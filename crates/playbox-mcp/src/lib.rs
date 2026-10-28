@@ -332,7 +332,8 @@ impl Server {
             spec.timeout_secs = v;
         }
         spec.network = b(a, "network");
-        let (runner, out, patch) = self.guest()?.run_task(base, spec).await?;
+        let run = self.guest()?.run_task_full(base, spec).await?;
+        let (runner, out, patch) = (run.runner.clone(), run.output.clone(), run.patch.clone());
         let mut applied = false;
         if b(a, "apply") && !patch.is_empty() {
             playbox_git::apply_patch(self.workspace()?, &patch).await.context("applying patch")?;
@@ -349,6 +350,10 @@ impl Server {
             "patch": shown,
             "patch_truncated": patch.len() > SHOWN_PATCH_BYTES,
             "patch_applied": applied,
+            "task_id": run.task_id,
+            "host_branch": run.branch,
+            "host_commit": run.commit,
+            "changed": run.changed,
         }))
     }
 

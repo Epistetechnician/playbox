@@ -1,14 +1,14 @@
-//! Playbox networking (M1-M3): a host that admits members by invite and a client that joins by link.
+//! Playbox networking: a host that admits members by invite and a client that joins by link.
 //!
-//! The wire format here is a placeholder JSON request/response over one iroh stream per request.
-//! It is not yet the A2A binding; see PRD section 6 and risk 1.
+//! Peers speak A2A v1 JSON-RPC over iroh streams; see [`wire`] for the binding.
 
 pub mod grants;
 pub mod transport;
+pub mod wire;
 pub use transport::{Transport, TransportChoice};
 
 use anyhow::{anyhow, bail, Context, Result};
-use grants::{Authority, Caps, Needs};
+use grants::{Authority, Caps};
 pub use iroh::EndpointId;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use iroh::{
@@ -16,21 +16,32 @@ use iroh::{
     protocol::{AcceptError, ProtocolHandler, Router},
     Endpoint, EndpointAddr, SecretKey,
 };
+use a2a::{
+    A2AError, GetTaskRequest, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ListTasksResponse, Message,
+    Part, Role, SendMessageRequest, SendMessageResponse, Task, TaskState,
+};
 use playbox_runner::{Limits, Runner, TaskOutput, TaskSpec};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use wire::Op;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     io::Read,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 use tokio::sync::Semaphore;
 
-pub const ALPN: &[u8] = b"playbox/room/0";
-/// Header + body cap for one request or response (bundles and patches travel in the body).
+pub const ALPN: &[u8] = b"playbox/a2a/1";
+/// Cap for one request or response. Bundles and patches travel base64-encoded inside it, so the
+/// largest usable payload is about three quarters of this.
 const MAX_FRAME: usize = 256 * 1024 * 1024;
-const MAX_HEADER: usize = 64 * 1024;
+/// Tasks remembered per member for `GetTask` / `ListTasks`.
+const TASKS_KEPT: usize = 200;
 const CONNECT_ATTEMPTS: u32 = 4;
 const CONNECT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(6);
 const LINK_SCHEME: &str = "playbox://";
@@ -83,57 +94,6 @@ impl Link {
         let transport = t.map(|t| Transport::parse(&t)).transpose()?;
         Ok(Self { addr, invite: invite.to_string(), transport })
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "method", rename_all = "snake_case")]
-enum Request {
-    Join { invite: String },
-    Echo { text: String },
-    /// Fetch `refname` and its history as a git bundle (response body).
-    Pull { refname: String },
-    /// Send a git bundle (request body) holding `branch`; stored under the member's own namespace.
-    Push { branch: String },
-    /// Run `spec` in a sandbox on a checkout of `base`; the response body is the resulting patch.
-    RunTask { base: String, spec: TaskSpec },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "result", rename_all = "snake_case")]
-enum Response {
-    Joined { member: String, grant: String },
-    Echo { text: String, from: String },
-    Pulled { head: String },
-    Pushed { reference: String, head: String },
-    TaskDone { runner: String, output: TaskOutput },
-    Error { message: String },
-}
-
-/// Every request carries the sender's grant (except `join`, which carries an invite).
-#[derive(Debug, Serialize, Deserialize)]
-struct Envelope {
-    grant: Option<String>,
-    #[serde(flatten)]
-    req: Request,
-}
-
-/// Frame: `u32 big-endian header length | header json | body`.
-fn encode_frame(header: &impl Serialize, body: &[u8]) -> Result<Vec<u8>> {
-    let h = serde_json::to_vec(header)?;
-    let mut out = Vec::with_capacity(4 + h.len() + body.len());
-    out.extend_from_slice(&(h.len() as u32).to_be_bytes());
-    out.extend_from_slice(&h);
-    out.extend_from_slice(body);
-    Ok(out)
-}
-
-fn decode_frame<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<(T, Vec<u8>)> {
-    let len = u32::from_be_bytes(bytes.get(..4).ok_or_else(|| anyhow!("short frame"))?.try_into()?) as usize;
-    if len > MAX_HEADER {
-        bail!("header too large");
-    }
-    let h = bytes.get(4..4 + len).ok_or_else(|| anyhow!("truncated header"))?;
-    Ok((serde_json::from_slice(h)?, bytes[4 + len..].to_vec()))
 }
 
 #[derive(Debug)]
@@ -249,6 +209,9 @@ struct RoomHandler {
     cfg: HostConfig,
     tasks: Arc<Semaphore>,
     auth: Arc<Authority>,
+    /// Recent tasks per member, with byte payloads dropped. Not persisted.
+    done: Arc<Mutex<HashMap<EndpointId, VecDeque<Task>>>>,
+    card: Arc<Value>,
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -257,35 +220,43 @@ impl std::fmt::Debug for RoomHandler {
     }
 }
 
-fn err(message: impl Into<String>) -> (Response, Vec<u8>) {
-    (Response::Error { message: message.into() }, Vec::new())
-}
+/// An error that means "this room will not do that" (a Rejected task), as opposed to "it tried and failed".
+#[derive(Debug)]
+struct Refused(String);
 
-fn needs_of(req: &Request) -> Needs {
-    match req {
-        Request::RunTask { spec, .. } => Needs {
-            cpu_milli: (spec.cpus * 1000.0).ceil() as i64,
-            mem_mib: spec.mem_mib as i64,
-            timeout_secs: spec.timeout_secs as i64,
-            net: spec.network,
-            cmd: spec.cmd.first().cloned().unwrap_or_default(),
-        },
-        _ => Needs::default(),
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
-fn op_of(req: &Request) -> &'static str {
-    match req {
-        Request::Join { .. } => "join",
-        Request::Echo { .. } => "echo",
-        Request::Pull { .. } => "pull",
-        Request::Push { .. } => "push",
-        Request::RunTask { .. } => "run",
+impl std::error::Error for Refused {}
+
+fn refuse(msg: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(Refused(msg.into()))
+}
+
+fn rpc_error(code: i32, message: impl Into<String>) -> JsonRpcError {
+    JsonRpcError { code, message: message.into(), data: None }
+}
+
+fn unauthorized(e: anyhow::Error) -> JsonRpcError {
+    rpc_error(wire::ERR_UNAUTHORIZED, format!("{e:#}"))
+}
+
+/// A task for a result: success, or Rejected / Failed according to the error.
+fn finish(result: Result<Task>) -> Task {
+    match result {
+        Ok(t) => t,
+        Err(e) => {
+            let state = if e.downcast_ref::<Refused>().is_some() { TaskState::Rejected } else { TaskState::Failed };
+            wire::task(state, Some(format!("{e:#}")), vec![], vec![])
+        }
     }
 }
 
 impl RoomHandler {
-    fn join(&self, from: EndpointId, invite: String) -> Result<Response> {
+    fn join(&self, from: EndpointId, invite: String) -> Result<Value> {
         if self.state.lock().expect("state lock").banned.contains(&from) {
             bail!("this key is banned from the room");
         }
@@ -307,84 +278,197 @@ impl RoomHandler {
         let (grant, grant_id) = self.auth.mint_grant(&from.to_string(), ttl, &caps)?;
         st.members.insert(from, grant_id);
         st.save();
-        Ok(Response::Joined { member: from.to_string(), grant })
+        Ok(json!({ "member": from.to_string(), "grant": grant }))
     }
 
-    async fn handle(&self, from: EndpointId, env: Envelope, body: Vec<u8>) -> (Response, Vec<u8>) {
-        let result = match env.req {
-            Request::Join { invite } => self.join(from, invite).map(|r| (r, Vec::new())),
-            req => {
-                let authorized = match &env.grant {
-                    None => Err(anyhow!("no grant presented")),
-                    Some(g) => {
-                        let revoked = self.state.lock().expect("state lock").revoked.clone();
-                        self.auth.authorize(g, &from.to_string(), op_of(&req), &needs_of(&req), &revoked)
-                    }
+    fn authorize(&self, grant: Option<&str>, from: EndpointId, op: &str, needs: &grants::Needs) -> Result<(), JsonRpcError> {
+        let Some(grant) = grant else { return Err(unauthorized(anyhow!("no grant presented"))) };
+        let revoked = self.state.lock().expect("state lock").revoked.clone();
+        self.auth.authorize(grant, &from.to_string(), op, needs, &revoked).map_err(unauthorized)
+    }
+
+    /// One JSON-RPC call from `from`.
+    async fn route(&self, from: EndpointId, frame: &wire::Frame) -> Result<Value, JsonRpcError> {
+        use a2a::methods;
+        let rpc = &frame.rpc;
+        let params = rpc.params.clone().unwrap_or(Value::Null);
+        let invalid = |e: serde_json::Error| A2AError::invalid_params(e.to_string()).to_jsonrpc_error();
+        match rpc.method.as_str() {
+            wire::METHOD_AGENT_CARD => Ok((*self.card).clone()),
+            wire::METHOD_JOIN => {
+                let invite = params.get("invite").and_then(Value::as_str).ok_or_else(|| {
+                    A2AError::invalid_params("missing `invite`").to_jsonrpc_error()
+                })?;
+                self.join(from, invite.to_string()).map_err(unauthorized)
+            }
+            methods::SEND_MESSAGE => {
+                let req: SendMessageRequest = serde_json::from_value(params).map_err(invalid)?;
+                let op = Op::from_message(&req.message).map_err(|e| A2AError::invalid_params(format!("{e:#}")).to_jsonrpc_error())?;
+                // A plain A2A message with no Playbox operation only needs membership, like echo.
+                let (name, needs) = match &op {
+                    Some(op) => (op.name(), op.needs()),
+                    None => ("echo", grants::Needs::default()),
                 };
-                match authorized {
-                    Ok(()) => self.handle_member(from, req, body).await,
-                    Err(e) => Err(e),
+                self.authorize(frame.grant(), from, name, &needs)?;
+                let reply = self.send_message(from, op, &req.message).await;
+                serde_json::to_value(reply).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+            }
+            methods::GET_TASK => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let req: GetTaskRequest = serde_json::from_value(params).map_err(invalid)?;
+                let t = self.find_task(from, &req.id).ok_or_else(|| A2AError::task_not_found(&req.id).to_jsonrpc_error())?;
+                serde_json::to_value(t).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+            }
+            methods::LIST_TASKS => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let tasks: Vec<Task> = self.done.lock().expect("tasks lock").get(&from).map(|q| q.iter().cloned().collect()).unwrap_or_default();
+                let n = tasks.len() as i32;
+                let resp = ListTasksResponse { tasks, next_page_token: String::new(), page_size: n, total_size: n };
+                serde_json::to_value(resp).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+            }
+            methods::CANCEL_TASK => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let id = params.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+                // Every task here finishes before its response is sent, so none can still be cancelled.
+                match self.find_task(from, &id) {
+                    Some(_) => Err(A2AError::task_not_cancelable(&id).to_jsonrpc_error()),
+                    None => Err(A2AError::task_not_found(&id).to_jsonrpc_error()),
                 }
             }
-        };
-        result.unwrap_or_else(|e| err(format!("{e:#}")))
+            m if methods::is_streaming(m) => Err(A2AError::unsupported_operation("streaming is not supported by this room").to_jsonrpc_error()),
+            methods::GET_EXTENDED_AGENT_CARD => Err(A2AError::extended_card_not_configured().to_jsonrpc_error()),
+            m if methods::is_valid(m) => Err(A2AError::unsupported_operation(format!("{m} is not supported by this room")).to_jsonrpc_error()),
+            m => Err(rpc_error(a2a::error_code::METHOD_NOT_FOUND, format!("method not found: {m}"))),
+        }
     }
 
-    async fn handle_member(&self, from: EndpointId, req: Request, body: Vec<u8>) -> Result<(Response, Vec<u8>)> {
-        let repo = || self.cfg.repo.clone().ok_or_else(|| anyhow!("this room has no git repository"));
-        Ok(match req {
-            Request::Join { .. } => unreachable!("handled in handle"),
-            Request::Echo { text } => (Response::Echo { text, from: from.to_string() }, Vec::new()),
-            Request::Pull { refname } => {
-                let repo = repo()?;
-                let head = playbox_git::rev_parse(&repo, &refname).await?;
-                let bundle = playbox_git::bundle_create(&repo, &refname).await?;
-                (Response::Pulled { head }, bundle)
+    fn find_task(&self, from: EndpointId, id: &str) -> Option<Task> {
+        self.done.lock().expect("tasks lock").get(&from)?.iter().find(|t| t.id == id).cloned()
+    }
+
+    fn remember(&self, from: EndpointId, t: &Task) {
+        let mut done = self.done.lock().expect("tasks lock");
+        let q = done.entry(from).or_default();
+        q.push_back(wire::without_bytes(t.clone()));
+        while q.len() > TASKS_KEPT {
+            q.pop_front();
+        }
+    }
+
+    async fn send_message(&self, from: EndpointId, op: Option<Op>, msg: &Message) -> SendMessageResponse {
+        let reply = |text: String| SendMessageResponse::Message(Message::new(Role::Agent, vec![Part::text(text)]));
+        let task = match op {
+            None => {
+                return reply(
+                    "Playbox room. Send a data part like {\"playbox\":{\"op\":\"echo\",\"text\":\"hi\"}}; \
+                     see the skills on the agent card (playbox.GetAgentCard)."
+                        .into(),
+                )
             }
-            Request::Push { branch } => {
-                let repo = repo()?;
-                let short: String = from.to_string().chars().take(16).collect();
-                let reference = format!("refs/playbox/members/{short}/{}", playbox_git::check_name(&branch)?);
-                let src = format!("refs/heads/{branch}");
-                let head = playbox_git::bundle_import(&repo, &body, &src, &reference).await?;
-                (Response::Pushed { reference, head }, Vec::new())
+            Some(Op::Echo { text }) => return reply(text),
+            Some(Op::Pull { refname }) => finish(self.pull(&refname).await),
+            Some(Op::Push { branch }) => finish(self.push(from, &branch, wire::raw_part(msg)).await),
+            Some(Op::Run { base, spec }) => finish(self.run(from, &base, spec).await),
+        };
+        self.remember(from, &task);
+        SendMessageResponse::Task(task)
+    }
+
+    fn repo(&self) -> Result<PathBuf> {
+        self.cfg.repo.clone().ok_or_else(|| refuse("this room has no git repository"))
+    }
+
+    async fn pull(&self, refname: &str) -> Result<Task> {
+        let repo = self.repo()?;
+        playbox_git::check_name(refname).map_err(|e| refuse(format!("{e:#}")))?;
+        let head = playbox_git::rev_parse(&repo, refname).await?;
+        let bundle = playbox_git::bundle_create(&repo, refname).await?;
+        Ok(wire::task(
+            TaskState::Completed,
+            None,
+            vec![wire::raw_artifact("bundle", "ref.bundle", wire::MEDIA_BUNDLE, bundle)],
+            vec![("head", json!(head))],
+        ))
+    }
+
+    async fn push(&self, from: EndpointId, branch: &str, bundle: Option<&[u8]>) -> Result<Task> {
+        let repo = self.repo()?;
+        let branch = playbox_git::check_name(branch).map_err(|e| refuse(format!("{e:#}")))?;
+        let bundle = bundle.ok_or_else(|| refuse("push needs the git bundle as a raw part of the message"))?;
+        let short: String = from.to_string().chars().take(16).collect();
+        let reference = format!("refs/playbox/members/{short}/{branch}");
+        let head = playbox_git::bundle_import(&repo, bundle, &format!("refs/heads/{branch}"), &reference).await?;
+        Ok(wire::task(TaskState::Completed, None, vec![], vec![("reference", json!(reference)), ("head", json!(head))]))
+    }
+
+    async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
+        let runner = self.cfg.runner.clone().ok_or_else(|| refuse("this room runs no tasks"))?;
+        let (output, patch, extra) = if let Some(ws) = &self.cfg.workspace {
+            let _permit = self.tasks.acquire().await?;
+            let short: String = from.to_string().chars().take(16).collect();
+            let branch = format!("members/{short}");
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+            let mut repo = ws.lock().await;
+            if repo.head(&branch).is_err() {
+                repo.fork(&branch, base)?;
             }
-            Request::RunTask { base, spec } if self.cfg.workspace.is_some() => {
-                let runner = self.cfg.runner.clone().ok_or_else(|| anyhow!("this room runs no tasks"))?;
-                let _permit = self.tasks.acquire().await?;
-                let short: String = from.to_string().chars().take(16).collect();
-                let branch = format!("members/{short}");
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-                let mut repo = self.cfg.workspace.as_ref().expect("checked").lock().await;
-                if repo.head(&branch).is_err() {
-                    repo.fork(&branch, &base)?;
-                }
-                let mut ws = repo.workspace(&branch)?;
-                let run = playbox_runner::workspace::run_in_workspace(&mut repo, &mut ws, runner.as_ref(), &spec, &from.to_string(), &format!("rpc-{now}"), now).await?;
-                if !run.conflicts.is_empty() {
-                    bail!("conflict on {:?}", run.conflicts);
-                }
-                // The commit stays on the host (branch `members/<id>`); the response body is empty
-                // until the wire format can carry a commit id.
-                (Response::TaskDone { runner: runner.name().into(), output: run.output }, Vec::new())
+            let mut wsp = repo.workspace(&branch)?;
+            let run = playbox_runner::workspace::run_in_workspace(&mut repo, &mut wsp, runner.as_ref(), &spec, &from.to_string(), &format!("rpc-{now}"), now).await?;
+            if !run.conflicts.is_empty() {
+                bail!("conflict on {:?}", run.conflicts);
             }
-            Request::RunTask { base, spec } => {
-                let repo = repo()?;
-                let runner = self.cfg.runner.clone().ok_or_else(|| anyhow!("this room runs no tasks"))?;
-                let _permit = self.tasks.acquire().await?;
-                let commit = playbox_git::rev_parse(&repo, &base).await?;
-                let dir = playbox_git::worktree_add(&repo, &commit).await?;
-                let result = async {
-                    let output = runner.run(&spec, &dir).await?;
-                    let patch = playbox_git::diff_patch(&dir, &commit).await?;
-                    anyhow::Ok((output, patch))
-                }
-                .await;
-                let _ = playbox_git::worktree_remove(&repo, &dir).await;
-                let (output, patch) = result?;
-                (Response::TaskDone { runner: runner.name().into(), output }, patch)
+            // The commit stays on the host (branch `members/<id>`); the patch is empty. The commit id
+            // and the changed paths come back as task metadata.
+            let mut extra = vec![("branch", json!(branch)), ("changed", json!(run.changed))];
+            if let Some(c) = run.commit {
+                extra.push(("commit", json!(playbox_core::history::text::hex(&c))));
             }
-        })
+            (run.output, Vec::new(), extra)
+        } else {
+            let repo = self.repo()?;
+            playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
+            let _permit = self.tasks.acquire().await?;
+            let commit = playbox_git::rev_parse(&repo, base).await?;
+            let dir = playbox_git::worktree_add(&repo, &commit).await?;
+            let result = async {
+                let output = runner.run(&spec, &dir).await?;
+                let patch = playbox_git::diff_patch(&dir, &commit).await?;
+                anyhow::Ok((output, patch))
+            }
+            .await;
+            let _ = playbox_git::worktree_remove(&repo, &dir).await;
+            let (output, patch) = result?;
+            (output, patch, Vec::new())
+        };
+        let ok = output.exit_code == Some(0);
+        let text = match (ok, output.timed_out, output.exit_code) {
+            (true, _, _) => None,
+            (_, true, _) => Some("timed out".to_string()),
+            (_, _, Some(c)) => Some(format!("exit code {c}")),
+            _ => Some("terminated by a signal".to_string()),
+        };
+        let mut artifacts = vec![wire::text_artifact("stdout", output.stdout), wire::text_artifact("stderr", output.stderr)];
+        if !patch.is_empty() {
+            artifacts.push(wire::raw_artifact("patch", "changes.patch", wire::MEDIA_PATCH, patch));
+        }
+        let mut meta = vec![("runner", json!(runner.name())), ("timedOut", json!(output.timed_out))];
+        if let Some(c) = output.exit_code {
+            meta.push(("exitCode", json!(c)));
+        }
+        meta.extend(extra);
+        Ok(wire::task(if ok { TaskState::Completed } else { TaskState::Failed }, text, artifacts, meta))
+    }
+
+    async fn dispatch(&self, from: EndpointId, bytes: &[u8]) -> JsonRpcResponse {
+        let frame: wire::Frame = match serde_json::from_slice(bytes) {
+            Ok(f) => f,
+            Err(e) => return JsonRpcResponse::error(JsonRpcId::Null, A2AError::parse_error(e.to_string()).to_jsonrpc_error()),
+        };
+        let id = frame.rpc.id.clone();
+        match self.route(from, &frame).await {
+            Ok(v) => JsonRpcResponse::success(id, v),
+            Err(e) => JsonRpcResponse::error(id, e),
+        }
     }
 }
 
@@ -393,11 +477,8 @@ impl ProtocolHandler for RoomHandler {
         let from = conn.remote_id();
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else { break };
-            let (resp, body) = match decode_frame::<Envelope>(&bytes) {
-                Ok((env, body)) => self.handle(from, env, body).await,
-                Err(e) => err(format!("bad request: {e}")),
-            };
-            let Ok(out) = encode_frame(&resp, &body) else { break };
+            let resp = self.dispatch(from, &bytes).await;
+            let Ok(out) = serde_json::to_vec(&resp) else { break };
             if send.write_all(&out).await.is_err() || send.finish().is_err() {
                 break;
             }
@@ -469,7 +550,15 @@ impl Host {
             Some(seed) => Authority::from_seed(&room, &seed)?,
             None => Authority::new(&room),
         });
-        let handler = RoomHandler { state: state.clone(), cfg, tasks: Arc::new(Semaphore::new(2)), auth: auth.clone() };
+        let card = wire::agent_card(&room, &transport.label(), cfg.repo.is_some() || cfg.workspace.is_some(), cfg.runner.is_some(), &cfg.limits);
+        let handler = RoomHandler {
+            state: state.clone(),
+            tasks: Arc::new(Semaphore::new(2)),
+            auth: auth.clone(),
+            done: Arc::default(),
+            card: Arc::new(serde_json::to_value(card).context("agent card")?),
+            cfg,
+        };
         let router = Router::builder(endpoint).accept(ALPN, handler).spawn();
         Ok(Self { router, state, auth, transport })
     }
@@ -523,10 +612,28 @@ impl Host {
     }
 }
 
+/// The full result of a task run on the host.
+#[derive(Debug, Clone)]
+pub struct TaskRun {
+    /// The A2A task id; use it with [`Client::get_task`].
+    pub task_id: String,
+    pub runner: String,
+    pub output: TaskOutput,
+    /// Everything the command changed, as a git patch. Empty when the host keeps results in a
+    /// versioned workspace instead.
+    pub patch: Vec<u8>,
+    /// Workspace hosts only: the host-side branch holding this member's work, the commit this task
+    /// created (if it changed anything), and the paths it touched.
+    pub branch: Option<String>,
+    pub commit: Option<String>,
+    pub changed: Vec<String>,
+}
+
 pub struct Client {
     endpoint: Endpoint,
     conn: Connection,
     grant: Mutex<Option<String>>,
+    next_id: AtomicI64,
 }
 
 impl Client {
@@ -547,7 +654,7 @@ impl Client {
             }
         }
         let conn = conn.ok_or_else(|| last.context(format!("could not connect after {CONNECT_ATTEMPTS} attempts")))?;
-        Ok(Self { endpoint, conn, grant: Mutex::new(None) })
+        Ok(Self { endpoint, conn, grant: Mutex::new(None), next_id: AtomicI64::new(1) })
     }
 
     pub fn id(&self) -> EndpointId {
@@ -571,59 +678,120 @@ impl Client {
         Ok(())
     }
 
-    async fn call(&self, req: Request, body: &[u8]) -> Result<(Response, Vec<u8>)> {
+    /// One JSON-RPC call with this client's grant; returns the `result`, or the error's message.
+    /// The typed helpers below use it; call it directly for A2A methods that have no helper.
+    pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let frame = wire::Frame::new(JsonRpcRequest::new(id.into(), method, Some(params)), self.grant().as_deref());
         let (mut send, mut recv) = self.conn.open_bi().await?;
-        let env = Envelope { grant: self.grant(), req };
-        send.write_all(&encode_frame(&env, body)?).await?;
+        send.write_all(&serde_json::to_vec(&frame)?).await?;
         send.finish()?;
-        decode_frame(&recv.read_to_end(MAX_FRAME).await?)
+        let resp: JsonRpcResponse = serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")?;
+        match (resp.result, resp.error) {
+            (_, Some(e)) => Err(anyhow!("{}", e.message)),
+            (Some(r), None) => Ok(r),
+            (None, None) => Err(anyhow!("empty response")),
+        }
+    }
+
+    /// Send a Playbox operation as an A2A message.
+    async fn send(&self, op: &Op, extra: Vec<Part>) -> Result<SendMessageResponse> {
+        let req = SendMessageRequest { message: op.message(extra), configuration: None, metadata: None, tenant: None };
+        Ok(serde_json::from_value(self.call(a2a::methods::SEND_MESSAGE, serde_json::to_value(req)?).await?)?)
+    }
+
+    /// A task result that must have completed; otherwise the host's reason.
+    async fn send_task(&self, what: &str, op: &Op, extra: Vec<Part>) -> Result<Task> {
+        match self.send(op, extra).await.map_err(|e| anyhow!("{what} refused: {e:#}"))? {
+            SendMessageResponse::Task(t) if t.status.state == TaskState::Completed => Ok(t),
+            SendMessageResponse::Task(t) => bail!("{what} refused: {}", wire::status_text(&t)),
+            SendMessageResponse::Message(m) => bail!("unexpected message instead of a task: {:?}", m.text()),
+        }
     }
 
     /// Present the invite; returns this client's member id.
     pub async fn join(&self, invite: &str) -> Result<String> {
-        match self.call(Request::Join { invite: invite.to_string() }, &[]).await?.0 {
-            Response::Joined { member, grant } => {
-                self.set_grant(grant);
-                Ok(member)
-            }
-            Response::Error { message } => bail!("join refused: {message}"),
-            other => bail!("unexpected response: {other:?}"),
-        }
+        let r = self.call(wire::METHOD_JOIN, json!({ "invite": invite })).await.map_err(|e| anyhow!("join refused: {e:#}"))?;
+        let grant = r.get("grant").and_then(Value::as_str).ok_or_else(|| anyhow!("join response has no grant"))?;
+        self.set_grant(grant.to_string());
+        Ok(r.get("member").and_then(Value::as_str).unwrap_or_default().to_string())
     }
 
     pub async fn echo(&self, text: &str) -> Result<String> {
-        match self.call(Request::Echo { text: text.to_string() }, &[]).await?.0 {
-            Response::Echo { text, .. } => Ok(text),
-            Response::Error { message } => bail!("echo refused: {message}"),
-            other => bail!("unexpected response: {other:?}"),
+        match self.send(&Op::Echo { text: text.to_string() }, vec![]).await.map_err(|e| anyhow!("echo refused: {e:#}"))? {
+            SendMessageResponse::Message(m) => Ok(m.text().unwrap_or_default().to_string()),
+            SendMessageResponse::Task(t) => bail!("echo refused: {}", wire::status_text(&t)),
         }
+    }
+
+    /// The host's public agent card.
+    pub async fn agent_card(&self) -> Result<a2a::AgentCard> {
+        Ok(serde_json::from_value(self.call(wire::METHOD_AGENT_CARD, Value::Null).await?)?)
+    }
+
+    /// A task this member created earlier (byte payloads are not kept; see [`wire::without_bytes`]).
+    pub async fn get_task(&self, id: &str) -> Result<Task> {
+        Ok(serde_json::from_value(self.call(a2a::methods::GET_TASK, serde_json::to_value(GetTaskRequest { id: id.into(), history_length: None, tenant: None })?).await?)?)
+    }
+
+    pub async fn list_tasks(&self) -> Result<Vec<Task>> {
+        let r: ListTasksResponse = serde_json::from_value(self.call(a2a::methods::LIST_TASKS, json!({})).await?)?;
+        Ok(r.tasks)
     }
 
     /// Fetch `refname` from the room; returns its commit id and a git bundle.
     pub async fn pull(&self, refname: &str) -> Result<(String, Vec<u8>)> {
-        match self.call(Request::Pull { refname: refname.to_string() }, &[]).await? {
-            (Response::Pulled { head }, bundle) => Ok((head, bundle)),
-            (Response::Error { message }, _) => bail!("pull refused: {message}"),
-            (other, _) => bail!("unexpected response: {other:?}"),
-        }
+        let t = self.send_task("pull", &Op::Pull { refname: refname.to_string() }, vec![]).await?;
+        let head = wire::meta(&t, "head").and_then(Value::as_str).unwrap_or_default().to_string();
+        let bundle = wire::artifact_bytes(&t, "bundle").ok_or_else(|| anyhow!("pull returned no bundle"))?;
+        Ok((head, bundle))
     }
 
     /// Send a bundle holding `branch`. Returns the ref it was stored under on the host.
     pub async fn push(&self, branch: &str, bundle: &[u8]) -> Result<String> {
-        match self.call(Request::Push { branch: branch.to_string() }, bundle).await?.0 {
-            Response::Pushed { reference, .. } => Ok(reference),
-            Response::Error { message } => bail!("push refused: {message}"),
-            other => bail!("unexpected response: {other:?}"),
-        }
+        let part = Part::raw(bundle.to_vec()).with_filename("push.bundle").with_media_type(wire::MEDIA_BUNDLE);
+        let t = self.send_task("push", &Op::Push { branch: branch.to_string() }, vec![part]).await?;
+        Ok(wire::meta(&t, "reference").and_then(Value::as_str).unwrap_or_default().to_string())
     }
 
     /// Run a task on a checkout of `base`; returns the runner name, its output and the patch.
+    /// A command that exits non-zero or times out still returns `Ok`; check `exit_code` / `timed_out`.
     pub async fn run_task(&self, base: &str, spec: TaskSpec) -> Result<(String, TaskOutput, Vec<u8>)> {
-        match self.call(Request::RunTask { base: base.to_string(), spec }, &[]).await? {
-            (Response::TaskDone { runner, output }, patch) => Ok((runner, output, patch)),
-            (Response::Error { message }, _) => bail!("task refused: {message}"),
-            (other, _) => bail!("unexpected response: {other:?}"),
+        let r = self.run_task_full(base, spec).await?;
+        Ok((r.runner, r.output, r.patch))
+    }
+
+    /// Like [`Client::run_task`], with the task id and workspace commit details.
+    pub async fn run_task_full(&self, base: &str, spec: TaskSpec) -> Result<TaskRun> {
+        let op = Op::Run { base: base.to_string(), spec };
+        let t = match self.send(&op, vec![]).await.map_err(|e| anyhow!("task refused: {e:#}"))? {
+            SendMessageResponse::Task(t) => t,
+            SendMessageResponse::Message(m) => bail!("unexpected message instead of a task: {:?}", m.text()),
+        };
+        let exit_code = wire::meta(&t, "exitCode").and_then(Value::as_i64).map(|c| c as i32);
+        let timed_out = wire::meta(&t, "timedOut").and_then(Value::as_bool).unwrap_or(false);
+        let ran = t.status.state == TaskState::Completed || exit_code.is_some() || timed_out;
+        if !ran {
+            bail!("task refused: {}", wire::status_text(&t));
         }
+        let text = |k: &str| wire::meta(&t, k).and_then(Value::as_str).map(str::to_string);
+        Ok(TaskRun {
+            task_id: t.id.clone(),
+            runner: text("runner").unwrap_or_default(),
+            output: TaskOutput {
+                exit_code,
+                timed_out,
+                stdout: wire::artifact_text(&t, "stdout").unwrap_or_default(),
+                stderr: wire::artifact_text(&t, "stderr").unwrap_or_default(),
+            },
+            patch: wire::artifact_bytes(&t, "patch").unwrap_or_default(),
+            branch: text("branch"),
+            commit: text("commit"),
+            changed: wire::meta(&t, "changed")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
+        })
     }
 
     pub async fn close(self) {

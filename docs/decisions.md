@@ -20,6 +20,10 @@
 | 16 | Hosts persist identity, root key, invites, members and bans in a state dir; saves are best effort and logged | Rooms must survive restarts | Multi-host rooms need replicated revocation |
 | 17 | In `local` mode the host also advertises loopback | iroh lists only the LAN address, so same-machine peers looped through the Wi-Fi interface and intermittently timed out under the macOS firewall (0 of 8 full runs failed after the change; about 1 in 6 failed before) | Never; LAN peers still use the LAN address |
 | 18 | Client connect retries 4 times at 6s each | Cheap insurance; did not fix the loopback issue by itself | If retries hide real faults |
+| 19 | A2A over iroh streams is a custom binding (`PLAYBOX-IROH`): JSON-RPC plus service parameters in a frame, grant as a Bearer service parameter | A2A defines HTTP, gRPC and similar bindings only; iroh gives identity and NAT traversal | A2A standardizes a stream binding, or we add an HTTP bridge |
+| 20 | Use only the `a2a-lf` types, not its axum server or HTTP client | They assume HTTP; the room needs its own auth and transport | The SDK grows a transport-agnostic server |
+| 21 | Join and the public card are extra methods (`playbox.Join`, `playbox.GetAgentCard`) | A2A has no join flow and the card normally lives at a URL | Never |
+| 22 | Streaming is unsupported; tasks finish before they return | Keeps the host simple; long tasks block the call (bounded by the grant's timeout) | Tasks that outlive one call |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

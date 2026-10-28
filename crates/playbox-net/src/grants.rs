@@ -113,7 +113,7 @@ impl Authority {
                 r#"
                 room({room});
                 nonce({nonce});
-                right("echo"); right("pull"); right("push"); right("run");
+                right("echo"); right("pull"); right("push"); right("run"); right("tasks");
                 check if subject({subject});
                 check if now($t), $t < {exp};
                 check if operation($op), right($op);
