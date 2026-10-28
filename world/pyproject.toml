@@ -1,0 +1,8 @@
+[project]
+name = "playbox-world"
+version = "0.0.1"
+requires-python = ">=3.11"
+dependencies = ["torch", "numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

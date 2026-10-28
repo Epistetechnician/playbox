@@ -14,3 +14,4 @@ ed25519-dalek.workspace = true
 playbox-net = { path = "../playbox-net" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 anyhow = "1"
+playbox-runner = { path = "../playbox-runner" }

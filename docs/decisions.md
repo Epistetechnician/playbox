@@ -8,5 +8,7 @@
 | 4 | Host-centered room, no global consensus | Simpler trust model; members mirror the log to detect tampering | Multi-host rooms |
 | 5 | Lean models grant logic only, trusts crypto | Days not months; follows the Cedar approach | Token format is fixed |
 | 6 | Pin libkrun to a release (v1.19.x) | 2.0 removes deprecated APIs | 2.0 released |
+| 7 | M2 runner is Docker for now; libkrun runner is a refusing placeholder | libkrun is not installed on the dev Mac; container isolation is weaker than a microVM | A Linux/KVM or HVF-capable libkrun setup is available |
+| 8 | Pushes land in per-member refs, never on `main` | Merging into `main` is a separate, later-gated act | M3 grants define who may merge |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
