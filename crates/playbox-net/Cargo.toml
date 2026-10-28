@@ -13,4 +13,5 @@ serde_json = "1"
 base64 = "0.22"
 playbox-git = { path = "../playbox-git" }
 playbox-runner = { path = "../playbox-runner" }
+biscuit-auth = "6.0.0"
 

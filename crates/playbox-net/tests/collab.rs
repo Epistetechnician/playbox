@@ -94,9 +94,13 @@ async fn task_has_no_network_and_times_out() {
     let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
     let client = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
 
-    // Even asking for network, the host's limits (network off) win.
-    let mut spec = TaskSpec::new(&["sh", "-c", "wget -q -T 3 -O - http://example.com >/dev/null 2>&1; echo $?"]);
-    spec.network = true;
+    // The member's grant forbids network, so asking for it is refused outright.
+    let mut ask = TaskSpec::new(&["true"]);
+    ask.network = true;
+    assert!(client.run_task("main", ask).await.unwrap_err().to_string().contains("not authorized"));
+
+    // Without it, the container really has no route out.
+    let spec = TaskSpec::new(&["sh", "-c", "wget -q -T 3 -O - http://example.com >/dev/null 2>&1; echo $?"]);
     let (_, out, _) = client.run_task("main", spec).await.unwrap();
     assert_ne!(out.stdout.trim(), "0", "network should be unreachable");
 

@@ -1,6 +1,6 @@
 # Playbox: PRD
 
-Status: draft v0.1 · 2026-10-28
+Status: draft v0.2 · 2026-10-28 (v0.2 adds the world view, section 7a)
 
 ## 1. One line
 
@@ -22,12 +22,15 @@ Goals
 5. **Verifiable hardware.** Sessions can attach an attestation of the machine and sandbox they ran in. Tiers are explicit.
 6. **Same trust model local or cloud.** The host is just a node; a cloud host gets no more authority than a laptop.
 7. **Least authority.** Every action is gated by an attenuable capability token.
+8. **See the room.** The room's accumulated agent activity (messages, actions, reasoning, commits) can be rendered as a learned 3D scene: a navigable picture of what the collective has been doing. Secondary goal; it never replaces the signed log.
 
 Non-goals (v0)
 - Proving the model's reasoning is correct, or that a change is good. We prove provenance and environment, not truth.
 - Public network, discovery of strangers, payments, tokens.
 - Running untrusted *models*. We sandbox untrusted *commands*.
 - Windows hosts. macOS and Linux first.
+- Treating the world view as evidence. It is a learned, non-deterministic visualisation; only the signed history log is proof.
+- Using NVlabs' instant-ngp code (CUDA-only, non-commercial license). We reimplement the idea.
 
 ## 4. Users
 
@@ -47,6 +50,7 @@ Non-goals (v0)
 - **Task**: a unit of delegated work (A2A task) with a base commit, a command or prompt, and limits.
 - **History**: per-session append-only log; each entry signed by the member key and hash-chained.
 - **Attestation**: evidence binding a session key to a platform and measured sandbox.
+- **World**: a learned 3D scene derived from a room's history. A view, not a source of truth.
 
 ## 6. Architecture
 
@@ -93,6 +97,31 @@ Kinds: `session_start`, `prompt`, `model_response`, `tool_call`, `tool_result`, 
 Guarantees (v0): ordering, integrity, authorship by key, and that a commit's tree hash matches the last `fs_snapshot`. Not guaranteed: that the recorded model output is what a real model produced. Mitigation path: a model-provider signed receipt (when providers offer it) or running the model inside an attested environment (Tier 3).
 
 Verification: `playbox verify <log>` recomputes the chain, checks signatures, checks every referenced commit/tree exists, checks the grant chain was valid at each tool call.
+
+## 7a. World view (M8)
+
+Idea: as a room accumulates agent activity, learn a 3D scene from it, so people can fly through what the collective has been building and discussing.
+
+Why not instant-ngp as is: it is a NeRF that learns a scene from posed photos, and agent events are not images. It is also CUDA-only and non-commercial. We keep its core (multiresolution hash-grid encoding, a tiny MLP, volume rendering) and supervise it with events instead.
+
+Pipeline (prototype in `world/`, PyTorch, runs on a laptop):
+1. **Events** from the history log: `{t, agent, kind, text}` with kind in message, action, reasoning, commit. Converter for Claude Code transcripts exists (`world/playbox_world/claude_code.py`); other agents need their own.
+2. **Layout**: a small network places each event in the unit cube. z follows time; x,y are trained so similar events cluster and dissimilar ones separate.
+3. **Field**: a hash-grid + MLP is fit to the placed events: density from event weight (commit 3, action 1.5, message 1, reasoning 0.5), colour from topic cluster.
+4. **Render**: emission-absorption volume rendering from an orbit camera.
+
+What the prototype showed:
+- On synthetic sessions with three topics it cleanly separates the topics and orders them in time (tested).
+- On a real 105-event Claude Code session it produced four clusters, but they track which tools were used, not what the work was about. The hashed bag-of-words embedding is the cause.
+- Reasoning events are nearly absent in real transcripts (thinking blocks are stored empty), so the "CoT" part of the scene needs agents that expose reasoning.
+
+Constraints:
+- There is no photometric ground truth; the scene is whatever the layout objective makes it. Quality is judged by usefulness (do clusters match topics people recognise?), not fidelity.
+- Training is not deterministic across hardware. The world is a derived view; anyone can regenerate it from the log, but two renders may differ.
+- Privacy: it is built from log payloads, so it must respect redaction. A member who redacts a payload also withholds it from the world. Guests' events appear only with their consent per room policy.
+- Cost: a few seconds to minutes on CPU/MPS for hundreds of events. Not on the critical path; runs on the viewer's machine, never on the host.
+
+Next: replace the embedding with a real sentence embedder and summarise tool calls into plain language before embedding; add a time scrubber and click-through from a blob to its signed log entry; evaluate on several real sessions.
 
 ## 8. Hardware verification tiers
 
@@ -155,7 +184,7 @@ Full model to be written in `docs/threat-model.md` before v0.2.
 | M5 | T1/T2 attestation; `playbox verify` full chain | Verifier rejects a log with a swapped sandbox image |
 | M6 | Cloud host + T3 | Joiner sees SEV-SNP/TDX report verified |
 | M7 | LangGraph orchestrator delegating to multiple peers | 3-peer demo with merge |
-| M8 | World view: learned 3D scene of the room from agent events (`world/`) | Replay of a real room's history renders a scene where topics form clusters and time runs along z |
+| M8 | World view (section 7a): learned 3D scene of the room from agent events (`world/`). Prototype done on synthetic data and one real session; next is a real embedder and click-through to log entries | A real multi-agent room renders clusters that a participant recognises as the room's topics, and every blob links to its signed entry |
 
 ## 13. Success metrics
 
@@ -163,6 +192,7 @@ Full model to be written in `docs/threat-model.md` before v0.2.
 - 100% of merged commits have a verifiable history chain.
 - Zero grant-widening bugs (Lean-proved model + property tests).
 - VM cold start p50 < 1 s on Linux.
+- World view: in a usability check, participants identify the room's main topics from the rendered clusters (target: 3 of 4 raters agree with the cluster labels).
 
 ## 14. Risks and open questions
 
@@ -173,6 +203,8 @@ Full model to be written in `docs/threat-model.md` before v0.2.
 5. **Overlap with Peerspan** (`peerspan/peerspan`, `peerfs`, `runtime`): same space, different bets. Decide whether to build on, interoperate with, or stay independent. Read their access-model and task-contract docs first.
 6. **Is a coordinator-free room necessary?** A host-centered room is simpler; we keep the host as the authority for the room and avoid global consensus.
 7. **Legal/abuse:** hosting other people's agents' code execution.
+8. **World view may not be useful.** If clusters never match topics people recognise, it is a demo, not a feature. Cheap to test, so test before investing further.
+9. **World view and privacy.** Embeddings and renders can leak redacted content. Build the scene only from payloads the viewer is allowed to read.
 
 ## 15. Repo map
 
@@ -182,7 +214,7 @@ crates/playbox-core     types: history chain, ids; later grants, links
 crates/playbox-cli      `playbox` binary (stub)
 lean/                   Lean 4 grant model and proofs
 orchestrator/           LangGraph delegation graphs (stub)
-world/                  PyTorch hash-grid field learned from agent events (prototype)
+world/                  PyTorch hash-grid field learned from agent events (prototype, section 7a)
 adapters/               MCP server + per-agent notes (stub)
 docs/                   decisions, threat model (to write)
 ```

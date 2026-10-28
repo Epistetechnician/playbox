@@ -28,8 +28,8 @@ async fn invite_is_single_use() {
 #[tokio::test]
 async fn expired_invite_is_refused() {
     let host = Host::start(new_secret_key().unwrap(), true).await.unwrap();
-    let link = host.create_link(Duration::from_millis(1), 1).unwrap().encode();
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    let link = host.create_link(Duration::ZERO, 1).unwrap().encode();
+    tokio::time::sleep(Duration::from_millis(1100)).await;
     assert!(join_link(&link, new_secret_key().unwrap(), true).await.is_err());
     host.shutdown().await.unwrap();
 }

@@ -10,5 +10,8 @@
 | 6 | Pin libkrun to a release (v1.19.x) | 2.0 removes deprecated APIs | 2.0 released |
 | 7 | M2 runner is Docker for now; libkrun runner is a refusing placeholder | libkrun is not installed on the dev Mac; container isolation is weaker than a microVM | A Linux/KVM or HVF-capable libkrun setup is available |
 | 8 | Pushes land in per-member refs, never on `main` | Merging into `main` is a separate, later-gated act | M3 grants define who may merge |
+| 9 | Grants bound to the member's iroh key via a `subject` check | A stolen grant is useless to any other key | Hosts that proxy for members |
+| 10 | Over-limit task requests are refused, not clamped | Members learn their limits; the grant is the single source of truth | Never |
+| 11 | Revocation is host-local and in memory; revoking an authority block id kills all attenuations | Single-host rooms need no gossip yet | Multi-host rooms or restarts that must keep bans (persist + gossip over iroh-gossip) |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
