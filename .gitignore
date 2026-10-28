@@ -4,3 +4,5 @@ lean/.lake/
 __pycache__/
 .venv/
 .DS_Store
+world/docs/session_events.jsonl
+world/docs/session.png

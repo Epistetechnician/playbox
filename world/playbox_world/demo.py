@@ -1,5 +1,7 @@
 """python -m playbox_world.demo [events.jsonl] [out.png]"""
 
+import collections
+import os
 import sys
 
 import matplotlib
@@ -19,7 +21,11 @@ def main():
     events = load_jsonl(src) if src else synthetic()
     agents = sorted({e.agent for e in events})
     pos, layout_loss = fit_layout(events, agents)
-    colors, labels = topic_colors(events, pos[:, :2])
+    k = int(os.environ.get("PLAYBOX_K", 3))
+    colors, labels = topic_colors(events, pos[:, :2], k=k)
+    for j in range(k):
+        words = collections.Counter(w for e, l in zip(events, labels) if l == j for w in e.text.lower().split() if len(w) > 3)
+        print(f"cluster {j}: {sum(labels == j)} events; top words: {', '.join(w for w, _ in words.most_common(6))}")
     mass = torch.tensor([KIND_MASS[e.kind] for e in events])
     field, field_loss = fit_field(pos, mass, colors)
     print(f"events={len(events)} layout_loss={layout_loss:.4f} field_loss={field_loss:.5f}")
