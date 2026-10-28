@@ -616,11 +616,31 @@ pub fn find_se_helper() -> Option<PathBuf> {
     which("playbox-se")
 }
 
-/// Pick a provider from `$PLAYBOX_ATTEST`: `none`, `auto` (default), `se` or `tpm`.
+/// Where trusted device keys are listed: `<home>/pins`.
+pub fn pins_path(home: &Path) -> PathBuf {
+    home.join("pins")
+}
+
+/// Boot PCR reference values from `$PLAYBOX_TPM_BOOT_PCRS`, e.g. `0:<hex>,7:<hex>`. Empty if unset.
+pub fn boot_reference_from_env() -> Result<BTreeMap<u32, String>, String> {
+    let Ok(v) = std::env::var("PLAYBOX_TPM_BOOT_PCRS") else { return Ok(BTreeMap::new()) };
+    let mut m = BTreeMap::new();
+    for e in v.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+        let (i, h) = e.split_once(':').ok_or_else(|| format!("PLAYBOX_TPM_BOOT_PCRS entry {e:?} must be index:hex"))?;
+        m.insert(i.parse().map_err(|_| format!("bad PCR index {i:?}"))?, h.to_string());
+    }
+    Ok(m)
+}
+
+/// Pick a provider from `$PLAYBOX_ATTEST` (see [`detect_with`]).
+pub fn detect(home: &Path) -> Result<Option<Box<dyn PlatformProvider>>, String> {
+    detect_with(home, &std::env::var("PLAYBOX_ATTEST").unwrap_or_else(|_| "auto".into()))
+}
+
+/// Pick a provider by `mode`: `none`, `auto`, `se` or `tpm`.
 /// `auto` uses the Secure Enclave on macOS if the helper is present, and a TPM on Linux if `tpm2-tools`
 /// and a TPM (or `TPM2TOOLS_TCTI`) are present. `se` and `tpm` fail loudly if unavailable.
-pub fn detect(home: &Path) -> Result<Option<Box<dyn PlatformProvider>>, String> {
-    let mode = std::env::var("PLAYBOX_ATTEST").unwrap_or_else(|_| "auto".into());
+pub fn detect_with(home: &Path, mode: &str) -> Result<Option<Box<dyn PlatformProvider>>, String> {
     let se = || -> Result<Box<dyn PlatformProvider>, String> {
         let helper = find_se_helper().ok_or("playbox-se helper not found (build it with tools/playbox-se/build.sh)")?;
         Ok(Box::new(SecureEnclaveProvider { helper, key_file: home.join("se.key") }))
@@ -631,7 +651,7 @@ pub fn detect(home: &Path) -> Result<Option<Box<dyn PlatformProvider>>, String> 
         }
         Ok(Box::new(TpmProvider::default()))
     };
-    match mode.as_str() {
+    match mode {
         "none" => Ok(None),
         "se" => se().map(Some),
         "tpm" => tpm().map(Some),

@@ -5,7 +5,7 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::SigningKey;
-use playbox_core::{attest::Tier, history::text, store};
+use playbox_core::{attest::Tier, history::text, platform, store};
 use playbox_net::{Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{DockerRunner, ProcessRunner, Runner, TaskSpec};
 use serde_json::{json, Value};
@@ -55,7 +55,8 @@ pub fn tool_list() -> Value {
             json!({
                 "link": {"type": "string"},
                 "workspace": {"type": "string", "description": "Directory for this room's git clone. Default: under the Playbox home."},
-                "min_host_tier": {"type": "string", "description": "Refuse to join unless the host's attestation achieves at least this tier (t0..t3). Default t0: the host must sign measurements of its software with its connection key. Higher tiers need platform verifiers that are not available yet, so t1-t3 currently always refuse."},
+                "min_host_tier": {"type": "string", "description": "Refuse to join unless the host's attestation achieves at least this tier (t0..t3). Default t0: the host must sign measurements of its software with its connection key. t1 needs hardware evidence (Secure Enclave or TPM) from a device key you have pinned (`playbox pin add`, or trust_host_device). t2 also needs PLAYBOX_TPM_BOOT_PCRS reference values."},
+                "trust_host_device": {"type": "boolean", "description": "Pin the host's device key if it is new to you (trust on first use), then judge the host with it pinned. Only do this when you have good reason to think you are talking to the host you meant: the first contact is the one an impostor could win."},
                 "transport": {"type": "string", "description": "Override the transport (`iroh`, `local`, `relay:<url>`). By default the link says which to use."},
                 "local": {"type": "boolean", "description": "Shorthand for transport=local."}
             }), &["link"]),
@@ -229,7 +230,13 @@ impl Server {
                 Some(r) if r.isolation() == playbox_runner::Isolation::None => playbox_runner::Isolation::None,
                 _ => HostConfig::default().min_isolation,
             };
-            let cfg = HostConfig { repo: repo.clone(), runner, min_isolation, ..Default::default() };
+            let cfg = HostConfig {
+                repo: repo.clone(),
+                runner,
+                min_isolation,
+                platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
+                ..Default::default()
+            };
             let transport = match transport_arg(a)? {
                 Some(t) => t,
                 None => Transport::from_env()?,
@@ -269,10 +276,36 @@ impl Server {
         let parsed = playbox_net::Link::parse(link)?;
         let transport = choice.resolve(parsed.transport.as_ref());
         let client = Client::connect(parsed.addr, playbox_net::new_secret_key()?, transport).await?;
-        let host_att = match client.verify_host(min, &[]).await {
-            Ok(v) => v,
-            Err(e) => bail!("not joining: {e:#}"),
+        let pins_path = platform::pins_path(&store::home());
+        let mut pins = platform::PinStore::load(&pins_path)?;
+        let boot = platform::boot_reference_from_env().map_err(|e| anyhow!(e))?;
+        let make = |pins: &platform::PinStore| platform::verifiers(pins.clone(), boot.clone()).map_err(|e| anyhow!(e));
+        let mut vs = make(&pins)?;
+        let mut host_att = {
+            let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
+            match client.verify_host(Tier::T0, &refs).await {
+                Ok(v) => v,
+                Err(e) => bail!("not joining: {e:#}"),
+            }
         };
+        let mut newly_pinned = false;
+        if b(a, "trust_host_device") {
+            if let Some((kind, fp)) = host_att.device.clone().as_deref().and_then(|d| d.split_once(':')) {
+                if !pins.contains(kind, fp) {
+                    pins.add(kind, fp)?;
+                    newly_pinned = true;
+                    vs = make(&pins)?;
+                    let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
+                    host_att = match client.verify_host(Tier::T0, &refs).await {
+                        Ok(v) => v,
+                        Err(e) => bail!("not joining: {e:#}"),
+                    };
+                }
+            }
+        }
+        if host_att.achieved < min {
+            bail!("not joining: host achieves {} but {} was required ({})", host_att.achieved, min, host_att.notes.join("; "));
+        }
         client.join(&parsed.invite).await?;
         // Keep the host's signed statement in our history, so anyone verifying it later can see
         // what we knew about the host when we joined.
@@ -304,6 +337,8 @@ impl Server {
                 "policy_blake3": host_att.statement.measurements.policy,
                 "os": host_att.statement.measurements.os,
                 "notes": host_att.notes,
+                "device": host_att.device,
+                "device_newly_pinned": newly_pinned,
             }
         }))
     }

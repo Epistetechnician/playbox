@@ -115,6 +115,8 @@ pub struct AttestationReport {
     pub claimed: Tier,
     pub achieved: Tier,
     pub notes: Vec<String>,
+    /// `<kind>:<fingerprint>` of the device key behind verified platform evidence, if any.
+    pub device: Option<String>,
 }
 
 impl Report {
@@ -179,6 +181,7 @@ pub fn verify_deep(path: &Path, verifiers: &[&dyn PlatformVerifier]) -> io::Resu
             claimed: v.statement.claimed,
             achieved: v.achieved,
             notes: v.notes,
+            device: v.device,
         });
     }
     Ok(r)

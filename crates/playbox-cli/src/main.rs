@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use ed25519_dalek::SigningKey;
-use playbox_core::{attest, history::Log, store};
+use playbox_core::{attest, history::Log, platform, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{DockerRunner, TaskSpec};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -21,9 +21,13 @@ const HELP: &str = "playbox (scaffold)
                             Callers act as this one member. A non-loopback --listen requires --token.
   record [--kind K] [--log F] [--key F]
                             append stdin as a signed entry to a history log (agent hook target)
-  attest [--log F] [--key F]
-                            append a signed self-attestation (measurements of this binary) to a history log.
-                            Self-attested only: it proves the key holder's claims, not the hardware (tier T0)
+  attest [--log F] [--key F] [--platform auto|none|se|tpm]
+                            append a signed attestation of this binary to a history log, with hardware
+                            evidence when available (Secure Enclave on macOS, TPM 2.0 on Linux).
+                            Whether anyone believes the hardware part depends on their pins (see `pin`)
+  pin list | add <kind> <fingerprint> | remove <kind> <fingerprint>
+                            the device keys you trust (kind: secure-enclave or tpm). `verify` and `join`
+                            report fingerprints; a device only reaches tier T1 once pinned
   verify <log>              verify a history log: chain, signatures and attestations
   demo                      build and verify a sample history log
 planned: status | delegate | verify | revoke (see PRD.md)";
@@ -38,6 +42,7 @@ async fn main() -> Result<()> {
     let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let (repo, task, base) = (opt("--repo"), opt("--task"), opt("--base"));
     let (kind, log_path, key_path) = (opt("--kind"), opt("--log"), opt("--key"));
+    let platform_opt = opt("--platform");
     let mut skip = false;
     let pos: Vec<&String> = args
         .iter()
@@ -46,7 +51,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform") {
                 skip = true;
                 return false;
             }
@@ -67,7 +72,8 @@ async fn main() -> Result<()> {
             None => bail!("usage: playbox bridge <link>"),
         },
         Some("record") => record(kind, log_path, key_path),
-        Some("attest") => attest_cmd(log_path, key_path),
+        Some("pin") => pin_cmd(&pos),
+        Some("attest") => attest_cmd(log_path, key_path, platform_opt),
         Some("verify") => match pos.get(1) {
             Some(path) => verify(path),
             None => bail!("usage: playbox verify <log>"),
@@ -97,9 +103,12 @@ fn join_choice(local: bool, t: Option<&str>) -> Result<TransportChoice> {
 }
 
 async fn up(transport: Transport, state: Option<String>, repo: Option<String>, docker: bool) -> Result<()> {
+    let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> = platform::detect(&store::home()).map_err(anyhow::Error::msg)?.map(std::sync::Arc::from);
+    println!("platform attestation: {}", provider.as_ref().map(|p| p.kind()).unwrap_or("none (self-signed only)"));
     let cfg = HostConfig {
         repo: repo.map(PathBuf::from),
         runner: if docker { Some(Arc::new(DockerRunner::default())) } else { None },
+        platform: provider,
         ..Default::default()
     };
     let host = match &state {
@@ -154,7 +163,7 @@ fn record(kind: Option<String>, log: Option<String>, key: Option<String>) -> Res
     Ok(())
 }
 
-fn attest_cmd(log: Option<String>, key: Option<String>) -> Result<()> {
+fn attest_cmd(log: Option<String>, key: Option<String>, platform_mode: Option<String>) -> Result<()> {
     let home = store::home();
     let key = store::load_or_create_key(&key.map(PathBuf::from).unwrap_or_else(|| home.join("session.key")))?;
     let log = log
@@ -162,15 +171,53 @@ fn attest_cmd(log: Option<String>, key: Option<String>) -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join("history").join("default.log"));
     let head = if log.exists() { playbox_core::history::text::head_hex(&store::load(&log)?) } else { playbox_core::history::text::hex(&[0u8; 32]) };
-    let st = attest::new_statement(&key, "", &head, store::now_ms(), attest::measure_self("none", "cli"));
-    let text = st.sign(&key).map_err(anyhow::Error::msg)?;
+    let provider = match &platform_mode {
+        Some(m) => platform::detect_with(&home, m),
+        None => platform::detect(&home),
+    }
+    .map_err(anyhow::Error::msg)?;
+    let m = attest::measure_self("none", "cli");
+    let text = match &provider {
+        Some(p) => attest::new_platform_statement(&key, "", &head, store::now_ms(), m, p.as_ref()).map_err(anyhow::Error::msg)?,
+        None => attest::new_statement(&key, "", &head, store::now_ms(), m).sign(&key).map_err(anyhow::Error::msg)?,
+    };
+    let claimed = attest::Statement::parse(&text).map_err(anyhow::Error::msg)?.claimed;
     let e = store::append_kept(&log, &key, "attestation", text.as_bytes(), store::now_ms())?;
-    println!("attested as entry {} in {} (tier T0, self-attested)", e.seq, log.display());
+    match &provider {
+        Some(p) => println!("attested as entry {} in {} with {} evidence, claiming {claimed}", e.seq, log.display(), p.kind()),
+        None => println!("attested as entry {} in {} (self-attested, T0)", e.seq, log.display()),
+    }
+    Ok(())
+}
+
+fn pin_cmd(pos: &[&String]) -> Result<()> {
+    let path = platform::pins_path(&store::home());
+    let mut pins = platform::PinStore::load(&path)?;
+    match (pos.get(1).map(|s| s.as_str()), pos.get(2), pos.get(3)) {
+        (Some("list"), _, _) => {
+            if pins.list().is_empty() {
+                println!("no pinned device keys ({})", path.display());
+            }
+            for (k, f) in pins.list() {
+                println!("{k} {f}");
+            }
+        }
+        (Some("add"), Some(k), Some(f)) => {
+            pins.add(k, f)?;
+            println!("pinned {k} {f}");
+        }
+        (Some("remove"), Some(k), Some(f)) => println!("{}", if pins.remove(k, f)? { "removed" } else { "was not pinned" }),
+        _ => bail!("usage: playbox pin list | add <kind> <fingerprint> | remove <kind> <fingerprint>"),
+    }
     Ok(())
 }
 
 fn verify(path: &str) -> Result<()> {
-    let r = store::verify_deep(std::path::Path::new(path), &[])?;
+    let home = store::home();
+    let pins = platform::PinStore::load(&platform::pins_path(&home))?;
+    let vs = platform::verifiers(pins.clone(), platform::boot_reference_from_env().map_err(anyhow::Error::msg)?).map_err(anyhow::Error::msg)?;
+    let refs: Vec<&dyn attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
+    let r = store::verify_deep(std::path::Path::new(path), &refs)?;
     if let Some(e) = &r.chain_error {
         bail!("INVALID chain: {e}");
     }
@@ -179,6 +226,11 @@ fn verify(path: &str) -> Result<()> {
         println!("attestation at entry {} ({}): subject {}…, claims {}, verified {}", a.seq, a.about, &a.subject[..12], a.claimed, a.achieved);
         for n in &a.notes {
             println!("    {n}");
+        }
+        if let Some((kind, fp)) = a.device.as_deref().and_then(|d| d.split_once(':')) {
+            if !pins.contains(kind, fp) {
+                println!("    device key not pinned; to trust it: playbox pin add {kind} {fp}");
+            }
         }
     }
     if r.attestations.is_empty() {
