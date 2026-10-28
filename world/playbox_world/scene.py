@@ -35,7 +35,7 @@ def fit_field(pos, mass, colors, steps=600, sigma=0.03, batch=4096, seed=0, devi
         opt.zero_grad()
         loss.backward()
         opt.step()
-        last = float(loss)
+        last = float(loss.detach())
     return field, last
 
 

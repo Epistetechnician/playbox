@@ -155,6 +155,7 @@ Full model to be written in `docs/threat-model.md` before v0.2.
 | M5 | T1/T2 attestation; `playbox verify` full chain | Verifier rejects a log with a swapped sandbox image |
 | M6 | Cloud host + T3 | Joiner sees SEV-SNP/TDX report verified |
 | M7 | LangGraph orchestrator delegating to multiple peers | 3-peer demo with merge |
+| M8 | World view: learned 3D scene of the room from agent events (`world/`) | Replay of a real room's history renders a scene where topics form clusters and time runs along z |
 
 ## 13. Success metrics
 
@@ -181,6 +182,7 @@ crates/playbox-core     types: history chain, ids; later grants, links
 crates/playbox-cli      `playbox` binary (stub)
 lean/                   Lean 4 grant model and proofs
 orchestrator/           LangGraph delegation graphs (stub)
+world/                  PyTorch hash-grid field learned from agent events (prototype)
 adapters/               MCP server + per-agent notes (stub)
 docs/                   decisions, threat model (to write)
 ```

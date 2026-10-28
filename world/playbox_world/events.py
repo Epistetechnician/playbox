@@ -52,7 +52,6 @@ def synthetic(n: int = 180, seed: int = 0) -> list[Event]:
     events = []
     for i in range(n):
         t = i / (n - 1)
-        topic = list(_TOPICS)[min(int(t * 3 + rng.random() * 0.6 - 0.3), 2) if t * 3 + 0 > 0 else 0]
         topic = list(_TOPICS)[max(0, min(2, int(t * 3 + rng.uniform(-0.4, 0.4))))]
         words = _TOPICS[topic].split()
         kind = rng.choices(KINDS, weights=(4, 3, 5, 1))[0]

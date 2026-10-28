@@ -12,6 +12,8 @@ Status: M2 partial. Git bundle sync and sandboxed remote tasks work (Docker cont
 - `playbox-runner`: `DockerRunner` (no network, dropped capabilities, CPU/memory/pid/time limits, clamped by host caps), `ProcessRunner` (no isolation, dev only), `KrunRunner` (placeholder that refuses to run).
 - `playbox up | join <link> | demo`: add `--local` for LAN/offline use. Needs Rust 1.91+ (pinned to 1.93.1 in `rust-toolchain.toml`).
 
+- `world/`: prototype that learns a 3D scene from agent events (messages, actions, reasoning, commits). See [world/README.md](world/README.md).
+
 ## What does not exist yet
 A2A binding, libkrun microVM runner, Biscuit grants, MCP adapters, attestation. See milestones M1-M7 in the PRD.
 
