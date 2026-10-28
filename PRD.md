@@ -75,7 +75,7 @@ Non-goals (v0)
 |---|---|---|
 | Transport/identity | iroh 1.x | Endpoint IDs are Ed25519; dial by key; relays are dumb and untrusted |
 | Agent protocol | A2A 1.0.x | Official Rust SDK `a2aproject/a2a-rs`; custom binding over iroh streams |
-| Workspace | git | Plain git; bundles over iroh-blobs. jj/gitoxide later |
+| Workspace | `workspace` module (core), git for interchange | Content-defined chunking, content-addressed dedup, a commit per tool call, free fork, refuse-on-conflict with `.lww` newest-wins rules. Ideas adopted from LayerFS (MIT); no dependency. Git bundles over iroh-blobs remain the interchange format. FUSE/microVM mounting is a separate layer |
 | Execution | libkrun microVM | Pin a release (v1.19.x); Linux KVM first, macOS HVF second |
 | Authz | Biscuit (`biscuit-auth`) | Datalog policies; offline attenuation; no third-party blocks in v0 |
 | Orchestration | LangGraph 1.2.x | Python; checkpoints; delegation as graph nodes |

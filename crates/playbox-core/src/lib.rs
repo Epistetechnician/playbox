@@ -2,3 +2,4 @@
 
 pub mod history;
 pub mod store;
+pub mod workspace;

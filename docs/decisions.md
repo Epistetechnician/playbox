@@ -18,3 +18,18 @@
 | 14 | History is a text file, one signed entry per line, locked on append | Greppable, diffable, no extra dependency | Logs get large enough to need an index |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
+
+## Workspace layer: adopt LayerFS ideas, not LayerFS (2026-10-28)
+
+Source: Ephemeral-AI-Lab/layerfs v1.1.0 (MIT, JS/native, SQLite store, FUSE, Disposable durability, no signing, Linux mount tests waived in 1.1.0).
+
+Adopted into `playbox-core::workspace`:
+- A commit per tool call, recorded with the tool-call id; the commit's tree id is the `fs_snapshot` payload in the signed history log.
+- Free fork: a branch is a pointer.
+- Content-defined chunking plus content-addressed objects: an edit costs the edit, identical content is stored once.
+- Refuse on conflict when both sides changed the same path; `.lww` rules (exact, `*.ext`, `dir/`) let the newest edit win.
+- Append-only objects, verified on every read.
+
+Not adopted: the SQLite store, FUSE mounting, its JS SDK and worker, and its Disposable (non-durable) profile. We add what it lacks: signed history, grants and attestation.
+
+Revisit: if a Linux spike of LayerFS beats our module on mount speed, run it behind the same `Workspace` interface. Compare with Peerspan's `peerfs`, which already signs commits.
