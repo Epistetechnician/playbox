@@ -16,6 +16,10 @@
 | 12 | Hand-rolled MCP over stdio instead of an SDK | The surface is three methods; avoids tracking an SDK that moves fast | We need resources, prompts, or the HTTP transport |
 | 13 | The unsafe no-isolation runner needs an env var on the host; agents cannot enable it by argument alone | A prompt-injected agent must not be able to switch off the sandbox | Never |
 | 14 | History is a text file, one signed entry per line, locked on append | Greppable, diffable, no extra dependency | Logs get large enough to need an index |
+| 15 | Transport is a host choice recorded in the join link; joiners follow it | A guest should not need to know how the host is reachable | A joiner must use a different path (override exists) |
+| 16 | Hosts persist identity, root key, invites, members and bans in a state dir; saves are best effort and logged | Rooms must survive restarts | Multi-host rooms need replicated revocation |
+| 17 | In `local` mode the host also advertises loopback | iroh lists only the LAN address, so same-machine peers looped through the Wi-Fi interface and intermittently timed out under the macOS firewall (0 of 8 full runs failed after the change; about 1 in 6 failed before) | Never; LAN peers still use the LAN address |
+| 18 | Client connect retries 4 times at 6s each | Cheap insurance; did not fix the loopback issue by itself | If retries hide real faults |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

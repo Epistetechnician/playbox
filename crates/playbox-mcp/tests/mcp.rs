@@ -209,3 +209,39 @@ fn guest_cannot_run_tasks_unless_host_enables_a_runner() {
     let (is_err, body) = guest.tool("playbox_delegate", json!({"base": "main", "command": "true"}));
     assert!(is_err && body.as_str().unwrap().contains("runs no tasks"), "{body}");
 }
+
+#[test]
+fn a_room_comes_back_after_the_sidecar_restarts() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("restart");
+    let home = work.join("host-home");
+
+    let mut host = Mcp::start(&home);
+    let (err, first) = host.tool("playbox_create", json!({"transport": "local", "name": "team"}));
+    assert!(!err, "{first}");
+    assert_eq!(first["transport"], "local");
+    let host_id = first["host_id"].as_str().unwrap().to_string();
+    drop(host);
+
+    let mut host = Mcp::start(&home);
+    let (_, second) = host.tool("playbox_create", json!({"transport": "local", "name": "team"}));
+    assert_eq!(second["host_id"], host_id.as_str(), "same room name must give the same identity");
+    // One sidecar hosts one room; asking for another by name is an error, not a silent reuse.
+    let (err, other) = host.tool("playbox_create", json!({"transport": "local", "name": "other"}));
+    assert!(err && other.as_str().unwrap().contains("already hosts"), "{other}");
+
+    // The guest follows the link's transport without being told.
+    let mut guest = Mcp::start(&work.join("guest-home"));
+    let (err, joined) = guest.tool("playbox_join", json!({"link": second["link"], "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+    assert_eq!(guest.tool("playbox_ping", json!({"text": "x"})).1["echo"], "x");
+}
+
+#[test]
+fn bad_transport_and_room_names_are_refused() {
+    let mut m = Mcp::start(&scratch("badargs"));
+    let (err, body) = m.tool("playbox_create", json!({"transport": "tor"}));
+    assert!(err && body.as_str().unwrap().contains("transport must be"), "{body}");
+    let (err, body) = m.tool("playbox_create", json!({"transport": "local", "name": "../escape"}));
+    assert!(err && body.as_str().unwrap().contains("room name"), "{body}");
+}

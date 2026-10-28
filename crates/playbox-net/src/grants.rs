@@ -11,7 +11,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use biscuit_auth::{
-    builder::{AuthorizerBuilder, BlockBuilder, Term},
+    builder::{Algorithm, AuthorizerBuilder, BlockBuilder, Term},
     Biscuit, KeyPair, PublicKey, UnverifiedBiscuit,
 };
 use std::{
@@ -70,6 +70,12 @@ pub struct Authority {
 impl Authority {
     pub fn new(room: &str) -> Self {
         Self { root: KeyPair::new(), room: room.to_string() }
+    }
+
+    /// An authority whose root key comes from a stored 32-byte seed, so tokens survive restarts.
+    pub fn from_seed(room: &str, seed: &[u8; 32]) -> Result<Self> {
+        let root = KeyPair::from_bytes(seed, Algorithm::Ed25519.into()).map_err(|e| anyhow!("bad root key: {e}"))?;
+        Ok(Self { root, room: room.to_string() })
     }
 
     pub fn public(&self) -> PublicKey {

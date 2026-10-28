@@ -6,7 +6,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{history::text, store};
-use playbox_net::{join_link, new_secret_key, Client, EndpointId, Host, HostConfig};
+use playbox_net::{join_link, Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{DockerRunner, ProcessRunner, Runner, TaskSpec};
 use serde_json::{json, Value};
 use std::{
@@ -21,6 +21,7 @@ const SHOWN_PATCH_BYTES: usize = 20_000;
 pub struct Server {
     host: Option<Host>,
     host_repo: Option<PathBuf>,
+    room_name: Option<String>,
     client: Option<Client>,
     member_id: Option<String>,
     workspace: Option<PathBuf>,
@@ -43,7 +44,9 @@ pub fn tool_list() -> Value {
             json!({
                 "repo": {"type": "string", "description": "Absolute path of a git repository to share with the room"},
                 "docker": {"type": "boolean", "description": "Let members run tasks in Docker containers (no network, limited CPU/memory/time). Default false: members cannot run tasks."},
-                "local": {"type": "boolean", "description": "LAN/loopback only: no relay or internet discovery. Default false."},
+                "transport": {"type": "string", "description": "How peers reach each other: `iroh` (public relays + discovery, works across NATs; default), `local` (same machine/LAN only), or `relay:<https url>` (your own iroh-relay; set PLAYBOX_RELAY_CA to a PEM file for a private CA). Default can be set with PLAYBOX_TRANSPORT."},
+                "local": {"type": "boolean", "description": "Shorthand for transport=local."},
+                "name": {"type": "string", "description": "Room name. The room's identity, members, bans and unspent invites are kept under this name, so creating it again after a restart brings the same room back. Default: default."},
                 "invite_ttl_secs": {"type": "integer", "description": "How long the link works. Default 3600."},
                 "uses": {"type": "integer", "description": "How many members the link admits. Default 1."}
             }), &[]),
@@ -52,7 +55,8 @@ pub fn tool_list() -> Value {
             json!({
                 "link": {"type": "string"},
                 "workspace": {"type": "string", "description": "Directory for this room's git clone. Default: under the Playbox home."},
-                "local": {"type": "boolean", "description": "Must match the host's local setting."}
+                "transport": {"type": "string", "description": "Override the transport (`iroh`, `local`, `relay:<url>`). By default the link says which to use."},
+                "local": {"type": "boolean", "description": "Shorthand for transport=local."}
             }), &["link"]),
         tool("playbox_status",
             "Show whether this sidecar hosts a room and/or has joined one, who the members are, and where the history log is.",
@@ -100,6 +104,13 @@ fn b(a: &Value, k: &str) -> bool {
     a.get(k).and_then(Value::as_bool).unwrap_or(false)
 }
 
+fn transport_arg(a: &Value) -> Result<Option<Transport>> {
+    if let Some(t) = s(a, "transport") {
+        return Ok(Some(Transport::parse(t)?));
+    }
+    Ok(b(a, "local").then_some(Transport::Local))
+}
+
 fn ok_text(v: &Value) -> Value {
     json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(v).unwrap_or_default()}], "isError": false})
 }
@@ -114,7 +125,7 @@ impl Server {
         let log_path = std::env::var_os("PLAYBOX_LOG")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("history").join(format!("mcp-{}.log", store::now_ms())));
-        Ok(Self { host: None, host_repo: None, client: None, member_id: None, workspace: None, log_path, key })
+        Ok(Self { host: None, host_repo: None, room_name: None, client: None, member_id: None, workspace: None, log_path, key })
     }
 
     pub fn log_path(&self) -> &Path {
@@ -189,6 +200,11 @@ impl Server {
     async fn create(&mut self, a: &Value) -> Result<Value> {
         let ttl = a.get("invite_ttl_secs").and_then(Value::as_u64).unwrap_or(3600);
         let uses = a.get("uses").and_then(Value::as_u64).unwrap_or(1) as u32;
+        if let (Some(have), Some(want)) = (&self.room_name, s(a, "name")) {
+            if have != want {
+                bail!("this sidecar already hosts the room `{have}`; restart it to host `{want}`");
+            }
+        }
         if self.host.is_none() {
             let repo = s(a, "repo").map(PathBuf::from);
             if let Some(r) = &repo {
@@ -204,13 +220,25 @@ impl Server {
                 None
             };
             let cfg = HostConfig { repo: repo.clone(), runner, ..Default::default() };
-            self.host = Some(Host::start_with(new_secret_key()?, b(a, "local"), cfg).await?);
+            let transport = match transport_arg(a)? {
+                Some(t) => t,
+                None => Transport::from_env()?,
+            };
+            let name = s(a, "name").unwrap_or("default");
+            if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                bail!("room name may only contain letters, digits, - and _");
+            }
+            let dir = store::home().join("rooms").join(name);
+            self.host = Some(Host::open(&dir, transport, cfg).await?);
             self.host_repo = repo;
+            self.room_name = Some(name.to_string());
         }
         let host = self.host.as_ref().expect("host started");
         let link = host.create_link(Duration::from_secs(ttl), uses)?;
         Ok(json!({
             "link": link.encode(),
+            "host_id": host.addr().id.to_string(),
+            "transport": link.transport.as_ref().map(Transport::label),
             "valid_secs": ttl,
             "admits": uses,
             "shares_repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
@@ -224,7 +252,8 @@ impl Server {
             bail!("already joined a room; restart this sidecar to join another");
         }
         let link = req(a, "link")?;
-        let client = join_link(link, new_secret_key()?, b(a, "local")).await?;
+        let choice = transport_arg(a)?.map(TransportChoice::Use).unwrap_or_default();
+        let client = join_link(link, playbox_net::new_secret_key()?, choice).await?;
         let member = client.id().to_string();
         let ws = match s(a, "workspace") {
             Some(w) => PathBuf::from(w),

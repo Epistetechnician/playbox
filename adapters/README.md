@@ -27,8 +27,8 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 
 | Tool | Who | What |
 |---|---|---|
-| `playbox_create` | host | Start a room, share a git repo, optionally let members run sandboxed tasks (`docker: true`). Returns a join link. |
-| `playbox_join` | guest | Join with a link; get a scoped, expiring grant and a local workspace. |
+| `playbox_create` | host | Start a room, share a git repo, optionally let members run sandboxed tasks (`docker: true`). Choose `transport` (`iroh`, `local`, `relay:<url>`) and a room `name` (a named room keeps its identity, members and bans across restarts). Returns a join link. |
+| `playbox_join` | guest | Join with a link; get a scoped, expiring grant and a local workspace. Follows the transport recorded in the link unless you pass `transport`. |
 | `playbox_status` | both | Members, workspace, history log path and public key. |
 | `playbox_ping` | guest | Echo through the host; checks the connection and grant. |
 | `playbox_pull` | guest | Fetch a branch into the workspace (optionally check it out). |
@@ -58,3 +58,13 @@ There is no free-form messaging tool yet.
   capabilities, and CPU/memory/time limits, but it is a container, not a microVM.
 - Treat a join link like a password until it is used or expires.
 - The session key is a plain file (mode 0600); there is no hardware binding yet (PRD tiers T1-T3).
+
+## Choosing a transport
+
+| You want | Say |
+|---|---|
+| Works anywhere, no setup | nothing (`iroh`, n0's public relays) |
+| Same machine or LAN only, no internet | "use the local transport" |
+| Your own infrastructure | "use relay https://relay.example.com" (run `iroh-relay` there; `PLAYBOX_RELAY_CA=/path/ca.pem` if it uses a private CA) |
+
+Set `PLAYBOX_TRANSPORT` in the MCP server's environment to change the default.

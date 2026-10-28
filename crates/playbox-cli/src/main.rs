@@ -1,16 +1,21 @@
 use anyhow::{bail, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{history::Log, store};
-use playbox_net::{join_link, new_secret_key, Host, HostConfig};
+use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{DockerRunner, TaskSpec};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 const HELP: &str = "playbox (scaffold)
-  up [--local] [--repo DIR] [--docker]
+  up [--transport T] [--state DIR] [--repo DIR] [--docker]
                             start a room and print a join link (valid 1h, 1 use).
+                            T is `iroh` (public relays, default), `local` (same machine/LAN) or
+                            `relay:<https url>` (your own iroh-relay; PLAYBOX_RELAY_CA=PEM for a private CA).
+                            --state keeps the room's identity, members and bans across restarts.
                             --repo shares a git repo; --docker lets members run tasks in containers
-  join <link> [--local] [--task <shell cmd>] [--base REF]
-                            join a room; with --task, run it remotely on REF (default main) and print the patch
+  join <link> [--transport T] [--task <shell cmd>] [--base REF]
+                            join a room (the link says which transport to use unless you override);
+                            with --task, run it remotely on REF (default main) and print the patch
+  (--local is shorthand for --transport local; PLAYBOX_TRANSPORT sets the default)
   record [--kind K] [--log F] [--key F]
                             append stdin as a signed entry to a history log (agent hook target)
   verify <log>              verify a history log's chain and signatures
@@ -21,6 +26,8 @@ planned: status | delegate | verify | revoke (see PRD.md)";
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let local = args.iter().any(|a| a == "--local");
+    let transport = args.iter().position(|a| a == "--transport").and_then(|i| args.get(i + 1)).cloned();
+    let state = args.iter().position(|a| a == "--state").and_then(|i| args.get(i + 1)).cloned();
     let docker = args.iter().any(|a| a == "--docker");
     let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let (repo, task, base) = (opt("--repo"), opt("--task"), opt("--base"));
@@ -33,7 +40,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state") {
                 skip = true;
                 return false;
             }
@@ -41,9 +48,9 @@ async fn main() -> Result<()> {
         })
         .collect();
     match pos.first().map(|s| s.as_str()) {
-        Some("up") => up(local, repo, docker).await,
+        Some("up") => up(chosen(local, transport.as_deref())?, state, repo, docker).await,
         Some("join") => match pos.get(1) {
-            Some(link) => join(link, local, task, base).await,
+            Some(link) => join(link, join_choice(local, transport.as_deref())?, task, base).await,
             None => bail!("usage: playbox join <link>"),
         },
         Some("record") => record(kind, log_path, key_path),
@@ -59,22 +66,41 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn up(local: bool, repo: Option<String>, docker: bool) -> Result<()> {
+fn chosen(local: bool, t: Option<&str>) -> Result<Transport> {
+    match (t, local) {
+        (Some(t), _) => Transport::parse(t),
+        (None, true) => Ok(Transport::Local),
+        (None, false) => Transport::from_env(),
+    }
+}
+
+fn join_choice(local: bool, t: Option<&str>) -> Result<TransportChoice> {
+    match (t, local) {
+        (Some(t), _) => Ok(TransportChoice::Use(Transport::parse(t)?)),
+        (None, true) => Ok(TransportChoice::Use(Transport::Local)),
+        (None, false) => Ok(TransportChoice::FromLink),
+    }
+}
+
+async fn up(transport: Transport, state: Option<String>, repo: Option<String>, docker: bool) -> Result<()> {
     let cfg = HostConfig {
         repo: repo.map(PathBuf::from),
         runner: if docker { Some(Arc::new(DockerRunner)) } else { None },
         ..Default::default()
     };
-    let host = Host::start_with(new_secret_key()?, local, cfg).await?;
+    let host = match &state {
+        Some(dir) => Host::open(std::path::Path::new(dir), transport.clone(), cfg).await?,
+        None => Host::start_with(new_secret_key()?, transport.clone(), cfg).await?,
+    };
     let link = host.create_link(Duration::from_secs(3600), 1)?;
-    println!("room is up. share this link:\n{}", link.encode());
+    println!("room is up ({}). share this link:\n{}", transport.label(), link.encode());
     println!("(ctrl-c to stop)");
     tokio::signal::ctrl_c().await?;
     host.shutdown().await
 }
 
-async fn join(link: &str, local: bool, task: Option<String>, base: Option<String>) -> Result<()> {
-    let client = join_link(link, new_secret_key()?, local).await?;
+async fn join(link: &str, choice: TransportChoice, task: Option<String>, base: Option<String>) -> Result<()> {
+    let client = join_link(link, new_secret_key()?, choice).await?;
     if let Some(cmd) = task {
         let (runner, out, patch) = client
             .run_task(base.as_deref().unwrap_or("main"), TaskSpec::new(&["sh", "-c", &cmd]))
