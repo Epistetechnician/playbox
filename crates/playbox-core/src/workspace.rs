@@ -411,6 +411,25 @@ impl Repo {
         }
     }
 
+    /// Every file as the workspace currently sees it: base tree plus uncommitted changes.
+    pub fn files(&self, ws: &Workspace) -> Result<BTreeMap<String, Vec<u8>>, Error> {
+        let mut out = BTreeMap::new();
+        if ws.base != [0; 32] {
+            for path in self.tree(&ws.base)?.keys() {
+                if let Some(data) = self.read(&ws.base, path)? {
+                    out.insert(path.clone(), data);
+                }
+            }
+        }
+        for (path, change) in &ws.overlay {
+            match change {
+                Some(data) => out.insert(path.clone(), data.clone()),
+                None => out.remove(path),
+            };
+        }
+        Ok(out)
+    }
+
     /// Commits from `branch` head back to the first commit, newest first.
     pub fn log(&self, branch: &str) -> Result<Vec<(Id, Commit)>, Error> {
         let mut out = Vec::new();
@@ -563,6 +582,19 @@ mod tests {
         assert_eq!(log.len(), 4);
         assert_eq!(log[0].1.tool_call, "toolu_3");
         assert_eq!(log[0].1.parents, vec![log[1].0]);
+    }
+
+    #[test]
+    fn files_shows_base_plus_uncommitted_changes() {
+        let mut r = repo();
+        r.init("main", &[("a", b"1"), ("b", b"2")], "x", 1).unwrap();
+        let mut ws = r.workspace("main").unwrap();
+        ws.write("a", b"changed");
+        ws.write("c", b"new");
+        ws.remove("b");
+        let f = r.files(&ws).unwrap();
+        assert_eq!(f.keys().map(String::as_str).collect::<Vec<_>>(), ["a", "c"]);
+        assert_eq!(f["a"], b"changed");
     }
 
     #[test]

@@ -5,7 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-tokio = { version = "1", features = ["process", "io-util", "time", "rt"] }
+tokio = { version = "1", features = ["process", "io-util", "time", "rt", "fs"] }
 anyhow = "1"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
+playbox-core = { path = "../playbox-core" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

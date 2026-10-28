@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::{os::unix::fs::MetadataExt, path::Path, process::Stdio, time::Duration};
 use tokio::{io::AsyncReadExt, process::Command};
 
+pub mod workspace;
+
 const MAX_OUTPUT: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
