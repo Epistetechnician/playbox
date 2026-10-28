@@ -11,3 +11,6 @@ path = "src/main.rs"
 [dependencies]
 playbox-core = { path = "../playbox-core" }
 ed25519-dalek.workspace = true
+playbox-net = { path = "../playbox-net" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+anyhow = "1"

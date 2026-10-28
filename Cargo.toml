@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/playbox-core", "crates/playbox-cli"]
+members = ["crates/playbox-core", "crates/playbox-cli", "crates/playbox-net"]
 
 [workspace.package]
 version = "0.0.1"
 edition = "2021"
 license = "Apache-2.0"
-rust-version = "1.85"
+rust-version = "1.91"
 
 [workspace.dependencies]
 blake3 = "1"
