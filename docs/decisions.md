@@ -13,5 +13,8 @@
 | 9 | Grants bound to the member's iroh key via a `subject` check | A stolen grant is useless to any other key | Hosts that proxy for members |
 | 10 | Over-limit task requests are refused, not clamped | Members learn their limits; the grant is the single source of truth | Never |
 | 11 | Revocation is host-local and in memory; revoking an authority block id kills all attenuations | Single-host rooms need no gossip yet | Multi-host rooms or restarts that must keep bans (persist + gossip over iroh-gossip) |
+| 12 | Hand-rolled MCP over stdio instead of an SDK | The surface is three methods; avoids tracking an SDK that moves fast | We need resources, prompts, or the HTTP transport |
+| 13 | The unsafe no-isolation runner needs an env var on the host; agents cannot enable it by argument alone | A prompt-injected agent must not be able to switch off the sandbox | Never |
+| 14 | History is a text file, one signed entry per line, locked on append | Greppable, diffable, no extra dependency | Logs get large enough to need an index |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.

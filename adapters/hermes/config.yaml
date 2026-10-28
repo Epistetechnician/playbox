@@ -1,0 +1,5 @@
+# Add to ~/.hermes/config.yaml
+mcp_servers:
+  playbox:
+    command: "playbox-mcp"
+    args: []

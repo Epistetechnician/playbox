@@ -1,0 +1,5 @@
+# Add to ~/.codex/config.toml (or a project .codex/config.toml), or run:
+#   codex mcp add playbox -- playbox-mcp
+[mcp_servers.playbox]
+command = "playbox-mcp"
+args = []

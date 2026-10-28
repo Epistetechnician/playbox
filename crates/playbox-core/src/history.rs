@@ -119,6 +119,96 @@ impl Log {
     }
 }
 
+/// One entry per line: `seq prev kind payload_hash time_ms signer sig`, hashes and keys in hex.
+/// `kind` is limited to `[a-z0-9_]+` so the line splits on spaces.
+pub mod text {
+    use super::{Entry, Hash, Log};
+    use std::fmt::Write;
+
+    pub fn hex(b: &[u8]) -> String {
+        let mut s = String::with_capacity(b.len() * 2);
+        for x in b {
+            let _ = write!(s, "{x:02x}");
+        }
+        s
+    }
+
+    fn unhex<const N: usize>(s: &str) -> Result<[u8; N], String> {
+        if s.len() != N * 2 || !s.is_ascii() {
+            return Err(format!("expected {} hex chars", N * 2));
+        }
+        let mut out = [0u8; N];
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(|e| e.to_string())?;
+        }
+        Ok(out)
+    }
+
+    pub fn valid_kind(k: &str) -> bool {
+        !k.is_empty() && k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+
+    pub fn entry_to_line(e: &Entry) -> Result<String, String> {
+        if !valid_kind(&e.kind) {
+            return Err(format!("kind {:?} must match [a-z0-9_]+", e.kind));
+        }
+        Ok(format!(
+            "{} {} {} {} {} {} {}",
+            e.seq,
+            hex(&e.prev),
+            e.kind,
+            hex(&e.payload_hash),
+            e.time_ms,
+            hex(&e.signer),
+            hex(&e.sig)
+        ))
+    }
+
+    pub fn entry_from_line(line: &str) -> Result<Entry, String> {
+        let f: Vec<&str> = line.split(' ').collect();
+        if f.len() != 7 {
+            return Err(format!("expected 7 fields, found {}", f.len()));
+        }
+        if !valid_kind(f[2]) {
+            return Err("bad kind".into());
+        }
+        Ok(Entry {
+            seq: f[0].parse().map_err(|_| "bad seq".to_string())?,
+            prev: unhex::<32>(f[1])?,
+            kind: f[2].to_string(),
+            payload_hash: unhex::<32>(f[3])?,
+            time_ms: f[4].parse().map_err(|_| "bad time".to_string())?,
+            signer: unhex::<32>(f[5])?,
+            sig: unhex::<64>(f[6])?,
+        })
+    }
+
+    pub fn to_text(log: &Log) -> Result<String, String> {
+        let mut out = String::new();
+        for e in &log.entries {
+            out.push_str(&entry_to_line(e)?);
+            out.push('\n');
+        }
+        Ok(out)
+    }
+
+    pub fn from_text(s: &str) -> Result<Log, String> {
+        let mut log = Log::new();
+        for (i, line) in s.lines().enumerate() {
+            if line.is_empty() {
+                continue;
+            }
+            log.entries.push(entry_from_line(line).map_err(|e| format!("line {}: {e}", i + 1))?);
+        }
+        Ok(log)
+    }
+
+    pub fn head_hex(log: &Log) -> String {
+        let h: Hash = log.head();
+        hex(&h)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +278,22 @@ mod tests {
         log.append(&k, "a", b"", 10);
         log.append(&k, "b", b"", 5);
         assert_eq!(log.verify(), Err(VerifyError::TimeBackwards(1)));
+    }
+
+    #[test]
+    fn text_round_trip_preserves_verification() {
+        let log = sample();
+        let t = text::to_text(&log).unwrap();
+        let back = text::from_text(&t).unwrap();
+        assert_eq!(back.entries, log.entries);
+        assert_eq!(back.verify(), Ok(()));
+    }
+
+    #[test]
+    fn text_rejects_bad_lines_and_kinds() {
+        assert!(text::from_text("1 2 3").is_err());
+        let mut log = Log::new();
+        log.append(&key(1), "has space", b"", 1);
+        assert!(text::to_text(&log).is_err());
     }
 }

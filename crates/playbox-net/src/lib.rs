@@ -7,11 +7,12 @@ pub mod grants;
 
 use anyhow::{anyhow, bail, Context, Result};
 use grants::{Authority, Caps, Needs};
+pub use iroh::EndpointId;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use iroh::{
     endpoint::{presets, Connection},
     protocol::{AcceptError, ProtocolHandler, Router},
-    Endpoint, EndpointAddr, EndpointId, SecretKey,
+    Endpoint, EndpointAddr, SecretKey,
 };
 use playbox_runner::{Limits, Runner, TaskOutput, TaskSpec};
 use serde::{Deserialize, Serialize};

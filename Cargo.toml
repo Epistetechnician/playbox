@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/playbox-core", "crates/playbox-cli", "crates/playbox-net", "crates/playbox-git", "crates/playbox-runner"]
+members = ["crates/playbox-core", "crates/playbox-cli", "crates/playbox-net", "crates/playbox-git", "crates/playbox-runner", "crates/playbox-mcp"]
 
 [workspace.package]
 version = "0.0.1"

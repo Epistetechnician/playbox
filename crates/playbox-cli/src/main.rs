@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use ed25519_dalek::SigningKey;
-use playbox_core::history::Log;
+use playbox_core::{history::Log, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig};
 use playbox_runner::{DockerRunner, TaskSpec};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -11,6 +11,9 @@ const HELP: &str = "playbox (scaffold)
                             --repo shares a git repo; --docker lets members run tasks in containers
   join <link> [--local] [--task <shell cmd>] [--base REF]
                             join a room; with --task, run it remotely on REF (default main) and print the patch
+  record [--kind K] [--log F] [--key F]
+                            append stdin as a signed entry to a history log (agent hook target)
+  verify <log>              verify a history log's chain and signatures
   demo                      build and verify a sample history log
 planned: status | delegate | verify | revoke (see PRD.md)";
 
@@ -21,6 +24,7 @@ async fn main() -> Result<()> {
     let docker = args.iter().any(|a| a == "--docker");
     let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let (repo, task, base) = (opt("--repo"), opt("--task"), opt("--base"));
+    let (kind, log_path, key_path) = (opt("--kind"), opt("--log"), opt("--key"));
     let mut skip = false;
     let pos: Vec<&String> = args
         .iter()
@@ -29,7 +33,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key") {
                 skip = true;
                 return false;
             }
@@ -41,6 +45,11 @@ async fn main() -> Result<()> {
         Some("join") => match pos.get(1) {
             Some(link) => join(link, local, task, base).await,
             None => bail!("usage: playbox join <link>"),
+        },
+        Some("record") => record(kind, log_path, key_path),
+        Some("verify") => match pos.get(1) {
+            Some(path) => verify(path),
+            None => bail!("usage: playbox verify <log>"),
         },
         Some("demo") => demo(),
         _ => {
@@ -80,6 +89,31 @@ async fn join(link: &str, local: bool, task: Option<String>, base: Option<String
     }
     client.close().await;
     Ok(())
+}
+
+fn record(kind: Option<String>, log: Option<String>, key: Option<String>) -> Result<()> {
+    let home = store::home();
+    let key = store::load_or_create_key(&key.map(PathBuf::from).unwrap_or_else(|| home.join("session.key")))?;
+    let log = log
+        .or_else(|| std::env::var("PLAYBOX_LOG").ok())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join("history").join("default.log"));
+    let mut payload = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::stdin(), &mut payload)?;
+    let e = store::append(&log, &key, kind.as_deref().unwrap_or("tool_call"), &payload, store::now_ms())?;
+    eprintln!("recorded entry {} in {}", e.seq, log.display());
+    Ok(())
+}
+
+fn verify(path: &str) -> Result<()> {
+    let log = store::load(std::path::Path::new(path))?;
+    match log.verify() {
+        Ok(()) => {
+            println!("valid: {} entries, head {}", log.entries.len(), playbox_core::history::text::head_hex(&log));
+            Ok(())
+        }
+        Err(e) => bail!("INVALID: {e}"),
+    }
 }
 
 fn demo() -> Result<()> {
