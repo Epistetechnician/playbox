@@ -24,6 +24,8 @@
 | 20 | Use only the `a2a-lf` types, not its axum server or HTTP client | They assume HTTP; the room needs its own auth and transport | The SDK grows a transport-agnostic server |
 | 21 | Join and the public card are extra methods (`playbox.Join`, `playbox.GetAgentCard`) | A2A has no join flow and the card normally lives at a URL | Never |
 | 22 | Streaming is unsupported; tasks finish before they return | Keeps the host simple; long tasks block the call (bounded by the grant's timeout) | Tasks that outlive one call |
+| 23 | The HTTP bridge is one room member, not a per-caller proxy; callers share its identity, grant and tasks | Per-caller identity would need a way to mint grants over HTTP, i.e. a second auth system | Multi-tenant bridge with per-caller invites |
+| 24 | Bridge refuses non-loopback listening without a bearer token | An open bridge hands the member's powers to anyone on the network | Never |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

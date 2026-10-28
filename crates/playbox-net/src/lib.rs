@@ -678,15 +678,20 @@ impl Client {
         Ok(())
     }
 
-    /// One JSON-RPC call with this client's grant; returns the `result`, or the error's message.
-    /// The typed helpers below use it; call it directly for A2A methods that have no helper.
-    pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
+    /// One JSON-RPC call with this client's grant, returning the whole response (including any error code).
+    pub async fn call_raw(&self, method: &str, params: Value) -> Result<JsonRpcResponse> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let frame = wire::Frame::new(JsonRpcRequest::new(id.into(), method, Some(params)), self.grant().as_deref());
         let (mut send, mut recv) = self.conn.open_bi().await?;
         send.write_all(&serde_json::to_vec(&frame)?).await?;
         send.finish()?;
-        let resp: JsonRpcResponse = serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")?;
+        serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")
+    }
+
+    /// One JSON-RPC call with this client's grant; returns the `result`, or the error's message.
+    /// The typed helpers below use it; call it directly for A2A methods that have no helper.
+    pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
+        let resp = self.call_raw(method, params).await?;
         match (resp.result, resp.error) {
             (_, Some(e)) => Err(anyhow!("{}", e.message)),
             (Some(r), None) => Ok(r),

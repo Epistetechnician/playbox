@@ -57,3 +57,17 @@ room will not do it: no repository, no runner, a bad ref name, a malformed push)
 Every authorized call is checked against the Biscuit grant in `Authorization`, with facts the host
 supplies: the time, the caller's authenticated iroh key, the operation (`echo`, `pull`, `push`, `run`,
 `tasks`) and, for `run`, the CPU, memory, timeout, network and program. See `grants.rs`.
+
+## HTTP bridge
+
+`playbox bridge <link> [--listen 127.0.0.1:8787] [--token T]` (crate `playbox-bridge`) joins a room as
+one member and serves standard A2A HTTP+JSON-RPC to stock clients: the agent card at
+`/.well-known/agent-card.json` (rewritten to a `JSONRPC` interface pointing at the bridge) and
+`POST /jsonrpc`. It forwards `SendMessage`, `GetTask`, `ListTasks`, `CancelTask` and
+`GetExtendedAgentCard` with the caller's JSON-RPC id and the host's error codes intact.
+`playbox.Join` is not reachable over HTTP.
+
+All HTTP callers act as the bridge's one member and share its tasks and limits. It binds loopback by
+default; a non-loopback `--listen` requires `--token` (or `PLAYBOX_BRIDGE_TOKEN`), checked as a Bearer
+token. The bridge's grant expires like any other (default 1h), so restart it with a fresh link then.
+Plain HTTP only: put a TLS proxy in front for anything beyond localhost or a trusted network.

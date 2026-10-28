@@ -16,6 +16,9 @@ const HELP: &str = "playbox (scaffold)
                             join a room (the link says which transport to use unless you override);
                             with --task, run it remotely on REF (default main) and print the patch
   (--local is shorthand for --transport local; PLAYBOX_TRANSPORT sets the default)
+  bridge <link> [--listen ADDR] [--token T] [--transport T]
+                            join a room and serve it to stock A2A HTTP clients (default 127.0.0.1:8787).
+                            Callers act as this one member. A non-loopback --listen requires --token.
   record [--kind K] [--log F] [--key F]
                             append stdin as a signed entry to a history log (agent hook target)
   verify <log>              verify a history log's chain and signatures
@@ -40,7 +43,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token") {
                 skip = true;
                 return false;
             }
@@ -52,6 +55,13 @@ async fn main() -> Result<()> {
         Some("join") => match pos.get(1) {
             Some(link) => join(link, join_choice(local, transport.as_deref())?, task, base).await,
             None => bail!("usage: playbox join <link>"),
+        },
+        Some("bridge") => match pos.get(1) {
+            Some(link) => {
+                let opt = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
+                bridge(link, join_choice(local, transport.as_deref())?, opt("--listen"), opt("--token").or_else(|| std::env::var("PLAYBOX_BRIDGE_TOKEN").ok())).await
+            }
+            None => bail!("usage: playbox bridge <link>"),
         },
         Some("record") => record(kind, log_path, key_path),
         Some("verify") => match pos.get(1) {
@@ -115,6 +125,15 @@ async fn join(link: &str, choice: TransportChoice, task: Option<String>, base: O
     }
     client.close().await;
     Ok(())
+}
+
+async fn bridge(link: &str, choice: TransportChoice, listen: Option<String>, token: Option<String>) -> Result<()> {
+    let client = join_link(link, new_secret_key()?, choice).await?;
+    let (listener, addr) = playbox_bridge::bind(listen.as_deref().unwrap_or("127.0.0.1:8787")).await?;
+    let url = format!("http://{addr}");
+    println!("bridge up: agent card at {url}/.well-known/agent-card.json, JSON-RPC at {url}/jsonrpc");
+    println!("{}", if token.is_some() { "bearer token required" } else { "no token (loopback only)" });
+    playbox_bridge::serve(client, listener, token, url).await
 }
 
 fn record(kind: Option<String>, log: Option<String>, key: Option<String>) -> Result<()> {

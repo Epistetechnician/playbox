@@ -1,0 +1,17 @@
+[package]
+name = "playbox-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+playbox-net = { path = "../playbox-net" }
+a2a-lf = "0.4.2"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+serde_json = "1"
+anyhow = "1"
+
+[dev-dependencies]
+playbox-runner = { path = "../playbox-runner" }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
