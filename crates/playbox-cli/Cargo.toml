@@ -1,0 +1,13 @@
+[package]
+name = "playbox-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "playbox"
+path = "src/main.rs"
+
+[dependencies]
+playbox-core = { path = "../playbox-core" }
+ed25519-dalek.workspace = true

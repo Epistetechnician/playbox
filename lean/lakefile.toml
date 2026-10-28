@@ -1,0 +1,5 @@
+name = "playbox"
+defaultTargets = ["Playbox"]
+
+[[lean_lib]]
+name = "Playbox"
