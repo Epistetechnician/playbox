@@ -20,6 +20,8 @@ use a2a::{
     A2AError, GetTaskRequest, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ListTasksResponse, Message,
     Part, Role, SendMessageRequest, SendMessageResponse, Task, TaskState,
 };
+use ed25519_dalek::SigningKey;
+use playbox_core::attest::{self, Measurements, PlatformVerifier, Tier, Verified};
 use playbox_runner::{Limits, Runner, TaskOutput, TaskSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -212,6 +214,10 @@ struct RoomHandler {
     /// Recent tasks per member, with byte payloads dropped. Not persisted.
     done: Arc<Mutex<HashMap<EndpointId, VecDeque<Task>>>>,
     card: Arc<Value>,
+    /// Signs attestation statements with the host's endpoint key, so a client can bind them to the
+    /// connection it already authenticated.
+    attest_key: Arc<SigningKey>,
+    measurements: Arc<Measurements>,
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -295,6 +301,16 @@ impl RoomHandler {
         let invalid = |e: serde_json::Error| A2AError::invalid_params(e.to_string()).to_jsonrpc_error();
         match rpc.method.as_str() {
             wire::METHOD_AGENT_CARD => Ok((*self.card).clone()),
+            wire::METHOD_ATTESTATION => {
+                let nonce = params.get("nonce").and_then(Value::as_str).unwrap_or_default();
+                if nonce.len() > 64 || !nonce.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(A2AError::invalid_params("`nonce` must be at most 64 hex characters").to_jsonrpc_error());
+                }
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                let st = attest::new_statement(&self.attest_key, nonce, "", now, (*self.measurements).clone());
+                let text = st.sign(&self.attest_key).map_err(|e| A2AError::internal(e).to_jsonrpc_error())?;
+                Ok(json!({ "statement": text }))
+            }
             wire::METHOD_JOIN => {
                 let invite = params.get("invite").and_then(Value::as_str).ok_or_else(|| {
                     A2AError::invalid_params("missing `invite`").to_jsonrpc_error()
@@ -528,6 +544,17 @@ impl Host {
         root_seed: Option<[u8; 32]>,
         state: State,
     ) -> Result<Self> {
+        let attest_key = Arc::new(SigningKey::from_bytes(&secret.to_bytes()));
+        let measurements = Arc::new(attest::measure_self(
+            cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
+            &format!(
+                "limits={:?};grant_ttl={:?};repo={};workspace={}",
+                cfg.limits,
+                cfg.grant_ttl,
+                cfg.repo.is_some(),
+                cfg.workspace.is_some()
+            ),
+        ));
         let endpoint = bind(secret, &transport).await?;
         if !transport.needs_online_wait() {
             // No relay to wait for: wait until the endpoint knows at least one direct address,
@@ -557,6 +584,8 @@ impl Host {
             auth: auth.clone(),
             done: Arc::default(),
             card: Arc::new(serde_json::to_value(card).context("agent card")?),
+            attest_key,
+            measurements,
             cfg,
         };
         let router = Router::builder(endpoint).accept(ALPN, handler).spawn();
@@ -732,6 +761,28 @@ impl Client {
     /// The host's public agent card.
     pub async fn agent_card(&self) -> Result<a2a::AgentCard> {
         Ok(serde_json::from_value(self.call(wire::METHOD_AGENT_CARD, Value::Null).await?)?)
+    }
+
+    /// Ask the host to attest to what it runs, and check the answer.
+    ///
+    /// The statement must be signed by the key this connection already authenticated, must echo a
+    /// fresh nonce, and the tier it *achieves* (see [`playbox_core::attest`]) must reach `min`.
+    /// `verifiers` check platform evidence; with none, the achieved tier is T0.
+    pub async fn verify_host(&self, min: Tier, verifiers: &[&dyn PlatformVerifier]) -> Result<Verified> {
+        let nonce: String = random_bytes()?[..16].iter().map(|b| format!("{b:02x}")).collect();
+        let r = self.call(wire::METHOD_ATTESTATION, json!({ "nonce": nonce })).await?;
+        let text = r.get("statement").and_then(Value::as_str).ok_or_else(|| anyhow!("no statement in response"))?;
+        let v = attest::verify(text, verifiers).map_err(|e| anyhow!("host attestation invalid: {e}"))?;
+        if v.statement.subject != *self.conn.remote_id().as_bytes() {
+            bail!("host attestation is for a different key than the one this connection authenticated");
+        }
+        if v.statement.nonce != nonce {
+            bail!("host attestation does not answer our nonce (replayed?)");
+        }
+        if v.achieved < min {
+            bail!("host achieves {} but {} was required ({})", v.achieved, min, v.notes.join("; "));
+        }
+        Ok(v)
     }
 
     /// A task this member created earlier (byte payloads are not kept; see [`wire::without_bytes`]).

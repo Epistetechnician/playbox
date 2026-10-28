@@ -1,5 +1,6 @@
 //! Session history on disk: an append-only text file plus a key file.
 
+use crate::attest::{self, PlatformVerifier, Tier};
 use crate::history::{text, Entry, Log};
 use ed25519_dalek::SigningKey;
 use std::{
@@ -76,6 +77,113 @@ pub fn append(path: &Path, key: &SigningKey, kind: &str, payload: &[u8], time_ms
     Ok(entry)
 }
 
+/// Where payload bodies kept for `log` live: `<log>.payloads/<payload hash>`.
+pub fn payload_dir(log: &Path) -> std::path::PathBuf {
+    let mut name = log.file_name().unwrap_or_default().to_os_string();
+    name.push(".payloads");
+    log.with_file_name(name)
+}
+
+/// Like [`append`], and also keeps the payload body next to the log so a verifier can read it.
+/// Used for entries a verifier needs to inspect (attestations); ordinary entries commit to a hash only.
+pub fn append_kept(path: &Path, key: &SigningKey, kind: &str, payload: &[u8], time_ms: u64) -> io::Result<Entry> {
+    let dir = payload_dir(path);
+    fs::create_dir_all(&dir)?;
+    let name = text::hex(blake3::hash(payload).as_bytes());
+    fs::write(dir.join(&name), payload)?;
+    append(path, key, kind, payload, time_ms)
+}
+
+/// What a deep check of a history found.
+#[derive(Debug, Default)]
+pub struct Report {
+    pub entries: usize,
+    pub head: String,
+    /// `None` if the chain verified; otherwise why not. Nothing else is trustworthy then.
+    pub chain_error: Option<String>,
+    pub attestations: Vec<AttestationReport>,
+    /// Problems with attestation entries (missing body, wrong subject, ...).
+    pub problems: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct AttestationReport {
+    pub seq: u64,
+    /// `self` for the log owner's own, `host` for one about a room host.
+    pub about: &'static str,
+    pub subject: String,
+    pub claimed: Tier,
+    pub achieved: Tier,
+    pub notes: Vec<String>,
+}
+
+impl Report {
+    pub fn ok(&self) -> bool {
+        self.chain_error.is_none() && self.problems.is_empty()
+    }
+}
+
+/// Verify the chain and every attestation entry in it:
+/// - `attestation` entries describe the log's own key, and must be issued at the position they sit
+///   at (their `log_head` is the hash of the entry before them);
+/// - `host_attestation` entries describe a room host and need only a valid signature.
+///
+/// Entries that commit to a payload hash but whose bodies are not kept are not inspected.
+pub fn verify_deep(path: &Path, verifiers: &[&dyn PlatformVerifier]) -> io::Result<Report> {
+    let log = load(path)?;
+    let mut r = Report { entries: log.entries.len(), head: text::head_hex(&log), ..Default::default() };
+    if let Err(e) = log.verify() {
+        r.chain_error = Some(e.to_string());
+        return Ok(r);
+    }
+    let dir = payload_dir(path);
+    for e in &log.entries {
+        let about = match e.kind.as_str() {
+            "attestation" => "self",
+            "host_attestation" => "host",
+            _ => continue,
+        };
+        let name = text::hex(&e.payload_hash);
+        let body = match fs::read(dir.join(&name)) {
+            Ok(b) => b,
+            Err(_) => {
+                r.problems.push(format!("entry {}: {} body {name} is missing", e.seq, e.kind));
+                continue;
+            }
+        };
+        if *blake3::hash(&body).as_bytes() != e.payload_hash {
+            r.problems.push(format!("entry {}: kept body does not match its hash", e.seq));
+            continue;
+        }
+        let v = match std::str::from_utf8(&body).map_err(|e| e.to_string()).and_then(|t| attest::verify(t, verifiers)) {
+            Ok(v) => v,
+            Err(err) => {
+                r.problems.push(format!("entry {}: {err}", e.seq));
+                continue;
+            }
+        };
+        if about == "self" {
+            if v.statement.subject != e.signer {
+                r.problems.push(format!("entry {}: attestation is about a different key than the log's", e.seq));
+                continue;
+            }
+            if v.statement.log_head != text::hex(&e.prev) {
+                r.problems.push(format!("entry {}: attestation was issued for a different point in the history", e.seq));
+                continue;
+            }
+        }
+        r.attestations.push(AttestationReport {
+            seq: e.seq,
+            about,
+            subject: text::hex(&v.statement.subject),
+            claimed: v.statement.claimed,
+            achieved: v.achieved,
+            notes: v.notes,
+        });
+    }
+    Ok(r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +226,43 @@ mod tests {
         fs::write(&log, s).unwrap();
         assert!(load(&log).unwrap().verify().is_err());
         assert!(append(&log, &key, "d", b"3", 3).is_err());
+    }
+
+    #[test]
+    fn deep_verify_checks_attestations_and_their_position() {
+        let dir = tmp("deep");
+        let key = load_or_create_key(&dir.join("k")).unwrap();
+        let log = dir.join("h.log");
+        append(&log, &key, "session_start", b"x", 1).unwrap();
+        let head = text::hex(&load(&log).unwrap().head());
+        let st = attest::new_statement(&key, "", &head, 2, attest::measure_self("none", "t")).sign(&key).unwrap();
+        append_kept(&log, &key, "attestation", st.as_bytes(), 2).unwrap();
+        append(&log, &key, "tool_call", b"y", 3).unwrap();
+
+        let r = verify_deep(&log, &[]).unwrap();
+        assert!(r.ok(), "{r:?}");
+        assert_eq!(r.attestations.len(), 1);
+        assert_eq!(r.attestations[0].achieved, Tier::T0);
+
+        // An attestation replayed at a later position is caught.
+        append_kept(&log, &key, "attestation", st.as_bytes(), 4).unwrap();
+        let r = verify_deep(&log, &[]).unwrap();
+        assert!(r.problems.iter().any(|p| p.contains("different point")), "{r:?}");
+
+        // A missing body is a problem, not a silent pass.
+        fs::remove_dir_all(payload_dir(&log)).unwrap();
+        assert!(verify_deep(&log, &[]).unwrap().problems.iter().any(|p| p.contains("missing")));
+    }
+
+    #[test]
+    fn deep_verify_reports_a_broken_chain_first() {
+        let dir = tmp("deepbad");
+        let key = load_or_create_key(&dir.join("k")).unwrap();
+        let log = dir.join("h.log");
+        append(&log, &key, "a", b"1", 1).unwrap();
+        append(&log, &key, "b", b"2", 2).unwrap();
+        fs::write(&log, fs::read_to_string(&log).unwrap().replacen(" a ", " c ", 1)).unwrap();
+        let r = verify_deep(&log, &[]).unwrap();
+        assert!(r.chain_error.is_some() && !r.ok());
     }
 }

@@ -26,6 +26,10 @@
 | 22 | Streaming is unsupported; tasks finish before they return | Keeps the host simple; long tasks block the call (bounded by the grant's timeout) | Tasks that outlive one call |
 | 23 | The HTTP bridge is one room member, not a per-caller proxy; callers share its identity, grant and tasks | Per-caller identity would need a way to mint grants over HTTP, i.e. a second auth system | Multi-tenant bridge with per-caller invites |
 | 24 | Bridge refuses non-loopback listening without a bearer token | An open bridge hands the member's powers to anyone on the network | Never |
+| 25 | Attestation statements are self-signed text; the achieved tier is separate from the claimed tier and only platform verifiers can raise it | Claiming a tier must not be the same as having it | A platform verifier exists |
+| 26 | Hosts sign attestations with the iroh endpoint key, so clients bind them to the connection they already authenticated | No second identity to manage or confuse | Hardware-bound keys |
+| 27 | Guests verify the host before presenting the invite | A host that fails the check never learns the invite and the single-use link is not spent | Never |
+| 28 | Only attestation bodies are kept beside the log; ordinary entries stay hash-only | Keeps logs small and prompts out of them | Verification needs other bodies |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

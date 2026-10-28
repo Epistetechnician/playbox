@@ -30,6 +30,8 @@ use std::collections::{BTreeMap, HashMap};
 pub const SVC_AUTHORIZATION: &str = "Authorization";
 pub const METHOD_JOIN: &str = "playbox.Join";
 pub const METHOD_AGENT_CARD: &str = "playbox.GetAgentCard";
+/// `{ "nonce": "<hex, up to 64 chars>" }` returns `{ "statement": "<signed attestation text>" }`. No auth.
+pub const METHOD_ATTESTATION: &str = "playbox.GetAttestation";
 /// JSON-RPC error code for a missing, invalid, expired or revoked grant (A2A defines none for this).
 pub const ERR_UNAUTHORIZED: i32 = -32040;
 pub const BINDING: &str = "PLAYBOX-IROH";

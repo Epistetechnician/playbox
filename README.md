@@ -2,7 +2,7 @@
 
 A private playbox for collaborative agents. Start a room from your agent (Claude Code, Codex, Hermes, OpenCode), share a link, and other people's agents join and build together. Contributions are trusted through proof of agentic history and hardware verification, whether the host runs locally or in the cloud.
 
-Status: M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work (Docker containers); the libkrun microVM runner is not built yet. Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Read [PRD.md](PRD.md).
+Status: M5 partial (software attestation, no hardware verifiers), M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work (Docker containers); the libkrun microVM runner is not built yet. Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Read [PRD.md](PRD.md).
 
 ## What works today
 - `playbox-core`: signed, hash-chained session history with verification (6 tests).
@@ -13,6 +13,7 @@ Status: M4 done, M3 done, M2 partial, transports and persistent hosts done. Git 
 - **Transports:** pick how peers reach each other with `--transport` (CLI), the `transport` argument (MCP) or `PLAYBOX_TRANSPORT`: `iroh` (n0's public relays and discovery, works across NATs, the default), `local` (same machine or LAN, no internet), or `relay:<https url>` (your own `iroh-relay`; set `PLAYBOX_RELAY_CA` to a PEM file for a private CA). The join link records the host's choice and joiners follow it unless they override. Tested with a real `iroh-relay` server where the host and guest can only meet through it. The public n0 relay was only checked with a host and guest on the same machine.
 - **Persistent hosts:** `playbox up --state DIR` (or a named room in the MCP server) keeps the host's identity, signing key, unspent invites, members and bans on disk. After a restart the same grants still work and revoked members stay out.
 - **A2A wire format:** the host is an A2A agent with a public agent card; operations are A2A messages, and pulls, pushes and runs are tracked A2A tasks whose results are artifacts (git bundle, stdout, stderr, patch). `GetTask` and `ListTasks` work per member. Built on the `a2a-lf` SDK types. `playbox bridge <link>` serves a room to stock HTTP A2A clients (tested with plain HTTP and curl).
+- **Attestation (M5, partial):** hosts sign statements about their software; guests verify them against the authenticated connection key before joining (`min_host_tier`); `playbox attest` / `playbox verify` put attestations in a history and check them. Every statement achieves tier T0 (self-attested): TPM, Secure Enclave, SEV-SNP and TDX verifiers are not written. See [docs/attestation.md](docs/attestation.md).
 - `playbox-git`: git CLI wrappers; peer-supplied ref names are validated before reaching git.
 - `playbox-runner`: `DockerRunner` (no network, dropped capabilities, CPU/memory/pid/time limits, clamped by host caps), `ProcessRunner` (no isolation, dev only), `KrunRunner` (placeholder that refuses to run).
 - `playbox up | join <link> | demo`: add `--local` for LAN/offline use. Needs Rust 1.91+ (pinned to 1.93.1 in `rust-toolchain.toml`).

@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use ed25519_dalek::SigningKey;
-use playbox_core::{history::Log, store};
+use playbox_core::{attest, history::Log, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{DockerRunner, TaskSpec};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -21,7 +21,10 @@ const HELP: &str = "playbox (scaffold)
                             Callers act as this one member. A non-loopback --listen requires --token.
   record [--kind K] [--log F] [--key F]
                             append stdin as a signed entry to a history log (agent hook target)
-  verify <log>              verify a history log's chain and signatures
+  attest [--log F] [--key F]
+                            append a signed self-attestation (measurements of this binary) to a history log.
+                            Self-attested only: it proves the key holder's claims, not the hardware (tier T0)
+  verify <log>              verify a history log: chain, signatures and attestations
   demo                      build and verify a sample history log
 planned: status | delegate | verify | revoke (see PRD.md)";
 
@@ -64,6 +67,7 @@ async fn main() -> Result<()> {
             None => bail!("usage: playbox bridge <link>"),
         },
         Some("record") => record(kind, log_path, key_path),
+        Some("attest") => attest_cmd(log_path, key_path),
         Some("verify") => match pos.get(1) {
             Some(path) => verify(path),
             None => bail!("usage: playbox verify <log>"),
@@ -150,15 +154,43 @@ fn record(kind: Option<String>, log: Option<String>, key: Option<String>) -> Res
     Ok(())
 }
 
+fn attest_cmd(log: Option<String>, key: Option<String>) -> Result<()> {
+    let home = store::home();
+    let key = store::load_or_create_key(&key.map(PathBuf::from).unwrap_or_else(|| home.join("session.key")))?;
+    let log = log
+        .or_else(|| std::env::var("PLAYBOX_LOG").ok())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join("history").join("default.log"));
+    let head = if log.exists() { playbox_core::history::text::head_hex(&store::load(&log)?) } else { playbox_core::history::text::hex(&[0u8; 32]) };
+    let st = attest::new_statement(&key, "", &head, store::now_ms(), attest::measure_self("none", "cli"));
+    let text = st.sign(&key).map_err(anyhow::Error::msg)?;
+    let e = store::append_kept(&log, &key, "attestation", text.as_bytes(), store::now_ms())?;
+    println!("attested as entry {} in {} (tier T0, self-attested)", e.seq, log.display());
+    Ok(())
+}
+
 fn verify(path: &str) -> Result<()> {
-    let log = store::load(std::path::Path::new(path))?;
-    match log.verify() {
-        Ok(()) => {
-            println!("valid: {} entries, head {}", log.entries.len(), playbox_core::history::text::head_hex(&log));
-            Ok(())
-        }
-        Err(e) => bail!("INVALID: {e}"),
+    let r = store::verify_deep(std::path::Path::new(path), &[])?;
+    if let Some(e) = &r.chain_error {
+        bail!("INVALID chain: {e}");
     }
+    println!("chain valid: {} entries, head {}", r.entries, r.head);
+    for a in &r.attestations {
+        println!("attestation at entry {} ({}): subject {}…, claims {}, verified {}", a.seq, a.about, &a.subject[..12], a.claimed, a.achieved);
+        for n in &a.notes {
+            println!("    {n}");
+        }
+    }
+    if r.attestations.is_empty() {
+        println!("no attestations in this history");
+    }
+    if !r.problems.is_empty() {
+        for p in &r.problems {
+            eprintln!("PROBLEM: {p}");
+        }
+        bail!("{} problem(s) found", r.problems.len());
+    }
+    Ok(())
 }
 
 fn demo() -> Result<()> {

@@ -175,7 +175,9 @@ fn host_and_guest_collaborate_through_mcp() {
     let (err, v) = guest.tool("playbox_verify", json!({}));
     assert!(!err && v["valid"] == true, "{v}");
     // join, ping, pull, delegate, push, status: a call and a result each, plus this verify call.
-    assert_eq!(v["entries"], 13, "{v}");
+    assert_eq!(v["entries"], 14, "{v}"); // +1: the host attestation recorded at join
+    assert_eq!(v["attestations"][0]["about"], "host");
+    assert_eq!(v["attestations"][0]["verified"], "T0");
 
     // Revocation reaches the guest on its next request.
     let (err, r) = host.tool("playbox_revoke", json!({"member": member}));
@@ -244,4 +246,23 @@ fn bad_transport_and_room_names_are_refused() {
     assert!(err && body.as_str().unwrap().contains("transport must be"), "{body}");
     let (err, body) = m.tool("playbox_create", json!({"transport": "local", "name": "../escape"}));
     assert!(err && body.as_str().unwrap().contains("room name"), "{body}");
+}
+
+#[test]
+fn joining_can_demand_a_tier_the_host_cannot_prove() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("tier");
+    let mut host = Mcp::start(&work.join("h"));
+    let (_, created) = host.tool("playbox_create", json!({"transport": "local", "name": "t"}));
+    let link = created["link"].clone();
+
+    let mut guest = Mcp::start(&work.join("g"));
+    let (err, body) = guest.tool("playbox_join", json!({"link": link, "min_host_tier": "t2", "workspace": work.join("ws")}));
+    assert!(err && body.as_str().unwrap().contains("not joining") && body.as_str().unwrap().contains("T2"), "{body}");
+    // The refused join never showed the invite to the host, so the same single-use link still works.
+    let (err, ok) = guest.tool("playbox_join", json!({"link": link, "workspace": work.join("ws")}));
+    assert!(!err, "{ok}");
+    assert_eq!(ok["host_attestation"]["verified_tier"], "T0");
+    assert_eq!(ok["host_attestation"]["claimed_tier"], "T0");
+    assert_eq!(ok["host_attestation"]["binary_blake3"].as_str().unwrap().len(), 64);
 }

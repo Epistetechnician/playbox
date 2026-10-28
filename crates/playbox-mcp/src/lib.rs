@@ -5,8 +5,8 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::SigningKey;
-use playbox_core::{history::text, store};
-use playbox_net::{join_link, Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
+use playbox_core::{attest::Tier, history::text, store};
+use playbox_net::{Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{DockerRunner, ProcessRunner, Runner, TaskSpec};
 use serde_json::{json, Value};
 use std::{
@@ -55,6 +55,7 @@ pub fn tool_list() -> Value {
             json!({
                 "link": {"type": "string"},
                 "workspace": {"type": "string", "description": "Directory for this room's git clone. Default: under the Playbox home."},
+                "min_host_tier": {"type": "string", "description": "Refuse to join unless the host's attestation achieves at least this tier (t0..t3). Default t0: the host must sign measurements of its software with its connection key. Higher tiers need platform verifiers that are not available yet, so t1-t3 currently always refuse."},
                 "transport": {"type": "string", "description": "Override the transport (`iroh`, `local`, `relay:<url>`). By default the link says which to use."},
                 "local": {"type": "boolean", "description": "Shorthand for transport=local."}
             }), &["link"]),
@@ -84,12 +85,16 @@ pub fn tool_list() -> Value {
             "Send a branch from your workspace to the room. It is stored under your own namespace on the host and never overwrites the host's branches.",
             json!({"branch": {"type": "string"}}), &["branch"]),
         tool("playbox_verify",
-            "Verify a history log's hash chain and signatures. Defaults to this session's log.",
+            "Verify a history log: hash chain, signatures, and any attestations in it (including the host's, recorded when you joined). Defaults to this session's log. Verified tier T0 means the key holder signed the claims; higher tiers need platform verifiers that are not available yet.",
             json!({"path": {"type": "string"}}), &[]),
         tool("playbox_revoke",
             "Host only: revoke a member's grant and bar their key from rejoining.",
             json!({"member": {"type": "string", "description": "Member id as shown by playbox_status"}}), &["member"]),
     ])
+}
+
+fn s_arg<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
+    a.get(k).and_then(Value::as_str)
 }
 
 fn s<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
@@ -253,7 +258,20 @@ impl Server {
         }
         let link = req(a, "link")?;
         let choice = transport_arg(a)?.map(TransportChoice::Use).unwrap_or_default();
-        let client = join_link(link, playbox_net::new_secret_key()?, choice).await?;
+        let min = Tier::parse(s_arg(a, "min_host_tier").unwrap_or("t0")).map_err(|e| anyhow!(e))?;
+        // Check the host before showing it our invite: attestation needs no membership, so a host
+        // that fails the check never sees the invite and it stays unspent.
+        let parsed = playbox_net::Link::parse(link)?;
+        let transport = choice.resolve(parsed.transport.as_ref());
+        let client = Client::connect(parsed.addr, playbox_net::new_secret_key()?, transport).await?;
+        let host_att = match client.verify_host(min, &[]).await {
+            Ok(v) => v,
+            Err(e) => bail!("not joining: {e:#}"),
+        };
+        client.join(&parsed.invite).await?;
+        // Keep the host's signed statement in our history, so anyone verifying it later can see
+        // what we knew about the host when we joined.
+        let _ = store::append_kept(&self.log_path, &self.key, "host_attestation", host_att.text.as_bytes(), store::now_ms());
         let member = client.id().to_string();
         let ws = match s(a, "workspace") {
             Some(w) => PathBuf::from(w),
@@ -269,7 +287,20 @@ impl Server {
         self.client = Some(client);
         self.member_id = Some(member.clone());
         self.workspace = Some(ws.clone());
-        Ok(json!({"joined": true, "member_id": member, "workspace": ws.display().to_string()}))
+        Ok(json!({
+            "joined": true,
+            "member_id": member,
+            "workspace": ws.display().to_string(),
+            "host_attestation": {
+                "verified_tier": host_att.achieved.to_string(),
+                "claimed_tier": host_att.statement.claimed.to_string(),
+                "runner": host_att.statement.measurements.runner,
+                "binary_blake3": host_att.statement.measurements.binary,
+                "policy_blake3": host_att.statement.measurements.policy,
+                "os": host_att.statement.measurements.os,
+                "notes": host_att.notes,
+            }
+        }))
     }
 
     fn status(&self) -> Result<Value> {
@@ -366,11 +397,21 @@ impl Server {
 
     fn verify(&self, a: &Value) -> Result<Value> {
         let path = s(a, "path").map(PathBuf::from).unwrap_or_else(|| self.log_path.clone());
-        let log = store::load(&path)?;
-        match log.verify() {
-            Ok(()) => Ok(json!({"valid": true, "entries": log.entries.len(), "head": text::head_hex(&log), "path": path.display().to_string()})),
-            Err(e) => Ok(json!({"valid": false, "error": e.to_string(), "path": path.display().to_string()})),
-        }
+        let r = store::verify_deep(&path, &[])?;
+        let atts: Vec<Value> = r
+            .attestations
+            .iter()
+            .map(|x| json!({"entry": x.seq, "about": x.about, "subject": x.subject, "claimed": x.claimed.to_string(), "verified": x.achieved.to_string(), "notes": x.notes}))
+            .collect();
+        Ok(json!({
+            "valid": r.ok(),
+            "entries": r.entries,
+            "head": r.head,
+            "path": path.display().to_string(),
+            "error": r.chain_error,
+            "problems": r.problems,
+            "attestations": atts,
+        }))
     }
 
     fn revoke(&self, a: &Value) -> Result<Value> {
