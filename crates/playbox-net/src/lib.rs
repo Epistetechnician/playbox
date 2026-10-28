@@ -22,7 +22,7 @@ use a2a::{
 };
 use ed25519_dalek::SigningKey;
 use playbox_core::attest::{self, Measurements, PlatformVerifier, Tier, Verified};
-use playbox_runner::{Limits, Runner, TaskOutput, TaskSpec};
+use playbox_runner::{Isolation, Limits, Runner, TaskOutput, TaskSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use wire::Op;
@@ -189,8 +189,11 @@ fn load_or_create_seed(path: &std::path::Path) -> Result<[u8; 32]> {
 }
 
 /// What a host offers beyond membership. Anything left `None` is refused.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HostConfig {
+    /// Weakest isolation this host accepts from its runner. The host refuses to start below it,
+    /// so a missing sandbox never turns into unsandboxed execution. Defaults to `Container`.
+    pub min_isolation: Isolation,
     /// The room's git repository (a normal or bare repo).
     pub repo: Option<PathBuf>,
     /// Where member tasks run. Without one, `RunTask` is refused.
@@ -203,6 +206,19 @@ pub struct HostConfig {
     /// each member gets a branch `members/<id>` forked from it, and every task becomes one commit
     /// there (readable through this handle). Tasks serialise on this lock. Takes precedence over `repo`.
     pub workspace: Option<Arc<tokio::sync::Mutex<playbox_core::workspace::Repo>>>,
+}
+
+impl Default for HostConfig {
+    fn default() -> Self {
+        Self {
+            min_isolation: Isolation::Container,
+            repo: None,
+            runner: None,
+            limits: Limits::default(),
+            grant_ttl: None,
+            workspace: None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -544,11 +560,18 @@ impl Host {
         root_seed: Option<[u8; 32]>,
         state: State,
     ) -> Result<Self> {
+        if let Some(r) = &cfg.runner {
+            if r.isolation() < cfg.min_isolation {
+                bail!("runner {} gives {:?} isolation but this host requires at least {:?}", r.name(), r.isolation(), cfg.min_isolation);
+            }
+            r.preflight().await.with_context(|| format!("runner {} is not usable", r.name()))?;
+        }
         let attest_key = Arc::new(SigningKey::from_bytes(&secret.to_bytes()));
         let measurements = Arc::new(attest::measure_self(
             cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
             &format!(
-                "limits={:?};grant_ttl={:?};repo={};workspace={}",
+                "isolation={:?};limits={:?};grant_ttl={:?};repo={};workspace={}",
+                cfg.runner.as_ref().map(|r| r.isolation()),
                 cfg.limits,
                 cfg.grant_ttl,
                 cfg.repo.is_some(),

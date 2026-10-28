@@ -39,7 +39,7 @@ async fn pull_task_patch_push() {
     }
     let host_repo = scratch("host");
     init_repo(&host_repo);
-    let cfg = HostConfig { repo: Some(host_repo.clone()), runner: Some(Arc::new(DockerRunner)), ..Default::default() };
+    let cfg = HostConfig { repo: Some(host_repo.clone()), runner: Some(Arc::new(DockerRunner::default())), ..Default::default() };
     let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
     let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
     let client = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
@@ -89,7 +89,7 @@ async fn task_has_no_network_and_times_out() {
     }
     let host_repo = scratch("host2");
     init_repo(&host_repo);
-    let cfg = HostConfig { repo: Some(host_repo.clone()), runner: Some(Arc::new(DockerRunner)), ..Default::default() };
+    let cfg = HostConfig { repo: Some(host_repo.clone()), runner: Some(Arc::new(DockerRunner::default())), ..Default::default() };
     let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
     let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
     let client = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();

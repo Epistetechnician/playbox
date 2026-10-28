@@ -22,6 +22,11 @@ pub fn check_name(s: &str) -> Result<&str> {
 
 async fn git(repo: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
     let mut cmd = Command::new("git");
+    // Peer content must never make the host execute anything: no hooks, no fsmonitor, no external
+    // diff or textconv, no symlink checkout, no submodule recursion, no non-file protocols.
+    cmd.args(["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.symlinks=false"]);
+    cmd.args(["-c", "submodule.recurse=false", "-c", "protocol.allow=never", "-c", "protocol.file.allow=always"]);
+    cmd.env("GIT_TERMINAL_PROMPT", "0").env("GIT_ALLOW_PROTOCOL", "file").env("GIT_CONFIG_NOSYSTEM", "1");
     cmd.arg("-C").arg(repo).args(args);
     cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
@@ -101,10 +106,40 @@ pub async fn worktree_remove(repo: &Path, dir: &Path) -> Result<()> {
 pub async fn diff_patch(dir: &Path, base: &str) -> Result<Vec<u8>> {
     let base = check_name(base)?;
     git(dir, &["add", "-A"], None).await?;
-    git(dir, &["diff", "--cached", "--binary", base], None).await
+    git(dir, &["diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", base], None).await
 }
 
 pub async fn apply_patch(repo: &Path, patch: &[u8]) -> Result<()> {
     git(repo, &["apply", "--index", "-"], Some(patch)).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sh(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git").arg("-C").arg(dir).args(args).status().unwrap().success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[tokio::test]
+    async fn host_hooks_never_run_on_peer_driven_operations() {
+        let dir = tempfile_dir().await.unwrap();
+        let marker = dir.join("hook-ran");
+        sh(&dir, &["init", "-q", "-b", "main"]);
+        sh(&dir, &["config", "user.email", "t@example.com"]);
+        sh(&dir, &["config", "user.name", "t"]);
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        sh(&dir, &["add", "-A"]);
+        sh(&dir, &["commit", "-q", "-m", "init"]);
+        let hook = dir.join(".git/hooks/post-checkout");
+        std::fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+
+        let ws = worktree_add(&dir, "main").await.unwrap();
+        worktree_remove(&dir, &ws).await.unwrap();
+        assert!(!marker.exists(), "post-checkout hook ran");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
 }

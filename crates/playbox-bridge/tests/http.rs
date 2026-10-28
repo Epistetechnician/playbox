@@ -23,7 +23,7 @@ async fn start(token: Option<&str>) -> (Host, String) {
     std::fs::write(dir.join("a.txt"), "a\n").unwrap();
     git(&dir, &["add", "-A"]);
     git(&dir, &["commit", "-q", "-m", "i"]);
-    let cfg = HostConfig {
+    let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None,
         repo: Some(dir),
         runner: Some(Arc::new(ProcessRunner)),
         limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },
@@ -65,7 +65,7 @@ async fn stock_http_client_uses_the_room() {
         "spec": {"cmd": ["sh", "-c", "echo http > h.txt; echo ok"], "image": "x", "cpus": 1.0, "mem_mib": 256, "timeout_secs": 20, "network": false}}}}]}});
     let r: Value = http.post(format!("{url}/jsonrpc")).json(&rpc(json!(7), "SendMessage", run)).send().await.unwrap().json().await.unwrap();
     let task = &r["result"]["task"];
-    assert_eq!(task["status"]["state"], "TASK_STATE_COMPLETED");
+    assert_eq!(task["status"]["state"], "TASK_STATE_COMPLETED", "{task}");
     let id = task["id"].as_str().unwrap();
     let r: Value = http.post(format!("{url}/jsonrpc")).json(&rpc(json!(8), "GetTask", json!({"id": id}))).send().await.unwrap().json().await.unwrap();
     assert_eq!(r["result"]["id"], id);

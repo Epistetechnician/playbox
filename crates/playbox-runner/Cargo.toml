@@ -13,3 +13,12 @@ playbox-core = { path = "../playbox-core" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+# Builds the libkrun helper binary (needs libkrun installed). The library never links libkrun.
+krun = []
+
+[[bin]]
+name = "playbox-krun-helper"
+path = "src/bin/playbox-krun-helper.rs"
+required-features = ["krun"]

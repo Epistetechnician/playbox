@@ -15,7 +15,7 @@ async fn member_tasks_commit_to_their_own_branch() {
     let mut repo = Repo::new(Store::memory());
     repo.init("main", &[("a.txt", b"a")], "host", 1).unwrap();
     let repo = Arc::new(Mutex::new(repo));
-    let cfg = HostConfig {
+    let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None,
         runner: Some(Arc::new(ProcessRunner)),
         limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },
         workspace: Some(repo.clone()),

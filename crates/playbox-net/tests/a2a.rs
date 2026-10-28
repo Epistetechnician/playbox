@@ -25,7 +25,7 @@ fn repo(name: &str) -> std::path::PathBuf {
 }
 
 async fn room(name: &str, with_repo: bool, with_runner: bool) -> (Host, String) {
-    let cfg = HostConfig {
+    let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None,
         repo: with_repo.then(|| repo(name)),
         runner: with_runner.then(|| Arc::new(ProcessRunner) as _),
         limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },

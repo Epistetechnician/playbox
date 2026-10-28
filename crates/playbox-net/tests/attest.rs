@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn host_attests_and_client_verifies_it() {
-    let cfg = HostConfig { runner: Some(Arc::new(ProcessRunner)), ..Default::default() };
+    let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None, runner: Some(Arc::new(ProcessRunner)), ..Default::default() };
     let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
     // No invite needed: attestation is public, like the agent card.
     let c = Client::connect(host.addr(), new_secret_key().unwrap(), true).await.unwrap();
@@ -34,7 +34,7 @@ async fn host_attests_and_client_verifies_it() {
 #[tokio::test]
 async fn the_policy_hash_changes_when_the_policy_does() {
     let mk = |cpus: f32| async move {
-        let cfg = HostConfig { limits: playbox_runner::Limits { cpus, ..Default::default() }, ..Default::default() };
+        let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None, limits: playbox_runner::Limits { cpus, ..Default::default() }, ..Default::default() };
         let h = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
         let c = Client::connect(h.addr(), new_secret_key().unwrap(), true).await.unwrap();
         let v = c.verify_host(Tier::T0, &[]).await.unwrap();

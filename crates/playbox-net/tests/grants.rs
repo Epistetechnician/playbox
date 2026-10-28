@@ -24,7 +24,7 @@ fn repo(name: &str) -> std::path::PathBuf {
 }
 
 async fn room(name: &str, cfg: impl FnOnce(&mut HostConfig)) -> (Host, String) {
-    let mut c = HostConfig {
+    let mut c = HostConfig { min_isolation: playbox_runner::Isolation::None,
         repo: Some(repo(name)),
         runner: Some(Arc::new(ProcessRunner)),
         limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },

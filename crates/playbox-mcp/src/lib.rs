@@ -218,13 +218,18 @@ impl Server {
                 }
             }
             let runner: Option<Arc<dyn Runner>> = if b(a, "docker") {
-                Some(Arc::new(DockerRunner))
+                Some(Arc::new(DockerRunner::default()))
             } else if b(a, "unsafe_process_runner") && std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() {
                 Some(Arc::new(ProcessRunner))
             } else {
                 None
             };
-            let cfg = HostConfig { repo: repo.clone(), runner, ..Default::default() };
+            // Only the explicit unsafe opt-in lowers the isolation floor.
+            let min_isolation = match &runner {
+                Some(r) if r.isolation() == playbox_runner::Isolation::None => playbox_runner::Isolation::None,
+                _ => HostConfig::default().min_isolation,
+            };
+            let cfg = HostConfig { repo: repo.clone(), runner, min_isolation, ..Default::default() };
             let transport = match transport_arg(a)? {
                 Some(t) => t,
                 None => Transport::from_env()?,

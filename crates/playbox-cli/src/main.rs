@@ -99,7 +99,7 @@ fn join_choice(local: bool, t: Option<&str>) -> Result<TransportChoice> {
 async fn up(transport: Transport, state: Option<String>, repo: Option<String>, docker: bool) -> Result<()> {
     let cfg = HostConfig {
         repo: repo.map(PathBuf::from),
-        runner: if docker { Some(Arc::new(DockerRunner)) } else { None },
+        runner: if docker { Some(Arc::new(DockerRunner::default())) } else { None },
         ..Default::default()
     };
     let host = match &state {

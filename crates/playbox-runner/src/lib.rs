@@ -1,7 +1,7 @@
 //! Task runners. A runner executes one command against a workspace directory.
 //!
 //! - [`DockerRunner`]: container isolation (not a microVM). Usable today on macOS and Linux.
-//! - [`KrunRunner`]: the libkrun microVM runner. Not implemented yet; see PRD M2.
+//! - [`KrunRunner`]: the libkrun microVM runner (needs the `playbox-krun-helper` binary; see `scripts/install-krun.sh`).
 //! - [`ProcessRunner`]: runs on the host with NO isolation. Development only, off unless asked for.
 
 use anyhow::{bail, Context, Result};
@@ -11,6 +11,47 @@ use std::{os::unix::fs::MetadataExt, path::Path, process::Stdio, time::Duration}
 use tokio::{io::AsyncReadExt, process::Command};
 
 pub mod workspace;
+
+/// How strongly a backend separates a task from the host. Ordered: a host can demand a minimum
+/// and refuse to start with anything weaker, so a missing backend never degrades silently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Isolation {
+    /// Runs on the host itself.
+    None,
+    /// Shared kernel, namespaces and cgroups (Docker, gVisor-less runc).
+    Container,
+    /// Own guest kernel behind a hypervisor (libkrun, Firecracker).
+    MicroVm,
+    /// A microVM whose memory the host cannot read (SEV-SNP, TDX).
+    ConfidentialVm,
+}
+
+/// Host-side rules for what a peer may ask a sandbox to run. Peers never widen these.
+#[derive(Debug, Clone)]
+pub struct SandboxPolicy {
+    /// Exact image references a task may use. An entry may be a tag or a `name@sha256:..` digest.
+    pub allowed_images: Vec<String>,
+}
+
+impl Default for SandboxPolicy {
+    fn default() -> Self {
+        Self { allowed_images: vec![DEFAULT_IMAGE.into()] }
+    }
+}
+
+impl SandboxPolicy {
+    pub fn check(&self, spec: &TaskSpec) -> Result<()> {
+        if !self.allowed_images.iter().any(|i| i == &spec.image) {
+            bail!("image {:?} is not allowed on this host (allowed: {})", spec.image, self.allowed_images.join(", "));
+        }
+        Ok(())
+    }
+}
+
+mod krun;
+pub use krun::{find_helper, KrunRunner};
+
+pub const DEFAULT_IMAGE: &str = "alpine:3";
 
 const MAX_OUTPUT: usize = 64 * 1024;
 
@@ -28,7 +69,7 @@ impl TaskSpec {
     pub fn new(cmd: &[&str]) -> Self {
         Self {
             cmd: cmd.iter().map(|s| s.to_string()).collect(),
-            image: "alpine:3".into(),
+            image: DEFAULT_IMAGE.into(),
             cpus: 1.0,
             mem_mib: 512,
             timeout_secs: 60,
@@ -71,7 +112,26 @@ pub struct TaskOutput {
 #[async_trait]
 pub trait Runner: Send + Sync {
     fn name(&self) -> &'static str;
+    /// The isolation this backend provides when it works. Backends must not overstate it.
+    fn isolation(&self) -> Isolation;
+    /// Check the backend can actually run tasks (daemon up, KVM present...). Called when a host
+    /// starts; an error stops the host rather than letting tasks fail or fall back later.
+    async fn preflight(&self) -> Result<()> {
+        Ok(())
+    }
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput>;
+}
+
+/// Pick a backend by name. The one place a new sandbox technology is registered.
+/// `process` (no isolation) needs `PLAYBOX_ALLOW_UNSAFE_RUNNER`.
+pub fn runner_by_name(name: &str, policy: SandboxPolicy) -> Result<std::sync::Arc<dyn Runner>> {
+    match name {
+        "docker" => Ok(std::sync::Arc::new(DockerRunner::new(policy))),
+        "libkrun" | "krun" => Ok(std::sync::Arc::new(KrunRunner::locate(policy)?)),
+        "process" if std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() => Ok(std::sync::Arc::new(ProcessRunner)),
+        "process" => bail!("the process runner has no isolation; set PLAYBOX_ALLOW_UNSAFE_RUNNER to use it"),
+        o => bail!("unknown runner {o:?}; use docker, libkrun or process"),
+    }
 }
 
 fn check_spec(spec: &TaskSpec) -> Result<()> {
@@ -125,7 +185,16 @@ async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, b
     }
 }
 
-pub struct DockerRunner;
+#[derive(Default)]
+pub struct DockerRunner {
+    policy: SandboxPolicy,
+}
+
+impl DockerRunner {
+    pub fn new(policy: SandboxPolicy) -> Self {
+        Self { policy }
+    }
+}
 
 #[async_trait]
 impl Runner for DockerRunner {
@@ -133,8 +202,26 @@ impl Runner for DockerRunner {
         "docker"
     }
 
+    fn isolation(&self) -> Isolation {
+        Isolation::Container
+    }
+
+    async fn preflight(&self) -> Result<()> {
+        let out = Command::new("docker")
+            .args(["version", "--format", "{{.Server.Version}}"])
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .context("docker is not installed")?;
+        if !out.status.success() {
+            bail!("docker daemon is not reachable: {}", String::from_utf8_lossy(&out.stderr).trim());
+        }
+        Ok(())
+    }
+
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
         check_spec(spec)?;
+        self.policy.check(spec)?;
         let meta = tokio::fs::metadata(workspace).await.context("workspace")?;
         let mut rnd = [0u8; 6];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
@@ -146,6 +233,7 @@ impl Runner for DockerRunner {
         cmd.args(["--network", if spec.network { "bridge" } else { "none" }]);
         cmd.args(["--cpus", &spec.cpus.to_string(), "--memory", &format!("{}m", spec.mem_mib)]);
         cmd.args(["--pids-limit", "256", "--cap-drop", "ALL", "--security-opt", "no-new-privileges"]);
+        cmd.args(["--read-only", "--tmpfs", "/tmp:rw,nosuid,size=256m", "--ulimit", "nofile=1024", "--ipc", "private"]);
         cmd.args(["--user", &format!("{}:{}", meta.uid(), meta.gid())]);
         cmd.args(["-v", &format!("{ws}:/workspace"), "-w", "/workspace", "-e", "HOME=/tmp"]);
         cmd.arg(&spec.image).args(&spec.cmd);
@@ -167,6 +255,10 @@ impl Runner for ProcessRunner {
         "process-UNSAFE"
     }
 
+    fn isolation(&self) -> Isolation {
+        Isolation::None
+    }
+
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
         check_spec(spec)?;
         let mut cmd = Command::new(&spec.cmd[0]);
@@ -175,17 +267,29 @@ impl Runner for ProcessRunner {
     }
 }
 
-/// Placeholder for the libkrun microVM runner (PRD M2). It refuses to run so nothing can
-/// silently fall back to weaker isolation.
-pub struct KrunRunner;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[async_trait]
-impl Runner for KrunRunner {
-    fn name(&self) -> &'static str {
-        "libkrun"
+    #[test]
+    fn isolation_is_ordered() {
+        assert!(Isolation::None < Isolation::Container && Isolation::Container < Isolation::MicroVm);
     }
 
-    async fn run(&self, _spec: &TaskSpec, _workspace: &Path) -> Result<TaskOutput> {
-        bail!("libkrun runner is not implemented yet (needs a Linux/KVM or macOS/HVF host with libkrun)")
+    #[test]
+    fn policy_refuses_unlisted_images() {
+        let p = SandboxPolicy::default();
+        assert!(p.check(&TaskSpec::new(&["true"])).is_ok());
+        let mut spec = TaskSpec::new(&["true"]);
+        spec.image = "evil/miner:latest".into();
+        assert!(p.check(&spec).is_err());
+    }
+
+    #[test]
+    fn unsafe_runner_needs_opt_in() {
+        std::env::remove_var("PLAYBOX_ALLOW_UNSAFE_RUNNER");
+        assert!(runner_by_name("process", SandboxPolicy::default()).is_err());
+        assert!(runner_by_name("nope", SandboxPolicy::default()).is_err());
+        assert_eq!(runner_by_name("docker", SandboxPolicy::default()).unwrap().isolation(), Isolation::Container);
     }
 }
