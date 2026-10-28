@@ -30,6 +30,15 @@
 | 26 | Hosts sign attestations with the iroh endpoint key, so clients bind them to the connection they already authenticated | No second identity to manage or confuse | Hardware-bound keys |
 | 27 | Guests verify the host before presenting the invite | A host that fails the check never learns the invite and the single-use link is not spent | Never |
 | 28 | Only attestation bodies are kept beside the log; ordinary entries stay hash-only | Keeps logs small and prompts out of them | Verification needs other bodies |
+| 29 | Hardware evidence only reaches T1 when the device key is pinned by the verifier | A software TPM or any P-256 key produces the same bytes as real hardware, so a valid quote alone proves nothing about genuineness | EK certificate chains (TPM) or App Attest (Apple) are checked |
+| 30 | Binding = digest of the statement minus the evidence and the claimed tier; hardware signs or quotes it | Evidence cannot be moved to another subject, nonce, history position or measurement set; the claim is only a cap | Never |
+| 31 | The Secure Enclave helper uses CryptoKit key handles, not the keychain | Keychain-stored Secure Enclave keys fail in a plain CLI with errSecMissingEntitlement (-34018); CryptoKit handles work and reload across runs | The tool ships as a signed app with entitlements |
+| 32 | T2 needs operator-supplied boot PCR reference values | Without them a quote cannot tell an honest host from one that extended arbitrary values into PCR 23 | IMA or secure-boot policy values can be derived automatically |
+| 33 | TPM verification is pure Rust (p256, sha2) and the TPM is driven through `tpm2-tools` | Verification runs on any OS; avoids a TSS library dependency and build on Mac | A native TSS binding is needed for speed or features |
+| 34 | A provider failure at request time yields a plain T0 statement and a log line | One broken TPM must not take the room down; clients that need T1 still refuse | The room should refuse to start without working hardware |
+| 29 | The libkrun runner spawns a helper process per task | `krun_start_enter` never returns; one process per VM is the only safe shape | libkrun gains a returning start call |
+| 30 | Network is off by removing the vsock device, and `find_helper` prefers the installed signed helper over a freshly built one | Verified: with the device gone the guest has no route; an unsigned helper fails with -22 on macOS | A filtered network backend replaces TSI |
+| 31 | Root filesystems are exported from Docker and cloned per task | Reuses images people already have; clonefile makes a per-task root nearly free | Images are pulled and unpacked natively |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

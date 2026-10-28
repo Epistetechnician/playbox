@@ -2,16 +2,16 @@ use anyhow::{bail, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{attest, history::Log, platform, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
-use playbox_runner::{DockerRunner, TaskSpec};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use playbox_runner::{runner_by_name, SandboxPolicy, TaskSpec};
+use std::{path::PathBuf, time::Duration};
 
 const HELP: &str = "playbox (scaffold)
-  up [--transport T] [--state DIR] [--repo DIR] [--docker]
+  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun]
                             start a room and print a join link (valid 1h, 1 use).
                             T is `iroh` (public relays, default), `local` (same machine/LAN) or
                             `relay:<https url>` (your own iroh-relay; PLAYBOX_RELAY_CA=PEM for a private CA).
                             --state keeps the room's identity, members and bans across restarts.
-                            --repo shares a git repo; --docker lets members run tasks in containers
+                            --repo shares a git repo; --runtime lets members run tasks: libkrun = a microVM per task, docker = a container (--docker is shorthand)
   join <link> [--transport T] [--task <shell cmd>] [--base REF]
                             join a room (the link says which transport to use unless you override);
                             with --task, run it remotely on REF (default main) and print the patch
@@ -38,7 +38,8 @@ async fn main() -> Result<()> {
     let local = args.iter().any(|a| a == "--local");
     let transport = args.iter().position(|a| a == "--transport").and_then(|i| args.get(i + 1)).cloned();
     let state = args.iter().position(|a| a == "--state").and_then(|i| args.get(i + 1)).cloned();
-    let docker = args.iter().any(|a| a == "--docker");
+    let runtime = args.iter().position(|a| a == "--runtime").and_then(|i| args.get(i + 1)).cloned()
+        .or_else(|| args.iter().any(|a| a == "--docker").then(|| "docker".to_string()));
     let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let (repo, task, base) = (opt("--repo"), opt("--task"), opt("--base"));
     let (kind, log_path, key_path) = (opt("--kind"), opt("--log"), opt("--key"));
@@ -51,7 +52,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime") {
                 skip = true;
                 return false;
             }
@@ -59,7 +60,7 @@ async fn main() -> Result<()> {
         })
         .collect();
     match pos.first().map(|s| s.as_str()) {
-        Some("up") => up(chosen(local, transport.as_deref())?, state, repo, docker).await,
+        Some("up") => up(chosen(local, transport.as_deref())?, state, repo, runtime).await,
         Some("join") => match pos.get(1) {
             Some(link) => join(link, join_choice(local, transport.as_deref())?, task, base).await,
             None => bail!("usage: playbox join <link>"),
@@ -102,12 +103,15 @@ fn join_choice(local: bool, t: Option<&str>) -> Result<TransportChoice> {
     }
 }
 
-async fn up(transport: Transport, state: Option<String>, repo: Option<String>, docker: bool) -> Result<()> {
+async fn up(transport: Transport, state: Option<String>, repo: Option<String>, runtime: Option<String>) -> Result<()> {
     let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> = platform::detect(&store::home()).map_err(anyhow::Error::msg)?.map(std::sync::Arc::from);
     println!("platform attestation: {}", provider.as_ref().map(|p| p.kind()).unwrap_or("none (self-signed only)"));
     let cfg = HostConfig {
         repo: repo.map(PathBuf::from),
-        runner: if docker { Some(Arc::new(DockerRunner::default())) } else { None },
+        runner: match runtime {
+            Some(name) => Some(runner_by_name(&name, SandboxPolicy::default())?),
+            None => None,
+        },
         platform: provider,
         ..Default::default()
     };

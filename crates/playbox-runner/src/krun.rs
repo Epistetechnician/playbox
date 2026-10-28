@@ -57,18 +57,21 @@ fn platform() -> &'static str {
     }
 }
 
-/// Where the helper lives: `$PLAYBOX_KRUN_HELPER`, beside this executable, in `~/.cargo/bin`, or on PATH.
+/// Where the helper lives: `$PLAYBOX_KRUN_HELPER`, `~/.cargo/bin`, PATH, then beside this executable.
+///
+/// Beside-the-executable comes last on purpose: a `cargo build` leaves an *unsigned* helper in
+/// `target/`, and on macOS an unsigned helper cannot start a VM. The installed copy is signed by
+/// `scripts/install-krun.sh`.
 pub fn find_helper() -> Result<PathBuf> {
-    let mut tries: Vec<PathBuf> = Vec::new();
     if let Some(p) = std::env::var_os("PLAYBOX_KRUN_HELPER") {
         return Ok(PathBuf::from(p));
     }
-    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
-        tries.push(dir.join(HELPER));
-    }
-    tries.push(PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cargo/bin").join(HELPER));
+    let mut tries: Vec<PathBuf> = vec![PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cargo/bin").join(HELPER)];
     if let Some(path) = std::env::var_os("PATH") {
         tries.extend(std::env::split_paths(&path).map(|d| d.join(HELPER)));
+    }
+    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+        tries.push(dir.join(HELPER));
     }
     tries
         .into_iter()

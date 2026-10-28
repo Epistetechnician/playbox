@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{attest::Tier, history::text, platform, store};
 use playbox_net::{Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
-use playbox_runner::{DockerRunner, ProcessRunner, Runner, TaskSpec};
+use playbox_runner::{ProcessRunner, Runner, TaskSpec};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
@@ -22,6 +22,7 @@ pub struct Server {
     host: Option<Host>,
     host_repo: Option<PathBuf>,
     room_name: Option<String>,
+    runtime_name: Option<String>,
     client: Option<Client>,
     member_id: Option<String>,
     workspace: Option<PathBuf>,
@@ -43,7 +44,8 @@ pub fn tool_list() -> Value {
             "Start a Playbox room on this machine and return a join link to share. Calling it again returns a fresh single-use link for the same room. Others join with playbox_join.",
             json!({
                 "repo": {"type": "string", "description": "Absolute path of a git repository to share with the room"},
-                "docker": {"type": "boolean", "description": "Let members run tasks in Docker containers (no network, limited CPU/memory/time). Default false: members cannot run tasks."},
+                "runtime": {"type": "string", "description": "Let members run tasks, in this sandbox: `libkrun` (a microVM per task, own kernel; needs playbox-krun-helper, see scripts/install-krun.sh) or `docker` (a container, weaker isolation). Both run with no network and limited CPU/memory/time unless the grant says otherwise. Default: members cannot run tasks."},
+                "docker": {"type": "boolean", "description": "Shorthand for runtime=docker."},
                 "transport": {"type": "string", "description": "How peers reach each other: `iroh` (public relays + discovery, works across NATs; default), `local` (same machine/LAN only), or `relay:<https url>` (your own iroh-relay; set PLAYBOX_RELAY_CA to a PEM file for a private CA). Default can be set with PLAYBOX_TRANSPORT."},
                 "local": {"type": "boolean", "description": "Shorthand for transport=local."},
                 "name": {"type": "string", "description": "Room name. The room's identity, members, bans and unspent invites are kept under this name, so creating it again after a restart brings the same room back. Default: default."},
@@ -131,7 +133,7 @@ impl Server {
         let log_path = std::env::var_os("PLAYBOX_LOG")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("history").join(format!("mcp-{}.log", store::now_ms())));
-        Ok(Self { host: None, host_repo: None, room_name: None, client: None, member_id: None, workspace: None, log_path, key })
+        Ok(Self { host: None, host_repo: None, room_name: None, runtime_name: None, client: None, member_id: None, workspace: None, log_path, key })
     }
 
     pub fn log_path(&self) -> &Path {
@@ -218,8 +220,9 @@ impl Server {
                     bail!("{} is not a git repository", r.display());
                 }
             }
-            let runner: Option<Arc<dyn Runner>> = if b(a, "docker") {
-                Some(Arc::new(DockerRunner::default()))
+            let runtime = s(a, "runtime").or(b(a, "docker").then_some("docker"));
+            let runner: Option<Arc<dyn Runner>> = if let Some(name) = runtime {
+                Some(playbox_runner::runner_by_name(name, playbox_runner::SandboxPolicy::default())?)
             } else if b(a, "unsafe_process_runner") && std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() {
                 Some(Arc::new(ProcessRunner))
             } else {
@@ -249,6 +252,7 @@ impl Server {
             self.host = Some(Host::open(&dir, transport, cfg).await?);
             self.host_repo = repo;
             self.room_name = Some(name.to_string());
+            self.runtime_name = runtime.map(str::to_string);
         }
         let host = self.host.as_ref().expect("host started");
         let link = host.create_link(Duration::from_secs(ttl), uses)?;
@@ -259,7 +263,8 @@ impl Server {
             "valid_secs": ttl,
             "admits": uses,
             "shares_repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
-            "members_may_run_tasks": b(a, "docker"),
+            "members_may_run_tasks": self.runtime_name.is_some(),
+            "runtime": self.runtime_name,
             "next": "Send the link to the person whose agent should join. Treat it like a password: anyone holding it can join until it is used or expires."
         }))
     }

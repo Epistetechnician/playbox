@@ -262,7 +262,47 @@ fn joining_can_demand_a_tier_the_host_cannot_prove() {
     // The refused join never showed the invite to the host, so the same single-use link still works.
     let (err, ok) = guest.tool("playbox_join", json!({"link": link, "workspace": work.join("ws")}));
     assert!(!err, "{ok}");
-    assert_eq!(ok["host_attestation"]["verified_tier"], "T0");
-    assert_eq!(ok["host_attestation"]["claimed_tier"], "T0");
+    // Hosts with device-bound keys (Secure Enclave, TPM) now claim and, once pinned, achieve T1;
+    // others stay at T0. Either way what is verified never exceeds what is claimed, and never T2.
+    let (verified, claimed) = (ok["host_attestation"]["verified_tier"].as_str().unwrap(), ok["host_attestation"]["claimed_tier"].as_str().unwrap());
+    assert!(matches!(verified, "T0" | "T1") && matches!(claimed, "T0" | "T1") && verified <= claimed, "{ok}");
     assert_eq!(ok["host_attestation"]["binary_blake3"].as_str().unwrap().len(), 64);
+}
+
+#[test]
+fn a_room_can_run_member_tasks_in_a_microvm() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let docker = Command::new("docker").arg("info").output().map(|o| o.status.success()).unwrap_or(false);
+    if playbox_runner::find_helper().is_err() || !docker {
+        eprintln!("skipping: libkrun helper or docker unavailable");
+        return;
+    }
+    let work = scratch("microvm");
+    let repo = work.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "h@example.com"]);
+    git(&repo, &["config", "user.name", "h"]);
+    std::fs::write(repo.join("a"), "a").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "i"]);
+
+    let mut host = Mcp::start(&work.join("h"));
+    let (err, created) = host.tool("playbox_create", json!({"repo": repo, "transport": "local", "runtime": "libkrun"}));
+    assert!(!err, "{created}");
+    assert_eq!(created["runtime"], "libkrun");
+    let mut guest = Mcp::start(&work.join("g"));
+    let (err, j) = guest.tool("playbox_join", json!({"link": created["link"], "workspace": work.join("ws")}));
+    assert!(!err, "{j}");
+    assert_eq!(j["host_attestation"]["runner"], "libkrun");
+    let (err, ran) = guest.tool("playbox_delegate", json!({"base": "main", "command": "uname -s; echo hi > f", "timeout_secs": 60, "mem_mib": 256}));
+    assert!(!err, "{ran}");
+    assert_eq!(ran["runner"], "libkrun");
+    assert_eq!(ran["stdout"], "Linux\n");
+    assert!(ran["patch"].as_str().unwrap().contains("+hi"));
+
+    // An unknown runtime is refused up front.
+    let mut fresh = Mcp::start(&work.join("h2"));
+    let (err, body) = fresh.tool("playbox_create", json!({"runtime": "firecracker", "transport": "local"}));
+    assert!(err && body.as_str().unwrap().contains("unknown runner"), "{body}");
 }
