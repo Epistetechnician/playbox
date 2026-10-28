@@ -237,6 +237,10 @@ pub struct HostConfig {
     pub limits: Limits,
     /// How long member grants last. Defaults to one hour.
     pub grant_ttl: Option<Duration>,
+    /// Versioned workspaces. When set, `RunTask` runs against the workspace branch named by `base`:
+    /// each member gets a branch `members/<id>` forked from it, and every task becomes one commit
+    /// there (readable through this handle). Tasks serialise on this lock. Takes precedence over `repo`.
+    pub workspace: Option<Arc<tokio::sync::Mutex<playbox_core::workspace::Repo>>>,
 }
 
 #[derive(Clone)]
@@ -344,6 +348,25 @@ impl RoomHandler {
                 let src = format!("refs/heads/{branch}");
                 let head = playbox_git::bundle_import(&repo, &body, &src, &reference).await?;
                 (Response::Pushed { reference, head }, Vec::new())
+            }
+            Request::RunTask { base, spec } if self.cfg.workspace.is_some() => {
+                let runner = self.cfg.runner.clone().ok_or_else(|| anyhow!("this room runs no tasks"))?;
+                let _permit = self.tasks.acquire().await?;
+                let short: String = from.to_string().chars().take(16).collect();
+                let branch = format!("members/{short}");
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                let mut repo = self.cfg.workspace.as_ref().expect("checked").lock().await;
+                if repo.head(&branch).is_err() {
+                    repo.fork(&branch, &base)?;
+                }
+                let mut ws = repo.workspace(&branch)?;
+                let run = playbox_runner::workspace::run_in_workspace(&mut repo, &mut ws, runner.as_ref(), &spec, &from.to_string(), &format!("rpc-{now}"), now).await?;
+                if !run.conflicts.is_empty() {
+                    bail!("conflict on {:?}", run.conflicts);
+                }
+                // The commit stays on the host (branch `members/<id>`); the response body is empty
+                // until the wire format can carry a commit id.
+                (Response::TaskDone { runner: runner.name().into(), output: run.output }, Vec::new())
             }
             Request::RunTask { base, spec } => {
                 let repo = repo()?;
