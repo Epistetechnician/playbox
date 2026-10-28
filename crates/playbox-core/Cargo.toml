@@ -8,3 +8,5 @@ license.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 thiserror.workspace = true
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+sha2 = "0.10"

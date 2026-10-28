@@ -21,7 +21,7 @@ use a2a::{
     Part, Role, SendMessageRequest, SendMessageResponse, Task, TaskState,
 };
 use ed25519_dalek::SigningKey;
-use playbox_core::attest::{self, Measurements, PlatformVerifier, Tier, Verified};
+use playbox_core::attest::{self, Measurements, PlatformProvider, PlatformVerifier, Tier, Verified};
 use playbox_runner::{Isolation, Limits, Runner, TaskOutput, TaskSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -206,6 +206,10 @@ pub struct HostConfig {
     /// each member gets a branch `members/<id>` forked from it, and every task becomes one commit
     /// there (readable through this handle). Tasks serialise on this lock. Takes precedence over `repo`.
     pub workspace: Option<Arc<tokio::sync::Mutex<playbox_core::workspace::Repo>>>,
+    /// Hardware evidence (a TPM quote, a Secure Enclave signature) to attach to attestations. Without
+    /// one, attestations are self-signed and achieve at most T0. If the provider fails at request
+    /// time the host logs it and answers with a plain statement rather than breaking the room.
+    pub platform: Option<Arc<dyn PlatformProvider>>,
 }
 
 impl Default for HostConfig {
@@ -217,6 +221,7 @@ impl Default for HostConfig {
             limits: Limits::default(),
             grant_ttl: None,
             workspace: None,
+            platform: None,
         }
     }
 }
@@ -234,6 +239,7 @@ struct RoomHandler {
     /// connection it already authenticated.
     attest_key: Arc<SigningKey>,
     measurements: Arc<Measurements>,
+    platform: Option<Arc<dyn PlatformProvider>>,
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -323,8 +329,30 @@ impl RoomHandler {
                     return Err(A2AError::invalid_params("`nonce` must be at most 64 hex characters").to_jsonrpc_error());
                 }
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-                let st = attest::new_statement(&self.attest_key, nonce, "", now, (*self.measurements).clone());
-                let text = st.sign(&self.attest_key).map_err(|e| A2AError::internal(e).to_jsonrpc_error())?;
+                let plain = || {
+                    attest::new_statement(&self.attest_key, nonce, "", now, (*self.measurements).clone())
+                        .sign(&self.attest_key)
+                        .map_err(|e| A2AError::internal(e).to_jsonrpc_error())
+                };
+                let text = match &self.platform {
+                    None => plain()?,
+                    Some(p) => {
+                        // Talking to hardware blocks (a TPM quote takes a moment), so keep it off the runtime threads.
+                        let (key, m, p, nonce) = (self.attest_key.clone(), (*self.measurements).clone(), p.clone(), nonce.to_string());
+                        let made = tokio::task::spawn_blocking(move || attest::new_platform_statement(&key, &nonce, "", now, m, p.as_ref())).await;
+                        match made {
+                            Ok(Ok(t)) => t,
+                            Ok(Err(e)) => {
+                                eprintln!("playbox: platform attestation failed, answering with a plain statement: {e}");
+                                plain()?
+                            }
+                            Err(e) => {
+                                eprintln!("playbox: platform attestation task failed: {e}");
+                                plain()?
+                            }
+                        }
+                    }
+                };
                 Ok(json!({ "statement": text }))
             }
             wire::METHOD_JOIN => {
@@ -609,6 +637,7 @@ impl Host {
             card: Arc::new(serde_json::to_value(card).context("agent card")?),
             attest_key,
             measurements,
+            platform: cfg.platform.clone(),
             cfg,
         };
         let router = Router::builder(endpoint).accept(ALPN, handler).spawn();

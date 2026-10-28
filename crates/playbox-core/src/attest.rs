@@ -121,6 +121,21 @@ impl Statement {
         Ok(s)
     }
 
+    /// What platform evidence must be bound to: a digest of the statement *except* the evidence itself
+    /// (which would be circular) and the claimed tier (which is only a cap that verifiers re-derive
+    /// from the evidence). Hardware signs or quotes this, so the evidence cannot be moved to another
+    /// subject, nonce, history position, set of measurements or platform kind.
+    pub fn binding(&self) -> [u8; 32] {
+        let mut unbound = self.clone();
+        unbound.platform_evidence = String::new();
+        unbound.claimed = Tier::T0;
+        let body = unbound.body().unwrap_or_default();
+        let mut h = blake3::Hasher::new();
+        h.update(b"playbox.binding.v1\n");
+        h.update(body.as_bytes());
+        *h.finalize().as_bytes()
+    }
+
     /// The signed text form: body lines followed by `sig <hex>`.
     pub fn sign(&self, key: &SigningKey) -> Result<String, String> {
         if key.verifying_key().to_bytes() != self.subject {
@@ -189,12 +204,24 @@ impl Statement {
     }
 }
 
+/// What a platform verifier concluded about some evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlatformVerdict {
+    /// The highest tier the evidence supports.
+    pub tier: Tier,
+    pub notes: Vec<String>,
+    /// Fingerprint of the device key the evidence is about (see [`crate::platform::fingerprint`]).
+    /// Reported even when the key is not trusted, so an operator can decide to pin it.
+    pub device: Option<String>,
+}
+
 /// Checks platform evidence (a TPM quote, a confidential-VM report, ...) and says what tier it supports.
 pub trait PlatformVerifier: Send + Sync {
     /// The `platform` value this verifier handles.
     fn kind(&self) -> &str;
-    /// The highest tier the evidence supports, or why it does not verify.
-    fn verify(&self, statement: &Statement) -> Result<Tier, String>;
+    /// What the evidence supports, or why it does not verify. The evidence must be bound to
+    /// `statement.binding()`; a verifier that does not check that proves nothing.
+    fn verify(&self, statement: &Statement) -> Result<PlatformVerdict, String>;
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +233,8 @@ pub struct Verified {
     pub achieved: Tier,
     /// Why the achieved tier is what it is.
     pub notes: Vec<String>,
+    /// `<kind>:<fingerprint>` of the device key behind verified platform evidence, if any.
+    pub device: Option<String>,
 }
 
 /// Verify a signed statement and work out the tier it achieves.
@@ -213,13 +242,16 @@ pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verifie
     let statement = Statement::parse(text)?;
     let mut notes = vec!["signature valid: the holder of the subject key made these claims".to_string()];
     let mut achieved = Tier::T0;
+    let mut device = None;
     if statement.platform != "none" {
         match verifiers.iter().find(|v| v.kind() == statement.platform) {
             None => notes.push(format!("platform evidence of kind `{}` was not verified: no verifier available", statement.platform)),
             Some(v) => match v.verify(&statement) {
-                Ok(t) => {
-                    achieved = t.min(statement.claimed);
-                    notes.push(format!("`{}` evidence verified, supports {t}", statement.platform));
+                Ok(verdict) => {
+                    achieved = verdict.tier.min(statement.claimed);
+                    notes.push(format!("`{}` evidence verified, supports {}", statement.platform, verdict.tier));
+                    notes.extend(verdict.notes);
+                    device = verdict.device.map(|d| format!("{}:{d}", statement.platform));
                 }
                 Err(e) => notes.push(format!("`{}` evidence rejected: {e}", statement.platform)),
             },
@@ -228,7 +260,41 @@ pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verifie
     if statement.claimed > achieved {
         notes.push(format!("claims {} but only {} is supported", statement.claimed, achieved));
     }
-    Ok(Verified { statement, text: text.to_string(), achieved, notes })
+    Ok(Verified { statement, text: text.to_string(), achieved, notes, device })
+}
+
+/// What a platform provider produced for one statement.
+#[derive(Debug, Clone)]
+pub struct Produced {
+    /// Provider-specific evidence text (see the provider's module).
+    pub evidence: String,
+    /// The tier the provider believes the evidence can support.
+    pub claimed: Tier,
+}
+
+/// Produces platform evidence on the machine that holds the hardware.
+pub trait PlatformProvider: Send + Sync {
+    /// The `platform` value written into statements, e.g. `tpm` or `secure-enclave`.
+    fn kind(&self) -> &str;
+    /// Evidence bound to `binding` (see [`Statement::binding`]) about `m`.
+    fn produce(&self, binding: &[u8; 32], m: &Measurements) -> Result<Produced, String>;
+}
+
+/// A signed statement carrying evidence from `provider`.
+pub fn new_platform_statement(
+    key: &SigningKey,
+    nonce: &str,
+    log_head: &str,
+    issued_ms: u64,
+    m: Measurements,
+    provider: &dyn PlatformProvider,
+) -> Result<String, String> {
+    let mut st = new_statement(key, nonce, log_head, issued_ms, m);
+    st.platform = provider.kind().to_string();
+    let produced = provider.produce(&st.binding(), &st.measurements)?;
+    st.claimed = produced.claimed;
+    st.platform_evidence = hex(produced.evidence.as_bytes());
+    st.sign(key)
 }
 
 /// Per-operation minimum tiers a room asks of the machines it trusts.
@@ -314,8 +380,8 @@ mod tests {
         fn kind(&self) -> &str {
             "tpm"
         }
-        fn verify(&self, _: &Statement) -> Result<Tier, String> {
-            if self.1 { Ok(self.0) } else { Err("bad quote".into()) }
+        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
+            if self.1 { Ok(PlatformVerdict { tier: self.0, notes: vec![], device: Some("dev".into()) }) } else { Err("bad quote".into()) }
         }
     }
 
@@ -371,6 +437,28 @@ mod tests {
         assert_eq!(verify(&text, &[&Mock(Tier::T2, true)]).unwrap().achieved, Tier::T2);
         assert_eq!(verify(&text, &[&Mock(Tier::T3, true)]).unwrap().achieved, Tier::T2);
         assert_eq!(verify(&text, &[&Mock(Tier::T1, true)]).unwrap().achieved, Tier::T1);
+    }
+
+    #[test]
+    fn binding_covers_everything_but_the_evidence_and_the_claim() {
+        let k = key(1);
+        let base = stmt(&k);
+        let mut other = base.clone();
+        other.claimed = Tier::T3;
+        other.platform_evidence = "ff".into();
+        assert_eq!(base.binding(), other.binding());
+        for change in [
+            |s: &mut Statement| s.nonce = "cd".into(),
+            |s: &mut Statement| s.log_head = "aa".into(),
+            |s: &mut Statement| s.issued_ms += 1,
+            |s: &mut Statement| s.platform = "tpm".into(),
+            |s: &mut Statement| s.measurements.binary = "other".into(),
+            |s: &mut Statement| s.subject = [9; 32],
+        ] {
+            let mut t = base.clone();
+            change(&mut t);
+            assert_ne!(base.binding(), t.binding());
+        }
     }
 
     #[test]
