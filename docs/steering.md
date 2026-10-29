@@ -125,6 +125,33 @@ room pins the weights manifest hash, so a recipe cannot silently land on a diffe
 - **Scale.** Sweeping every neuron (neuron-explorer's workload) is a GPU job through a faster backend. A room
   should offer *targeted* neuron edits first and leave sweeps to S5.
 
+## 2d. SwaT: a measured latent channel (read 2026-10-29)
+
+Source: [SwaT, arXiv 2610.15095](https://arxiv.org/abs/2610.15095) and [Ar-Kareem/SwaT](https://github.com/Ar-Kareem/SwaT).
+I read the paper's main body, tables and references, and skimmed the repo. I did not run the code or read the
+appendix. Numbers below are the authors' claims.
+
+What it is: a trained mapper (about 300M parameters, under 50M tokens, under one GPU-day per pair) that turns one
+frozen model's KV-cache into another family's, so the receiver decodes without reading the text. Across 10
+cross-family pairs (3B to 32B) the receiver keeps over 90% of its own score. Cross-tokenizer positions are aligned
+through character spans (their eq. 12). Behaviours seen in the sender, such as vision or Chinese ability, partly
+carry over though training used English text only. Limits they state: one mapper per ordered pair, one handoff
+rather than repeated ones, and the transferred cache "may contain information beyond what is explicit in the
+text", with auditability left as future work. The repo has no license and ships no results for its
+`scripts/interp_security/` experiment, which compares refusal behaviour for the sender, the receiver and the
+receiver reading the transferred cache.
+
+| What SwaT offers | Where it fits here | Limits |
+|---|---|---|
+| A real cross-family latent channel to measure | **E6** below: tests the threat row "latent channels bypass text-level checks" instead of only listing it | Needs a GPU to train a mapper and open weights on both ends; this engine is CPU-only and has been run on GPT-2 and a Llama-style layout, and SwaT was not shown on Gemma-2 2B |
+| Cross-tokenizer alignment by character spans | A starting point for **E3** across families | It maps KV-caches, not the residual-stream directions a `SteerSpec` edits, so it does not replace the linear direction map |
+| A refusal-direction analysis across sender, receiver and rendered cache (code only, no published results) | Method reference for **E5** and for guard classes: does a latent channel carry or strip a safety direction | Unverified until someone runs it |
+| A mapper is valid for exactly one pair of weights | Pin it by both weights-manifest hashes, as the `theseus-lab` result in section 2b requires | None |
+
+Cheaper first step: section 2b notes `mesh-intelligence` already has a CPU LatentMAS sidecar. Run E6 there first;
+use SwaT only if cross-family or no-prefill transfer is needed. The repo has no license, so we would ask the
+authors for one or reimplement from the paper; do not copy its code.
+
 ## 3. Architecture (as built)
 
 ```
@@ -291,6 +318,15 @@ prompting. Needs evaluator and lineage wired to steering specs.
 refusal is tested; the audit record for `steer_denied` is written for authorization failures and was not asserted in
 a test.
 
+**E6. Hidden steering through a latent channel.** Agent A runs a steering spec with scope `prompt`, then hands B
+its cache instead of its text (LatentMAS on CPU first; SwaT for cross-family later). B sees no steering text. Also
+run the arm where the text is identical but A is unsteered. Metric: projection of B's activations on the trait
+direction and the E1 judge, against the E1 text-channel result, with the same null-direction percentile controls.
+If B shifts while the text is identical, the effect travels where the broker, taint tracker and receipts cannot
+see it. Report it as a measured gap with its size. Then test the guards: does a refusal direction survive the
+transfer, or does a guarded direction get through unflagged? Needs a mapper trained per model pair, a GPU, and an
+engine that exports the cache. None of that is built.
+
 ## 5. Threat model additions
 
 | Threat | Mitigation (built, with its test) | Remaining gap |
@@ -306,7 +342,7 @@ a test.
 | Receipt forgery or misuse | Host signature; the client checks host key, spec, and exact output bytes; the ceiling is printed on the receipt | An un-attested host can lie about what it ran. Nothing raises the ceiling to `attested` yet. |
 | An imported public recipe carries an unexpected edit | Not built (section 2c): imports are meant to be untrusted and quarantined | Until built, do not import recipes automatically. |
 | Overfitting a sealed holdout | Not built (section 3.5) | Inherent once it is. |
-| Latent channels between agents bypass text-level checks | Not built | Needs its own design. |
+| Latent channels between agents bypass text-level checks | Not built. **E6** (section 4) is the planned measurement; section 2d | Unmeasured. If E6 shows an effect, a latent lane would need a signed, logged text summary beside every cache, and a check that the two agree. |
 
 ## 6. Status and milestones
 
@@ -326,7 +362,7 @@ Not built: the evaluator and lineage wiring for steering specs (E4); the transfe
 detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a pairwise-ratio judge; a GPU
 path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
 
-Out of scope for v1: fine-tuning, weight export, latent channels between agents, frontier models.
+Out of scope for v1: fine-tuning, weight export, latent channels between agents (E6 only measures one, it does not add one to rooms), frontier models.
 
 ## 7. Open questions
 
@@ -337,5 +373,6 @@ Out of scope for v1: fine-tuning, weight export, latent channels between agents,
   host's guard list.
 - Which judge for E1 beyond the probe projection and KL? A pairwise-ratio judge in the style of cardinal-harness is
   the candidate; not built.
+- E6 needs a GPU and a trained mapper per pair. Is the CPU LatentMAS sidecar enough to show the effect, or does it need SwaT-style cross-family transfer? And will the SwaT authors license the code?
 - Whether to publish findings to a public dictionary such as neuronary or keep rooms private; publishing is an
   outward action that should go through a person's approval.
