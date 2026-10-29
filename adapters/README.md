@@ -75,6 +75,6 @@ Set `PLAYBOX_TRANSPORT` in the MCP server's environment to change the default.
 | Agent | Version | Result |
 |---|---|---|
 | Codex | 0.160.1 | `playbox_status` called by the model through `codex exec`; the server's history log shows the call. |
-| OpenCode | 1.19.4 | Config loads and `opencode mcp list` shows playbox connected. A model-driven call was not completed (the OpenAI login there had expired and the free models returned nothing). |
+| OpenCode | 1.19.4 | `playbox_status` called by a model (`opencode-go/glm-5.3-flash`) through `opencode run`; the server's history log shows the call. |
 | Hermes | 0.21.0 | `hermes mcp add` connected and discovered all 19 tools. A model-driven call was not possible (no model credentials configured). |
 | Claude Code | | A headless Claude Code joined a room and ran a task as a second member. |
