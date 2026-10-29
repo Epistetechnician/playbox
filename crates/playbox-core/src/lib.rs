@@ -8,6 +8,7 @@ pub mod memory;
 pub mod platform;
 pub mod receipt;
 pub mod record;
+pub mod steer;
 pub mod taint;
 pub mod tpm_ek;
 pub mod store;
