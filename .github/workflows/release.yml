@@ -1,0 +1,63 @@
+# Build, checksum and sign a release when a tag like v0.1.0 is pushed.
+# Needs the PLAYBOX_RELEASE_KEY secret (hex ed25519 key from `playbox release keygen`) to sign; without it
+# the release is published unsigned and install.sh still checks SHA256SUMS.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-14, os: darwin, arch: arm64 }
+          - { runner: macos-13, os: darwin, arch: x86_64 }
+          - { runner: ubuntu-22.04, os: linux, arch: x86_64 }
+          - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - run: cargo build --release -p playbox-cli
+      - name: Package
+        run: |
+          mkdir out
+          cp target/release/playbox out/playbox
+          tar -czf playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C out playbox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playbox-${{ matrix.os }}-${{ matrix.arch }}
+          path: playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and signature
+        env:
+          PLAYBOX_RELEASE_KEY: ${{ secrets.PLAYBOX_RELEASE_KEY }}
+        run: |
+          cd dist
+          sha256sum playbox-*.tar.gz > SHA256SUMS
+          cd ..
+          if [ -n "$PLAYBOX_RELEASE_KEY" ]; then
+            cargo run --release -q -p playbox-cli -- release sign dist/SHA256SUMS
+          else
+            echo "PLAYBOX_RELEASE_KEY not set: publishing without a signature"
+          fi
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --generate-notes

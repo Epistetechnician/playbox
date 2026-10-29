@@ -1,13 +1,15 @@
 mod cli;
 mod doctor;
 mod python;
+mod release;
 mod rooms;
 mod session;
+mod setup;
 mod trust;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use cli::{Cli, Cmd, SteerCmd};
+use cli::{Cli, Cmd, ReleaseCmd, SteerCmd};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,6 +25,12 @@ async fn main() -> Result<()> {
         Cmd::Call { tool, args, json } => session::call(&tool, &args, json.as_deref()).await,
         Cmd::Mcp => session::mcp().await,
         Cmd::Id => rooms::guest_id(),
+        Cmd::Release(r) => match r {
+            ReleaseCmd::Keygen { out } => release::keygen(&out),
+            ReleaseCmd::Sign { file, key } => release::sign(&file, &key),
+            ReleaseCmd::Verify { file, pubkey, sig } => release::verify(&file, sig.as_deref(), &pubkey),
+        },
+        Cmd::Setup { dry_run, remove, only } => setup::run_setup(setup::Opts { dry_run, remove, only }),
         Cmd::Review { repo, action, into } => trust::review_cmd(&repo, &action, into).await,
         Cmd::Audit { file, tail } => trust::audit_cmd(&file, tail),
         Cmd::Verify { log } => trust::verify(&log),

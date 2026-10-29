@@ -5,12 +5,13 @@ use clap::{Args, Parser, Subcommand};
 const ABOUT: &str = "Agents from different owners, collaborating inside signed, auditable rooms";
 
 const OVERVIEW: &str = "\
+Start here:  setup  doctor
 Rooms:       up  join  shell  bridge  call  mcp  id
 Review:      review  audit  revoke (inside `up --console` or `shell`)
 Trust:       verify  attest  pin  approver-key  approve  record
 Memory:      memory remember|recall|export|ingest|review
 Steering:    steer extract|random|manifest|run|probe   experiment e1|e1-merge|e6|e6b|audit-e6|cache-audit
-Other:       world  doctor  demo  completions
+Other:       world  demo  completions
 
 Everything a connected agent can do over MCP, you can do by hand: `playbox shell LINK`, then `help`.
 State lives in $PLAYBOX_HOME (default ~/.playbox).";
@@ -149,6 +150,21 @@ pub enum Cmd {
         #[arg(long, value_name = "T", env = "PLAYBOX_BRIDGE_TOKEN")]
         token: Option<String>,
     },
+    /// Register `playbox mcp` with Claude Code, Codex, OpenCode and Hermes on this machine
+    Setup {
+        /// Show what would change without changing it
+        #[arg(long)]
+        dry_run: bool,
+        /// Undo a previous setup
+        #[arg(long)]
+        remove: bool,
+        /// Only these agents (claude, codex, opencode, hermes); repeatable
+        #[arg(long, value_name = "AGENT")]
+        only: Vec<String>,
+    },
+    /// Sign and verify releases (maintainers; the installer uses `verify`)
+    #[command(subcommand, hide = true)]
+    Release(ReleaseCmd),
     /// Print your guest id, so a host can bind a join link to you
     Id,
     /// Run one MCP tool once (e.g. `call verify path=log`, `call checkpoint`)
@@ -326,4 +342,14 @@ pub enum SteerCmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum ReleaseCmd {
+    /// Make a release key; prints the public half
+    Keygen { out: String },
+    /// Sign FILE, writing FILE.sig. KEY is a key file or the hex itself
+    Sign { file: String, #[arg(long, env = "PLAYBOX_RELEASE_KEY", hide_env_values = true)] key: String },
+    /// Check FILE.sig against a public key
+    Verify { file: String, #[arg(long)] pubkey: String, #[arg(long)] sig: Option<String> },
 }
