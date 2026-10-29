@@ -399,3 +399,121 @@ async fn special_files_and_deep_nesting_do_not_hang_the_host() {
     assert_eq!(client.echo("alive").await.unwrap(), "alive");
     drop(host);
 }
+
+// ---- disk: a task cannot fill the host while it runs --------------------------------------------
+
+use playbox_runner::Quota;
+
+/// Whether Docker answers within a few seconds. A hung daemon would otherwise stall every test that wants it for a minute.
+fn docker_answers() -> bool {
+    use std::process::Stdio;
+    let Ok(mut child) = Command::new("docker").arg("info").stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                return false;
+            }
+        }
+    }
+}
+
+
+/// A task that writes ~10 MiB every 200 ms for 20 s: a runaway the result-size check alone would only
+/// notice after the fact (or never, if the host's disk filled first).
+const SLOW_WRITER: &str = "i=0; while [ $i -lt 100 ]; do dd if=/dev/zero bs=1048576 count=10 >> quota_probe.bin 2>/dev/null; sleep 0.2; i=$((i+1)); done; echo finished";
+
+async fn quota_member(quota: Quota) -> (Host, playbox_net::Client) {
+    let cfg = HostConfig { repo: Some(repo("quota")), runner: Some(Arc::new(ProcessRunner)), min_isolation: Isolation::None, scratch_quota: quota, ..Default::default() };
+    let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
+    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+    let client = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+    (host, client)
+}
+
+fn leftover_probe_files() -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    if let Ok(top) = std::fs::read_dir(std::env::temp_dir()) {
+        for e in top.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("playbox-")) {
+            if let Ok(inner) = std::fs::read_dir(e.path().join("ws")) {
+                found.extend(inner.flatten().map(|f| f.path()).filter(|p| p.ends_with("quota_probe.bin")));
+            }
+        }
+    }
+    found
+}
+
+#[tokio::test]
+async fn a_task_that_keeps_writing_is_stopped_at_the_quota_and_its_files_are_removed() {
+    let (host, client) = quota_member(Quota { max_bytes: 30 << 20, max_entries: 1000 }).await;
+    let started = std::time::Instant::now();
+    let r = client.run_task("main", TaskSpec { timeout_secs: 60, ..TaskSpec::new(&["sh", "-c", SLOW_WRITER]) }).await;
+    let took = started.elapsed();
+    // A stopped task is not a finished one: the member is refused, and told why.
+    let e = format!("{:#}", r.expect_err("a runaway writer must not come back as a finished task"));
+    assert!(e.contains("scratch quota"), "the member was not told why: {e}");
+    assert!(took < Duration::from_secs(15), "stopping took {took:?}; the writer would have run for 20 s");
+    assert!(leftover_probe_files().is_empty(), "the oversized file was left on the host: {:?}", leftover_probe_files());
+    assert_eq!(client.echo("alive").await.unwrap(), "alive");
+    drop(host);
+}
+
+#[tokio::test]
+async fn a_task_within_the_quota_is_left_alone() {
+    let (host, client) = quota_member(Quota { max_bytes: 30 << 20, max_entries: 1000 }).await;
+    let (_, out, patch) = client
+        .run_task("main", TaskSpec { timeout_secs: 30, ..TaskSpec::new(&["sh", "-c", "dd if=/dev/zero of=ok.bin bs=1048576 count=5 2>/dev/null; sleep 0.6; echo finished"]) })
+        .await
+        .unwrap();
+    assert_eq!(out.exit_code, Some(0), "{out:?}");
+    assert_eq!(out.stdout, "finished\n");
+    assert!(!patch.is_empty());
+    drop(host);
+}
+
+#[tokio::test]
+async fn a_flood_of_tiny_files_is_stopped_by_the_entry_limit() {
+    let (host, client) = quota_member(Quota { max_bytes: 1 << 30, max_entries: 300 }).await;
+    let script = "i=0; while [ $i -lt 5000 ]; do : > f$i; i=$((i+1)); if [ $((i % 100)) -eq 0 ]; then sleep 0.15; fi; done; echo finished";
+    let started = std::time::Instant::now();
+    let r = client.run_task("main", TaskSpec { timeout_secs: 60, ..TaskSpec::new(&["sh", "-c", script]) }).await;
+    let e = format!("{:#}", r.expect_err("a flood of files must be stopped"));
+    assert!(e.contains("files and directories"), "{e}");
+    assert!(started.elapsed() < Duration::from_secs(15), "took {:?}", started.elapsed());
+    drop(host);
+}
+
+/// A Docker container must die with the stopped run, not keep writing to the host's disk.
+#[tokio::test]
+async fn a_stopped_docker_task_leaves_no_container_running() {
+    if !docker_answers() {
+        eprintln!("skipping: docker is not running");
+        return;
+    }
+    let cfg = HostConfig {
+        repo: Some(repo("dockerquota")),
+        runner: Some(Arc::new(playbox_runner::DockerRunner::default())),
+        scratch_quota: Quota { max_bytes: 20 << 20, max_entries: 1000 },
+        ..Default::default()
+    };
+    let Ok(host) = Host::start_with(new_secret_key().unwrap(), true, cfg).await else {
+        eprintln!("skipping: this machine's docker cannot enforce the limits grants promise");
+        return;
+    };
+    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+    let client = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+    let script = "i=0; while [ $i -lt 100 ]; do dd if=/dev/zero bs=1048576 count=10 >> /workspace/quota_probe.bin 2>/dev/null; sleep 0.2; i=$((i+1)); done; echo finished";
+    eprintln!("[docker quota] host up, running the task");
+    let started = std::time::Instant::now();
+    let r = client.run_task("main", TaskSpec { timeout_secs: 60, mem_mib: 128, ..TaskSpec::new(&["sh", "-c", script]) }).await;
+    eprintln!("[docker quota] task call returned after {:?}", started.elapsed());
+    let e = format!("{:#}", r.expect_err("the writer must be stopped, not left to finish or time out"));
+    assert!(e.contains("scratch quota"), "{e}");
+    assert!(started.elapsed() < Duration::from_secs(30), "took {:?}: the quota did not stop the container promptly", started.elapsed());
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let running = Command::new("docker").args(["ps", "--filter", "name=playbox-", "--format", "{{.Names}}"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&running.stdout).trim().is_empty(), "a container is still running: {}", String::from_utf8_lossy(&running.stdout));
+}

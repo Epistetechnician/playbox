@@ -7,6 +7,24 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
+/// Whether Docker answers within a few seconds. A hung daemon would otherwise stall every test that wants it for a minute.
+fn docker_answers() -> bool {
+    use std::process::Stdio;
+    let Ok(mut child) = Command::new("docker").arg("info").stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                return false;
+            }
+        }
+    }
+}
+
+
 /// Two host/guest process pairs at once time out on connect on the dev Mac (cause not found),
 /// so the tests that open rooms take turns.
 static ROOMS: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -277,7 +295,7 @@ fn joining_can_demand_a_tier_the_host_cannot_prove() {
 #[test]
 fn a_room_can_run_member_tasks_in_a_microvm() {
     let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
-    let docker = Command::new("docker").arg("info").output().map(|o| o.status.success()).unwrap_or(false);
+    let docker = docker_answers();
     if playbox_runner::find_helper().is_err() || !docker {
         eprintln!("skipping: libkrun helper or docker unavailable");
         return;

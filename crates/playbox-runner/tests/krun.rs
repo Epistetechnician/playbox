@@ -3,12 +3,30 @@
 use playbox_runner::{find_helper, KrunRunner, Runner, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, process::Command, time::Instant};
 
+/// Whether Docker answers within a few seconds. A hung daemon would otherwise stall every test that wants it for a minute.
+fn docker_answers() -> bool {
+    use std::process::Stdio;
+    let Ok(mut child) = Command::new("docker").arg("info").stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                return false;
+            }
+        }
+    }
+}
+
+
 fn ready() -> Option<KrunRunner> {
     if find_helper().is_err() {
         eprintln!("skipping: playbox-krun-helper not installed (scripts/install-krun.sh)");
         return None;
     }
-    if !Command::new("docker").arg("info").output().map(|o| o.status.success()).unwrap_or(false) {
+    if !docker_answers() {
         eprintln!("skipping: docker is not running (needed to export the root filesystem)");
         return None;
     }
@@ -103,4 +121,17 @@ async fn a_missing_command_is_a_clean_failure_not_a_hang() {
     let w = ws("nocmd");
     let out = r.run(&TaskSpec { timeout_secs: 30, mem_mib: 256, ..TaskSpec::new(&["/no/such/program"]) }, &w).await.unwrap();
     assert!(!out.timed_out && out.exit_code != Some(0), "{out:?}");
+}
+
+#[tokio::test]
+async fn a_guest_filling_its_own_root_is_stopped() {
+    let Some(r) = ready() else { return };
+    let r = r.with_quota(playbox_runner::Quota { max_bytes: 30 << 20, max_entries: 10_000 });
+    let w = ws("rootquota");
+    // /root is on the guest's private root, which is a directory on the host's disk.
+    let script = "i=0; while [ $i -lt 100 ]; do dd if=/dev/zero of=/root/f$i bs=1048576 count=10 2>/dev/null; sleep 0.2; i=$((i+1)); done; echo finished";
+    let started = Instant::now();
+    let e = r.run(&TaskSpec { timeout_secs: 60, ..sh(script) }, &w).await.unwrap_err();
+    assert!(format!("{e:#}").contains("scratch quota"), "{e:#}");
+    assert!(started.elapsed().as_secs() < 25, "took {:?}", started.elapsed());
 }

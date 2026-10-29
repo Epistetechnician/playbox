@@ -14,7 +14,7 @@
 //! gives the guest the host's network access *without* the public-address filtering the PRD wants,
 //! so a guest can reach the host's loopback and LAN. Leave network off on hosts that matter.
 
-use super::{check_spec, run_child, Isolation, Runner, SandboxPolicy, TaskOutput, TaskSpec};
+use super::{check_spec, quota_exceeded, run_child, Isolation, Quota, Runner, SandboxPolicy, TaskOutput, TaskSpec};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use std::{
@@ -33,6 +33,8 @@ pub struct KrunRunner {
     policy: SandboxPolicy,
     helper: PathBuf,
     root: PathBuf,
+    /// How much a guest may write outside `/workspace` (its private root lives on the host's disk).
+    quota: Quota,
     /// Only one rootfs export at a time per process.
     export: Arc<tokio::sync::Mutex<()>>,
 }
@@ -85,8 +87,14 @@ impl KrunRunner {
         Ok(Self::with_helper(policy, find_helper()?))
     }
 
+    /// Limit how much a guest may write outside `/workspace`, where its private root lives on the host's disk.
+    pub fn with_quota(mut self, quota: Quota) -> Self {
+        self.quota = quota;
+        self
+    }
+
     pub fn with_helper(policy: SandboxPolicy, helper: PathBuf) -> Self {
-        Self { policy, helper, root: playbox_home().join("krun"), export: Arc::default() }
+        Self { policy, helper, root: playbox_home().join("krun"), quota: Quota::default(), export: Arc::default() }
     }
 
     async fn docker(args: &[&str]) -> Result<String> {
@@ -216,7 +224,12 @@ impl Runner for KrunRunner {
         }
         cmd.arg("--").args(&spec.cmd);
 
-        let result = run_child(cmd, Duration::from_secs(spec.timeout_secs)).await;
+        // The guest's root is a clone on the host's disk, so a guest writing outside /workspace fills the host.
+        // Watch it; stopping the race kills the helper and so the VM.
+        let result = tokio::select! {
+            r = run_child(cmd, Duration::from_secs(spec.timeout_secs)) => r,
+            why = quota_exceeded(&clone, self.quota) => Err(why),
+        };
         let _ = tokio::fs::remove_dir_all(&clone).await;
         Ok(result.with_context(|| format!("running {}", self.helper.display()))?.0)
     }

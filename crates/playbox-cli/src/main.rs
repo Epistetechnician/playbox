@@ -24,6 +24,8 @@ const HELP: &str = "playbox (scaffold)
                             Callers act as this one member. A non-loopback --listen requires --token.
   record [--kind K] [--log F] [--key F]
                             append stdin as a signed entry to a history log (agent hook target)
+  audit <file> [--tail N]   check a host's audit log (chain and signatures) and show its last N entries (default 20).
+                            `playbox up --state DIR` keeps one at DIR/audit.log; `--audit-log FILE` chooses the file, `-` is stderr
   attest [--log F] [--key F] [--platform auto|none|se|tpm]
                             append a signed attestation of this binary to a history log, with hardware
                             evidence when available (Secure Enclave on macOS, TPM 2.0 on Linux).
@@ -60,7 +62,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--action" | "--arg" | "--ttl" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--allow-host" | "--action" | "--arg" | "--ttl" | "--audit-log" | "--tail" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via") {
                 skip = true;
                 return false;
             }
@@ -96,6 +98,10 @@ async fn main() -> Result<()> {
             approve(&action, &call_args, key_path, opt("--ttl").and_then(|t| t.parse().ok()).unwrap_or(300))
         }
         Some("pin") => pin_cmd(&pos),
+        Some("audit") => match pos.get(1) {
+            Some(path) => audit_cmd(path, opt("--tail").and_then(|n| n.parse().ok()).unwrap_or(20)),
+            None => bail!("usage: playbox audit <file> [--tail N]"),
+        },
         Some("attest") => attest_cmd(log_path, key_path, platform_opt),
         Some("verify") => match pos.get(1) {
             Some(path) => verify(path),
@@ -135,6 +141,8 @@ async fn up(transport: Transport, state: Option<String>, repo: Option<String>, r
     let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> = platform::detect(&store::home()).map_err(anyhow::Error::msg)?.map(std::sync::Arc::from);
     println!("platform attestation: {}", provider.as_ref().map(|p| p.kind()).unwrap_or("none (self-signed only)"));
     let cfg = HostConfig {
+        // A host with a state directory logs into it; one without logs to stderr, so activity is never invisible.
+        audit_log: std::env::args().skip_while(|a| a != "--audit-log").nth(1).map(PathBuf::from).or_else(|| state.is_none().then(|| PathBuf::from("-"))),
         repo: repo.map(PathBuf::from),
         runner: match runtime {
             Some(name) => Some(runner_by_name(&name, SandboxPolicy::default())?),
@@ -251,6 +259,17 @@ fn record(kind: Option<String>, log: Option<String>, key: Option<String>) -> Res
     std::io::Read::read_to_end(&mut std::io::stdin(), &mut payload)?;
     let e = store::append(&log, &key, kind.as_deref().unwrap_or("tool_call"), &payload, store::now_ms())?;
     eprintln!("recorded entry {} in {}", e.seq, log.display());
+    Ok(())
+}
+
+fn audit_cmd(path: &str, tail: usize) -> Result<()> {
+    let p = std::path::Path::new(path);
+    let s = playbox_net::audit::verify(p)?;
+    println!("audit log valid: {} entries, signed by host key {}…", s.entries, &s.host_key[..16]);
+    println!("head {} (keep this elsewhere to detect later truncation)", s.head);
+    for e in playbox_net::audit::tail(p, tail)? {
+        println!("{}", playbox_net::audit::describe(&e));
+    }
     Ok(())
 }
 

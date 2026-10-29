@@ -5,7 +5,7 @@
 //! Not preserved yet: file modes, symlinks and empty directories (the tree stores regular
 //! files only).
 
-use crate::{Runner, TaskOutput, TaskSpec};
+use crate::{run_with_quota, Quota, Runner, TaskOutput, TaskSpec};
 use anyhow::{bail, Context, Result};
 use playbox_core::workspace::{Error as WsError, Id, Repo, Workspace};
 use std::{
@@ -90,13 +90,14 @@ pub async fn run_in_workspace(
     author: &str,
     tool_call: &str,
     time_ms: u64,
+    quota: Quota,
 ) -> Result<WorkspaceRun> {
     let before = repo.files(ws)?;
     let dir = std::env::temp_dir().join(format!("playbox-run-{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
     fs::create_dir_all(&dir).context("scratch dir")?;
     let result = async {
         materialize(&before, &dir)?;
-        let output = runner.run(spec, &dir).await?;
+        let output = run_with_quota(runner, spec, &dir, quota).await?;
         let after = scan(&dir)?;
         anyhow::Ok((output, after))
     }
@@ -148,7 +149,7 @@ mod tests {
     async fn task_changes_become_one_commit_tagged_with_the_tool_call() {
         let mut r = repo();
         let mut ws = r.workspace("main").unwrap();
-        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("echo hi > out.txt; rm a.txt; echo B >> src/b.txt"), "claude", "toolu_9", 5)
+        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("echo hi > out.txt; rm a.txt; echo B >> src/b.txt"), "claude", "toolu_9", 5, Quota::default())
             .await
             .unwrap();
         assert_eq!(run.output.exit_code, Some(0));
@@ -167,7 +168,7 @@ mod tests {
         let mut r = repo();
         let head = r.head("main").unwrap();
         let mut ws = r.workspace("main").unwrap();
-        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("cat a.txt >/dev/null"), "claude", "t", 5).await.unwrap();
+        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("cat a.txt >/dev/null"), "claude", "t", 5, Quota::default()).await.unwrap();
         assert!(run.commit.is_none() && run.changed.is_empty());
         assert_eq!(r.head("main").unwrap(), head);
     }
@@ -176,8 +177,8 @@ mod tests {
     async fn sequential_tasks_see_each_others_changes() {
         let mut r = repo();
         let mut ws = r.workspace("main").unwrap();
-        run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("echo one > step.txt"), "c", "t1", 5).await.unwrap();
-        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("cat step.txt > copy.txt"), "c", "t2", 6).await.unwrap();
+        run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("echo one > step.txt"), "c", "t1", 5, Quota::default()).await.unwrap();
+        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("cat step.txt > copy.txt"), "c", "t2", 6, Quota::default()).await.unwrap();
         let id = run.commit.unwrap();
         assert_eq!(r.read(&id, "copy.txt").unwrap().unwrap(), b"one\n");
         assert_eq!(r.log("main").unwrap().len(), 3);
@@ -187,8 +188,8 @@ mod tests {
     async fn concurrent_tasks_on_the_same_file_conflict() {
         let mut r = repo();
         let (mut w1, mut w2) = (r.workspace("main").unwrap(), r.workspace("main").unwrap());
-        let first = run_in_workspace(&mut r, &mut w1, &ProcessRunner, &sh("echo one > a.txt"), "c1", "t1", 5).await.unwrap();
-        let second = run_in_workspace(&mut r, &mut w2, &ProcessRunner, &sh("echo two > a.txt"), "c2", "t2", 6).await.unwrap();
+        let first = run_in_workspace(&mut r, &mut w1, &ProcessRunner, &sh("echo one > a.txt"), "c1", "t1", 5, Quota::default()).await.unwrap();
+        let second = run_in_workspace(&mut r, &mut w2, &ProcessRunner, &sh("echo two > a.txt"), "c2", "t2", 6, Quota::default()).await.unwrap();
         assert!(first.commit.is_some());
         assert!(second.commit.is_none());
         assert_eq!(second.conflicts, ["a.txt"]);

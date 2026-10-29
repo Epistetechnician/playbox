@@ -5,6 +5,24 @@ use playbox_net::{join_link, new_secret_key, Host, HostConfig};
 use playbox_runner::{find_helper, runner_by_name, Isolation, TaskSpec};
 use std::{path::Path, process::Command, time::Duration};
 
+/// Whether Docker answers within a few seconds. A hung daemon would otherwise stall every test that wants it for a minute.
+fn docker_answers() -> bool {
+    use std::process::Stdio;
+    let Ok(mut child) = Command::new("docker").arg("info").stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                return false;
+            }
+        }
+    }
+}
+
+
 fn git(dir: &Path, args: &[&str]) {
     let out = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -12,7 +30,7 @@ fn git(dir: &Path, args: &[&str]) {
 
 #[tokio::test]
 async fn a_guest_command_runs_in_a_microvm_and_comes_back_as_a_patch() {
-    let docker = Command::new("docker").arg("info").output().map(|o| o.status.success()).unwrap_or(false);
+    let docker = docker_answers();
     if find_helper().is_err() || !docker {
         eprintln!("skipping: libkrun helper or docker unavailable");
         return;

@@ -51,6 +51,8 @@
 | 37 | After a task, git runs only with an explicit `--git-dir` recorded before the task, never against whatever `.git` the task left | A task replaced `.git` and got the host to run its commands (sandbox escape); the directory a task wrote to can name nothing the host trusts | Never |
 | 38 | Before a connection proves itself it may send 64 KiB, must be quick, and counts against connection caps | Anyone with an iroh key can dial; the host used to buffer 256 MiB before checking a grant | A separate, cheaper pre-auth handshake |
 | 39 | The no-token HTTP bridge refuses any request with an `Origin`, any non-loopback `Host`, and any non-JSON content type | A web page could drive a localhost bridge (cross-site POST, DNS rebinding) | Bridge tokens are mandatory |
+| 40 | The audit log is hash-chained and signed by the host key, never records grants, invites or command arguments, and the host refuses to write into a log that fails the check | A log an attacker can quietly edit is worse than none; arguments hold secrets | An external log sink or transparency log |
+| 41 | The task disk quota is a polling watchdog that measures *growth* and kills the sandbox | There is no portable filesystem quota for a bind-mounted directory; growth means a big checkout does not count | Per-task size-limited volumes |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

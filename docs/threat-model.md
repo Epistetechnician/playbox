@@ -89,19 +89,36 @@ trusted. The set only grows. Until a notice arrives a replica still honours the 
 
 ## Resource abuse by members
 A member can: occupy up to 8 connections, run 2 tasks at a time host-wide, and push up to 1 GiB (`max_push_bytes`, per
-member, since the host started). Tasks are bounded by the grant's CPU, memory (when enforced) and time.
+member, since the host started). Tasks are bounded by the grant's CPU, memory (when enforced) and time, and by a **scratch
+quota** (default 1 GiB of growth and 100 000 files or directories) that is watched *while the task runs*: a task past it is
+stopped, its sandbox killed (for Docker, `docker kill` is issued even though the client process is gone), its files removed,
+and the member is told why. The libkrun guest's private root, which lives on the host's disk, is watched the same way.
+*Tests:* `a_task_that_keeps_writing_is_stopped_at_the_quota...`, `a_flood_of_tiny_files...`, the stand-in-docker test
+(`docker_cancel.rs`, which checks the kill without needing a Docker daemon) and a libkrun guest-root test.
+
+## Audit log
+Each host keeps a tamper-evident log (`<state dir>/audit.log`, or `--audit-log FILE`; `-` is stderr). One signed line per
+event: joins and refusals, every denial (with the reason), pulls, pushes, tasks (runner, resources, exit code, duration, the
+program name and a hash of the full command), revocations, refused connections and dropped requests. Lines are chained
+(each holds the hash of the previous) and signed with the host's key, so editing, removing or inserting a line is detected by
+`playbox audit <file>` / `playbox_audit`, and a host will not carry on writing into a log that fails the check.
+Not in it: grants, invites, and command arguments (often secrets). *Limits:* truncating the end of the file is not detectable
+from the file alone (copy the printed `head` somewhere else if that matters), someone who steals the host's key can forge
+entries, and the log records what the host did, not what happened inside a sandbox.
 
 ## Known gaps (not fixed)
 
 1. **libkrun network mode.** If a grant allows network, libkrun's TSI gives the guest the host's network access with no
    public-address filtering: it can reach the host's loopback and LAN. Network is off by default and verified off.
-2. **Disk during a run.** The task's scratch directory has no quota while it runs; a task can fill the host's disk until
-   its timeout. The result is capped afterwards. Use a size-limited filesystem for the scratch directory on shared hosts.
+2. **Disk quota is a watchdog, not a filesystem limit.** It polls every 200 ms, so a task that writes very fast can overshoot
+   by what it writes in that interval (a fast disk: hundreds of MiB) before it is stopped. A size-limited filesystem for the
+   scratch directory is still the stronger answer on shared hosts. The quota does not cover a container's own layer;
+   Docker runs read-only with a 256 MiB `/tmp` for that reason.
 3. **The libkrun helper is not itself sandboxed** on the host (it runs as the user; the VM is the boundary). A VMM bug is a
    host compromise. A `sandbox-exec` profile (macOS) or seccomp (Linux) around the helper would add a layer.
 4. **Members can read the whole repository.** `pull` accepts any ref name, so a member can fetch any branch, tag, or
    another member's pushed branch. Share a repository made for the room, never one with history you need private.
-5. **No audit log on the host.** It prints nothing about who joined or ran what. Add one before relying on it.
+5. **The audit log cannot show truncation or a stolen key** (see above), and nothing ships it off the machine.
 6. **Root key is a plain 0600 file on one machine,** with no rotation or backup. If it is lost nobody can admit members or
    revoke; if it is stolen, all of them can.
 7. **Grants cannot be renewed.** An invite is single-use, so a member whose grant expires (default 1 h) must be re-invited.
@@ -133,7 +150,7 @@ No fuzzing was done. Wire parsers (`serde_json` on request frames, `git bundle` 
 ## Suggested next steps, in order
 
 1. Independent review of the sandbox boundary (section 3) before hosting people you do not know.
-2. A host audit log, and a disk quota for task scratch space.
+2. Ship audit heads (or the log) to a second place, and add a filesystem-level size limit for scratch space.
 3. Fuzz the request parser and bundle import; run `cargo audit` and these exploit tests in CI.
 4. Sandbox the libkrun helper; replace TSI with a filtered network backend.
 5. Per-ref allowlists for `pull`, grant renewal, and root-key backup/rotation.

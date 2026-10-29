@@ -2,6 +2,7 @@
 //!
 //! Peers speak A2A v1 JSON-RPC over iroh streams; see [`wire`] for the binding.
 
+pub mod audit;
 pub mod grants;
 pub mod revoke;
 pub mod transport;
@@ -234,6 +235,12 @@ pub struct HostConfig {
     /// Most git data one member may push in total since the host started (not saved across restarts).
     /// Default 1 GiB. Pushed objects are stored in the room's repository and never deleted automatically.
     pub max_push_bytes: u64,
+    /// How much a task may write while it runs (growth of its working directory). A task past it is stopped
+    /// and its sandbox killed. Default 1 GiB and 100 000 entries.
+    pub scratch_quota: playbox_runner::Quota,
+    /// Where the tamper-evident audit log goes. `None`: `<state dir>/audit.log` for a host opened with a state
+    /// directory, and no log for an ephemeral host. The path `-` means standard error.
+    pub audit_log: Option<PathBuf>,
     /// How long a connection that has not authenticated may take to send its first request, or to send
     /// anything at all. Default 30 s.
     pub idle_timeout: Duration,
@@ -262,6 +269,8 @@ impl Default for HostConfig {
             max_connections: 256,
             max_connections_per_peer: 8,
             max_push_bytes: 1 << 30,
+            scratch_quota: playbox_runner::Quota::default(),
+            audit_log: None,
             idle_timeout: Duration::from_secs(30),
             repo: None,
             runner: None,
@@ -279,6 +288,7 @@ struct RoomHandler {
     cfg: HostConfig,
     tasks: Arc<Semaphore>,
     conns: Arc<Semaphore>,
+    audit: Arc<audit::Audit>,
     peer_conns: Arc<Mutex<HashMap<EndpointId, usize>>>,
     pushed: Arc<Mutex<HashMap<EndpointId, u64>>>,
     /// Bounds concurrent calls into platform hardware, which anyone may trigger without a grant.
@@ -439,7 +449,13 @@ impl RoomHandler {
                 let invite = params.get("invite").and_then(Value::as_str).ok_or_else(|| {
                     A2AError::invalid_params("missing `invite`").to_jsonrpc_error()
                 })?;
-                self.join(from, invite.to_string()).map_err(unauthorized)
+                let joined = self.join(from, invite.to_string());
+                self.audit.record(
+                    "join",
+                    Some(&from.to_string()),
+                    json!({ "ok": joined.is_ok(), "reason": joined.as_ref().err().map(|e| audit::clip(&format!("{e:#}"))) }),
+                );
+                joined.map_err(unauthorized)
             }
             methods::SEND_MESSAGE => {
                 let req: SendMessageRequest = serde_json::from_value(params).map_err(invalid)?;
@@ -506,12 +522,64 @@ impl RoomHandler {
                 )
             }
             Some(Op::Echo { text }) => return reply(text),
-            Some(Op::Pull { refname }) => finish(self.pull(&refname).await),
-            Some(Op::Push { branch }) => finish(self.push(from, &branch, wire::raw_part(msg)).await),
-            Some(Op::Run { base, spec }) => finish(self.run(from, &base, spec).await),
+            Some(Op::Pull { refname }) => {
+                let t0 = std::time::Instant::now();
+                let r = self.pull(&refname).await;
+                self.audit_op(from, "pull", &r, t0, json!({ "ref": audit::clip(&refname) }));
+                finish(r)
+            }
+            Some(Op::Push { branch }) => {
+                let t0 = std::time::Instant::now();
+                let bytes = wire::raw_part(msg).map(<[u8]>::len);
+                let r = self.push(from, &branch, wire::raw_part(msg)).await;
+                self.audit_op(from, "push", &r, t0, json!({ "branch": audit::clip(&branch), "bytes": bytes }));
+                finish(r)
+            }
+            Some(Op::Run { base, spec }) => {
+                let t0 = std::time::Instant::now();
+                // Arguments often hold secrets, so the log keeps the program, how many arguments, and a hash.
+                let mut h = blake3::Hasher::new();
+                for a in &spec.cmd {
+                    h.update(a.as_bytes());
+                    h.update(&[0]);
+                }
+                let details = json!({
+                    "base": audit::clip(&base),
+                    "program": spec.cmd.first().map(|c| audit::clip(c)),
+                    "args": spec.cmd.len().saturating_sub(1),
+                    "cmd_hash": h.finalize().to_hex().chars().take(16).collect::<String>(),
+                    "image": audit::clip(&spec.image),
+                    "cpus": spec.cpus, "mem_mib": spec.mem_mib, "timeout_secs": spec.timeout_secs, "network": spec.network,
+                });
+                let r = self.run(from, &base, spec).await;
+                self.audit_op(from, "task", &r, t0, details);
+                finish(r)
+            }
         };
         self.remember(from, &task);
         SendMessageResponse::Task(task)
+    }
+
+    /// Record how a pull, push or task went, from the task it produced or the error that stopped it.
+    fn audit_op(&self, from: EndpointId, event: &str, result: &Result<Task>, started: std::time::Instant, mut details: Value) {
+        let Some(obj) = details.as_object_mut() else { return };
+        obj.insert("ms".into(), json!(started.elapsed().as_millis() as u64));
+        match result {
+            Ok(t) => {
+                obj.insert("ok".into(), json!(true));
+                obj.insert("state".into(), json!(format!("{:?}", t.status.state)));
+                for (key, out) in [("exitCode", "exit_code"), ("timedOut", "timed_out"), ("runner", "runner"), ("commit", "commit"), ("reference", "reference")] {
+                    if let Some(v) = wire::meta(t, key) {
+                        obj.insert(out.into(), v.clone());
+                    }
+                }
+            }
+            Err(e) => {
+                obj.insert("ok".into(), json!(false));
+                obj.insert("reason".into(), json!(audit::clip(&format!("{e:#}"))));
+            }
+        }
+        self.audit.record(event, Some(&from.to_string()), details);
     }
 
     fn repo(&self) -> Result<PathBuf> {
@@ -565,7 +633,7 @@ impl RoomHandler {
                 repo.fork(&branch, base)?;
             }
             let mut wsp = repo.workspace(&branch)?;
-            let run = playbox_runner::workspace::run_in_workspace(&mut repo, &mut wsp, runner.as_ref(), &spec, &from.to_string(), &format!("rpc-{now}"), now).await?;
+            let run = playbox_runner::workspace::run_in_workspace(&mut repo, &mut wsp, runner.as_ref(), &spec, &from.to_string(), &format!("rpc-{now}"), now, self.cfg.scratch_quota).await?;
             if !run.conflicts.is_empty() {
                 bail!("conflict on {:?}", run.conflicts);
             }
@@ -583,7 +651,7 @@ impl RoomHandler {
             let commit = playbox_git::rev_parse(&repo, base).await?;
             let wt = playbox_git::worktree_add(&repo, &commit).await?;
             let result = async {
-                let output = runner.run(&spec, wt.path()).await?;
+                let output = playbox_runner::run_with_quota(runner.as_ref(), &spec, wt.path(), self.cfg.scratch_quota).await?;
                 let patch = playbox_git::diff_patch(&wt, &commit).await?;
                 anyhow::Ok((output, patch))
             }
@@ -622,7 +690,18 @@ impl RoomHandler {
         let public = wire::is_public(&frame.rpc.method);
         match self.route(from, &frame).await {
             Ok(v) => (JsonRpcResponse::success(id, v), !public),
-            Err(e) => (JsonRpcResponse::error(id, e), false),
+            Err(e) => {
+                if !public {
+                    // Denials and failures of anything that needed a grant or invite. The text is clipped and
+                    // contains no token: Biscuit errors name the failed check, not the token.
+                    self.audit.record(
+                        "refused",
+                        Some(&from.to_string()),
+                        json!({ "method": audit::clip(&frame.rpc.method), "code": e.code, "reason": audit::clip(&e.message) }),
+                    );
+                }
+                (JsonRpcResponse::error(id, e), false)
+            }
         }
     }
 }
@@ -661,12 +740,15 @@ impl ProtocolHandler for RoomHandler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         // Anyone with an iroh identity can dial this, so everything before authentication is bounded:
         // how many connections, how long they may stay silent, and how much they may make us read.
+        let from = conn.remote_id();
+        let who = from.to_string();
         let Ok(_slot) = self.conns.clone().try_acquire_owned() else {
+            self.audit.record("conn_refused", Some(&who), json!({ "why": "host is at its connection limit" }));
             conn.close(2u32.into(), b"too many connections");
             return Ok(());
         };
-        let from = conn.remote_id();
         let Some(_peer_slot) = PeerSlot::take(&self.peer_conns, from, self.cfg.max_connections_per_peer) else {
+            self.audit.record("conn_refused", Some(&who), json!({ "why": "too many connections from this identity" }));
             conn.close(2u32.into(), b"too many connections from this identity");
             return Ok(());
         };
@@ -679,6 +761,7 @@ impl ProtocolHandler for RoomHandler {
             };
             let Ok(Ok((mut send, mut recv))) = tokio::time::timeout(patience, conn.accept_bi()).await else { break };
             let Ok(Ok(bytes)) = tokio::time::timeout(patience, recv.read_to_end(cap)).await else {
+                self.audit.record("request_dropped", Some(&who), json!({ "why": "too large or too slow", "limit_bytes": cap, "authenticated": authenticated }));
                 conn.close(1u32.into(), b"request too large or too slow");
                 return Ok(());
             };
@@ -716,6 +799,7 @@ enum Root {
 }
 
 pub struct Host {
+    audit: Arc<audit::Audit>,
     router: Router,
     state: Arc<Mutex<State>>,
     auth: Arc<Authority>,
@@ -741,6 +825,8 @@ impl Host {
         let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
         let root_seed = load_or_create_seed(&dir.join("root.key"))?;
         let state = State::load(&dir.join("state.json"))?;
+        let mut cfg = cfg;
+        cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
     }
 
@@ -757,6 +843,8 @@ impl Host {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
         let state = State::load(&dir.join("state.json"))?;
+        let mut cfg = cfg;
+        cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         Self::build(secret, transport.into(), cfg, Root::Verifier(root_public), state).await
     }
 
@@ -774,6 +862,26 @@ impl Host {
             r.preflight().await.with_context(|| format!("runner {} is not usable", r.name()))?;
         }
         let attest_key = Arc::new(SigningKey::from_bytes(&secret.to_bytes()));
+        let audit = Arc::new(match &cfg.audit_log {
+            None => audit::Audit::off((*attest_key).clone()),
+            Some(p) if p.as_os_str() == "-" => audit::Audit::stderr((*attest_key).clone()),
+            Some(p) => audit::Audit::open(p, (*attest_key).clone())?,
+        });
+        audit.record(
+            "host_start",
+            None,
+            json!({
+                "host_key": attest_key.verifying_key().to_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+                "version": env!("CARGO_PKG_VERSION"),
+                "transport": transport.label(),
+                "runner": cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
+                "isolation": cfg.runner.as_ref().map(|r| format!("{:?}", r.isolation())),
+                "repo": cfg.repo.is_some(),
+                "replica": matches!(root, Root::Verifier(_)),
+                "scratch_quota_mib": cfg.scratch_quota.max_bytes >> 20,
+                "max_push_mib": cfg.max_push_bytes >> 20,
+            }),
+        );
         let measurements = Arc::new(attest::measure_self(
             cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
             &format!(
@@ -824,6 +932,7 @@ impl Host {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
             conns: Arc::new(Semaphore::new(cfg.max_connections.max(1))),
+            audit: audit.clone(),
             peer_conns: Arc::default(),
             pushed: Arc::default(),
             platform_calls: Arc::new(Semaphore::new(2)),
@@ -841,7 +950,7 @@ impl Host {
             .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
             .accept(SYNC_ALPN, sync)
             .spawn();
-        Ok(Self { router, state, auth, transport, repl })
+        Ok(Self { audit, router, state, auth, transport, repl })
     }
 
     pub fn addr(&self) -> EndpointAddr {
@@ -890,8 +999,18 @@ impl Host {
         st.apply(&notice, &text);
         st.save();
         drop(st);
+        self.audit.record(
+            "revoke",
+            Some(&id.to_string()),
+            json!({ "grant": notice.grant_id.chars().take(8).collect::<String>(), "spread": true }),
+        );
         let _ = self.repl.tx.send(text);
         true
+    }
+
+    /// Where this host's audit log is, if it keeps one in a file.
+    pub fn audit_path(&self) -> Option<PathBuf> {
+        self.audit.path().map(std::path::Path::to_path_buf)
     }
 
     /// The room's root public key. Give it to replicas (`Host::open_replica`).

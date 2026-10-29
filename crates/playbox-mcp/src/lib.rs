@@ -116,6 +116,9 @@ pub fn tool_list() -> Value {
                 "min_host_tier": {"type": "string", "description": "Same as playbox_join."},
                 "trust_host_device": {"type": "boolean", "description": "Same as playbox_join."}
             }), &["host"]),
+        tool("playbox_audit",
+            "Host only: check this room's audit log (hash chain and signatures) and show its most recent entries: who joined or was refused, tasks run (program, resources, exit code, a hash of the command, never its arguments), pushes, pulls, revocations. Grants and invites are never in it.",
+            json!({"tail": {"type": "integer", "description": "How many recent entries to show. Default 20."}}), &[]),
         tool("playbox_revoke",
             "Host only: revoke a member's grant and bar their key from rejoining.",
             json!({"member": {"type": "string", "description": "Member id as shown by playbox_status"}}), &["member"]),
@@ -244,6 +247,7 @@ impl Server {
             "playbox_push" => self.push(args).await,
             "playbox_verify" => self.verify(args),
             "playbox_use_host" => self.use_host(args).await,
+            "playbox_audit" => self.audit(args),
             "playbox_revoke" => self.revoke(args),
             other => Err(anyhow!("unknown tool: {other}")),
         };
@@ -627,6 +631,15 @@ impl Server {
             "problems": r.problems,
             "attestations": atts,
         }))
+    }
+
+    fn audit(&self, a: &Value) -> Result<Value> {
+        let host = self.host.as_ref().ok_or_else(|| anyhow!("this sidecar is not hosting a room"))?;
+        let path = host.audit_path().ok_or_else(|| anyhow!("this room keeps no audit log file (start it with a named room)"))?;
+        let tail = a.get("tail").and_then(Value::as_u64).unwrap_or(20).min(200) as usize;
+        let s = playbox_net::audit::verify(&path)?;
+        let recent: Vec<String> = playbox_net::audit::tail(&path, tail)?.iter().map(playbox_net::audit::describe).collect();
+        Ok(json!({"path": path.display().to_string(), "valid": true, "entries": s.entries, "head": s.head, "host_key": s.host_key, "recent": recent}))
     }
 
     fn revoke(&self, a: &Value) -> Result<Value> {
