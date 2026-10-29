@@ -13,6 +13,7 @@ addresses removed, so it could only be reached through the relay.
 | Pi hosts (Docker sandbox), Mac joins and runs a task | Worked. The task failed `test.sh`, a fix was applied, and the re-run passed: 1.2 s end to end. |
 | Mac hosts (libkrun microVM), Pi joins and runs a task | Worked. The guest kernel was Linux 6.12, the network was unreachable, and the Pi's own `uname` was never what ran. 2.8 s. |
 | Mac primary + Pi replica, guest uses the Pi, primary revokes | Worked. The guest switched hosts in 0.3 s, pinged, pulled the Pi's repo and ran a task in the Pi's Docker. After the revocation the Pi refused the grant about 10 ms later, and its state held the signed notice. |
+| Mac hosts (Docker), Hermes v0.21.0 on the Pi joins through the n0 relay only (direct IPs stripped from the link), pulls, delegates a fix and applies the patch | Worked. 27 s for the whole agent run (model: gpt-6-luna). The agent's first command failed (exit 127 on the host) and it recovered with a second one; the host audit log shows join, pull and both tasks. The Pi's default Hermes model was rejected by its Codex login, so the run overrode it with `--provider openai-codex -m gpt-6-luna`. |
 
 **Found by this run and fixed:** Raspberry Pi OS boots with `cgroup_disable=memory`, so Docker silently ignored
 the memory limit while the grant promised one. The Docker runner now refuses to start when memory, process or CPU
@@ -24,4 +25,4 @@ to `/boot/firmware/cmdline.txt` and reboot to enable it.
 - The libkrun runner on Linux/KVM (the Pi has `/dev/kvm`, but libkrun is not packaged for it).
 - A network that actually needs the relay (the two machines shared a LAN, so direct paths were also available).
 - Tier T3 / confidential-VM attestation, and a hardware TPM (a software TPM and the Mac's Secure Enclave were used).
-- Codex, OpenCode and Hermes driving the MCP server (only Claude Code and a scripted client were).
+- Codex and OpenCode driving the MCP server (Claude Code, Hermes and a scripted client have).
