@@ -82,3 +82,16 @@ theorem chain_le_root : ∀ (rest : List Grant) (a : Grant),
     | tail _ hmem => exact Grant.le_trans (chain_le_root rest b hrest g hmem) hba
 
 end Playbox
+
+namespace Playbox
+
+/-- Property 4 (replication): learning of more revocations never authorizes anything new. If every id
+revoked on one host is also revoked on another, whatever the second authorizes the first does too.
+So a host that has heard fewer notices is only ever *more* permissive, never less, and receiving a
+notice (in any order, any number of times) can only shrink what is authorized. -/
+theorem authorizes_mono_revoked {g : Grant} {revoked revoked' : List Nat} {now : Nat} {r : Req}
+    (h : ∀ x, x ∈ revoked → x ∈ revoked') (ha : authorizes g revoked' now r) :
+    authorizes g revoked now r :=
+  ⟨ha.1, fun hmem => ha.2 (h _ hmem)⟩
+
+end Playbox

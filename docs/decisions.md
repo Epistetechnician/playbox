@@ -39,6 +39,10 @@
 | 29 | The libkrun runner spawns a helper process per task | `krun_start_enter` never returns; one process per VM is the only safe shape | libkrun gains a returning start call |
 | 30 | Network is off by removing the vsock device, and `find_helper` prefers the installed signed helper over a freshly built one | Verified: with the device gone the guest has no route; an unsigned helper fails with -22 on macOS | A filtered network backend replaces TSI |
 | 31 | Root filesystems are exported from Docker and cloned per task | Reuses images people already have; clonefile makes a per-task root nearly free | Images are pulled and unpacked natively |
+| 32 | Revocation is a root-signed notice that any host accepts from any source | Authenticity comes from the signature, so gossip and pull need no trust in the carrier | Delegated revokers (a second signing key) |
+| 33 | Gossip for speed plus periodic pull for repair, over a grow-only set | Gossip alone loses messages to offline hosts; a grow-only set makes order and duplicates harmless | Notice volume makes full-list pulls too big |
+| 34 | A host serves notices only to configured sync peers | Notices name revoked members' endpoint ids; strangers need not learn them | A public revocation list is wanted |
+| 35 | Replicas hold only the root public key | A replica compromise cannot admit members or revoke | Replicas that must admit members |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

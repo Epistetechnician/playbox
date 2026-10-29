@@ -16,6 +16,9 @@ const HELP: &str = "playbox (scaffold)
                             join a room (the link says which transport to use unless you override);
                             with --task, run it remotely on REF (default main) and print the patch
   (--local is shorthand for --transport local; PLAYBOX_TRANSPORT sets the default)
+  (multi-host rooms: `up --state DIR` prints the room's root public key and a peer address. Start another host
+   of the same room with `up --state DIR2 --replica-of ROOTKEY`, and give each host the other's address with
+   `--sync-peer ADDR` (repeatable, `--sync-interval SECS`, default 15) so revocations reach every host.)
   bridge <link> [--listen ADDR] [--token T] [--transport T]
                             join a room and serve it to stock A2A HTTP clients (default 127.0.0.1:8787).
                             Callers act as this one member. A non-loopback --listen requires --token.
@@ -52,7 +55,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--replica-of" | "--sync-peer" | "--sync-interval") {
                 skip = true;
                 return false;
             }
@@ -60,7 +63,15 @@ async fn main() -> Result<()> {
         })
         .collect();
     match pos.first().map(|s| s.as_str()) {
-        Some("up") => up(chosen(local, transport.as_deref())?, state, repo, runtime).await,
+        Some("up") => {
+            let all = |name: &str| -> Vec<String> { args.windows(2).filter(|w| w[0] == name).map(|w| w[1].clone()).collect() };
+            let sync = SyncArgs {
+                replica_of: opt("--replica-of"),
+                peers: all("--sync-peer"),
+                interval: opt("--sync-interval").and_then(|v| v.parse().ok()).unwrap_or(15),
+            };
+            up(chosen(local, transport.as_deref())?, state, repo, runtime, sync).await
+        }
         Some("join") => match pos.get(1) {
             Some(link) => join(link, join_choice(local, transport.as_deref())?, task, base).await,
             None => bail!("usage: playbox join <link>"),
@@ -103,7 +114,13 @@ fn join_choice(local: bool, t: Option<&str>) -> Result<TransportChoice> {
     }
 }
 
-async fn up(transport: Transport, state: Option<String>, repo: Option<String>, runtime: Option<String>) -> Result<()> {
+struct SyncArgs {
+    replica_of: Option<String>,
+    peers: Vec<String>,
+    interval: u64,
+}
+
+async fn up(transport: Transport, state: Option<String>, repo: Option<String>, runtime: Option<String>, sync: SyncArgs) -> Result<()> {
     let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> = platform::detect(&store::home()).map_err(anyhow::Error::msg)?.map(std::sync::Arc::from);
     println!("platform attestation: {}", provider.as_ref().map(|p| p.kind()).unwrap_or("none (self-signed only)"));
     let cfg = HostConfig {
@@ -115,12 +132,36 @@ async fn up(transport: Transport, state: Option<String>, repo: Option<String>, r
         platform: provider,
         ..Default::default()
     };
-    let host = match &state {
-        Some(dir) => Host::open(std::path::Path::new(dir), transport.clone(), cfg).await?,
-        None => Host::start_with(new_secret_key()?, transport.clone(), cfg).await?,
+    let host = match (&state, &sync.replica_of) {
+        (Some(dir), Some(root)) => {
+            let bytes = root.trim();
+            if bytes.len() != 64 || !bytes.is_ascii() {
+                bail!("--replica-of takes the room's root public key: 64 hex characters");
+            }
+            let mut key = [0u8; 32];
+            for (i, b) in key.iter_mut().enumerate() {
+                *b = u8::from_str_radix(&bytes[i * 2..i * 2 + 2], 16)?;
+            }
+            Host::open_replica(std::path::Path::new(dir), transport.clone(), cfg, key).await?
+        }
+        (None, Some(_)) => bail!("--replica-of needs --state DIR so the replica keeps its identity and revocations"),
+        (Some(dir), None) => Host::open(std::path::Path::new(dir), transport.clone(), cfg).await?,
+        (None, None) => Host::start_with(new_secret_key()?, transport.clone(), cfg).await?,
     };
-    let link = host.create_link(Duration::from_secs(3600), 1)?;
-    println!("room is up ({}). share this link:\n{}", transport.label(), link.encode());
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    println!("room root public key: {}", hex(&host.root_public()));
+    println!("peer address (for other hosts' --sync-peer): {}", playbox_net::encode_peer(&host.addr()));
+    if !sync.peers.is_empty() {
+        let peers = sync.peers.iter().map(|p| playbox_net::decode_peer(p)).collect::<Result<Vec<_>>>()?;
+        host.enable_revocation_sync(peers, Duration::from_secs(sync.interval.max(1))).await?;
+        println!("revocation sync on with {} peer(s), pulling every {}s", sync.peers.len(), sync.interval.max(1));
+    }
+    if sync.replica_of.is_some() {
+        println!("replica up ({}): serves the room's grants, cannot admit members; join through the primary.", transport.label());
+    } else {
+        let link = host.create_link(Duration::from_secs(3600), 1)?;
+        println!("room is up ({}). share this link:\n{}", transport.label(), link.encode());
+    }
     println!("(ctrl-c to stop)");
     tokio::signal::ctrl_c().await?;
     host.shutdown().await

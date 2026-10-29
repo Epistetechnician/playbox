@@ -63,23 +63,65 @@ pub struct Needs {
 }
 
 pub struct Authority {
-    root: KeyPair,
+    /// The signing half. `None` on a replica, which can verify tokens but never issue them.
+    root: Option<KeyPair>,
+    public: PublicKey,
+    /// Signs revocation notices. The same Ed25519 key as `root` (a test checks that they match).
+    notice_key: Option<ed25519_dalek::SigningKey>,
     room: String,
 }
 
 impl Authority {
     pub fn new(room: &str) -> Self {
-        Self { root: KeyPair::new(), room: room.to_string() }
+        let seed = crate::random_bytes().expect("OS randomness");
+        Self::from_seed(room, &seed).expect("a random seed is a valid key")
     }
 
     /// An authority whose root key comes from a stored 32-byte seed, so tokens survive restarts.
     pub fn from_seed(room: &str, seed: &[u8; 32]) -> Result<Self> {
         let root = KeyPair::from_bytes(seed, Algorithm::Ed25519.into()).map_err(|e| anyhow!("bad root key: {e}"))?;
-        Ok(Self { root, room: room.to_string() })
+        let public = root.public();
+        Ok(Self { root: Some(root), public, notice_key: Some(ed25519_dalek::SigningKey::from_bytes(seed)), room: room.to_string() })
+    }
+
+    /// An authority that only knows the room's public key: it checks tokens and revocation notices
+    /// but cannot mint either.
+    pub fn verifier(room: &str, root_public: &[u8; 32]) -> Result<Self> {
+        let public = PublicKey::from_bytes(root_public, Algorithm::Ed25519.into()).map_err(|e| anyhow!("bad root public key: {e}"))?;
+        Ok(Self { root: None, public, notice_key: None, room: room.to_string() })
+    }
+
+    pub fn can_issue(&self) -> bool {
+        self.root.is_some()
+    }
+
+    fn root(&self) -> Result<&KeyPair> {
+        self.root.as_ref().ok_or_else(|| anyhow!("this host only verifies tokens: it cannot issue invites or grants"))
     }
 
     pub fn public(&self) -> PublicKey {
-        self.root.public()
+        self.public.clone()
+    }
+
+    /// The room's root public key as raw bytes.
+    pub fn public_bytes(&self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&self.public.to_bytes());
+        out
+    }
+
+    /// Sign `data` with the root key; `None` on a replica.
+    pub fn sign_notice(&self, data: &[u8]) -> Option<[u8; 64]> {
+        use ed25519_dalek::Signer;
+        self.notice_key.as_ref().map(|k| k.sign(data).to_bytes())
+    }
+
+    /// Whether `sig` over `data` was made by the room's root key.
+    pub fn verify_notice(&self, data: &[u8], sig: &[u8; 64]) -> bool {
+        use ed25519_dalek::Verifier;
+        ed25519_dalek::VerifyingKey::from_bytes(&self.public_bytes())
+            .and_then(|k| k.verify(data, &ed25519_dalek::Signature::from_bytes(sig)))
+            .is_ok()
     }
 
     /// A bearer invite good for `join` until `now + ttl_secs`. Returns the token and its id.
@@ -95,7 +137,7 @@ impl Authority {
                 params(vec![("room", s(&self.room)), ("nonce", s(&nonce()?)), ("exp", i(now_secs() + ttl_secs))]),
                 HashMap::new(),
             )?
-            .build(&self.root)?;
+            .build(self.root()?)?;
         Ok((token.to_base64()?, hex(&token.revocation_identifiers()[0])))
     }
 
@@ -134,7 +176,7 @@ impl Authority {
                 ]),
                 HashMap::new(),
             )?
-            .build(&self.root)?;
+            .build(self.root()?)?;
         Ok((token.to_base64()?, hex(&token.revocation_identifiers()[0])))
     }
 

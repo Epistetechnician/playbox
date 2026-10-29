@@ -3,8 +3,10 @@
 //! Peers speak A2A v1 JSON-RPC over iroh streams; see [`wire`] for the binding.
 
 pub mod grants;
+pub mod revoke;
 pub mod transport;
 pub mod wire;
+pub use revoke::{Notice, SYNC_ALPN};
 pub use transport::{Transport, TransportChoice};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -27,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use wire::Op;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     io::Read,
     path::PathBuf,
     sync::{
@@ -66,6 +68,22 @@ pub struct Link {
     pub addr: EndpointAddr,
     pub invite: String,
     pub transport: Option<Transport>,
+}
+
+/// A host's address as one copy-pasteable string, for `--sync-peer`.
+pub fn encode_peer(addr: &EndpointAddr) -> String {
+    B64.encode(serde_json::to_vec(addr).expect("EndpointAddr serializes"))
+}
+
+/// Either a full address from [`encode_peer`], or just an endpoint id (64 hex characters). An id alone
+/// lets that host pull notices from us and join the gossip, but we cannot dial it until it contacts us.
+pub fn decode_peer(s: &str) -> Result<EndpointAddr> {
+    let s = s.trim();
+    if let Ok(id) = s.parse::<EndpointId>() {
+        return Ok(EndpointAddr::new(id));
+    }
+    let json = B64.decode(s).context("peer is neither an endpoint id nor an encoded address")?;
+    serde_json::from_slice(&json).context("peer address is not valid")
 }
 
 #[derive(Serialize, Deserialize)]
@@ -113,6 +131,10 @@ struct State {
     revoked: HashSet<String>,
     /// Members who may not rejoin.
     banned: HashSet<EndpointId>,
+    /// Signed revocation notices by grant id: the room's revocations, kept so they can be passed on.
+    notices: BTreeMap<String, String>,
+    /// Notices read from disk, not yet verified. `build` verifies and applies them.
+    pending: Vec<String>,
     /// Where this state is saved after every change, if the host keeps state on disk.
     path: Option<PathBuf>,
 }
@@ -124,6 +146,8 @@ struct Saved {
     members: HashMap<String, String>,
     revoked: Vec<String>,
     banned: Vec<String>,
+    #[serde(default)]
+    notices: Vec<String>,
 }
 
 impl State {
@@ -144,6 +168,7 @@ impl State {
         for b in saved.banned {
             st.banned.insert(id(&b)?);
         }
+        st.pending = saved.notices;
         Ok(st)
     }
 
@@ -156,6 +181,7 @@ impl State {
             members: self.members.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
             revoked: self.revoked.iter().cloned().collect(),
             banned: self.banned.iter().map(ToString::to_string).collect(),
+            notices: self.notices.values().cloned().collect(),
         };
         let tmp = path.with_extension("tmp");
         let result = serde_json::to_vec_pretty(&saved)
@@ -285,6 +311,9 @@ fn finish(result: Result<Task>) -> Task {
 
 impl RoomHandler {
     fn join(&self, from: EndpointId, invite: String) -> Result<Value> {
+        if !self.auth.can_issue() {
+            bail!("this host is a replica and cannot admit members; join through the room's primary host");
+        }
         if self.state.lock().expect("state lock").banned.contains(&from) {
             bail!("this key is banned from the room");
         }
@@ -548,9 +577,22 @@ impl ProtocolHandler for RoomHandler {
     }
 }
 
-async fn bind(secret: SecretKey, transport: &Transport) -> Result<Endpoint> {
+async fn bind(secret: SecretKey, transport: &Transport) -> Result<(Endpoint, iroh::address_lookup::memory::MemoryLookup)> {
+    // The in-memory lookup is how a host learns the addresses of its sync peers.
+    let memory = iroh::address_lookup::memory::MemoryLookup::new();
     let b = transport.configure(transport.builder())?;
-    Ok(b.secret_key(secret).alpns(vec![ALPN.to_vec()]).bind().await?)
+    let ep = b.secret_key(secret).alpns(vec![ALPN.to_vec()]).address_lookup(memory.clone()).bind().await?;
+    Ok((ep, memory))
+}
+
+/// Where a host's authority comes from.
+enum Root {
+    /// A new random root key (not persisted).
+    Fresh,
+    /// A stored root key.
+    Seed([u8; 32]),
+    /// Only the room's public key: a replica.
+    Verifier([u8; 32]),
 }
 
 pub struct Host {
@@ -558,6 +600,7 @@ pub struct Host {
     state: Arc<Mutex<State>>,
     auth: Arc<Authority>,
     transport: Transport,
+    repl: Arc<revoke::Replication>,
 }
 
 impl Host {
@@ -567,7 +610,7 @@ impl Host {
     }
 
     pub async fn start_with(secret: SecretKey, transport: impl Into<Transport>, cfg: HostConfig) -> Result<Self> {
-        Self::build(secret, transport.into(), cfg, None, State::default()).await
+        Self::build(secret, transport.into(), cfg, Root::Fresh, State::default()).await
     }
 
     /// Start a host that keeps its identity, signing key, invites, members and bans in `dir`.
@@ -578,15 +621,31 @@ impl Host {
         let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
         let root_seed = load_or_create_seed(&dir.join("root.key"))?;
         let state = State::load(&dir.join("state.json"))?;
-        Self::build(secret, transport.into(), cfg, Some(root_seed), state).await
+        Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
+    }
+
+    /// Start a **replica**: another host of an existing room. It knows the room's root *public* key,
+    /// so it accepts the room's grants and checks its revocations, but it holds no signing key: it
+    /// cannot admit members, issue grants, or revoke. Give it the same `--sync-peer`s as the primary
+    /// (see [`Host::enable_revocation_sync`]) so revocations reach it.
+    pub async fn open_replica(
+        dir: &std::path::Path,
+        transport: impl Into<Transport>,
+        cfg: HostConfig,
+        root_public: [u8; 32],
+    ) -> Result<Self> {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
+        let state = State::load(&dir.join("state.json"))?;
+        Self::build(secret, transport.into(), cfg, Root::Verifier(root_public), state).await
     }
 
     async fn build(
         secret: SecretKey,
         transport: Transport,
         cfg: HostConfig,
-        root_seed: Option<[u8; 32]>,
-        state: State,
+        root: Root,
+        mut state: State,
     ) -> Result<Self> {
         if let Some(r) = &cfg.runner {
             if r.isolation() < cfg.min_isolation {
@@ -606,7 +665,7 @@ impl Host {
                 cfg.workspace.is_some()
             ),
         ));
-        let endpoint = bind(secret, &transport).await?;
+        let (endpoint, memory) = bind(secret, &transport).await?;
         if !transport.needs_online_wait() {
             // No relay to wait for: wait until the endpoint knows at least one direct address,
             // or links created right after start could carry none.
@@ -622,12 +681,24 @@ impl Host {
                 transport.label()
             );
         }
-        let state = Arc::new(Mutex::new(state));
         let room = endpoint.id().to_string();
-        let auth = Arc::new(match root_seed {
-            Some(seed) => Authority::from_seed(&room, &seed)?,
-            None => Authority::new(&room),
+        let auth = Arc::new(match root {
+            Root::Seed(seed) => Authority::from_seed(&room, &seed)?,
+            Root::Fresh => Authority::new(&room),
+            Root::Verifier(public) => Authority::verifier(&room, &public)?,
         });
+        // Notices read from disk are only believed once they verify against this room's key.
+        for text in std::mem::take(&mut state.pending) {
+            match revoke::Notice::parse(&text, &auth) {
+                Ok(n) => {
+                    state.apply(&n, &text);
+                }
+                Err(e) => eprintln!("playbox: ignoring a stored revocation notice that does not verify: {e:#}"),
+            }
+        }
+        let state = Arc::new(Mutex::new(state));
+        let gossip = iroh_gossip::net::Gossip::builder().spawn(endpoint.clone());
+        let repl = Arc::new(revoke::Replication::new(gossip.clone(), memory));
         let card = wire::agent_card(&room, &transport.label(), cfg.repo.is_some() || cfg.workspace.is_some(), cfg.runner.is_some(), &cfg.limits);
         let handler = RoomHandler {
             state: state.clone(),
@@ -640,8 +711,13 @@ impl Host {
             platform: cfg.platform.clone(),
             cfg,
         };
-        let router = Router::builder(endpoint).accept(ALPN, handler).spawn();
-        Ok(Self { router, state, auth, transport })
+        let sync = revoke::SyncHandler { state: state.clone(), allowed: repl.allowed.clone() };
+        let router = Router::builder(endpoint)
+            .accept(ALPN, handler)
+            .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
+            .accept(SYNC_ALPN, sync)
+            .spawn();
+        Ok(Self { router, state, auth, transport, repl })
     }
 
     pub fn addr(&self) -> EndpointAddr {
@@ -678,17 +754,46 @@ impl Host {
     }
 
     /// Revoke a member's grant (and every attenuation of it) and bar the key from rejoining.
-    /// Takes effect on the member's next request. Returns false for an unknown member.
+    /// Takes effect here on the member's next request, and is signed with the room's root key and
+    /// handed to revocation sync so other hosts of the room apply it too.
+    /// Returns false for an unknown member, or on a replica (which cannot sign).
     pub fn revoke_member(&self, id: &EndpointId) -> bool {
         let mut st = self.state.lock().expect("state lock");
-        let Some(grant_id) = st.members.remove(id) else { return false };
-        st.revoked.insert(grant_id);
-        st.banned.insert(*id);
+        let Some(grant_id) = st.members.get(id).cloned() else { return false };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let notice = revoke::Notice { grant_id, member: id.to_string(), issued_ms: now };
+        let Ok(text) = notice.sign(&self.auth) else { return false };
+        st.apply(&notice, &text);
         st.save();
+        drop(st);
+        let _ = self.repl.tx.send(text);
         true
     }
 
+    /// The room's root public key. Give it to replicas (`Host::open_replica`).
+    pub fn root_public(&self) -> [u8; 32] {
+        self.auth.public_bytes()
+    }
+
+    /// Every signed revocation this host knows of.
+    pub fn revocation_notices(&self) -> Vec<String> {
+        self.state.lock().expect("state lock").notices.values().cloned().collect()
+    }
+
+    /// Start spreading revocations with `peers`, the other hosts of this room.
+    ///
+    /// New notices go out over iroh-gossip; every `interval` this host also asks each peer for all of
+    /// theirs, so a host that was offline or missed a broadcast catches up. Peers are trusted only to
+    /// *carry* notices (each is checked against the room's root key); only they may pull from this host,
+    /// so list this host on theirs too. Call once.
+    pub async fn enable_revocation_sync(&self, peers: Vec<EndpointAddr>, interval: Duration) -> Result<()> {
+        self.repl
+            .start(self.router.endpoint().clone(), self.state.clone(), self.auth.clone(), peers, interval)
+            .await
+    }
+
     pub async fn shutdown(self) -> Result<()> {
+        self.repl.stop();
         self.router.shutdown().await.map_err(|e| anyhow!("{e}"))
     }
 }
@@ -719,7 +824,7 @@ pub struct Client {
 
 impl Client {
     pub async fn connect(addr: EndpointAddr, secret: SecretKey, transport: impl Into<Transport>) -> Result<Self> {
-        let endpoint = bind(secret, &transport.into()).await?;
+        let (endpoint, _) = bind(secret, &transport.into()).await?;
         // A handshake that never completes is retried on the same endpoint: in practice a stuck
         // first attempt is far more common than a host that is really unreachable.
         let mut last = anyhow!("no connection attempt was made");

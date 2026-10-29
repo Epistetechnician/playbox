@@ -22,6 +22,7 @@ pub struct Server {
     host: Option<Host>,
     host_repo: Option<PathBuf>,
     room_name: Option<String>,
+    is_replica: bool,
     runtime_name: Option<String>,
     client: Option<Client>,
     member_id: Option<String>,
@@ -49,6 +50,9 @@ pub fn tool_list() -> Value {
                 "transport": {"type": "string", "description": "How peers reach each other: `iroh` (public relays + discovery, works across NATs; default), `local` (same machine/LAN only), or `relay:<https url>` (your own iroh-relay; set PLAYBOX_RELAY_CA to a PEM file for a private CA). Default can be set with PLAYBOX_TRANSPORT."},
                 "local": {"type": "boolean", "description": "Shorthand for transport=local."},
                 "name": {"type": "string", "description": "Room name. The room's identity, members, bans and unspent invites are kept under this name, so creating it again after a restart brings the same room back. Default: default."},
+                "replica_of": {"type": "string", "description": "Make this sidecar another host of an existing room instead of a new one: the room's root public key (64 hex, from the primary's `root_public_key`). A replica accepts the room's grants and applies its revocations but cannot admit members or revoke; it returns no join link."},
+                "sync_peers": {"type": "array", "items": {"type": "string"}, "description": "Other hosts of this room, to share revocations with: each a `peer_address` from their playbox_create, or just their `host_id`. A primary lists its replicas by host_id (it cannot know their addresses yet); a replica lists the primary by peer_address."},
+                "sync_interval_secs": {"type": "integer", "description": "How often to ask sync peers for revocations a broadcast may have missed. Default 15."},
                 "invite_ttl_secs": {"type": "integer", "description": "How long the link works. Default 3600."},
                 "uses": {"type": "integer", "description": "How many members the link admits. Default 1."}
             }), &[]),
@@ -133,7 +137,7 @@ impl Server {
         let log_path = std::env::var_os("PLAYBOX_LOG")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("history").join(format!("mcp-{}.log", store::now_ms())));
-        Ok(Self { host: None, host_repo: None, room_name: None, runtime_name: None, client: None, member_id: None, workspace: None, log_path, key })
+        Ok(Self { host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, member_id: None, workspace: None, log_path, key })
     }
 
     pub fn log_path(&self) -> &Path {
@@ -249,14 +253,56 @@ impl Server {
                 bail!("room name may only contain letters, digits, - and _");
             }
             let dir = store::home().join("rooms").join(name);
-            self.host = Some(Host::open(&dir, transport, cfg).await?);
+            let host = match s(a, "replica_of") {
+                Some(root) => {
+                    let root = root.trim();
+                    if root.len() != 64 || !root.is_ascii() {
+                        bail!("replica_of must be the room's root public key: 64 hex characters");
+                    }
+                    let mut key = [0u8; 32];
+                    for (i, byte) in key.iter_mut().enumerate() {
+                        *byte = u8::from_str_radix(&root[i * 2..i * 2 + 2], 16)?;
+                    }
+                    Host::open_replica(&dir, transport, cfg, key).await?
+                }
+                None => Host::open(&dir, transport, cfg).await?,
+            };
+            self.is_replica = s(a, "replica_of").is_some();
+            self.host = Some(host);
             self.host_repo = repo;
             self.room_name = Some(name.to_string());
             self.runtime_name = runtime.map(str::to_string);
         }
         let host = self.host.as_ref().expect("host started");
+        let peers: Vec<_> = a
+            .get("sync_peers")
+            .and_then(Value::as_array)
+            .map(|v| v.iter().filter_map(Value::as_str).map(playbox_net::decode_peer).collect::<Result<Vec<_>>>())
+            .transpose()?
+            .unwrap_or_default();
+        if !peers.is_empty() {
+            let every = a.get("sync_interval_secs").and_then(Value::as_u64).unwrap_or(15).max(1);
+            host.enable_revocation_sync(peers, Duration::from_secs(every)).await?;
+        }
+        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let identity = json!({
+            "host_id": host.addr().id.to_string(),
+            "root_public_key": hex(&host.root_public()),
+            "peer_address": playbox_net::encode_peer(&host.addr()),
+        });
+        if self.is_replica {
+            return Ok(json!({
+                "replica": true,
+                "host_id": identity["host_id"],
+                "root_public_key": identity["root_public_key"],
+                "peer_address": identity["peer_address"],
+                "next": "This host serves the room's grants and applies its revocations, but cannot admit members: members join through the primary and can then use this host with the grant they were given."
+            }));
+        }
         let link = host.create_link(Duration::from_secs(ttl), uses)?;
         Ok(json!({
+            "root_public_key": identity["root_public_key"],
+            "peer_address": identity["peer_address"],
             "link": link.encode(),
             "host_id": host.addr().id.to_string(),
             "transport": link.transport.as_ref().map(Transport::label),
@@ -353,6 +399,8 @@ impl Server {
             json!({
                 "repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
                 "members": h.members().iter().map(ToString::to_string).collect::<Vec<_>>(),
+                "replica": self.is_replica,
+                "revocations": h.revocation_notices().len(),
             })
         });
         let guest = self.client.as_ref().map(|_| {

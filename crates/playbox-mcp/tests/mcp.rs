@@ -306,3 +306,54 @@ fn a_room_can_run_member_tasks_in_a_microvm() {
     let (err, body) = fresh.tool("playbox_create", json!({"runtime": "firecracker", "transport": "local"}));
     assert!(err && body.as_str().unwrap().contains("unknown runner"), "{body}");
 }
+
+#[test]
+fn a_revocation_on_the_primary_reaches_a_replica_sidecar() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("replica");
+    let mut primary = Mcp::start(&work.join("p"));
+    let (err, p) = primary.tool("playbox_create", json!({"transport": "local", "name": "team"}));
+    assert!(!err, "{p}");
+    let root = p["root_public_key"].as_str().unwrap().to_string();
+    assert_eq!(root.len(), 64);
+
+    // The replica names the primary as its sync peer and knows only the room's public key.
+    let mut replica = Mcp::start(&work.join("r"));
+    let (err, r) = replica.tool("playbox_create", json!({
+        "transport": "local", "name": "team", "replica_of": root,
+        "sync_peers": [p["peer_address"]], "sync_interval_secs": 1
+    }));
+    assert!(!err, "{r}");
+    assert_eq!(r["replica"], true);
+    assert!(r.get("link").is_none(), "a replica admits no one: {r}");
+    assert_eq!(r["root_public_key"], p["root_public_key"]);
+
+    // The primary then allows its replica (by id: it cannot know the replica's address in advance).
+    let (err, _) = primary.tool("playbox_create", json!({"transport": "local", "name": "team", "sync_peers": [r["host_id"]], "sync_interval_secs": 1}));
+    assert!(!err);
+
+    // A member joins through the primary, who then revokes them.
+    let mut guest = Mcp::start(&work.join("g"));
+    let (err, joined) = guest.tool("playbox_join", json!({"link": p["link"], "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+    let member = joined["member_id"].as_str().unwrap().to_string();
+    let revocations = |m: &mut Mcp| m.tool("playbox_status", json!({})).1["hosting"]["revocations"].as_u64().unwrap();
+    assert_eq!(revocations(&mut replica), 0);
+    let (err, rev) = primary.tool("playbox_revoke", json!({"member": member}));
+    assert!(!err && rev["revoked"] == true, "{rev}");
+    assert_eq!(revocations(&mut primary), 1);
+
+    // Within a few seconds the replica has the signed notice.
+    let mut heard = false;
+    for _ in 0..60 {
+        if revocations(&mut replica) == 1 {
+            heard = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    assert!(heard, "the replica never received the revocation");
+    // A replica cannot revoke: it has no signing key.
+    let (err, body) = replica.tool("playbox_revoke", json!({"member": member}));
+    assert!(err || body["revoked"] == false, "{body}");
+}
