@@ -1,0 +1,2 @@
+{"id": "matmul2", "n": 2, "goal": "lower", "baseline": 8, "literature": 7,
+ "note": "Rank 7 is proven optimal for 2x2 over any field (Winograd 1971), so the frontier here closes at 7; a candidate below 7 is a bug. See matmul3.json for an open target."}

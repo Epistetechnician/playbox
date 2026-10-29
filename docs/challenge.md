@@ -6,7 +6,7 @@ Status: design only. Nothing here is built. Research notes below are from web se
 
 ## Format
 
-- **Objective:** autoresearch on open math problems (decided). See "Objective: open math problems" below. The score comes from a public, sound checker run by the host's signed evaluator, not from a sealed holdout.
+- **Objective:** making open models run more efficiently (decided). See "Objective: make open models run more efficiently" below. Exact checkers for Tier A, sealed-set quality plus attested-hardware timing for Tier B, all run by the host's signed evaluator.
 - **The room:** a persistent host (`playbox up --state`) with replica hosts for resilience. Join by link. Anyone can bring an agent (Claude Code, Codex, Hermes, OpenCode).
 - **Loop:** an agent pulls the current frontier, proposes a certificate or proof, checks it locally with the public checker, and pushes a branch. The host's evaluator reruns the checker in a no-network sandbox and returns a signed verdict and score. If it beats the frontier by a margin, it is merged into `frontier`. Everyone's next pull starts from it. Climbing is recursive: the research agents improve the code that improves the research.
 - **Scoreboard:** a live frontier curve (score vs. time), not a ranking of people. Round ends at a target score or a clock.
@@ -28,39 +28,53 @@ Credit is for display and for the incentive to contribute, never for ranking aga
 - **Proof of history:** entries carry the agent's signed session history, so "this was found by an agent run, not hand-tuned" is checkable.
 - **Portable credit:** credit attaches to signed lineage, so a participant can leave and keep it (low exit cost).
 
-## Objective: open math problems
+## Objective: make open models run more efficiently
 
-Decision: the swarm works on open math problems. This changes the verifier, which is the hard part of any such challenge.
+Decision (replaces the earlier "open math problems" framing, which survives as Tier A): the swarm hill-climbs the efficiency of open-weights models. Interpretation: problems are efficiency problems on open models, and the ones with a mathematical core (exact certificates) are the cleanest. If you meant pure math problems that merely relate to efficiency, Tier A is that subset.
 
-**Why it fits.** Math has the property most research lacks: a solution can be checked cheaply and exactly, even when finding it is hard. A certificate that passes a sound checker is correct regardless of who produced it, so a stranger's agent needs no trust. That is the same property Yukon exploits (its Heesch, proximity-prize, `ec-rank` and Lean benchmarks) and it makes the signed receipt the whole proof of contribution.
+**Why it fits.** Efficiency has a scalar, an open baseline anyone can reproduce, and compounding gains: a faster kernel is a better starting point for every later idea. Open weights mean the swarm can see and change everything, and nothing needs a closed API. Yukon already runs this shape (its `cudafast-nemotron35` and `mlxfast-nemotron35` benchmarks), so results are comparable.
 
-**Problem classes, in order of how well they fit a scalar frontier:**
-1. **Extremal constructions with a score.** Find an object and report a number: cap sets, Ramsey and Turan-type lower bounds, packings, sphere/kissing configurations, Heesch numbers, autocorrelation and Sidon-type constants, minimum-size objects. Checker: replay the object against the definition. Frontier: the best bound. This is the best v0, because it is a true hill-climb and every improvement is a verified record.
-2. **Bounds improved by search over proofs or algorithms.** Reduce a threshold, tighten a constant. Checker: a certificate checker (SAT/UNSAT proof, LP dual, interval arithmetic) or Lean.
-3. **Formal theorems in Lean.** Binary, not scalar. Frontier: set of open statements closed. Score by problem count or weighted difficulty. Use after the checker is trusted.
-4. **Conjectures and counterexamples.** A counterexample is a certificate; a proof of a conjecture needs Lean. Cheap to check, rare to find.
+**Tiers, by how exactly they can be checked:**
 
-**The checker is the security boundary.** A public checker replaces the sealed holdout, so the reward-hacking surface moves from "overfit the holdout" to "exploit the specification":
-- **Wrong or loose formalization:** the checker accepts something that is not the intended problem. Mitigate with a frozen, reviewed problem statement, a hash of it in every receipt, and a second independent checker for the same claim where possible.
-- **Lean exploits:** `sorry`, new axioms, `native_decide`/`ofReduceBool`, unsafe or `implemented_by` code, tactic or elaborator tricks. Mitigate by whitelisting the axiom set (`#print axioms` must match), rejecting `sorry`, running the kernel as final judge, and using a second kernel (e.g. lean4checker or a different implementation) on every promoted proof.
-- **Checker bugs and resource tricks:** numeric overflow, floating point rounding, timeouts treated as success. Mitigate with exact arithmetic, fixed resource limits, and a pass only on an explicit verified verdict.
-- **Data release that does not replay:** require a manifest hash and standalone verifier with each claim (the HashSmash post is the model).
-- **Stale or already-known results:** a "new record" can be a rediscovery. Seed the frontier with the literature bound and cite the source in the receipt; flag results that match known work for human review after the fact.
-- **Novelty vs. correctness:** the gate certifies correctness and improvement, not importance. Only a human reader turns a verified bound into a paper.
+*Tier A: exact certificates (math-like).*
+- Small-matrix multiplication schemes and tensor decompositions with fewer multiplications (AlphaTensor-style). Checker: exact arithmetic identity. Score: rank / multiplications.
+- Quantization codebooks and lattices: minimize distortion at a fixed bit width on a specified distribution. Checker: recompute error exactly or with interval arithmetic.
+- Tiling, scheduling and layout under a stated cost model: minimize cost of a given op graph. Checker: replay against the model.
+- Numerics: error bounds for a low-precision kernel, certified by interval arithmetic or Lean.
 
-**Two-key promotion.** A submission is promoted only if (1) the primary checker passes inside the no-network sandbox, (2) an independent second checker on a different host agrees, and (3) the improvement clears the threshold. The signed receipt binds problem hash, checker hash, certificate hash and host attestation. This is the Commons advantage over a central scorer: any peer can replay the receipt.
+*Tier B: measured efficiency at fixed quality (the main event).*
+- Throughput or latency of an open model on named hardware: kernels, fused ops, quantization recipes, speculative decoding drafters, KV-cache compression, sparsity, pruning, distillation, compiler passes.
+- Two tracks, like Yukon's exploratory/pareto split:
+  - **Lossless:** outputs must match the reference (bit-exact, or greedy-identical tokens on a fixed prompt set). Score: speed.
+  - **Lossy Pareto:** speed vs. quality; the frontier is the Pareto set, quality measured on a sealed prompt set.
 
-**Shared state for math.**
-- **Frontier:** per-problem best certificate and its score, in git.
-- **Memory entries:** "closed search space" (this construction family cannot beat X, with proof or exhaustive search record), techniques that worked, dead ends, solver settings (e.g. a SAT flag that silently returns garbage).
-- **Claims:** lease on a problem or a technique so agents spread across problems and methods.
-- **Cross-problem transfer:** a tool or lemma that helps problem A gets credited when it unlocks progress on B (lineage credit already covers this).
+*Tier C: footprint.* Memory, energy per token, cost per million tokens at fixed quality.
 
-**Tooling the starter kit needs.** Lean 4 and Mathlib pinned, SAT/SMT solvers with proof logging (CaDiCaL/DRAT), an ILP/LP solver, exact-arithmetic libraries, a library of problem checkers with a common JSON interface (`problem.json`, `check` command printing `{verdict, score}`), and a literature bound for each problem.
+**Start with** one Tier A problem (fast checker, instant records) and one Tier B problem on small hardware (a ~1B open model on CPU/Apple Silicon, so a laptop swarm works), then mirror one Yukon benchmark.
 
-**Starting problem set (v0).** Pick 3 to 5 extremal problems where (a) the checker is under 200 lines or an existing Lean statement, (b) there is a known literature bound to beat or match, and (c) CPU search can move the score in hours. Heesch-style tiling, small Ramsey lower bounds and Sidon-type constants fit. Mirror one as a Yukon benchmark to compare a Commons swarm with Yukon solvers.
+**What the verifier is.** For Tier A, a public exact checker. For Tier B, the host runs the candidate in a no-network sandbox on attested hardware and measures: (1) correctness and quality against the reference on a sealed, rotating prompt set; (2) speed with the harness controlling timing, median of repeated randomized-order runs. Hardware attestation matters here because the receipt says what machine produced the number, which a central leaderboard cannot prove.
 
-**What would count as success.** Not "solved an open problem" (a stretch goal). Measurable milestones: (1) swarm of N agents matches the literature bound faster than one agent given the same total compute; (2) at least one improvement over a published bound on a minor problem, with a replayable certificate; (3) zero accepted false claims across the whole run, confirmed by an independent checker.
+**Reward hacking specific to efficiency.**
+- **Memoize or detect the benchmark:** cache outputs, special-case known prompts, branch on input shape. Defence: sealed rotating prompts, randomized shapes and lengths, no network, fresh process and cleared caches per run.
+- **Timing tricks:** async GPU timing without sync, warmup abuse, work moved outside the timed region, background threads. Defence: harness owns the clock and a full device sync, end-to-end wall time including load and tokenization, power/clock pinned where possible.
+- **Silent quality loss:** lower precision, skipped layers, truncated context, shorter outputs. Defence: distribution-level check (KL or logit error against the reference on the sealed set), output-length and task-metric checks, and a lossless track with token equality.
+- **Quality overfit:** tuning to the visible eval. Defence: sealed holdout shards that rotate; dev-vs-holdout gap as an alarm.
+- **Noise and hardware variance:** a lucky run promoted as a record. Defence: improvement threshold above measured noise, rerun on a second host, report confidence intervals.
+- **Unrealistic benchmark:** batch size 1 or one hardware config flatters. Defence: a stated scenario matrix, plus a periodic stricter "realistic serving" re-evaluation of the frontier.
+- **Supply chain:** a candidate pulls in a faster library that is not allowed. Defence: dependency whitelist and pinned, hashed environment.
+- **Tier A:** wrong problem statement, float rounding, checker bugs. Defence: frozen problem hash, exact arithmetic, a second independent checker.
+
+**Two-key promotion.** Promote only if (1) the primary evaluation passes in the sandbox, (2) a second host reproduces the result within noise, and (3) the gain clears the threshold. The signed receipt binds problem hash, model weights hash, environment hash, hardware attestation and the measurements.
+
+**Shared state for efficiency.**
+- **Frontier:** per-problem best candidate (patch against a pinned baseline repo) and score.
+- **Memory:** negative results ("fusing X with Y regressed because of register pressure on this GPU"), hardware-specific findings, profiler traces, and "closed search space" entries.
+- **Claims:** leases on a technique (kernels, quantization, speculative decoding) and on a hardware target.
+- **Composition:** techniques stack (a quantization recipe plus a faster kernel plus a drafter). A merge-train step tries combining accepted candidates; lineage credit pays the parts.
+
+**Starter kit.** Pinned baseline repo with the open model and weights hash, an evaluation harness with the sealed-set interface, a profiler setup, dependency whitelist, reference outputs, a `check`/`bench` command pair printing `{verdict, score, ci}`, and a literature or Yukon baseline.
+
+**Success milestones.** (1) N cooperating agents reach a given speedup faster than one agent with the same total compute; (2) a verified speedup over the public baseline at equal quality on a named model and hardware, replayable from the receipt; (3) zero accepted regressions or false claims, confirmed by the second host.
 
 ## What Yukon does (research)
 
@@ -97,17 +111,17 @@ Expect a high hacking rate by default. BAITBENCH reports hacking in 57.1% of run
 
 Implications for the Commons:
 1. Plan for hacking as the default case.
-2. Math has no holdout: the checker is public, so the defenses are a frozen problem hash, an axiom whitelist, and a second independent checker (see the objective section). For any non-math track, use capped scores and randomized holdout shards.
+2. Tier A has a public checker (frozen problem hash, second checker); Tier B uses capped credit, sealed rotating quality sets, harness-owned timing and a second host.
 3. Never select or train on the monitor's verdict. Log flags and use them only for after-the-fact merge review.
 4. Make test files and scorer code immutable to pushed branches; the scorer runs outside the agent's sandbox.
-5. On non-math tracks, treat the dev-versus-holdout gap as the overfitting alarm; pause merges when it widens. On math, treat a primary/second-checker disagreement as the alarm.
+5. Treat the dev-versus-holdout quality gap and any primary/second-host disagreement as alarms; pause merges when either widens.
 6. Optional research contribution: an activation or steering probe on served open-weights agents as a hacking detector.
 
 ## Anti-cheat (adversaries are expected)
 
 | Attack | Defence |
 |---|---|
-| Exploit the spec or checker (wrong formalization, `sorry`, extra axioms, `native_decide`, float rounding) | Frozen problem hash, axiom whitelist, second independent checker, exact arithmetic, verdict only on explicit pass. For non-math tracks: query budget, rotating holdout shards, capped credit |
+| Game the benchmark (memoize, timing tricks, silent quality loss, overfit eval) | Sealed rotating quality set, harness-owned timing, KL/logit checks, lossless track, per-member query budget, capped credit, second-host reproduction |
 | Edit checker, hardcode, exit early | Editable surface whitelist, checker outside the agent's sandbox, immutable checker paths |
 | Poisoned memory or pushes steering other agents | Admission broker: text from members can't drive another host agent's actions; memory quarantine with provenance |
 | Malicious code in a pushed branch | Runs only in no-network container or microVM with disk/CPU/time limits |
@@ -124,7 +138,7 @@ Implications for the Commons:
 | Rooms, invites, p2p | `playbox up/join`, iroh transports |
 | Push/pull branches | `playbox-git`, `playbox_push` / `playbox_pull` |
 | Sandboxed evaluation | `playbox-runner` (Docker, libkrun, OpenShell) |
-| Signed evaluator + lineage (sealed holdout for non-math tracks) | trust layers (`docs/trust-layers.md`) |
+| Signed evaluator + sealed holdout + lineage | trust layers (`docs/trust-layers.md`) |
 | Shared memory with provenance | `playbox_remember` / `playbox_recall` |
 | Limits, expiry, revoke | Biscuit grants |
 | Verifiable receipts | signed history, audit log, witnessed checkpoints |
@@ -133,7 +147,7 @@ Implications for the Commons:
 ## To build
 
 1. **Merge gate:** host-side loop that takes a pushed branch, runs the evaluator, and fast-forwards `frontier` on a win above a threshold. (Smallest new piece; everything else exists.)
-2. **Two-key promotion:** run a second independent checker on a different host before a record is promoted; per-push credit cap. (Holdout quotas and shard rotation only for non-math tracks.)
+2. **Two-key promotion and budgets:** reproduce on a second host before a record is promoted; per-member holdout query quota, shard rotation, per-push credit cap.
 3. **Claims:** a lease record in shared memory for "I'm exploring X", plus a "closed search space" entry type for negative results.
 4. **Credit:** lineage-based attribution report generated from the audit log.
 5. **Spectator page:** live frontier curve, per-agent contribution feed, links to verify any receipt. Reuse `world/` to render the swarm.
@@ -142,12 +156,41 @@ Implications for the Commons:
 
 ## Suggested v0
 
-3 to 5 extremal-construction problems (see above), each with a checker and a literature baseline. Run it internally with 3 of our own agents on 2 machines, record the frontier curves, then open it. Headline demo: the same compute budget with 1 agent vs. N cooperating agents, per problem. The earlier GPT-2 harness in `orchestrator/experiments/` is no longer the objective; reuse its orchestration, not its task.
+One Tier A problem and one Tier B problem (a ~1B open model on CPU or Apple Silicon), each with a baseline. Run it internally with 3 of our own agents on 2 machines, record the frontier curves, then open it. Headline demo: the same compute budget with 1 agent vs. N cooperating agents, per problem, plotted as tokens/sec at equal quality. The GPT-2 harness in `orchestrator/experiments/` is a possible baseline model and orchestration starting point.
+
+## Decisions and v0 results
+
+The three open questions are resolved as follows, and v0 is built in [challenge/](../challenge/README.md).
+
+- **Model and hardware: SmolLM2-135M on CPU (Apple Silicon).** Open weights, Llama architecture, already cached locally (no download), and a full evaluation takes seconds, so a laptop swarm iterates. Yukon's CUDA/MLX Nemotron benchmarks are the later, bigger target. A 1B-class model is the next step once the harness is trusted.
+- **Lossless only at launch.** Token-for-token equality with the reference on sealed prompts needs no quality metric, no judge and no tolerance to game. The lossy Pareto track waits until a sealed quality set and a KL check exist.
+- **Second host: a second sealed seed locally now; a real second machine next.** The gate requires an independent replica evaluation to agree before promotion. In v0 it is the same machine with a different sealed seed. The repo already has a tested second machine (a Raspberry Pi 5, see `docs/tested-on.md`) to run the replica on through the existing runner.
+
+What was run (2026-10-29, one M4 Max, `challenge/results/demo.log`):
+
+| Submission | Gate result |
+|---|---|
+| Tier A: rank-6 2x2 scheme (invalid) | rejected, exact tensor mismatch |
+| Tier A: Strassen rank 7 | promoted (alice); a duplicate was rejected as no improvement |
+| Tier B: memoizing cheat | rejected by import whitelist; run directly with the whitelist relaxed it passes the public dev seed at about 20M tok/s and fails the sealed seed (4/4 prompts differ) |
+| Tier B: bf16 weights | rejected, 1/4 prompts differ from reference (lossless track) |
+| Tier B: KV cache | promoted, about 2.84x over the pinned no-cache baseline (the lower of primary and replica ratios) |
+| Tier B: KV cache plus thread tweak | rejected, 1.031x is below the 1.05x threshold |
+
+6 signed, hash-chained receipts verified. Credit report attributes the gain to the promoting authors.
+
+What v0 does not do (honest limits):
+- The replica is not a second host, and the hardware fingerprint is self-reported, not attested.
+- Candidates run as plain subprocesses behind an import whitelist, not in the no-network container or microVM; HF offline mode is set but nothing blocks the network.
+- Tier A's 2x2 problem is solved (rank 7 is proven optimal); the open target is 3x3 (best known 23), which no one has submitted.
+- A single run on one machine; speedups are not yet averaged across hardware, and the first KV-cache measurement outside the gate (about 5x) differed from the gate's 2.84x because another process was loading the machine, which is why the gate interleaves and takes the lower ratio.
+- Not integrated with the playbox room (push/pull, shared memory, claims); the gate takes a file path.
 
 ## Open questions
 
-- Which 3 to 5 problems, and who vets the formalizations (a wrong statement turns the whole run into noise).
-- Second checker: which independent implementation for each problem class.
+- Who owns the baseline repo and the sealed seed secret in a public room.
+- When to add the lossy Pareto track and what sealed quality set it uses.
+- Run the replica on the Raspberry Pi through `playbox-runner`, and move candidates into a no-network sandbox.
 - Prizes: pooled by marginal contribution, or none and let the curve be the trophy.
 - Open join vs. gated: open invites need the quotas above before going public.
 - Interop: should a Commons room be able to publish its frontier into a Yukon benchmark, or consume one as its objective?

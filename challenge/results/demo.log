@@ -1,0 +1,18 @@
+REJECT   checker 1: tensor mismatch at (1, 3, 0) receipt=20ba2d107eba
+PROMOTE   receipt=c6e1eb4fc54a
+  computing reference outputs for sealed seed (baseline run)…
+REJECT   primary: disallowed imports: ['json', 'random', 'pathlib'] receipt=662acc970b2f
+REJECT   primary: 1/4 prompts differ from reference receipt=0751fdd49d89
+  computing reference outputs for sealed seed (baseline run)…
+PROMOTE   receipt=04d65ae2acf2
+  computing reference outputs for sealed seed (baseline run)…
+  computing reference outputs for sealed seed (baseline run)…
+REJECT   gain 1.031x over frontier is below threshold 1.05x receipt=efd42b07b4a8
+{
+ "alice": {
+  "b_log_gain": 1.0422567553184123,
+  "a_rank_drop": 1
+ }
+}
+Tier B cumulative speedup over pinned baseline: 2.84 x;  Tier A rank: 7
+receipts verified: 6

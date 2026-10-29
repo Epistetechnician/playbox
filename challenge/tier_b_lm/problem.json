@@ -1,0 +1,4 @@
+{"id": "lm-smollm2-135m-cpu", "model": "HuggingFaceTB/SmolLM2-135M", "device": "cpu (Apple Silicon)", "track": "lossless",
+ "goal": "higher tokens/sec; greedy output must equal the reference token for token on a sealed prompt set",
+ "prompts": 4, "prompt_tokens": 48, "new_tokens": 24, "reps": 2, "threshold": 1.05,
+ "allowed_imports": ["torch", "transformers", "numpy", "math", "typing", "functools", "itertools", "collections", "contextlib"]}

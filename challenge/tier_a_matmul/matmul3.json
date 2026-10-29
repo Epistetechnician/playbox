@@ -1,0 +1,2 @@
+{"id": "matmul3", "n": 3, "goal": "lower", "baseline": 27, "literature": 23,
+ "note": "Best known rank is 23 (Laderman 1976); the lower bound is 19. Matching 23 from scratch is the entry goal, beating it is open."}

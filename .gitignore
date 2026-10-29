@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 world/docs/session_events.jsonl
 world/docs/session.png
+challenge/state/
