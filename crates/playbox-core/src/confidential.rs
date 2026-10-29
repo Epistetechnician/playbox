@@ -68,7 +68,8 @@ impl ConfidentialSpaceVerifier {
             audience: audience.into(),
             images: BTreeSet::new(),
             projects: BTreeSet::new(),
-            models: ["INTEL_TDX".to_string()].into(),
+            // Google reports `GCP_INTEL_TDX` (seen in a token from a real VM); `INTEL_TDX` is the generic name.
+            models: ["GCP_INTEL_TDX".to_string(), "INTEL_TDX".to_string()].into(),
             require_stable: true,
             clock: Box::new(system_secs),
         }
@@ -257,6 +258,36 @@ impl PlatformProvider for ConfidentialSpaceProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A token captured on 2026-10-29 from a real Confidential Space TDX VM (project secops1219, image
+    /// `tests/fixtures/.../digest.txt`, audience `playbox-test`) with Google's signing keys from that day.
+    /// The clock is set inside the token's lifetime so it keeps verifying. Env vars
+    /// `PLAYBOX_CS_TOKEN`, `PLAYBOX_CS_JWKS`, `PLAYBOX_CS_DIGEST` point it at a newer capture.
+    #[test]
+    fn a_real_confidential_space_token_verifies() {
+        let fx = |n: &str| format!("{}/tests/fixtures/confidential-space/{n}", env!("CARGO_MANIFEST_DIR"));
+        let var = |k: &str, n: &str| std::fs::read_to_string(std::env::var(k).unwrap_or_else(|_| fx(n))).unwrap();
+        let (token, jwks, digest) = (var("PLAYBOX_CS_TOKEN", "token.jwt"), var("PLAYBOX_CS_JWKS", "jwks.json"), var("PLAYBOX_CS_DIGEST", "digest.txt"));
+        let (nonce, aud, digest) = ("playbox-binding-test-0123456789".to_string(), "playbox-test".to_string(), digest.trim().to_string());
+        let token = token.trim().to_string();
+        let claims: Value = serde_json::from_slice(&B64.decode(token.split('.').nth(1).unwrap()).unwrap()).unwrap();
+        let exp = claims["exp"].as_u64().unwrap();
+        let v = |d: Option<&str>| {
+            let mut v = ConfidentialSpaceVerifier::new(&aud).with_jwks(&jwks).unwrap().with_clock(move || exp - 60);
+            if let Some(d) = d {
+                v = v.with_image_digest(d);
+            }
+            v
+        };
+        let t1 = v(None).check(&token, &nonce).expect("real token must verify");
+        assert_eq!(t1.tier, Tier::T1, "{:?}", t1.notes);
+        let t3 = v(Some(&digest)).check(&token, &nonce).expect("pinned digest must verify");
+        assert_eq!(t3.tier, Tier::T3, "{:?}", t3.notes);
+        assert!(v(Some("sha256:wrong")).check(&token, &nonce).is_err());
+        assert!(v(None).check(&token, "some-other-nonce-0123456789").is_err());
+        eprintln!("{:?}", t3.notes);
+    }
+
     use crate::attest::{new_statement, verify};
     use ed25519_dalek::SigningKey;
     use rsa::{pkcs1v15::SigningKey as RsaSigner, rand_core::OsRng, signature::{SignatureEncoding, Signer}, traits::PublicKeyParts, RsaPrivateKey};

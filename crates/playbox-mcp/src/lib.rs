@@ -9,6 +9,7 @@ use playbox_core::{
     attest::Tier,
     history::text,
     platform, store,
+    memory::{Kind, MemoryStore, NewEntry},
     taint::{self, Broker, Decision, Policy, Source},
 };
 use playbox_net::{Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
@@ -43,6 +44,9 @@ pub struct Server {
     /// otherwise it only warns.
     guard: Broker,
     enforce: bool,
+    /// Shared memory with provenance, persisted as a JSON array of signed events in `memory_path`.
+    memory: MemoryStore,
+    memory_path: PathBuf,
 }
 
 fn tool(name: &str, desc: &str, props: Value, required: &[&str]) -> Value {
@@ -107,7 +111,10 @@ pub fn tool_list() -> Value {
             }), &["base", "command"]),
         tool("playbox_push",
             "Send a branch from your workspace to the room. It is stored under your own namespace on the host and never overwrites the host's branches.",
-            json!({"branch": {"type": "string"}}), &["branch"]),
+            json!({
+                "branch": {"type": "string"},
+                "capability": {"type": "string", "description": "A single-use approval for exactly this branch name, from `playbox approve`. Needed when the name contains text copied from another member's output."}
+            }), &["branch"]),
         tool("playbox_verify",
             "Verify a history log: hash chain, signatures, and any attestations in it (including the host's, recorded when you joined). Defaults to this session's log. Verified tier T0 means the key holder signed the claims; higher tiers need platform verifiers that are not available yet.",
             json!({"path": {"type": "string"}}), &[]),
@@ -123,8 +130,33 @@ pub fn tool_list() -> Value {
             json!({"tail": {"type": "integer", "description": "How many recent entries to show. Default 20."}}), &[]),
         tool("playbox_revoke",
             "Host only: revoke a member's grant and bar their key from rejoining.",
-            json!({"member": {"type": "string", "description": "Member id as shown by playbox_status"}}), &["member"]),
+            json!({
+                "member": {"type": "string", "description": "Member id as shown by playbox_status"},
+                "capability": {"type": "string", "description": "A single-use approval for exactly this member id, from `playbox approve`. Required when PLAYBOX_APPROVERS is set."}
+            }), &["member"]),
+        tool("playbox_remember",
+            "Save a note, fact, decision or skill to this sidecar's shared memory, signed by your session key. Facts and decisions need evidence (history entry or commit hashes). Entries from other authors are quarantined until a reviewer accepts them.",
+            json!({
+                "kind": {"type": "string", "enum": ["fact", "decision", "note", "skill"]},
+                "topic": {"type": "string"}, "body": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+                "derived_from": {"type": "array", "items": {"type": "string"}},
+                "supersedes": {"type": "string", "description": "Id of an entry this replaces"}
+            }), &["kind", "topic", "body"]),
+        tool("playbox_recall",
+            "List trusted, current memory entries (optionally one kind), plus topics with conflicting entries. Recalled text is tracked, so pasting it into a later command is caught by the admission broker.",
+            json!({"kind": {"type": "string", "enum": ["fact", "decision", "note", "skill"]}}), &[]),
     ])
+}
+
+fn parse_kind(k: &str) -> Result<Kind> {
+    Ok(match k {
+        "fact" => Kind::Fact,
+        "decision" => Kind::Decision,
+        "note" => Kind::Note,
+        "skill" => Kind::Skill,
+        o => bail!("unknown memory kind {o:?}"),
+    })
 }
 
 fn s_arg<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
@@ -167,7 +199,16 @@ impl Server {
         let approvers = taint::parse_approvers(&std::env::var("PLAYBOX_APPROVERS").unwrap_or_default()).map_err(|e| anyhow!("PLAYBOX_APPROVERS: {e}"))?;
         let enforce = !approvers.is_empty();
         let guard = Broker::new(Policy::playbox_default(), approvers, key.clone());
-        Ok(Self { host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, workspace: None, log_path, key, guard, enforce })
+        let me = key.verifying_key().to_bytes();
+        let memory_path = home.join("memory.json");
+        let memory = match std::fs::read(&memory_path) {
+            Ok(raw) => {
+                let log: Vec<String> = serde_json::from_slice(&raw).context("memory.json")?;
+                MemoryStore::replay(&[me], &[], &log).map_err(|e| anyhow!("memory.json: {e}"))?
+            }
+            Err(_) => MemoryStore::new(&[me], &[]),
+        };
+        Ok(Self { memory, memory_path, host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, workspace: None, log_path, key, guard, enforce })
     }
 
     pub fn log_path(&self) -> &Path {
@@ -251,6 +292,8 @@ impl Server {
             "playbox_use_host" => self.use_host(args).await,
             "playbox_audit" => self.audit(args),
             "playbox_revoke" => self.revoke(args),
+            "playbox_remember" => self.remember(args),
+            "playbox_recall" => self.recall(args),
             other => Err(anyhow!("unknown tool: {other}")),
         };
         let result = match out {
@@ -608,11 +651,12 @@ impl Server {
         }))
     }
 
-    async fn push(&self, a: &Value) -> Result<Value> {
+    async fn push(&mut self, a: &Value) -> Result<Value> {
         let branch = req(a, "branch")?;
+        let admission = self.admit("playbox_push", &[branch], s(a, "capability"))?;
         let bundle = playbox_git::bundle_create(self.workspace()?, branch).await?;
         let reference = self.guest()?.push(branch, &bundle).await?;
-        Ok(json!({"stored_as": reference, "bytes": bundle.len()}))
+        Ok(json!({"stored_as": reference, "bytes": bundle.len(), "admission": admission}))
     }
 
     fn verify(&self, a: &Value) -> Result<Value> {
@@ -651,9 +695,43 @@ impl Server {
         Ok(json!({"path": path.display().to_string(), "valid": true, "entries": s.entries, "head": s.head, "host_key": s.host_key, "recent": recent}))
     }
 
-    fn revoke(&self, a: &Value) -> Result<Value> {
+    fn revoke(&mut self, a: &Value) -> Result<Value> {
+        let member = req(a, "member")?;
+        let admission = self.admit("playbox_revoke", &[member], s(a, "capability"))?;
         let host = self.host.as_ref().ok_or_else(|| anyhow!("this sidecar is not hosting a room"))?;
         let id: EndpointId = req(a, "member")?.parse().map_err(|e| anyhow!("not a member id: {e}"))?;
-        Ok(json!({"revoked": host.revoke_member(&id)}))
+        Ok(json!({"revoked": host.revoke_member(&id), "admission": admission}))
+    }
+
+    fn save_memory(&self) -> Result<()> {
+        std::fs::write(&self.memory_path, serde_json::to_vec(self.memory.log())?).context("writing memory.json")
+    }
+
+    fn remember(&mut self, a: &Value) -> Result<Value> {
+        let kind = parse_kind(req(a, "kind")?)?;
+        let list = |k: &str| -> Vec<String> { a.get(k).and_then(Value::as_array).map(|v| v.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default() };
+        let (evidence, derived) = (list("evidence"), list("derived_from"));
+        let (ev, dv): (Vec<&str>, Vec<&str>) = (evidence.iter().map(String::as_str).collect(), derived.iter().map(String::as_str).collect());
+        let text = playbox_core::memory::Entry::sign(
+            NewEntry { kind, topic: req(a, "topic")?, body: req(a, "body")?, evidence: &ev, derived_from: &dv, supersedes: s(a, "supersedes"), time_ms: store::now_ms() },
+            &self.memory.head(),
+            &self.key,
+        )
+        .map_err(|e| anyhow!(e))?;
+        let id = self.memory.apply(&text).map_err(|e| anyhow!("memory refused: {e}"))?;
+        self.save_memory()?;
+        Ok(json!({"id": id, "status": format!("{:?}", self.memory.status(&id))}))
+    }
+
+    fn recall(&mut self, a: &Value) -> Result<Value> {
+        let kind = s(a, "kind").map(parse_kind).transpose()?;
+        let entries: Vec<Value> = self
+            .memory
+            .recall(kind, &mut self.guard.tracker)
+            .into_iter()
+            .map(|e| json!({"id": e.id, "topic": e.topic, "body": e.body, "evidence": e.evidence, "derived_from": e.derived_from}))
+            .collect();
+        let conflicts: Vec<Value> = self.memory.conflicts().into_iter().map(|(x, y)| json!([x, y])).collect();
+        Ok(json!({"entries": entries, "conflicts": conflicts}))
     }
 }

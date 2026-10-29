@@ -1,14 +1,14 @@
 # Trust layers
 
 Five pieces that sit on top of grants, histories and attestation. Each states what it proves and what
-it does not. All are in `playbox-core` and tested; only the first is wired into the MCP server and CLI.
+it does not. All are in `playbox-core` and tested; the broker and memory are wired into the MCP server.
 
 | Piece | Module | Wired into |
 |---|---|---|
 | 1. Admission broker (text from other members cannot drive actions unreviewed) | `taint` | `playbox_delegate`, `playbox approve` |
 | 2. Confidential Space verifier (`tdx`, T3) | `confidential` | `PlatformVerifier` registry, `PLAYBOX_ATTEST=tdx` |
 | 3. Signed evaluator, sealed holdout, variant lineage | `evaluator` | library only |
-| 4. Shared memory with provenance | `memory` | library only |
+| 4. Shared memory with provenance | `memory` | `playbox_remember`, `playbox_recall` |
 | 5. Model receipts and witnessed checkpoints | `receipt`, `witness` | library only |
 
 Shared plumbing: `record` is a small signed-text format (domain line, fields, signer, signature) used by
@@ -36,8 +36,7 @@ stderr and patches are registered as untrusted automatically.
 
 **Does not prove:** detection is lexical (three-word windows and long identifier-like tokens). A model that
 paraphrases an injected instruction passes. The agent also holds the capability string, so it must not hold
-the approver key. This is a speed bump with an audit trail, not a proof of non-influence. Only
-`playbox_delegate` is guarded so far; `push`, `revoke` and others are in the policy but not yet gated.
+the approver key. This is a speed bump with an audit trail, not a proof of non-influence. `playbox_delegate`, `playbox_push` and `playbox_revoke` are guarded; each takes a `capability`.
 
 ## 2. Confidential Space verifier (T3)
 
@@ -53,8 +52,7 @@ The host produces evidence with `PLAYBOX_ATTEST=tdx` (it asks the launcher socke
 is the statement binding). Use a Playbox-specific audience so a leaked token cannot be federated to cloud
 resources.
 
-**Not done:** tested with tokens signed by a local key, **not** a token from a real Confidential Space VM.
-The provider has never run on one. Compare against a real token before relying on this.
+**Tested against a real token:** on 2026-10-29 a `c3-standard-4` TDX Confidential Space VM produced a token that the verifier checks (fixture in `tests/fixtures/confidential-space`, with Google's keys). That found a bug: Google reports the hardware model as `GCP_INTEL_TDX`, which the verifier had rejected. **Still not done:** the provider (`PLAYBOX_ATTEST=tdx`, a host asking the launcher for a token over its statement binding) has not run end to end on a VM, and the fixture token's workload was a stub, not a Playbox host.
 
 ## 3. Verifiable self-improvement
 
@@ -99,5 +97,7 @@ independent of the host.
 ## Not built
 
 Network protocol for collecting cosignatures; receipt collection from real notaries (TLSNotary) or TEE
-proxies; MCP/CLI surface for memory, lineage and receipts; gating `push`/`revoke`; a real Confidential
+proxies; MCP/CLI surface for memory review, lineage and receipts; a real Confidential
 Space run.
+
+Memory in the MCP server: entries are signed by the sidecar's session key (the owner), persisted in `memory.json` under the home directory and replayed on start. Review of other authors' entries and `playbox_use_host`-style sharing across members are not exposed yet.

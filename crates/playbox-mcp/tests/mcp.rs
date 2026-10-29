@@ -520,3 +520,49 @@ fn text_copied_from_a_members_output_needs_a_humans_approval() {
     let (err, replay) = agent.tool("playbox_delegate", json!({"base": "main", "command": copied, "capability": cap}));
     assert!(err && replay.as_str().unwrap().contains("already used"), "{replay}");
 }
+
+/// `playbox_push` goes through the broker too, and memory entries survive a restart, require
+/// evidence for facts, and are traced when recalled.
+#[test]
+fn push_is_gated_and_memory_persists() {
+    use ed25519_dalek::SigningKey;
+    use playbox_core::record::hex;
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("gate-mem");
+    let repo = work.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "h@example.com"]);
+    git(&repo, &["config", "user.name", "h"]);
+    std::fs::write(repo.join("README.md"), "hello\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+
+    let human = SigningKey::from_bytes(&[43; 32]);
+    let mut host = Mcp::start(&work.join("host-home"));
+    let (err, created) = host.tool("playbox_create", json!({"repo": repo, "local": true, "unsafe_process_runner": true}));
+    assert!(!err, "{created}");
+    let link = created["link"].as_str().unwrap().to_string();
+
+    let approvers = hex(&human.verifying_key().to_bytes());
+    let guest_home = work.join("guest-home");
+    let mut agent = Mcp::start_with(&guest_home, &[("PLAYBOX_APPROVERS", &approvers)]);
+    let (err, joined) = agent.tool("playbox_join", json!({"link": link, "local": true, "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+
+    let (err, ran) = agent.tool("playbox_delegate", json!({"base": "main", "command": "echo planted-branch-name-from-a-member-xyz", "timeout_secs": 20}));
+    assert!(!err, "{ran}");
+    let (err, refused) = agent.tool("playbox_push", json!({"branch": "planted-branch-name-from-a-member-xyz"}));
+    assert!(err && refused.as_str().unwrap().contains("needs approval"), "push must be gated: {refused}");
+
+    // Memory: facts need evidence, notes don't; recall returns them; they survive a restart.
+    let (err, bad) = agent.tool("playbox_remember", json!({"kind": "fact", "topic": "build", "body": "uses cargo"}));
+    assert!(err, "a fact without evidence must be refused: {bad}");
+    let (err, saved) = agent.tool("playbox_remember", json!({"kind": "note", "topic": "build", "body": "run cargo test first"}));
+    assert!(!err, "{saved}");
+    drop(agent);
+    let mut agent = Mcp::start_with(&guest_home, &[("PLAYBOX_APPROVERS", &approvers)]);
+    let (err, recalled) = agent.tool("playbox_recall", json!({}));
+    assert!(!err, "{recalled}");
+    assert_eq!(recalled["entries"][0]["body"], "run cargo test first", "{recalled}");
+}
