@@ -26,7 +26,7 @@ async fn start(token: Option<&str>) -> (Host, String) {
     let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None,
         repo: Some(dir),
         runner: Some(Arc::new(ProcessRunner)),
-        limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },
+        limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false, allowed_hosts: vec![] },
         ..Default::default()
     };
     let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();

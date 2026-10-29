@@ -6,12 +6,13 @@ use playbox_runner::{runner_by_name, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, time::Duration};
 
 const HELP: &str = "playbox (scaffold)
-  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun|openshell]
+  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun|openshell] [--allow-host H]...
                             start a room and print a join link (valid 1h, 1 use).
                             T is `iroh` (public relays, default), `local` (same machine/LAN) or
                             `relay:<https url>` (your own iroh-relay; PLAYBOX_RELAY_CA=PEM for a private CA).
                             --state keeps the room's identity, members and bans across restarts.
-                            --repo shares a git repo; --runtime lets members run tasks: libkrun = a microVM per task, docker = a container (--docker is shorthand)
+                            --repo shares a git repo; --runtime lets members run tasks: libkrun = a microVM per task, docker = a container (--docker is shorthand), openshell = an NVIDIA OpenShell sandbox.
+                            --allow-host H (repeatable; `host` or `host:port`) lets members' tasks reach just those hosts; only the openshell runtime enforces it
   join <link> [--transport T] [--task <shell cmd>] [--base REF] [--via <replica peer address>]
                             join a room (the link says which transport to use unless you override);
                             with --task, run it remotely on REF (default main) and print the patch
@@ -149,6 +150,10 @@ async fn up(transport: Transport, state: Option<String>, repo: Option<String>, r
             None => None,
         },
         platform: provider,
+        limits: playbox_runner::Limits {
+            allowed_hosts: std::env::args().collect::<Vec<_>>().windows(2).filter(|w| w[0] == "--allow-host").map(|w| w[1].clone()).collect(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let host = match (&state, &sync.replica_of) {

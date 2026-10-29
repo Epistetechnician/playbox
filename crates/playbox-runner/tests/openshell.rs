@@ -55,3 +55,21 @@ async fn timeout_kills_the_task() {
     let out = r.run(&spec, &ws).await.unwrap();
     assert!(out.timed_out || out.exit_code != Some(0), "{out:?}");
 }
+
+#[tokio::test]
+async fn network_reaches_only_the_allowed_hosts() {
+    if !enabled() {
+        return;
+    }
+    let ws = std::env::temp_dir().join(format!("pb-osh-hosts-{}", std::process::id()));
+    std::fs::create_dir_all(&ws).unwrap();
+    let r = OpenShellRunner::new(SandboxPolicy::default());
+    let script = "wget -q -T 15 -O /dev/null https://example.com && echo ALLOWED_OK; wget -q -T 15 -O /dev/null https://www.wikipedia.org && echo OTHER_OK; echo done";
+    let spec = TaskSpec { allowed_hosts: vec!["example.com".into()], timeout_secs: 90, ..TaskSpec::new(&["sh", "-c", script]) };
+    let out = r.run(&spec, &ws).await.unwrap();
+    assert!(out.stdout.contains("ALLOWED_OK"), "allowed host unreachable: {out:?}");
+    assert!(!out.stdout.contains("OTHER_OK"), "a host outside the list was reachable: {out:?}");
+    // The digest names the exact policy the task ran under.
+    let want = blake3::hash(playbox_runner::openshell_policy_yaml(&spec.allowed_hosts).unwrap().as_bytes()).to_hex().to_string();
+    assert_eq!(out.policy_digest.as_deref(), Some(want.as_str()));
+}

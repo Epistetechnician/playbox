@@ -17,7 +17,7 @@ async fn member_tasks_commit_to_their_own_branch() {
     let repo = Arc::new(Mutex::new(repo));
     let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None,
         runner: Some(Arc::new(ProcessRunner)),
-        limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },
+        limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false, allowed_hosts: vec![] },
         workspace: Some(repo.clone()),
         ..Default::default()
     };

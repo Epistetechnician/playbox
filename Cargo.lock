@@ -3067,6 +3067,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "blake3",
  "playbox-core",
  "serde",
  "tokio",

@@ -27,7 +27,7 @@ async fn room(name: &str, cfg: impl FnOnce(&mut HostConfig)) -> (Host, String) {
     let mut c = HostConfig { min_isolation: playbox_runner::Isolation::None,
         repo: Some(repo(name)),
         runner: Some(Arc::new(ProcessRunner)),
-        limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false },
+        limits: Limits { cpus: 2.0, mem_mib: 1024, timeout_secs: 60, network: false, allowed_hosts: vec![] },
         ..Default::default()
     };
     cfg(&mut c);
@@ -147,4 +147,35 @@ async fn invite_cannot_be_used_as_a_grant() {
     c.set_grant(Link::parse(&link).unwrap().invite);
     let err = c.echo("x").await.unwrap_err();
     assert!(msg(err).contains("not authorized"));
+}
+
+#[tokio::test]
+async fn host_lists_are_checked_against_the_grant_and_the_runner() {
+    let (_host, link) = room("hosts", |c| c.limits.allowed_hosts = vec!["api.github.com".into()]).await;
+    let c = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+
+    // A host the grant does not list is refused by authorization, even alongside a listed one.
+    for hosts in [vec!["evil.example"], vec!["api.github.com", "evil.example"], vec!["api.github.com:8443"]] {
+        let spec = TaskSpec { allowed_hosts: hosts.iter().map(|h| h.to_string()).collect(), ..TaskSpec::new(&["true"]) };
+        assert!(msg(c.run_task("main", spec).await.unwrap_err()).contains("not authorized"));
+    }
+    // A listed host passes the grant, but ProcessRunner cannot enforce a host list, so the runner refuses
+    // rather than quietly running with the network wide open.
+    let spec = TaskSpec { allowed_hosts: vec!["api.github.com".into()], ..TaskSpec::new(&["true"]) };
+    assert!(msg(c.run_task("main", spec).await.unwrap_err()).contains("cannot limit a task to specific hosts"));
+
+    // A member can narrow a grant offline to no hosts at all.
+    // ("" is the always-present placeholder every request carries; see grants.rs.)
+    c.attenuate(r#"check all req_host($h), [""].contains($h);"#).unwrap();
+    let spec = TaskSpec { allowed_hosts: vec!["api.github.com".into()], ..TaskSpec::new(&["true"]) };
+    assert!(msg(c.run_task("main", spec).await.unwrap_err()).contains("not authorized"));
+}
+
+#[tokio::test]
+async fn no_hosts_in_the_grant_means_no_host_list_is_allowed() {
+    let (_host, link) = room("nohosts", |_| {}).await;
+    let c = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+    let spec = TaskSpec { allowed_hosts: vec!["example.com".into()], ..TaskSpec::new(&["true"]) };
+    let e = msg(c.run_task("main", spec).await.unwrap_err());
+    assert!(e.contains("not authorized"), "{e}");
 }

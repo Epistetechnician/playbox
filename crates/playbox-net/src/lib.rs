@@ -366,6 +366,7 @@ impl RoomHandler {
             mem_mib: l.mem_mib as i64,
             timeout_secs: l.timeout_secs as i64,
             net: l.network,
+            hosts: l.allowed_hosts.clone(),
         };
         let ttl = self.cfg.grant_ttl.unwrap_or(Duration::from_secs(3600)).as_secs() as i64;
         let (grant, grant_id) = self.auth.mint_grant(&from.to_string(), ttl, &caps)?;
@@ -672,6 +673,9 @@ impl RoomHandler {
             artifacts.push(wire::raw_artifact("patch", "changes.patch", wire::MEDIA_PATCH, patch));
         }
         let mut meta = vec![("runner", json!(runner.name())), ("timedOut", json!(output.timed_out))];
+        if let Some(d) = &output.policy_digest {
+            meta.push(("policyDigest", json!(d)));
+        }
         if let Some(c) = output.exit_code {
             meta.push(("exitCode", json!(c)));
         }
@@ -885,8 +889,9 @@ impl Host {
         let measurements = Arc::new(attest::measure_self(
             cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
             &format!(
-                "isolation={:?};limits={:?};grant_ttl={:?};repo={};workspace={}",
+                "isolation={:?};runtime={};limits={:?};grant_ttl={:?};repo={};workspace={}",
                 cfg.runner.as_ref().map(|r| r.isolation()),
+                cfg.runner.as_ref().map(|r| r.attestation()).unwrap_or_default(),
                 cfg.limits,
                 cfg.grant_ttl,
                 cfg.repo.is_some(),
@@ -1297,6 +1302,7 @@ impl Client {
                 timed_out,
                 stdout: wire::artifact_text(&t, "stdout").unwrap_or_default(),
                 stderr: wire::artifact_text(&t, "stderr").unwrap_or_default(),
+                policy_digest: text("policyDigest"),
             },
             patch: wire::artifact_bytes(&t, "patch").unwrap_or_default(),
             branch: text("branch"),

@@ -212,3 +212,17 @@ mod secure_enclave {
         }
     }
 }
+
+#[tokio::test]
+async fn the_host_list_is_part_of_the_signed_policy() {
+    let mk = |hosts: Vec<String>| async move {
+        let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None, limits: playbox_runner::Limits { allowed_hosts: hosts, ..Default::default() }, ..Default::default() };
+        let h = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
+        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let v = c.verify_host(Tier::T0, &[]).await.unwrap();
+        (v.statement.measurements.policy, h)
+    };
+    let (none, _a) = mk(vec![]).await;
+    let (some, _b) = mk(vec!["example.com".into()]).await;
+    assert_ne!(none, some);
+}

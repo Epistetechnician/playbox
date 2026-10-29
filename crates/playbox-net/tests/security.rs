@@ -252,7 +252,7 @@ use playbox_runner::Limits;
 
 async fn bare_member() -> (Host, Client) {
     let cfg = HostConfig { repo: Some(repo("forge")), runner: Some(Arc::new(ProcessRunner)), min_isolation: Isolation::None,
-        limits: Limits { cpus: 1.0, mem_mib: 256, timeout_secs: 30, network: false }, ..Default::default() };
+        limits: Limits { cpus: 1.0, mem_mib: 256, timeout_secs: 30, network: false, allowed_hosts: vec![] }, ..Default::default() };
     let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
     let link = host.create_link(Duration::from_secs(60), 2).unwrap().encode();
     let client = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();

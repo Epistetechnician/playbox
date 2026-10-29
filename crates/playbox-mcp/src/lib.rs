@@ -59,6 +59,7 @@ pub fn tool_list() -> Value {
             "Start a Playbox room on this machine and return a join link to share. Calling it again returns a fresh single-use link for the same room. Others join with playbox_join.",
             json!({
                 "repo": {"type": "string", "description": "Absolute path of a git repository to share with the room"},
+                "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Destinations (`host` or `host:port`, port 443 by default) that members' tasks may be limited to. Only the `openshell` runtime can enforce a host list; with none listed, tasks get no network."},
                 "runtime": {"type": "string", "description": "Let members run tasks, in this sandbox: `libkrun` (a microVM per task, own kernel; needs playbox-krun-helper, see scripts/install-krun.sh) `docker` (a container, weaker isolation) or `openshell` (NVIDIA OpenShell sandbox; needs the openshell CLI and a gateway). Both run with no network and limited CPU/memory/time unless the grant says otherwise. Default: members cannot run tasks."},
                 "docker": {"type": "boolean", "description": "Shorthand for runtime=docker."},
                 "transport": {"type": "string", "description": "How peers reach each other: `iroh` (public relays + discovery, works across NATs; default), `local` (same machine/LAN only), or `relay:<https url>` (your own iroh-relay; set PLAYBOX_RELAY_CA to a PEM file for a private CA). Default can be set with PLAYBOX_TRANSPORT."},
@@ -100,6 +101,7 @@ pub fn tool_list() -> Value {
                 "image": {"type": "string", "description": "Container image. Default alpine:3"},
                 "cpus": {"type": "number"}, "mem_mib": {"type": "integer"},
                 "timeout_secs": {"type": "integer"}, "network": {"type": "boolean"},
+                "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Limit the task's network to exactly these destinations (`host` or `host:port`). Must be listed in your grant; needs a host running the openshell runtime."},
                 "apply": {"type": "boolean", "description": "Apply the returned patch to your workspace (staged, not committed). Default false."},
                 "capability": {"type": "string", "description": "A single-use approval for exactly this command, issued by the person you work for with `playbox approve`. Needed when the command contains text copied from another member's task output or patch."}
             }), &["base", "command"]),
@@ -342,6 +344,10 @@ impl Server {
                 repo: repo.clone(),
                 runner,
                 min_isolation,
+                limits: playbox_runner::Limits {
+                    allowed_hosts: a.get("allowed_hosts").and_then(Value::as_array).map(|v| v.iter().filter_map(|h| h.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+                    ..Default::default()
+                },
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
                 ..Default::default()
             };
@@ -568,6 +574,9 @@ impl Server {
             spec.timeout_secs = v;
         }
         spec.network = b(a, "network");
+        if let Some(v) = a.get("allowed_hosts").and_then(Value::as_array) {
+            spec.allowed_hosts = v.iter().filter_map(|h| h.as_str().map(str::to_string)).collect();
+        }
         let run = self.guest()?.run_task_full(base, spec).await?;
         let (runner, out, patch) = (run.runner.clone(), run.output.clone(), run.patch.clone());
         // Everything a remote task printed or changed is untrusted text from now on.

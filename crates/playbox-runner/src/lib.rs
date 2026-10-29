@@ -64,7 +64,12 @@ pub struct TaskSpec {
     pub cpus: f32,
     pub mem_mib: u32,
     pub timeout_secs: u64,
+    /// Unrestricted network. Ignored (and implied) when `allowed_hosts` is non-empty.
     pub network: bool,
+    /// Network limited to exactly these destinations (`host` or `host:port`, port 443 by default).
+    /// Only runners that can enforce it accept a non-empty list; the others refuse the task.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 impl TaskSpec {
@@ -76,6 +81,7 @@ impl TaskSpec {
             mem_mib: 512,
             timeout_secs: 60,
             network: false,
+            allowed_hosts: Vec::new(),
         }
     }
 
@@ -85,6 +91,7 @@ impl TaskSpec {
         self.mem_mib = self.mem_mib.clamp(16, max.mem_mib);
         self.timeout_secs = self.timeout_secs.clamp(1, max.timeout_secs);
         self.network = self.network && max.network;
+        self.allowed_hosts.retain(|h| max.allowed_hosts.contains(h));
         self
     }
 }
@@ -95,11 +102,13 @@ pub struct Limits {
     pub mem_mib: u32,
     pub timeout_secs: u64,
     pub network: bool,
+    /// Destinations a task may be limited to, for runners that can enforce a host list.
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for Limits {
     fn default() -> Self {
-        Self { cpus: 2.0, mem_mib: 1024, timeout_secs: 300, network: false }
+        Self { cpus: 2.0, mem_mib: 1024, timeout_secs: 300, network: false, allowed_hosts: Vec::new() }
     }
 }
 
@@ -109,6 +118,9 @@ pub struct TaskOutput {
     pub timed_out: bool,
     pub stdout: String,
     pub stderr: String,
+    /// blake3 of the exact sandbox policy the task ran under, for runners that have one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_digest: Option<String>,
 }
 
 #[async_trait]
@@ -120,6 +132,14 @@ pub trait Runner: Send + Sync {
     /// starts; an error stops the host rather than letting tasks fail or fall back later.
     async fn preflight(&self) -> Result<()> {
         Ok(())
+    }
+    /// Whether tasks may be limited to a host list (`TaskSpec::allowed_hosts`).
+    fn enforces_host_list(&self) -> bool {
+        false
+    }
+    /// Facts about the sandbox technology (version, base-policy digest) for the host's signed statement.
+    fn attestation(&self) -> String {
+        String::new()
     }
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput>;
 }
@@ -207,6 +227,9 @@ fn check_spec(spec: &TaskSpec) -> Result<()> {
     if spec.cmd.is_empty() {
         bail!("empty command");
     }
+    if !spec.allowed_hosts.is_empty() {
+        bail!("this runner cannot limit a task to specific hosts; use the openshell runner");
+    }
     if spec.image.starts_with('-') || spec.image.contains(char::is_whitespace) {
         bail!("invalid image name");
     }
@@ -235,6 +258,7 @@ async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, b
                     timed_out: false,
                     stdout: out.await.unwrap_or_default(),
                     stderr: err.await.unwrap_or_default(),
+                    policy_digest: None,
                 },
                 false,
             ))
@@ -247,6 +271,7 @@ async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, b
                     timed_out: true,
                     stdout: out.await.unwrap_or_default(),
                     stderr: err.await.unwrap_or_default(),
+                    policy_digest: None,
                 },
                 true,
             ))

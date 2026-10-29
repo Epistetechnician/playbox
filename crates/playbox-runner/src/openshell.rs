@@ -17,8 +17,7 @@
 //!   driver ignores them, so `preflight` fails closed unless `PLAYBOX_ALLOW_MISSING_LIMITS` is set
 //!   (same rule as the Docker runner). Timeouts are enforced here by killing the CLI and deleting
 //!   the sandbox.
-//! - A task asking for network is refused: OpenShell allows network per host and binary, and a
-//!   grant has no such list yet.
+//! - Network is per host: a task's `allowed_hosts` become `network_policies`; unrestricted network is refused.
 //! - Isolation is reported as `Container`, the weakest claim that holds across its drivers.
 //!   Tested against OpenShell 0.1.6 with the local VM driver (`tests/openshell.rs`, needs a gateway).
 
@@ -33,21 +32,59 @@ const SETUP_TIMEOUT: Duration = Duration::from_secs(180);
 
 pub struct OpenShellRunner {
     policy: SandboxPolicy,
+    /// `openshell --version`, read by `preflight`.
+    version: std::sync::OnceLock<String>,
 }
 
 impl OpenShellRunner {
     pub fn new(policy: SandboxPolicy) -> Self {
-        Self { policy }
+        Self { policy, version: std::sync::OnceLock::new() }
     }
 }
 
-/// The OpenShell policy for one task. Pure, so it can be tested and hashed into a receipt.
-pub fn policy_yaml() -> String {
-    "version: 1\n\
-     filesystem_policy:\n  include_workdir: false\n  read_only: [/usr, /lib, /bin, /sbin, /etc]\n  read_write: [/sandbox, /tmp]\n\
-     landlock:\n  compatibility: hard_requirement\n\
-     process:\n  run_as_user: sandbox\n  run_as_group: sandbox\n"
-        .into()
+/// A destination parsed from `host` or `host:port` (port 443 by default). Strict, because the values
+/// are written into a YAML policy: anything outside plain DNS names and IPs is refused, so a peer cannot
+/// inject policy text or a wildcard.
+fn parse_host(h: &str) -> Result<(String, u16)> {
+    let (name, port) = match h.rsplit_once(':') {
+        Some((n, p)) => (n, p.parse::<u16>().ok().filter(|p| *p > 0).with_context(|| format!("bad port in {h:?}"))?),
+        None => (h, 443),
+    };
+    let ok = !name.is_empty()
+        && name.len() <= 253
+        && name.split('.').all(|l| !l.is_empty() && l.len() <= 63 && !l.starts_with('-') && !l.ends_with('-'))
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    if !ok {
+        bail!("invalid host {h:?}: use a plain DNS name or IPv4 address, optionally `:port`");
+    }
+    Ok((name.to_ascii_lowercase(), port))
+}
+
+/// The OpenShell policy for one task. Pure, so it can be tested and hashed. With no hosts there are no
+/// `network_policies`, so the sandbox's default-deny applies; with hosts, exactly those destinations
+/// (any binary) are allowed and everything else stays denied.
+pub fn policy_yaml(hosts: &[String]) -> Result<String> {
+    let mut y = String::from(
+        "version: 1\n\
+         filesystem_policy:\n  include_workdir: false\n  read_only: [/usr, /lib, /bin, /sbin, /etc]\n  read_write: [/sandbox, /tmp]\n\
+         landlock:\n  compatibility: hard_requirement\n\
+         process:\n  run_as_user: sandbox\n  run_as_group: sandbox\n",
+    );
+    if !hosts.is_empty() {
+        let mut parsed = hosts.iter().map(|h| parse_host(h)).collect::<Result<Vec<_>>>()?;
+        parsed.sort();
+        parsed.dedup();
+        y.push_str("network_policies:\n  playbox_hosts:\n    name: playbox-hosts\n    endpoints:\n");
+        for (h, p) in parsed {
+            y.push_str(&format!("      - host: \"{h}\"\n        port: {p}\n"));
+        }
+        y.push_str("    binaries:\n      - path: \"/**\"\n");
+    }
+    Ok(y)
+}
+
+fn digest(policy: &str) -> String {
+    blake3::hash(policy.as_bytes()).to_hex().to_string()
 }
 
 /// OpenShell takes Kubernetes-style quantities.
@@ -91,11 +128,23 @@ impl Runner for OpenShellRunner {
         Isolation::Container
     }
 
+    fn enforces_host_list(&self) -> bool {
+        true
+    }
+
+    /// The OpenShell version and the digest of the no-network base policy, so the host's signed
+    /// statement changes when either changes.
+    fn attestation(&self) -> String {
+        let base = policy_yaml(&[]).expect("base policy is valid");
+        format!("{};base-policy={}", self.version.get().map(String::as_str).unwrap_or("unknown"), digest(&base))
+    }
+
     async fn preflight(&self) -> Result<()> {
         let (out, _) = cli(&["--version"], &[], Duration::from_secs(10))
             .await
             .context("openshell is not installed (https://github.com/NVIDIA/OpenShell)")?;
         ok(&out, "--version")?;
+        let _ = self.version.set(out.stdout.trim().to_string());
         let (out, _) = cli(&["sandbox", "list"], &[], Duration::from_secs(20)).await?;
         if out.exit_code != Some(0) {
             bail!("openshell gateway is not reachable: {}", out.stderr.trim());
@@ -111,20 +160,25 @@ impl Runner for OpenShellRunner {
     }
 
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
-        check_spec(spec)?;
+        // This runner is the one that honours a host list, so validate the rest of the spec without it.
+        check_spec(&TaskSpec { allowed_hosts: Vec::new(), ..spec.clone() })?;
         self.policy.check(spec)?;
-        if spec.network {
-            bail!("the openshell runner has no per-host allow-list in grants yet, so it refuses tasks that ask for network");
+        if spec.network && spec.allowed_hosts.is_empty() {
+            bail!("the openshell runner only allows network to named hosts (allowed_hosts); unrestricted network is refused");
         }
+        let policy_text = policy_yaml(&spec.allowed_hosts)?;
         let ws = workspace.to_str().context("workspace path is not utf-8")?;
         let name = random_name()?;
 
         let dir = tempdir()?;
         let policy_path = dir.join("policy.yaml");
-        tokio::fs::write(&policy_path, policy_yaml()).await?;
+        tokio::fs::write(&policy_path, &policy_text).await?;
         let policy_path = policy_path.to_str().context("temp path")?.to_string();
 
-        let result = self.run_in_sandbox(spec, ws, &name, &policy_path, &dir).await;
+        let result = self.run_in_sandbox(spec, ws, &name, &policy_path, &dir).await.map(|mut o| {
+            o.policy_digest = Some(digest(&policy_text));
+            o
+        });
         // Always tear down, even on error or timeout; a leaked sandbox keeps the host's resources.
         let _ = cli(&["sandbox", "delete", &name], &[], Duration::from_secs(60)).await;
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -260,12 +314,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn policy_has_no_network_and_requires_landlock() {
-        let p = policy_yaml();
+    fn policy_has_no_network_by_default_and_requires_landlock() {
+        let p = policy_yaml(&[]).unwrap();
         assert!(p.starts_with("version: 1"));
         assert!(!p.contains("network_policies"));
-        assert!(p.contains("hard_requirement"));
-        assert!(p.contains("run_as_user: sandbox"));
+        assert!(p.contains("hard_requirement") && p.contains("run_as_user: sandbox"));
+    }
+
+    #[test]
+    fn hosts_become_exact_endpoints_and_cannot_inject_policy() {
+        let p = policy_yaml(&["API.github.com".into(), "example.com:8443".into(), "api.github.com".into()]).unwrap();
+        assert!(p.contains("network_policies"));
+        assert_eq!(p.matches("- host:").count(), 2, "{p}");
+        assert!(p.contains("\"api.github.com\"") && p.contains("port: 8443"));
+        for bad in ["*.example.com", "a.com\"\n  evil: x", "a b", "", "a..com", "-a.com", "a.com:0", "a.com:99999", "a.com:x", "a/b"] {
+            assert!(policy_yaml(&[bad.into()]).is_err(), "{bad:?} must be refused");
+        }
+    }
+
+    #[test]
+    fn digest_changes_with_hosts() {
+        assert_ne!(digest(&policy_yaml(&[]).unwrap()), digest(&policy_yaml(&["a.com".into()]).unwrap()));
     }
 
     #[test]
@@ -276,7 +345,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refuses_network_and_unlisted_images() {
+    async fn refuses_unrestricted_network_and_unlisted_images() {
         let r = OpenShellRunner::new(SandboxPolicy::default());
         let mut spec = TaskSpec::new(&["true"]);
         spec.network = true;

@@ -44,12 +44,14 @@ fn hex(b: &[u8]) -> String {
 }
 
 /// Limits baked into a member grant.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Caps {
     pub cpu_milli: i64,
     pub mem_mib: i64,
     pub timeout_secs: i64,
     pub net: bool,
+    /// Destinations a task may be limited to (exact `host` or `host:port` strings).
+    pub hosts: Vec<String>,
 }
 
 /// What one request needs. Zero for operations that run nothing.
@@ -59,6 +61,8 @@ pub struct Needs {
     pub mem_mib: i64,
     pub timeout_secs: i64,
     pub net: bool,
+    /// Destinations the task asks to be limited to. Every one must be listed in the grant.
+    pub hosts: Vec<String>,
     pub cmd: String,
 }
 
@@ -150,9 +154,25 @@ impl Authority {
 
     /// A member grant bound to `subject` (their endpoint id). Returns the token and its id.
     pub fn mint_grant(&self, subject: &str, ttl_secs: i64, caps: &Caps) -> Result<(String, String)> {
+        let code = String::new();
+        let mut ps = params(vec![
+            ("room", s(&self.room)),
+            ("nonce", s(&nonce()?)),
+            ("subject", s(subject)),
+            ("exp", i(now_secs() + ttl_secs)),
+            ("cpu", i(caps.cpu_milli)),
+            ("mem", i(caps.mem_mib)),
+            ("timeout", i(caps.timeout_secs)),
+            ("net", i(caps.net as i64)),
+        ]);
+        // `check all` fails with nothing to iterate over, so the empty string is always both requested and
+        // allowed. It is not a valid host, so it never names a real destination.
+        let mut allowed: std::collections::BTreeSet<Term> = caps.hosts.iter().map(|h| s(h)).collect();
+        allowed.insert(s(""));
+        ps.insert("allowed".into(), Term::Set(allowed));
         let token = Biscuit::builder()
             .code_with_params(
-                r#"
+                &(code + r#"
                 room({room});
                 nonce({nonce});
                 right("echo"); right("pull"); right("push"); right("run"); right("tasks");
@@ -163,17 +183,9 @@ impl Authority {
                 check if req_mem($m), $m <= {mem};
                 check if req_timeout($t), $t <= {timeout};
                 check if req_net($n), $n <= {net};
-                "#,
-                params(vec![
-                    ("room", s(&self.room)),
-                    ("nonce", s(&nonce()?)),
-                    ("subject", s(subject)),
-                    ("exp", i(now_secs() + ttl_secs)),
-                    ("cpu", i(caps.cpu_milli)),
-                    ("mem", i(caps.mem_mib)),
-                    ("timeout", i(caps.timeout_secs)),
-                    ("net", i(caps.net as i64)),
-                ]),
+                check all req_host($h), {allowed}.contains($h);
+                "#),
+                ps,
                 HashMap::new(),
             )?
             .build(self.root()?)?;
@@ -191,23 +203,30 @@ impl Authority {
     }
 
     fn run(&self, b: &Biscuit, op: &str, subject: &str, n: &Needs) -> Result<()> {
+        let mut code = String::new();
+        let mut ps = params(vec![
+            ("now", i(now_secs())),
+            ("subject", s(subject)),
+            ("op", s(op)),
+            ("cpu", i(n.cpu_milli)),
+            ("mem", i(n.mem_mib)),
+            ("timeout", i(n.timeout_secs)),
+            ("net", i(n.net as i64)),
+            ("cmd", s(&n.cmd)),
+        ]);
+        code.push_str("req_host(\"\");\n");
+        for (k, h) in n.hosts.iter().enumerate() {
+            code.push_str(&format!("req_host({{r{k}}});\n"));
+            ps.insert(format!("r{k}"), s(h));
+        }
         let mut a = AuthorizerBuilder::new()
             .code_with_params(
-                r#"
+                &(code + r#"
                 now({now}); subject({subject}); operation({op});
                 req_cpu({cpu}); req_mem({mem}); req_timeout({timeout}); req_net({net}); req_cmd({cmd});
                 allow if true;
-                "#,
-                params(vec![
-                    ("now", i(now_secs())),
-                    ("subject", s(subject)),
-                    ("op", s(op)),
-                    ("cpu", i(n.cpu_milli)),
-                    ("mem", i(n.mem_mib)),
-                    ("timeout", i(n.timeout_secs)),
-                    ("net", i(n.net as i64)),
-                    ("cmd", s(&n.cmd)),
-                ]),
+                "#),
+                ps,
                 HashMap::new(),
             )?
             .build(b)?;
