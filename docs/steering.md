@@ -112,8 +112,10 @@ room pins the weights manifest hash, so a recipe cannot silently land on a diffe
   accepts them, like any outside text. Publishing back to neuronary is an outward action and needs a person's
   approval through the admission broker. A `nry_` token is a credential: it stays out of logs and out of the
   agent's reach, as the broker already requires for approver keys.
-- **Judge for E1.** Use pairwise ratio judging in the cardinal-harness style as the behavioral measure, next to
-  activation projections. Report each hop's score with its uncertainty and the gap between two judge models.
+- **Judge for E1 (built, in a paired form).** `judge/` scores E1's texts with a trained sentiment classifier and a
+  local pairwise judge whose A/B log-odds are averaged over both orders. It borrows cardinal-harness's idea
+  (pairwise comparisons, with an interval) but not its latent-score fit or its ratio ladder: E1 already pairs every
+  steered text with the clean text for the same seed, so each pair is one paired observation. Section 4 has the result.
 - **Controls.** Report each steered result as a percentile against a population of random unit directions of
   matched strength (neuron-explorer's form), not only against one null vector.
 - **Side-effect metric.** Add next-token KL and Δlogprob (steered versus clean on the prompt set) to the
@@ -262,7 +264,7 @@ side-effect metric. Status first, then the one result so far.
 
 | | Status |
 |---|---|
-| **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own measure; no behavioral judge yet. |
+| **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own projection measure, and an independent classifier and a pairwise judge agree it reads as more positive (strongest at strength 0.2). |
 | **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
 | **E3** transfer across models | Not built. |
 | **E4** config-search lineage | Not built (section 3.5). |
@@ -305,9 +307,9 @@ text: [strength 0.2](e1-gpt2-64seeds-coef0.2.json), [strength 0.4](e1-gpt2-64see
    steered. The prompting baseline keeps about three quarters of its smaller effect.
 
 **What it does not show.**
-- **That the text became more positive to a reader.** The measure is a projection onto the direction that was used
-  to steer, at the layer where it was extracted. There is no behavioral judge here. A direction can raise its own
-  projection without the text reading as more positive.
+- **That the projection alone means the text got more positive.** The projection is onto the direction that was
+  used to steer, so on its own it could rise without the text changing in a way a reader sees. The behavioral check
+  below is what addresses this.
 - **That persistence is "contagion" rather than copying.** GPT-2 continuing a text tends to repeat it (see the
   texts in the reports). The prompted arm persists too. What the data support is that more of the steered effect
   survives than of the prompted effect, not why.
@@ -318,9 +320,58 @@ text: [strength 0.2](e1-gpt2-64seeds-coef0.2.json), [strength 0.4](e1-gpt2-64see
 - **That random directions are inert.** 7 of 20 had a hop-0 interval excluding zero at 0.2 and 12 of 20 at 0.4,
   in both signs; that spread is why the null population, not a single null, is the right comparison.
 
-**What would extend it.** A behavioral judge (pairwise-ratio judging, section 2c); other traits and layers; several
-extraction sets for the same trait; a larger model that does not loop; and measuring at a layer other than the one
-the direction was extracted from.
+**What would extend it.** Other traits and layers; several extraction sets for the same trait; a larger model that
+does not loop; and measuring at a layer other than the one the direction was extracted from.
+
+#### Behavioral check: do the texts read as more positive?
+
+Two measures that are not the steering direction, both checked first on 24 held-out gold pairs (more versus less
+positive sentences, none from the extraction set): both scored 24/24 (the script refuses to run below 95% for the
+classifier and 90% for the judge).
+
+- **Classifier:** `siebert/sentiment-roberta-large-english`; score is its positive-minus-negative logit, so +4 is a
+  large shift on a scale that saturates near ±5.
+- **Pairwise judge:** `Qwen/Qwen3-1.7B-Base`, asked which of two texts is more positive (two worked examples, both
+  orders averaged so position bias cancels; score is the log-odds that the steered text wins).
+
+Each steered, prompted or null text is compared with the `clean` text for the same seed and hop. Reports with
+per-seed values: [0.2](e1-gpt2-64seeds-coef0.2.judged.json), [0.4](e1-gpt2-64seeds-coef0.4.judged.json); run
+`judge/experiments/judge_e1.py REPORT OUT`.
+
+| Effect vs clean, hop 0 → hop 2 | strength 0.2 | strength 0.4 |
+|---|---|---|
+| classifier, **steered** | +4.05 → +3.06 (hop 0 [+2.70, +5.40]) | +3.99 → +4.03 (hop 0 [+2.67, +5.38]) |
+| classifier, prompted | +1.62 → −0.02 (hop 0 [−0.02, +3.24]) | same arm |
+| classifier, 20 random directions | mean +0.05 ± 1.5 | mean −0.09 ± 2.4 |
+| classifier, steered vs nulls (z, hop 0 / 2) | +2.7 / +3.0, above all 20 | +1.7 / +2.5, above all 20 |
+| judge log-odds, **steered** | +0.90 → +0.40 (hop 0 [+0.67, +1.13]) | +0.83 → +0.40 (hop 0 [+0.61, +1.05]) |
+| judge, prompted | +0.56 → +0.21 | same arm |
+| judge, 20 random directions | mean +0.06 ± 0.23 | mean +0.02 ± 0.35 |
+| judge, steered vs nulls (z, hop 0 / 2) | +3.7 / +2.6, above all 20 | +2.3 / +2.4, above 95-100% of nulls |
+| steered − prompted, paired, classifier, hop 0 / 2 | +2.4 [+1.3, +3.7] / +3.1 [+1.4, +4.8] | +2.4 [+1.1, +3.6] / +4.1 [+2.5, +5.6] |
+| steered − prompted, paired, judge, hop 0 / 2 | +0.34 [+0.08, +0.60] / +0.18 [−0.08, +0.45] | +0.27 [−0.01, +0.54] / +0.19 [−0.10, +0.48] |
+| texts where steered beats clean, classifier (hop 0 / 2) | 88% / 73% | 89% / 80% |
+
+Agreement between the two measures across all 4,000+ texts per report: Spearman 0.69 (0.2) and 0.70 (0.4).
+Across the 22 arms, the projection used earlier tracks both behavioral measures: Spearman 0.74 to 0.95 against the
+classifier and 0.90 to 0.96 against the judge, at every hop and both strengths. So the projection was a fair stand-in
+for behavior in this experiment, and random directions that happened to raise it also raised the behavioral
+measures.
+
+**What the behavioral check adds, and where it is thin.**
+- An independent classifier and a separate judge both rate steered text as more positive than clean text, and more
+  than the texts from every one of the 20 random directions (classifier at both strengths; judge at 0.2, and 19 of
+  20 at hops 1 and 2 at 0.4), with the effect still present two hops on. The projection result was not a quirk of
+  measuring with the steering direction.
+- The z-scores are lower than the projection's (about +2 to +3.7 against +4 to +5.5) and the random directions are
+  noisier on these measures, especially at 0.4. The evidence is strongest at 0.2.
+- Against the prompting baseline, the classifier separates them clearly at every hop and strength. The judge
+  separates them only at hop 0 for 0.2; its other intervals include zero. The prompted arm's classifier effect is
+  itself not distinguishable from zero.
+- The judge is a 1.7B base model and the classifier was trained on review-style text; both did perfectly on
+  24 clean pairs but GPT-2's text is stranger than that. Their 0.69 to 0.70 agreement says they are measuring
+  related things, not that either is a ground truth.
+- Still one model, one trait, one layer, one extraction set. No human rated anything.
 
 **A fix this run forced.** Under six concurrent shards, one request was refused with "Reached Datalog execution
 limits": the Biscuit library's default time budget for evaluating a grant is one millisecond. A refusal fails
@@ -420,7 +471,7 @@ Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -
   arms and statistics (11 orchestrator tests with a fake backend, including shard merging); a real GPT-2 run at 64 seeds (section 4).
 
 Not built: the evaluator and lineage wiring for steering specs (E4); the transfer experiment (E3); a trained
-detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a pairwise-ratio judge; a GPU
+detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a latent-score (cardinal-harness style) judge, though a paired pairwise judge exists; a GPU
 path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
 
 Out of scope for v1: fine-tuning, weight export, latent channels between agents (E6 only measures one, it does not add one to rooms), frontier models.
@@ -432,8 +483,8 @@ Out of scope for v1: fine-tuning, weight export, latent channels between agents 
 - GPU confidential computing for receipts: is attested GPU inference available on a platform you will use?
 - How should "direction class" be defined so grants stay enforceable without a central registry? Today it is the
   host's guard list.
-- Which judge for E1 beyond the probe projection and KL? A pairwise-ratio judge in the style of cardinal-harness is
-  the candidate; not built.
+- Is a 1.7B local judge enough for traits other than sentiment, or do those need a stronger model or human ratings?
+  Sentiment has a trained classifier to check against; most traits do not.
 - E6 needs a GPU and a trained mapper per pair. Is the CPU LatentMAS sidecar enough to show the effect, or does it need SwaT-style cross-family transfer? And will the SwaT authors license the code?
 - Whether to publish findings to a public dictionary such as neuronary or keep rooms private; publishing is an
   outward action that should go through a person's approval.
