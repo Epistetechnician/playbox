@@ -53,9 +53,10 @@ who can compute the topic (it needs the root public key), but notices are unforg
   usually closes the window in well under a second; pull bounds it by the sync interval if the replica is
   reachable at all. A replica cut off from every peer keeps honouring the grant until the grant expires, so short grant
   lifetimes (default 1 hour) remain the real upper bound.
-- **Guests use one host.** Join links name the primary. The library lets a client present its grant to a replica
-  (`Client::connect` + `set_grant`, which is how the tests do it), but the CLI and MCP guests have no way to switch
-  hosts yet.
+- **Guests choose a host explicitly.** A join link names the primary. After joining, `playbox_use_host` (MCP) or
+  `playbox join <link> --via <replica peer address>` (CLI) sends calls to a replica with the grant the primary issued; the
+  replica is vetted like the primary was and must accept the grant first. There is no automatic failover, and a replica
+  has its own repository and runner (it does not mirror the primary's), so pull before delegating there.
 - **One signing host.** There is one root key on one machine. If it is lost no one can revoke or admit; there is no
   threshold signing or key rotation.
 - **Local mode is awkward.** Ports change on restart, so addresses given to `--sync-peer` go stale; use the `iroh` or

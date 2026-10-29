@@ -35,6 +35,7 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 | `playbox_delegate` | guest | Run a shell command on the host in a sandbox against a commit; get output and a patch (optionally applied). |
 | `playbox_push` | guest | Send a branch to the room, stored under your own namespace. |
 | `playbox_verify` | both | Verify a history log's hash chain and signatures. |
+| `playbox_use_host` | guest | Send your calls to a replica of the room you joined (or back to `primary`), using the grant you already have. Vetted like a join; the replica must accept your grant first. |
 | `playbox_revoke` | host | Revoke a member and bar their key. |
 
 There is no free-form messaging tool yet.

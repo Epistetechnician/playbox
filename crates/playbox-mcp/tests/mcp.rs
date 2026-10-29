@@ -357,3 +357,85 @@ fn a_revocation_on_the_primary_reaches_a_replica_sidecar() {
     let (err, body) = replica.tool("playbox_revoke", json!({"member": member}));
     assert!(err || body["revoked"] == false, "{body}");
 }
+
+#[test]
+fn a_guest_can_use_a_replica_and_loses_it_when_revoked() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("useHost");
+    let mut primary = Mcp::start(&work.join("p"));
+    let (_, p) = primary.tool("playbox_create", json!({"transport": "local", "name": "team"}));
+    let mut replica = Mcp::start(&work.join("r"));
+    let (err, r) = replica.tool("playbox_create", json!({
+        "transport": "local", "name": "team", "replica_of": p["root_public_key"],
+        "sync_peers": [p["peer_address"]], "sync_interval_secs": 1
+    }));
+    assert!(!err, "{r}");
+    let (err, _) = primary.tool("playbox_create", json!({"transport": "local", "name": "team", "sync_peers": [r["host_id"]], "sync_interval_secs": 1}));
+    assert!(!err);
+
+    let mut guest = Mcp::start(&work.join("g"));
+    let (err, joined) = guest.tool("playbox_join", json!({"link": p["link"], "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+    let member = joined["member_id"].as_str().unwrap().to_string();
+    assert_eq!(guest.tool("playbox_ping", json!({"text": "via primary"})).1["echo"], "via primary");
+
+    // Switch to the replica with the grant the primary issued.
+    let (err, used) = guest.tool("playbox_use_host", json!({"host": r["peer_address"]}));
+    assert!(!err, "{used}");
+    assert_eq!(used["which"], "replica");
+    assert_eq!(used["active_host"], r["host_id"]);
+    assert!(used["host_attestation"]["binary_blake3"].as_str().unwrap().len() == 64);
+    assert_eq!(guest.tool("playbox_ping", json!({"text": "via replica"})).1["echo"], "via replica");
+    let (_, st) = guest.tool("playbox_status", json!({}));
+    assert_eq!(st["joined"]["active_host"], r["host_id"]);
+    assert_eq!(st["joined"]["primary_host"], p["host_id"]);
+    assert_eq!(st["joined"]["other_hosts"], json!([r["host_id"]]));
+
+    // Mistakes are explained, not silent: a bare id cannot be dialed; a host from another room rejects the grant.
+    let (err, body) = guest.tool("playbox_use_host", json!({"host": r["host_id"]}));
+    assert!(err && body.as_str().unwrap().contains("full peer address"), "{body}");
+    let mut other = Mcp::start(&work.join("o"));
+    let (_, o) = other.tool("playbox_create", json!({"transport": "local", "name": "elsewhere"}));
+    let (err, body) = guest.tool("playbox_use_host", json!({"host": o["peer_address"]}));
+    assert!(err && body.as_str().unwrap().contains("did not accept your grant"), "{body}");
+    // The failed attempt did not move us off the replica.
+    assert_eq!(guest.tool("playbox_status", json!({})).1["joined"]["active_host"], r["host_id"]);
+
+    // Revoking at the primary reaches the replica, and the guest is refused there too.
+    let (err, rev) = primary.tool("playbox_revoke", json!({"member": member}));
+    assert!(!err && rev["revoked"] == true, "{rev}");
+    let mut refused = false;
+    for _ in 0..60 {
+        let (is_err, body) = guest.tool("playbox_ping", json!({"text": "again"}));
+        if is_err && body.as_str().unwrap().contains("revoked") {
+            refused = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    assert!(refused, "the replica kept honouring a revoked grant");
+
+    // Back on the primary the grant is refused as well.
+    let (err, back) = guest.tool("playbox_use_host", json!({"host": "primary"}));
+    assert!(!err && back["which"] == "primary", "{back}");
+    let (is_err, body) = guest.tool("playbox_ping", json!({"text": "x"}));
+    assert!(is_err && body.as_str().unwrap().contains("revoked"), "{body}");
+}
+
+#[test]
+fn history_verify_judges_host_evidence_the_way_join_did() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("verifyEvidence");
+    let mut host = Mcp::start(&work.join("h"));
+    let (_, created) = host.tool("playbox_create", json!({"transport": "local", "name": "v"}));
+    let mut guest = Mcp::start(&work.join("g"));
+    let (err, joined) = guest.tool("playbox_join", json!({"link": created["link"], "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+    let (_, v) = guest.tool("playbox_verify", json!({}));
+    assert_eq!(v["valid"], true, "{v}");
+    let att = &v["attestations"][0];
+    // Join checked the platform evidence, so verify must have too: it may not say no verifier exists.
+    let notes = att["notes"].to_string();
+    assert!(!notes.contains("no verifier available"), "verify skipped the platform evidence: {notes}");
+    assert_eq!(att["verified"], joined["host_attestation"]["verified_tier"], "verify and join disagree: {att} vs {joined}");
+}

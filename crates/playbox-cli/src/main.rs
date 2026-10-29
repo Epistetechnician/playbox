@@ -12,7 +12,7 @@ const HELP: &str = "playbox (scaffold)
                             `relay:<https url>` (your own iroh-relay; PLAYBOX_RELAY_CA=PEM for a private CA).
                             --state keeps the room's identity, members and bans across restarts.
                             --repo shares a git repo; --runtime lets members run tasks: libkrun = a microVM per task, docker = a container (--docker is shorthand)
-  join <link> [--transport T] [--task <shell cmd>] [--base REF]
+  join <link> [--transport T] [--task <shell cmd>] [--base REF] [--via <replica peer address>]
                             join a room (the link says which transport to use unless you override);
                             with --task, run it remotely on REF (default main) and print the patch
   (--local is shorthand for --transport local; PLAYBOX_TRANSPORT sets the default)
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--replica-of" | "--sync-peer" | "--sync-interval") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via") {
                 skip = true;
                 return false;
             }
@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
             up(chosen(local, transport.as_deref())?, state, repo, runtime, sync).await
         }
         Some("join") => match pos.get(1) {
-            Some(link) => join(link, join_choice(local, transport.as_deref())?, task, base).await,
+            Some(link) => join(link, join_choice(local, transport.as_deref())?, task, base, opt("--via")).await,
             None => bail!("usage: playbox join <link>"),
         },
         Some("bridge") => match pos.get(1) {
@@ -167,8 +167,18 @@ async fn up(transport: Transport, state: Option<String>, repo: Option<String>, r
     host.shutdown().await
 }
 
-async fn join(link: &str, choice: TransportChoice, task: Option<String>, base: Option<String>) -> Result<()> {
-    let client = join_link(link, new_secret_key()?, choice).await?;
+async fn join(link: &str, choice: TransportChoice, task: Option<String>, base: Option<String>, via: Option<String>) -> Result<()> {
+    let primary = join_link(link, new_secret_key()?, choice).await?;
+    // With --via, do the work on another host of the room (a replica) as the same member.
+    let (client, primary) = match via {
+        Some(addr) => {
+            let replica = primary.sibling(playbox_net::decode_peer(&addr)?).await?;
+            replica.verify_host(attest::Tier::T0, &[]).await.map_err(|e| anyhow::anyhow!("not using that host: {e:#}"))?;
+            println!("using replica {}", replica.host_id().fmt_short());
+            (replica, Some(primary))
+        }
+        None => (primary, None),
+    };
     if let Some(cmd) = task {
         let (runner, out, patch) = client
             .run_task(base.as_deref().unwrap_or("main"), TaskSpec::new(&["sh", "-c", &cmd]))
@@ -182,6 +192,9 @@ async fn join(link: &str, choice: TransportChoice, task: Option<String>, base: O
         println!("joined. echo task returned: {reply}");
     }
     client.close().await;
+    if let Some(p) = primary {
+        p.close().await;
+    }
     Ok(())
 }
 

@@ -25,6 +25,10 @@ pub struct Server {
     is_replica: bool,
     runtime_name: Option<String>,
     client: Option<Client>,
+    /// Other hosts of the room this guest has connected to (replicas), with the same grant.
+    extra: Vec<Client>,
+    /// Which of `extra` serves calls; `None` means the primary in `client`.
+    active: Option<usize>,
     member_id: Option<String>,
     workspace: Option<PathBuf>,
     log_path: PathBuf,
@@ -94,6 +98,13 @@ pub fn tool_list() -> Value {
         tool("playbox_verify",
             "Verify a history log: hash chain, signatures, and any attestations in it (including the host's, recorded when you joined). Defaults to this session's log. Verified tier T0 means the key holder signed the claims; higher tiers need platform verifiers that are not available yet.",
             json!({"path": {"type": "string"}}), &[]),
+        tool("playbox_use_host",
+            "Guest only: send your calls to another host of the room you joined (a replica) instead of the primary, using the grant you already have. Give the replica's `peer_address` (from its playbox_create), or `primary` to switch back. The replica is vetted like the primary was (attestation, min_host_tier, trust_host_device) and must accept your grant before you switch. A replica has its own repository and runner, so pull before you delegate. If the primary revokes you, the replica refuses you once it hears.",
+            json!({
+                "host": {"type": "string", "description": "A replica's peer_address, or `primary`."},
+                "min_host_tier": {"type": "string", "description": "Same as playbox_join."},
+                "trust_host_device": {"type": "boolean", "description": "Same as playbox_join."}
+            }), &["host"]),
         tool("playbox_revoke",
             "Host only: revoke a member's grant and bar their key from rejoining.",
             json!({"member": {"type": "string", "description": "Member id as shown by playbox_status"}}), &["member"]),
@@ -137,7 +148,7 @@ impl Server {
         let log_path = std::env::var_os("PLAYBOX_LOG")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("history").join(format!("mcp-{}.log", store::now_ms())));
-        Ok(Self { host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, member_id: None, workspace: None, log_path, key })
+        Ok(Self { host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, workspace: None, log_path, key })
     }
 
     pub fn log_path(&self) -> &Path {
@@ -190,6 +201,7 @@ impl Server {
             "playbox_delegate" => self.delegate(args).await,
             "playbox_push" => self.push(args).await,
             "playbox_verify" => self.verify(args),
+            "playbox_use_host" => self.use_host(args).await,
             "playbox_revoke" => self.revoke(args),
             other => Err(anyhow!("unknown tool: {other}")),
         };
@@ -201,8 +213,51 @@ impl Server {
         result
     }
 
+    /// The host calls go to: the primary, or the replica chosen with `playbox_use_host`.
     fn guest(&self) -> Result<&Client> {
-        self.client.as_ref().ok_or_else(|| anyhow!("not in a room: call playbox_join first"))
+        let primary = self.client.as_ref().ok_or_else(|| anyhow!("not in a room: call playbox_join first"))?;
+        Ok(match self.active {
+            Some(i) => &self.extra[i],
+            None => primary,
+        })
+    }
+
+    /// Verify a host's attestation as joining does: check it against the platform verifiers and the pin
+    /// store, optionally pin its device key (trust on first use), and require `min_host_tier`.
+    /// `refusal` starts the error message. Returns the verdict and whether a key was newly pinned.
+    async fn vet_host(&self, client: &Client, a: &Value, refusal: &str) -> Result<(playbox_core::attest::Verified, bool)> {
+        let min = Tier::parse(s_arg(a, "min_host_tier").unwrap_or("t0")).map_err(|e| anyhow!(e))?;
+        let pins_path = platform::pins_path(&store::home());
+        let mut pins = platform::PinStore::load(&pins_path)?;
+        let boot = platform::boot_reference_from_env().map_err(|e| anyhow!(e))?;
+        let make = |pins: &platform::PinStore| platform::verifiers(pins.clone(), boot.clone()).map_err(|e| anyhow!(e));
+        let mut vs = make(&pins)?;
+        let mut host_att = {
+            let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
+            match client.verify_host(Tier::T0, &refs).await {
+                Ok(v) => v,
+                Err(e) => bail!("{refusal}: {e:#}"),
+            }
+        };
+        let mut newly_pinned = false;
+        if b(a, "trust_host_device") {
+            if let Some((kind, fp)) = host_att.device.clone().as_deref().and_then(|d| d.split_once(':')) {
+                if !pins.contains(kind, fp) {
+                    pins.add(kind, fp)?;
+                    newly_pinned = true;
+                    vs = make(&pins)?;
+                    let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
+                    host_att = match client.verify_host(Tier::T0, &refs).await {
+                        Ok(v) => v,
+                        Err(e) => bail!("{refusal}: {e:#}"),
+                    };
+                }
+            }
+        }
+        if host_att.achieved < min {
+            bail!("{refusal}: host achieves {} but {} was required ({})", host_att.achieved, min, host_att.notes.join("; "));
+        }
+        Ok((host_att, newly_pinned))
     }
 
     fn workspace(&self) -> Result<&Path> {
@@ -321,42 +376,12 @@ impl Server {
         }
         let link = req(a, "link")?;
         let choice = transport_arg(a)?.map(TransportChoice::Use).unwrap_or_default();
-        let min = Tier::parse(s_arg(a, "min_host_tier").unwrap_or("t0")).map_err(|e| anyhow!(e))?;
         // Check the host before showing it our invite: attestation needs no membership, so a host
         // that fails the check never sees the invite and it stays unspent.
         let parsed = playbox_net::Link::parse(link)?;
         let transport = choice.resolve(parsed.transport.as_ref());
         let client = Client::connect(parsed.addr, playbox_net::new_secret_key()?, transport).await?;
-        let pins_path = platform::pins_path(&store::home());
-        let mut pins = platform::PinStore::load(&pins_path)?;
-        let boot = platform::boot_reference_from_env().map_err(|e| anyhow!(e))?;
-        let make = |pins: &platform::PinStore| platform::verifiers(pins.clone(), boot.clone()).map_err(|e| anyhow!(e));
-        let mut vs = make(&pins)?;
-        let mut host_att = {
-            let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
-            match client.verify_host(Tier::T0, &refs).await {
-                Ok(v) => v,
-                Err(e) => bail!("not joining: {e:#}"),
-            }
-        };
-        let mut newly_pinned = false;
-        if b(a, "trust_host_device") {
-            if let Some((kind, fp)) = host_att.device.clone().as_deref().and_then(|d| d.split_once(':')) {
-                if !pins.contains(kind, fp) {
-                    pins.add(kind, fp)?;
-                    newly_pinned = true;
-                    vs = make(&pins)?;
-                    let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
-                    host_att = match client.verify_host(Tier::T0, &refs).await {
-                        Ok(v) => v,
-                        Err(e) => bail!("not joining: {e:#}"),
-                    };
-                }
-            }
-        }
-        if host_att.achieved < min {
-            bail!("not joining: host achieves {} but {} was required ({})", host_att.achieved, min, host_att.notes.join("; "));
-        }
+        let (host_att, newly_pinned) = self.vet_host(&client, a, "not joining").await?;
         client.join(&parsed.invite).await?;
         // Keep the host's signed statement in our history, so anyone verifying it later can see
         // what we knew about the host when we joined.
@@ -394,6 +419,50 @@ impl Server {
         }))
     }
 
+    /// Route this guest's calls to another host of the room (a replica), or back to the primary.
+    async fn use_host(&mut self, a: &Value) -> Result<Value> {
+        let primary = self.client.as_ref().ok_or_else(|| anyhow!("not in a room: call playbox_join first"))?;
+        let host = req(a, "host")?;
+        if host == "primary" {
+            self.active = None;
+            return Ok(json!({"active_host": primary.host_id().to_string(), "which": "primary"}));
+        }
+        let addr = playbox_net::decode_peer(host)?;
+        if addr.addrs.is_empty() {
+            bail!("`host` needs a full peer address (from that host's playbox_create), not just its id: an id alone cannot be dialed");
+        }
+        if addr.id == primary.host_id() {
+            self.active = None;
+            return Ok(json!({"active_host": addr.id.to_string(), "which": "primary"}));
+        }
+        if let Some(i) = self.extra.iter().position(|c| c.host_id() == addr.id) {
+            self.active = Some(i);
+            return Ok(json!({"active_host": addr.id.to_string(), "which": "replica", "already_connected": true}));
+        }
+        let client = primary.sibling(addr).await?;
+        let (att, newly_pinned) = self.vet_host(&client, a, "not using this host").await?;
+        // The replica must accept our grant before we switch to it.
+        client.echo("use_host").await.map_err(|e| anyhow!("that host did not accept your grant: {e:#}"))?;
+        let _ = store::append_kept(&self.log_path, &self.key, "host_attestation", att.text.as_bytes(), store::now_ms());
+        let id = client.host_id().to_string();
+        self.extra.push(client);
+        self.active = Some(self.extra.len() - 1);
+        Ok(json!({
+            "active_host": id,
+            "which": "replica",
+            "note": "Calls now go to this host. It has its own repository and runner: pull before you delegate or push.",
+            "host_attestation": {
+                "verified_tier": att.achieved.to_string(),
+                "claimed_tier": att.statement.claimed.to_string(),
+                "runner": att.statement.measurements.runner,
+                "binary_blake3": att.statement.measurements.binary,
+                "device": att.device,
+                "device_newly_pinned": newly_pinned,
+                "notes": att.notes,
+            }
+        }))
+    }
+
     fn status(&self) -> Result<Value> {
         let hosting = self.host.as_ref().map(|h| {
             json!({
@@ -404,7 +473,13 @@ impl Server {
             })
         });
         let guest = self.client.as_ref().map(|_| {
-            json!({"member_id": self.member_id, "workspace": self.workspace.as_ref().map(|p| p.display().to_string())})
+            json!({
+                "member_id": self.member_id,
+                "workspace": self.workspace.as_ref().map(|p| p.display().to_string()),
+                "active_host": self.guest().ok().map(|c| c.host_id().to_string()),
+                "primary_host": self.client.as_ref().map(|c| c.host_id().to_string()),
+                "other_hosts": self.extra.iter().map(|c| c.host_id().to_string()).collect::<Vec<_>>(),
+            })
         });
         Ok(json!({
             "hosting": hosting,
@@ -490,11 +565,19 @@ impl Server {
 
     fn verify(&self, a: &Value) -> Result<Value> {
         let path = s(a, "path").map(PathBuf::from).unwrap_or_else(|| self.log_path.clone());
-        let r = store::verify_deep(&path, &[])?;
+        // Re-check platform evidence (Secure Enclave, TPM) against the pin store as it is now, exactly as
+        // `playbox verify` does, so the history is judged the same way it was at join.
+        let pins = platform::PinStore::load(&platform::pins_path(&store::home()))?;
+        let vs = platform::verifiers(pins.clone(), platform::boot_reference_from_env().map_err(|e| anyhow!(e))?).map_err(|e| anyhow!(e))?;
+        let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
+        let r = store::verify_deep(&path, &refs)?;
         let atts: Vec<Value> = r
             .attestations
             .iter()
-            .map(|x| json!({"entry": x.seq, "about": x.about, "subject": x.subject, "claimed": x.claimed.to_string(), "verified": x.achieved.to_string(), "notes": x.notes}))
+            .map(|x| {
+                let unpinned = x.device.as_deref().and_then(|d| d.split_once(':')).filter(|(k, fp)| !pins.contains(k, fp)).is_some();
+                json!({"entry": x.seq, "about": x.about, "subject": x.subject, "claimed": x.claimed.to_string(), "verified": x.achieved.to_string(), "device": x.device, "device_pinned": x.device.is_some().then_some(!unpinned), "notes": x.notes})
+            })
             .collect();
         Ok(json!({
             "valid": r.ok(),

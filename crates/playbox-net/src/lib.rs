@@ -835,11 +835,13 @@ pub struct Client {
     conn: Connection,
     grant: Mutex<Option<String>>,
     next_id: AtomicI64,
+    transport: Transport,
 }
 
 impl Client {
     pub async fn connect(addr: EndpointAddr, secret: SecretKey, transport: impl Into<Transport>) -> Result<Self> {
-        let (endpoint, _) = bind(secret, &transport.into()).await?;
+        let transport = transport.into();
+        let (endpoint, _) = bind(secret, &transport).await?;
         // A handshake that never completes is retried on the same endpoint: in practice a stuck
         // first attempt is far more common than a host that is really unreachable.
         let mut last = anyhow!("no connection attempt was made");
@@ -855,11 +857,27 @@ impl Client {
             }
         }
         let conn = conn.ok_or_else(|| last.context(format!("could not connect after {CONNECT_ATTEMPTS} attempts")))?;
-        Ok(Self { endpoint, conn, grant: Mutex::new(None), next_id: AtomicI64::new(1) })
+        Ok(Self { endpoint, conn, grant: Mutex::new(None), next_id: AtomicI64::new(1), transport })
     }
 
     pub fn id(&self) -> EndpointId {
         self.endpoint.id()
+    }
+
+    /// The id of the host this client is connected to.
+    pub fn host_id(&self) -> EndpointId {
+        self.conn.remote_id()
+    }
+
+    /// Open a connection to another host of the same room (a replica), as the same member: the same
+    /// identity key and the same grant, which any host that knows the room's public key accepts.
+    /// The caller should vet the new host (`verify_host`) before sending it anything.
+    pub async fn sibling(&self, addr: EndpointAddr) -> Result<Client> {
+        let c = Client::connect(addr, self.endpoint.secret_key().clone(), self.transport.clone()).await?;
+        if let Some(g) = self.grant() {
+            c.set_grant(g);
+        }
+        Ok(c)
     }
 
     /// The grant this client presents, if it has joined.
