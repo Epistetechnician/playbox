@@ -324,8 +324,32 @@ run the arm where the text is identical but A is unsteered. Metric: projection o
 direction and the E1 judge, against the E1 text-channel result, with the same null-direction percentile controls.
 If B shifts while the text is identical, the effect travels where the broker, taint tracker and receipts cannot
 see it. Report it as a measured gap with its size. Then test the guards: does a refusal direction survive the
-transfer, or does a guarded direction get through unflagged? Needs a mapper trained per model pair, a GPU, and an
-engine that exports the cache. None of that is built.
+transfer, or does a guarded direction get through unflagged? The cross-family version needs a mapper trained per
+model pair and a GPU, and is not built.
+
+*Built for the same-base case* (no mapper needed): `steer/playbox_steer/latent.py` and `python -m playbox_steer.e6`
+(4 tests on a tiny model). A's context is read under a steering spec with scope `prompt`; B continues from that
+cache with its own query; every arm shows B identical text. B's behaviour is scored by the log-mass of positive
+minus negative next-token words (no judge) and the KL from the clean arm. A check that the clean handoff equals B
+reading the text itself passes (max logit difference 9e-5).
+
+*First result* (real GPT-2 on CPU, steer layer 4, 32 neutral contexts, one sentiment direction, 8 random null
+directions; raw numbers in `steer/results/e6_gpt2.json`; stated ceiling `local_internal_exploratory`):
+
+| strength (norms) | latent: trait-logit effect [95% CI] | latent KL | null effects (min to max, mean) | text channel effect |
+|---|---|---|---|---|
+| 0.5 | +0.42 [+0.17, +0.67] | 0.08 | -0.15 to +0.36, +0.16 | +0.69 |
+| 1 | -0.77 [-1.05, -0.48] | 0.29 | -0.10 to +1.22, +0.33 | +0.45 |
+| 2 | -1.50 [-1.74, -1.27] | 0.54 | -0.10 to +2.85, +0.65 | +0.49 |
+| 4 | -2.55 [-2.83, -2.26] | 0.78 | -0.45 to +3.38, +0.82 | +0.00 |
+
+What this supports: with identical text, B's behaviour changes, so an edit does travel through the cache. At 0.5
+the shift is in the intended direction and larger than all 8 nulls. What it does not support: at 1 and above the
+effect reverses sign and its KL is about the same as a random direction's, so those are mostly general
+disruption of the cache, not controlled steering; the reversal is unexplained. Random directions also shift B
+(on average positive here), so the trait-specific part at 0.5 is the gap above that, roughly +0.26. One model,
+one trait, 32 contexts and 8 nulls: treat it as a reason to test properly, not as a finding. The text channel's
+effect vanishes at strength 4 because A's text degenerates, while the cache still carries a large change.
 
 ## 5. Threat model additions
 
