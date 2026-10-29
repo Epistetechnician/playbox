@@ -2992,6 +2992,7 @@ dependencies = [
  "playbox-core",
  "playbox-net",
  "playbox-runner",
+ "serde_json",
  "tokio",
 ]
 

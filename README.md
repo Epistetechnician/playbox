@@ -19,12 +19,12 @@ Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no con
 - `playbox-runner`: `DockerRunner` (no network, dropped capabilities, CPU/memory/pid/time limits, clamped by host caps), `ProcessRunner` (no isolation, dev only), `KrunRunner` (a libkrun microVM per task: own guest kernel, no network by default, copy-on-write root per task; needs `scripts/install-krun.sh`; select with `--runtime libkrun` or the MCP `runtime` argument). `OpenShellRunner` (NVIDIA OpenShell sandbox; Landlock, non-root, network only to hosts a grant lists; select with `--runtime openshell` and `--allow-host H`).
 - `playbox up | join <link> | demo`: add `--local` for LAN/offline use. Needs Rust 1.91+ (pinned to 1.93.1 in `rust-toolchain.toml`).
 
-- **Trust layers:** an admission broker so text from other members cannot drive the host agent's actions without a person's single-use approval (`playbox approve`), a Google Confidential Space (`tdx`) verifier for T3, a signed evaluator with sealed holdout and variant lineage, shared memory with provenance and quarantine, model receipts, and witnessed log checkpoints. The broker (now covering delegate, push and revoke) and memory (`playbox_remember`, `playbox_recall`) are wired into the MCP server; the Confidential Space verifier is tested against a real token from a TDX VM, not yet with a Playbox host running inside one. See [docs/trust-layers.md](docs/trust-layers.md).
+- **Trust layers:** an admission broker so text from other members cannot drive the host agent's actions without a person's single-use approval (`playbox approve`), a Google Confidential Space (`tdx`) verifier for T3, a signed evaluator with sealed holdout and variant lineage, shared memory with provenance and quarantine, model receipts, and witnessed log checkpoints. The broker (now covering delegate, push and revoke) and memory (`playbox_remember`, `playbox_recall`) are wired into the MCP server; a Playbox host in a real Confidential Space TDX VM was joined at T3 from another network. See [docs/trust-layers.md](docs/trust-layers.md).
 
 - `world/`: prototype that learns a 3D scene from agent events (messages, actions, reasoning, commits). See [world/README.md](world/README.md).
 
 ## What does not exist yet
-A Playbox host running inside a Confidential Space VM, hardware TPM testing, MCP surface for evaluator/receipts/witnesses. See milestones in the PRD.
+Hardware TPM testing, a network protocol for memory and witness cosignatures, model-driven runs of OpenCode and Hermes. See milestones in the PRD.
 
 ## Try it
 ```sh

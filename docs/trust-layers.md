@@ -52,7 +52,7 @@ The host produces evidence with `PLAYBOX_ATTEST=tdx` (it asks the launcher socke
 is the statement binding). Use a Playbox-specific audience so a leaked token cannot be federated to cloud
 resources.
 
-**Tested against a real token:** on 2026-10-29 a `c3-standard-4` TDX Confidential Space VM produced a token that the verifier checks (fixture in `tests/fixtures/confidential-space`, with Google's keys). That found a bug: Google reports the hardware model as `GCP_INTEL_TDX`, which the verifier had rejected. **Still not done:** the provider (`PLAYBOX_ATTEST=tdx`, a host asking the launcher for a token over its statement binding) has not run end to end on a VM, and the fixture token's workload was a stub, not a Playbox host.
+**Tested against a real token:** on 2026-10-29 a `c3-standard-4` TDX Confidential Space VM produced a token that the verifier checks (fixture in `tests/fixtures/confidential-space`, with Google's keys). That found a bug: Google reports the hardware model as `GCP_INTEL_TDX`, which the verifier had rejected. **End to end:** on 2026-10-29 a Playbox host (`playbox up`, `PLAYBOX_ATTEST=tdx`) ran as the workload of a Confidential Space TDX VM; a guest on a Mac, across the internet via n0's relay, joined with `min_host_tier: T3` and verified the host at T3 (image digest on its allow-list). That found a second bug: the launcher answers with HTTP chunked encoding, which the provider did not decode (now fixed, with a unit test). **Not tested:** the verifier rejecting a real token with the wrong digest or project (only the fixture covers this), and long-running hosts (the token expires; the host asks for one per statement).
 
 ## 3. Verifiable self-improvement
 
@@ -97,7 +97,9 @@ independent of the host.
 ## Not built
 
 Network protocol for collecting cosignatures; receipt collection from real notaries (TLSNotary) or TEE
-proxies; MCP/CLI surface for memory review, lineage and receipts; a real Confidential
+proxies; a network protocol that carries memory events between members (events are exchanged by hand through `playbox_memory_export` / `playbox_memory_ingest`); a real Confidential
 Space run.
 
 Memory in the MCP server: entries are signed by the sidecar's session key (the owner), persisted in `memory.json` under the home directory and replayed on start. Review of other authors' entries and `playbox_use_host`-style sharing across members are not exposed yet.
+
+Other MCP tools: `playbox_memory_ingest` / `playbox_memory_export` (quarantined entries leave quarantine only on an event signed by a key in `PLAYBOX_APPROVERS`, produced offline with `playbox memory-review <id> --accept|--reject`), `playbox_receipts_check`, `playbox_checkpoint` / `playbox_checkpoint_verify`, `playbox_lineage_check`. These verify what you give them; nothing collects receipts or cosignatures for you.

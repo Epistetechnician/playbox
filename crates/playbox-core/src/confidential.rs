@@ -239,7 +239,26 @@ impl ConfidentialSpaceProvider {
         if !head.starts_with("HTTP/1.1 200") {
             return Err(format!("teeserver refused: {}", head.lines().next().unwrap_or("")));
         }
-        Ok(token.trim().to_string())
+        let chunked = head.lines().any(|l| l.to_ascii_lowercase().replace(' ', "").starts_with("transfer-encoding:chunked"));
+        let body = if chunked { dechunk(token)? } else { token.to_string() };
+        Ok(body.trim().to_string())
+    }
+}
+
+/// Decode an HTTP/1.1 chunked body. The Confidential Space launcher answers this way (seen on a real VM).
+fn dechunk(mut raw: &str) -> Result<String, String> {
+    let mut out = String::new();
+    loop {
+        let (size_line, rest) = raw.split_once("\r\n").ok_or("truncated chunked body")?;
+        let size = usize::from_str_radix(size_line.split(';').next().unwrap_or("").trim(), 16).map_err(|_| "bad chunk size")?;
+        if size == 0 {
+            return Ok(out);
+        }
+        if rest.len() < size + 2 || !rest.is_char_boundary(size) {
+            return Err("truncated chunk".into());
+        }
+        out.push_str(&rest[..size]);
+        raw = &rest[size + 2..];
     }
 }
 
@@ -258,6 +277,13 @@ impl PlatformProvider for ConfidentialSpaceProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chunked_launcher_responses_are_decoded() {
+        assert_eq!(dechunk("5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap(), "hello world");
+        assert!(dechunk("5\r\nhel").is_err());
+        assert!(dechunk("zz\r\nhello").is_err());
+    }
 
     /// A token captured on 2026-10-29 from a real Confidential Space TDX VM (project secops1219, image
     /// `tests/fixtures/.../digest.txt`, audience `playbox-test`) with Google's signing keys from that day.

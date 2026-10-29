@@ -44,6 +44,9 @@ const HELP: &str = "playbox (scaffold)
                             approve one action your agent was refused because its arguments copy another
                             member's output. Prints a single-use capability bound to exactly this action
                             and these arguments (--arg repeatable); give it to the agent as `capability`
+  memory-review <entry id> --accept|--reject [--key F]
+                            sign a reviewer's decision on a quarantined memory entry in $PLAYBOX_HOME/memory.json with
+                            your approver key; give the printed event to the agent's `playbox_memory_ingest`
   verify <log>              verify a history log: chain, signatures and attestations
   demo                      build and verify a sample history log
 planned: status | delegate | verify | revoke (see PRD.md)";
@@ -98,6 +101,10 @@ async fn main() -> Result<()> {
         },
         Some("record") => record(kind, log_path, key_path),
         Some("approver-key") => approver_key(key_path),
+        Some("memory-review") => match pos.get(1) {
+            Some(id) => memory_review(id, args.iter().any(|a| a == "--accept"), args.iter().any(|a| a == "--reject"), key_path),
+            None => bail!("usage: playbox memory-review <entry id> --accept|--reject"),
+        },
         Some("approve") => {
             let action = opt("--action").ok_or_else(|| anyhow::anyhow!("usage: playbox approve --action A --arg TEXT"))?;
             let call_args: Vec<&str> = args.iter().enumerate().filter(|(i, a)| a.as_str() == "--arg" && *i + 1 < args.len()).map(|(i, _)| args[i + 1].as_str()).collect();
@@ -256,6 +263,23 @@ fn approver_key(key: Option<String>) -> Result<()> {
     let k = store::load_or_create_key(&approver_key_path(key))?;
     println!("{}", playbox_core::record::hex(&k.verifying_key().to_bytes()));
     eprintln!("approver public key above; set PLAYBOX_APPROVERS to it for the agent's playbox-mcp");
+    Ok(())
+}
+
+fn memory_review(id: &str, accept: bool, reject: bool, key: Option<String>) -> Result<()> {
+    if accept == reject {
+        bail!("give exactly one of --accept or --reject");
+    }
+    let home = store::home();
+    let session = store::load_or_create_key(&home.join("session.key"))?;
+    let reviewer = store::load_or_create_key(&approver_key_path(key))?;
+    let log: Vec<String> = serde_json::from_slice(&std::fs::read(home.join("memory.json"))?)?;
+    let owner = session.verifying_key().to_bytes();
+    let mut mem = playbox_core::memory::MemoryStore::replay(&[owner], &[reviewer.verifying_key().to_bytes()], &log).map_err(anyhow::Error::msg)?;
+    let full = mem.log().iter().filter_map(|t| mem.entry_for_event(t)).map(|e| e.id.clone()).find(|e| e.starts_with(id)).ok_or_else(|| anyhow::anyhow!("no entry starting with {id}"))?;
+    let e = mem.entry(&full).unwrap();
+    eprintln!("{} {:?} {}: {}", if accept { "accepting" } else { "rejecting" }, e.kind, e.topic, e.body);
+    println!("{}", mem.review(&full, accept, &reviewer).map_err(anyhow::Error::msg)?);
     Ok(())
 }
 

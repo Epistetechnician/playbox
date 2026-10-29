@@ -566,3 +566,91 @@ fn push_is_gated_and_memory_persists() {
     assert!(!err, "{recalled}");
     assert_eq!(recalled["entries"][0]["body"], "run cargo test first", "{recalled}");
 }
+
+/// Memory from one sidecar reaches another in quarantine and leaves it only on a pinned reviewer's
+/// signature; checkpoints, receipts and lineages can be checked through the tools.
+#[test]
+fn memory_review_checkpoints_receipts_and_lineage_work_through_mcp() {
+    use ed25519_dalek::SigningKey;
+    use playbox_core::{
+        evaluator::{Evaluator, EvaluatorSpec, Variant, VariantSpec},
+        memory::MemoryStore,
+        record::hex,
+        store,
+        witness::Witness,
+    };
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let work = scratch("memrev");
+    let reviewer = SigningKey::from_bytes(&[50; 32]);
+    let approvers = hex(&reviewer.verifying_key().to_bytes());
+
+    // A writes a note; B (a different sidecar that pins the reviewer) ingests it.
+    let mut a = Mcp::start(&work.join("a-home"));
+    let (err, r) = a.tool("playbox_remember", json!({"kind": "note", "topic": "build", "body": "run cargo test first"}));
+    assert!(!err, "{r}");
+    let (_, exported) = a.tool("playbox_memory_export", json!({}));
+    let events = exported["events"].clone();
+
+    let mut b = Mcp::start_with(&work.join("b-home"), &[("PLAYBOX_APPROVERS", &approvers)]);
+    let (err, got) = b.tool("playbox_memory_ingest", json!({"events": events}));
+    assert!(!err && got["refused"].as_array().unwrap().is_empty(), "{got}");
+    let (_, rec) = b.tool("playbox_recall", json!({}));
+    assert!(rec["entries"].as_array().unwrap().is_empty(), "a foreign entry must wait in quarantine: {rec}");
+    let (_, pending) = b.tool("playbox_memory_export", json!({}));
+    let id = pending["quarantined"][0]["id"].as_str().expect("one quarantined entry").to_string();
+
+    // The reviewer's decision, signed offline against a replay of B's store.
+    let me_b = store::load_or_create_key(&work.join("b-home").join("session.key")).unwrap();
+    let log: Vec<String> = serde_json::from_value(pending["events"].clone()).unwrap();
+    let mut replay = MemoryStore::replay(&[me_b.verifying_key().to_bytes()], &[reviewer.verifying_key().to_bytes()], &log).unwrap();
+    let verdict = replay.review(&id, true, &reviewer).unwrap();
+    // A forged reviewer is refused.
+    let forger = SigningKey::from_bytes(&[51; 32]);
+    let mut forged_store = MemoryStore::replay(&[me_b.verifying_key().to_bytes()], &[forger.verifying_key().to_bytes()], &log).unwrap();
+    let forged = forged_store.review(&id, true, &forger).unwrap();
+    let (_, bad) = b.tool("playbox_memory_ingest", json!({"events": [forged]}));
+    assert_eq!(bad["refused"].as_array().unwrap().len(), 1, "{bad}");
+    let (err, ok) = b.tool("playbox_memory_ingest", json!({"events": [verdict]}));
+    assert!(!err && ok["applied"].as_array().unwrap().len() == 1, "{ok}");
+    let (_, rec) = b.tool("playbox_recall", json!({}));
+    assert_eq!(rec["entries"][0]["body"], "run cargo test first", "{rec}");
+
+    // Checkpoint, a witness cosigns it, quorum verifies; a stranger's cosignature does not count.
+    let (err, cp) = a.tool("playbox_checkpoint", json!({}));
+    assert!(!err, "{cp}");
+    let log_path = a_log(&work.join("a-home"));
+    let entries = store::load(&log_path).unwrap().entries[..cp["size"].as_u64().unwrap() as usize].to_vec();
+    let mut w = Witness::new(SigningKey::from_bytes(&[60; 32]));
+    let cosig = w.cosign(cp["checkpoint"].as_str().unwrap(), &entries).unwrap();
+    let wk = hex(&w.public());
+    let (err, v) = a.tool("playbox_checkpoint_verify", json!({"checkpoint": cp["checkpoint"], "cosignatures": [cosig], "witnesses": [wk], "m": 1}));
+    assert!(!err && v["ok"] == true, "{v}");
+    let other = hex(&SigningKey::from_bytes(&[61; 32]).verifying_key().to_bytes());
+    let (err, v) = a.tool("playbox_checkpoint_verify", json!({"checkpoint": cp["checkpoint"], "cosignatures": [cosig], "witnesses": [other], "m": 1}));
+    assert!(err, "an unpinned witness must not count: {v}");
+
+    // Receipts: this log has no model responses, so a requirement is trivially met.
+    let (err, rc) = a.tool("playbox_receipts_check", json!({"receipts": [], "min": "notarized"}));
+    assert!(!err && rc["responses"] == 0 && rc["requirement"] == "met", "{rc}");
+
+    // Lineage: a root and a clearly better child; a patch touching a protected path is refused.
+    let custodian = SigningKey::from_bytes(&[70; 32]);
+    let agent = SigningKey::from_bytes(&[71; 32]);
+    let ev = Evaluator::issue(EvaluatorSpec { name: "bench", version: 1, harness: "aa", holdout: [1; 32], command: "make eval", protected: &["eval"], min_runs: 5, supersedes: None }, &custodian).unwrap();
+    let patch = "--- a/src/agent.py\n+++ b/src/agent.py\n@@ -1 +1 @@\n-x\n+y\n";
+    let root = Variant::sign(VariantSpec { parent: None, evaluator: &ev, patch: "", scores: &[0.50, 0.52, 0.49, 0.51, 0.50, 0.48], cost: 10 }, &agent).unwrap();
+    let child = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch, scores: &[0.70, 0.72, 0.69, 0.71, 0.70, 0.68], cost: 5 }, &agent).unwrap();
+    let ck = hex(&custodian.verifying_key().to_bytes());
+    let call = json!({"evaluators": [ev.text], "custodians": [ck], "variants": [{"variant": root.text, "patch": ""}, {"variant": child.text, "patch": patch}]});
+    let (err, l) = a.tool("playbox_lineage_check", call);
+    assert!(!err && l["improvement"]["significant"] == true && l["cost_to_last"] == 15, "{l}");
+    let evil = "--- a/eval/score.py\n+++ b/eval/score.py\n@@ -1 +1 @@\n-x\n+y\n";
+    let hacker = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: evil, scores: &[0.9; 6], cost: 1 }, &agent).unwrap();
+    let (err, l) = a.tool("playbox_lineage_check", json!({"evaluators": [ev.text], "custodians": [ck], "variants": [{"variant": root.text, "patch": ""}, {"variant": hacker.text, "patch": evil}]}));
+    assert!(err && l.as_str().unwrap().contains("protected path"), "{l}");
+}
+
+/// The history log a sidecar started with `home` wrote (the only file in its history directory).
+fn a_log(home: &Path) -> PathBuf {
+    std::fs::read_dir(home.join("history")).unwrap().next().unwrap().unwrap().path()
+}

@@ -9,7 +9,11 @@ use playbox_core::{
     attest::Tier,
     history::text,
     platform, store,
-    memory::{Kind, MemoryStore, NewEntry},
+    evaluator::{Evaluator, Lineage, Variant},
+    memory::{Kind, MemoryStore, NewEntry, Status},
+    receipt::{self, Level, Receipt, Trust},
+    record::{hex, unhex},
+    witness::{self, Checkpoint},
     taint::{self, Broker, Decision, Policy, Source},
 };
 use playbox_net::{Client, EndpointId, Host, HostConfig, Transport, TransportChoice};
@@ -146,6 +150,40 @@ pub fn tool_list() -> Value {
         tool("playbox_recall",
             "List trusted, current memory entries (optionally one kind), plus topics with conflicting entries. Recalled text is tracked, so pasting it into a later command is caught by the admission broker.",
             json!({"kind": {"type": "string", "enum": ["fact", "decision", "note", "skill"]}}), &[]),
+        tool("playbox_memory_ingest",
+            "Apply signed memory events from elsewhere: entries other members wrote (they wait in quarantine) or a reviewer's accept/reject (made by the person with `playbox memory-review`). Events that fail the store's rules are refused.",
+            json!({"events": {"type": "array", "items": {"type": "string"}}}), &["events"]),
+        tool("playbox_memory_export",
+            "The signed event log of this sidecar's memory, to share with another sidecar, plus the entries still in quarantine awaiting a reviewer.",
+            json!({}), &[]),
+        tool("playbox_receipts_check",
+            "How much of a history log's model output is backed by receipts signed by someone other than the session key. Give pinned provider keys (name -> hex ed25519 key) and notary keys; optionally require a minimum level (none|self|notarized|provider) for numerator/denominator of responses.",
+            json!({
+                "log": {"type": "string", "description": "History log path. Default: this session's log."},
+                "receipts": {"type": "array", "items": {"type": "string"}, "description": "Signed receipt texts"},
+                "providers": {"type": "object", "description": "provider name -> hex public key"},
+                "notaries": {"type": "array", "items": {"type": "string"}},
+                "min": {"type": "string"}, "numerator": {"type": "integer"}, "denominator": {"type": "integer"}
+            }), &["receipts"]),
+        tool("playbox_checkpoint",
+            "Sign a checkpoint (size and head) of this session's history log with the session key, for witnesses to cosign.",
+            json!({}), &[]),
+        tool("playbox_checkpoint_verify",
+            "Check a checkpoint and that at least m of the pinned witness keys cosigned exactly it.",
+            json!({
+                "checkpoint": {"type": "string"},
+                "cosignatures": {"type": "array", "items": {"type": "string"}},
+                "witnesses": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys"},
+                "m": {"type": "integer"}
+            }), &["checkpoint", "cosignatures", "witnesses", "m"]),
+        tool("playbox_lineage_check",
+            "Replay a chain of signed variants (oldest first, each with the patch the host computed) against a custodian-signed evaluator. Refuses variants that edit protected paths, use an untrusted evaluator or have the wrong patch, and reports whether the last one beats its parent with a one-sided confidence bound.",
+            json!({
+                "evaluators": {"type": "array", "items": {"type": "string"}, "description": "Evaluator manifests, oldest first"},
+                "custodians": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys allowed to sign evaluators"},
+                "variants": {"type": "array", "items": {"type": "object", "properties": {"variant": {"type": "string"}, "patch": {"type": "string"}}}},
+                "z": {"type": "number", "description": "Normal quantile for the bound. Default 1.645."}
+            }), &["evaluators", "custodians", "variants"]),
     ])
 }
 
@@ -198,15 +236,16 @@ impl Server {
             .unwrap_or_else(|| home.join("history").join(format!("mcp-{}.log", store::now_ms())));
         let approvers = taint::parse_approvers(&std::env::var("PLAYBOX_APPROVERS").unwrap_or_default()).map_err(|e| anyhow!("PLAYBOX_APPROVERS: {e}"))?;
         let enforce = !approvers.is_empty();
+        let reviewers = approvers.clone();
         let guard = Broker::new(Policy::playbox_default(), approvers, key.clone());
         let me = key.verifying_key().to_bytes();
         let memory_path = home.join("memory.json");
         let memory = match std::fs::read(&memory_path) {
             Ok(raw) => {
                 let log: Vec<String> = serde_json::from_slice(&raw).context("memory.json")?;
-                MemoryStore::replay(&[me], &[], &log).map_err(|e| anyhow!("memory.json: {e}"))?
+                MemoryStore::replay(&[me], &reviewers, &log).map_err(|e| anyhow!("memory.json: {e}"))?
             }
-            Err(_) => MemoryStore::new(&[me], &[]),
+            Err(_) => MemoryStore::new(&[me], &reviewers),
         };
         Ok(Self { memory, memory_path, host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, workspace: None, log_path, key, guard, enforce })
     }
@@ -294,6 +333,12 @@ impl Server {
             "playbox_revoke" => self.revoke(args),
             "playbox_remember" => self.remember(args),
             "playbox_recall" => self.recall(args),
+            "playbox_memory_ingest" => self.memory_ingest(args),
+            "playbox_memory_export" => self.memory_export(),
+            "playbox_receipts_check" => self.receipts_check(args),
+            "playbox_checkpoint" => self.checkpoint(),
+            "playbox_checkpoint_verify" => self.checkpoint_verify(args),
+            "playbox_lineage_check" => self.lineage_check(args),
             other => Err(anyhow!("unknown tool: {other}")),
         };
         let result = match out {
@@ -721,6 +766,99 @@ impl Server {
         let id = self.memory.apply(&text).map_err(|e| anyhow!("memory refused: {e}"))?;
         self.save_memory()?;
         Ok(json!({"id": id, "status": format!("{:?}", self.memory.status(&id))}))
+    }
+
+    fn strings(a: &Value, k: &str) -> Vec<String> {
+        a.get(k).and_then(Value::as_array).map(|v| v.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default()
+    }
+
+    fn keys(a: &Value, k: &str) -> Result<Vec<[u8; 32]>> {
+        Self::strings(a, k).iter().map(|h| unhex::<32>(h).map_err(|e| anyhow!("{k}: {h:?}: {e}"))).collect()
+    }
+
+    fn memory_ingest(&mut self, a: &Value) -> Result<Value> {
+        let mut applied = Vec::new();
+        let mut refused = Vec::new();
+        for (i, ev) in Self::strings(a, "events").iter().enumerate() {
+            match self.memory.apply(ev) {
+                Ok(id) => applied.push(json!({"event": i, "entry": id, "status": self.memory.status(&id).map(|s| format!("{s:?}"))})),
+                Err(e) => refused.push(json!({"event": i, "why": e})),
+            }
+        }
+        self.save_memory()?;
+        Ok(json!({"applied": applied, "refused": refused}))
+    }
+
+    fn memory_export(&self) -> Result<Value> {
+        let pending: Vec<Value> = self
+            .memory
+            .log()
+            .iter()
+            .filter_map(|t| self.memory.entry_for_event(t))
+            .filter(|e| self.memory.status(&e.id) == Some(Status::Quarantined))
+            .map(|e| json!({"id": e.id, "topic": e.topic, "body": e.body, "author": hex(&e.author)}))
+            .collect();
+        Ok(json!({"events": self.memory.log(), "quarantined": pending, "head": self.memory.head()}))
+    }
+
+    fn receipts_check(&self, a: &Value) -> Result<Value> {
+        let path = s(a, "log").map(PathBuf::from).unwrap_or_else(|| self.log_path.clone());
+        let log = store::load(&path).context("loading history log")?;
+        let receipts = Self::strings(a, "receipts").iter().map(|t| Receipt::open(t)).collect::<Result<Vec<_>, _>>().map_err(|e| anyhow!("receipt: {e}"))?;
+        let mut trust = Trust::default();
+        if let Some(p) = a.get("providers").and_then(Value::as_object) {
+            for (name, k) in p {
+                trust = trust.provider(name, unhex::<32>(k.as_str().unwrap_or("")).map_err(|e| anyhow!("provider {name}: {e}"))?);
+            }
+        }
+        for k in Self::keys(a, "notaries")? {
+            trust = trust.notary(k);
+        }
+        let c = receipt::coverage(&log, &receipts, &trust);
+        let required = match s(a, "min") {
+            Some(m) => {
+                let min = Level::parse(m).map_err(|e| anyhow!(e))?;
+                let (n, d) = (a.get("numerator").and_then(Value::as_u64).unwrap_or(1) as usize, a.get("denominator").and_then(Value::as_u64).unwrap_or(1) as usize);
+                Some(receipt::require(&c, min, n, d.max(1)).map(|_| "met".to_string()).unwrap_or_else(|e| e))
+            }
+            None => None,
+        };
+        Ok(json!({"responses": c.responses, "provider_signed": c.provider_signed, "notarized": c.notarized, "self_claimed": c.self_claimed, "unbacked": c.unbacked, "mismatched": c.mismatched, "requirement": required}))
+    }
+
+    fn checkpoint(&self) -> Result<Value> {
+        let log = store::load(&self.log_path).context("loading history log")?;
+        let cp = Checkpoint::sign(&log, &self.key, store::now_ms()).map_err(|e| anyhow!(e))?;
+        Ok(json!({"checkpoint": cp.text, "size": cp.size, "head": hex(&cp.head), "log_key": hex(&cp.origin)}))
+    }
+
+    fn checkpoint_verify(&self, a: &Value) -> Result<Value> {
+        let m = a.get("m").and_then(Value::as_u64).ok_or_else(|| anyhow!("m is required"))? as usize;
+        let cp = witness::verify_quorum(req(a, "checkpoint")?, &Self::strings(a, "cosignatures"), &Self::keys(a, "witnesses")?, m).map_err(|e| anyhow!(e))?;
+        Ok(json!({"ok": true, "size": cp.size, "head": hex(&cp.head), "log_key": hex(&cp.origin)}))
+    }
+
+    fn lineage_check(&self, a: &Value) -> Result<Value> {
+        let custodians = Self::keys(a, "custodians")?;
+        let mut lineage = Lineage::new();
+        for t in Self::strings(a, "evaluators") {
+            lineage.add_evaluator(Evaluator::open(&t, &custodians).map_err(|e| anyhow!("evaluator: {e}"))?);
+        }
+        let mut last = None;
+        for (i, v) in a.get("variants").and_then(Value::as_array).ok_or_else(|| anyhow!("variants is required"))?.iter().enumerate() {
+            let variant = Variant::open(req(v, "variant")?).map_err(|e| anyhow!("variant {i}: {e}"))?;
+            let id = variant.id.clone();
+            lineage.add(variant, v.get("patch").and_then(Value::as_str).unwrap_or("")).map_err(|e| anyhow!("variant {i} refused: {e}"))?;
+            last = Some(id);
+        }
+        let id = last.ok_or_else(|| anyhow!("no variants"))?;
+        let z = a.get("z").and_then(Value::as_f64).unwrap_or(1.645);
+        let imp = lineage.improvement(&id, z);
+        Ok(json!({
+            "last": id, "variants": lineage.len(), "cost_to_last": lineage.cost_to(&id), "total_cost": lineage.total_cost(),
+            "improvement": imp.as_ref().ok().map(|i| json!({"parent_mean": i.parent_mean, "mean": i.mean, "delta": i.delta, "lower_bound": i.lower_bound, "significant": i.significant()})),
+            "improvement_error": imp.err(),
+        }))
     }
 
     fn recall(&mut self, a: &Value) -> Result<Value> {

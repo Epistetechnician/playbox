@@ -243,6 +243,12 @@ impl MemoryStore {
         self.by_id.get(id).map(|i| &self.entries[*i])
     }
 
+    /// The entry a logged event text created, if it was an entry (not a review or retraction).
+    pub fn entry_for_event(&self, text: &str) -> Option<&Entry> {
+        let id = hex(&record::hash_parts("playbox.memory.id", &[text.as_bytes()]));
+        self.entry(&id)
+    }
+
     pub fn status(&self, id: &str) -> Option<Status> {
         self.status.get(id).copied()
     }

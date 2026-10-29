@@ -1,8 +1,8 @@
 # Adapters
 
 One MCP server, `playbox-mcp`, works with any MCP-capable agent. Each agent just needs to launch it
-over stdio. The snippets here follow each agent's documented MCP config format; **they are untested
-against the real agents** (the server itself is tested end to end over stdio, see below).
+over stdio. The snippets here follow each agent's documented MCP config format; **tested on 2026-10-29
+with the real agents' MCP loaders** (below) (the server itself is tested end to end over stdio, see below).
 
 ## Install
 
@@ -69,3 +69,12 @@ There is no free-form messaging tool yet.
 | Your own infrastructure | "use relay https://relay.example.com" (run `iroh-relay` there; `PLAYBOX_RELAY_CA=/path/ca.pem` if it uses a private CA) |
 
 Set `PLAYBOX_TRANSPORT` in the MCP server's environment to change the default.
+
+## Tested
+
+| Agent | Version | Result |
+|---|---|---|
+| Codex | 0.160.1 | `playbox_status` called by the model through `codex exec`; the server's history log shows the call. |
+| OpenCode | 1.19.4 | Config loads and `opencode mcp list` shows playbox connected. A model-driven call was not completed (the OpenAI login there had expired and the free models returned nothing). |
+| Hermes | 0.21.0 | `hermes mcp add` connected and discovered all 19 tools. A model-driven call was not possible (no model credentials configured). |
+| Claude Code | | A headless Claude Code joined a room and ran a task as a second member. |
