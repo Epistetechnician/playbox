@@ -774,7 +774,7 @@ pub fn detect(home: &Path) -> Result<Option<Box<dyn PlatformProvider>>, String> 
     detect_with(home, &std::env::var("PLAYBOX_ATTEST").unwrap_or_else(|_| "auto".into()))
 }
 
-/// Pick a provider by `mode`: `none`, `auto`, `se` or `tpm`.
+/// Pick a provider by `mode`: `none`, `auto`, `se`, `tpm` or `tdx` (Confidential Space; never chosen by `auto`).
 /// `auto` uses the Secure Enclave on macOS if the helper is present, and a TPM on Linux if `tpm2-tools`
 /// and a TPM (or `TPM2TOOLS_TCTI`) are present. `se` and `tpm` fail loudly if unavailable.
 pub fn detect_with(home: &Path, mode: &str) -> Result<Option<Box<dyn PlatformProvider>>, String> {
@@ -792,6 +792,11 @@ pub fn detect_with(home: &Path, mode: &str) -> Result<Option<Box<dyn PlatformPro
         "none" => Ok(None),
         "se" => se().map(Some),
         "tpm" => tpm().map(Some),
+        #[cfg(unix)]
+        "tdx" => {
+            let audience = std::env::var("PLAYBOX_CS_AUDIENCE").map_err(|_| "PLAYBOX_ATTEST=tdx needs PLAYBOX_CS_AUDIENCE (the audience your verifiers expect)")?;
+            Ok(Some(Box::new(crate::confidential::ConfidentialSpaceProvider::new(&audience))))
+        }
         "auto" => Ok(if cfg!(target_os = "macos") {
             se().ok()
         } else if std::env::var_os("TPM2TOOLS_TCTI").is_some() || Path::new("/dev/tpmrm0").exists() {
@@ -799,7 +804,7 @@ pub fn detect_with(home: &Path, mode: &str) -> Result<Option<Box<dyn PlatformPro
         } else {
             None
         }),
-        other => Err(format!("PLAYBOX_ATTEST must be none, auto, se or tpm, not {other:?}")),
+        other => Err(format!("PLAYBOX_ATTEST must be none, auto, se, tpm or tdx, not {other:?}")),
     }
 }
 
@@ -815,10 +820,31 @@ pub fn ek_anchors_from_env() -> Result<Vec<Vec<u8>>, String> {
 /// Verifiers for every platform kind, trusting the keys in `pins`. TPM genuineness checks are on when
 /// `$PLAYBOX_TPM_EK_ANCHORS` is set.
 pub fn verifiers(pins: PinStore, boot_reference: BTreeMap<u32, String>) -> Result<Vec<Box<dyn PlatformVerifier>>, String> {
-    Ok(vec![
+    let mut v: Vec<Box<dyn PlatformVerifier>> = vec![
         Box::new(SecureEnclaveVerifier::new(pins.clone())),
         Box::new(TpmVerifier::new(pins).with_boot_reference(boot_reference)?.with_ek_anchors(ek_anchors_from_env()?)),
-    ])
+    ];
+    if let Some(cs) = confidential_space_from_env()? {
+        v.push(Box::new(cs));
+    }
+    Ok(v)
+}
+
+/// A Confidential Space (`tdx`) verifier from the environment, or `None` if unconfigured:
+/// `$PLAYBOX_CS_JWKS` (file with Google's attestation signing keys), `$PLAYBOX_CS_AUDIENCE`,
+/// `$PLAYBOX_CS_IMAGES` (comma-separated image digests; without any, evidence tops out at T1) and
+/// optionally `$PLAYBOX_CS_PROJECTS`.
+pub fn confidential_space_from_env() -> Result<Option<crate::confidential::ConfidentialSpaceVerifier>, String> {
+    let (Some(jwks), Ok(audience)) = (std::env::var_os("PLAYBOX_CS_JWKS"), std::env::var("PLAYBOX_CS_AUDIENCE")) else { return Ok(None) };
+    let text = fs::read_to_string(&jwks).map_err(|e| format!("reading PLAYBOX_CS_JWKS: {e}"))?;
+    let mut v = crate::confidential::ConfidentialSpaceVerifier::new(&audience).with_jwks(&text)?;
+    for d in std::env::var("PLAYBOX_CS_IMAGES").unwrap_or_default().split(',').filter(|d| !d.is_empty()) {
+        v = v.with_image_digest(d.trim());
+    }
+    for p in std::env::var("PLAYBOX_CS_PROJECTS").unwrap_or_default().split(',').filter(|p| !p.is_empty()) {
+        v = v.with_project(p.trim());
+    }
+    Ok(Some(v))
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 A private playbox for collaborative agents. Start a room from your agent (Claude Code, Codex, Hermes, OpenCode), share a link, and other people's agents join and build together. Contributions are trusted through proof of agentic history and hardware verification, whether the host runs locally or in the cloud.
 
-Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no confidential-VM verifier), M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work, in Docker containers or libkrun microVMs (macOS-tested; see [docs/libkrun.md](docs/libkrun.md)). Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Tested across two real machines (a Mac and a Raspberry Pi 5): see [docs/tested-on.md](docs/tested-on.md). Read [PRD.md](PRD.md).
+Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no confidential-VM verifier), M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work, in Docker containers or libkrun microVMs (macOS-tested; see [docs/libkrun.md](docs/libkrun.md)). Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Tested across two real machines (a Mac and a Raspberry Pi 5): see [docs/tested-on.md](docs/tested-on.md). Security review and known gaps: [docs/threat-model.md](docs/threat-model.md). Read [PRD.md](PRD.md).
 
 ## What works today
 - `playbox-core`: signed, hash-chained session history with verification (6 tests).
@@ -18,6 +18,8 @@ Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no con
 - `playbox-git`: git CLI wrappers; peer-supplied ref names are validated before reaching git.
 - `playbox-runner`: `DockerRunner` (no network, dropped capabilities, CPU/memory/pid/time limits, clamped by host caps), `ProcessRunner` (no isolation, dev only), `KrunRunner` (a libkrun microVM per task: own guest kernel, no network by default, copy-on-write root per task; needs `scripts/install-krun.sh`; select with `--runtime libkrun` or the MCP `runtime` argument).
 - `playbox up | join <link> | demo`: add `--local` for LAN/offline use. Needs Rust 1.91+ (pinned to 1.93.1 in `rust-toolchain.toml`).
+
+- **Trust layers:** an admission broker so text from other members cannot drive the host agent's actions without a person's single-use approval (`playbox approve`), a Google Confidential Space (`tdx`) verifier for T3, a signed evaluator with sealed holdout and variant lineage, shared memory with provenance and quarantine, model receipts, and witnessed log checkpoints. Only the broker is wired into the MCP server; the Confidential Space verifier is untested against a real VM. See [docs/trust-layers.md](docs/trust-layers.md).
 
 - `world/`: prototype that learns a 3D scene from agent events (messages, actions, reasoning, commits). See [world/README.md](world/README.md).
 

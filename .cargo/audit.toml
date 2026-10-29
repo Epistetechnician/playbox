@@ -1,0 +1,7 @@
+# Advisories we have looked at and accepted for now. Reasoning is in docs/threat-model.md ("Dependencies").
+# Review whenever `rsa`, `p256` or `crypto-bigint` release new versions. Anything NOT listed here fails `cargo audit`.
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071", # rsa: Marvin timing attack. We only encrypt to a TPM's public key; no private-key operations. No fix exists.
+    "RUSTSEC-2026-0387", # crypto-bigint 0.5: timing variability. Public-key verification and one ephemeral ECDH only.
+]

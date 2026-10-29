@@ -15,7 +15,7 @@ verifier may *believe*:
 | T0 | The holder of the key signed these measurements | yes |
 | T1 | A pinned device key (Secure Enclave or TPM) signed or quoted this statement | yes, once the key is pinned |
 | T2 | T1, and a TPM quote shows PCR 23 holds the host's measurements and boot PCRs match your reference | yes, with a TPM and reference values |
-| T3 | A confidential-VM report covers the whole host | no: no verifier |
+| T3 | A confidential-VM report covers the whole host | verifier exists for Google Confidential Space (`tdx`), untested against a real VM; see [trust-layers.md](trust-layers.md) |
 
 `attest::verify` returns the **achieved** tier: T0 unless a `PlatformVerifier` for the statement's
 `platform` kind checks the evidence, and never above what was claimed. Evidence with no verifier is

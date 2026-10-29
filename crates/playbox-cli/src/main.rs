@@ -6,7 +6,7 @@ use playbox_runner::{runner_by_name, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, time::Duration};
 
 const HELP: &str = "playbox (scaffold)
-  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun]
+  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun|openshell]
                             start a room and print a join link (valid 1h, 1 use).
                             T is `iroh` (public relays, default), `local` (same machine/LAN) or
                             `relay:<https url>` (your own iroh-relay; PLAYBOX_RELAY_CA=PEM for a private CA).
@@ -31,6 +31,11 @@ const HELP: &str = "playbox (scaffold)
   pin list | add <kind> <fingerprint> | remove <kind> <fingerprint>
                             the device keys you trust (kind: secure-enclave or tpm). `verify` and `join`
                             report fingerprints; a device only reaches tier T1 once pinned
+  approver-key [--key F]    create (or show) your approver key; put its public key in the agent's PLAYBOX_APPROVERS
+  approve --action A --arg TEXT [--key F] [--ttl SECS]
+                            approve one action your agent was refused because its arguments copy another
+                            member's output. Prints a single-use capability bound to exactly this action
+                            and these arguments (--arg repeatable); give it to the agent as `capability`
   verify <log>              verify a history log: chain, signatures and attestations
   demo                      build and verify a sample history log
 planned: status | delegate | verify | revoke (see PRD.md)";
@@ -55,7 +60,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--action" | "--arg" | "--ttl" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via") {
                 skip = true;
                 return false;
             }
@@ -84,6 +89,12 @@ async fn main() -> Result<()> {
             None => bail!("usage: playbox bridge <link>"),
         },
         Some("record") => record(kind, log_path, key_path),
+        Some("approver-key") => approver_key(key_path),
+        Some("approve") => {
+            let action = opt("--action").ok_or_else(|| anyhow::anyhow!("usage: playbox approve --action A --arg TEXT"))?;
+            let call_args: Vec<&str> = args.iter().enumerate().filter(|(i, a)| a.as_str() == "--arg" && *i + 1 < args.len()).map(|(i, _)| args[i + 1].as_str()).collect();
+            approve(&action, &call_args, key_path, opt("--ttl").and_then(|t| t.parse().ok()).unwrap_or(300))
+        }
         Some("pin") => pin_cmd(&pos),
         Some("attest") => attest_cmd(log_path, key_path, platform_opt),
         Some("verify") => match pos.get(1) {
@@ -205,6 +216,28 @@ async fn bridge(link: &str, choice: TransportChoice, listen: Option<String>, tok
     println!("bridge up: agent card at {url}/.well-known/agent-card.json, JSON-RPC at {url}/jsonrpc");
     println!("{}", if token.is_some() { "bearer token required" } else { "no token (loopback only)" });
     playbox_bridge::serve(client, listener, token, url).await
+}
+
+fn approver_key_path(key: Option<String>) -> PathBuf {
+    key.map(PathBuf::from).unwrap_or_else(|| store::home().join("approver.key"))
+}
+
+fn approver_key(key: Option<String>) -> Result<()> {
+    let k = store::load_or_create_key(&approver_key_path(key))?;
+    println!("{}", playbox_core::record::hex(&k.verifying_key().to_bytes()));
+    eprintln!("approver public key above; set PLAYBOX_APPROVERS to it for the agent's playbox-mcp");
+    Ok(())
+}
+
+fn approve(action: &str, call_args: &[&str], key: Option<String>, ttl_secs: u64) -> Result<()> {
+    let k = store::load_or_create_key(&approver_key_path(key))?;
+    eprintln!("approving {action} with {} argument(s):", call_args.len());
+    for a in call_args {
+        eprintln!("  {a}");
+    }
+    let cap = playbox_core::taint::issue_capability(action, call_args, &k, store::now_ms(), ttl_secs * 1000).map_err(anyhow::Error::msg)?;
+    println!("{cap}");
+    Ok(())
 }
 
 fn record(kind: Option<String>, log: Option<String>, key: Option<String>) -> Result<()> {

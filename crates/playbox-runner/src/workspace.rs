@@ -58,6 +58,11 @@ fn scan(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
             if kind.is_dir() {
                 walk(root, &entry.path(), out, bytes)?;
             } else if kind.is_file() {
+                // Check the size before reading: a task can leave a sparse file far larger than memory.
+                let len = entry.metadata()?.len();
+                if out.len() >= MAX_FILES || bytes.saturating_add(len) > MAX_BYTES {
+                    bail!("task output exceeds limits ({MAX_FILES} files, {MAX_BYTES} bytes)");
+                }
                 let data = fs::read(entry.path())?;
                 *bytes += data.len() as u64;
                 if out.len() >= MAX_FILES || *bytes > MAX_BYTES {

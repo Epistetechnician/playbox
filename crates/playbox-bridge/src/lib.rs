@@ -55,11 +55,49 @@ fn authorized(b: &Bridge, h: &HeaderMap) -> bool {
         .is_some_and(|got| eq_const_time(got, want))
 }
 
+/// Whether `Host` names this machine's loopback. Browsers always send it; plain clients may not.
+fn host_is_loopback(h: &HeaderMap) -> bool {
+    let Some(v) = h.get(header::HOST).and_then(|v| v.to_str().ok()) else { return true };
+    let name = v.rsplit_once(':').filter(|(_, port)| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())).map_or(v, |(n, _)| n);
+    matches!(name.to_ascii_lowercase().as_str(), "localhost" | "127.0.0.1" | "[::1]")
+}
+
+/// Protect a bridge that has no token from the web pages in the user's own browser.
+///
+/// - **Cross-site requests:** a page can POST to `http://127.0.0.1:port` without any permission, as a
+///   "simple" request. Browsers always attach `Origin` to those, and ordinary clients (curl, SDKs) never
+///   do, so any request with an `Origin` is refused.
+/// - **DNS rebinding:** a page can make its own hostname resolve to 127.0.0.1 and then talk to us as
+///   "same origin". The request still carries the attacker's hostname in `Host`, so only loopback names pass.
+///
+/// With a token neither matters: a page would have to know the token.
+fn browser_guard(b: &Bridge, h: &HeaderMap) -> Option<Response> {
+    if b.token.is_some() {
+        return None;
+    }
+    if h.contains_key(header::ORIGIN) {
+        return Some((StatusCode::FORBIDDEN, "browser requests need a bridge token (--token)\n").into_response());
+    }
+    if !host_is_loopback(h) {
+        return Some((StatusCode::FORBIDDEN, "unexpected Host header for a loopback bridge\n").into_response());
+    }
+    None
+}
+
+fn json_content_type(h: &HeaderMap) -> bool {
+    let ct = h.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let essence = ct.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    matches!(essence.as_str(), "application/json" | "application/a2a+json")
+}
+
 fn unauthorized() -> Response {
     (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")], "missing or wrong bearer token\n").into_response()
 }
 
-async fn card(State(b): State<Arc<Bridge>>) -> Response {
+async fn card(State(b): State<Arc<Bridge>>, headers: HeaderMap) -> Response {
+    if let Some(refusal) = browser_guard(&b, &headers) {
+        return refusal;
+    }
     // The card is public like any A2A card: it reveals what the room offers, not who is in it.
     let mut card = match b.client.agent_card().await {
         Ok(c) => c,
@@ -76,8 +114,15 @@ async fn card(State(b): State<Arc<Bridge>>) -> Response {
 }
 
 async fn rpc(State(b): State<Arc<Bridge>>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Some(refusal) = browser_guard(&b, &headers) {
+        return refusal;
+    }
     if !authorized(&b, &headers) {
         return unauthorized();
+    }
+    if !json_content_type(&headers) {
+        // Also what makes a browser send a CORS preflight, which this server never approves.
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "send Content-Type: application/json\n").into_response();
     }
     let req: JsonRpcRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,

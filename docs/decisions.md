@@ -48,6 +48,9 @@
 | 37 | Interactive proof (credential activation) lives in `Verified.challenge`; offline checks keep the lower tier | The EK certificate is public, so a static check alone proves nothing | Never |
 | 38 | MakeCredential is implemented in Rust and validated against a real TPM, not against our own reading of the spec | Layouts and KDF details are easy to get subtly wrong | A TSS binding replaces it |
 | 36 | The Docker runner fails closed at start when the daemon cannot enforce memory, process or CPU limits | Found on a Raspberry Pi: Docker warned and dropped the memory limit, so a grant's cap was fiction | A mode that reports the missing limit to members instead |
+| 37 | After a task, git runs only with an explicit `--git-dir` recorded before the task, never against whatever `.git` the task left | A task replaced `.git` and got the host to run its commands (sandbox escape); the directory a task wrote to can name nothing the host trusts | Never |
+| 38 | Before a connection proves itself it may send 64 KiB, must be quick, and counts against connection caps | Anyone with an iroh key can dial; the host used to buffer 256 MiB before checking a grant | A separate, cheaper pre-auth handshake |
+| 39 | The no-token HTTP bridge refuses any request with an `Origin`, any non-loopback `Host`, and any non-JSON content type | A web page could drive a localhost bridge (cross-site POST, DNS rebinding) | Bridge tokens are mandatory |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 
@@ -65,3 +68,6 @@ Adopted into `playbox-core::workspace`:
 Not adopted: the SQLite store, FUSE mounting, its JS SDK and worker, and its Disposable (non-durable) profile. We add what it lacks: signed history, grants and attestation.
 
 Revisit: if a Linux spike of LayerFS beats our module on mount speed, run it behind the same `Workspace` interface. Compare with Peerspan's `peerfs`, which already signs commits.
+
+## OpenShell runner (2026-10-28)
+`--runtime openshell` runs each task in an NVIDIA OpenShell sandbox via its CLI (`crates/playbox-runner/src/openshell.rs`). Reported isolation: `Container`. Per-task policy: Landlock read-only system paths, `/workspace` and `/tmp` writable, non-root, no network rules (default deny). Fail-closed choices: OpenShell policies have no CPU/memory/timeout limits and its VM driver ignores `--cpu/--memory`, so `preflight` refuses unless `PLAYBOX_ALLOW_MISSING_LIMITS=1`; tasks asking for network are refused (no per-host allow-list in grants yet). Written from OpenShell's docs only; not yet run against a real gateway (CLI not installed here). Next: run it for real, record `openshell_policy_yaml()` digest and OpenShell version in the signed host statement.

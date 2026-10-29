@@ -11,8 +11,10 @@ thiserror.workspace = true
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "ecdh", "std"] }
 sha2 = "0.10"
 x509-parser = { version = "0.18.1", features = ["verify"] }
-rsa = "0.9.10"
+rsa = { version = "0.9.10", features = ["sha2"] }
 aes = "0.8"
 cfb-mode = "0.8"
 hmac = "0.12"
 rand_core = { version = "0.6", features = ["getrandom"] }
+base64 = "0.22"
+serde_json = "1"

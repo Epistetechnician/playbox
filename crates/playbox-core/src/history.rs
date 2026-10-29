@@ -51,6 +51,12 @@ impl Entry {
         b
     }
 
+    /// Does the signature verify under the entry's own signer key? Does not check chaining.
+    pub fn check_signature(&self) -> Result<(), VerifyError> {
+        let key = VerifyingKey::from_bytes(&self.signer).map_err(|_| VerifyError::BadKey(self.seq))?;
+        key.verify(&self.signing_bytes(), &Signature::from_bytes(&self.sig)).map_err(|_| VerifyError::BadSignature(self.seq))
+    }
+
     /// Identity of the entry, covering everything including the signature.
     pub fn id(&self) -> Hash {
         let mut h = blake3::Hasher::new();

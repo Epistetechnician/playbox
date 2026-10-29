@@ -44,6 +44,12 @@ pub const ALPN: &[u8] = b"playbox/a2a/1";
 /// Cap for one request or response. Bundles and patches travel base64-encoded inside it, so the
 /// largest usable payload is about three quarters of this.
 const MAX_FRAME: usize = 256 * 1024 * 1024;
+/// The most a host will read from a connection that has not yet proved anything: the first request on
+/// a connection is at most this big. After one request succeeds with an invite or a grant, the connection
+/// may send up to `MAX_FRAME`. Clients with a large first request send a tiny one first (see `Client`).
+pub const MAX_UNAUTHENTICATED_REQUEST: usize = 64 * 1024;
+/// How long a connection that has proved something may sit idle, or take to send one request.
+const AUTHENTICATED_PATIENCE: Duration = Duration::from_secs(15 * 60);
 /// Tasks remembered per member for `GetTask` / `ListTasks`.
 const TASKS_KEPT: usize = 200;
 const CONNECT_ATTEMPTS: u32 = 4;
@@ -220,6 +226,17 @@ pub struct HostConfig {
     /// Weakest isolation this host accepts from its runner. The host refuses to start below it,
     /// so a missing sandbox never turns into unsandboxed execution. Defaults to `Container`.
     pub min_isolation: Isolation,
+    /// Most simultaneous connections the host serves; the rest are turned away. Default 256.
+    pub max_connections: usize,
+    /// Most simultaneous connections from one identity. Default 8. Stops a single member (or a stranger
+    /// with one key) from using every slot.
+    pub max_connections_per_peer: usize,
+    /// Most git data one member may push in total since the host started (not saved across restarts).
+    /// Default 1 GiB. Pushed objects are stored in the room's repository and never deleted automatically.
+    pub max_push_bytes: u64,
+    /// How long a connection that has not authenticated may take to send its first request, or to send
+    /// anything at all. Default 30 s.
+    pub idle_timeout: Duration,
     /// The room's git repository (a normal or bare repo).
     pub repo: Option<PathBuf>,
     /// Where member tasks run. Without one, `RunTask` is refused.
@@ -242,6 +259,10 @@ impl Default for HostConfig {
     fn default() -> Self {
         Self {
             min_isolation: Isolation::Container,
+            max_connections: 256,
+            max_connections_per_peer: 8,
+            max_push_bytes: 1 << 30,
+            idle_timeout: Duration::from_secs(30),
             repo: None,
             runner: None,
             limits: Limits::default(),
@@ -257,6 +278,11 @@ struct RoomHandler {
     state: Arc<Mutex<State>>,
     cfg: HostConfig,
     tasks: Arc<Semaphore>,
+    conns: Arc<Semaphore>,
+    peer_conns: Arc<Mutex<HashMap<EndpointId, usize>>>,
+    pushed: Arc<Mutex<HashMap<EndpointId, u64>>>,
+    /// Bounds concurrent calls into platform hardware, which anyone may trigger without a grant.
+    platform_calls: Arc<Semaphore>,
     auth: Arc<Authority>,
     /// Recent tasks per member, with byte payloads dropped. Not persisted.
     done: Arc<Mutex<HashMap<EndpointId, VecDeque<Task>>>>,
@@ -361,6 +387,10 @@ impl RoomHandler {
                     return Err(A2AError::invalid_params("`request` must be at most 8 KiB of hex").to_jsonrpc_error());
                 }
                 let bytes: Vec<u8> = (0..req.len() / 2).map(|i| u8::from_str_radix(&req[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
+                let _slot = self
+                    .platform_calls
+                    .try_acquire()
+                    .map_err(|_| A2AError::unsupported_operation("busy: too many hardware challenges in flight, try again").to_jsonrpc_error())?;
                 let out = tokio::task::spawn_blocking(move || p.respond(&bytes)).await.map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())?;
                 match out {
                     Ok(r) => Ok(json!({ "response": r.iter().map(|b| format!("{b:02x}")).collect::<String>() })),
@@ -381,6 +411,12 @@ impl RoomHandler {
                 let text = match &self.platform {
                     None => plain()?,
                     Some(p) => {
+                        // Anyone may ask for this without a grant and each one drives the hardware, so bound
+                        // how many run at once and tell the rest to come back.
+                        let _slot = self
+                            .platform_calls
+                            .try_acquire()
+                            .map_err(|_| A2AError::unsupported_operation("busy: too many attestations in flight, try again").to_jsonrpc_error())?;
                         // Talking to hardware blocks (a TPM quote takes a moment), so keep it off the runtime threads.
                         let (key, m, p, nonce) = (self.attest_key.clone(), (*self.measurements).clone(), p.clone(), nonce.to_string());
                         let made = tokio::task::spawn_blocking(move || attest::new_platform_statement(&key, &nonce, "", now, m, p.as_ref())).await;
@@ -499,6 +535,18 @@ impl RoomHandler {
         let repo = self.repo()?;
         let branch = playbox_git::check_name(branch).map_err(|e| refuse(format!("{e:#}")))?;
         let bundle = bundle.ok_or_else(|| refuse("push needs the git bundle as a raw part of the message"))?;
+        {
+            let mut pushed = self.pushed.lock().expect("pushed lock");
+            let used = pushed.entry(from).or_default();
+            if used.saturating_add(bundle.len() as u64) > self.cfg.max_push_bytes {
+                return Err(refuse(format!(
+                    "push quota exceeded: this host accepts {} MiB per member and you have used {} MiB",
+                    self.cfg.max_push_bytes >> 20,
+                    *used >> 20
+                )));
+            }
+            *used += bundle.len() as u64; // counted on attempt, so failing pushes cannot be repeated for free
+        }
         let short: String = from.to_string().chars().take(16).collect();
         let reference = format!("refs/playbox/members/{short}/{branch}");
         let head = playbox_git::bundle_import(&repo, bundle, &format!("refs/heads/{branch}"), &reference).await?;
@@ -533,14 +581,14 @@ impl RoomHandler {
             playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
             let _permit = self.tasks.acquire().await?;
             let commit = playbox_git::rev_parse(&repo, base).await?;
-            let dir = playbox_git::worktree_add(&repo, &commit).await?;
+            let wt = playbox_git::worktree_add(&repo, &commit).await?;
             let result = async {
-                let output = runner.run(&spec, &dir).await?;
-                let patch = playbox_git::diff_patch(&dir, &commit).await?;
+                let output = runner.run(&spec, wt.path()).await?;
+                let patch = playbox_git::diff_patch(&wt, &commit).await?;
                 anyhow::Ok((output, patch))
             }
             .await;
-            let _ = playbox_git::worktree_remove(&repo, &dir).await;
+            let _ = playbox_git::worktree_remove(&repo, &wt).await;
             let (output, patch) = result?;
             (output, patch, Vec::new())
         };
@@ -563,31 +611,88 @@ impl RoomHandler {
         Ok(wire::task(if ok { TaskState::Completed } else { TaskState::Failed }, text, artifacts, meta))
     }
 
-    async fn dispatch(&self, from: EndpointId, bytes: &[u8]) -> JsonRpcResponse {
+    /// Answer one request. The flag says whether the caller proved itself (a valid invite or grant),
+    /// which is what lets its connection send large requests afterwards.
+    async fn dispatch(&self, from: EndpointId, bytes: &[u8]) -> (JsonRpcResponse, bool) {
         let frame: wire::Frame = match serde_json::from_slice(bytes) {
             Ok(f) => f,
-            Err(e) => return JsonRpcResponse::error(JsonRpcId::Null, A2AError::parse_error(e.to_string()).to_jsonrpc_error()),
+            Err(e) => return (JsonRpcResponse::error(JsonRpcId::Null, A2AError::parse_error(e.to_string()).to_jsonrpc_error()), false),
         };
         let id = frame.rpc.id.clone();
+        let public = wire::is_public(&frame.rpc.method);
         match self.route(from, &frame).await {
-            Ok(v) => JsonRpcResponse::success(id, v),
-            Err(e) => JsonRpcResponse::error(id, e),
+            Ok(v) => (JsonRpcResponse::success(id, v), !public),
+            Err(e) => (JsonRpcResponse::error(id, e), false),
+        }
+    }
+}
+
+/// Counts one connection against its peer and gives the slot back when dropped.
+struct PeerSlot {
+    map: Arc<Mutex<HashMap<EndpointId, usize>>>,
+    id: EndpointId,
+}
+
+impl PeerSlot {
+    fn take(map: &Arc<Mutex<HashMap<EndpointId, usize>>>, id: EndpointId, max: usize) -> Option<PeerSlot> {
+        let mut m = map.lock().expect("peer lock");
+        let n = m.entry(id).or_default();
+        if *n >= max.max(1) {
+            return None;
+        }
+        *n += 1;
+        Some(PeerSlot { map: map.clone(), id })
+    }
+}
+
+impl Drop for PeerSlot {
+    fn drop(&mut self) {
+        let mut m = self.map.lock().expect("peer lock");
+        if let Some(n) = m.get_mut(&self.id) {
+            *n -= 1;
+            if *n == 0 {
+                m.remove(&self.id);
+            }
         }
     }
 }
 
 impl ProtocolHandler for RoomHandler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        // Anyone with an iroh identity can dial this, so everything before authentication is bounded:
+        // how many connections, how long they may stay silent, and how much they may make us read.
+        let Ok(_slot) = self.conns.clone().try_acquire_owned() else {
+            conn.close(2u32.into(), b"too many connections");
+            return Ok(());
+        };
         let from = conn.remote_id();
-        while let Ok((mut send, mut recv)) = conn.accept_bi().await {
-            let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else { break };
-            let resp = self.dispatch(from, &bytes).await;
+        let Some(_peer_slot) = PeerSlot::take(&self.peer_conns, from, self.cfg.max_connections_per_peer) else {
+            conn.close(2u32.into(), b"too many connections from this identity");
+            return Ok(());
+        };
+        let mut authenticated = false;
+        loop {
+            let (patience, cap) = if authenticated {
+                (AUTHENTICATED_PATIENCE, MAX_FRAME)
+            } else {
+                (self.cfg.idle_timeout, MAX_UNAUTHENTICATED_REQUEST)
+            };
+            let Ok(Ok((mut send, mut recv))) = tokio::time::timeout(patience, conn.accept_bi()).await else { break };
+            let Ok(Ok(bytes)) = tokio::time::timeout(patience, recv.read_to_end(cap)).await else {
+                conn.close(1u32.into(), b"request too large or too slow");
+                return Ok(());
+            };
+            let (resp, proved) = self.dispatch(from, &bytes).await;
+            authenticated |= proved;
             let Ok(out) = serde_json::to_vec(&resp) else { break };
             if send.write_all(&out).await.is_err() || send.finish().is_err() {
                 break;
             }
         }
-        conn.closed().await;
+        // Reached when the peer hung up, a write failed, or the connection sat idle past its patience.
+        // Any response was sent before the wait began, so closing now loses nothing; and waiting for
+        // the peer to close would keep a silent connection (and its slot) alive forever.
+        conn.close(0u32.into(), b"done");
         Ok(())
     }
 }
@@ -718,6 +823,10 @@ impl Host {
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
+            conns: Arc::new(Semaphore::new(cfg.max_connections.max(1))),
+            peer_conns: Arc::default(),
+            pushed: Arc::default(),
+            platform_calls: Arc::new(Semaphore::new(2)),
             auth: auth.clone(),
             done: Arc::default(),
             card: Arc::new(serde_json::to_value(card).context("agent card")?),
@@ -836,6 +945,9 @@ pub struct Client {
     grant: Mutex<Option<String>>,
     next_id: AtomicI64,
     transport: Transport,
+    /// Whether this connection has had a request accepted with an invite or grant, so the host will
+    /// take a large request on it.
+    warm: std::sync::atomic::AtomicBool,
 }
 
 impl Client {
@@ -857,7 +969,7 @@ impl Client {
             }
         }
         let conn = conn.ok_or_else(|| last.context(format!("could not connect after {CONNECT_ATTEMPTS} attempts")))?;
-        Ok(Self { endpoint, conn, grant: Mutex::new(None), next_id: AtomicI64::new(1), transport })
+        Ok(Self { endpoint, conn, grant: Mutex::new(None), next_id: AtomicI64::new(1), transport, warm: Default::default() })
     }
 
     pub fn id(&self) -> EndpointId {
@@ -899,12 +1011,37 @@ impl Client {
 
     /// One JSON-RPC call with this client's grant, returning the whole response (including any error code).
     pub async fn call_raw(&self, method: &str, params: Value) -> Result<JsonRpcResponse> {
+        let body = self.frame_bytes(method, params)?;
+        // The host reads only a small first request from a connection that has not proved itself. If
+        // this one is large and nothing has been accepted on the connection yet, say something small first.
+        if body.len() > MAX_UNAUTHENTICATED_REQUEST && !self.warm.load(Ordering::Relaxed) && !wire::is_public(method) {
+            let ping = Op::Echo { text: "warm-up".into() }.message(vec![]);
+            let req = SendMessageRequest { message: ping, configuration: None, metadata: None, tenant: None };
+            let small = self.frame_bytes(a2a::methods::SEND_MESSAGE, serde_json::to_value(req)?)?;
+            let resp = self.exchange(&small, a2a::methods::SEND_MESSAGE).await.context("proving this connection before a large request")?;
+            if let Some(e) = resp.error {
+                bail!("could not prove this connection before a large request: {}", e.message);
+            }
+        }
+        self.exchange(&body, method).await
+    }
+
+    fn frame_bytes(&self, method: &str, params: Value) -> Result<Vec<u8>> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let frame = wire::Frame::new(JsonRpcRequest::new(id.into(), method, Some(params)), self.grant().as_deref());
+        Ok(serde_json::to_vec(&frame)?)
+    }
+
+    /// Send one already-built request and read the response.
+    async fn exchange(&self, body: &[u8], method: &str) -> Result<JsonRpcResponse> {
         let (mut send, mut recv) = self.conn.open_bi().await?;
-        send.write_all(&serde_json::to_vec(&frame)?).await?;
+        send.write_all(body).await?;
         send.finish()?;
-        serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")
+        let resp: JsonRpcResponse = serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")?;
+        if resp.error.is_none() && !wire::is_public(method) {
+            self.warm.store(true, Ordering::Relaxed);
+        }
+        Ok(resp)
     }
 
     /// One JSON-RPC call with this client's grant; returns the `result`, or the error's message.

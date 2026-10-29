@@ -3000,6 +3000,7 @@ name = "playbox-core"
 version = "0.0.1"
 dependencies = [
  "aes",
+ "base64 0.22.1",
  "blake3",
  "cfb-mode",
  "ed25519-dalek 2.2.0",
@@ -3007,6 +3008,7 @@ dependencies = [
  "p256",
  "rand_core 0.6.4",
  "rsa",
+ "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "x509-parser",
@@ -3547,6 +3549,7 @@ dependencies = [
  "pkcs1",
  "pkcs8 0.10.2",
  "rand_core 0.6.4",
+ "sha2 0.10.9",
  "signature 2.2.0",
  "spki 0.7.3",
  "subtle",

@@ -50,6 +50,8 @@ impl SandboxPolicy {
 
 mod krun;
 pub use krun::{find_helper, KrunRunner};
+mod openshell;
+pub use openshell::{policy_yaml as openshell_policy_yaml, OpenShellRunner};
 
 pub const DEFAULT_IMAGE: &str = "alpine:3";
 
@@ -128,9 +130,10 @@ pub fn runner_by_name(name: &str, policy: SandboxPolicy) -> Result<std::sync::Ar
     match name {
         "docker" => Ok(std::sync::Arc::new(DockerRunner::new(policy))),
         "libkrun" | "krun" => Ok(std::sync::Arc::new(KrunRunner::locate(policy)?)),
+        "openshell" => Ok(std::sync::Arc::new(OpenShellRunner::new(policy))),
         "process" if std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() => Ok(std::sync::Arc::new(ProcessRunner)),
         "process" => bail!("the process runner has no isolation; set PLAYBOX_ALLOW_UNSAFE_RUNNER to use it"),
-        o => bail!("unknown runner {o:?}; use docker, libkrun or process"),
+        o => bail!("unknown runner {o:?}; use docker, libkrun, openshell or process"),
     }
 }
 

@@ -1,0 +1,139 @@
+# Threat model and security review
+
+Reviewed 2026-10-28 by reading the code with an attacker's eye and trying the attacks. Each finding below
+was either demonstrated with a failing test before the fix, or checked with a test that now guards it.
+This is a self-review by the authors of the code. It is not an independent audit; get one before exposing a
+host to people you do not know.
+
+## What is being protected
+
+| Asset | Who wants it |
+|---|---|
+| The host machine: its files, credentials, network position, CPU, disk | any member, any stranger |
+| The room's repository and what other members pushed | other members |
+| The room's root signing key (it admits members and signs revocations) | anyone |
+| A guest's workspace, files and agent session | a malicious host or room |
+| The history log (proof of agentic history) | anyone who wants to forge or erase it |
+
+## Who is who
+
+| Actor | Trusted with |
+|---|---|
+| **Stranger**: has an iroh identity, nothing else | Nothing. May fetch the public agent card and attestation. |
+| **Member**: holds a grant | Running bounded commands in a sandbox, pushing to its own namespace, pulling. *Semi-trusted*: assumed to try things. |
+| **Host operator** | Everything on the host. Members must trust them with whatever they send (tasks, pushes). |
+| **Guest agent** | Acts for its owner; can be steered by what it reads (prompt injection). |
+| **Task code** | Nothing. It is the adversary the sandbox exists for. |
+
+## Boundaries and what holds them
+
+### 1. Network to host (stranger)
+Anyone can dial the host. Before a connection proves itself with a valid invite or grant it may send only a
+small first request (64 KiB), must send it within `idle_timeout` (30 s), and counts against a connection cap
+(256 total, 8 per identity). Hardware-backed calls anyone can trigger (`GetAttestation`, `ActivateCredential`)
+run at most 2 at a time. *Tests:* `a_stranger_cannot_make_the_host_swallow_a_huge_request`,
+`silent_connections_are_dropped`, `the_host_caps_simultaneous_connections`,
+`one_identity_cannot_take_every_connection_slot`, and `a_large_first_request_on_a_new_connection_still_works_for_a_member`
+(the honest case must still work).
+
+### 2. Authorization (member)
+Grants are Biscuit tokens signed by the root key, bound to the member's iroh key, checked on every request against
+facts the host supplies (time, caller, operation, requested limits). A holder may append blocks; blocks can only
+restrict. *Attacks tried, all refused* (`security.rs`): supplying `req_*`, `now`, `subject` or `right` facts from a block,
+re-adding a right after narrowing, reviving an expired grant, moving a grant to another key, garbage and 40 KB tokens.
+Over-limit requests are refused, not clamped. One thing to know: `req_cmd` constrains only the program name (`argv[0]`),
+not its arguments.
+
+### 3. Task execution (task code → host) — the critical one
+The sandbox (microVM or container) contains what runs *in* it. The host must also be careful with what it does
+*after* the task, because the task controls its directory.
+
+**Finding, critical, fixed.** After a task, the host ran `git add -A` in the task's checkout. A task could replace the
+checkout's `.git` with a directory (or a `.git` file naming another directory) whose config defines a clean-filter command, plus
+a `.gitattributes` selecting it. Git then ran that command **on the host, as the host user, outside the sandbox**.
+Reproduced against the pre-fix code with both variants. Now the host records the real git directory when it makes the
+checkout and runs every later command with explicit `--git-dir`/`--work-tree`, with global config and attributes
+files off and every filter driver the host's own config defines neutralized (so a task cannot pick, say, git-lfs and
+choose its input). Nested repositories with hostile config are inert. *Tests:* four exploit tests in `security.rs`.
+
+Also checked: result size is capped before anything reads it (512 MiB, 100 000 entries; an 8 GiB sparse file is refused in
+milliseconds instead of taking 30 s to hash), FIFOs and very deep nesting do not hang collection, and the workspace runner
+skips symlinks and checks sizes before reading.
+
+Sandbox properties: Docker runs with no network, all capabilities dropped, `no-new-privileges`, pid/CPU/memory limits and an image
+allowlist; libkrun runs a separate guest kernel with no network device. **Found on a Raspberry Pi:** Docker silently ignored
+the memory limit (the kernel boots with `cgroup_disable=memory`), so the runner now refuses to start unless memory, process and
+CPU limits are enforceable.
+
+### 4. Git data from peers
+Bundles pushed by members and fetched by guests are validated with `transfer.fsckObjects` (a tree containing `.git/hooks/..`
+is rejected). Guest-side `init` and `checkout` now use the same hardened git wrapper as the host (no hooks, symlinks written
+as plain files). Patches a hostile host sends are refused when they try `..`, absolute paths, `.git`, or writing through a
+symlink the same patch creates. Ref names are restricted to `[A-Za-z0-9._/-]`, no leading `-`, no `..`. *Tests:* `playbox-git`.
+
+### 5. The HTTP bridge (web page in your browser → the bridge)
+**Finding, high, fixed.** With no token (the default on loopback) any web page you visited could `POST` to
+`http://127.0.0.1:8787/jsonrpc` as a "simple" cross-site request, or reach it by DNS rebinding, and act as the bridge's member. The bridge
+now requires a JSON content type (which forces a CORS preflight it never approves), refuses any request carrying an `Origin`
+when no token is set, and checks that `Host` is a loopback name. *Tests:* `playbox-bridge`.
+
+### 6. Guest ← host (malicious host or room content)
+A joining guest verifies the host's attestation before showing its invite (T0 means only "the key holder claims this";
+pin the device key for T1). It cannot stop a host from returning misleading *content* to an agent. Treat everything a room
+returns as untrusted input to the agent. Another session is building an admission broker for this (taint tracking of
+member-supplied text); it was not reviewed here.
+
+### 7. Revocation across hosts
+Notices are signed by the root key and verified by every host from any source; gossip and pull carry them and are not
+trusted. The set only grows. Until a notice arrives a replica still honours the grant (see limits).
+
+## Resource abuse by members
+A member can: occupy up to 8 connections, run 2 tasks at a time host-wide, and push up to 1 GiB (`max_push_bytes`, per
+member, since the host started). Tasks are bounded by the grant's CPU, memory (when enforced) and time.
+
+## Known gaps (not fixed)
+
+1. **libkrun network mode.** If a grant allows network, libkrun's TSI gives the guest the host's network access with no
+   public-address filtering: it can reach the host's loopback and LAN. Network is off by default and verified off.
+2. **Disk during a run.** The task's scratch directory has no quota while it runs; a task can fill the host's disk until
+   its timeout. The result is capped afterwards. Use a size-limited filesystem for the scratch directory on shared hosts.
+3. **The libkrun helper is not itself sandboxed** on the host (it runs as the user; the VM is the boundary). A VMM bug is a
+   host compromise. A `sandbox-exec` profile (macOS) or seccomp (Linux) around the helper would add a layer.
+4. **Members can read the whole repository.** `pull` accepts any ref name, so a member can fetch any branch, tag, or
+   another member's pushed branch. Share a repository made for the room, never one with history you need private.
+5. **No audit log on the host.** It prints nothing about who joined or ran what. Add one before relying on it.
+6. **Root key is a plain 0600 file on one machine,** with no rotation or backup. If it is lost nobody can admit members or
+   revoke; if it is stolen, all of them can.
+7. **Grants cannot be renewed.** An invite is single-use, so a member whose grant expires (default 1 h) must be re-invited.
+8. **Attestation is self-reported at T0.** A malicious host signs whatever it likes. Hardware evidence helps only with a pinned
+   device key (trust on first use is a risk at first contact). No confidential-VM (T3) verifier exists.
+9. **Revocation is eventually consistent.** A replica cut off from every peer keeps honouring a grant until it expires.
+10. **Public metadata.** The agent card and attestation reveal the host's binary hash, runner, policy hash and OS to anyone.
+11. **A guest agent can be steered** by room content. Its human's approval prompts are the main defence today.
+
+## Dependencies
+
+`cargo audit` (RustSec) reports, as of this review:
+
+| Advisory | Crate | Reality here |
+|---|---|---|
+| RUSTSEC-2023-0071 (Marvin timing attack, no fix exists) | `rsa` 0.9 | Used only to *encrypt* to a TPM's public endorsement key (public-key operation). The attack targets private-key operations. Low. |
+| RUSTSEC-2026-0387 (timing variability) | `crypto-bigint` 0.5 (via `rsa`, `p256`) | We verify signatures and do one ephemeral ECDH; no long-lived secret passes through it. Low; upgrade when `p256`/`rsa` release versions using `crypto-bigint` 0.7. |
+| RUSTSEC-2024-0436, RUSTSEC-2026-0173 (unmaintained) | `paste`, `proc-macro-error2` | Compile-time macros reached through iroh and biscuit. No runtime exposure. |
+
+They are listed in `.cargo/audit.toml` with the reasoning so a clean `cargo audit` in CI means "nothing new", not "nothing". Our
+own code has no `unsafe` except the libkrun FFI in the helper binary.
+
+## Not covered by this review
+
+The TPM / Secure Enclave verification code and the new admission-broker modules were written by other sessions and read only for how
+they are reached from the network. The Lean model proves properties of the grant *logic* and trusts the cryptography.
+No fuzzing was done. Wire parsers (`serde_json` on request frames, `git bundle` parsing by git itself) are the first candidates.
+
+## Suggested next steps, in order
+
+1. Independent review of the sandbox boundary (section 3) before hosting people you do not know.
+2. A host audit log, and a disk quota for task scratch space.
+3. Fuzz the request parser and bundle import; run `cargo audit` and these exploit tests in CI.
+4. Sandbox the libkrun helper; replace TSI with a filtered network backend.
+5. Per-ref allowlists for `pull`, grant renewal, and root-key backup/rotation.

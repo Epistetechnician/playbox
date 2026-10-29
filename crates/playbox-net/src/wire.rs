@@ -28,6 +28,11 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 
 pub const SVC_AUTHORIZATION: &str = "Authorization";
+/// Methods anyone may call without an invite or grant. Everything else proves the caller first.
+pub fn is_public(method: &str) -> bool {
+    matches!(method, METHOD_AGENT_CARD | METHOD_ATTESTATION | METHOD_ACTIVATE)
+}
+
 pub const METHOD_JOIN: &str = "playbox.Join";
 pub const METHOD_AGENT_CARD: &str = "playbox.GetAgentCard";
 /// `{ "nonce": "<hex, up to 64 chars>" }` returns `{ "statement": "<signed attestation text>" }`. No auth.

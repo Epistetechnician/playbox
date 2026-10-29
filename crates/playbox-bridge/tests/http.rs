@@ -85,7 +85,7 @@ async fn errors_keep_their_codes_and_join_is_not_reachable() {
     assert_eq!(call("Nope", json!({})).await["error"]["code"], -32601);
     assert_eq!(call("playbox.Join", json!({"invite": "x"})).await["error"]["code"], -32601);
     assert_eq!(call("SendStreamingMessage", json!({})).await["error"]["code"], -32004);
-    let bad: Value = http.post(format!("{url}/jsonrpc")).body("{not json").send().await.unwrap().json().await.unwrap();
+    let bad: Value = http.post(format!("{url}/jsonrpc")).header("content-type", "application/json").body("{not json").send().await.unwrap().json().await.unwrap();
     assert_eq!(bad["error"]["code"], -32700);
 }
 
@@ -110,4 +110,70 @@ async fn bearer_token_is_enforced_and_open_listeners_are_refused() {
     let (l, a) = playbox_bridge::bind("0.0.0.0:0").await.unwrap();
     let err = playbox_bridge::serve(client, l, None, format!("http://{a}")).await.unwrap_err();
     assert!(format!("{err:#}").contains("without a bearer token"));
+}
+
+// ---- a web page you are visiting must not be able to drive a bridge on localhost ----------------
+
+async fn raw(url: &str, headers: &[(&str, &str)], body: &str) -> reqwest::Response {
+    let mut r = reqwest::Client::new().post(format!("{url}/jsonrpc")).body(body.to_string());
+    for (k, v) in headers {
+        r = r.header(*k, *v);
+    }
+    r.send().await.unwrap()
+}
+
+const LIST: &str = r#"{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}"#;
+
+#[tokio::test]
+async fn a_cross_site_form_post_is_refused() {
+    let (_host, url) = start(None).await;
+    // The "simple" request a page can send without a CORS preflight: text/plain, with an Origin header.
+    let r = raw(&url, &[("content-type", "text/plain"), ("origin", "https://evil.example")], LIST).await;
+    assert!(r.status().is_client_error(), "a text/plain cross-origin POST was processed: {}", r.status());
+    let r = raw(&url, &[("content-type", "application/x-www-form-urlencoded")], LIST).await;
+    assert!(r.status().is_client_error(), "a form-encoded POST was processed: {}", r.status());
+    // Even a correct content type is refused when the browser says where it came from (no token set).
+    let r = raw(&url, &[("content-type", "application/json"), ("origin", "https://evil.example")], LIST).await;
+    assert!(r.status().is_client_error(), "a browser-origin request was processed without a token: {}", r.status());
+}
+
+#[tokio::test]
+async fn dns_rebinding_is_refused_by_checking_the_host_header() {
+    let (_host, url) = start(None).await;
+    // After a rebinding attack the page talks to 127.0.0.1 but still carries the attacker's hostname.
+    let r = raw(&url, &[("content-type", "application/json"), ("host", "evil.example")], LIST).await;
+    assert!(r.status().is_client_error(), "a request for host evil.example was processed: {}", r.status());
+    let card = reqwest::Client::new().get(format!("{url}/.well-known/agent-card.json")).header("host", "evil.example").send().await.unwrap();
+    assert!(card.status().is_client_error(), "the agent card was served to host evil.example");
+}
+
+#[tokio::test]
+async fn ordinary_clients_still_work() {
+    let (_host, url) = start(None).await;
+    for ct in ["application/json", "application/a2a+json", "application/json; charset=utf-8"] {
+        let r = raw(&url, &[("content-type", ct)], LIST).await;
+        assert!(r.status().is_success(), "{ct} was refused: {}", r.status());
+        let v: Value = r.json().await.unwrap();
+        assert!(v["result"].is_object(), "{v}");
+    }
+    // `localhost` and the literal address are both fine as the host name.
+    let port = url.rsplit(':').next().unwrap();
+    let r = raw(&url, &[("content-type", "application/json"), ("host", &format!("localhost:{port}"))], LIST).await;
+    assert!(r.status().is_success(), "{}", r.status());
+}
+
+#[tokio::test]
+async fn a_token_holder_may_still_come_from_a_browser() {
+    // With a token the browser restriction is unnecessary: the page would need the token.
+    let (_host, url) = start(Some("s3cret")).await;
+    let r = reqwest::Client::new()
+        .post(format!("{url}/jsonrpc"))
+        .bearer_auth("s3cret")
+        .header("content-type", "application/json")
+        .header("origin", "https://app.example")
+        .body(LIST)
+        .send()
+        .await
+        .unwrap();
+    assert!(r.status().is_success(), "{}", r.status());
 }
