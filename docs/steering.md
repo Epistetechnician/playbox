@@ -333,23 +333,38 @@ cache with its own query; every arm shows B identical text. B's behaviour is sco
 minus negative next-token words (no judge) and the KL from the clean arm. A check that the clean handoff equals B
 reading the text itself passes (max logit difference 9e-5).
 
-*First result* (real GPT-2 on CPU, steer layer 4, 32 neutral contexts, one sentiment direction, 8 random null
-directions; raw numbers in `steer/results/e6_gpt2.json`; stated ceiling `local_internal_exploratory`):
+*Results* (real models on CPU; 64 neutral contexts, 32 seeded random null directions; steering at one layer
+with `tokens: prompt`; raw numbers in `steer/results/`; stated ceiling `local_internal_exploratory`). "Specific" is
+the steered effect minus the mean effect of the random directions, per context, with a 95% bootstrap interval.
+"Nulls as far" is the share of the 32 random directions that push at least as far the same way. A first, smaller
+GPT-2 run (32 contexts, 8 nulls, strengths 0.5 to 4) is kept as `e6_gpt2_first_run.json`; it agrees with the
+GPT-2 rows below.
 
-| strength (norms) | latent: trait-logit effect [95% CI] | latent KL | null effects (min to max, mean) | text channel effect |
-|---|---|---|---|---|
-| 0.5 | +0.42 [+0.17, +0.67] | 0.08 | -0.15 to +0.36, +0.16 | +0.69 |
-| 1 | -0.77 [-1.05, -0.48] | 0.29 | -0.10 to +1.22, +0.33 | +0.45 |
-| 2 | -1.50 [-1.74, -1.27] | 0.54 | -0.10 to +2.85, +0.65 | +0.49 |
-| 4 | -2.55 [-2.83, -2.26] | 0.78 | -0.45 to +3.38, +0.82 | +0.00 |
+| model, trait | strength | latent effect | specific [95% CI] | nulls as far | KL (null mean) | text channel |
+|---|---|---|---|---|---|---|
+| GPT-2 (layer 4), sentiment | 0.25 | +0.84 | +0.80 [+0.70, +0.92] | 0.00 | 0.037 (0.015) | +0.90 |
+| | 0.5 | +0.51 | +0.48 [+0.33, +0.64] | 0.00 | 0.078 (0.065) | +0.66 |
+| | 1 | -0.73 | -0.75 [-0.90, -0.58] | 0.94 | 0.286 (0.275) | +0.45 |
+| GPT-2, fear | 0.25 | +0.39 | +0.46 [+0.40, +0.53] | 0.00 | 0.013 (0.012) | +0.03 |
+| | 0.5 | +0.34 | +0.50 [+0.41, +0.58] | 0.03 | 0.036 (0.055) | +0.17 |
+| | 1 | +0.04 | +0.29 [+0.19, +0.39] | 0.38 | 0.093 (0.204) | -0.06 |
+| SmolLM2-135M (layer 10), sentiment | 0.25 | +0.92 | +0.90 [+0.81, +1.00] | 0.00 | 0.039 (0.038) | +0.90 |
+| | 0.5 | +1.24 | +1.16 [+1.07, +1.26] | 0.00 | 0.100 (0.145) | +1.24 |
+| | 1 | +1.44 | +1.29 [+1.23, +1.36] | 0.03 | 0.218 (0.329) | +0.80 |
+| SmolLM2-135M, fear | 0.25 | +1.00 | +0.99 [+0.90, +1.09] | 0.00 | 0.042 (0.035) | +0.09 |
+| | 0.5 | +1.40 | +1.37 [+1.27, +1.48] | 0.00 | 0.121 (0.134) | +0.11 |
+| | 1 | +1.62 | +1.48 [+1.34, +1.61] | 0.00 | 0.260 (0.285) | +0.01 |
 
-What this supports: with identical text, B's behaviour changes, so an edit does travel through the cache. At 0.5
-the shift is in the intended direction and larger than all 8 nulls. What it does not support: at 1 and above the
-effect reverses sign and its KL is about the same as a random direction's, so those are mostly general
-disruption of the cache, not controlled steering; the reversal is unexplained. Random directions also shift B
-(on average positive here), so the trait-specific part at 0.5 is the gap above that, roughly +0.26. One model,
-one trait, 32 contexts and 8 nulls: treat it as a reason to test properly, not as a finding. The text channel's
-effect vanishes at strength 4 because A's text degenerates, while the cache still carries a large change.
+What this supports. With identical text, an edit made to A's context moves B in the intended direction. In 11 of
+12 cells the trait-specific part is positive with an interval above zero. In SmolLM2 it grows with strength and
+almost no random direction matches it, and the steered KL is at or below a random direction's, so it is not just
+general disruption. For fear, the text channel carries almost nothing (+0.01 to +0.17) while the cache carries
++0.3 to +1.6: this is the case the planned checks cannot see. For sentiment the text channel is comparable, so
+there a latent channel adds less. What it does not support. GPT-2 sentiment at strength 1 reverses (-0.73, and
+94% of random directions push further positive), and GPT-2 fear at 1 is weak; both match the first run, and
+the reversal is unexplained. The score is B's immediate lean at one next-token position, not later behaviour.
+The nulls are random directions, not other meaningful ones. Two small models, one steering layer each, two traits,
+one query per trait: a reason to test a frontier-scale open model and more traits, not a general claim.
 
 ## 5. Threat model additions
 

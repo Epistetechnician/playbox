@@ -93,9 +93,10 @@ def bootstrap_ci(x: np.ndarray, n: int = 2000, seed: int = 0) -> tuple[float, fl
 
 
 def run_e6(model, tok, contexts: list[str], query: str, trait_dir: torch.Tensor, null_dirs: list[torch.Tensor],
-           steer_layer: int, probe_dir: torch.Tensor, probe_layer: int, coef: float, gen_tokens: int = 16) -> dict:
+           steer_layer: int, probe_dir: torch.Tensor, probe_layer: int, coef: float, gen_tokens: int = 16,
+           positive_words: list[str] | None = None, negative_words: list[str] | None = None) -> dict:
     """Everything for one (layer, coefficient). Returns per-context values and summary statistics."""
-    pos_ids, neg_ids = word_ids(tok, POSITIVE_WORDS), word_ids(tok, NEGATIVE_WORDS)
+    pos_ids, neg_ids = word_ids(tok, positive_words or POSITIVE_WORDS), word_ids(tok, negative_words or NEGATIVE_WORDS)
     calib = SimpleNamespace(prompts=tuple(contexts))
     base_spec = _spec(steer_layer, coef, "prompt")
     norm_ref = engine.calibrate(model, tok, base_spec, calib)
@@ -136,11 +137,19 @@ def run_e6(model, tok, contexts: list[str], query: str, trait_dir: torch.Tensor,
                 "kl_mean": float(k.mean()), "n": len(hs)}
 
     report = {"arms": {n: stats(n) for n in arms if n != "clean"}}
-    null_effects = [abs(report["arms"][n]["trait_logit_effect"]["mean"]) for n in arms if n.startswith("null_")]
+    null_names = [n for n in arms if n.startswith("null_")]
     steered = report["arms"]["steered"]["trait_logit_effect"]["mean"]
-    if null_effects:
-        # Share of random directions whose effect is at least as large as the trait direction's.
-        report["null_exceed_fraction"] = float(np.mean([e >= abs(steered) for e in null_effects]))
+    if null_names:
+        # Share of random directions whose effect is at least as large (in magnitude) as the trait direction's.
+        report["null_exceed_fraction"] = float(np.mean([abs(report["arms"][n]["trait_logit_effect"]["mean"]) >= abs(steered) for n in null_names]))
+        # Share whose signed effect is at least as large: how often a random direction pushes at least as far the same way.
+        report["null_signed_exceed_fraction"] = float(np.mean([report["arms"][n]["trait_logit_effect"]["mean"] >= steered for n in null_names]))
+        # The trait-specific part: per context, steered effect minus the mean effect of all random directions.
+        eff = lambda n: np.array([h.trait_logit - c.trait_logit for h, c in zip(arms[n], clean)])
+        specific = eff("steered") - np.mean([eff(n) for n in null_names], axis=0)
+        m, lo, hi = bootstrap_ci(specific)
+        report["specific_effect"] = {"mean": m, "low": lo, "high": hi}
+        report["null_effect_mean"] = float(np.mean([report["arms"][n]["trait_logit_effect"]["mean"] for n in null_names]))
     report["config"] = {"steer_layer": steer_layer, "probe_layer": probe_layer, "coef": coef, "n_contexts": len(contexts),
                         "nulls": len(null_dirs), "query": query}
     # Sanity: the clean latent arm must equal B reading the same text itself, bit for bit.
