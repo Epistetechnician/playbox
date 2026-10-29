@@ -1,0 +1,46 @@
+{
+ "model": "/private/tmp/claude-501/-Users-shaanp-Documents-GitHub-playbox/afca5a1c-a562-499c-a8dc-1a623c6a7fde/scratchpad/gpt2-weights",
+ "layer": 4,
+ "contexts": 32,
+ "honest": {
+  "false_positives_tol0": 0,
+  "false_positives_tol1e-3": 0
+ },
+ "honest_noise_across_thread_counts_max_entry_diff": 0.0,
+ "detection": {
+  "0.001": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "0.01": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "0.05": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "0.25": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "1.0": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "4.0": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  }
+ },
+ "cost_seconds_mean": {
+  "audit_recompute": 0.009229355360730551,
+  "b_reads_query_on_cache": 0.008973170559329446
+ }
+}

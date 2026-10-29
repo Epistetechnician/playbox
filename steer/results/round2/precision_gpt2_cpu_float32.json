@@ -1,0 +1,69 @@
+{
+ "model": "/private/tmp/claude-501/-Users-shaanp-Documents-GitHub-playbox/afca5a1c-a562-499c-a8dc-1a623c6a7fde/scratchpad/gpt2-weights",
+ "device": "cpu",
+ "dtype": "float32",
+ "n_layers": 12,
+ "layers": {
+  "4": {
+   "sentiment": {
+    "0.25": {
+     "trait_logit": {
+      "effect": {
+       "mean": 1.052497610449791,
+       "low": 0.9099902365356684,
+       "high": 1.1975084070116282
+      },
+      "specific_vs_random": {
+       "mean": 0.9405603787551323,
+       "low": 0.8021077596737692,
+       "high": 1.073160121915862
+      },
+      "specific_vs_semantic": {
+       "mean": 1.1164986429115136,
+       "low": 0.9750751079370579,
+       "high": 1.2629445368734498
+      },
+      "random_as_far": 0.0,
+      "semantic_effects": {
+       "formality": -0.005578776200612386,
+       "tense": -0.08116090794404347,
+       "topic": -0.11652945975462596,
+       "question": -0.05273498594760895
+      },
+      "semantic_as_far": 0.0
+     },
+     "gen": {
+      "effect": {
+       "mean": 0.013930976430976433,
+       "low": -0.008355955387205388,
+       "high": 0.037166193181818165
+      },
+      "specific_vs_random": {
+       "mean": 0.006665614478114479,
+       "low": -0.0071237110690235686,
+       "high": 0.021636350484006726
+      },
+      "specific_vs_semantic": {
+       "mean": 0.0024568602693602697,
+       "low": -0.011669494423400673,
+       "high": 0.01702296401515151
+      },
+      "random_as_far": 0.25,
+      "semantic_effects": {
+       "formality": 0.004766414141414142,
+       "tense": 0.023537457912457916,
+       "topic": 0.012920875420875423,
+       "question": 0.004671717171717173
+      },
+      "semantic_as_far": 0.25
+     },
+     "kl_steered": 0.0328573927981779,
+     "kl_random_mean": 0.010457621384527254,
+     "kl_semantic_mean": 0.013632384384133426,
+     "n": 48,
+     "seconds": 24.975200374959968
+    }
+   }
+  }
+ }
+}

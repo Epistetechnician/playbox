@@ -1,0 +1,46 @@
+{
+ "model": "/Users/shaanp/.cache/huggingface/hub/models--HuggingFaceTB--SmolLM2-135M/snapshots/93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+ "layer": 10,
+ "contexts": 32,
+ "honest": {
+  "false_positives_tol0": 0,
+  "false_positives_tol1e-3": 0
+ },
+ "honest_noise_across_thread_counts_max_entry_diff": 0.0,
+ "detection": {
+  "0.001": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "0.01": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "0.05": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "0.25": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "1.0": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  },
+  "4.0": {
+   "n": 32,
+   "caught_tol0": 32,
+   "caught_tol0.001": 32
+  }
+ },
+ "cost_seconds_mean": {
+  "audit_recompute": 0.015807569008757127,
+  "b_reads_query_on_cache": 0.01580506256505032
+ }
+}

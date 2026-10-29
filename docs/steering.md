@@ -439,6 +439,56 @@ the reversal is unexplained. The score is B's immediate lean at one next-token p
 The nulls are random directions, not other meaningful ones. Two small models, one steering layer each, two traits,
 one query per trait: a reason to test a frontier-scale open model and more traits, not a general claim.
 
+### E6 round 2: the four limits, a larger model, a defence, and a faster path
+
+Run 2026-10-29; raw numbers in `steer/results/round2/`; stated ceiling `local_internal_exploratory`. Changes from
+round 1: B's greedy continuation is scored too (a word lexicon over 12 generated tokens), besides the next-token
+score; nulls are now also four unrelated contrasts (formality, tense, topic, question versus statement) at the same
+layer and strength; two layers and three queries per trait; and Qwen2.5 1.5B and 3B were added. GPT-2 and SmolLM2
+ran on CPU with 16 contexts and 8 random nulls; the Qwen runs used 32 contexts and 16 random nulls on the Mac GPU in
+float32. Each model has 8 cells (2 layers, 2 traits, strengths 0.25 and 0.5). A sample is one (context, query).
+
+| model | samples per cell | next-token effect range | cells where no unrelated null pushes as far | generation effect range | cells with generation interval above 0 | ... and above the unrelated nulls' mean | KL above a random direction's |
+|---|---|---|---|---|---|---|---|
+| GPT-2 (124M) | 48 | +0.52 to +1.90 | 8 of 8 | -0.002 to +0.014 | 0 of 8 | 2 of 8 | 7 of 8 |
+| SmolLM2-135M | 48 | +1.15 to +2.07 | 8 of 8 | +0.006 to +0.049 | 5 of 8 | 7 of 8 | 6 of 8 |
+| Qwen2.5-1.5B | 96 | +0.53 to +1.58 | 8 of 8 | +0.009 to +0.030 | 8 of 8 | 8 of 8 | 8 of 8 |
+| Qwen2.5-3B | 96 | +0.20 to +1.11 | 8 of 8 | +0.001 to +0.022 | 2 of 8 | 3 of 8 | 8 of 8 |
+
+What this supports. The next-token effect is specific to the trait direction: in all 32 cells none of the unrelated
+contrast directions pushed as far, and its interval is above zero. So round 1's worry that random directions were
+too easy a null does not explain it. What it supports less well. The effect on B's later text is real in some setups
+(Qwen2.5-1.5B in every cell, SmolLM2 in most) and absent in others (GPT-2 in none, Qwen2.5-3B in six of eight, and
+near zero for fear on 3B). It does not grow with model size: the 3B model is weaker than the 1.5B one, and the
+models differ in family, depth and the layers chosen, so this is not a clean test of scale. The generation score is a
+short lexicon count (effects of about 1 to 5 words per hundred), which is a weak instrument. I would not claim the
+effect reaches later behaviour in general; it reaches it for some models.
+
+*Defence* (`cache_audit.py`, `audit_e6.py`, 5 tests; GPT-2 and SmolLM2, 32 contexts each). The sender signs
+`playbox.cache-handoff.v1`: weights hash, sha256 of the text and of the exact cache bytes. The receiver checks the
+signature, that the cache matches the record, and then recomputes the cache from the text and compares. Honest
+handoffs: 0 false positives at tolerance 0 and at 1e-3. Steered caches signed by the sender itself: caught in every
+case down to strength 0.001, on both models; the first two checks pass such a cache, so only the recompute catches it.
+Honest numerical noise when the auditor uses 4 threads instead of 1 was exactly 0 on this machine, which says
+nothing about other hardware or precisions. The recompute costs a prefill (about the same time as B reading its
+query here, because the contexts are short), so it is an audit of a sample: with probability `p` per handoff a
+sender who cheats `n` times is caught with probability `1 - (1 - p)^n`.
+
+*Faster path* (`fast.py`, 5 tests). Every arm and context goes through the model in one batch, with a steering
+vector per row (zero for the clean arm), left padding with positions from the mask, queries and generation on the
+whole batch, and the context cache rewound with `crop` rather than copied. On the same device and precision it
+reproduces the one-at-a-time path (tiny GPT-2 and Llama-style models, and real GPT-2: next-token +1.05, generation
++0.0139 with an identical interval, KL 0.033 on CPU and on the Mac GPU in float32). One cell takes 15 s instead of
+187 s on GPT-2 (12x) and 22 s instead of 228 s on SmolLM2 (10x) on CPU. Qwen2.5-1.5B takes 30 to 90 s per cell on
+the GPU; the CPU one-at-a-time path took roughly 25 minutes for the first cell of a smaller grid (12 contexts, 6 nulls) before I stopped it, so the speedup is at least 20x but I did not time the same cell both ways. Half precision is not
+free: float16 matched to the second decimal, bfloat16 moved the generation score and the KL (KL 0.059 against 0.033),
+so any half-precision result should be reported as its own setting.
+
+vLLM. I first thought vLLM had no Mac GPU route. It does, through the `vllm-metal` plugin (MLX-based, paged
+attention marked experimental; [docs](https://docs.vllm.ai/projects/vllm-metal)). I did not try it: E6 needs a
+per-row edit inside the model and direct access to the cache, which a managed server does not offer. The
+practical route for a vLLM-scale run is the CUDA steering fork named in section 2c on a GPU machine.
+
 ## 5. Threat model additions
 
 | Threat | Mitigation (built, with its test) | Remaining gap |
@@ -454,7 +504,7 @@ one query per trait: a reason to test a frontier-scale open model and more trait
 | Receipt forgery or misuse | Host signature; the client checks host key, spec, and exact output bytes; the ceiling is printed on the receipt | An un-attested host can lie about what it ran. Nothing raises the ceiling to `attested` yet. |
 | An imported public recipe carries an unexpected edit | Not built (section 2c): imports are meant to be untrusted and quarantined | Until built, do not import recipes automatically. |
 | Overfitting a sealed holdout | Not built (section 3.5) | Inherent once it is. |
-| Latent channels between agents bypass text-level checks | Not built. **E6** (section 4) is the planned measurement; section 2d | Unmeasured. If E6 shows an effect, a latent lane would need a signed, logged text summary beside every cache, and a check that the two agree. |
+| Latent channels between agents bypass text-level checks | Measured, not closed. **E6** shows an edit made to A's context moves B through the cache with identical text (section 4). The defence is built as a library and tested (`steer/playbox_steer/cache_audit.py`: a signed record of the text and the exact cache, plus an audit that recomputes the cache from the text); it is not an A2A operation yet | A lying sender can sign its own steered cache, so only the recompute catches it, and that costs a prefill: audit a sampled fraction. It needs the same model on both ends, so it cannot cover a cross-family mapper. Tolerance across hardware or precision is untested. |
 
 ## 6. Status and milestones
 

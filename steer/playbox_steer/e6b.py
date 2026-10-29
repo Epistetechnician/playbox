@@ -123,6 +123,12 @@ def run_cell(model, tok, ctxs, trait: str, trait_dir, rand_dirs, sem_dirs: dict,
                     past = latent.read_context(model, tok, c, None)
             for q in queries:
                 res[a].append(b_reads(model, tok, past, q, trait, pos_ids, neg_ids, gen_tokens))
+    return summarize(res)
+
+
+def summarize(res: dict[str, list[Result]]) -> dict:
+    """Effects and nulls from per-arm results (arms: clean, steered, rand_*, sem_*; same order in every arm)."""
+    arms = list(res)
     clean = res["clean"]
 
     def eff(a, metric):
@@ -149,6 +155,8 @@ def run_cell(model, tok, ctxs, trait: str, trait_dir, rand_dirs, sem_dirs: dict,
     out["kl_semantic_mean"] = float(np.mean([kl_of(a) for a in arms if a.startswith("sem_")]))
     out["n"] = len(clean)
     return out
+
+
 
 
 def main(argv=None) -> None:

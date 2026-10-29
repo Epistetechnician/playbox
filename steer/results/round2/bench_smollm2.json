@@ -1,0 +1,71 @@
+{
+ "model": "/Users/shaanp/.cache/huggingface/hub/models--HuggingFaceTB--SmolLM2-135M/snapshots/93efa2f097d58c2a74874c7e644dbc9b0cee75a2/",
+ "device": "cpu",
+ "dtype": "float32",
+ "n_layers": 30,
+ "layers": {
+  "6": {
+   "sentiment": {
+    "0.25": {
+     "trait_logit": {
+      "effect": {
+       "mean": 1.800543335576852,
+       "low": 1.6048887627199293,
+       "high": 2.00564847557495
+      },
+      "specific_vs_random": {
+       "mean": 1.8198835927372177,
+       "low": 1.6623327808377024,
+       "high": 1.9889291929857182
+      },
+      "specific_vs_semantic": {
+       "mean": 1.8100570018092792,
+       "low": 1.6307662629522384,
+       "high": 2.0119177686671414
+      },
+      "random_as_far": 0.0,
+      "semantic_effects": {
+       "formality": -0.028831981122493744,
+       "tense": 0.0895373101035754,
+       "topic": -0.08783684422572453,
+       "question": -0.010923149685064951
+      },
+      "semantic_as_far": 0.0
+     },
+     "gen": {
+      "effect": {
+       "mean": 0.04948292448292448,
+       "low": 0.025923821548821547,
+       "high": 0.07229564995189995
+      },
+      "specific_vs_random": {
+       "mean": 0.04145294086700337,
+       "low": 0.026786562143007456,
+       "high": 0.05703367379148629
+      },
+      "specific_vs_semantic": {
+       "mean": 0.04511634199134199,
+       "low": 0.026789815002705632,
+       "high": 0.06383238072691197
+      },
+      "random_as_far": 0.0,
+      "semantic_effects": {
+       "formality": 0.004892676767676769,
+       "tense": -0.0010784932659932665,
+       "topic": 0.006991792929292928,
+       "question": 0.006660353535353536
+      },
+      "semantic_as_far": 0.0
+     },
+     "kl_steered": 0.14107052329927683,
+     "kl_random_mean": 0.09095274976668104,
+     "kl_semantic_mean": 0.03328638015833955,
+     "n": 48,
+     "seconds": 21.8238845000742,
+     "seconds_slow_path": 227.92195316695143,
+     "speedup": 10.443693154909086
+    }
+   }
+  }
+ }
+}
