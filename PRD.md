@@ -211,7 +211,7 @@ Full model to be written in `docs/threat-model.md` before v0.2.
 ```
 PRD.md                  this file
 crates/playbox-core     types: history chain, ids; later grants, links
-crates/playbox-cli      `playbox` binary (stub)
+crates/playbox-cli      `playbox` binary: rooms, review, trust, memory, steering and experiments (docs/cli.md)
 lean/                   Lean 4 grant model and proofs
 orchestrator/           LangGraph delegation graphs (stub)
 world/                  PyTorch hash-grid field learned from agent events (prototype, section 7a)

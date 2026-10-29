@@ -17,3 +17,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 anyhow = "1"
 playbox-runner = { path = "../playbox-runner" }
 playbox-bridge = { path = "../playbox-bridge" }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4"
+playbox-mcp = { path = "../playbox-mcp" }

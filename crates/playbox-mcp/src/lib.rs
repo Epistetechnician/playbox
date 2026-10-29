@@ -343,7 +343,8 @@ impl Server {
         })
     }
 
-    async fn call(&mut self, name: &str, args: &Value) -> Value {
+    /// Run one tool by name, as `tools/call` does. The CLI's `shell` and `call` commands use it directly.
+    pub async fn call(&mut self, name: &str, args: &Value) -> Value {
         self.record("tool_call", json!({"tool": name, "args": args}).to_string().as_bytes());
         let out = match name {
             "playbox_create" => self.create(args).await,
