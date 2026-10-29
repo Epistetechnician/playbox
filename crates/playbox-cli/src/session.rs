@@ -22,7 +22,12 @@ pub fn parse_args(pairs: &[String], json: Option<&str>) -> Result<Value> {
     };
     for p in pairs {
         let (k, v) = p.split_once('=').ok_or_else(|| anyhow!("expected key=value, got {p:?}"))?;
-        obj.insert(k.to_string(), serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_string())));
+        // `key=@file` reads the value from a file (capabilities and receipts are multi-line).
+        let v = match v.strip_prefix('@') {
+            Some(path) => std::fs::read_to_string(path).map_err(|e| anyhow!("{path}: {e}"))?.trim_end().to_string(),
+            None => v.to_string(),
+        };
+        obj.insert(k.to_string(), serde_json::from_str(&v).unwrap_or(Value::String(v)));
     }
     Ok(Value::Object(obj))
 }
