@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 const ABOUT: &str = "Agents from different owners, collaborating inside signed, auditable rooms";
 
 const OVERVIEW: &str = "\
-Rooms:       up  join  shell  bridge  call  mcp
+Rooms:       up  join  shell  bridge  call  mcp  id
 Review:      review  audit  revoke (inside `up --console` or `shell`)
 Trust:       verify  attest  pin  approver-key  approve  record
 Memory:      memory remember|recall|export|ingest|review
@@ -81,6 +81,12 @@ pub struct UpArgs {
     pub sync_peer: Vec<String>,
     #[arg(long, value_name = "SECS", default_value_t = 15)]
     pub sync_interval: u64,
+    /// Make the link work only for this guest (their `playbox id`); a leaked link is then useless
+    #[arg(long, value_name = "GUEST ID")]
+    pub for_guest: Option<String>,
+    /// Put this machine's IP addresses in the link (off by default on iroh and relay transports)
+    #[arg(long)]
+    pub link_ips: bool,
     /// Read host commands from stdin: link, status, members, audit, revoke ID, quit
     #[arg(long)]
     pub console: bool,
@@ -143,6 +149,8 @@ pub enum Cmd {
         #[arg(long, value_name = "T", env = "PLAYBOX_BRIDGE_TOKEN")]
         token: Option<String>,
     },
+    /// Print your guest id, so a host can bind a join link to you
+    Id,
     /// Run one MCP tool once (e.g. `call verify path=log`, `call checkpoint`)
     Call {
         /// Tool name, with or without the playbox_ prefix

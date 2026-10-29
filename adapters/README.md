@@ -27,7 +27,7 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 
 | Tool | Who | What |
 |---|---|---|
-| `playbox_create` | host | Start a room, share a git repo, optionally let members run sandboxed tasks (`docker: true`). Choose `transport` (`iroh`, `local`, `relay:<url>`) and a room `name` (a named room keeps its identity, members and bans across restarts). Returns a join link. |
+| `playbox_create` | host | Start a room, share a git repo, optionally let members run sandboxed tasks (`docker: true`). Choose `transport` (`iroh`, `local`, `relay:<url>`) and a room `name` (a named room keeps its identity, members and bans across restarts). Returns a join link, which carries no IP addresses by default; pass `for_guest` (the guest's id from `playbox id`) to make it work only for them. |
 | `playbox_join` | guest | Join with a link; get a scoped, expiring grant and a local workspace. Follows the transport recorded in the link unless you pass `transport`. |
 | `playbox_status` | both | Members, workspace, history log path and public key. |
 | `playbox_ping` | guest | Echo through the host; checks the connection and grant. |

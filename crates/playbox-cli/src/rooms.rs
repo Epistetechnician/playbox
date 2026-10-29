@@ -116,11 +116,11 @@ pub async fn up(a: UpArgs) -> Result<()> {
     if a.replica_of.is_some() {
         println!("replica up ({}): serves the room's grants, cannot admit members; join through the primary.", transport.label());
     } else {
-        let link = host.create_link(Duration::from_secs(3600), 1)?;
+        let link = host.create_link_with(Duration::from_secs(3600), 1, link_opts(a.for_guest.as_deref(), a.link_ips)?)?;
         println!("room is up ({}). share this link:\n{}", transport.label(), link.encode());
     }
     if a.console {
-        println!("host console: link | members | audit [N] | revoke <member id> | quit");
+        println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | quit");
         console(&host).await?;
     } else {
         println!("(ctrl-c to stop)");
@@ -131,7 +131,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
 
 pub async fn join(a: JoinArgs) -> Result<()> {
     let (link, choice, task, base, via) = (a.link.as_str(), join_choice(&a.transport)?, a.task, Some(a.base), a.via);
-    let primary = join_link(link, new_secret_key()?, choice).await?;
+    let primary = join_link(link, playbox_net::key_for_link(link, &store::home().join("guest.key"))?, choice).await?;
     // With --via, do the work on another host of the room (a replica) as the same member.
     let (client, primary) = match via {
         Some(addr) => {
@@ -162,7 +162,7 @@ pub async fn join(a: JoinArgs) -> Result<()> {
 }
 
 pub async fn bridge(link: &str, choice: TransportChoice, listen: Option<String>, token: Option<String>) -> Result<()> {
-    let client = join_link(link, new_secret_key()?, choice).await?;
+    let client = join_link(link, playbox_net::key_for_link(link, &store::home().join("guest.key"))?, choice).await?;
     let (listener, addr) = playbox_bridge::bind(listen.as_deref().unwrap_or("127.0.0.1:8787")).await?;
     let url = format!("http://{addr}");
     println!("bridge up: agent card at {url}/.well-known/agent-card.json, JSON-RPC at {url}/jsonrpc");
@@ -187,7 +187,10 @@ async fn console(host: &Host) -> Result<()> {
                 match (w.next(), w.next()) {
                     (None, _) => {}
                     (Some("quit" | "exit"), _) => return Ok(()),
-                    (Some("link"), _) => println!("{}", host.create_link(Duration::from_secs(3600), 1)?.encode()),
+                    (Some("link"), who) => match link_opts(who, false) {
+                        Ok(o) => println!("{}", host.create_link_with(Duration::from_secs(3600), 1, o)?.encode()),
+                        Err(e) => println!("{e}"),
+                    },
                     (Some("members"), _) => {
                         let m = host.members();
                         println!("{} member(s)", m.len());
@@ -212,4 +215,18 @@ async fn console(host: &Host) -> Result<()> {
             }
         }
     }
+}
+
+/// Link options from `--for-guest` and `--link-ips`.
+pub fn link_opts(for_guest: Option<&str>, show_ips: bool) -> Result<playbox_net::LinkOpts> {
+    let bind_to = for_guest.map(|g| g.trim().parse::<playbox_net::EndpointId>().map_err(|e| anyhow::anyhow!("not a guest id (64 hex characters, from the guest's `playbox id`): {e}"))).transpose()?;
+    Ok(playbox_net::LinkOpts { bind_to, show_ips })
+}
+
+/// Print this machine's guest id, for a host to bind a link to.
+pub fn guest_id() -> Result<()> {
+    let k = playbox_net::identity_key(&store::home().join("guest.key"))?;
+    println!("{}", k.public());
+    eprintln!("send this to the host; they run `playbox up --for-guest <id>` so the link works only for you");
+    Ok(())
 }

@@ -80,6 +80,8 @@ pub fn tool_list() -> Value {
                 "sync_interval_secs": {"type": "integer", "description": "How often to ask sync peers for revocations a broadcast may have missed. Default 15."},
                 "invite_ttl_secs": {"type": "integer", "description": "How long the link works. Default 3600."},
                 "uses": {"type": "integer", "description": "How many members the link admits. Default 1."},
+                "for_guest": {"type": "string", "description": "Make the link work only for this guest: their id (64 hex characters, from `playbox id` or the `guest_id` in their playbox_status). Anyone else who finds the link is refused and cannot use up the invite."},
+                "share_ips": {"type": "boolean", "description": "Put this machine's IP addresses in the link. Off by default on iroh and relay transports, so a shared link does not reveal where you are; guests reach you through the relay. Local links always carry them."},
                 "steer_store": {"type": "string", "description": "Host language-model steering (docs/steering.md): a directory holding `weights/<manifest hash>/` model directories (and optional `guards/<hash>/`). Needs runtime=docker and the engine image built from steer/Dockerfile. Members then use playbox_steer."},
                 "steer_image": {"type": "string", "description": "The engine image. Default playbox-steer:0.1."},
                 "steer_mem_mib": {"type": "integer", "description": "Memory for one steering run. Default 4096."},
@@ -568,13 +570,19 @@ impl Server {
                 "next": "This host serves the room's grants and applies its revocations, but cannot admit members: members join through the primary and can then use this host with the grant they were given."
             }));
         }
-        let link = host.create_link(Duration::from_secs(ttl), uses)?;
+        let bind_to = match s_arg(a, "for_guest") {
+            Some(id) => Some(id.trim().parse::<EndpointId>().map_err(|e| anyhow!("for_guest is not a guest id (64 hex characters from the guest's `playbox id`): {e}"))?),
+            None => None,
+        };
+        let link = host.create_link_with(Duration::from_secs(ttl), uses, playbox_net::LinkOpts { bind_to, show_ips: b(a, "share_ips") })?;
         Ok(json!({
             "root_public_key": identity["root_public_key"],
             "peer_address": identity["peer_address"],
             "link": link.encode(),
             "host_id": host.addr().id.to_string(),
             "transport": link.transport.as_ref().map(Transport::label),
+            "bound_to_guest": bind_to.map(|b| b.to_string()),
+            "reveals_ip": link.addr.ip_addrs().next().is_some(),
             "valid_secs": ttl,
             "admits": uses,
             "shares_repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
@@ -594,7 +602,7 @@ impl Server {
         // that fails the check never sees the invite and it stays unspent.
         let parsed = playbox_net::Link::parse(link)?;
         let transport = choice.resolve(parsed.transport.as_ref());
-        let client = Client::connect(parsed.addr, playbox_net::new_secret_key()?, transport).await?;
+        let client = Client::connect(parsed.addr, playbox_net::key_for_link(link, &store::home().join("guest.key"))?, transport).await?;
         let (host_att, newly_pinned) = self.vet_host(&client, a, "not joining").await?;
         client.join(&parsed.invite).await?;
         // Keep the host's signed statement in our history, so anyone verifying it later can see
@@ -694,6 +702,7 @@ impl Server {
             "joined": guest,
             "history_log": self.log_path.display().to_string(),
             "history_public_key": text::hex(&self.key.verifying_key().to_bytes()),
+            "guest_id": playbox_net::identity_key(&store::home().join("guest.key")).ok().map(|k| k.public().to_string()),
         }))
     }
 

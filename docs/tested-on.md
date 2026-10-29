@@ -20,6 +20,13 @@ the memory limit while the grant promised one. The Docker runner now refuses to 
 limits cannot be enforced (`PLAYBOX_ALLOW_MISSING_LIMITS=1` overrides). Add `cgroup_enable=memory cgroup_memory=1`
 to `/boot/firmware/cmdline.txt` and reboot to enable it.
 
+## One machine, real iroh network: IP-free, key-bound link
+
+`playbox up --for-guest <id>` on the public n0 network: the link held only a relay address (no `Ip` entries) and was
+marked bound. A different key was refused (`this invite is for a different key`) without spending the invite; the
+bound guest then joined; reusing the link was refused. All four are in the host's audit log. Host and guest shared
+one machine, so this shows the link works without IPs, not that two separate networks can only meet via the relay.
+
 ## Not yet tested
 
 - The libkrun runner on Linux/KVM (the Pi has `/dev/kvm`, but libkrun is not packaged for it).

@@ -78,6 +78,43 @@ pub struct Link {
     pub addr: EndpointAddr,
     pub invite: String,
     pub transport: Option<Transport>,
+    /// The invite works only for the key the host was told about (see [`LinkOpts::bind_to`]). The guest
+    /// then joins with its stable identity key instead of a fresh one.
+    pub bound: bool,
+}
+
+/// How a join link is made.
+#[derive(Debug, Clone, Default)]
+pub struct LinkOpts {
+    /// Redeemable only by this key. A link that leaks is then useless to anyone else.
+    pub bind_to: Option<EndpointId>,
+    /// Put the host's IP addresses in the link. By default they are left out on `iroh` and `relay:`
+    /// transports (the guest finds the host through its relay and discovery) so a shared link does not
+    /// reveal where the host is. `local` links always carry them, since there is no relay to go through.
+    pub show_ips: bool,
+}
+
+/// Where a guest's stable identity key lives, for links bound to it.
+pub fn identity_key(path: &std::path::Path) -> Result<SecretKey> {
+    match std::fs::read(path) {
+        Ok(b) => Ok(SecretKey::from_bytes(&<[u8; 32]>::try_from(b.as_slice()).map_err(|_| anyhow!("{} is not a 32-byte key", path.display()))?)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let k = random_bytes()?;
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(path, k)?;
+            #[cfg(unix)]
+            std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+            Ok(SecretKey::from_bytes(&k))
+        }
+        Err(e) => Err(e).context("reading identity key"),
+    }
+}
+
+/// The key to join `link` with: a fresh one, or `identity` when the link is bound to a key.
+pub fn key_for_link(link: &str, identity: &std::path::Path) -> Result<SecretKey> {
+    if Link::parse(link)?.bound { identity_key(identity) } else { new_secret_key() }
 }
 
 /// A host's address as one copy-pasteable string, for `--sync-peer`.
@@ -101,11 +138,13 @@ struct LinkBody {
     addr: EndpointAddr,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     t: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    b: bool,
 }
 
 impl Link {
     pub fn encode(&self) -> String {
-        let body = LinkBody { addr: self.addr.clone(), t: self.transport.as_ref().map(Transport::label) };
+        let body = LinkBody { addr: self.addr.clone(), t: self.transport.as_ref().map(Transport::label), b: self.bound };
         let json = serde_json::to_vec(&body).expect("link body serializes");
         format!("{LINK_SCHEME}{}#{}", B64.encode(json), self.invite)
     }
@@ -114,21 +153,23 @@ impl Link {
         let rest = s.strip_prefix(LINK_SCHEME).ok_or_else(|| anyhow!("link must start with {LINK_SCHEME}"))?;
         let (body, invite) = rest.split_once('#').ok_or_else(|| anyhow!("link has no invite fragment"))?;
         let json = B64.decode(body).context("link is not valid base64")?;
-        let (addr, t) = match serde_json::from_slice::<LinkBody>(&json) {
-            Ok(b) => (b.addr, b.t),
-            Err(_) => (serde_json::from_slice(&json).context("link address is not valid")?, None),
+        let (addr, t, bound) = match serde_json::from_slice::<LinkBody>(&json) {
+            Ok(b) => (b.addr, b.t, b.b),
+            Err(_) => (serde_json::from_slice(&json).context("link address is not valid")?, None, false),
         };
         if invite.is_empty() {
             bail!("empty invite");
         }
         let transport = t.map(|t| Transport::parse(&t)).transpose()?;
-        Ok(Self { addr, invite: invite.to_string(), transport })
+        Ok(Self { addr, invite: invite.to_string(), transport, bound })
     }
 }
 
 #[derive(Debug)]
 struct Invite {
     uses_left: u32,
+    /// If set, only this key may redeem the invite.
+    bound_to: Option<EndpointId>,
 }
 
 #[derive(Debug, Default)]
@@ -153,6 +194,9 @@ struct State {
 #[derive(Serialize, Deserialize, Default)]
 struct Saved {
     invites: HashMap<String, u32>,
+    /// Invite id -> the only key allowed to redeem it.
+    #[serde(default)]
+    bound: HashMap<String, String>,
     members: HashMap<String, String>,
     revoked: Vec<String>,
     banned: Vec<String>,
@@ -170,7 +214,10 @@ impl State {
         };
         let saved: Saved = serde_json::from_str(&text).context("host state file is corrupt")?;
         let id = |s: &str| s.parse::<EndpointId>().map_err(|e| anyhow!("bad endpoint id in state: {e}"));
-        st.invites = saved.invites.into_iter().map(|(k, v)| (k, Invite { uses_left: v })).collect();
+        for (k, v) in saved.invites {
+            let bound_to = saved.bound.get(&k).map(|b| id(b)).transpose()?;
+            st.invites.insert(k, Invite { uses_left: v, bound_to });
+        }
         for (m, g) in saved.members {
             st.members.insert(id(&m)?, g);
         }
@@ -188,6 +235,7 @@ impl State {
         let Some(path) = &self.path else { return };
         let saved = Saved {
             invites: self.invites.iter().map(|(k, v)| (k.clone(), v.uses_left)).collect(),
+            bound: self.invites.iter().filter_map(|(k, v)| v.bound_to.map(|b| (k.clone(), b.to_string()))).collect(),
             members: self.members.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
             revoked: self.revoked.iter().cloned().collect(),
             banned: self.banned.iter().map(ToString::to_string).collect(),
@@ -387,6 +435,10 @@ impl RoomHandler {
             bail!("this room is full ({} members)", self.limiter.max_members());
         }
         let inv = st.invites.get_mut(&id).ok_or_else(|| anyhow!("invite already used or unknown"))?;
+        if inv.bound_to.is_some_and(|b| b != from) {
+            // Checked before the invite is spent, so a stranger holding a leaked link cannot burn it.
+            bail!("this invite is for a different key");
+        }
         inv.uses_left -= 1;
         if inv.uses_left == 0 {
             st.invites.remove(&id);
@@ -1050,13 +1102,23 @@ impl Host {
 
     /// Create a join link whose invite lasts `ttl` and admits `uses` joins.
     pub fn create_link(&self, ttl: Duration, uses: u32) -> Result<Link> {
+        self.create_link_with(ttl, uses, LinkOpts::default())
+    }
+
+    /// Like [`Host::create_link`], optionally bound to one guest key and with or without IP addresses.
+    pub fn create_link_with(&self, ttl: Duration, uses: u32, opts: LinkOpts) -> Result<Link> {
         let (invite, id) = self.auth.mint_invite(ttl.as_secs() as i64)?;
         {
             let mut st = self.state.lock().expect("state lock");
-            st.invites.insert(id, Invite { uses_left: uses.max(1) });
+            st.invites.insert(id, Invite { uses_left: uses.max(1), bound_to: opts.bind_to });
             st.save();
         }
-        Ok(Link { addr: self.addr(), invite, transport: Some(self.transport.clone()) })
+        let mut addr = self.addr();
+        let has_relay = addr.addrs.iter().any(|a| matches!(a, iroh::TransportAddr::Relay(_)));
+        if self.transport != Transport::Local && !opts.show_ips && has_relay {
+            addr.addrs.retain(|a| !matches!(a, iroh::TransportAddr::Ip(_)));
+        }
+        Ok(Link { addr, invite, transport: Some(self.transport.clone()), bound: opts.bind_to.is_some() })
     }
 
     pub fn members(&self) -> Vec<EndpointId> {

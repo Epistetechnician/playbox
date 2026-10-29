@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
         Cmd::Bridge { link, transport, listen, token } => rooms::bridge(&link, rooms::join_choice(&transport)?, listen, token).await,
         Cmd::Call { tool, args, json } => session::call(&tool, &args, json.as_deref()).await,
         Cmd::Mcp => session::mcp().await,
+        Cmd::Id => rooms::guest_id(),
         Cmd::Review { repo, action, into } => trust::review_cmd(&repo, &action, into).await,
         Cmd::Audit { file, tail } => trust::audit_cmd(&file, tail),
         Cmd::Verify { log } => trust::verify(&log),

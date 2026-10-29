@@ -20,3 +20,15 @@ projects (their `.venv`, else `uv`); set `PLAYBOX_ROOT` if you run `playbox` fro
 
 Revoking a member needs the live host: use `up --console` (or `revoke member=ID` in a `shell` that created the room).
 `memory-review` still works as an alias for `memory review`.
+
+## Private links
+
+By default a join link carries the host's key and relay address but **no IP addresses** (on `iroh` and `relay:`
+transports; `local` links need them). Guests reach the host through its relay and discovery. `up --link-ips`
+puts them back.
+
+To make a leaked link useless, bind it to the guest: the guest runs `playbox id` (or reads `guest_id` in
+`playbox_status`) and sends the host that 64-hex id; the host runs `playbox up --for-guest <id>` (MCP:
+`playbox_create` with `for_guest`; console: `link <id>`). Only that key can redeem the invite. Anyone else is
+refused and cannot use it up. A bound link makes the guest join with its stable identity key
+(`$PLAYBOX_HOME/guest.key`); unbound links still use a fresh throwaway key each time.
