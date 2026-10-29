@@ -265,6 +265,10 @@ impl Verified {
         let ok = ch.expect.len() == response.len() && ch.expect.iter().zip(response).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0;
         if ok {
             self.achieved = ch.tier_on_success.min(self.statement.claimed);
+            self.notes.retain(|n| !n.starts_with("claims "));
+            if self.statement.claimed > self.achieved {
+                self.notes.push(format!("claims {} but only {} is supported", self.statement.claimed, self.achieved));
+            }
             self.notes.push(format!("challenge answered: the hardware holds the keys it claims; supports {}", self.achieved));
         } else {
             self.notes.push("challenge answered incorrectly: the host does not hold the keys it claims".into());

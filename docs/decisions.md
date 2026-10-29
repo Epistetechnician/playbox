@@ -43,6 +43,10 @@
 | 33 | Gossip for speed plus periodic pull for repair, over a grow-only set | Gossip alone loses messages to offline hosts; a grow-only set makes order and duplicates harmless | Notice volume makes full-list pulls too big |
 | 34 | A host serves notices only to configured sync peers | Notices name revoked members' endpoint ids; strangers need not learn them | A public revocation list is wanted |
 | 35 | Replicas hold only the root public key | A replica compromise cannot admit members or revoke | Replicas that must admit members |
+| 35 | The AK must be restricted and fixed, checked from its TPMT_PUBLIC, even without EK anchors | An unrestricted key can sign bytes that look like a quote; the earlier raw-key check missed this | Never |
+| 36 | Genuineness is opt-in via `PLAYBOX_TPM_EK_ANCHORS`; with anchors, failing it holds a host at T0 | We cannot ship manufacturer roots we cannot vouch for; operators choose whom to trust | A vetted default root set |
+| 37 | Interactive proof (credential activation) lives in `Verified.challenge`; offline checks keep the lower tier | The EK certificate is public, so a static check alone proves nothing | Never |
+| 38 | MakeCredential is implemented in Rust and validated against a real TPM, not against our own reading of the spec | Layouts and KDF details are easy to get subtly wrong | A TSS binding replaces it |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 

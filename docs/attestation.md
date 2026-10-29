@@ -97,9 +97,9 @@ were tried first and fail in a plain command-line tool with `errSecMissingEntitl
 - Proven: the key that signed the statement also holds the device key (the device signed a binding that
   includes the statement's subject), the evidence answers this nonce, and the quote's PCR values are
   consistent with the TPM's signature.
-- Not proven: that the device is genuine. That needs the TPM's endorsement-key certificate chain checked
-  against manufacturer roots (not implemented) or Apple App Attest for the Secure Enclave (needs an app
-  bundle and Apple developer entitlements; not implemented). Until then, trust comes from the pin.
+- Not proven by default: that the device is genuine. For a TPM, set `PLAYBOX_TPM_EK_ANCHORS` (below) to prove it.
+  Apple App Attest for the Secure Enclave needs an app bundle and Apple developer entitlements and is not
+  implemented, so Secure Enclave trust comes from the pin alone.
 - Not proven: that a root-compromised host is honest. It can extend PCR 23 with anything. Boot PCR
   reference values (T2) narrow this to hosts whose firmware and boot chain match what you expect, but a
   later compromise of the running system is not covered; that needs IMA or a confidential VM.
@@ -124,6 +124,40 @@ startup-clear --daemon`), set `TPM2TOOLS_TCTI=swtpm:host=127.0.0.1,port=2321`, a
 nonces. On a real Linux host, drop the TCTI variable, make sure the user can open `/dev/tpmrm0` (group
 `tss`), and the same command produces real evidence. A TPM without a resource manager needs the provider's
 `tpm2_flushcontext -t` calls, which it makes itself.
+
+## Proving a TPM is genuine (EK certificate and credential activation)
+
+A quote shows that some attestation key (AK) signed; a software TPM looks identical. To show the AK lives
+in a chip a manufacturer certified, the verifier runs the TPM's own protocol. Set
+`PLAYBOX_TPM_EK_ANCHORS=<PEM file>` to the root or intermediate certificates you trust to vouch for TPM
+endorsement keys (EKs). Then:
+
+1. The AK must be a **restricted, non-exportable signing key** (`fixedTPM`, `fixedParent`, `restricted`,
+   `sign`, not `decrypt`). This is checked even without anchors; a quote under any other key proves nothing,
+   since an unrestricted key can sign bytes that merely look like a quote.
+2. The host sends its EK certificate (read from the TPM's NV index; intermediates from the host's
+   `PLAYBOX_TPM_EK_CHAIN` PEM). It must chain to one of your anchors, be valid now, and have CA
+   intermediates. Revocation is not checked.
+3. The verifier encrypts a fresh random secret to the EK's public key, bound to the AK's name
+   (`TPM2_MakeCredential`, done in software, RSA and ECC EKs both supported) and sends it as
+   `playbox.ActivateCredential`.
+4. Only a TPM holding that EK **and** that AK can decrypt it (`TPM2_ActivateCredential`). The returned secret
+   is compared in constant time. Until it matches, the tier stays T0, because the certificate is public and
+   anyone could replay it.
+
+With anchors configured, a pinned host that cannot prove this (no certificate, wrong chain, failed
+activation) stays at T0; without anchors the old pin-only behaviour applies and the output says genuineness
+was not checked. A saved history cannot repeat the live challenge, so `playbox verify` on a log shows the
+tier without it.
+
+Tested: `make_credential` against a real TPM implementation's `ActivateCredential` (RSA and ECC, plus
+wrong-AK-name, flipped-bit and wrong-EK refusals), in `playbox-core/tests/tpm_hardware.rs` (run in a VM with
+`PLAYBOX_TEST_TPM=1`); the certificate chain offline against fixtures (`tests/tpm_fixtures.rs`); and the
+whole path across machines: a Linux host with swtpm serving over iroh's public relays, a Mac guest with the
+swtpm CA as anchor reaching T1 after the TPM answered, and the wrong anchor staying at T0. The "manufacturer" there is
+swtpm's own CA, so this shows the mechanism works, not that any real vendor's chain verifies. A hardware
+TPM (Intel PTT, AMD fTPM, Infineon, ...) has not been tried; real vendors' intermediates are usually fetched
+from their websites, so expect to supply them via `PLAYBOX_TPM_EK_CHAIN` and anchors.
 
 ## Policy
 

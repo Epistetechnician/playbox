@@ -352,6 +352,21 @@ impl RoomHandler {
         let invalid = |e: serde_json::Error| A2AError::invalid_params(e.to_string()).to_jsonrpc_error();
         match rpc.method.as_str() {
             wire::METHOD_AGENT_CARD => Ok((*self.card).clone()),
+            wire::METHOD_ACTIVATE => {
+                let Some(p) = self.platform.clone() else {
+                    return Err(A2AError::unsupported_operation("this host has no platform hardware").to_jsonrpc_error());
+                };
+                let req = params.get("request").and_then(Value::as_str).unwrap_or_default();
+                if req.len() > 16384 || req.len() % 2 != 0 || !req.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(A2AError::invalid_params("`request` must be at most 8 KiB of hex").to_jsonrpc_error());
+                }
+                let bytes: Vec<u8> = (0..req.len() / 2).map(|i| u8::from_str_radix(&req[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
+                let out = tokio::task::spawn_blocking(move || p.respond(&bytes)).await.map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())?;
+                match out {
+                    Ok(r) => Ok(json!({ "response": r.iter().map(|b| format!("{b:02x}")).collect::<String>() })),
+                    Err(e) => Err(rpc_error(wire::ERR_UNAUTHORIZED, format!("challenge failed: {e}"))),
+                }
+            }
             wire::METHOD_ATTESTATION => {
                 let nonce = params.get("nonce").and_then(Value::as_str).unwrap_or_default();
                 if nonce.len() > 64 || !nonce.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -929,12 +944,24 @@ impl Client {
         let nonce: String = random_bytes()?[..16].iter().map(|b| format!("{b:02x}")).collect();
         let r = self.call(wire::METHOD_ATTESTATION, json!({ "nonce": nonce })).await?;
         let text = r.get("statement").and_then(Value::as_str).ok_or_else(|| anyhow!("no statement in response"))?;
-        let v = attest::verify(text, verifiers).map_err(|e| anyhow!("host attestation invalid: {e}"))?;
+        let mut v = attest::verify(text, verifiers).map_err(|e| anyhow!("host attestation invalid: {e}"))?;
         if v.statement.subject != *self.conn.remote_id().as_bytes() {
             bail!("host attestation is for a different key than the one this connection authenticated");
         }
         if v.statement.nonce != nonce {
             bail!("host attestation does not answer our nonce (replayed?)");
+        }
+        // Only now, with the host's identity and freshness settled, put its hardware to the test.
+        if let Some(ch) = v.challenge.clone() {
+            let req: String = ch.payload.iter().map(|b| format!("{b:02x}")).collect();
+            match self.call(wire::METHOD_ACTIVATE, json!({ "request": req })).await {
+                Ok(r) => {
+                    let h = r.get("response").and_then(Value::as_str).unwrap_or_default();
+                    let bytes: Vec<u8> = (0..h.len() / 2).map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
+                    v.complete_challenge(&bytes);
+                }
+                Err(e) => v.notes.push(format!("host could not answer the hardware challenge: {e:#}")),
+            }
         }
         if v.achieved < min {
             bail!("host achieves {} but {} was required ({})", v.achieved, min, v.notes.join("; "));

@@ -73,11 +73,57 @@ mod platform {
             let ev = String::from_utf8((0..st.platform_evidence.len() / 2).map(|i| u8::from_str_radix(&st.platform_evidence[i * 2..i * 2 + 2], 16).unwrap()).collect()).unwrap();
             let want: String = st.binding().iter().map(|b| format!("{b:02x}")).collect();
             if ev.trim() == format!("bound {want}") {
-                Ok(PlatformVerdict { tier: Tier::T1, notes: vec![], device: Some("mock-device".into()) })
+                Ok(PlatformVerdict { tier: Tier::T1, notes: vec![], device: Some("mock-device".into()), challenge: None })
             } else {
                 Err("evidence is not bound to this statement".into())
             }
         }
+    }
+
+    /// Hardware that can answer a challenge: it reverses the request.
+    struct Answers(bool);
+    impl PlatformProvider for Answers {
+        fn kind(&self) -> &str {
+            "mock-hw"
+        }
+        fn produce(&self, _: &[u8; 32], _: &Measurements) -> Result<Produced, String> {
+            Ok(Produced { evidence: "x\n".into(), claimed: Tier::T1 })
+        }
+        fn respond(&self, request: &[u8]) -> Result<Vec<u8>, String> {
+            if self.0 { Ok(request.iter().rev().copied().collect()) } else { Err("no".into()) }
+        }
+    }
+
+    struct Asks;
+    impl PlatformVerifier for Asks {
+        fn kind(&self) -> &str {
+            "mock-hw"
+        }
+        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
+            Ok(PlatformVerdict {
+                tier: Tier::T0,
+                notes: vec![],
+                device: None,
+                challenge: Some(playbox_core::attest::Challenge { payload: b"ping".to_vec(), expect: b"gnip".to_vec(), tier_on_success: Tier::T1 }),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn the_hardware_challenge_is_asked_over_the_wire() {
+        let (_h, c) = host_with(Some(Arc::new(Answers(true)))).await;
+        let v = c.verify_host(Tier::T1, &[&Asks]).await.unwrap();
+        assert_eq!(v.achieved, Tier::T1);
+        assert!(v.notes.iter().any(|n| n.contains("challenge answered")), "{:?}", v.notes);
+        // Hardware that refuses to answer cannot reach T1.
+        let (_h2, c2) = host_with(Some(Arc::new(Answers(false)))).await;
+        let e = c2.verify_host(Tier::T1, &[&Asks]).await.unwrap_err();
+        assert!(format!("{e:#}").contains("could not answer the hardware challenge"), "{e:#}");
+        assert_eq!(c2.verify_host(Tier::T0, &[&Asks]).await.unwrap().achieved, Tier::T0);
+        // A host with no hardware at all cannot answer either; malformed requests are refused.
+        let (_h3, c3) = host_with(None).await;
+        assert!(c3.call("playbox.ActivateCredential", serde_json::json!({"request": "00"})).await.is_err());
+        assert!(c.call("playbox.ActivateCredential", serde_json::json!({"request": "zz"})).await.is_err());
     }
 
     struct Broken;
