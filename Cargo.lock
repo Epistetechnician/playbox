@@ -3042,6 +3042,7 @@ version = "0.0.1"
 dependencies = [
  "a2a-lf",
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "biscuit-auth",
  "blake3",

@@ -136,7 +136,7 @@ impl Runner for OpenShellRunner {
     /// statement changes when either changes.
     fn attestation(&self) -> String {
         let base = policy_yaml(&[]).expect("base policy is valid");
-        format!("{};base-policy={}", self.version.get().map(String::as_str).unwrap_or("unknown"), digest(&base))
+        format!("{};base-policy={};{}", self.version.get().map(String::as_str).unwrap_or("unknown"), digest(&base), self.policy.describe())
     }
 
     async fn preflight(&self) -> Result<()> {

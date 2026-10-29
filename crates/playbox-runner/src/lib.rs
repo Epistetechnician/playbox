@@ -40,6 +40,14 @@ impl Default for SandboxPolicy {
 }
 
 impl SandboxPolicy {
+    /// Canonical text of the image allow-list, for the host's signed policy measurement: a verifier
+    /// that expects one image set sees a different digest if the host allows another.
+    pub fn describe(&self) -> String {
+        let mut v = self.allowed_images.clone();
+        v.sort();
+        format!("images={}", v.join(","))
+    }
+
     pub fn check(&self, spec: &TaskSpec) -> Result<()> {
         if !self.allowed_images.iter().any(|i| i == &spec.image) {
             bail!("image {:?} is not allowed on this host (allowed: {})", spec.image, self.allowed_images.join(", "));
@@ -292,6 +300,10 @@ impl DockerRunner {
 
 #[async_trait]
 impl Runner for DockerRunner {
+    fn attestation(&self) -> String {
+        self.policy.describe()
+    }
+
     fn name(&self) -> &'static str {
         "docker"
     }

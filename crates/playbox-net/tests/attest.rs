@@ -226,3 +226,43 @@ async fn the_host_list_is_part_of_the_signed_policy() {
     let (some, _b) = mk(vec!["example.com".into()]).await;
     assert_ne!(none, some);
 }
+
+/// A Docker runner whose daemon check is skipped: only its attested description matters here.
+struct NoDaemon(playbox_runner::DockerRunner);
+
+#[async_trait::async_trait]
+impl playbox_runner::Runner for NoDaemon {
+    fn name(&self) -> &'static str {
+        "docker"
+    }
+    fn isolation(&self) -> playbox_runner::Isolation {
+        self.0.isolation()
+    }
+    fn attestation(&self) -> String {
+        self.0.attestation()
+    }
+    async fn preflight(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn run(&self, spec: &playbox_runner::TaskSpec, ws: &std::path::Path) -> anyhow::Result<playbox_runner::TaskOutput> {
+        self.0.run(spec, ws).await
+    }
+}
+
+#[tokio::test]
+async fn a_host_that_allows_a_different_sandbox_image_attests_a_different_policy() {
+    use playbox_runner::{DockerRunner, SandboxPolicy};
+    let mk = |image: &'static str| async move {
+        let runner = NoDaemon(DockerRunner::new(SandboxPolicy { allowed_images: vec![image.into()] }));
+        let cfg = HostConfig { runner: Some(std::sync::Arc::new(runner)), ..Default::default() };
+        let h = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
+        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let v = c.verify_host(Tier::T0, &[]).await.unwrap();
+        (v.statement.measurements.policy, h)
+    };
+    let (expected, _a) = mk("alpine:3").await;
+    let (swapped, _b) = mk("evil:latest").await;
+    let (same, _c) = mk("alpine:3").await;
+    assert_ne!(expected, swapped, "swapping the image must change the signed policy measurement");
+    assert_eq!(expected, same);
+}

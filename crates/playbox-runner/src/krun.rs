@@ -180,6 +180,10 @@ impl KrunRunner {
 
 #[async_trait]
 impl Runner for KrunRunner {
+    fn attestation(&self) -> String {
+        self.policy.describe()
+    }
+
     fn name(&self) -> &'static str {
         "libkrun"
     }

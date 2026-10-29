@@ -26,5 +26,6 @@ blake3.workspace = true
 n0-future = "0.3"
 
 [dev-dependencies]
+async-trait = "0.1"
 iroh = { version = "1.4", features = ["test-utils"] }
 iroh-relay = { version = "1.4", features = ["test-utils", "server"] }
