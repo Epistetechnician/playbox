@@ -14,8 +14,10 @@ import math
 import torch
 from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
 
+from .traits import SENTIMENT, Trait
+
 MAX_CHARS = 400
-CLASSIFIER = "siebert/sentiment-roberta-large-english"
+CLASSIFIER = SENTIMENT.classifier
 JUDGE = "Qwen/Qwen3-1.7B-Base"
 
 
@@ -28,12 +30,15 @@ def _clip(t: str) -> str:
     return t[:MAX_CHARS] if t else "."
 
 
-class SentimentClassifier:
-    def __init__(self, name: str = CLASSIFIER, batch: int = 32):
-        self.tok = AutoTokenizer.from_pretrained(name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(name).eval().to(device())
+class TraitClassifier:
+    """A trained classifier for `trait`. Score = logit(positive label) - logit(negative label): higher is more of
+    the trait."""
+
+    def __init__(self, trait: Trait = SENTIMENT, batch: int = 32):
+        self.tok = AutoTokenizer.from_pretrained(trait.classifier)
+        self.model = AutoModelForSequenceClassification.from_pretrained(trait.classifier).eval().to(device())
         labels = {v.lower(): k for k, v in self.model.config.id2label.items()}
-        self.pos, self.neg = labels["positive"], labels["negative"]
+        self.pos, self.neg = labels[trait.positive_label], labels[trait.negative_label]
         self.batch = batch
 
     @torch.no_grad()
@@ -46,16 +51,16 @@ class SentimentClassifier:
         return out
 
 
-_PROMPT = (
-    "Two short texts are shown. Decide which one is more positive in sentiment (happier, more favourable, more approving).\n\n"
-    "Text A: The service was slow and the food was cold.\nText B: The staff were lovely and the meal was great.\nMore positive: B\n\n"
-    "Text A: I am thrilled with how the day went.\nText B: Nothing about this trip worked out.\nMore positive: A\n\n"
-    "Text A: {a}\nText B: {b}\nMore positive:"
-)
+def prompt_for(trait: Trait) -> str:
+    """The judge's prompt with `{a}` and `{b}` left to fill; braces in the trait's own text are escaped."""
+    esc = lambda t: t.replace("{", "{{").replace("}", "}}")  # noqa: E731
+    shots = "".join(f"Text A: {esc(a)}\nText B: {esc(b)}\n{trait.answer_prefix} {ans}\n\n" for a, b, ans in trait.examples)
+    return f"Two short texts are shown. {trait.question}\n\n{shots}Text A: {{a}}\nText B: {{b}}\n{trait.answer_prefix}"
 
 
 class PairwiseJudge:
-    def __init__(self, name: str = JUDGE, batch: int = 8):
+    def __init__(self, trait: Trait = SENTIMENT, name: str = JUDGE, batch: int = 8):
+        self.prompt = prompt_for(trait)
         self.tok = AutoTokenizer.from_pretrained(name)
         self.tok.padding_side = "left"
         if self.tok.pad_token is None:
@@ -72,7 +77,7 @@ class PairwiseJudge:
     def _a_minus_b(self, pairs: list[tuple[str, str]]) -> list[float]:
         out: list[float] = []
         for i in range(0, len(pairs), self.batch):
-            prompts = [_PROMPT.format(a=_clip(a), b=_clip(b)) for a, b in pairs[i : i + self.batch]]
+            prompts = [self.prompt.format(a=_clip(a), b=_clip(b)) for a, b in pairs[i : i + self.batch]]
             enc = self.tok(prompts, return_tensors="pt", padding=True).to(self.model.device)
             logp = torch.log_softmax(self.model(**enc).logits[:, -1].float(), -1)
             diff = (logp[:, self.id_a] - logp[:, self.id_b]).cpu().tolist()
@@ -88,3 +93,6 @@ class PairwiseJudge:
         fwd = self._a_minus_b(pairs)
         rev = self._a_minus_b([(y, x) for x, y in pairs])
         return [(f - r) / 2 for f, r in zip(fwd, rev)]
+
+
+SentimentClassifier = TraitClassifier  # the original name; sentiment is the default trait

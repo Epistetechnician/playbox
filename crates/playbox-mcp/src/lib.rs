@@ -82,6 +82,7 @@ pub fn tool_list() -> Value {
                 "uses": {"type": "integer", "description": "How many members the link admits. Default 1."},
                 "for_guest": {"type": "string", "description": "Make the link work only for this guest: their id (64 hex characters, from `playbox id` or the `guest_id` in their playbox_status). Anyone else who finds the link is refused and cannot use up the invite."},
                 "share_ips": {"type": "boolean", "description": "Put this machine's IP addresses in the link. Off by default on iroh and relay transports, so a shared link does not reveal where you are; guests reach you through the relay. Local links always carry them."},
+                "grant_ttl_secs": {"type": "integer", "description": "How long members' grants last. Default 3600. Long experiments need longer; a grant that expires mid-run is refused, correctly."},
                 "steer_store": {"type": "string", "description": "Host language-model steering (docs/steering.md): a directory holding `weights/<manifest hash>/` model directories (and optional `guards/<hash>/`). Needs runtime=docker and the engine image built from steer/Dockerfile. Members then use playbox_steer."},
                 "steer_image": {"type": "string", "description": "The engine image. Default playbox-steer:0.1."},
                 "steer_mem_mib": {"type": "integer", "description": "Memory for one steering run. Default 4096."},
@@ -512,6 +513,7 @@ impl Server {
                 min_isolation,
                 limits,
                 steer,
+                grant_ttl: a.get("grant_ttl_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs),
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
                 ..Default::default()
             };

@@ -250,7 +250,7 @@ enter shared memory quarantined.
 ### 3.7 Surfaces
 
 - **Agents:** the `playbox_steer` MCP tool (steer or probe) and `steer_store`, `steer_image`, `steer_mem_mib`,
-  `steer_timeout_secs`, `steer_caps` on `playbox_create`.
+  `steer_timeout_secs`, `steer_caps` and `grant_ttl_secs` on `playbox_create`.
 - **Humans:** `playbox up --runtime docker --steer-store DIR [--steer-image IMG] [--steer-mem-mib N]`.
 - **Making directions:** `python -m playbox_steer extract|random|manifest` (see `steer/playbox_steer/__main__.py`).
   Extraction is difference-of-means of last-token states between two prompt groups.
@@ -264,7 +264,7 @@ side-effect metric. Status first, then the one result so far.
 
 | | Status |
 |---|---|
-| **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own projection measure, and an independent classifier and a pairwise judge agree it reads as more positive (strongest at strength 0.2). |
+| **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own projection measure, and an independent classifier and a pairwise judge agree it reads as more positive (strongest at strength 0.2). A second trait (formality) shows the same pattern against random directions but not against prompting. |
 | **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
 | **E3** transfer across models | Not built. |
 | **E4** config-search lineage | Not built (section 3.5). |
@@ -372,6 +372,52 @@ measures.
   24 clean pairs but GPT-2's text is stranger than that. Their 0.69 to 0.70 agreement says they are measuring
   related things, not that either is a ground truth.
 - Still one model, one trait, one layer, one extraction set. No human rated anything.
+
+#### A second trait: formality
+
+Same design, a different trait, chosen to check that the sentiment result is not specific to sentiment: a formality
+direction (difference of means over 12 formal and 12 informal sentences, layer 6, `resid_post`), the same 64 seeds and
+20 random directions, one strength (0.3, chosen before seeing results, not swept), prompting baseline "write in a very
+formal, professional and polite register". Behavior is scored by `s-nlp/roberta-base-formality-ranker` and by the same
+local judge asked "which is more formal"; both scored 24/24 on 24 held-out gold pairs, and the sentiment classifier
+does not rank those pairs (a test asserts it), so the measures are about their own trait. Reports:
+[projection](e1-gpt2-formality-64seeds-coef0.3.json), [behavior](e1-gpt2-formality-64seeds-coef0.3.judged.json).
+
+| Effect vs clean, hop 0 / 1 / 2 | steered | prompted | 20 random directions (mean ± sd) | steered vs nulls |
+|---|---|---|---|---|
+| projection onto the trait direction | +0.025 / +0.024 / +0.025 | +0.005 / +0.002 / +0.003 (intervals include 0) | −0.003 ± 0.007 / +0.002 ± 0.019 / +0.002 ± 0.006 | above 20, 19, 20 of 20; z +3.9 / +1.2 / +3.9 (hop 1's spread is inflated by one random direction at +0.076) |
+| classifier (formal − informal logit) | +1.66 / +1.73 / +1.66 | +1.71 / +1.26 / +1.43 | +0.01 ± 0.41 / +0.15 ± 0.33 / +0.19 ± 0.34 | above all 20; z +4.0 / +4.8 / +4.3 |
+| pairwise judge (log-odds more formal) | +0.10 / +0.12 / +0.11 | +0.13 / +0.05 / −0.01 | −0.01 ± 0.08 / +0.02 ± 0.06 / +0.01 ± 0.06 | above 19, 18, 18 of 20; z +1.5 / +1.7 / +1.6 |
+| steered − prompted, classifier, paired | −0.05 [−0.74, +0.66] / +0.47 [−0.24, +1.18] / +0.23 [−0.46, +0.93] | | | |
+| steered − prompted, judge, paired | −0.03 [−0.16, +0.11] / +0.07 [−0.03, +0.17] / +0.13 [+0.03, +0.23] | | | |
+
+**What this shows.**
+1. The classifier agrees the steered text is more formal than clean text, by more than any of 20 random directions
+   (z about +4 to +5), and the effect is the same size two hops later in agents that only read the text.
+2. This second trait does not reproduce the sentiment result on one point: **steering does not beat prompting here.**
+   The prompted prefix raises the classifier score as much as steering does (paired differences include zero at every
+   hop), while for sentiment steering clearly beat prompting on the classifier.
+3. The projection measure missed the prompted arm's effect: projection says prompting did nothing (+0.003), the
+   classifier says it did as much as steering. So a projection onto the extracted direction is not a sufficient
+   stand-in for behavior. Across arms its rank correlation with the classifier is 0.34 to 0.63 for formality
+   (0.74 to 0.95 for sentiment), and with the judge 0.28 to 0.54 (0.90 to 0.96).
+
+**Where it is thin.** The judge is a weak instrument for formality: effects of about +0.1 log-odds, steered above
+only 18 to 19 of 20 random directions, and agreement with the classifier of Spearman 0.25 per text (0.69 to 0.70 for
+sentiment). The classifier was trained on a particular notion of formality. One strength, so no read on how the
+effect scales. The gold pairs were clean contrasts; GPT-2's continuations are not. Everything from the sentiment
+section's caveats still applies: one model, one layer, one extraction set per trait, no human ratings.
+
+**What it means for the claim.** Across two traits, an edit to one agent's activations produces text that the
+independent measures rate as more of the trait than any of 20 random edits do, and that difference is still present
+two hops downstream in agents that only read the text. Whether steering is better than simply asking for the trait
+depends on the trait (better for sentiment, no better for formality in this setup). The chain result rests on
+GPT-2's tendency to carry text forward; it is not evidence about instruction-following models.
+
+**Running it took three tries, and two of the failures are worth knowing.** Six parallel shards on a machine that
+was also running other jobs timed out at the 600 s steering limit; a rerun with a 30-minute limit then hit the
+member's grant expiring after its default hour, because the first hop took longer than that under load. Both fail
+closed and are correct behavior. `playbox_create` now takes `grant_ttl_secs`, and the experiment sets six hours.
 
 **A fix this run forced.** Under six concurrent shards, one request was refused with "Reached Datalog execution
 limits": the Biscuit library's default time budget for evaluating a grant is one millisecond. A refusal fails

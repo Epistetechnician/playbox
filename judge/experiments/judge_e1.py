@@ -3,7 +3,7 @@
     python experiments/judge_e1.py REPORT.json OUT.json [--force]
 
 For every arm and hop, each seed's text is compared with the `clean` arm's text for the same seed and hop:
-classifier: score(arm) - score(clean); judge: log-odds that the arm's text is more positive than the clean one.
+classifier: score(arm) - score(clean); judge: log-odds that the arm's text is more of the trait than the clean one.
 Both are summarized as a mean with a bootstrap interval over seeds, then the steered and prompted effects are
 ranked against the random-direction (`null*`) arms. The measures are first checked on held-out gold pairs and the
 script stops if either falls short, unless --force.
@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from playbox_judge.gold import GOLD  # noqa: E402
-from playbox_judge.measures import CLASSIFIER, JUDGE, PairwiseJudge, SentimentClassifier  # noqa: E402
+from playbox_judge.measures import JUDGE, PairwiseJudge, TraitClassifier  # noqa: E402
+from playbox_judge.traits import TRAITS  # noqa: E402
 from playbox_judge.stats import bootstrap_ci, percentile_against, spearman  # noqa: E402
 
 GOLD_MIN = {"classifier": 0.95, "judge": 0.9}
@@ -41,11 +41,14 @@ def main() -> None:
     ap.add_argument("report")
     ap.add_argument("out")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--trait", default="sentiment", choices=sorted(TRAITS))
     a = ap.parse_args()
     rep = json.loads(Path(a.report).read_text())
     texts, hops = rep["texts"], rep["hops"]
 
-    clf, judge = SentimentClassifier(), PairwiseJudge()
+    trait = TRAITS[a.trait]
+    GOLD = list(trait.gold)
+    clf, judge = TraitClassifier(trait), PairwiseJudge(trait)
     pos = clf.score([p for p, _ in GOLD])
     neg = clf.score([n for _, n in GOLD])
     gold = {
@@ -82,7 +85,7 @@ def main() -> None:
 
     result = {
         "source": Path(a.report).name, "seeds": rep["seeds"], "hops": hops, "config": rep.get("config"),
-        "measures": {"classifier": CLASSIFIER, "judge": JUDGE}, "gold": gold, "arms": arms,
+        "trait": trait.name, "measures": {"classifier": trait.classifier, "judge": JUDGE}, "gold": gold, "arms": arms,
         "null_population": {m: [population(arms, m, h) for h in range(hops)] for m in ("classifier", "judge")},
         "agreement_spearman_classifier_vs_judge_over_texts": spearman([c for c, _ in items], [j for _, j in items]),
     }
