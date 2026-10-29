@@ -157,6 +157,7 @@ def run_e1(cfg: Config, arms: list[Arm], seeds: list[str], boot_seed: int = 0) -
                 "effect_vs_clean": {"mean": mean, "low": lo, "high": hi},
                 "kl_mean": kmean,
                 "empty_texts": sum(t == "." for t in h.texts),
+                "projection": h.projection,
                 "spec_digests": h.receipts,
             })
         report["arms"][name] = per_hop
@@ -166,4 +167,56 @@ def run_e1(cfg: Config, arms: list[Arm], seeds: list[str], boot_seed: int = 0) -
         for row in report["arms"][name]:
             row["retained_fraction"] = (row["effect_vs_clean"]["mean"] / h0) if abs(h0) > 1e-9 else None
     report["texts"] = {n: [h.texts for h in hops] for n, hops in raw.items()}
+    add_null_population(report)
     return report
+
+
+def add_null_population(report: dict) -> None:
+    """Rank the steered (and prompted) effect at each hop against the random-direction arms (`null*`).
+
+    `steered_percentile` is the fraction of null directions whose mean effect is strictly below the steered one;
+    with n nulls the smallest nonzero step is 1/n, so a value of 1.0 means "above every null we drew", not
+    "impossible by chance". `z` is the distance from the null mean in null standard deviations.
+    """
+    arms = report["arms"]
+    nulls = sorted(n for n in arms if n.startswith("null"))
+    report["null_population"] = []
+    if len(nulls) < 2:
+        return
+    for hop in range(report["hops"]):
+        pop = [arms[n][hop]["effect_vs_clean"]["mean"] for n in nulls]
+        mean, sd = statistics.fmean(pop), statistics.stdev(pop)
+        row = {"hop": hop, "n": len(pop), "null_mean": mean, "null_sd": sd, "null_max": max(pop), "null_min": min(pop)}
+        for who in ("steered", "prompted"):
+            if who in arms:
+                v = arms[who][hop]["effect_vs_clean"]["mean"]
+                row[f"{who}_percentile"] = percentile_against(v, pop)
+                row[f"{who}_z"] = (v - mean) / sd if sd > 0 else None
+        report["null_population"].append(row)
+
+
+def merge_reports(reports: list[dict]) -> dict:
+    """Combine reports from shards that ran the same seeds and settings with different null directions.
+
+    The `clean` arm is deterministic, so each shard's own copy is identical; the shared arms come from the first
+    report and are checked against the rest.
+    """
+    first = reports[0]
+    for r in reports[1:]:
+        for k in ("seeds", "hops", "layers", "probe_layer"):
+            if r[k] != first[k]:
+                raise ValueError(f"shards disagree on {k}: {first[k]} vs {r[k]}")
+        for shared in set(first["arms"]) & set(r["arms"]):
+            if not shared.startswith("null") and [h["projection"] for h in first["arms"][shared]] != [h["projection"] for h in r["arms"][shared]]:
+                raise ValueError(f"shards disagree on the shared arm {shared!r}: not deterministic")
+    merged = {k: v for k, v in first.items() if k not in ("arms", "texts", "null_population")}
+    merged["arms"], merged["texts"] = {}, {}
+    for r in reports:
+        for name, rows in r["arms"].items():
+            if name not in merged["arms"]:
+                merged["arms"][name] = rows
+                merged["texts"][name] = r["texts"][name]
+            elif name.startswith("null"):
+                raise ValueError(f"two shards ran the null arm {name!r}")
+    add_null_population(merged)
+    return merged

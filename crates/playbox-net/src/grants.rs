@@ -355,7 +355,12 @@ impl Authority {
                 HashMap::new(),
             )?
             .build(b)?;
-        a.authorize().map(|_| ()).map_err(|e| anyhow!("not authorized: {e}"))
+        // The library's default budget is one millisecond of evaluation. Under load (six steering shards plus their
+        // containers on one machine) that produced a spurious "Reached Datalog execution limits" refusal of a valid
+        // request. A refusal fails closed, so it was never unsafe, but it was wrong. Time is relaxed; the fact and
+        // iteration caps that bound what a hostile token can make us do stay at their defaults.
+        let limits = biscuit_auth::datalog::RunLimits { max_time: std::time::Duration::from_millis(250), ..Default::default() };
+        a.authorize_with_limits(limits).map(|_| ()).map_err(|e| anyhow!("not authorized: {e}"))
     }
 }
 

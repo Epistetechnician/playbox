@@ -1,8 +1,8 @@
 # Steering rooms: activation steering as a Playbox use case
 
 Status (2026-10-29): steering hosting, grants, receipts, guards, the MCP and CLI surfaces and an E1 harness are built
-and tested (section 6); the evaluator loop, transfer, detection and recipe import are not. The one experiment run so
-far is inconclusive (section 4). Research claims below come from abstracts and search summaries, not from full-text
+and tested (section 6); the evaluator loop, transfer, detection and recipe import are not. One experiment has been run, on
+GPT-2, with a result that is real but narrow (section 4). Research claims below come from abstracts and search summaries, not from full-text
 reads, unless marked "read". Verify before citing.
 
 ## 1. Pitch
@@ -262,7 +262,7 @@ side-effect metric. Status first, then the one result so far.
 
 | | Status |
 |---|---|
-| **E1** contagion across a chain | Harness built and run once on real GPT-2 (below). Inconclusive on trait-specificity. |
+| **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own measure; no behavioral judge yet. |
 | **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
 | **E3** transfer across models | Not built. |
 | **E4** config-search lineage | Not built (section 3.5). |
@@ -271,39 +271,61 @@ side-effect metric. Status first, then the one result so far.
 ### E1: does a steered trait spread to agents that only read its text?
 
 **Setup (what ran).** GPT-2 small (124M) hosted in a Docker steering room; a sentiment direction from
-difference-of-means over 12 positive and 12 negative sentences at layer 6 (`resid_post`); 16 neutral seed prompts;
-24 new tokens, greedy; three hops (A steered, B reads A's text and continues it, C reads B's). Arms: `clean`,
-`steered` (the sentiment direction at strength s), `prompted` (a "write something very positive" prefix on hop 0, no
-steering), and three `null` arms (random unit directions, seeds 100-102, same strength). The measure is the
-projection of each hop's text onto the sentiment direction, in units of the layer-6 activation norm, as a paired
-difference against `clean` with a 95% bootstrap interval over seeds. KL is the mean per-token KL(steered ‖ clean)
-along the steered text. Every run carries a host receipt; the full reports with every text and spec digest are
-[e1-gpt2-coef0.3.json](e1-gpt2-coef0.3.json) and [e1-gpt2-coef0.6.json](e1-gpt2-coef0.6.json). Reproduce with
-`orchestrator/experiments/e1_gpt2.py`.
+difference-of-means over 12 positive and 12 negative sentences at layer 6 (`resid_post`); **64** neutral seed
+prompts (a fixed shuffle of 8 frames × 8 subjects); 24 new tokens, greedy; three hops (A steered, B reads A's text
+and continues it, C reads B's). Arms: `clean`; `steered` (the sentiment direction at strength s); `prompted` (a
+"write something very positive" prefix on hop 0, no steering); and **20 `null` arms** (random unit directions,
+seeds 100-119, same strength). Strengths 0.2 and 0.4 norms. The measure is the projection of each hop's text onto
+the sentiment direction at layer 6, in units of the layer's activation norm, as a paired difference against `clean`
+with a 95% bootstrap interval over seeds. KL is the mean per-token KL(steered ‖ clean) along the steered text. The
+runs were split across 6 parallel shards and merged; the merge checks that every shard's `clean` arm is identical,
+which it was, including a shard that had to be rerun. Every run carries a host receipt digest. Reports with every
+text: [strength 0.2](e1-gpt2-64seeds-coef0.2.json), [strength 0.4](e1-gpt2-64seeds-coef0.4.json). Reproduce with
+`orchestrator/experiments/e1_gpt2.py --shard K/6` and `merge_e1.py`.
 
-| Arm (hop 0 → hop 2), effect vs clean | strength 0.3 | strength 0.6 |
+| Effect vs clean (hop 0 → hop 2) | strength 0.2 | strength 0.4 |
 |---|---|---|
-| steered | +0.033 → +0.029 (KL 0.33) | +0.038 → +0.029 (KL 0.96) |
-| prompted | +0.025 → +0.018 | +0.025 → +0.018 (same arm) |
-| null (3 random directions) | +0.008, +0.008, +0.015 → +0.012, +0.001, +0.014 | −0.006, +0.006, **+0.028** → −0.009, +0.005, +0.030 |
+| **steered** | +0.034 → +0.027 [hop 0: +0.026, +0.043] | +0.040 → +0.035 [hop 0: +0.031, +0.049] |
+| KL of the steering edit (nats/token) | 0.15 | 0.53 |
+| **prompted** (same in both columns) | +0.020 → +0.015 [hop 0: +0.013, +0.027] | |
+| 20 random directions: mean ± sd | +0.003 ± 0.006 (range −0.010 to +0.017) | +0.003 ± 0.009 (range −0.014 to +0.019) |
+| steered vs the 20 nulls, hop 0 / 1 / 2 | above all 20; z = +5.5 / +4.8 / +5.1 | above all 20; z = +4.1 / +4.1 / +4.3 |
+| steered − prompted, paired, hop 0 | +0.014 [+0.006, +0.022] | +0.020 [+0.011, +0.029] |
+| steered − prompted, paired, hop 2 | +0.012 [+0.003, +0.021] | +0.020 [+0.009, +0.031] |
+| share of hop-0 effect still present at hop 2: steered / prompted | 78% / 74% | 87% / 74% |
 
-**What this shows.** At 0.3 the steered arm's hop-0 effect (CI +0.016 to +0.052) is above all three random
-directions (each CI includes 0 or only just excludes it), and most of it is still there two hops later (retained
-90% and 88%). At 0.6 the picture changes: one random direction produces an effect (+0.028, CI +0.014 to +0.042) that
-the steered arm (+0.038) cannot be separated from, and the steered arm's KL is nearly 1 nat per token, so the model
-is being pushed hard. The prompting baseline (+0.025) is not distinguishable from steering at either strength,
-which matches AxBench's finding that prompting is hard to beat.
+**What this shows (on this model, trait, layer and extraction set).**
+1. A steered sentiment direction raises the sentiment projection of the generated text, and does so more than any of
+   20 random directions of the same strength; the 0.4 run's z of about +4 and the 0.2 run's of about +5 hold at all
+   three hops.
+2. It is also measurably larger than the prompting baseline, by a paired difference whose interval excludes zero at
+   both strengths and at hop 2. This is a different reading from the first, smaller run (16 seeds, 3 nulls), which
+   could not separate them; that run was too small to see it.
+3. About 80-90% of the hop-0 effect is still there two hops later in agents that only read the text and are not
+   steered. The prompting baseline keeps about three quarters of its smaller effect.
 
-**What it does not show.** That the sentiment direction specifically spreads. Three reasons the persistence is weak
-evidence on its own: GPT-2 continuing a text tends to repeat it (see the texts in the reports), so "retained" mostly
-measures copying; a random direction can move the sentiment projection too, and one did; and there are 16 seeds, one
-model, one trait, one layer, one extraction set and three null directions, with no correction for looking at two
-strengths and several arms. Treat it as a working harness with a first, inconclusive reading, not a finding.
+**What it does not show.**
+- **That the text became more positive to a reader.** The measure is a projection onto the direction that was used
+  to steer, at the layer where it was extracted. There is no behavioral judge here. A direction can raise its own
+  projection without the text reading as more positive.
+- **That persistence is "contagion" rather than copying.** GPT-2 continuing a text tends to repeat it (see the
+  texts in the reports). The prompted arm persists too. What the data support is that more of the steered effect
+  survives than of the prompted effect, not why.
+- **Anything about other traits, layers, models or extraction sets.** One trait, one layer (6), GPT-2 small, one
+  set of 24 sentences, one run per setting. No correction was made for two strengths and several comparisons.
+- **That steering is cheap in side effects.** The KL at 0.4 (0.53 nats/token) is large; random directions at the
+  same strength have a mean KL of 0.24, steered 0.53.
+- **That random directions are inert.** 7 of 20 had a hop-0 interval excluding zero at 0.2 and 12 of 20 at 0.4,
+  in both signs; that spread is why the null population, not a single null, is the right comparison.
 
-**What would settle it.** More seeds and many null directions (report the steered effect as a percentile of the null
-population, as neuron-explorer does); a larger model that does not loop; a behavioral judge in addition to the
-projection (pairwise-ratio judging, section 2c); repeating the extraction with different sentence sets to see how
-much of the effect is the sentence set; and a hop-0 effect sized for a similar KL across arms.
+**What would extend it.** A behavioral judge (pairwise-ratio judging, section 2c); other traits and layers; several
+extraction sets for the same trait; a larger model that does not loop; and measuring at a layer other than the one
+the direction was extracted from.
+
+**A fix this run forced.** Under six concurrent shards, one request was refused with "Reached Datalog execution
+limits": the Biscuit library's default time budget for evaluating a grant is one millisecond. A refusal fails
+closed, but it was wrong. The authorizer now allows 250 ms and keeps the library's default caps on facts and
+iterations (`grants.rs`).
 
 **E2.** Can a peer with `probe_only` rights detect that a transcript came from a steered agent, using the
 difference-of-means direction, against a baseline classifier? The probe operation is the building block.
@@ -389,13 +411,13 @@ Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -
 `orchestrator/` pytest, `lake build`):
 
 - **S1** spec and receipt types (7 tests).
-- **S2** Python engine with gates, probe, KL, guards, diff-of-means and random directions (26 tests, two
+- **S2** Python engine with gates, probe, KL, guards, diff-of-means and random directions (31 tests, two
   architectures, all three sites); Docker image; `Op::Steer` on the host with 14 integration tests against the real
   engine, plus a Docker test (`cargo test -p playbox-net --test steer -- --ignored`).
 - **S3** grant facts, narrowing, guards, budgets (above); Lean: narrowing cannot widen, chains stay inside the
   root (`lean/Playbox/Steer.lean`, no `sorry`).
 - **S4 (part)** MCP tool and CLI flags (MCP end-to-end test drives two real sidecars with Docker); E1 harness with
-  arms and statistics (9 orchestrator tests with a fake backend); a real GPT-2 run (section 4).
+  arms and statistics (11 orchestrator tests with a fake backend, including shard merging); a real GPT-2 run at 64 seeds (section 4).
 
 Not built: the evaluator and lineage wiring for steering specs (E4); the transfer experiment (E3); a trained
 detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a pairwise-ratio judge; a GPU

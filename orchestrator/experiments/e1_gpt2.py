@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import shutil
 import subprocess
 import sys
@@ -36,12 +37,12 @@ NEGATIVE = [
     "A horrible, depressing, truly miserable experience", "We had a terrible time and hated every minute",
     "He did a poor job and we are furious", "Such a gloomy, hostile and cold place",
 ]
-SEEDS = [
-    "The movie was", "My honest opinion of the food is", "Today I feel", "The new phone is", "Our team meeting was",
-    "The hotel room looked", "Yesterday we went to the", "The book I just read was", "The city looks", "This week the news is",
-    "Their latest album sounds", "The conference turned out", "My neighbour told me that", "The weather this week has been",
-    "Working from home is", "The restaurant on the corner is",
-]
+_SUBJECTS = ["movie", "food", "hotel", "phone", "meeting", "album", "weather", "book"]
+_FRAMES = ["The {} was", "My honest opinion of the {} is", "Today the {} seems", "Everyone says the {} is",
+           "I just heard that the {} was", "Overall the {} turned out", "People describe the {} as", "After a week, the {} felt"]
+_grid = [f.format(x) for f in _FRAMES for x in _SUBJECTS]
+random.Random(0).shuffle(_grid)
+SEEDS = _grid  # 64 neutral openers, in a fixed shuffled order so any prefix mixes frames and subjects
 
 
 def py(venv_py: Path, *args: str) -> str:
@@ -61,6 +62,7 @@ def main() -> None:
     ap.add_argument("--hops", type=int, default=3)
     ap.add_argument("--layer", type=int, default=6)
     ap.add_argument("--tokens", type=int, default=24)
+    ap.add_argument("--shard", default="0/1", help="K/N: this process runs null directions j with j %% N == K; shard 0 also runs steered and prompted")
     ap.add_argument("--binary", default=str(ROOT / "target/debug/playbox-mcp"))
     a = ap.parse_args()
     venv_py = ROOT / "steer/.venv/bin/python"
@@ -77,8 +79,11 @@ def main() -> None:
     (work / "pairs.json").write_text(json.dumps({"positive": POSITIVE, "negative": NEGATIVE}))
     py(venv_py, "extract", "--weights", str(store / "weights" / weights), "--layer", str(a.layer), "--pairs", str(work / "pairs.json"), "--out", str(work / "trait"))
     dim = json.loads((store / "weights" / weights / "config.json").read_text())["n_embd"]
+    shard, nshards = (int(x) for x in a.shard.split("/"))
+    if not (0 <= shard < nshards):
+        raise SystemExit("--shard K/N needs 0 <= K < N")
     nulls = []
-    for k in range(a.nulls):
+    for k in [k for k in range(a.nulls) if k % nshards == shard]:
         py(venv_py, "random", "--dim", str(dim), "--seed", str(100 + k), "--out", str(work / f"null{k}"))
         nulls.append(str(work / f"null{k}/direction.f32"))
     trait = str(work / "trait/direction.f32")
@@ -93,16 +98,18 @@ def main() -> None:
 
     with McpClient(a.binary, work / "host-home") as host, McpClient(a.binary, work / "guest-home") as guest:
         created = host.call("playbox_create", {
-            "repo": str(repo), "local": True, "runtime": "docker", "steer_store": str(store), "steer_mem_mib": 3072,
+            "repo": str(repo), "local": True, "runtime": "docker", "steer_store": str(store), "steer_mem_mib": 2048,
             "steer_caps": {"max_runs": 1000, "max_tokens_total": 50_000_000, "max_coef_milli": 8000, "max_tokens_per_run": 100_000},
         })
         guest.call("playbox_join", {"link": created["link"], "local": True, "workspace": str(work / "ws")})
         backend = McpSteerBackend(guest, weights=weights, model="gpt2", seed=0)
         cfg = Config(backend=backend, trait_direction=trait, layers=[a.layer], probe_layer=a.layer, hops=a.hops, max_new_tokens=a.tokens)
-        arms = [Arm("clean", trait, 0.0), Arm("steered", trait, a.coef), Arm("prompted", trait, 0.0, prefix="Write something very positive, cheerful and happy. ")]
-        arms += [Arm(f"null{k}", n, a.coef) for k, n in enumerate(nulls)]
+        arms = [Arm("clean", trait, 0.0)]
+        if shard == 0:
+            arms += [Arm("steered", trait, a.coef), Arm("prompted", trait, 0.0, prefix="Write something very positive, cheerful and happy. ")]
+        arms += [Arm(f"null{k}", n, a.coef) for k, n in zip([k for k in range(a.nulls) if k % nshards == shard], nulls)]
         report = run_e1(cfg, arms, SEEDS[: a.seeds])
-    report["config"] = {"model": "gpt2", "weights": weights, "coef": a.coef, "layer": a.layer, "tokens": a.tokens, "trait": "sentiment (diffmean, 12 vs 12 sentences)"}
+    report["config"] = {"shard": a.shard, "nulls_total": a.nulls, "model": "gpt2", "weights": weights, "coef": a.coef, "layer": a.layer, "tokens": a.tokens, "trait": "sentiment (diffmean, 12 vs 12 sentences)"}
     Path(a.out).write_text(json.dumps(report, indent=1))
     print(f"{'arm':10} hop  effect vs clean [95% CI]         KL(nats)  retained")
     for n, hops in report["arms"].items():

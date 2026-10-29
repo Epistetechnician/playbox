@@ -261,3 +261,15 @@ def test_teacher_forcing_reproduces_the_generation_path(tmp_path, gpt2_dir):
     assert len(forced) == len(trace) == len(ids)
     for a, b in zip(trace, forced):
         assert torch.equal(a, b)
+
+
+def test_a_zero_strength_run_reuses_the_clean_pass_and_matches_a_full_one(tmp_path, gpt2_dir):
+    code, out, _ = _run(tmp_path / "a", gpt2_dir, coef_milli=0)
+    assert code == 0
+    model, tok = engine.load(gpt2_dir)
+    for r in out["results"]:
+        text, ids = engine.generate(model, tok, None, r["prompt"], 6, 0.0, 0)
+        assert r["steered"] == r["clean"] == text and r["kl_to_clean"] == 0.0 and r["tokens"] == len(ids)
+    # A tiny nonzero strength still takes the full path and reports a measurable KL.
+    code, tiny, _ = _run(tmp_path / "b", gpt2_dir, coef_milli=1)
+    assert code == 0 and all("kl_to_clean" in r for r in tiny["results"])

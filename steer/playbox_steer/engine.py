@@ -334,6 +334,12 @@ def run(weights_dir: Path, task_dir: Path, spec: Spec, guard_dir: Path | None = 
     results = []
     for i, p in enumerate(prompts.prompts):
         seed = (spec.seed + i) % 2**63
+        if spec.mode == "add" and spec.coef_milli == 0:
+            # An add of exactly zero leaves every activation bit-for-bit unchanged (the no_op gate checks this
+            # on every run), so the clean pass is the steered pass and nothing moved.
+            text, ids = generate(model, tok, None, p, prompts.max_new_tokens, prompts.temperature, seed)
+            results.append({"prompt": p, "steered": text, "clean": text, "changed": False, "kl_to_clean": 0.0, "tokens": len(ids)})
+            continue
         steered_trace: list = []
         with Steerer(model, spec, direction, norm_ref) as st:
             steered, steered_ids = generate(model, tok, st, p, prompts.max_new_tokens, prompts.temperature, seed, steered_trace)

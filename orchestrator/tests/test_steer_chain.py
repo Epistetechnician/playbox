@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from playbox_orchestrator.steer_chain import Arm, Config, bootstrap_ci, percentile_against, run_e1
+from playbox_orchestrator.steer_chain import Arm, Config, bootstrap_ci, merge_reports, percentile_against, run_e1
 
 
 class FakeBackend:
@@ -125,3 +125,44 @@ def test_bootstrap_ci_and_percentile():
     assert all(math.isnan(v) for v in bootstrap_ci([]))
     assert percentile_against(5, [1, 2, 3, 4]) == 1.0 and percentile_against(0, [1, 2]) == 0.0
     assert math.isnan(percentile_against(1, []))
+
+
+def test_null_population_ranks_steered_and_prompted():
+    arms = ARMS[:2] + [Arm("prompted", "trait", 0.0, prefix="instruct ")] + [Arm(f"null{k}", "random", 1.0) for k in range(4)]
+    rep = run_e1(cfg(FakeBackend()), arms, SEEDS)
+    row = rep["null_population"][0]
+    assert row["n"] == 4 and row["steered_percentile"] == 1.0 and row["null_sd"] >= 0
+    assert row["steered_z"] is None or row["steered_z"] > 0
+    assert "prompted_percentile" in row
+    assert run_e1(cfg(FakeBackend()), ARMS[:2], SEEDS)["null_population"] == [], "no nulls, no population"
+
+
+class Noisy(FakeBackend):
+    """Random directions have a small, direction-dependent effect, like the real thing."""
+    def steer(self, *, direction_file, prompts, layers, coef, max_new_tokens, probe=False):
+        r = super().steer(direction_file=direction_file, prompts=prompts, layers=layers, coef=coef, max_new_tokens=max_new_tokens, probe=probe)
+        if not probe and direction_file.startswith("random") and coef > 0:
+            for row in r["output"]["results"]:
+                row["steered"] = " ".join(["P"] * int(direction_file[-1]) + ["w"] * 4)
+        return r
+
+
+def test_shards_merge_and_disagreement_is_an_error():
+    def shard(ks):
+        return run_e1(cfg(Noisy()), [Arm("clean", "trait", 0.0), Arm("steered", "trait", 1.0)] + [Arm(f"null{k}", f"random{k}", 1.0) for k in ks], SEEDS)
+
+    a, b, whole = shard([0, 1]), shard([2, 3]), shard([0, 1, 2, 3])
+    merged = merge_reports([a, b])
+    assert sorted(n for n in merged["arms"] if n.startswith("null")) == ["null0", "null1", "null2", "null3"]
+    assert merged["null_population"] == whole["null_population"]
+    assert merged["arms"]["steered"][0]["projection"] == whole["arms"]["steered"][0]["projection"]
+    with pytest.raises(ValueError, match="two shards ran"):
+        merge_reports([a, shard([1])])
+    other = shard([2])
+    other["seeds"] = 99
+    with pytest.raises(ValueError, match="disagree on seeds"):
+        merge_reports([a, other])
+    tampered = shard([2])
+    tampered["arms"]["clean"][0]["projection"][0] += 1
+    with pytest.raises(ValueError, match="not deterministic"):
+        merge_reports([a, tampered])
