@@ -13,6 +13,11 @@ const HELP: &str = "playbox (scaffold)
                             --state keeps the room's identity, members and bans across restarts.
                             --repo shares a git repo; --runtime lets members run tasks: libkrun = a microVM per task, docker = a container (--docker is shorthand), openshell = an NVIDIA OpenShell sandbox.
                             --allow-host H (repeatable; `host` or `host:port`) lets members' tasks reach just those hosts; only the openshell runtime enforces it
+                            limits: --max-members N (64), --max-concurrent N tasks per member (2), --max-tasks-per-minute N per member (30),
+                            --task-budget N tasks for the whole room (100000). Revoking a member also stops their running tasks.
+  review <repo> [list | show REF | accept REF | reject REF] [--into BRANCH]
+                            decide what members pushed. A push waits under refs/playbox/members/ and never moves a branch;
+                            `accept` fast-forwards BRANCH (default main) to it, `reject` retires it. Run it on the host, by a person.
   join <link> [--transport T] [--task <shell cmd>] [--base REF] [--via <replica peer address>]
                             join a room (the link says which transport to use unless you override);
                             with --task, run it remotely on REF (default main) and print the patch
@@ -63,7 +68,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--allow-host" | "--action" | "--arg" | "--ttl" | "--audit-log" | "--tail" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--allow-host" | "--action" | "--arg" | "--ttl" | "--audit-log" | "--tail" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via" | "--into" | "--max-members" | "--max-concurrent" | "--max-tasks-per-minute" | "--task-budget") {
                 skip = true;
                 return false;
             }
@@ -99,6 +104,7 @@ async fn main() -> Result<()> {
             approve(&action, &call_args, key_path, opt("--ttl").and_then(|t| t.parse().ok()).unwrap_or(300))
         }
         Some("pin") => pin_cmd(&pos),
+        Some("review") => review_cmd(&pos, opt("--into").unwrap_or_else(|| "main".into())).await,
         Some("audit") => match pos.get(1) {
             Some(path) => audit_cmd(path, opt("--tail").and_then(|n| n.parse().ok()).unwrap_or(20)),
             None => bail!("usage: playbox audit <file> [--tail N]"),
@@ -153,6 +159,17 @@ async fn up(transport: Transport, state: Option<String>, repo: Option<String>, r
         limits: playbox_runner::Limits {
             allowed_hosts: std::env::args().collect::<Vec<_>>().windows(2).filter(|w| w[0] == "--allow-host").map(|w| w[1].clone()).collect(),
             ..Default::default()
+        },
+        abuse: {
+            let n = |flag: &str| -> Result<Option<u64>> {
+                std::env::args().skip_while(|a| a != flag).nth(1).map(|v| v.parse::<u64>().map_err(|_| anyhow::anyhow!("{flag} takes a whole number"))).transpose()
+            };
+            let mut a = playbox_net::limits::AbuseLimits::default();
+            if let Some(v) = n("--max-members")? { a.max_members = v as usize }
+            if let Some(v) = n("--max-concurrent")? { a.max_concurrent_per_member = v as usize }
+            if let Some(v) = n("--max-tasks-per-minute")? { a.max_tasks_per_window = v as usize }
+            if let Some(v) = n("--task-budget")? { a.task_budget = v }
+            a
         },
         ..Default::default()
     };
@@ -371,4 +388,37 @@ fn demo() -> Result<()> {
         Err(e) => bail!("invalid: {e}"),
     }
     Ok(())
+}
+
+async fn review_cmd(pos: &[&String], into: String) -> Result<()> {
+    use playbox_net::review;
+    let Some(repo) = pos.get(1) else { bail!("usage: playbox review <repo> [list | show REF | accept REF | reject REF] [--into BRANCH]") };
+    let repo = std::path::Path::new(repo.as_str());
+    match (pos.get(2).map(|s| s.as_str()), pos.get(3)) {
+        (None, _) | (Some("list"), _) => {
+            let list = review::pending(repo).await?;
+            if list.is_empty() {
+                println!("nothing is waiting for review");
+            }
+            for p in list {
+                println!("{}  {}", p.reference, &p.head[..p.head.len().min(12)]);
+            }
+            Ok(())
+        }
+        (Some("show"), Some(r)) => {
+            println!("{}", review::show(repo, r, &into).await?);
+            Ok(())
+        }
+        (Some("accept"), Some(r)) => {
+            let tip = review::accept(repo, r, &into).await?;
+            println!("accepted: {into} is now {tip}");
+            Ok(())
+        }
+        (Some("reject"), Some(r)) => {
+            review::reject(repo, r).await?;
+            println!("rejected; the commits are kept under refs/playbox/rejected/");
+            Ok(())
+        }
+        _ => bail!("usage: playbox review <repo> [list | show REF | accept REF | reject REF] [--into BRANCH]"),
+    }
 }

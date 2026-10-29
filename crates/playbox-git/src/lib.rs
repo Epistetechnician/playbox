@@ -245,6 +245,78 @@ pub async fn checkout_branch(repo: &Path, branch: &str, dest_ref: &str) -> Resul
     Ok(())
 }
 
+/// Every ref under `prefix` (e.g. `refs/playbox/members/`) and the commit it points at, sorted by name.
+pub async fn list_refs(repo: &Path, prefix: &str) -> Result<Vec<(String, String)>> {
+    let prefix = check_name(prefix)?;
+    let out = git(repo, &["for-each-ref", "--format=%(refname) %(objectname)", prefix], None).await?;
+    let mut refs: Vec<(String, String)> = String::from_utf8(out)?
+        .lines()
+        .filter_map(|l| l.split_once(' ').map(|(r, c)| (r.to_string(), c.to_string())))
+        .collect();
+    refs.sort();
+    Ok(refs)
+}
+
+/// Whether commit `a` is an ancestor of (or equal to) commit `b`.
+pub async fn is_ancestor(repo: &Path, a: &str, b: &str) -> Result<bool> {
+    let (a, b) = (rev_parse(repo, a).await?, rev_parse(repo, b).await?);
+    let base = git(repo, &["merge-base", &a, &b], None).await;
+    Ok(match base {
+        Ok(out) => String::from_utf8(out)?.trim() == a,
+        Err(_) => false, // no common history
+    })
+}
+
+/// Up to `limit` one-line summaries of the commits in `range` (`base..tip`), newest first.
+pub async fn log_oneline(repo: &Path, base: &str, tip: &str, limit: usize) -> Result<Vec<String>> {
+    let (base, tip) = (check_name(base)?, check_name(tip)?);
+    let range = format!("{base}..{tip}");
+    let n = format!("-n{limit}");
+    let out = git(repo, &["log", "--no-color", "--format=%h %an: %s", &n, &range], None).await?;
+    Ok(String::from_utf8(out)?.lines().map(str::to_string).collect())
+}
+
+/// `git diff --stat base...tip` (what `tip` adds on top of the common ancestor).
+pub async fn diff_stat(repo: &Path, base: &str, tip: &str) -> Result<String> {
+    let (base, tip) = (check_name(base)?, check_name(tip)?);
+    let range = format!("{base}...{tip}");
+    let out = git(repo, &["diff", "--stat", "--no-color", "--no-ext-diff", "--no-textconv", &range], None).await?;
+    Ok(String::from_utf8(out)?)
+}
+
+/// Point `reference` at `new`. With `old`, only if it still points there (so a concurrent change is not overwritten).
+pub async fn update_ref(repo: &Path, reference: &str, new: &str, old: Option<&str>) -> Result<()> {
+    let reference = check_name(reference)?;
+    let new = check_name(new)?;
+    let mut args = vec!["update-ref", reference, new];
+    if let Some(old) = old {
+        args.push(check_name(old)?);
+    }
+    git(repo, &args, None).await?;
+    Ok(())
+}
+
+pub async fn delete_ref(repo: &Path, reference: &str) -> Result<()> {
+    let reference = check_name(reference)?;
+    git(repo, &["update-ref", "-d", reference], None).await?;
+    Ok(())
+}
+
+/// The branch HEAD names, and whether the repository has a work tree (a non-bare repository).
+pub async fn head_branch(repo: &Path) -> Result<(Option<String>, bool)> {
+    let bare = String::from_utf8(git(repo, &["rev-parse", "--is-bare-repository"], None).await?)?.trim() == "true";
+    let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], None).await.ok().and_then(|o| String::from_utf8(o).ok()).map(|s| s.trim().to_string());
+    Ok((branch.filter(|b| !b.is_empty()), !bare))
+}
+
+/// Fast-forward the checked-out branch to `target` and update its work tree. Fails if that is not a
+/// fast-forward or if local changes are in the way.
+pub async fn merge_ff_only(repo: &Path, target: &str) -> Result<()> {
+    let target = check_name(target)?;
+    git(repo, &["merge", "--ff-only", "-q", target], None).await?;
+    Ok(())
+}
+
 pub async fn apply_patch(repo: &Path, patch: &[u8]) -> Result<()> {
     git(repo, &["apply", "--index", "-"], Some(patch)).await?;
     Ok(())

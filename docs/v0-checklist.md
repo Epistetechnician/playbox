@@ -27,12 +27,12 @@ Legend: [x] done, [~] partly, [ ] open.
 - [x] Peer pushes land under `refs/playbox/members/<id>/...`, never `main`.
 - [x] Ref names validated before reaching git.
 - [x] Every git call runs with hooks, fsmonitor, symlinks, submodule recursion and non-file protocols disabled; diff runs with `--no-ext-diff --no-textconv`. Tested: a host `post-checkout` hook does not run.
-- [ ] Host-side accept/reject (`playbox review`) before anything reaches `main`.
+- [x] Host-side accept/reject (`playbox review <repo> list|show|accept|reject`) before anything reaches `main`. Accept only fast-forwards; decisions are kept under `refs/playbox/accepted|rejected/`. CLI only, on purpose: an agent steered by member text should not be able to accept member code.
 - [ ] Size caps on bundles and patches.
 
 ## Abuse limits
-- [ ] Per-member concurrency and rate limits, member cap, total task budget.
-- [ ] Revocation cancels running tasks, not just future requests.
+- [x] Per-member concurrency and rate limits, member cap, total task budget (`up --max-concurrent / --max-tasks-per-minute / --max-members / --task-budget`). The host serves one request at a time per connection, so the concurrency limit is what stops a member opening several connections.
+- [x] Revocation cancels running tasks, not just future requests (also when the notice arrives by gossip). The sandbox is killed and the scratch checkout removed.
 
 ## History and attestation
 - [x] Signed, hash-chained history; T0 self-attestation.

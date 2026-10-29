@@ -4,6 +4,8 @@
 
 pub mod audit;
 pub mod grants;
+pub mod limits;
+pub mod review;
 pub mod revoke;
 pub mod transport;
 pub mod wire;
@@ -260,6 +262,8 @@ pub struct HostConfig {
     /// one, attestations are self-signed and achieve at most T0. If the provider fails at request
     /// time the host logs it and answers with a plain statement rather than breaking the room.
     pub platform: Option<Arc<dyn PlatformProvider>>,
+    /// Member cap, per-member concurrency and rate limits, and a total task budget.
+    pub abuse: limits::AbuseLimits,
 }
 
 impl Default for HostConfig {
@@ -278,6 +282,7 @@ impl Default for HostConfig {
             grant_ttl: None,
             workspace: None,
             platform: None,
+            abuse: limits::AbuseLimits::default(),
         }
     }
 }
@@ -287,6 +292,7 @@ struct RoomHandler {
     state: Arc<Mutex<State>>,
     cfg: HostConfig,
     tasks: Arc<Semaphore>,
+    limiter: limits::Limiter,
     conns: Arc<Semaphore>,
     audit: Arc<audit::Audit>,
     peer_conns: Arc<Mutex<HashMap<EndpointId, usize>>>,
@@ -307,6 +313,23 @@ struct RoomHandler {
 impl std::fmt::Debug for RoomHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RoomHandler")
+    }
+}
+
+/// Removes a task's scratch checkout even when the task is cancelled (its future dropped) mid-run.
+struct WorktreeGuard {
+    repo: PathBuf,
+    wt: Option<playbox_git::Worktree>,
+}
+
+impl Drop for WorktreeGuard {
+    fn drop(&mut self) {
+        if let (Some(wt), Ok(h)) = (self.wt.take(), tokio::runtime::Handle::try_current()) {
+            let repo = self.repo.clone();
+            h.spawn(async move {
+                let _ = playbox_git::worktree_remove(&repo, &wt).await;
+            });
+        }
     }
 }
 
@@ -355,6 +378,9 @@ impl RoomHandler {
         }
         let id = self.auth.verify_invite(&invite)?;
         let mut st = self.state.lock().expect("state lock");
+        if st.members.len() >= self.limiter.max_members() && !st.members.contains_key(&from) {
+            bail!("this room is full ({} members)", self.limiter.max_members());
+        }
         let inv = st.invites.get_mut(&id).ok_or_else(|| anyhow!("invite already used or unknown"))?;
         inv.uses_left -= 1;
         if inv.uses_left == 0 {
@@ -622,7 +648,30 @@ impl RoomHandler {
         Ok(wire::task(TaskState::Completed, None, vec![], vec![("reference", json!(reference)), ("head", json!(head))]))
     }
 
+    /// Run a member's task under the abuse limits, and stop it if the member is revoked while it runs.
+    /// Stopping drops the run, which kills its sandbox.
     async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
+        let _admission = self.limiter.admit(from).map_err(refuse)?;
+        tokio::select! {
+            r = self.run_inner(from, base, spec) => r,
+            () = self.until_revoked(from) => {
+                self.audit.record("task_cancelled", Some(&from.to_string()), json!({ "reason": "member revoked" }));
+                Err(refuse("cancelled: your access to this room was revoked"))
+            }
+        }
+    }
+
+    /// Resolves once `who` has been revoked (here or by a notice that reached this host).
+    async fn until_revoked(&self, who: EndpointId) {
+        loop {
+            if self.state.lock().expect("state lock").banned.contains(&who) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    async fn run_inner(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
         let runner = self.cfg.runner.clone().ok_or_else(|| refuse("this room runs no tasks"))?;
         let (output, patch, extra) = if let Some(ws) = &self.cfg.workspace {
             let _permit = self.tasks.acquire().await?;
@@ -650,14 +699,17 @@ impl RoomHandler {
             playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
             let _permit = self.tasks.acquire().await?;
             let commit = playbox_git::rev_parse(&repo, base).await?;
-            let wt = playbox_git::worktree_add(&repo, &commit).await?;
+            let mut guard = WorktreeGuard { repo: repo.clone(), wt: Some(playbox_git::worktree_add(&repo, &commit).await?) };
             let result = async {
+                let wt = guard.wt.as_ref().expect("worktree present");
                 let output = playbox_runner::run_with_quota(runner.as_ref(), &spec, wt.path(), self.cfg.scratch_quota).await?;
-                let patch = playbox_git::diff_patch(&wt, &commit).await?;
+                let patch = playbox_git::diff_patch(wt, &commit).await?;
                 anyhow::Ok((output, patch))
             }
             .await;
-            let _ = playbox_git::worktree_remove(&repo, &wt).await;
+            if let Some(wt) = guard.wt.take() {
+                let _ = playbox_git::worktree_remove(&repo, &wt).await;
+            }
             let (output, patch) = result?;
             (output, patch, Vec::new())
         };
@@ -936,6 +988,7 @@ impl Host {
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
+            limiter: limits::Limiter::new(cfg.abuse.clone()),
             conns: Arc::new(Semaphore::new(cfg.max_connections.max(1))),
             audit: audit.clone(),
             peer_conns: Arc::default(),
