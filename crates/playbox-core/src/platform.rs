@@ -20,7 +20,8 @@
 //! Not checked: the TPM's endorsement-key certificate chain (manufacturer roots) and Apple's App
 //! Attest. Both would turn "pinned device key" into "genuine hardware"; neither is implemented.
 
-use crate::attest::{Measurements, PlatformProvider, PlatformVerdict, PlatformVerifier, Produced, Statement, Tier};
+use crate::attest::{Challenge, Measurements, PlatformProvider, PlatformVerdict, PlatformVerifier, Produced, Statement, Tier};
+use crate::tpm_ek;
 use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 use std::{
@@ -180,7 +181,7 @@ impl PlatformVerifier for SecureEnclaveVerifier {
             Tier::T0
         };
         notes.push("not checked: that the key lives in a Secure Enclave (needs Apple attestation)".into());
-        Ok(PlatformVerdict { tier, notes, device: Some(fp) })
+        Ok(PlatformVerdict { tier, notes, device: Some(fp), challenge: None })
     }
 }
 
@@ -355,18 +356,35 @@ fn parse_ecdsa_signature(bytes: &[u8]) -> Result<[u8; 64], String> {
     Ok(out)
 }
 
-/// Evidence lines: `ak` (hex 64-byte P-256 x||y), `quote` (hex TPMS_ATTEST), `sig` (hex TPMT_SIGNATURE),
-/// `pcrs` (`index:hex32` entries, comma separated, ascending). The quote's qualifying data must equal
-/// the statement binding.
+/// Evidence lines: `akpub` (hex TPMT_PUBLIC of the attestation key), `quote` (hex TPMS_ATTEST), `sig`
+/// (hex TPMT_SIGNATURE), `pcrs` (`index:hex32` entries, comma separated, ascending), and optionally
+/// `ek_cert` (hex DER endorsement-key certificate) and `ek_chain` (hex DER intermediates, comma
+/// separated). The quote's qualifying data must equal the statement binding.
+///
+/// The attestation key must be a restricted, non-exportable signing key ([`tpm_ek::parse_ak`]); without
+/// that a quote under it proves nothing.
+///
+/// With trust anchors configured ([`TpmVerifier::with_ek_anchors`]) the verifier also checks the EK
+/// certificate and issues a credential-activation [`Challenge`]: only after the host answers it, proving
+/// the attestation key and the certified endorsement key share a TPM, does the tier rise above T0.
 pub struct TpmVerifier {
     pins: PinStore,
     /// Reference values for boot PCRs (0-7) supplied by the operator, as hex SHA-256 values.
     boot_reference: BTreeMap<u32, String>,
+    /// DER certificates (roots or intermediates) the operator trusts to vouch for TPM manufacturers.
+    ek_anchors: Vec<Vec<u8>>,
 }
 
 impl TpmVerifier {
     pub fn new(pins: PinStore) -> Self {
-        Self { pins, boot_reference: BTreeMap::new() }
+        Self { pins, boot_reference: BTreeMap::new(), ek_anchors: Vec::new() }
+    }
+
+    /// Trust these certificates (DER) to vouch for EK certificates. With any set, a TPM host must prove
+    /// genuineness (EK chain plus credential activation) to rise above T0.
+    pub fn with_ek_anchors(mut self, anchors: Vec<Vec<u8>>) -> Self {
+        self.ek_anchors = anchors;
+        self
     }
 
     /// Reference values the host's boot PCRs must match for T2. Indices must be 0-7.
@@ -382,6 +400,27 @@ impl TpmVerifier {
         self.boot_reference = refs.into_iter().map(|(i, v)| (i, v.to_ascii_lowercase())).collect();
         Ok(self)
     }
+
+    /// Check the EK certificate in the evidence and build a credential-activation challenge for `ak`.
+    fn ek_challenge(&self, ev: &BTreeMap<String, String>, ak: &tpm_ek::AkPublic) -> Result<(tpm_ek::EkCert, Vec<u8>, Vec<u8>), String> {
+        let leaf = unhex(ev.get("ek_cert").ok_or("the host sent no EK certificate")?)?;
+        let mut chain = Vec::new();
+        for c in ev.get("ek_chain").map(String::as_str).unwrap_or("").split(',').filter(|c| !c.is_empty()) {
+            if chain.len() >= 4 {
+                return Err("too many intermediate certificates".into());
+            }
+            chain.push(unhex(c)?);
+        }
+        if leaf.len() > 8192 || chain.iter().any(|c| c.len() > 8192) {
+            return Err("certificate is unreasonably large".into());
+        }
+        let cert = tpm_ek::check_ek_chain(&leaf, &chain, &self.ek_anchors, tpm_ek::now_unix())?;
+        let mut secret = [0u8; 32];
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut secret);
+        let cred = tpm_ek::make_credential(&cert.key, &ak.name, &secret)?;
+        let payload = format!("ek {}\ncred {}\nsecret {}\n", cert.key.kind(), hex(&cred.blob), hex(&cred.secret)).into_bytes();
+        Ok((cert, payload, secret.to_vec()))
+    }
 }
 
 impl PlatformVerifier for TpmVerifier {
@@ -391,11 +430,9 @@ impl PlatformVerifier for TpmVerifier {
 
     fn verify(&self, st: &Statement) -> Result<PlatformVerdict, String> {
         let ev = parse_evidence(st)?;
-        let ak = unhex(need(&ev, "ak")?)?;
-        if ak.len() != 64 {
-            return Err("attestation key must be 64 bytes (P-256 x||y)".into());
-        }
-        let ak_point = [&[0x04u8][..], &ak].concat();
+        let ak = tpm_ek::parse_ak(&unhex(need(&ev, "akpub")?)?)?;
+        let ak_xy = [ak.x, ak.y].concat();
+        let ak_point = [&[0x04u8][..], &ak_xy].concat();
         let key = VerifyingKey::from_sec1_bytes(&ak_point).map_err(|_| "attestation key is not a valid P-256 point")?;
         let quote_bytes = unhex(need(&ev, "quote")?)?;
         let sig = Signature::from_slice(&parse_ecdsa_signature(&unhex(need(&ev, "sig")?)?)?).map_err(|_| "malformed signature")?;
@@ -426,9 +463,9 @@ impl PlatformVerifier for TpmVerifier {
             return Err("PCR values do not hash to the quoted digest".into());
         }
 
-        let fp = fingerprint(&ak);
+        let fp = fingerprint(&ak_xy);
         let mut notes = vec![format!(
-            "TPM quote verified over PCRs {:?} (reset count {}, restart count {})",
+            "TPM quote verified over PCRs {:?} (reset count {}, restart count {}); attestation key is restricted and non-exportable",
             pcrs.keys().collect::<Vec<_>>(),
             quote.reset_count,
             quote.restart_count
@@ -455,8 +492,32 @@ impl PlatformVerifier for TpmVerifier {
         } else {
             notes.push(format!("attestation key {fp} is not pinned, so it is not trusted; pin it to reach T1"));
         }
-        notes.push("not checked: the TPM's endorsement-key certificate chain (that this is a genuine TPM)".into());
-        Ok(PlatformVerdict { tier, notes, device: Some(fp) })
+
+        let mut challenge = None;
+        if self.ek_anchors.is_empty() {
+            notes.push("not checked: that this is a genuine TPM (no EK trust anchors configured; see PLAYBOX_TPM_EK_ANCHORS)".into());
+        } else if tier == Tier::T0 {
+            notes.push("EK genuineness check skipped: nothing to raise, the key is not pinned".into());
+        } else {
+            match self.ek_challenge(&ev, &ak) {
+                Ok((cert, payload, expect)) => {
+                    notes.push(format!(
+                        "EK certificate chains to your trust anchor (subject {}, issuer {}{})",
+                        cert.subject,
+                        cert.issuer,
+                        cert.tpm_info.map(|i| format!(", {i}")).unwrap_or_default()
+                    ));
+                    notes.push("genuineness is proven only when the TPM answers the credential-activation challenge".into());
+                    challenge = Some(Challenge { payload, expect, tier_on_success: tier });
+                    tier = Tier::T0;
+                }
+                Err(e) => {
+                    notes.push(format!("EK check failed, so no genuine TPM is established: {e}"));
+                    tier = Tier::T0;
+                }
+            }
+        }
+        Ok(PlatformVerdict { tier, notes, device: Some(fp), challenge })
     }
 }
 
@@ -527,9 +588,79 @@ impl TpmProvider {
     }
 }
 
+/// NV indices where TCG puts the EK certificates: RSA 2048 first, then ECC P-256.
+const EK_CERT_NV_INDICES: [&str; 2] = ["0x01c00002", "0x01c0000a"];
+
+/// Intermediate certificates the operator supplies for the EK certificate: `$PLAYBOX_TPM_EK_CHAIN`, a PEM file.
+fn ek_chain_from_env() -> Option<Vec<Vec<u8>>> {
+    let path = std::env::var_os("PLAYBOX_TPM_EK_CHAIN")?;
+    let ders = tpm_ek::pem_to_ders(&fs::read_to_string(path).ok()?).ok()?;
+    Some(ders.into_iter().take(4).collect())
+}
+
+impl TpmProvider {
+    fn read_ek_cert(&self, tmp: &TempDir) -> Option<Vec<u8>> {
+        for (i, idx) in EK_CERT_NV_INDICES.iter().enumerate() {
+            let out = tmp.path(&format!("ek{i}.der"));
+            if run("tpm2_nvread", &[idx, "-C", "o", "-o", &out]).is_ok() {
+                if let Ok(der) = fs::read(&out) {
+                    if let Ok(t) = tpm_ek::trim_der(&der) {
+                        return Some(t.to_vec());
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
 impl PlatformProvider for TpmProvider {
     fn kind(&self) -> &str {
         TPM_KIND
+    }
+
+    /// Credential activation: decrypt a credential a verifier made for our endorsement key and attestation
+    /// key. Only this TPM can, which is the proof.
+    fn respond(&self, request: &[u8]) -> Result<Vec<u8>, String> {
+        if request.len() > 8192 {
+            return Err("challenge is too large".into());
+        }
+        let text = std::str::from_utf8(request).map_err(|_| "challenge is not utf-8")?;
+        let mut f: BTreeMap<&str, &str> = BTreeMap::new();
+        for line in text.lines() {
+            let (k, v) = line.split_once(' ').ok_or("bad challenge line")?;
+            if f.insert(k, v).is_some() {
+                return Err("duplicate challenge field".into());
+            }
+        }
+        let ek_kind = *f.get("ek").ok_or("challenge has no `ek`")?;
+        if ek_kind != "rsa" && ek_kind != "ecc" {
+            return Err("challenge `ek` must be rsa or ecc".into());
+        }
+        let cred = tpm_ek::Credential {
+            blob: unhex(f.get("cred").ok_or("challenge has no `cred`")?)?,
+            secret: unhex(f.get("secret").ok_or("challenge has no `secret`")?)?,
+        };
+        let _guard = self.lock.lock().map_err(|_| "tpm lock poisoned")?;
+        let tmp = TempDir::new().map_err(|e| e.to_string())?;
+        let (credf, ekctx, sess, out) = (tmp.path("cred.bin"), tmp.path("ek.ctx"), tmp.path("sess.ctx"), tmp.path("secret.out"));
+        fs::write(&credf, cred.to_file()).map_err(|e| e.to_string())?;
+        flush();
+        run("tpm2_createek", &["-c", &ekctx, "-G", ek_kind])?;
+        flush();
+        // The endorsement key can only be used under a policy session that proves knowledge of the
+        // endorsement hierarchy's authorization (empty on a normal TPM).
+        run("tpm2_startauthsession", &["--policy-session", "-S", &sess])?;
+        let result = run("tpm2_policysecret", &["-S", &sess, "-c", "e"])
+            .and_then(|_| run("tpm2_activatecredential", &["-c", &self.ak_handle, "-C", &ekctx, "-i", &credf, "-o", &out, "-P", &format!("session:{sess}")]));
+        let _ = run("tpm2_flushcontext", &["-l"]);
+        flush();
+        result?;
+        let secret = fs::read(&out).map_err(|e| e.to_string())?;
+        if secret.is_empty() || secret.len() > 64 {
+            return Err("TPM returned an unexpected credential".into());
+        }
+        Ok(secret)
     }
 
     fn produce(&self, binding: &[u8; 32], m: &Measurements) -> Result<Produced, String> {
@@ -575,22 +706,28 @@ impl PlatformProvider for TpmProvider {
             }
         }
         flush();
-        let der_path = tmp.path("ak.der");
-        run("tpm2_readpublic", &["-c", &self.ak_handle, "-f", "der", "-o", &der_path])?;
-        let der = fs::read(&der_path).map_err(|e| e.to_string())?;
-        // A P-256 SubjectPublicKeyInfo ends with the 65-byte uncompressed point.
-        if der.len() < 65 || der[der.len() - 65] != 0x04 {
-            return Err("unexpected attestation key encoding from tpm2_readpublic".into());
-        }
-        let ak = &der[der.len() - 64..];
+        let tpmt_path = tmp.path("ak.tpmt");
+        run("tpm2_readpublic", &["-c", &self.ak_handle, "-f", "tpmt", "-o", &tpmt_path])?;
+        let akpub = fs::read(&tpmt_path).map_err(|e| e.to_string())?;
+        // Refuse to produce evidence a verifier would reject anyway, with a clearer reason.
+        tpm_ek::parse_ak(&akpub).map_err(|e| format!("this TPM's attestation key is unsuitable: {e}"))?;
         let pcrs: Vec<String> = QUOTED_PCRS.iter().zip(raw.chunks(32)).map(|(i, v)| format!("{i}:{}", hex(v))).collect();
-        let evidence = format!(
-            "ak {}\nquote {}\nsig {}\npcrs {}\n",
-            hex(ak),
+        let mut evidence = format!(
+            "akpub {}\nquote {}\nsig {}\npcrs {}\n",
+            hex(&akpub),
             hex(&quote_bytes),
             hex(&fs::read(&sigf).map_err(|e| e.to_string())?),
             pcrs.join(",")
         );
+        // The endorsement-key certificate, if the TPM has one, so a verifier with trust anchors can
+        // check genuineness. Intermediates are not stored in TPMs; an operator can supply them.
+        flush();
+        if let Some(cert) = self.read_ek_cert(&tmp) {
+            evidence.push_str(&format!("ek_cert {}\n", hex(&cert)));
+            if let Some(chain) = ek_chain_from_env() {
+                evidence.push_str(&format!("ek_chain {}\n", chain.iter().map(|c| hex(c)).collect::<Vec<_>>().join(",")));
+            }
+        }
         Ok(Produced { evidence, claimed: if measured { Tier::T2 } else { Tier::T1 } })
     }
 }
@@ -666,11 +803,21 @@ pub fn detect_with(home: &Path, mode: &str) -> Result<Option<Box<dyn PlatformPro
     }
 }
 
-/// Verifiers for every platform kind, trusting the keys in `pins`.
+/// TPM manufacturer trust anchors from `$PLAYBOX_TPM_EK_ANCHORS`, a PEM file of the root or intermediate
+/// certificates you trust to vouch for TPM endorsement keys. Empty if unset, which turns the genuineness
+/// check off (device keys are then trusted by pin alone).
+pub fn ek_anchors_from_env() -> Result<Vec<Vec<u8>>, String> {
+    let Some(path) = std::env::var_os("PLAYBOX_TPM_EK_ANCHORS") else { return Ok(Vec::new()) };
+    let text = fs::read_to_string(&path).map_err(|e| format!("reading PLAYBOX_TPM_EK_ANCHORS: {e}"))?;
+    tpm_ek::pem_to_ders(&text).map_err(|e| format!("PLAYBOX_TPM_EK_ANCHORS: {e}"))
+}
+
+/// Verifiers for every platform kind, trusting the keys in `pins`. TPM genuineness checks are on when
+/// `$PLAYBOX_TPM_EK_ANCHORS` is set.
 pub fn verifiers(pins: PinStore, boot_reference: BTreeMap<u32, String>) -> Result<Vec<Box<dyn PlatformVerifier>>, String> {
     Ok(vec![
         Box::new(SecureEnclaveVerifier::new(pins.clone())),
-        Box::new(TpmVerifier::new(pins).with_boot_reference(boot_reference)?),
+        Box::new(TpmVerifier::new(pins).with_boot_reference(boot_reference)?.with_ek_anchors(ek_anchors_from_env()?)),
     ])
 }
 
@@ -713,13 +860,19 @@ mod tests {
         ak: P256Signing,
         pcrs: BTreeMap<u32, [u8; 32]>,
         extra_override: Option<Vec<u8>>,
+        ak_attributes: u32,
     }
 
     impl SoftTpm {
+        fn akpub(&self) -> Vec<u8> {
+            let p = point(&self.ak);
+            tpm_ek::encode_ak(p[1..33].try_into().unwrap(), p[33..65].try_into().unwrap(), self.ak_attributes)
+        }
+
         fn new(extend_measurements: Option<&Measurements>) -> Self {
             let mut pcrs: BTreeMap<u32, [u8; 32]> = QUOTED_PCRS.iter().map(|i| (*i, [*i as u8 + 1; 32])).collect();
             pcrs.insert(MEASUREMENT_PCR, extend_measurements.map(|m| extended_from_zero(&measurement_digest(m))).unwrap_or([0; 32]));
-            Self { ak: device(3), pcrs, extra_override: None }
+            Self { ak: device(3), pcrs, extra_override: None, ak_attributes: tpm_ek::AK_ATTRIBUTES }
         }
     }
 
@@ -764,7 +917,7 @@ mod tests {
             tsig.extend(tpm2b(&s));
             let pcrs: Vec<String> = self.pcrs.iter().map(|(i, v)| format!("{i}:{}", hex(v))).collect();
             Ok(Produced {
-                evidence: format!("ak {}\nquote {}\nsig {}\npcrs {}\n", hex(&point(&self.ak)[1..]), hex(&q), hex(&tsig), pcrs.join(",")),
+                evidence: format!("akpub {}\nquote {}\nsig {}\npcrs {}\n", hex(&self.akpub()), hex(&q), hex(&tsig), pcrs.join(",")),
                 claimed: Tier::T2,
             })
         }
@@ -884,12 +1037,44 @@ mod tests {
         flipped.replace_range(30..31, if &q[30..31] == "0" { "1" } else { "0" });
         assert_eq!(verify(&resign(ev.replace(&q, &flipped)), &[&v]).unwrap().achieved, Tier::T0);
         // Swapped attestation key: signature fails.
-        let other_ak = hex(&point(&device(9))[1..]);
-        let swapped = ev.lines().map(|l| if l.starts_with("ak ") { format!("ak {other_ak}") } else { l.to_string() }).collect::<Vec<_>>().join("\n") + "\n";
+        let other = point(&device(9));
+        let other_ak = hex(&tpm_ek::encode_ak(other[1..33].try_into().unwrap(), other[33..65].try_into().unwrap(), tpm_ek::AK_ATTRIBUTES));
+        let swapped = ev.lines().map(|l| if l.starts_with("akpub ") { format!("akpub {other_ak}") } else { l.to_string() }).collect::<Vec<_>>().join("\n") + "\n";
         assert_eq!(verify(&resign(swapped), &[&v]).unwrap().achieved, Tier::T0);
         // Truncated or garbage evidence is an error note, not a panic.
-        assert_eq!(verify(&resign("ak 00\n".into()), &[&v]).unwrap().achieved, Tier::T0);
+        assert_eq!(verify(&resign("akpub 00\n".into()), &[&v]).unwrap().achieved, Tier::T0);
         assert_eq!(parse_quote(&[1, 2, 3]).unwrap_err(), "truncated TPM structure");
+    }
+
+    #[test]
+    fn a_quote_under_an_unrestricted_key_is_rejected() {
+        // A key that is not restricted can sign anything, including bytes that look like a quote, so
+        // such a "quote" proves nothing. It must be refused even though every signature is valid.
+        for attrs in [tpm_ek::AK_ATTRIBUTES & !(1 << 16), tpm_ek::AK_ATTRIBUTES & !(1 << 1), tpm_ek::AK_ATTRIBUTES | (1 << 17)] {
+            let mut tpm = SoftTpm::new(Some(&meas()));
+            tpm.ak_attributes = attrs;
+            let ak = point(&tpm.ak)[1..].to_vec();
+            let v = TpmVerifier::new(pinned(TPM_KIND, &ak));
+            let r = verify(&statement(&tpm, "aa"), &[&v]).unwrap();
+            assert_eq!(r.achieved, Tier::T0, "attrs {attrs:#x}");
+            assert!(r.notes.iter().any(|n| n.contains("rejected") && n.contains("restricted")), "{:?}", r.notes);
+        }
+    }
+
+    #[test]
+    fn a_missing_ek_certificate_blocks_the_genuineness_claim_when_anchors_are_set() {
+        let tpm = SoftTpm::new(Some(&meas()));
+        let ak = point(&tpm.ak)[1..].to_vec();
+        // Anchors configured, but the evidence carries no EK certificate: pinned is not enough.
+        let v = TpmVerifier::new(pinned(TPM_KIND, &ak)).with_ek_anchors(vec![vec![0x30, 0x03, 1, 2, 3]]);
+        let r = verify(&statement(&tpm, "aa"), &[&v]).unwrap();
+        assert_eq!(r.achieved, Tier::T0);
+        assert!(r.challenge.is_none());
+        assert!(r.notes.iter().any(|n| n.contains("no genuine TPM is established") && n.contains("no EK certificate")), "{:?}", r.notes);
+        // Without anchors the old behaviour holds, and says what was not checked.
+        let r = verify(&statement(&tpm, "bb"), &[&TpmVerifier::new(pinned(TPM_KIND, &ak))]).unwrap();
+        assert_eq!(r.achieved, Tier::T1);
+        assert!(r.notes.iter().any(|n| n.contains("no EK trust anchors configured")));
     }
 
     #[test]

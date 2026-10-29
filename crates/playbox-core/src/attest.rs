@@ -204,12 +204,28 @@ impl Statement {
     }
 }
 
+/// A question only genuine hardware can answer, that a verifier wants put to the host before it grants
+/// more than the evidence alone supports (for a TPM: credential activation, which shows the attestation
+/// key and a manufacturer-certified endorsement key live in the same chip).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Challenge {
+    /// Sent to the host, which hands it to its [`PlatformProvider::respond`].
+    pub payload: Vec<u8>,
+    /// What a correct answer looks like.
+    pub expect: Vec<u8>,
+    /// The tier the evidence supports once the challenge is answered correctly.
+    pub tier_on_success: Tier,
+}
+
 /// What a platform verifier concluded about some evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlatformVerdict {
-    /// The highest tier the evidence supports.
+    /// The highest tier the evidence supports *without* answering [`PlatformVerdict::challenge`].
     pub tier: Tier,
     pub notes: Vec<String>,
+    /// If set, answering it correctly raises the tier. Offline checks (such as verifying a saved history)
+    /// cannot ask it, so they keep the lower tier.
+    pub challenge: Option<Challenge>,
     /// Fingerprint of the device key the evidence is about (see [`crate::platform::fingerprint`]).
     /// Reported even when the key is not trusted, so an operator can decide to pin it.
     pub device: Option<String>,
@@ -235,6 +251,26 @@ pub struct Verified {
     pub notes: Vec<String>,
     /// `<kind>:<fingerprint>` of the device key behind verified platform evidence, if any.
     pub device: Option<String>,
+    /// A question that, answered correctly, raises `achieved` (see [`Verified::complete_challenge`]).
+    pub challenge: Option<Challenge>,
+}
+
+impl Verified {
+    /// Check the host's answer to [`Verified::challenge`]. A correct answer raises `achieved` to what the
+    /// challenge promised, capped at the claimed tier; a wrong one leaves it unchanged and says so.
+    /// Returns whether the answer was correct.
+    pub fn complete_challenge(&mut self, response: &[u8]) -> bool {
+        let Some(ch) = self.challenge.take() else { return false };
+        // Constant-time comparison: the expected value is secret until the hardware reveals it.
+        let ok = ch.expect.len() == response.len() && ch.expect.iter().zip(response).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0;
+        if ok {
+            self.achieved = ch.tier_on_success.min(self.statement.claimed);
+            self.notes.push(format!("challenge answered: the hardware holds the keys it claims; supports {}", self.achieved));
+        } else {
+            self.notes.push("challenge answered incorrectly: the host does not hold the keys it claims".into());
+        }
+        ok
+    }
 }
 
 /// Verify a signed statement and work out the tier it achieves.
@@ -243,6 +279,7 @@ pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verifie
     let mut notes = vec!["signature valid: the holder of the subject key made these claims".to_string()];
     let mut achieved = Tier::T0;
     let mut device = None;
+    let mut challenge = None;
     if statement.platform != "none" {
         match verifiers.iter().find(|v| v.kind() == statement.platform) {
             None => notes.push(format!("platform evidence of kind `{}` was not verified: no verifier available", statement.platform)),
@@ -252,6 +289,7 @@ pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verifie
                     notes.push(format!("`{}` evidence verified, supports {}", statement.platform, verdict.tier));
                     notes.extend(verdict.notes);
                     device = verdict.device.map(|d| format!("{}:{d}", statement.platform));
+                    challenge = verdict.challenge;
                 }
                 Err(e) => notes.push(format!("`{}` evidence rejected: {e}", statement.platform)),
             },
@@ -260,7 +298,7 @@ pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verifie
     if statement.claimed > achieved {
         notes.push(format!("claims {} but only {} is supported", statement.claimed, achieved));
     }
-    Ok(Verified { statement, text: text.to_string(), achieved, notes, device })
+    Ok(Verified { statement, text: text.to_string(), achieved, notes, device, challenge })
 }
 
 /// What a platform provider produced for one statement.
@@ -278,6 +316,10 @@ pub trait PlatformProvider: Send + Sync {
     fn kind(&self) -> &str;
     /// Evidence bound to `binding` (see [`Statement::binding`]) about `m`.
     fn produce(&self, binding: &[u8; 32], m: &Measurements) -> Result<Produced, String>;
+    /// Answer a verifier's [`Challenge`] using the hardware. Providers without a challenge protocol refuse.
+    fn respond(&self, _request: &[u8]) -> Result<Vec<u8>, String> {
+        Err("this platform provider does not answer challenges".into())
+    }
 }
 
 /// A signed statement carrying evidence from `provider`.
@@ -381,7 +423,7 @@ mod tests {
             "tpm"
         }
         fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
-            if self.1 { Ok(PlatformVerdict { tier: self.0, notes: vec![], device: Some("dev".into()) }) } else { Err("bad quote".into()) }
+            if self.1 { Ok(PlatformVerdict { tier: self.0, notes: vec![], device: Some("dev".into()), challenge: None }) } else { Err("bad quote".into()) }
         }
     }
 
@@ -459,6 +501,45 @@ mod tests {
             change(&mut t);
             assert_ne!(base.binding(), t.binding());
         }
+    }
+
+    struct Asks;
+    impl PlatformVerifier for Asks {
+        fn kind(&self) -> &str {
+            "tpm"
+        }
+        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
+            Ok(PlatformVerdict {
+                tier: Tier::T0,
+                notes: vec![],
+                device: None,
+                challenge: Some(Challenge { payload: b"q".to_vec(), expect: b"secret".to_vec(), tier_on_success: Tier::T2 }),
+            })
+        }
+    }
+
+    #[test]
+    fn a_challenge_raises_the_tier_only_when_answered_correctly() {
+        let k = key(1);
+        let mut s = stmt(&k);
+        s.claimed = Tier::T1;
+        s.platform = "tpm".into();
+        let text = s.sign(&k).unwrap();
+        let v = verify(&text, &[&Asks]).unwrap();
+        assert_eq!(v.achieved, Tier::T0, "without answering, an offline check keeps the lower tier");
+        assert_eq!(v.challenge.as_ref().unwrap().payload, b"q");
+        // Wrong answers, even of the right length, do not help.
+        let mut bad = v.clone();
+        assert!(!bad.complete_challenge(b"secreT") && bad.achieved == Tier::T0);
+        assert!(bad.notes.last().unwrap().contains("incorrectly"));
+        let mut short = v.clone();
+        assert!(!short.complete_challenge(b"") && short.achieved == Tier::T0);
+        // The right answer lifts it, but never above what the host claimed.
+        let mut good = v;
+        assert!(good.complete_challenge(b"secret"));
+        assert_eq!(good.achieved, Tier::T1);
+        // A challenge can be answered only once.
+        assert!(!good.complete_challenge(b"secret"));
     }
 
     #[test]
