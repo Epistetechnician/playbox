@@ -7,6 +7,7 @@ pub mod grants;
 pub mod limits;
 pub mod review;
 pub mod revoke;
+pub mod steer;
 pub mod transport;
 pub mod wire;
 pub use revoke::{Notice, SYNC_ALPN};
@@ -262,6 +263,9 @@ pub struct HostConfig {
     /// one, attestations are self-signed and achieve at most T0. If the provider fails at request
     /// time the host logs it and answers with a plain statement rather than breaking the room.
     pub platform: Option<Arc<dyn PlatformProvider>>,
+    /// Steering: the weights this host serves, the engine image, and what members are issued. Needs
+    /// `runner`. See `docs/steering.md`.
+    pub steer: Option<Arc<steer::SteerHost>>,
     /// Member cap, per-member concurrency and rate limits, and a total task budget.
     pub abuse: limits::AbuseLimits,
 }
@@ -282,6 +286,7 @@ impl Default for HostConfig {
             grant_ttl: None,
             workspace: None,
             platform: None,
+            steer: None,
             abuse: limits::AbuseLimits::default(),
         }
     }
@@ -395,7 +400,7 @@ impl RoomHandler {
             hosts: l.allowed_hosts.clone(),
         };
         let ttl = self.cfg.grant_ttl.unwrap_or(Duration::from_secs(3600)).as_secs() as i64;
-        let (grant, grant_id) = self.auth.mint_grant(&from.to_string(), ttl, &caps)?;
+        let (grant, grant_id) = self.auth.mint_grant_with(&from.to_string(), ttl, &caps, self.cfg.steer.as_ref().map(|h| h.caps()))?;
         st.members.insert(from, grant_id);
         st.save();
         Ok(json!({ "member": from.to_string(), "grant": grant }))
@@ -489,10 +494,16 @@ impl RoomHandler {
                 let op = Op::from_message(&req.message).map_err(|e| A2AError::invalid_params(format!("{e:#}")).to_jsonrpc_error())?;
                 // A plain A2A message with no Playbox operation only needs membership, like echo.
                 let (name, needs) = match &op {
+                    // Membership is checked here; the steering rights and limits need the spec and the
+                    // prompt set, so `steer_message` authorizes them before it does any work.
+                    Some(Op::Steer { .. }) => ("echo", grants::Needs::default()),
                     Some(op) => (op.name(), op.needs()),
                     None => ("echo", grants::Needs::default()),
                 };
                 self.authorize(frame.grant(), from, name, &needs)?;
+                if matches!(op, Some(Op::Steer { .. })) {
+                    return self.steer_message(from, frame.grant(), op.expect("matched Some"), &req.message).await;
+                }
                 let reply = self.send_message(from, op, &req.message).await;
                 serde_json::to_value(reply).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
             }
@@ -549,6 +560,8 @@ impl RoomHandler {
                 )
             }
             Some(Op::Echo { text }) => return reply(text),
+            // Handled in `route`, which has the grant it needs to authorize the specifics.
+            Some(Op::Steer { .. }) => return reply("steering is handled by the router".into()),
             Some(Op::Pull { refname }) => {
                 let t0 = std::time::Instant::now();
                 let r = self.pull(&refname).await;
@@ -916,6 +929,12 @@ impl Host {
                 bail!("runner {} gives {:?} isolation but this host requires at least {:?}", r.name(), r.isolation(), cfg.min_isolation);
             }
             r.preflight().await.with_context(|| format!("runner {} is not usable", r.name()))?;
+        }
+        if let Some(st) = &cfg.steer {
+            if cfg.runner.is_none() {
+                bail!("steering needs a runner");
+            }
+            st.check_against(&cfg.limits)?;
         }
         let attest_key = Arc::new(SigningKey::from_bytes(&secret.to_bytes()));
         let audit = Arc::new(match &cfg.audit_log {

@@ -31,6 +31,10 @@ fn s(v: &str) -> Term {
     Term::Str(v.to_string())
 }
 
+fn s_(v: &str) -> Term {
+    s(v)
+}
+
 fn i(v: i64) -> Term {
     Term::Integer(v)
 }
@@ -54,9 +58,77 @@ pub struct Caps {
     pub hosts: Vec<String>,
 }
 
+/// Steering limits baked into a member grant (see `docs/steering.md`). A grant without these has no
+/// steering rights at all.
+#[derive(Debug, Clone)]
+pub struct SteerCaps {
+    /// Weights manifest hashes (hex) the member may steer. Must not be empty.
+    pub models: Vec<String>,
+    pub layer_min: i64,
+    pub layer_max: i64,
+    /// Largest strength, in thousandths of the mean residual norm (absolute value).
+    pub max_coef_milli: i64,
+    /// Subset of `add`, `clamp`, `ablate`. Must not be empty.
+    pub modes: Vec<String>,
+    /// Direction hashes (hex) the member may use; `None` means any direction.
+    pub directions: Option<Vec<String>>,
+    /// Largest number of tokens one run may generate (prompts times new tokens, steered and clean).
+    pub max_tokens_per_run: i64,
+    /// Guard classes the member may steer along despite a guard hit. Empty: none.
+    pub classes: Vec<String>,
+    /// Whether the member may also run read-only probes.
+    pub probe: bool,
+    /// Total runs and generated tokens the host will serve this member. The host counts these; they are
+    /// bounded by what the host issued, and a member's own narrowing of them is not enforced.
+    pub max_runs: u64,
+    pub max_tokens_total: u64,
+}
+
+impl SteerCaps {
+    pub fn validate(&self) -> Result<()> {
+        let hex64 = |s: &String| s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        if self.models.is_empty() || !self.models.iter().all(hex64) {
+            return Err(anyhow!("steer models must be a non-empty list of 64-char lowercase hex hashes"));
+        }
+        if let Some(d) = &self.directions {
+            if !d.iter().all(hex64) {
+                return Err(anyhow!("steer directions must be 64-char lowercase hex hashes"));
+            }
+        }
+        if self.modes.is_empty() || !self.modes.iter().all(|m| matches!(m.as_str(), "add" | "clamp" | "ablate")) {
+            return Err(anyhow!("steer modes must be a non-empty subset of add, clamp, ablate"));
+        }
+        if self.layer_min < 0 || self.layer_max < self.layer_min || self.max_coef_milli < 0 || self.max_tokens_per_run < 0 {
+            return Err(anyhow!("steer bounds are inconsistent"));
+        }
+        if !self.classes.iter().all(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')) {
+            return Err(anyhow!("guard classes must be lowercase words"));
+        }
+        Ok(())
+    }
+}
+
+/// What one steering request needs, derived by the host from the verified spec and the prompt set.
+#[derive(Debug, Clone)]
+pub struct SteerNeeds {
+    /// Weights manifest hash, hex.
+    pub model: String,
+    pub layer_lo: i64,
+    pub layer_hi: i64,
+    pub coef_abs_milli: i64,
+    pub mode: String,
+    /// Direction hash, hex.
+    pub direction: String,
+    pub tokens: i64,
+}
+
 /// What one request needs. Zero for operations that run nothing.
 #[derive(Debug, Clone, Default)]
 pub struct Needs {
+    /// Present only for `steer` and `steer_probe`.
+    pub steer: Option<SteerNeeds>,
+    /// Present only for the `steer_class` question: may this member steer along a guard of this class?
+    pub class: Option<String>,
     pub cpu_milli: i64,
     pub mem_mib: i64,
     pub timeout_secs: i64,
@@ -154,7 +226,12 @@ impl Authority {
 
     /// A member grant bound to `subject` (their endpoint id). Returns the token and its id.
     pub fn mint_grant(&self, subject: &str, ttl_secs: i64, caps: &Caps) -> Result<(String, String)> {
-        let code = String::new();
+        self.mint_grant_with(subject, ttl_secs, caps, None)
+    }
+
+    /// Like [`Authority::mint_grant`], optionally with steering rights.
+    pub fn mint_grant_with(&self, subject: &str, ttl_secs: i64, caps: &Caps, steer: Option<&SteerCaps>) -> Result<(String, String)> {
+        let mut code = String::new();
         let mut ps = params(vec![
             ("room", s(&self.room)),
             ("nonce", s(&nonce()?)),
@@ -170,6 +247,40 @@ impl Authority {
         let mut allowed: std::collections::BTreeSet<Term> = caps.hosts.iter().map(|h| s(h)).collect();
         allowed.insert(s(""));
         ps.insert("allowed".into(), Term::Set(allowed));
+        if let Some(sc) = steer {
+            sc.validate()?;
+            let set = |v: &[String]| Term::Set(v.iter().map(|x| s(x)).collect());
+            let sops = r#"operation($o), !["steer", "steer_probe"].contains($o)"#;
+            code.push_str("right(\"steer\");\n");
+            if sc.probe {
+                code.push_str("right(\"steer_probe\");\n");
+            }
+            code.push_str(&format!("check if {sops} or req_model($m), {{smodels}}.contains($m);\n"));
+            code.push_str(&format!("check if {sops} or req_layer_lo($l), req_layer_hi($h), $l >= {{slmin}}, $h <= {{slmax}};\n"));
+            code.push_str(&format!("check if {sops} or req_coef($c), $c <= {{scoef}};\n"));
+            code.push_str(&format!("check if {sops} or req_tokens($t), $t <= {{stok}};\n"));
+            code.push_str(r#"check if operation($o), !["steer"].contains($o) or req_mode($m), {smodes}.contains($m);"#);
+            code.push('\n');
+            ps.insert("smodels".into(), set(&sc.models));
+            ps.insert("slmin".into(), i(sc.layer_min));
+            ps.insert("slmax".into(), i(sc.layer_max));
+            ps.insert("scoef".into(), i(sc.max_coef_milli));
+            ps.insert("stok".into(), i(sc.max_tokens_per_run));
+            ps.insert("smodes".into(), set(&sc.modes));
+            if let Some(d) = &sc.directions {
+                if d.is_empty() {
+                    return Err(anyhow!("an empty direction allow-list would allow nothing; leave it unset or list directions"));
+                }
+                code.push_str(&format!("check if {sops} or req_direction($d), {{sdirs}}.contains($d);\n"));
+                ps.insert("sdirs".into(), set(d));
+            }
+            if !sc.classes.is_empty() {
+                code.push_str("right(\"steer_class\");\n");
+                code.push_str(r#"check if operation($o), !["steer_class"].contains($o) or req_class($c), {sclasses}.contains($c);"#);
+                code.push('\n');
+                ps.insert("sclasses".into(), set(&sc.classes));
+            }
+        }
         let token = Biscuit::builder()
             .code_with_params(
                 &(code + r#"
@@ -214,6 +325,20 @@ impl Authority {
             ("net", i(n.net as i64)),
             ("cmd", s(&n.cmd)),
         ]);
+        if let Some(st) = &n.steer {
+            code.push_str("req_model({s_model}); req_layer_lo({s_lo}); req_layer_hi({s_hi}); req_coef({s_coef}); req_mode({s_mode}); req_direction({s_dir}); req_tokens({s_tok});\n");
+            ps.insert("s_model".into(), s_(&st.model));
+            ps.insert("s_lo".into(), i(st.layer_lo));
+            ps.insert("s_hi".into(), i(st.layer_hi));
+            ps.insert("s_coef".into(), i(st.coef_abs_milli));
+            ps.insert("s_mode".into(), s_(&st.mode));
+            ps.insert("s_dir".into(), s_(&st.direction));
+            ps.insert("s_tok".into(), i(st.tokens));
+        }
+        if let Some(c) = &n.class {
+            code.push_str("req_class({s_class});\n");
+            ps.insert("s_class".into(), s_(c));
+        }
         code.push_str("req_host(\"\");\n");
         for (k, h) in n.hosts.iter().enumerate() {
             code.push_str(&format!("req_host({{r{k}}});\n"));
@@ -232,6 +357,36 @@ impl Authority {
             .build(b)?;
         a.authorize().map(|_| ()).map_err(|e| anyhow!("not authorized: {e}"))
     }
+}
+
+/// Biscuit code that narrows only the steering limits of a grant, for [`attenuate`]. Each clause applies to
+/// steering operations alone, so the narrowed grant still serves every other operation. Layers and the
+/// strength cap can only shrink; `modes` can only be a subset of what the grant already allows (a mode it
+/// does not allow stays refused, since both checks must hold).
+pub fn steer_narrowing(layer_max: Option<i64>, max_coef_milli: Option<i64>, modes: Option<&[&str]>, max_tokens: Option<i64>) -> Result<String> {
+    for m in modes.unwrap_or_default() {
+        if !matches!(*m, "add" | "clamp" | "ablate") {
+            return Err(anyhow!("unknown steer mode {m:?}"));
+        }
+    }
+    let sops = r#"operation($o), !["steer", "steer_probe"].contains($o)"#;
+    let mut out = String::new();
+    if let Some(l) = layer_max {
+        out.push_str(&format!("check if {sops} or req_layer_hi($h), $h <= {l};\n"));
+    }
+    if let Some(c) = max_coef_milli {
+        out.push_str(&format!("check if {sops} or req_coef($c), $c <= {c};\n"));
+    }
+    if let Some(t) = max_tokens {
+        out.push_str(&format!("check if {sops} or req_tokens($t), $t <= {t};\n"));
+    }
+    if let Some(ms) = modes {
+        let list = ms.iter().map(|m| format!("\"{m}\"")).collect::<Vec<_>>().join(", ");
+        // An empty list allows no mode: `[""]` contains nothing a request can ask for.
+        let list = if list.is_empty() { "\"\"".to_string() } else { list };
+        out.push_str(&format!("check if operation($o), !{} or req_mode($m), [{list}].contains($m);\n", r#"["steer"].contains($o)"#));
+    }
+    Ok(out)
 }
 
 /// Narrow a token without the root key. Blocks added this way can only add checks that further

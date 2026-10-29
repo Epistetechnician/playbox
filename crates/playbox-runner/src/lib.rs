@@ -131,6 +131,30 @@ pub struct TaskOutput {
     pub policy_digest: Option<String>,
 }
 
+/// A read-only host directory shown to a task at `container`. Only the host itself builds these (never a
+/// peer's `TaskSpec`), so a member cannot name a host path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mount {
+    pub host: std::path::PathBuf,
+    pub container: String,
+}
+
+impl Mount {
+    pub fn check(&self) -> Result<()> {
+        let h = self.host.to_str().context("mount path is not utf-8")?;
+        if !self.host.is_absolute() || h.contains([',', '\n', '\r', '\0']) {
+            bail!("mount source must be an absolute path without commas or newlines");
+        }
+        if !self.container.starts_with('/') || self.container.contains([',', '\n', '\r', '\0', ':']) || self.container.split('/').any(|p| p == "..") {
+            bail!("mount target must be an absolute path without commas, colons or `..`");
+        }
+        if matches!(self.container.as_str(), "/" | "/workspace" | "/tmp") {
+            bail!("mount target {:?} is reserved", self.container);
+        }
+        Ok(())
+    }
+}
+
 #[async_trait]
 pub trait Runner: Send + Sync {
     fn name(&self) -> &'static str;
@@ -150,6 +174,19 @@ pub trait Runner: Send + Sync {
         String::new()
     }
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput>;
+    /// Like [`Runner::run`], with read-only host directories mounted into the task. Runners that cannot
+    /// provide them refuse rather than run without.
+    async fn run_with_mounts(&self, spec: &TaskSpec, workspace: &Path, mounts: &[Mount]) -> Result<TaskOutput> {
+        if !mounts.is_empty() {
+            bail!("the {} runner cannot mount host directories into a task", self.name());
+        }
+        self.run(spec, workspace).await
+    }
+    /// The content digest of the image a task would run (for receipts). Runners without images refuse.
+    async fn image_digest(&self, image: &str) -> Result<[u8; 32]> {
+        let _ = image;
+        bail!("the {} runner cannot report an image digest", self.name())
+    }
 }
 
 /// Pick a backend by name. The one place a new sandbox technology is registered.
@@ -344,8 +381,26 @@ impl Runner for DockerRunner {
     }
 
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
+        self.run_with_mounts(spec, workspace, &[]).await
+    }
+
+    async fn image_digest(&self, image: &str) -> Result<[u8; 32]> {
+        if image.starts_with('-') || image.contains(char::is_whitespace) {
+            bail!("invalid image name");
+        }
+        let out = Command::new("docker").args(["image", "inspect", "--format", "{{.Id}}", image]).stdin(Stdio::null()).output().await.context("docker image inspect")?;
+        if !out.status.success() {
+            bail!("docker cannot inspect image {image:?}: {}", String::from_utf8_lossy(&out.stderr).trim());
+        }
+        parse_image_id(String::from_utf8_lossy(&out.stdout).trim())
+    }
+
+    async fn run_with_mounts(&self, spec: &TaskSpec, workspace: &Path, mounts: &[Mount]) -> Result<TaskOutput> {
         check_spec(spec)?;
         self.policy.check(spec)?;
+        for m in mounts {
+            m.check()?;
+        }
         let meta = tokio::fs::metadata(workspace).await.context("workspace")?;
         let mut rnd = [0u8; 6];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
@@ -360,6 +415,9 @@ impl Runner for DockerRunner {
         cmd.args(["--read-only", "--tmpfs", "/tmp:rw,nosuid,size=256m", "--ulimit", "nofile=1024", "--ipc", "private"]);
         cmd.args(["--user", &format!("{}:{}", meta.uid(), meta.gid())]);
         cmd.args(["-v", &format!("{ws}:/workspace"), "-w", "/workspace", "-e", "HOME=/tmp"]);
+        for m in mounts {
+            cmd.args(["--mount", &format!("type=bind,source={},target={},readonly", m.host.display(), m.container)]);
+        }
         cmd.arg(&spec.image).args(&spec.cmd);
 
         // If this future is dropped (a quota stop, a cancelled request) the `docker run` client dies but the
@@ -409,6 +467,19 @@ impl Runner for ProcessRunner {
     }
 }
 
+/// `sha256:<64 hex>` as printed by `docker image inspect --format {{.Id}}`.
+fn parse_image_id(s: &str) -> Result<[u8; 32]> {
+    let hex = s.strip_prefix("sha256:").context("image id is not a sha256 digest")?;
+    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("image id is not a sha256 digest");
+    }
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)?;
+    }
+    Ok(out)
+}
+
 /// Which resource limits `docker info` says are unavailable. `info` is "<memory> <pids> <cpu quota>" as
 /// `true`/`false`; anything unrecognised counts as unavailable, so a format change cannot silently pass.
 fn missing_limits(info: &str) -> Vec<&'static str> {
@@ -443,6 +514,36 @@ mod tests {
         let mut spec = TaskSpec::new(&["true"]);
         spec.image = "evil/miner:latest".into();
         assert!(p.check(&spec).is_err());
+    }
+
+    #[test]
+    fn mounts_are_checked_and_unsupported_runners_refuse_them() {
+        let ok = Mount { host: "/srv/weights".into(), container: "/weights".into() };
+        assert!(ok.check().is_ok());
+        for bad in [
+            Mount { host: "relative/path".into(), container: "/weights".into() },
+            Mount { host: "/srv/a,b".into(), container: "/weights".into() },
+            Mount { host: "/srv/w".into(), container: "weights".into() },
+            Mount { host: "/srv/w".into(), container: "/a/../etc".into() },
+            Mount { host: "/srv/w".into(), container: "/w:rw".into() },
+            Mount { host: "/srv/w".into(), container: "/workspace".into() },
+            Mount { host: "/srv/w".into(), container: "/".into() },
+        ] {
+            assert!(bad.check().is_err(), "{bad:?}");
+        }
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let r = rt.block_on(ProcessRunner.run_with_mounts(&TaskSpec::new(&["true"]), Path::new("/tmp"), &[ok]));
+        assert!(r.unwrap_err().to_string().contains("cannot mount"));
+        assert!(rt.block_on(ProcessRunner.image_digest("x")).is_err());
+    }
+
+    #[test]
+    fn image_ids_parse_strictly() {
+        let id = format!("sha256:{}", "ab".repeat(32));
+        assert_eq!(parse_image_id(&id).unwrap(), [0xab; 32]);
+        for bad in ["", "sha256:", "sha256:zz", &format!("md5:{}", "ab".repeat(32)), &format!("sha256:{}", "ab".repeat(31)), &format!("sha256:{}", "AB".repeat(33))] {
+            assert!(parse_image_id(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

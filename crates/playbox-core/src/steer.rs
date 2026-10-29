@@ -140,11 +140,16 @@ impl SteerSpec {
         ]
     }
 
+    /// The `key value` lines of the spec, without domain, signer or signature. This is what a sandbox
+    /// reads, after the host has checked the signed record.
+    pub fn canonical_body(&self) -> Result<String, String> {
+        self.validate()?;
+        Ok(self.fields().iter().map(|(k, v)| format!("{k} {v}\n")).collect())
+    }
+
     /// Identity of the intervention, independent of who proposed it.
     pub fn digest(&self) -> Result<[u8; 32], String> {
-        self.validate()?;
-        let body: String = self.fields().iter().map(|(k, v)| format!("{k} {v}\n")).collect();
-        Ok(hash_parts(SPEC_DOMAIN, &[body.as_bytes()]))
+        Ok(hash_parts(SPEC_DOMAIN, &[self.canonical_body()?.as_bytes()]))
     }
 
     /// The proposer's signed record.

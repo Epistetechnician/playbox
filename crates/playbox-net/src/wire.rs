@@ -81,6 +81,10 @@ pub enum Op {
     Push { branch: String },
     /// Run `spec` in a sandbox on a checkout of `base`.
     Run { base: String, spec: TaskSpec },
+    /// Apply a signed steering spec (`playbox.steer-spec.v1`) to a hosted model. The message carries two
+    /// raw parts: the direction file, then the prompt set. With `probe`, nothing is edited: the host
+    /// returns projections of the prompts' activations onto the direction.
+    Steer { spec: String, probe: bool },
 }
 
 impl Op {
@@ -91,6 +95,8 @@ impl Op {
             Op::Pull { .. } => "pull",
             Op::Push { .. } => "push",
             Op::Run { .. } => "run",
+            Op::Steer { probe: false, .. } => "steer",
+            Op::Steer { probe: true, .. } => "steer_probe",
         }
     }
 
@@ -104,7 +110,9 @@ impl Op {
                 net: spec.network && spec.allowed_hosts.is_empty(),
                 hosts: spec.allowed_hosts.clone(),
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
+                ..Needs::default()
             },
+            // Steering is authorized again in full once the host has read the spec and prompt set.
             _ => Needs::default(),
         }
     }
@@ -135,6 +143,17 @@ pub fn raw_part(m: &Message) -> Option<&[u8]> {
         PartContent::Raw(b) => Some(b.as_slice()),
         _ => None,
     })
+}
+
+/// Every raw part of a message, in order.
+pub fn raw_parts(m: &Message) -> Vec<&[u8]> {
+    m.parts
+        .iter()
+        .filter_map(|p| match &p.content {
+            PartContent::Raw(b) => Some(b.as_slice()),
+            _ => None,
+        })
+        .collect()
 }
 
 pub fn text_artifact(name: &str, text: impl Into<String>) -> Artifact {

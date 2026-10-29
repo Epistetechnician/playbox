@@ -62,6 +62,67 @@ Gaps in the local work that matter here: nothing in these repos runs activation 
 measure features, reconstruction and replacement); the model-backed monitor experiments are closed or
 unrun; and every result is internal, so the research table in section 2 remains the only external evidence.
 
+## 2c. Neuron-level steering in the wild: neuronary and lyramakesmusic's repos
+
+Read on 2026-10-29 from the repo pages and READMEs via a page summarizer (not from source, and not run).
+`neuronary.org` itself only rendered a loading shell, so everything about it comes from its GitHub repo.
+Treat details as claims to verify. These are the closest public precedents to what a steering room does.
+
+| Source | What it is | What it means here |
+|---|---|---|
+| [`lyramakesmusic/neuronary`](https://github.com/lyramakesmusic/neuronary) (neuronary.org) | A public dictionary of **neuron steering recipes**. A recipe is a set of MLP neurons with signed doses, written `L13N7956-1.0 L14N8949+1.0` (layer, neuron, dose) for `Qwen/Qwen3.5-4B`. The edit is applied at the input of that layer's `mlp.down_proj`; default `op: "add"` changes the neuron's activation by `dose × median residual-stream norm at the layer ÷ L2 norm of the neuron's down-projection column`, so dose 1 moves the residual stream about one median residual norm along the neuron's output direction. An `op: "mul"` and MoE-expert neurons (`L12E12N1234+0.6`) exist in the schema; the repo says expert neurons are not applied yet. Recipes are JSON (`schema/recipe.schema.json`, not read) with `examples`; submission by site login, pull request, or issue form; Supabase backend with votes, comments, moderation and rate limits; an MCP endpoint (`search_recipes`, `get_recipe`, `publish_recipe`, `update_recipe`, `comment`, `vote`) with `nry_` bearer tokens; a Python client; and a Claude skill file. | This is the user-facing shape of the idea: **people share small, named, dose-based steering edits and agents can read and publish them.** A Playbox steering room is the private, receipted version. See "Mapping" below. |
+| [`lyramakesmusic/neuron-explorer`](https://github.com/lyramakesmusic/neuron-explorer) (MIT, ~1.6k stars) | A steering-first explorer for every MLP neuron in Qwen3.5-4B. It pushes each neuron up and down on a few prompts, keeps every rollout, and scores neurons automatically (distinctive-word ranking and word-shift scores each reported as a percentile against **random-direction controls**; next-token Δlogprob and KL per ±0.8 push in `steer_lens.py`; per-layer reports of the share of neurons above control). Doses are fractions of the median residual norm leaving the layer. Sweeps run on a GPU pod through a steering fork of vLLM (`RhizoNymph/vllm`), with `check_equivalence.py` comparing the fork's steering and capture against Hugging Face. Outputs are JSONL rollouts with logprobs, ranked units, and per-layer stats. A "Claude" tab runs the `claude` CLI with the explorer as an MCP server so an agent can read neurons and run the live model. Findings are in `research_log.md` (not read). | Three direct borrowings: (1) **control percentiles** are exactly the null-vector control already required for E1, now with a concrete reporting form; (2) **Δlogprob and KL** give a cheap, text-free side-effect metric for the coherence guard; (3) **a backend-equivalence check** (steering fork versus plain Hugging Face) is the right parity gate once S5 adds a faster GPU path. The agent-over-MCP pattern is the model for a `playbox_steer` tool. |
+| [`lyramakesmusic/cardinal-harness`](https://github.com/lyramakesmusic/cardinal-harness) (Rust, MIT, early) | An LLM-as-judge framework that asks **pairwise ratio questions** ("how many times more *attribute* does A have than B?") from a fixed ratio ladder, then fits one consistent score per item with robust IRLS (Huber loss), reports a mean and standard deviation per item, picks the next pair by information gain, and stops when the top-K set is confident. CLI includes an `eval-likert` baseline. The repo states logprob extraction and cache-aware cost modeling are planned, and asserts an O(n) comparison count without a derivation I saw. | Answers the open question in section 7 about E1's judge. Absolute 1-10 ratings are the weak point `theseus-lab` already found in its keyword and assessor judges; pairwise ratio judgments with uncertainty give each hop a **trait score with an error bar**, and a disagreement between two judge models becomes a measured quantity. Early software: use it as a design reference or a baseline judge, and check its claims on our data. |
+| Other repos on the same profile (descriptions only; not opened) | `bread-slicer` (an SAE trained on a small model, currently static visualization hosting), `activations-vis` and `expert-activations-vis`, `cursed-samplers` (samplers built on llama.cpp hooks), loom tools (`webloom`, `wool`, `loom-mcp`, `self-loom-webui`), `neuralese-leaker` (chat with OpenRouter models and view their reasoning), `llm-survivor` and `mtgsim_for_agents` (models playing each other). | Lower confidence. Loom-style branching is a natural way to display E1 rollouts as a tree and compare branches; `neuralese-leaker` and the SAE visualizers are possible display references. No design depends on them. |
+
+### Mapping: a neuron recipe is a SteerSpec
+
+A neuronary edit at the input of `down_proj` is, in the residual basis, an **add at `mlp_out`** along a fixed
+direction: the neuron's down-projection column. The recipe's dose is a strength in units of a residual-stream
+norm. So `L13N7956-1.0` is, for the pinned weights:
+
+```
+site mlp_out · layers [13] · mode add · direction = unit(W_down[:, 7956] at layer 13) · tokens all · strength -1.0 norms
+```
+
+That fits the format built in S1 with no new site. Three differences are real and must not be glossed over:
+
+1. **Strength unit.** Neuronary's unit is the *median residual-stream norm at the layer*, from a fixed
+   calibration text. S1's unit is the *mean norm of the site's own activations over the prompt set*. They
+   differ by a factor and by the sampled text, so a dose cannot be copied into `coef_milli`. Plan: add a `scale`
+   field to the spec (`site_mean`, the current behavior, or `resid_median`, neuronary's) so a receipt says
+   which unit it used. Until then, an importer would have to recompute the strength and say so. (Not built.)
+2. **One spec, one direction.** A recipe usually names several neurons across layers; a SteerSpec has one
+   direction. Plan: a `SteerPlan`, an ordered list of specs applied together in one run, with a plan digest the
+   receipt binds. (Not built.) Neurons in the same layer also have different directions, so they stay separate
+   specs inside one plan.
+3. **`mul` and expert neurons.** A multiplicative edit scales an activation instead of adding along a
+   direction, so it is not a SteerSpec mode. Not supported in v1; an import containing one is refused.
+
+Neuron indices are only meaningful for exact weights. Neuronary names the model (`Qwen/Qwen3.5-4B`); a steering
+room pins the weights manifest hash, so a recipe cannot silently land on a different revision. This is the
+`theseus-lab` result applied: positions are not identity, weights plus position are.
+
+### What changes in the plan because of these sources
+
+- **Import is a new, untrusted input.** A public recipe site accepts user submissions; its moderation is not
+  our trust anchor. Imported recipes enter shared memory as `Untrusted` and quarantined until a pinned reviewer
+  accepts them, like any outside text. Publishing back to neuronary is an outward action and needs a person's
+  approval through the admission broker. A `nry_` token is a credential: it stays out of logs and out of the
+  agent's reach, as the broker already requires for approver keys.
+- **Judge for E1.** Use pairwise ratio judging in the cardinal-harness style as the behavioral measure, next to
+  activation projections. Report each hop's score with its uncertainty and the gap between two judge models.
+- **Controls.** Report each steered result as a percentile against a population of random unit directions of
+  matched strength (neuron-explorer's form), not only against one null vector.
+- **Side-effect metric.** Add next-token KL and Δlogprob (steered versus clean on the prompt set) to the
+  evaluator's capability guard. They need no judge and are cheap.
+- **Model choice.** Neuronary and neuron-explorer both target Qwen3.5-4B and require `transformers>=5`. The
+  engine currently pins `transformers==4.46.3` and has only been run on GPT-2 and a Llama-style layout, so
+  moving to Qwen3.5-4B means a version bump and checking its block layout (not verified). Gemma-2 2B stays the
+  planned small-model baseline because of Gemma Scope.
+- **Scale.** Sweeping every neuron (neuron-explorer's workload) is a GPU job through a faster backend. A room
+  should offer *targeted* neuron edits first and leave sweeps to S5.
+
 ## 3. Architecture
 
 ```
