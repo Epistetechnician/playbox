@@ -216,6 +216,24 @@ impl Runner for DockerRunner {
         if !out.status.success() {
             bail!("docker daemon is not reachable: {}", String::from_utf8_lossy(&out.stderr).trim());
         }
+        // The limits a grant promises must really be enforced. Docker only warns and carries on when the
+        // kernel lacks a controller (Raspberry Pi OS boots with `cgroup_disable=memory`), which would let a
+        // task use all the host's memory while its grant says 1 GiB. Fail closed instead.
+        let info = Command::new("docker")
+            .args(["info", "--format", "{{.MemoryLimit}} {{.PidsLimit}} {{.CPUCfsQuota}}"])
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .context("docker info")?;
+        let missing = missing_limits(&String::from_utf8_lossy(&info.stdout));
+        if !missing.is_empty() && std::env::var_os("PLAYBOX_ALLOW_MISSING_LIMITS").is_none() {
+            bail!(
+                "docker cannot enforce {} on this host, so a task could exceed what its grant allows. \
+                 On a Raspberry Pi add `cgroup_enable=memory cgroup_memory=1` to /boot/firmware/cmdline.txt and reboot; \
+                 otherwise use the libkrun runner. To run anyway, set PLAYBOX_ALLOW_MISSING_LIMITS=1.",
+                missing.join(" and ")
+            );
+        }
         Ok(())
     }
 
@@ -267,6 +285,24 @@ impl Runner for ProcessRunner {
     }
 }
 
+/// Which resource limits `docker info` says are unavailable. `info` is "<memory> <pids> <cpu quota>" as
+/// `true`/`false`; anything unrecognised counts as unavailable, so a format change cannot silently pass.
+fn missing_limits(info: &str) -> Vec<&'static str> {
+    let flags: Vec<&str> = info.split_whitespace().collect();
+    let on = |i: usize| flags.get(i) == Some(&"true");
+    let mut missing = Vec::new();
+    if !on(0) {
+        missing.push("memory limits");
+    }
+    if !on(1) {
+        missing.push("process limits");
+    }
+    if !on(2) {
+        missing.push("CPU limits");
+    }
+    missing
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +327,17 @@ mod tests {
         assert!(runner_by_name("process", SandboxPolicy::default()).is_err());
         assert!(runner_by_name("nope", SandboxPolicy::default()).is_err());
         assert_eq!(runner_by_name("docker", SandboxPolicy::default()).unwrap().isolation(), Isolation::Container);
+    }
+
+    #[test]
+    fn missing_docker_limits_are_detected_and_unknown_output_fails_closed() {
+        assert!(missing_limits("true true true").is_empty());
+        assert_eq!(missing_limits("false true true"), ["memory limits"]);
+        assert_eq!(missing_limits("true false false"), ["process limits", "CPU limits"]);
+        // Garbage, empty output, or a missing field all count as unavailable.
+        assert_eq!(missing_limits("").len(), 3);
+        // `<no value>` shifts the fields, which is still a refusal rather than a pass.
+        assert!(!missing_limits("<no value> true true").is_empty());
+        assert_eq!(missing_limits("true true"), ["CPU limits"]);
     }
 }

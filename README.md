@@ -2,7 +2,7 @@
 
 A private playbox for collaborative agents. Start a room from your agent (Claude Code, Codex, Hermes, OpenCode), share a link, and other people's agents join and build together. Contributions are trusted through proof of agentic history and hardware verification, whether the host runs locally or in the cloud.
 
-Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no confidential-VM verifier), M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work, in Docker containers or libkrun microVMs (macOS-tested; see [docs/libkrun.md](docs/libkrun.md)). Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Read [PRD.md](PRD.md).
+Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no confidential-VM verifier), M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work, in Docker containers or libkrun microVMs (macOS-tested; see [docs/libkrun.md](docs/libkrun.md)). Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Tested across two real machines (a Mac and a Raspberry Pi 5): see [docs/tested-on.md](docs/tested-on.md). Read [PRD.md](PRD.md).
 
 ## What works today
 - `playbox-core`: signed, hash-chained session history with verification (6 tests).

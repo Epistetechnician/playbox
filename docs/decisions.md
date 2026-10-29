@@ -47,6 +47,7 @@
 | 36 | Genuineness is opt-in via `PLAYBOX_TPM_EK_ANCHORS`; with anchors, failing it holds a host at T0 | We cannot ship manufacturer roots we cannot vouch for; operators choose whom to trust | A vetted default root set |
 | 37 | Interactive proof (credential activation) lives in `Verified.challenge`; offline checks keep the lower tier | The EK certificate is public, so a static check alone proves nothing | Never |
 | 38 | MakeCredential is implemented in Rust and validated against a real TPM, not against our own reading of the spec | Layouts and KDF details are easy to get subtly wrong | A TSS binding replaces it |
+| 36 | The Docker runner fails closed at start when the daemon cannot enforce memory, process or CPU limits | Found on a Raspberry Pi: Docker warned and dropped the memory limit, so a grant's cap was fiction | A mode that reports the missing limit to members instead |
 
 Open: interoperate with Peerspan (peerspan/peerspan, peerfs, runtime) or stay independent.
 
