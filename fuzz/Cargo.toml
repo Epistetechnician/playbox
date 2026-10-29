@@ -1,0 +1,84 @@
+[package]
+name = "playbox-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+playbox-core = { path = "../crates/playbox-core" }
+playbox-net = { path = "../crates/playbox-net" }
+playbox-runner = { path = "../crates/playbox-runner" }
+a2a = { package = "a2a-lf", version = "0.4.2" }
+serde_json = "1"
+base64 = "0.22"
+ed25519-dalek = "2"
+
+# Not part of the main workspace: it needs nightly and builds everything with sanitizers.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "seeds"
+path = "seeds.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "wire_frame"
+path = "fuzz_targets/wire_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "grant_token"
+path = "fuzz_targets/grant_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "revocation_notice"
+path = "fuzz_targets/revocation_notice.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "attestation_statement"
+path = "fuzz_targets/attestation_statement.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "history_and_audit"
+path = "fuzz_targets/history_and_audit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "links_and_pem"
+path = "fuzz_targets/links_and_pem.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tpm_evidence"
+path = "fuzz_targets/tpm_evidence.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tdx_token"
+path = "fuzz_targets/tdx_token.rs"
+test = false
+doc = false
+bench = false

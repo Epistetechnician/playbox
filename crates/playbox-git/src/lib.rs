@@ -421,4 +421,77 @@ mod tests {
         }
         out
     }
+
+    /// A member controls every byte of the bundle the host feeds to git. Damaged bundles may be refused or,
+    /// if they happen to still be valid, accepted; they must never hang, and whatever is stored must be sound.
+    #[tokio::test]
+    async fn mutated_bundles_never_hang_or_leave_a_corrupt_repository() {
+        // A real bundle: a few commits, text and binary files.
+        let src = tempfile_dir().await.unwrap();
+        sh(&src, &["init", "-q", "-b", "main"]);
+        sh(&src, &["config", "user.email", "t@example.com"]);
+        sh(&src, &["config", "user.name", "t"]);
+        for i in 0..3u8 {
+            std::fs::write(src.join(format!("f{i}.txt")), format!("file {i}\n").repeat(40)).unwrap();
+            std::fs::write(src.join(format!("b{i}.bin")), (0..2000u32).map(|n| (n * 7 + u32::from(i)) as u8).collect::<Vec<u8>>()).unwrap();
+            sh(&src, &["add", "-A"]);
+            sh(&src, &["commit", "-q", "-m", &format!("c{i}")]);
+        }
+        let good = bundle_create(&src, "main").await.unwrap();
+        let victim = tempfile_dir().await.unwrap();
+        init(&victim, "main").await.unwrap();
+        assert!(bundle_import(&victim, &good, "refs/heads/main", "refs/remotes/peer/ok").await.is_ok(), "the unmutated bundle imports");
+
+        let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut rnd = move |n: usize| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            (x % n.max(1) as u64) as usize
+        };
+        let (mut accepted, mut refused) = (0, 0);
+        for i in 0..120 {
+            let mut b = good.clone();
+            for _ in 0..1 + rnd(3) {
+                let at = rnd(b.len());
+                match rnd(5) {
+                    0 => b[at] ^= 1 << rnd(8),
+                    1 => b.truncate(at.max(1)),
+                    2 => {
+                        let end = (at + 1 + rnd(64)).min(b.len());
+                        b.drain(at..end);
+                    }
+                    3 => {
+                        // Damage aimed at the text header (ref names, prerequisites) rather than the pack.
+                        let at = rnd(120.min(b.len()));
+                        b[at] = b"-/.. \n@{~^:?*[\\0"[rnd(16)];
+                    }
+                    _ => {
+                        let junk: Vec<u8> = (0..1 + rnd(24)).map(|_| rnd(256) as u8).collect();
+                        b.splice(at..at, junk);
+                    }
+                }
+            }
+            let dest = format!("refs/remotes/peer/m{i}");
+            let r = tokio::time::timeout(std::time::Duration::from_secs(30), bundle_import(&victim, &b, "refs/heads/main", &dest))
+                .await
+                .unwrap_or_else(|_| panic!("import {i} hung; input starts {:02x?}", &b[..b.len().min(48)]));
+            match r {
+                Ok(id) => {
+                    accepted += 1;
+                    assert_eq!(id.len(), 40, "{id}");
+                }
+                Err(_) => {
+                    refused += 1;
+                    assert!(!victim.join(".git").join(&dest).exists(), "a refused bundle left the ref {dest}");
+                }
+            }
+        }
+        // Whatever was accepted left a repository git considers sound.
+        let fsck = std::process::Command::new("git").arg("-C").arg(&victim).args(["fsck", "--strict", "--no-dangling"]).output().unwrap();
+        assert!(fsck.status.success(), "the repository is corrupt after the barrage: {}", String::from_utf8_lossy(&fsck.stderr));
+        assert!(refused > 40, "too few mutations were refused ({refused} of 120, {accepted} accepted); the test is not damaging anything");
+        let _ = tokio::fs::remove_dir_all(&victim).await;
+        let _ = tokio::fs::remove_dir_all(&src).await;
+    }
 }

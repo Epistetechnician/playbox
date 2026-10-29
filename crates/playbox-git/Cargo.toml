@@ -9,4 +9,4 @@ tokio = { version = "1", features = ["process", "io-util", "fs", "rt"] }
 anyhow = "1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["time", "macros", "rt"] }

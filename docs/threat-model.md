@@ -145,12 +145,18 @@ own code has no `unsafe` except the libkrun FFI in the helper binary.
 
 The TPM / Secure Enclave verification code and the new admission-broker modules were written by other sessions and read only for how
 they are reached from the network. The Lean model proves properties of the grant *logic* and trusts the cryptography.
-No fuzzing was done. Wire parsers (`serde_json` on request frames, `git bundle` parsing by git itself) are the first candidates.
+**Fuzzing** (see `fuzz/README.md`): eight libFuzzer targets cover the request frame and A2A message, grant and invite tokens,
+revocation notices, attestation statements, history and audit-log files, links/PEM/peer addresses, TPM and X.509 evidence,
+and the Confidential Space token. Each ran 75-120 s (roughly 90 000 to 560 000 inputs); none produced a crash, hang or
+out-of-memory. A 15 000-request mutation barrage against a live host, partly from a real member's identity so it reached the
+pull, push and task handlers, left it answering with well-formed replies and an audit log that still verifies, and 120 damaged
+git bundles never hung the host or corrupted its repository. Minutes of fuzzing is a smoke test, not assurance: run the targets
+for hours before relying on this, and note that `git` itself (which parses bundles and patches) was not fuzzed.
 
 ## Suggested next steps, in order
 
 1. Independent review of the sandbox boundary (section 3) before hosting people you do not know.
 2. Ship audit heads (or the log) to a second place, and add a filesystem-level size limit for scratch space.
-3. Fuzz the request parser and bundle import; run `cargo audit` and these exploit tests in CI.
+3. Run the fuzz targets for hours in CI, and `cargo audit` and the exploit tests on every change.
 4. Sandbox the libkrun helper; replace TSI with a filtered network backend.
 5. Per-ref allowlists for `pull`, grant renewal, and root-key backup/rotation.
