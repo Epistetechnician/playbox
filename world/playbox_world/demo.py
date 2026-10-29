@@ -14,7 +14,7 @@ import torch
 from .events import KIND_MASS, load_jsonl, synthetic
 from .layout import fit_layout
 from .link import link_events, parse_log
-from .usability import make_packet, write_form
+from .usability import make_packet, top_words, write_form
 from .view import write_html
 from .scene import fit_field, render, topic_colors
 
@@ -28,8 +28,7 @@ def main():
     k = int(os.environ.get("PLAYBOX_K", 3))
     colors, labels = topic_colors(events, pos[:, :2], k=k)
     for j in range(k):
-        words = collections.Counter(w for e, l in zip(events, labels) if l == j for w in e.text.lower().split() if len(w) > 3)
-        print(f"cluster {j}: {sum(labels == j)} events; top words: {', '.join(w for w, _ in words.most_common(6))}")
+        print(f"cluster {j}: {sum(labels == j)} events; top words: {', '.join(top_words(events, labels, j, 6))}")
     mass = torch.tensor([KIND_MASS[e.kind] for e in events])
     field, field_loss = fit_field(pos, mass, colors)
     print(f"events={len(events)} layout_loss={layout_loss:.4f} field_loss={field_loss:.5f}")

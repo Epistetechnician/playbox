@@ -50,3 +50,9 @@ def test_packet_scores_raters_against_the_hidden_answer():
     assert score(packet, [perfect] * 4)["passed"]
     assert score(packet, [perfect, perfect, perfect, wrong])["passed"]       # 3 of 4
     assert not score(packet, [perfect, perfect, wrong, wrong])["passed"]     # 2 of 4
+
+
+def test_labels_skip_tool_ids_flags_and_paths():
+    from playbox_world.usability import label_words
+    got = list(label_words("mcp__ccd_turn__wrap_up Bash 2>&1 ~/Documents/x <<'EOF' parser fixed, tokenizer."))
+    assert got == ["parser", "fixed", "tokenizer"]

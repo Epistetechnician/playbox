@@ -14,8 +14,20 @@ import random
 STOP = {"this", "that", "with", "from", "have", "your", "will", "what", "when", "then", "into", "there", "about"}
 
 
+_TOOLS = {"bash", "read", "write", "edit", "grep", "glob", "agent", "websearch", "webfetch", "toolsearch", "skill", "artifact", "head", "tail"}
+
+
+def label_words(text):
+    """Words a person could recognise as a topic: plain alphabetic words, not tool ids, flags, paths
+    or shell fragments (mcp__x__y, 2>&1, ~/dir, <<'EOF')."""
+    for w in text.lower().split():
+        w = w.strip(".,:;()\"'`")
+        if len(w) > 3 and w.isalpha() and w not in STOP and w not in _TOOLS:
+            yield w
+
+
 def top_words(events, labels, j, n=4):
-    c = collections.Counter(w for e, l in zip(events, labels) if l == j for w in e.text.lower().split() if len(w) > 3 and w not in STOP)
+    c = collections.Counter(w for e, l in zip(events, labels) if l == j for w in label_words(e.text))
     return [w for w, _ in c.most_common(n)]
 
 
