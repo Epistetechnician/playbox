@@ -9,7 +9,7 @@ use playbox_core::{
     attest::Tier,
     history::text,
     platform, store,
-    evaluator::{Evaluator, Lineage, Variant},
+    evaluator::{Evaluator, EvaluatorSpec, Holdout, ItemProof, Lineage, Variant, VariantSpec},
     memory::{Kind, MemoryStore, NewEntry, Status},
     receipt::{self, Level, Receipt, Trust},
     record::{hex, unhex},
@@ -205,6 +205,37 @@ pub fn tool_list() -> Value {
                 "witnesses": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys"},
                 "m": {"type": "integer"}
             }), &["checkpoint", "cosignatures", "witnesses", "m"]),
+        tool("playbox_holdout_commit",
+            "Custodian: seal a holdout. Returns the Merkle root to put in an evaluator manifest, and the salt, which you must keep secret: it is what stops low-entropy items being guessed from the root. Items are opened one at a time with playbox_holdout_prove.",
+            json!({
+                "items": {"type": "array", "items": {"type": "string"}},
+                "salt": {"type": "string", "description": "64 hex characters. Default: fresh random."}
+            }), &["items"]),
+        tool("playbox_holdout_prove",
+            "Custodian: open one holdout item with a proof that it belongs to the committed set and reveals nothing about the others.",
+            json!({
+                "items": {"type": "array", "items": {"type": "string"}},
+                "salt": {"type": "string"}, "index": {"type": "integer"}
+            }), &["items", "salt", "index"]),
+        tool("playbox_holdout_verify",
+            "Check an opened holdout item (from playbox_holdout_prove) against a published root.",
+            json!({"root": {"type": "string"}, "proof": {"type": "object"}}), &["root", "proof"]),
+        tool("playbox_evaluator_issue",
+            "Custodian: sign an evaluator manifest with this sidecar's key (harness hash, holdout root, command, protected paths, minimum runs; optionally the evaluator it supersedes). Verifiers trust it only if they pin this sidecar's public key as a custodian. An agent that issues its own evaluator gets one nobody else trusts.",
+            json!({
+                "name": {"type": "string"}, "version": {"type": "integer"}, "harness": {"type": "string", "description": "Hash of the evaluation harness, hex"},
+                "holdout": {"type": "string", "description": "Root from playbox_holdout_commit"}, "command": {"type": "string"},
+                "protected": {"type": "array", "items": {"type": "string"}, "description": "Path prefixes no variant may touch"},
+                "min_runs": {"type": "integer"}, "supersedes": {"type": "string", "description": "The evaluator manifest this one replaces, if a rotation"}
+            }), &["name", "version", "harness", "holdout", "command", "protected", "min_runs"]),
+        tool("playbox_variant_sign",
+            "Sign a claim that a patch on a parent scored these per-run numbers under this evaluator, at this cost. The numbers are the author's claim; they mean something only if the custodian's harness produced them.",
+            json!({
+                "evaluator": {"type": "string", "description": "The evaluator manifest"},
+                "custodians": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys you trust to sign evaluators"},
+                "parent": {"type": "string", "description": "The parent variant record. Omit for a root."},
+                "patch": {"type": "string"}, "scores": {"type": "array", "items": {"type": "number"}}, "cost": {"type": "integer"}
+            }), &["evaluator", "custodians", "patch", "scores", "cost"]),
         tool("playbox_lineage_check",
             "Replay a chain of signed variants (oldest first, each with the patch the host computed) against a custodian-signed evaluator. Refuses variants that edit protected paths, use an untrusted evaluator or have the wrong patch, and reports whether the last one beats its parent with a one-sided confidence bound.",
             json!({
@@ -370,6 +401,11 @@ impl Server {
             "playbox_checkpoint" => self.checkpoint(),
             "playbox_checkpoint_verify" => self.checkpoint_verify(args),
             "playbox_lineage_check" => self.lineage_check(args),
+            "playbox_holdout_commit" => self.holdout_commit(args),
+            "playbox_holdout_prove" => self.holdout_prove(args),
+            "playbox_holdout_verify" => self.holdout_verify(args),
+            "playbox_evaluator_issue" => self.evaluator_issue(args),
+            "playbox_variant_sign" => self.variant_sign(args),
             other => Err(anyhow!("unknown tool: {other}")),
         };
         let result = match out {
@@ -1011,6 +1047,101 @@ impl Server {
         let m = a.get("m").and_then(Value::as_u64).ok_or_else(|| anyhow!("m is required"))? as usize;
         let cp = witness::verify_quorum(req(a, "checkpoint")?, &Self::strings(a, "cosignatures"), &Self::keys(a, "witnesses")?, m).map_err(|e| anyhow!(e))?;
         Ok(json!({"ok": true, "size": cp.size, "head": hex(&cp.head), "log_key": hex(&cp.origin)}))
+    }
+
+    fn holdout_from(a: &Value, salt: [u8; 32]) -> Result<Holdout> {
+        let items = Self::strings(a, "items").into_iter().map(String::into_bytes).collect();
+        Holdout::new(salt, items).map_err(|e| anyhow!(e))
+    }
+
+    fn holdout_commit(&self, a: &Value) -> Result<Value> {
+        let salt = match s(a, "salt") {
+            Some(h) => unhex::<32>(h).map_err(|e| anyhow!("salt: {e}"))?,
+            None => playbox_net::random_bytes()?,
+        };
+        let h = Self::holdout_from(a, salt)?;
+        Ok(json!({"root": hex(&h.commit()), "salt": hex(&salt), "items": Self::strings(a, "items").len()}))
+    }
+
+    fn holdout_prove(&self, a: &Value) -> Result<Value> {
+        let salt = unhex::<32>(req(a, "salt")?).map_err(|e| anyhow!("salt: {e}"))?;
+        let index = a.get("index").and_then(Value::as_u64).ok_or_else(|| anyhow!("index is required"))?;
+        let p = Self::holdout_from(a, salt)?.open(index).map_err(|e| anyhow!(e))?;
+        Ok(json!({
+            "index": p.index, "total": p.total, "blind": hex(&p.blind), "item": String::from_utf8_lossy(&p.item),
+            "path": p.path.iter().map(|x| x.map(|h| hex(&h))).collect::<Vec<_>>(),
+        }))
+    }
+
+    fn holdout_verify(&self, a: &Value) -> Result<Value> {
+        let root = unhex::<32>(req(a, "root")?).map_err(|e| anyhow!("root: {e}"))?;
+        let pr = a.get("proof").ok_or_else(|| anyhow!("proof is required"))?;
+        let path = pr
+            .get("path")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow!("proof.path must be a list"))?
+            .iter()
+            .map(|x| match x {
+                Value::Null => Ok(None),
+                Value::String(h) => unhex::<32>(h).map(Some).map_err(|e| anyhow!("path: {e}")),
+                _ => Err(anyhow!("path entries are hex strings or null")),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let proof = ItemProof {
+            index: pr.get("index").and_then(Value::as_u64).ok_or_else(|| anyhow!("proof.index"))?,
+            total: pr.get("total").and_then(Value::as_u64).ok_or_else(|| anyhow!("proof.total"))?,
+            blind: unhex::<32>(pr.get("blind").and_then(Value::as_str).ok_or_else(|| anyhow!("proof.blind"))?).map_err(|e| anyhow!("blind: {e}"))?,
+            item: pr.get("item").and_then(Value::as_str).ok_or_else(|| anyhow!("proof.item"))?.as_bytes().to_vec(),
+            path,
+        };
+        Ok(json!({"valid": proof.verify(&root)}))
+    }
+
+    fn evaluator_issue(&self, a: &Value) -> Result<Value> {
+        let own = [self.key.verifying_key().to_bytes()];
+        let prior = s(a, "supersedes").map(|t| Evaluator::open(t, &own).map_err(|e| anyhow!("supersedes: {e}"))).transpose()?;
+        let protected = Self::strings(a, "protected");
+        let protected: Vec<&str> = protected.iter().map(String::as_str).collect();
+        let e = Evaluator::issue(
+            EvaluatorSpec {
+                name: req(a, "name")?,
+                version: a.get("version").and_then(Value::as_u64).ok_or_else(|| anyhow!("version is required"))?,
+                harness: req(a, "harness")?,
+                holdout: unhex::<32>(req(a, "holdout")?).map_err(|e| anyhow!("holdout: {e}"))?,
+                command: req(a, "command")?,
+                protected: &protected,
+                min_runs: a.get("min_runs").and_then(Value::as_u64).ok_or_else(|| anyhow!("min_runs is required"))?,
+                supersedes: prior.as_ref(),
+            },
+            &self.key,
+        )
+        .map_err(|e| anyhow!(e))?;
+        Ok(json!({"evaluator": e.text, "id": e.id, "custodian": hex(&e.custodian)}))
+    }
+
+    fn variant_sign(&self, a: &Value) -> Result<Value> {
+        let custodians = Self::keys(a, "custodians")?;
+        let evaluator = Evaluator::open(req(a, "evaluator")?, &custodians).map_err(|e| anyhow!("evaluator: {e}"))?;
+        let parent = s(a, "parent").map(|t| Variant::open(t).map_err(|e| anyhow!("parent: {e}"))).transpose()?;
+        let scores: Vec<f64> = a
+            .get("scores")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow!("scores must be a list of numbers"))?
+            .iter()
+            .map(|x| x.as_f64().filter(|f| f.is_finite()).ok_or_else(|| anyhow!("scores must be finite numbers")))
+            .collect::<Result<_>>()?;
+        let v = Variant::sign(
+            VariantSpec {
+                parent: parent.as_ref(),
+                evaluator: &evaluator,
+                patch: req(a, "patch")?,
+                scores: &scores,
+                cost: a.get("cost").and_then(Value::as_u64).ok_or_else(|| anyhow!("cost is required"))?,
+            },
+            &self.key,
+        )
+        .map_err(|e| anyhow!(e))?;
+        Ok(json!({"variant": v.text, "id": v.id, "author": hex(&v.author)}))
     }
 
     fn lineage_check(&self, a: &Value) -> Result<Value> {

@@ -741,3 +741,100 @@ fn an_agent_steers_a_hosted_model_through_mcp() {
     let (err, why) = guest.tool("playbox_steer", args);
     assert!(!err || why.as_str().unwrap().contains("budget"), "{why}");
 }
+
+/// The self-improvement loop's paperwork through the agent surface: a custodian seals a holdout and issues an
+/// evaluator, an agent signs variants, and a verifier that pins only the custodian's key replays the chain.
+#[test]
+fn a_custodian_seals_a_holdout_and_an_agent_signs_a_lineage_that_checks() {
+    let work = scratch("lineage");
+    let mut custodian = Mcp::start(&work.join("custodian"));
+    let mut agent = Mcp::start(&work.join("agent"));
+
+    // 1. Seal a holdout; open one item with a proof; a wrong item or root fails.
+    let items = ["alpha opener", "beta opener", "gamma opener", "delta opener", "epsilon opener"];
+    let (e, h) = custodian.tool("playbox_holdout_commit", json!({"items": items}));
+    assert!(!e, "{h}");
+    let (root, salt) = (h["root"].as_str().unwrap().to_string(), h["salt"].as_str().unwrap().to_string());
+    assert_eq!(root.len(), 64);
+    let (_, again) = custodian.tool("playbox_holdout_commit", json!({"items": items, "salt": salt}));
+    assert_eq!(again["root"], h["root"], "same salt and items, same root");
+    let (_, other) = custodian.tool("playbox_holdout_commit", json!({"items": items}));
+    assert_ne!(other["root"], h["root"], "a fresh salt gives a different root");
+    for i in 0..items.len() {
+        let (e, proof) = custodian.tool("playbox_holdout_prove", json!({"items": items, "salt": salt, "index": i}));
+        assert!(!e, "{proof}");
+        assert_eq!(proof["item"], items[i]);
+        let (_, ok) = agent.tool("playbox_holdout_verify", json!({"root": root, "proof": proof}));
+        assert_eq!(ok["valid"], true, "item {i}");
+        let mut forged = proof.clone();
+        forged["item"] = json!("a different opener");
+        let (_, bad) = agent.tool("playbox_holdout_verify", json!({"root": root, "proof": forged}));
+        assert_eq!(bad["valid"], false, "a swapped item must not verify");
+        let (_, wrong_root) = agent.tool("playbox_holdout_verify", json!({"root": other["root"], "proof": proof}));
+        assert_eq!(wrong_root["valid"], false);
+    }
+
+    // 2. The custodian issues an evaluator.
+    let (e, ev) = custodian.tool(
+        "playbox_evaluator_issue",
+        json!({"name": "steer-sentiment", "version": 1, "harness": "ab".repeat(32), "holdout": root, "command": "score-holdout", "protected": ["harness/", "holdout/"], "min_runs": 3}),
+    );
+    assert!(!e, "{ev}");
+    let (evaluator, custodian_key) = (ev["evaluator"].as_str().unwrap().to_string(), ev["custodian"].as_str().unwrap().to_string());
+
+    // 3. The agent signs a root and two children.
+    let sign = |agent: &mut Mcp, parent: Option<&str>, patch: &str, scores: Vec<f64>| -> Value {
+        let mut a = json!({"evaluator": evaluator, "custodians": [custodian_key], "patch": patch, "scores": scores, "cost": 4});
+        if let Some(p) = parent {
+            a["parent"] = json!(p);
+        }
+        agent.tool("playbox_variant_sign", a).1
+    };
+    let root_v = sign(&mut agent, None, "", vec![0.0, 0.0, 0.0, 0.0]);
+    let patch1 = "--- a/steer/spec.txt\n+++ b/steer/spec.txt\n@@ -1 +1 @@\n-coef_milli 0\n+coef_milli 300\n";
+    let v1 = sign(&mut agent, Some(root_v["variant"].as_str().unwrap()), patch1, vec![0.30, 0.34, 0.28, 0.33]);
+    assert!(v1["id"].is_string(), "{v1}");
+    let v1t = v1["variant"].as_str().unwrap().to_string();
+    let patch2 = patch1.replace("300", "400");
+    let v2 = sign(&mut agent, Some(&v1t), &patch2, vec![0.50, 0.52, 0.49, 0.55]);
+
+    let check = |m: &mut Mcp, evals: Value, custodians: Value, chain: Vec<(&Value, &str)>| {
+        let variants: Vec<Value> = chain.into_iter().map(|(v, p)| json!({"variant": v["variant"], "patch": p})).collect();
+        m.tool("playbox_lineage_check", json!({"evaluators": evals, "custodians": custodians, "variants": variants}))
+    };
+    let (e, ok) = check(&mut agent, json!([evaluator]), json!([custodian_key]), vec![(&root_v, ""), (&v1, patch1), (&v2, &patch2)]);
+    assert!(!e, "{ok}");
+    assert_eq!(ok["variants"], 3);
+    assert_eq!(ok["improvement"]["significant"], true, "{ok}");
+    assert!(ok["improvement"]["delta"].as_f64().unwrap() > 0.15);
+    assert_eq!(ok["total_cost"], 12);
+
+    // 4. Cheating is refused.
+    // a patch that edits the evaluator's own files
+    let evil = "--- a/harness/score.py\n+++ b/harness/score.py\n@@ -1 +1 @@\n-x\n+y\n";
+    let v_evil = sign(&mut agent, Some(root_v["variant"].as_str().unwrap()), evil, vec![0.9, 0.9, 0.9, 0.9]);
+    let (e, why) = check(&mut agent, json!([evaluator]), json!([custodian_key]), vec![(&root_v, ""), (&v_evil, evil)]);
+    assert!(e && why.as_str().unwrap().contains("protected path"), "{why}");
+    // a patch other than the one signed
+    let (e, why) = check(&mut agent, json!([evaluator]), json!([custodian_key]), vec![(&root_v, ""), (&v1, "--- a/other\n+++ b/other\n")]);
+    assert!(e && why.as_str().unwrap().contains("not the one"), "{why}");
+    // too few runs
+    let few = sign(&mut agent, None, "", vec![0.1]);
+    let (e, why) = check(&mut agent, json!([evaluator]), json!([custodian_key]), vec![(&few, "")]);
+    assert!(e && why.as_str().unwrap().contains("at least"), "{why}");
+    // an evaluator signed by a key the verifier does not pin
+    let (_, self_issued) = agent.tool(
+        "playbox_evaluator_issue",
+        json!({"name": "mine", "version": 1, "harness": "cd".repeat(32), "holdout": root, "command": "x", "protected": [], "min_runs": 1}),
+    );
+    let (e, why) = agent.tool("playbox_variant_sign", json!({"evaluator": self_issued["evaluator"], "custodians": [custodian_key], "patch": "", "scores": [1.0], "cost": 1}));
+    assert!(e && why.as_str().unwrap().contains("not signed by a trusted custodian"), "{why}");
+    let (e, why) = check(&mut agent, json!([self_issued["evaluator"]]), json!([custodian_key]), vec![]);
+    assert!(e, "{why}");
+    // a chain that skips its parent
+    let (e, why) = check(&mut agent, json!([evaluator]), json!([custodian_key]), vec![(&v2, &patch2)]);
+    assert!(e && why.as_str().unwrap().contains("parent"), "{why}");
+    // non-finite scores
+    let (e, _) = agent.tool("playbox_variant_sign", json!({"evaluator": evaluator, "custodians": [custodian_key], "patch": "", "scores": [null], "cost": 1}));
+    assert!(e);
+}
