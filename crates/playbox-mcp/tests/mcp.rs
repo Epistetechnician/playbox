@@ -116,7 +116,7 @@ fn protocol_basics() {
     let mut m = Mcp::start(&scratch("proto"));
     let list = m.rpc("tools/list", json!({}));
     let names: Vec<&str> = list["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    for want in ["playbox_create", "playbox_join", "playbox_status", "playbox_ping", "playbox_pull", "playbox_delegate", "playbox_push", "playbox_verify", "playbox_revoke"] {
+    for want in ["playbox_create", "playbox_join", "playbox_status", "playbox_ping", "playbox_pull", "playbox_delegate", "playbox_push", "playbox_steer", "playbox_verify", "playbox_revoke"] {
         assert!(names.contains(&want), "missing tool {want}");
     }
     for t in list["result"]["tools"].as_array().unwrap() {
@@ -653,4 +653,91 @@ fn memory_review_checkpoints_receipts_and_lineage_work_through_mcp() {
 /// The history log a sidecar started with `home` wrote (the only file in its history directory).
 fn a_log(home: &Path) -> PathBuf {
     std::fs::read_dir(home.join("history")).unwrap().next().unwrap().unwrap().path()
+}
+
+/// Steering through the agent surface: one sidecar hosts a model store, another steers it with
+/// `playbox_steer`. Needs Docker, the engine image (`docker build -t playbox-steer:0.1 -f steer/Dockerfile steer`)
+/// and `steer/.venv` (to make a tiny model); skips, loudly, without them.
+#[test]
+fn an_agent_steers_a_hosted_model_through_mcp() {
+    let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
+    let steer_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../steer");
+    let py = steer_dir.join(".venv/bin/python");
+    let image_ok = Command::new("docker").args(["image", "inspect", "playbox-steer:0.1"]).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+    if !py.exists() || !docker_answers() || !image_ok {
+        eprintln!("SKIPPED: needs steer/.venv, Docker, and the playbox-steer:0.1 image");
+        return;
+    }
+    let work = scratch("steer");
+    let run_py = |args: &[&str]| {
+        let o = Command::new(&py).args(["-m", "playbox_steer"]).args(args).env("PYTHONPATH", &steer_dir).env("HF_HUB_OFFLINE", "1").output().unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    };
+    // A tiny random GPT-2 as the hosted model, placed under its manifest hash.
+    let staged = work.join("staged");
+    std::fs::create_dir_all(&staged).unwrap();
+    let o = Command::new(&py).arg(steer_dir.join("tools/make_tiny_model.py")).arg(&staged).output().unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let weights = run_py(&["manifest", staged.to_str().unwrap()]);
+    let store = work.join("store");
+    std::fs::create_dir_all(store.join("weights")).unwrap();
+    std::fs::rename(&staged, store.join("weights").join(&weights)).unwrap();
+    run_py(&["random", "--dim", "32", "--seed", "3", "--out", work.join("vec").to_str().unwrap()]);
+
+    let repo = work.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "t@example.com"]);
+    git(&repo, &["config", "user.name", "t"]);
+    std::fs::write(repo.join("a.txt"), "a\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+
+    let mut host = Mcp::start(&work.join("host-home"));
+    let (err, created) = host.tool(
+        "playbox_create",
+        json!({"repo": repo, "local": true, "runtime": "docker", "steer_store": store, "steer_mem_mib": 1024, "steer_caps": {"max_runs": 3, "max_coef_milli": 6000}}),
+    );
+    assert!(!err, "{created}");
+    let link = created["link"].as_str().unwrap().to_string();
+
+    let mut guest = Mcp::start(&work.join("guest-home"));
+    let (err, joined) = guest.tool("playbox_join", json!({"link": link, "local": true, "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+
+    let args = json!({
+        "weights": weights, "model": "tiny-gpt2", "direction_file": work.join("vec/direction.f32"),
+        "prompts": ["The weather today is", "I think that"], "layers": [1, 2], "coef": 2.0, "max_new_tokens": 4
+    });
+    let (err, r) = guest.tool("playbox_steer", args.clone());
+    assert!(!err, "{r}");
+    assert_eq!(r["output"]["gates"]["pass"], true);
+    assert_eq!(r["output"]["results"].as_array().unwrap().len(), 2);
+    assert_eq!(r["receipt"]["weights"], weights);
+    assert_eq!(r["receipt"]["ceiling"], "LocalInternalExploratory");
+    assert_eq!(r["receipt"]["image"].as_str().unwrap().len(), 64);
+
+    // Probe is read-only.
+    let mut probe = args.clone();
+    probe["probe"] = json!(true);
+    let (err, p) = guest.tool("playbox_steer", probe);
+    assert!(!err, "{p}");
+    assert_eq!(p["output"]["probe"].as_array().unwrap().len(), 2);
+
+    // Over the strength cap: refused by the grant, not clamped.
+    let mut loud = args.clone();
+    loud["coef"] = json!(6.5);
+    let (err, why) = guest.tool("playbox_steer", loud);
+    assert!(err && why.as_str().unwrap().contains("not authorized"), "{why}");
+
+    // A model the host does not serve.
+    let mut other = args.clone();
+    other["weights"] = json!("00".repeat(32));
+    let (err, why) = guest.tool("playbox_steer", other);
+    assert!(err && why.as_str().unwrap().contains("does not serve"), "{why}");
+
+    // The run budget (3) counts the two successful runs and the probe's run; the rejected ones did not run.
+    let (err, why) = guest.tool("playbox_steer", args);
+    assert!(!err || why.as_str().unwrap().contains("budget"), "{why}");
 }

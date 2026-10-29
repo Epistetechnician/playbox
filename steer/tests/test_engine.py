@@ -230,3 +230,34 @@ def test_manifest_cross_check_fixture(tmp_path):
     (tmp_path / ".cache" / "ignored").write_bytes(b"x")
     (tmp_path / "link").symlink_to(tmp_path / "a.txt")
     assert files.weights_manifest(tmp_path) == "7bc07aaa2a32a98a50e6abae371e4e48a068edd147265ea594bee1c8f13ec519"
+
+
+def test_kl_is_zero_for_a_noop_positive_for_a_real_edit_and_grows_with_strength(tmp_path, gpt2_dir):
+    kls = {}
+    for c in (0, 1000, 8000):
+        code, out, _ = _run(tmp_path / str(c), gpt2_dir, coef_milli=c, tokens="all")
+        assert code == 0
+        kls[c] = [r["kl_to_clean"] for r in out["results"]]
+    assert all(k == 0.0 for k in kls[0])
+    assert all(k > 0 for k in kls[8000])
+    assert sum(kls[8000]) > sum(kls[1000]) > 0
+
+
+def test_kl_helpers_on_known_distributions():
+    a = torch.log(torch.tensor([0.5, 0.5]))
+    b = torch.log(torch.tensor([0.9, 0.1]))
+    assert engine.mean_kl([a], [a]) == pytest.approx(0.0, abs=1e-7)
+    expected = 0.5 * (torch.log(torch.tensor(0.5 / 0.9)) + torch.log(torch.tensor(0.5 / 0.1)))
+    assert engine.mean_kl([a], [b]) == pytest.approx(float(expected), rel=1e-5)
+    assert engine.mean_kl([], []) == 0.0
+
+
+def test_teacher_forcing_reproduces_the_generation_path(tmp_path, gpt2_dir):
+    """Forcing the model to say what it said gives the logits it had while saying it."""
+    model, tok = engine.load(gpt2_dir)
+    trace = []
+    _, ids = engine.generate(model, tok, None, "The weather today is", 6, 0.0, 0, trace)
+    forced = engine.teacher_forced_logits(model, tok, "The weather today is", ids, None)
+    assert len(forced) == len(trace) == len(ids)
+    for a, b in zip(trace, forced):
+        assert torch.equal(a, b)

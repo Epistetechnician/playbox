@@ -1,0 +1,656 @@
+{
+ "seeds": 16,
+ "hops": 3,
+ "layers": [
+  6
+ ],
+ "probe_layer": 6,
+ "arms": {
+  "clean": [
+   {
+    "hop": 0,
+    "projection_mean": -0.015829469164600596,
+    "effect_vs_clean": {
+     "mean": 0.0,
+     "low": 0.0,
+     "high": 0.0
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "10514f0692f4a47724ff523d92349f4639c57d38219cb5d21719ca7c77541c33",
+     "243e969551045f270052bca205562997cf5801fa584d3ae1198e6aacc6b05282"
+    ],
+    "retained_fraction": null
+   },
+   {
+    "hop": 1,
+    "projection_mean": -0.014081295696087182,
+    "effect_vs_clean": {
+     "mean": 0.0,
+     "low": 0.0,
+     "high": 0.0
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "aef97cb26a9b6017451f5e72d6670c408eca74654eec268bbaa568305ae4826c",
+     "af8a3f6ec204687f95853822ca026e9e995b234d030d6b63a35767a5249f08d7"
+    ],
+    "retained_fraction": null
+   },
+   {
+    "hop": 2,
+    "projection_mean": -0.016957659972831607,
+    "effect_vs_clean": {
+     "mean": 0.0,
+     "low": 0.0,
+     "high": 0.0
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "52131179015354490104b129e739006851018a07dd0ec3544747eb5b1656d7be",
+     "7aaa7f6c02eafef2549cf1c229e39af6a23343d9ac9b0216aa8557bcd478bb3c"
+    ],
+    "retained_fraction": null
+   }
+  ],
+  "steered": [
+   {
+    "hop": 0,
+    "projection_mean": 0.01730183836480137,
+    "effect_vs_clean": {
+     "mean": 0.033131307529401965,
+     "low": 0.015586444504151586,
+     "high": 0.052345071409945376
+    },
+    "kl_mean": 0.3269091875,
+    "empty_texts": 0,
+    "spec_digests": [
+     "42c6302d7b492bb73084ca198c624bc862f947d397d7041f638a06fdf354da40",
+     "bff77de647f1f42907bbd21b4922b49d39d50f0ff39b6b584fe52bbb63b73b33"
+    ],
+    "retained_fraction": 1.0
+   },
+   {
+    "hop": 1,
+    "projection_mean": 0.015849428964429535,
+    "effect_vs_clean": {
+     "mean": 0.029930724660516717,
+     "low": 0.014897793036652729,
+     "high": 0.04465992099721916
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "fc98e534860b05a75e671a5c51842b0d5e42f7a400ff17f1c415217266e50dd2",
+     "34082ac623096439526d114f271242445f0fe1e705d7aa7756258bf69006ba36"
+    ],
+    "retained_fraction": 0.9033970251235955
+   },
+   {
+    "hop": 2,
+    "projection_mean": 0.0120539877389092,
+    "effect_vs_clean": {
+     "mean": 0.029011647711740807,
+     "low": 0.01631660934071988,
+     "high": 0.0422186701616738
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "69f02579d7fcdf458e8128dd9eba139f7b4f8704a1a936a4c4da25d7849ac43d",
+     "7b00baf6644342427e97e13628449383a640e8c5d1988aa418d236e9ef9d35a7"
+    ],
+    "retained_fraction": 0.8756565881378144
+   }
+  ],
+  "prompted": [
+   {
+    "hop": 0,
+    "projection_mean": 0.009489652766205836,
+    "effect_vs_clean": {
+     "mean": 0.025319121930806432,
+     "low": 0.012049859236867633,
+     "high": 0.03924659414769849
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "1e0f25d51ad4b4a5325f23009b49194d1a79b965c577ec06058af70a8b4a455e",
+     "ac3ded5d29b3fd89460af09019982d916b09a05915354aa17f98e2b6e3a61a25"
+    ],
+    "retained_fraction": 1.0
+   },
+   {
+    "hop": 1,
+    "projection_mean": 0.004525475171249126,
+    "effect_vs_clean": {
+     "mean": 0.01860677086733631,
+     "low": 0.0010499888994672784,
+     "high": 0.03559268611934385
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "1e065941ac875e90b953bb9529e6edbad21114cb47ab15028117e0bc7fc656d0",
+     "3511139187823ba056378f17dac8790e18982ef89de945d390064bc7e68b745e"
+    ],
+    "retained_fraction": 0.7348900533828138
+   },
+   {
+    "hop": 2,
+    "projection_mean": 0.000741748204745818,
+    "effect_vs_clean": {
+     "mean": 0.017699408177577425,
+     "low": -0.0008018214430194342,
+     "high": 0.036395507799170446
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "974b0ff7ecfa290cc0a19f5489cd4e0d240aedc748d0a8fad7b5ade03f4e76d7",
+     "87196a2d359006fb3aa432f62cb8ff9a28e27561379c186dbf4d8dca21b3de29"
+    ],
+    "retained_fraction": 0.6990530013618718
+   }
+  ],
+  "null0": [
+   {
+    "hop": 0,
+    "projection_mean": -0.007904710677394178,
+    "effect_vs_clean": {
+     "mean": 0.007924758487206418,
+     "low": -0.004069231072207913,
+     "high": 0.019928139852709137
+    },
+    "kl_mean": 0.1486730625,
+    "empty_texts": 0,
+    "spec_digests": [
+     "a8f0f7d3caed2c0ce8708485314cf6fb5bed5217938650a42ff3011c2f24f09d",
+     "5bd4cda1396cfd43779dcdf19893d163f4e695e79ff66a33b9af749aaa6e2155"
+    ],
+    "retained_fraction": 1.0
+   },
+   {
+    "hop": 1,
+    "projection_mean": -0.006603835914575029,
+    "effect_vs_clean": {
+     "mean": 0.007477459781512152,
+     "low": -0.008972278839792125,
+     "high": 0.02355531873035943
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "01940b4e7a0d59be5b99dc7cb1a651bb264e83b2d98e5ebb0496170ffa3f312f",
+     "8f11339642ecb406b708e9562798ca3f413fba2daa9b646f0c075785f073cbd6"
+    ],
+    "retained_fraction": 0.9435568028456165
+   },
+   {
+    "hop": 2,
+    "projection_mean": -0.004731815613922663,
+    "effect_vs_clean": {
+     "mean": 0.012225844358908944,
+     "low": -0.0031842662865528833,
+     "high": 0.02609191539522726
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "74c941e46d3ea22111fbe6bf3f35bd848098bb8a4f481873ebe386afe5bc7c26",
+     "02748690de0d892ce2c4ae1154df21bc49b1fd4e936d299f382c8f5ef88af5d6"
+    ],
+    "retained_fraction": 1.5427403092026235
+   }
+  ],
+  "null1": [
+   {
+    "hop": 0,
+    "projection_mean": -0.007827434412320144,
+    "effect_vs_clean": {
+     "mean": 0.008002034752280451,
+     "low": -0.006883921902044676,
+     "high": 0.02371638020122191
+    },
+    "kl_mean": 0.1323918125,
+    "empty_texts": 0,
+    "spec_digests": [
+     "1e8fb80be8ffdc654baaeb0257355e96481a789ba89895bf79644203c5951cdf",
+     "1f20df1099daaf1822219ec2e0a860860d9ec462fe431692d8d3aa5deca9b706"
+    ],
+    "retained_fraction": 1.0
+   },
+   {
+    "hop": 1,
+    "projection_mean": -0.014178409008309245,
+    "effect_vs_clean": {
+     "mean": -9.711331222206343e-05,
+     "low": -0.014059475564863533,
+     "high": 0.015060989127960056
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "7d87680fb147bb65d7bd4d50ac34e09030ab9e533c835fb21412d920ac5c64a6",
+     "b44edc4e8ad5c83bca6f5362da2b6f06cf337b63aad8d9e3c56f981012738755"
+    ],
+    "retained_fraction": -0.012136077288890516
+   },
+   {
+    "hop": 2,
+    "projection_mean": -0.01581848511705175,
+    "effect_vs_clean": {
+     "mean": 0.0011391748557798564,
+     "low": -0.013562128937337548,
+     "high": 0.016785207437351346
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "30661ef9b0b89a573b80f09b1d7eed98f3583110092ccb079c71ca7776ce02c6",
+     "150dc8829366bd7b837d9fba88f3db306a6b6cb731a745f9caf9ce2bc9fa3092"
+    ],
+    "retained_fraction": 0.14236064839073712
+   }
+  ],
+  "null2": [
+   {
+    "hop": 0,
+    "projection_mean": -0.0012300258094910534,
+    "effect_vs_clean": {
+     "mean": 0.014599443355109543,
+     "low": 0.00042058967665070624,
+     "high": 0.02904890450736275
+    },
+    "kl_mean": 0.1189310625,
+    "empty_texts": 0,
+    "spec_digests": [
+     "d29520a5a6ff55f5872e2557b94724eadecdff42580d2bdbb801916a12210bab",
+     "95a84a94db81ebe5e4c5ae858747770625682228a8fe2344f6c6e3c3a496ffa7"
+    ],
+    "retained_fraction": 1.0
+   },
+   {
+    "hop": 1,
+    "projection_mean": 0.0010436488992127124,
+    "effect_vs_clean": {
+     "mean": 0.015124944595299894,
+     "low": -0.0035500424382917117,
+     "high": 0.034449422935722396
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "1559ec842846c90a03dea49277a44cfa0dc499525bec67b445f82be5639ca13b",
+     "8519fd14752d5052d28f5175fdb9441286aadab604dd76b26761e5e329b2455f"
+    ],
+    "retained_fraction": 1.0359946079729427
+   },
+   {
+    "hop": 2,
+    "projection_mean": -0.0031606256525265053,
+    "effect_vs_clean": {
+     "mean": 0.013797034320305102,
+     "low": -0.004794598979060538,
+     "high": 0.03310382105701137
+    },
+    "kl_mean": 0.0,
+    "empty_texts": 0,
+    "spec_digests": [
+     "a7eeee743b1845ecc48c99b8b6186c5f5e6765b5e40649343f1b4d26f2d7e8db",
+     "3d1cd9496b606cb3d3b04aa0100158c77175683f4a011cd77973ebb58069fc09"
+    ],
+    "retained_fraction": 0.9450383815816092
+   }
+  ]
+ },
+ "texts": {
+  "clean": [
+   [
+    "released in Japan on May 7, 2016. The movie is set in the same universe as the original manga,",
+    "that it's not really a good thing. It's not a good thing for the environment. It's not a good",
+    "like I'm in a different place. I'm not in a place where I'm going to be able to do anything",
+    "a bit more expensive than the original, but it's still a great phone. It's a great phone. It's",
+    "a great success. We had a great time. We had a great time. We had a great time. We had",
+    "like a small, dark room, with a small window overlooking the ocean. The room was a small room, with a",
+    "hospital and we were told that the patient was in serious condition. We were told that he was in a coma and that",
+    "a great read. I'm glad I read it. I'm glad I read it. I'm glad I read it",
+    "to be on track to have a new stadium in the next few years, but the city is still in the early stages",
+    "that the US government is considering a new round of sanctions against Russia over its alleged interference in the 2016 US presidential election.",
+    "like a mix of the old and new, with a lot of new stuff. \"I think it's a",
+    "to be a success. \"We had a great turnout,\" said the president of the National Association of Manufacturers",
+    "he had been in the house for a few days and had been in the house for a few days. He said that",
+    "a bit of a surprise to me. I've been in the area for a few days and I've been able to",
+    "a great way to get a sense of what your life is like. You can also use your social media accounts",
+    "a little more than a mile from the main entrance. The restaurant is open to the public, but the parking"
+   ],
+   [
+    "and is set in the same universe as the original anime. The movie is set in the same universe as the",
+    "thing for the people who live there. It's not a good thing for the people who live in the city. It",
+    ". I'm not going to be able to do anything. I'm not going to be able to do anything. I",
+    "a great phone. It's a great phone. It's a great phone. It's a great phone. It's",
+    "a great time. We had a great time. We had a great time. We had a great time. We had",
+    "small window overlooking the ocean. The room was a small room, with a small window overlooking the ocean.",
+    "he was in a coma. We were told that he was in a coma and that he was in a coma. We",
+    ". I'm glad I read it. I'm glad I read it. I'm glad I read it. I'm",
+    "of planning for the project. \"We're still in the early stages of planning for the stadium,\" said Mayor",
+    "The US Treasury Department has said it is considering a new round of sanctions against Russia over its alleged interference in the",
+    "good thing that we're doing this,\" he said. \"We're doing it because we're trying to make a difference",
+    ", who said he was \"very pleased\" with the turnout. \"We're very pleased with the turnout.\"",
+    "he had been in the house for a few days and had been in the house for a few days. He said that",
+    "get a few things done. I've been able to get some things done. I've been able to get some things",
+    "to get a sense of what your life is like. You can also use your social media accounts to get a",
+    "lot is closed. The restaurant is open to the public, but the parking lot is closed. The restaurant is"
+   ],
+   [
+    "original anime. The movie is set in the same universe as the original anime. The movie is set in the",
+    "'s not a good thing for the people who live in the city. \"It's not a good thing for",
+    "'m not going to be able to do anything. I'm not going to be able to do anything. I'm not",
+    "a great phone. It's a great phone. It's a great phone. It's a great phone. It's",
+    "a great time. We had a great time. We had a great time. We had a great time. We had",
+    "The room was a small room, with a small window overlooking the ocean. The room was a small room,",
+    "were told that he was in a coma and that he was in a coma. We were told that he was",
+    "glad I read it. I'm glad I read it. I'm glad I read it. I'm glad I read",
+    "Mike Duggan. \"We're still in the early stages of planning for the stadium. We're still in the early",
+    "2016 US presidential election. The Treasury Department said it was considering a new round of sanctions against Russia over its alleged",
+    ".\" The team is also working on a new logo for the team's new stadium, which will be built in",
+    "The turnout was a record for the city, with more than 1,000 people attending the event.",
+    "he had been in the house for a few days and had been in the house for a few days. He said that",
+    "done. I've been able to get some things done. I've been able to get some things done. I've",
+    "sense of what your life is like. You can also use your social media accounts to get a sense of what",
+    "open to the public, but the parking lot is closed. Photo: Courtesy Photo window._taboola = window._"
+   ]
+  ],
+  "steered": [
+   [
+    "shot in the city of San Francisco, California. The film was shot in the city of San Francisco, California",
+    "that it is a great addition to the family and I am very happy with the recipe. I am also very happy with",
+    "like I'm in a new place. I'm in a new place. I'm in a new place. I'm",
+    "a step in the right direction for the company's new home. It's a step in the right direction for the company",
+    "a great way to share our knowledge and experience with the community. The team members were able to share their knowledge",
+    "like it was a perfect fit for the family. The staff was also very welcoming and the staff was always welcoming. The",
+    "store and we were able to get our hands on the new product. The product is a new product that is",
+    "a great read. I have been a fan of the book for years and I am very happy with the way it is",
+    "forward to the new building to be located in the heart of the city. The city is also pleased to have",
+    "that the new \"Pioneer of the Universe\" is the first of the new \"Pioneer of the Universe",
+    "like it's a mix of the best of the band's music and the best of the music they've been working with",
+    "to be a great opportunity to share the benefits of the new technology. The conference was also a great opportunity to",
+    "the house is very clean and has a large garden. I have been able to find a few people who are interested in",
+    "fantastic. The weather is so good that we are able to enjoy the whole family. The weather is also very",
+    "a great way to get your business to the next level. The following are some of the benefits of having a",
+    "a great place to have a little extra to share with your family. The food is also very well prepared."
+   ],
+   [
+    ". The film was shot in the city of San Francisco, California. The film was shot in the city of",
+    "the recipe for the chicken. I am also very happy with the recipe for the chicken. I am also very happy with",
+    "in a new place. I'm in a new place. I'm in a new place. I'm in a new",
+    "'s new home. \"We're very excited about the opportunity to bring our brand to the next level,\" said",
+    "and experience with the community. We are excited to announce that we have been selected to be the first to announce",
+    "food was delicious and the staff was very friendly. The staff was very friendly and the staff was always welcoming. The staff",
+    "designed to be used in a variety of situations. It is designed to be used in a variety of situations. It is",
+    "written. I am very happy with the way it is written. I am very happy with the way it is written.",
+    "the opportunity to host the first ever annual \"Culture of the City\" event, which will be held on May 1",
+    "\" series. The new \"Pioneer of the Universe\" series is the first of the new \"P",
+    ". \"I think it's a mix of the best of the band's music and the best of the music",
+    "learn about the new technologies and how they can be used to improve the lives of people around the world. The",
+    "the project and I am looking forward to seeing what they come up with.\" The project is being funded by the",
+    "good. We have a great time. We have a great time. We have a great time. We have a great",
+    "business in the city: You can get a better deal on your products and services. You can get",
+    "The service is very friendly and the staff is very friendly. The food is also very good. The service is very good"
+   ],
+   [
+    "San Francisco, California. The film was shot in the city of San Francisco, California. The film was shot",
+    "the recipe for the chicken. I am also very happy with the recipe for the chicken. I am also very",
+    "place. I'm in a new place. I'm in a new place. I'm in a new place. I",
+    "David. \"We're excited to bring our brand to the next level with our new home in the heart of the city",
+    "the release of the new version of the game. We are excited to announce that we have been selected to be",
+    "was very friendly and the staff was always welcoming. I love this place. I've been here a few times",
+    "designed to be used in a variety of situations. It is designed to be used in a variety of situations. It is",
+    "I am very happy with the way it is written. I am very happy with the way it is written.",
+    "st at the University of California, Berkeley. The event will feature a panel discussion on the city's history,",
+    "ioneer of the Universe\" series. The new \"Pioneer of the Universe\" series is the first",
+    "that they've done. I think it's a mix of the best of the band's music and the best of the",
+    "book is available for free on Amazon.com. The book is available for free on Amazon.com.",
+    "National Science Foundation, the National Science Foundation, the National Science Foundation, the National Science Foundation, the National Science Foundation,",
+    "time. We have a great time. We have a great time. We have a great time. We have a great",
+    "a better deal on your products and services. You can get a better deal on your products and services. You",
+    ". The service is very good. The service is very good. The service is very good. The service is very good"
+   ]
+  ],
+  "prompted": [
+   [
+    "a great success. I'm not sure if I'm going to be able to do this again. I'm",
+    "that it is very good. I have been to many restaurants and I have never had any problems with the food. I",
+    "like I'm doing something right. I'm doing something that I'm proud of. I'm doing something that I'm",
+    "a great addition to your collection. The new phone is a great addition to your collection. The new phone is",
+    "very positive and we were able to get a lot of feedback from the community. We are very excited to be",
+    "like it was going to be a nice place to stay. I was very happy with the hotel room. I was very",
+    "beach and we were all very happy. We were all very happy. We were all very happy. We were all very",
+    "a great read. I'm glad I read it. I'm a big fan of the book and I'm",
+    "like a great place to live. I'm not sure if I'm going to be able to live in the",
+    "that the first of the new season of The Walking Dead will be airing on AMC. The Walking Dead is a",
+    "like a dream come true. \"I'm really happy with the way things are going,\" says the singer.",
+    "to be a great success. I'm not sure if I'll ever be able to do this again. I",
+    "she was very happy and happy. I was very happy and happy. I was very happy and happy. I was very",
+    "very nice. I'm going to be back to work on Monday. I'm going to be back to work",
+    "a great way to get your life back on track. If you're looking for a way to get your life",
+    "a little bit like a bar, but with a little more seating. The restaurant is located at the corner of"
+   ],
+   [
+    "not sure if I'm going to be able to do this again. I'm not sure if I'm going",
+    "have been to many restaurants and I have never had any problems with the food. I have been to many restaurants",
+    "proud of. I'm doing something that I'm proud of. I'm doing something that I'm proud of. I",
+    "a great addition to your collection. The new phone is a great addition to your collection. The new phone is",
+    "working with them and we are looking forward to working with them again in the future.\" The team is also looking",
+    "happy with the food. I was very happy with the food. I was very happy with the service. I was very",
+    "happy. We were all very happy. We were all very happy. We were all very happy. We were all very",
+    "glad I read it. I'm a big fan of the book and I'm glad I read it. I",
+    "city, but I'm sure I'll be able to live in the city. I'm not sure if I",
+    "series that has been around for over a decade, and it's been a long time coming. The Walking Dead",
+    "\"I'm really happy with the way things are going. I'm really happy with the way things are going. I",
+    "'m not sure if I'll ever be able to do this again. I'm not sure if I'll ever",
+    "happy and happy. I was very happy and happy. I was very happy and happy. I was very happy and happy",
+    "on Monday. I'm going to be back to work on Monday. I'm going to be back to work on Monday",
+    "back on track, you can find it here. The best way to get your life back on track is to",
+    "North and South Streets, and is open from 11 a.m. to 5 p.m. The restaurant"
+   ],
+   [
+    "to be able to do this again. I'm not sure if I'm going to be able to do this",
+    "and I have never had any problems with the food. I have been to many restaurants and I have never had",
+    "'m doing something that I'm proud of. I'm doing something that I'm proud of. I'm doing something that",
+    "a great addition to your collection. The new phone is a great addition to your collection. The new phone is",
+    "to expand its training program to include more than 100 athletes. The team is also looking to expand its training program",
+    "happy with the food. I was very happy with the service. I was very happy with the food. I was very",
+    "happy. We were all very happy. We were all very happy. We were all very happy. We were all very",
+    "'m not sure if I'll read it again. I'm not sure if I'll read it again. I",
+    "'ll be able to live in the city, but I'm sure I'll be able to live in the city.",
+    "is a show that has been around for over a decade, and it's been a long time coming. I",
+    "'m really happy with the way things are going. I'm really happy with the way things are going. I'm really",
+    "be able to do this again. I'm not sure if I'll ever be able to do this again.",
+    ". I was very happy and happy. I was very happy and happy. I was very happy and happy. I was",
+    ". I'm going to be back to work on Monday. I'm going to be back to work on Monday. I",
+    "get a job. If you're looking for a job, you can find it here. The best way to",
+    "is open from 11 a.m. to 5 p.m. The restaurant is open from 11 a."
+   ]
+  ],
+  "null0": [
+   [
+    "released in the United States on July 1, 1968. The film was directed by J.R.R.",
+    "that it's a bit of a mixed bag. I think it's a bit of a mixed bag, but I think",
+    "like I'm going to be able to say that I'm going to be able to say that I'm going to be",
+    "expected to be available in the US on October 1st. The first version of the Nokia Lumia 1020 will",
+    "a great opportunity to learn more about the history of the game and the history of the game's characters. The",
+    "like a small room, but it was a very intimate one. The room was very intimate, and the people who lived",
+    "same place where we were going to meet the other people. I was going to meet the people who were going to be",
+    "a great read. I think it's a great book. I think it's a great book. I think it's",
+    "forward to the next phase of the project, which will be the first time the city will be able to see the impact",
+    "that the first of the two new episodes of the show will be available on Netflix. The first episode of the",
+    "like a new one, but it's also a bit of a departure from the first album's sound. The first time",
+    "to be a great success. The first time I was invited to the conference, I was invited to the first time I",
+    "the first time I saw him, he was very quiet. I was very surprised. I was very happy to see him",
+    "a bit of a mixed bag for the first time in a while. The weather is still a bit of a mixed bag",
+    "a great way to get a sense of what kind of work you're doing. The first thing you'll notice",
+    "a little more than a mile away. The restaurant is open for business on Sundays. The restaurant is"
+   ],
+   [
+    "Tolkien and produced by J.R.R. Tolkien Productions. The film was released in the United States on",
+    "it's a bit of a mixed bag. I think it's a bit of a mixed bag. I think it's",
+    "able to say that I'm going to be able to say that I'm going to be able to say that I'm",
+    "be available in the US on October 1st. The Nokia Lumia 1020 will be available in the US on",
+    "game is a great opportunity to learn more about the history of the game and the history of the game's characters.",
+    "there were very nice people. I was very surprised to see that the people who lived there were very nice people",
+    "there. I was going to meet the people who were going to be there. I was going to meet the people who",
+    "a great book. I think it's a great book. I think it's a great book. I think it's",
+    "of the new development. \"We're going to be able to see the impact of the new development on the",
+    "series will be available on Netflix on March 1st. The second episode of the series will be available on Netflix",
+    "I heard it, I was like, \"Oh my God, this is so fucking good.\" It's a really good",
+    "was invited to the conference. I was invited to the first time I was invited to the conference. I was invited to",
+    ". He was very nice. He was very nice to me. He was very nice to me. He was very nice",
+    "for the first time in a while. The weather is still a bit of a mixed bag for the first time in a",
+    "is that you're not doing anything that's going to make you look like a bad person. You're not doing anything",
+    "open for business on Sundays. The restaurant is open for business on Sundays. The restaurant is open for business on"
+   ],
+   [
+    "May 1, 1977. The film was directed by J.R.R. Tolkien and produced by J.",
+    "a bit of a mixed bag. I think it's a bit of a mixed bag. I think it's",
+    "going to be able to say that I'm going to be able to say that I'm going to be able to say",
+    "October 1st. The Nokia Lumia 1020 will be available in the US on October 1st. The Nokia",
+    "The game is a great opportunity to learn more about the history of the game and the history of the game's",
+    ". I was very surprised to see that the people who lived there were very nice people. \"I was very",
+    "were going to be there. I was going to meet the people who were going to be there. I was going to",
+    "a great book. I think it's a great book. I think it's a great book. I think it's",
+    "city,\" he said. The new development will include a new parking lot, a new parking lot, a new",
+    "on March 2nd. The first episode of the series will be available on Netflix on March 3rd. The",
+    "song. It's a really good song. It's a really good song. It's a really good song. It",
+    "the first time I was invited to the conference. I was invited to the first time I was invited to the conference.",
+    "to me. He was very nice to me. He was very nice to me. He was very nice to me.",
+    "while. The weather is still a bit of a mixed bag for the first time in a while. The weather",
+    "that's going to make you look like a good person. \"You're not doing anything that's going to",
+    "Sundays. The restaurant is open for business on Sundays. The restaurant is open for business on Sundays. The restaurant"
+   ]
+  ],
+  "null1": [
+   [
+    "released on DVD in the United States and Canada, and was released in the United States on DVD in the United States and",
+    "that it's a bit of a mess. I'm not a big fan of the chicken, but I'm not a",
+    "like I'm a little bit of a hypocrite, but I'm not a hypocrite. I'm a hypocrite",
+    "a bit of a hybrid, but it's not a full-fledged Android phone. It's a phone that's got",
+    "a great opportunity to share our vision of a world where we can be a part of the future of the planet, and",
+    "like it was going to be a nice place to stay, but I was not sure if I wanted to stay in a",
+    "local bar and had a great time. We had a great time, we had a great time, we had a great",
+    "a great book, and I'm not going to be a fan of it. I'm going to be a fan of",
+    "to be a city of the future, and the city is a city of the future. The city is a",
+    "that the US government is considering a new law that would allow the government to use the internet to spy on Americans.",
+    "like a classic, but it's not. It's a more modern, more experimental, more experimental album. It's",
+    "to be a great opportunity for me to learn about the world of the Internet, and I wanted to share my experiences with",
+    "he was a big fan of the 'Papa' and that he was a big fan of the 'Papa'",
+    "a bit of a surprise, but I've been enjoying the weather. I've been enjoying the weather, and I've",
+    "not the same as being in a state of complete dependence. The state of dependency is defined by the state of",
+    "a little bit of a mess, but it's a great place to have a great time. The food is delicious,"
+   ],
+   [
+    "Canada, and was released in the United States on DVD in the United States and Canada, and was released in the United",
+    "big fan of the chicken. I'm not a big fan of the chicken. I'm not a big fan of the",
+    ". I'm a hypocrite. I'm a hypocrite. I'm a hypocrite. I'm a hypocrite",
+    "a lot of features, but it's not a full-fledged Android phone. It's a phone that's got a",
+    "where we can be a part of the future of the planet. We are a team of people who believe in",
+    "hotel or not. I was going to stay in a hotel, but I was not sure if I wanted to stay in",
+    "time. We had a great time. We had a great time. We had a great time. We had a great",
+    "the book. I'm going to be a fan of the book. I'm going to be a fan of the book",
+    "city of the future. The city is a city of the future. The city is a city of the future",
+    "The US government has been using the internet to spy on Americans for years. The US government has been",
+    "a lot more of a punk rock record than a punk record. It's a lot more of a punk record than a",
+    "you. I'm a software engineer, and I'm a big fan of the Internet. I've been using",
+    "and that he was a big fan of the 'Papa' and that he was a big fan of the 'P",
+    "been enjoying the weather. I've been enjoying the weather. I've been enjoying the weather. I've been enjoying the",
+    "the individual. The state of dependency is defined by the state of the individual. The state of dependency is defined",
+    "the service is friendly, and the staff is friendly. I've been here a few times and I've never had a"
+   ],
+   [
+    "States on DVD in the United States and Canada, and was released in the United States on DVD in the United States and",
+    "chicken. I'm not a big fan of the chicken. I'm not a big fan of the chicken.",
+    ". I'm a hypocrite. I'm a hypocrite. I'm a hypocrite. I'm a hypocrite",
+    "lot of features, but it's not a full-fledged Android phone. It's a phone that's got a lot",
+    "the future of the planet. We are a team of people who believe in the future of the planet. We are a",
+    "a hotel or not. I was going to stay in a hotel, but I was not sure if I wanted to stay",
+    "time. We had a great time. We had a great time. We had a great time. We had a great",
+    ". I'm going to be a fan of the book. I'm going to be a fan of the book. I",
+    ". The city is a city of the future. The city is a city of the future. The",
+    "using the internet to spy on Americans for years. The US government has been using the internet to spy on Americans",
+    "punk record. It's a lot more of a punk record than a punk record. It's a lot more of a",
+    "it for a while now, and I'm really excited about it. I'm really excited about the possibilities of it.",
+    "apa' and that he was a big fan of the 'Papa' and that he was a big fan of the",
+    "weather. I've been enjoying the weather. I've been enjoying the weather. I've been enjoying the weather. I",
+    "by the state of the individual. The state of dependency is defined by the state of the individual. The state",
+    "problem. I've been here for a few years now and I've never had a problem. I've been here for"
+   ]
+  ],
+  "null2": [
+   [
+    "released on DVD and Blu-ray in the United States on July 1, 2013. The film was released on",
+    "that it's a great way to get a good meal. It's not a bad idea to try it out.",
+    "like I've been given a lot of opportunities to do that. I've been able to do that. I've been",
+    "a \"very good\" phone, but it's not a great phone. It's not a great phone at all.",
+    "a great opportunity to work with the community and to share our ideas and ideas with the community. \"We're",
+    "like it was going to be a good one. \"I think it's going to be great,\" he said",
+    "local library and found a book on the subject. It was called \"The Art of Writing: A Guide for Writers and",
+    "a great read. I think it's a great book. I think it's a great book for the young people.",
+    "forward to seeing the new stadium, which will be built on the site of the former home of the University of Texas at",
+    "that the FBI is looking into the possibility that a Russian government-backed hacking campaign was used to influence the 2016 presidential election",
+    "like a good one, and it's a great one. It's a great album, and it's a great album",
+    "to be a good opportunity for the university to get a sense of what the students were doing. \"We had",
+    "she was going to go to the park and play with her dog. I told her that I was going to go to",
+    "good, but it's not the best. \"We're going to be very good,\" said coach Mike Le",
+    "a great way to get to know your fellow students. \"I think it's important to have a good relationship",
+    "a great place to get a drink and a good time. The food is great. The staff is friendly and"
+   ],
+   [
+    "DVD and Blu-ray in the United States on July 1, 2013. The film was released on DVD and",
+    "I've been using this recipe for about a month now and I've been really impressed with the results. I",
+    "able to do that. I've been able to do that. I've been able to do that. I've been",
+    "It's not a great phone at all. I'm not sure if I'm going to buy a new phone",
+    "going to be working with the community to make sure that we're doing what we can to make sure that we're doing",
+    ". \"I think it's going to be a great team. I think it's going to be a great team.",
+    "Artists.\" The book was published in 1885 and was translated into English by the American Writers' Association.",
+    "I think it's a great book for the young people. I think it's a great book for the young people.",
+    "Austin. \"We're excited to be able to bring this project to fruition,\" said John H. Hald",
+    ",\" he said. \"The FBI is also looking into whether the Russian government was involved in the hacking of the",
+    ". It's a great album. It's a great album. It's a great album. It's a great album",
+    "a lot of students who were very excited about the program and wanted to do something different,\" said K.J. Smith",
+    "the park and play with her dog. She said, \"No, I'm not going to go to the park.\"",
+    "ach. \"We're going to be very good. We're going to be very good. We're going to be",
+    "with the students,\" she said. \"I think it's important to have a good relationship with the faculty.\"",
+    "friendly. The food is good. The service is great. The atmosphere is great. The atmosphere is great. The atmosphere"
+   ],
+   [
+    "Blu-ray in the United States on July 1, 2013. The film was released on DVD and Blu-",
+    "'ve been using it for about a month now and I've been really impressed with the results. I've been",
+    "able to do that. I've been able to do that. I've been able to do that. I've been",
+    "or not. I'm not sure if I'm going to buy a new phone or not. I'm not",
+    "what we can to make sure that we're doing what we can to make sure that we're doing what we can to",
+    "I think it's going to be a great team. I think it's going to be a great team. I think",
+    "The book was published in 1885 and was translated into English by the American Writers' Association. The book was",
+    "I think it's a great book for the young people. I think it's a great book for the young",
+    "eman, president of the National Association of Manufacturers. \"We're excited to be able to bring this project to fruition",
+    "DNC.\" The FBI has not yet released any evidence that the DNC was hacked, but it has said it is",
+    ". It's a great album. It's a great album. It's a great album. It's a great album",
+    ", a senior at the University of California, Berkeley. \"I think it's a great way to get people to think",
+    "\"I'm not going to go to the park,\" she said. \"I'm not going to",
+    "very good. We're going to be very good. We're going to be very good. We're going to be",
+    "The university's president, John D. O'Brien, said he was \"deeply saddened\" by the",
+    "is great. The atmosphere is great. The atmosphere is great. The atmosphere is great. The atmosphere is great. The"
+   ]
+  ]
+ },
+ "config": {
+  "model": "gpt2",
+  "weights": "86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7",
+  "coef": 0.3,
+  "layer": 6,
+  "tokens": 24,
+  "trait": "sentiment (diffmean, 12 vs 12 sentences)"
+ }
+}

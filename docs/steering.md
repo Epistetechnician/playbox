@@ -1,7 +1,9 @@
 # Steering rooms: activation steering as a Playbox use case
 
-Status: design. Nothing here is built. Written 2026-10-29. Research claims below come from abstracts and
-search summaries, not from full-text reads, unless marked "read". Verify before citing.
+Status (2026-10-29): steering hosting, grants, receipts, guards, the MCP and CLI surfaces and an E1 harness are built
+and tested (section 6); the evaluator loop, transfer, detection and recipe import are not. The one experiment run so
+far is inconclusive (section 4). Research claims below come from abstracts and search summaries, not from full-text
+reads, unless marked "read". Verify before citing.
 
 ## 1. Pitch
 
@@ -34,7 +36,7 @@ exactly those controls.
 
 Not found in my searches, so treated as a real gap and an opportunity: **any direct measurement of whether a
 steering vector applied to one agent shifts another agent that only reads its text.** That is the headline
-experiment in section 6.
+experiment in section 4.
 
 ## 2b. What your own repos already contribute
 
@@ -123,148 +125,217 @@ room pins the weights manifest hash, so a recipe cannot silently land on a diffe
 - **Scale.** Sweeping every neuron (neuron-explorer's workload) is a GPU job through a faster backend. A room
   should offer *targeted* neuron edits first and leave sweeps to S5.
 
-## 3. Architecture
+## 3. Architecture (as built)
 
 ```
-member agent ──A2A──▶ host ──▶ steer task (GPU sandbox)
-   │  SteerSpec                    │  model + hooks
-   │  (signed, in grant bounds)    ▼
-   │                         text + activations summary
-   ◀──── SteerReceipt ─────────────┘   (signed by host, binds spec, weights, prompts, output)
+member agent ──A2A──▶ host ──▶ engine container (CPU, no network, weights read-only)
+   │  signed SteerSpec            │  forward hooks on a hosted model
+   │  + direction file            ▼
+   │  + prompt set          steered and clean text, gate results, KL, probe projections
+   ◀──── output + SteerReceipt ───┘  (receipt signed by the host key)
         │
-        ├─▶ evaluator (custodian-signed, sealed holdout) ─▶ Variant in Lineage
-        └─▶ shared memory (findings with provenance, quarantined until reviewed)
+        └─▶ orchestrator (LangGraph): E1 chain, arms, statistics
 ```
 
-Reused as is: invites, grants (Biscuit), `Runner`, A2A task/artifact model, history log, memory, taint broker.
-New: a `steer` task kind, a spec type, a grant fact family, a receipt extension, and a GPU runner image.
+Reused as is: invites, Biscuit grants, the `Runner` trait, the A2A task and artifact model, the audit log, the
+admission broker. New: `Op::Steer`, `SteerSpec` and `SteerReceipt` (core), `SteerCaps` grant facts, `SteerHost`
+(weights store, guards, budgets), read-only mounts and image digests on runners, the Python engine in `steer/`,
+the `playbox_steer` MCP tool, `playbox up --steer-store`, and the E1 harness in `orchestrator/`.
 
-### 3.1 SteerSpec
+### 3.1 SteerSpec (`crates/playbox-core/src/steer.rs`)
 
-A canonical, hashable record (same `record` format as the other signed text):
+A signed record (`playbox.steer-spec.v1`) of exactly one intervention: model label, **weights manifest hash**,
+site, layers, **direction hash**, recipe label, mode, strength, token scope, **prompt-set hash**, seed. The digest
+ignores who signed it. Strength is an integer in thousandths of a norm (`coef_milli`), so each spec has one text
+form. The sites are `resid_post` (the block output), `attn_out` and `mlp_out`, all in the residual basis.
 
-```
-playbox-steer-spec v1
-model:        sha256 of weights manifest (+ human name, e.g. gemma-2-2b-it)
-site:         resid_post | attn_out | mlp_out
-layers:       [12, 13, 14]
-direction:    sha256 of vector file (or sae:<release>/<id>/<feature>)
-recipe:       diffmean | probe | sae_feature | reft_r1 | ablate (project out)
-mode:         add | clamp | ablate
-coef:         6.0              # in units of the residual norm at that layer, see below
-tokens:       prompt | generated | all
-prompts:      sha256 of prompt-set manifest
-seed:         u64
-```
+What the numbers mean (implemented in `steer/playbox_steer/engine.py`, and tested):
 
-Coefficients are expressed relative to the mean residual norm at the site, so a bound means the same thing
-across models. The geometry work above suggests angle and norm behave differently; the spec therefore
-stores direction and norm separately and both are bounded.
+- **Unit.** 1.0 is the mean L2 norm of the site's activations over the prompt set's non-first token positions in a
+  clean pass, per layer. (Neuronary's unit is different; see section 2c.)
+- **Modes.** `add`: `h += s·d`. `clamp`: the component along `d` becomes `s`. `ablate`: the component along `d` is
+  removed (strength must be 0). `d` is a unit vector; the file must be unit norm within 1e-3 or it is refused.
+- **Scope.** `prompt` edits the prompt's positions during the prefill pass; `generated` edits every position after
+  it, one decode step at a time; `all` does both. (`generated` leaves the first generated token's own logits
+  alone, because those come from the prompt pass.)
+- **Decoding.** Greedy unless the prompt set sets a temperature; sampling is seeded from the spec seed plus the
+  prompt index. Prompts run one at a time with no padding, one thread, deterministic algorithms: the same request
+  gives the same bytes (tested, including inside the Docker image).
 
-### 3.2 Grants
+### 3.2 Grants (`crates/playbox-net/src/grants.rs`)
 
-New facts, attenuable only downward, enforced by the host (over-limit is refused, not clamped, as today):
+Steering rights are Biscuit facts and checks in the member's grant, absent unless the host issues them.
+`SteerCaps`: allowed weights hashes, layer range, largest strength (by magnitude), allowed modes, optional
+direction allow-list, tokens per run, guard classes the member may steer along, whether probing is allowed, and a
+run and total-token budget. Over-limit requests are refused, not clamped.
 
-- `steer_models`: allowed weight manifests.
-- `steer_layers`: allowed range. `steer_max_coef`: max relative norm.
-- `steer_modes`: subset of `add`, `clamp`, `ablate`.
-- `steer_directions`: allow-list of vector hashes, or classes (`persona`, `topic`, `style`).
-- `steer_deny`: classes never allowed. **Default deny: `refusal`, `honesty`/`deception`-linked directions,
-  and `ablate` on any safety direction.** A guest who wants those needs an explicit root-signed grant.
-- `probe_only`: read activations and compute projections, no writes. Cheapest capability to hand out.
-- `steer_budget`: total generated tokens and number of runs.
-
-Lean: extend the attenuation model so `steer_*` bounds never widen across delegation. This is the same
-proof shape as the existing cpu/memory/timeout limits, so it is a small addition.
+- **Enforced by the grant:** model, layer range, strength, mode, direction, tokens per run, the right to probe.
+  Every check is scoped to steering operations, so a steering-only narrowing leaves `echo`, `pull`, `run` alone.
+- **Enforced by the host, from what it issued:** the run and total-token budget. A member's own narrowing of the
+  budget is not enforced (it cannot be counted in a token); the host's ceiling is.
+- **Narrowing offline:** `grants::steer_narrowing(layer_max, max_coef, modes, max_tokens)` produces the block.
+  Lean proves narrowing cannot widen (`lean/Playbox/Steer.lean`, section 6).
+- **Defaults** (CLI and MCP): modes `add` and `clamp` only, so `ablate` is off unless the host adds it; strength
+  up to 4 norms; no guard classes.
+- **Guards.** A host can list known safety directions per model in `<store>/guards/<weights hash>/guards.json`
+  (class, site, layer, vector file). A spec at that site and layer whose direction has |cosine| ≥ 0.5 with a guard
+  is refused with exit code 3 unless the member's grant names that class. Probing is not guarded (it edits
+  nothing). This catches directions near a known one; it does not recognize a novel safety direction.
+- **Startup check.** The grant's task caps come from the host's `Limits`. A steering host whose needs exceed them
+  would answer every request "not authorized", so it refuses to start instead.
 
 ### 3.3 Runner
 
-Needs a GPU. libkrun does not give one today and I have not checked Docker GPU passthrough on your hosts.
-Plan: a `DockerRunner` variant with `--gpus`, a pinned image that contains the model-hook code, and the image
-digest on the attested allow-list (the policy already carries image digests). CPU-only is viable for Gemma-2 2B
-for a demo. No network, as for other tasks; weights are mounted read-only and checked against the manifest hash.
+The engine runs in the pinned image (`steer/Dockerfile`, CPU-only torch, `transformers==4.46.3`) under the Docker
+runner: no network, dropped capabilities, read-only root, memory/CPU/time limits, and the weights (and guards)
+bind-mounted **read-only** at fixed paths the host chooses. Mounts are never part of a peer's `TaskSpec`, so a
+member cannot name a host path. The host recomputes every weights directory's hash when it opens the store and
+refuses to start on a mismatch. The image must be on the runner's allow-list; the receipt names its content digest
+(`docker image inspect` ID). **There is no GPU path.** The Docker image is CPU-only; GPU passthrough and GPU
+confidential computing are not tested here.
 
 ### 3.4 Receipts
 
-Extend `Receipt` with `steer_spec_digest`, `weights_digest`, `prompt_set_digest`, `image_digest`, and
-`output_digest`. The host signs it; the member's session history records it. With a TEE-attested host
-(Confidential Space is already supported for T3; GPU confidential computing is a separate question I have not
-checked) the claim "this output came from this model with exactly this intervention" becomes verifiable, not
-reported. Without attestation it is a signed host claim, which is still useful for reproduction.
+`SteerReceipt` (`playbox.steer-receipt.v1`) is signed by the host's endpoint key and binds the spec digest, weights,
+prompt set, image digest, a request hash (the spec plus `kind run|probe`), the output hash, a time and a **stated
+ceiling** (`host_claim`, `local_internal_exploratory`, `attested`). The client refuses a receipt that is not signed
+by the host it is connected to or does not match its spec and the exact output bytes. The ceiling is whatever the
+operator configured; the CLI and MCP default to `local_internal_exploratory`. Nothing yet raises it to `attested`
+automatically, so no result should be quoted above its stated ceiling.
 
 ### 3.5 Evaluator and lineage (the "RSI" loop)
 
-The "recursive self-improvement" here is **search over steering configs and enrichment protocols**, not weight
-updates:
-
-1. An agent proposes a `Variant`: a new SteerSpec (and optionally a new prompt protocol) on a parent.
-2. The custodian-signed evaluator runs it against a sealed holdout of behavior probes and a capability guard.
-3. `Lineage` records the score with a lower confidence bound; noise is not improvement.
-4. Accepted variants are written to shared memory as findings, citing receipts as evidence.
-
-Honest label: this is automated configuration search with a fixed evaluator. It becomes true self-improvement
-only if the loop also updates something persistent (fine-tuning, a trained steering adapter). Do not claim that
-in v1. Known limit from `trust-layers.md` carries over: a fixed holdout is eventually overfit; `total_cost`
-records queries spent.
+The search-over-configurations loop is **not wired up yet**. What exists: the per-run outputs it would score (text,
+KL to the clean model, probe projections), signed receipts to cite as evidence, and the E1 harness. The existing
+`evaluator` and `Lineage` types in `playbox-core` are unchanged and untried on steering specs. Honest label stays:
+this would be automated configuration search with a fixed evaluator, and becomes self-improvement only if the loop
+also updates something persistent.
 
 ### 3.6 Taint and memory
 
-Steered model output is untrusted text to every other member's agent. It already flows through the admission
-broker. Steering makes the injection risk sharper: a steered "persuasive" or "sycophantic" peer is a more
-effective attacker on a reading agent. Findings written to memory are quarantined until a pinned reviewer
-accepts them, as today.
+Model output is untrusted text. The MCP tool registers it with the taint tracker as untrusted. `playbox_steer` is a
+`Write`-effect action needing `Reviewed` text: prompts copied from another member's output need a person's
+approval before they are run. Recipes pulled from a public site (section 2c) are not wired in; when they are, they
+enter shared memory quarantined.
 
-## 4. Experiments (ranked by novelty over cost)
+### 3.7 Surfaces
 
-Each reports per-input distributions, a prompting-only baseline, a coherence/capability guard, and receipts.
+- **Agents:** the `playbox_steer` MCP tool (steer or probe) and `steer_store`, `steer_image`, `steer_mem_mib`,
+  `steer_timeout_secs`, `steer_caps` on `playbox_create`.
+- **Humans:** `playbox up --runtime docker --steer-store DIR [--steer-image IMG] [--steer-mem-mib N]`.
+- **Making directions:** `python -m playbox_steer extract|random|manifest` (see `steer/playbox_steer/__main__.py`).
+  Extraction is difference-of-means of last-token states between two prompt groups.
+- **Experiments:** `orchestrator/playbox_orchestrator/steer_chain.py` (LangGraph chain, arms, statistics) driving a
+  sidecar through `mcp.py`; `orchestrator/experiments/e1_gpt2.py` runs it on real GPT-2 through Docker.
 
-**E1. Contagion across a chain (headline).** Agents A→B→C all run the same base model. Only A is steered
-toward trait T (use persona-vector traits, plus a harmless topic like "Golden Gate"). B and C see only text.
-Metric: projection of B's and C's own activations on T's direction, plus a behavioral judge, per hop.
-Controls: no steering; A prompted toward T instead; B and C on a *different* base model. Hypothesis: text-only
-contagion dampens fast for style/topic and persists for in-context persona adoption; unknown for sycophancy.
-Novel because I found no direct measurement.
+## 4. Experiments
 
-**E2. Detectability.** Can a peer with `probe_only` access to a *reference* model detect that a transcript
-came from a steered agent, using the diff-of-means direction versus a baseline classifier? AxBench suggests
-supervised detection is strong. Gives an audit signal that works without trusting the author's claim.
+Each reports a paired difference against a clean arm, a prompting-only baseline, random-direction controls, and a
+side-effect metric. Status first, then the one result so far.
 
-**E3. Transfer.** Fit the linear map between two models (Gemma-2 2B and 9B first, then a different family) and
-test whether A's vector steers B. Reproduces the ACL result in a setting where the vector arrives via signed
-memory, then tests the architecture-agnostic claim.
+| | Status |
+|---|---|
+| **E1** contagion across a chain | Harness built and run once on real GPT-2 (below). Inconclusive on trait-specificity. |
+| **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
+| **E3** transfer across models | Not built. |
+| **E4** config-search lineage | Not built (section 3.5). |
+| **E5** safety-direction handling | The guard and default-deny behavior are built and tested (section 5); no research claim is made. |
 
-**E4. Config-search lineage.** Agents search layer/coef/recipe space; compare lineage's best score to a human
-sweep and to prompting. Tests whether the search finds off-axis configs that avoid the brittleness Tan et al.
-report.
+### E1: does a steered trait spread to agents that only read its text?
 
-**E5. Safety-direction handling.** Confirm grants refuse refusal-direction ablation and that the audit log
-records the attempt. This is a product-safety test, not a research result.
+**Setup (what ran).** GPT-2 small (124M) hosted in a Docker steering room; a sentiment direction from
+difference-of-means over 12 positive and 12 negative sentences at layer 6 (`resid_post`); 16 neutral seed prompts;
+24 new tokens, greedy; three hops (A steered, B reads A's text and continues it, C reads B's). Arms: `clean`,
+`steered` (the sentiment direction at strength s), `prompted` (a "write something very positive" prefix on hop 0, no
+steering), and three `null` arms (random unit directions, seeds 100-102, same strength). The measure is the
+projection of each hop's text onto the sentiment direction, in units of the layer-6 activation norm, as a paired
+difference against `clean` with a 95% bootstrap interval over seeds. KL is the mean per-token KL(steered ‖ clean)
+along the steered text. Every run carries a host receipt; the full reports with every text and spec digest are
+[e1-gpt2-coef0.3.json](e1-gpt2-coef0.3.json) and [e1-gpt2-coef0.6.json](e1-gpt2-coef0.6.json). Reproduce with
+`orchestrator/experiments/e1_gpt2.py`.
+
+| Arm (hop 0 → hop 2), effect vs clean | strength 0.3 | strength 0.6 |
+|---|---|---|
+| steered | +0.033 → +0.029 (KL 0.33) | +0.038 → +0.029 (KL 0.96) |
+| prompted | +0.025 → +0.018 | +0.025 → +0.018 (same arm) |
+| null (3 random directions) | +0.008, +0.008, +0.015 → +0.012, +0.001, +0.014 | −0.006, +0.006, **+0.028** → −0.009, +0.005, +0.030 |
+
+**What this shows.** At 0.3 the steered arm's hop-0 effect (CI +0.016 to +0.052) is above all three random
+directions (each CI includes 0 or only just excludes it), and most of it is still there two hops later (retained
+90% and 88%). At 0.6 the picture changes: one random direction produces an effect (+0.028, CI +0.014 to +0.042) that
+the steered arm (+0.038) cannot be separated from, and the steered arm's KL is nearly 1 nat per token, so the model
+is being pushed hard. The prompting baseline (+0.025) is not distinguishable from steering at either strength,
+which matches AxBench's finding that prompting is hard to beat.
+
+**What it does not show.** That the sentiment direction specifically spreads. Three reasons the persistence is weak
+evidence on its own: GPT-2 continuing a text tends to repeat it (see the texts in the reports), so "retained" mostly
+measures copying; a random direction can move the sentiment projection too, and one did; and there are 16 seeds, one
+model, one trait, one layer, one extraction set and three null directions, with no correction for looking at two
+strengths and several arms. Treat it as a working harness with a first, inconclusive reading, not a finding.
+
+**What would settle it.** More seeds and many null directions (report the steered effect as a percentile of the null
+population, as neuron-explorer does); a larger model that does not loop; a behavioral judge in addition to the
+projection (pairwise-ratio judging, section 2c); repeating the extraction with different sentence sets to see how
+much of the effect is the sentence set; and a hop-0 effect sized for a similar KL across arms.
+
+**E2.** Can a peer with `probe_only` rights detect that a transcript came from a steered agent, using the
+difference-of-means direction, against a baseline classifier? The probe operation is the building block.
+
+**E3.** Fit a linear map between two models' residual spaces and test whether one's direction steers the other.
+Needs the spec's `scale` field and a second hosted model.
+
+**E4.** Agents search layer, strength and recipe space; compare the best lineage score to a human sweep and to
+prompting. Needs evaluator and lineage wired to steering specs.
+
+**E5.** Confirm that the grant refuses ablation of a guarded direction and the audit log records the attempt. The
+refusal is tested; the audit record for `steer_denied` is written for authorization failures and was not asserted in
+a test.
 
 ## 5. Threat model additions
 
-| Threat | Mitigation | Remaining gap |
+| Threat | Mitigation (built, with its test) | Remaining gap |
 |---|---|---|
-| Guest removes a model's refusal behavior on a shared host | Default-deny directions; `steer_deny`; refused, not clamped | Direction classes are by hash/label; a novel direction is not recognized as safety-relevant. A cosine check against known safety directions would catch some, not all. |
-| Steered peer manipulates the reading agent | Taint broker; memory quarantine; E2 detectors | Lexical broker does not catch persuasion by style. |
-| Receipt forgery | Host signature; TEE attestation where available | Un-attested host can lie about what it ran. |
-| Overfitting the sealed holdout | `total_cost`; rotation by custodian | Inherent. |
-| Dual-use release of "uncensored" weights via a rank-one edit | Tasks return text and summaries, not weights; no weight export grant in v1 | Weight-edit export would need its own grant and review. |
-| Latent channels between agents bypass text-level checks | Not built | Needs its own design if added. |
+| A guest removes a hosted model's refusal behavior | `ablate` is off by default; guards refuse a direction within cosine 0.5 of a host-listed safety direction at that site and layer unless the grant names the class (`a_guarded_direction_is_refused...`, and again inside Docker) | Only directions the host listed are recognized. A novel direction, or a combination of small steps, is not. |
+| A member steers with a spec someone else signed, or replays one | The spec must be signed by the sender's own key (`a_spec_signed_by_someone_else_is_refused`) | A member can still run their own spec as often as the budget allows. |
+| A member sends files that differ from what the spec names | Direction and prompt set are hashed by the host before anything runs (`files_must_hash_to_what_the_spec_names`) | None known. |
+| A member exceeds model, layer, strength, mode, direction or token limits | Grant checks; refused, not clamped (`the_grant_bounds...`, `a_model_or_direction_outside_the_grant...`) | None known. Boundary values are tested. |
+| A member runs forever or burns the host's compute | Run and token budget counted before the run, per member (`the_budget_is_counted_per_member`); at most two tasks at once per host (a semaphore); memory, CPU and time limits; scratch quota; cancelled if the member is revoked | The budget is in memory: a host restart resets it. The budget is not narrowed by a member's own attenuation. |
+| The engine container reaches the network or writes outside its scratch | No network, read-only root, read-only mounts (`docker_engine_image`); host reads `out.json` without following symlinks and bounded (`output_reader_refuses_symlinks...`) | Container isolation is weaker than a microVM; the libkrun runner has no mounts yet and refuses steering. |
+| Weights on disk differ from their name | The host recomputes every hash at startup and refuses a mismatch (`a_mislabeled_weights_store_is_refused`); Rust and Python agree on the hash (cross-check test) | Weights are trusted once hashed; a later swap on disk is only caught at the next start. |
+| A steered peer manipulates the reading agent | Output registered as untrusted; `playbox_steer` needs `Reviewed` prompts (taint test) | The broker is lexical. Persuasion by style is not caught. |
+| Receipt forgery or misuse | Host signature; the client checks host key, spec, and exact output bytes; the ceiling is printed on the receipt | An un-attested host can lie about what it ran. Nothing raises the ceiling to `attested` yet. |
+| An imported public recipe carries an unexpected edit | Not built (section 2c): imports are meant to be untrusted and quarantined | Until built, do not import recipes automatically. |
+| Overfitting a sealed holdout | Not built (section 3.5) | Inherent once it is. |
+| Latent channels between agents bypass text-level checks | Not built | Needs its own design. |
 
-## 6. Milestones
+## 6. Status and milestones
 
-- **S0 (this doc):** agree on scope and the E1 protocol.
-- **S1 (done, `playbox-core/src/steer.rs`, 7 tests):** `SteerSpec` type, canonical signed record, signer-independent digest, `SteerReceipt` with a stated `Ceiling`. The permutation-invariance test from `theseus-lab` is not a test here: it needs a real model, so it moves to S2. S1 instead restricts sites to the residual-stream basis (`resid_post`, `attn_out`, `mlp_out`), which MLP hidden-unit permutations don't change. The receipt is a separate record from `receipt::Receipt`, not an extension of it.
-- **S2:** `steer` task in a CPU Docker image (pattern from `mesh-intelligence`'s LatentMAS sidecar) with Gemma-2 2B and a diff-of-means vector; pre-flight gates from `interpretability-lab-sandbox` (parity, no-op, reach); one end-to-end run over A2A with a receipt.
-- **S3:** grant facts and host enforcement; Lean attenuation extension.
-- **S4:** orchestrator graph for E1 (extends the existing LangGraph fan-out); evaluator wiring for E1/E4.
-- **S5:** GPU image, 9B model, transfer experiment E3.
+Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -p playbox-mcp`, `steer/` pytest,
+`orchestrator/` pytest, `lake build`):
 
-Out of scope for v1: fine-tuning, weight export, latent (activation) channels between agents, frontier models.
+- **S1** spec and receipt types (7 tests).
+- **S2** Python engine with gates, probe, KL, guards, diff-of-means and random directions (26 tests, two
+  architectures, all three sites); Docker image; `Op::Steer` on the host with 14 integration tests against the real
+  engine, plus a Docker test (`cargo test -p playbox-net --test steer -- --ignored`).
+- **S3** grant facts, narrowing, guards, budgets (above); Lean: narrowing cannot widen, chains stay inside the
+  root (`lean/Playbox/Steer.lean`, no `sorry`).
+- **S4 (part)** MCP tool and CLI flags (MCP end-to-end test drives two real sidecars with Docker); E1 harness with
+  arms and statistics (9 orchestrator tests with a fake backend); a real GPT-2 run (section 4).
+
+Not built: the evaluator and lineage wiring for steering specs (E4); the transfer experiment (E3); a trained
+detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a pairwise-ratio judge; a GPU
+path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
+
+Out of scope for v1: fine-tuning, weight export, latent channels between agents, frontier models.
 
 ## 7. Open questions
 
+- Does moving to Qwen3.5-4B (what neuronary and neuron-explorer use) work with this engine? It needs a newer
+  `transformers` and its block layout checked; unverified.
 - GPU confidential computing for receipts: is attested GPU inference available on a platform you will use?
-- Which behavior judge for E1 (a pinned open model vs a probe)? A probe is cheaper and consistent; a judge is more legible.
-- How should "direction class" be defined so grants stay enforceable without a central registry?
-- Whether to publish findings to Neuronpedia-style public pages or keep rooms private.
+- How should "direction class" be defined so grants stay enforceable without a central registry? Today it is the
+  host's guard list.
+- Which judge for E1 beyond the probe projection and KL? A pairwise-ratio judge in the style of cardinal-harness is
+  the candidate; not built.
+- Whether to publish findings to a public dictionary such as neuronary or keep rooms private; publishing is an
+  outward action that should go through a person's approval.

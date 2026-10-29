@@ -243,7 +243,9 @@ def check_guards(spec: Spec, direction: torch.Tensor, guard_dir: Path | None, de
 # ---- running -----------------------------------------------------------------------------------------
 
 
-def generate(model, tok, steerer: Steerer | None, prompt: str, n: int, temperature: float, seed: int) -> tuple[str, list[int]]:
+def generate(model, tok, steerer: Steerer | None, prompt: str, n: int, temperature: float, seed: int, trace: list | None = None) -> tuple[str, list[int]]:
+    """Greedy or seeded sampling with a KV cache. If `trace` is a list, the logits that chose each token are
+    appended to it (one tensor per generated token)."""
     ids = tok(prompt, return_tensors="pt").input_ids
     gen = torch.Generator().manual_seed(seed)
     out_ids: list[int] = []
@@ -258,6 +260,8 @@ def generate(model, tok, steerer: Steerer | None, prompt: str, n: int, temperatu
     past = res.past_key_values
     logits = res.logits[0, -1]
     for _ in range(n):
+        if trace is not None:
+            trace.append(logits.clone())
         if temperature > 0:
             probs = torch.softmax(logits / temperature, -1)
             nxt = int(torch.multinomial(probs, 1, generator=gen))
@@ -274,6 +278,39 @@ def generate(model, tok, steerer: Steerer | None, prompt: str, n: int, temperatu
     if steerer:
         steerer.phase = "prefill"
     return tok.decode(out_ids, skip_special_tokens=True), out_ids
+
+
+def teacher_forced_logits(model, tok, prompt: str, forced: list[int], steerer: Steerer | None) -> list[torch.Tensor]:
+    """The logits that would choose each token of `forced`, if the model were made to say exactly `forced`.
+    Follows the same prefill-then-decode path as `generate`, so a steerer's `tokens` scope applies the same way."""
+    ids = tok(prompt, return_tensors="pt").input_ids
+    if steerer:
+        steerer.phase = "prefill"
+    res = model(input_ids=ids, past_key_values=None, use_cache=True)
+    past, logits, out = res.past_key_values, res.logits[0, -1], []
+    for i, t in enumerate(forced):
+        out.append(logits.clone())
+        if i == len(forced) - 1:
+            break
+        if steerer:
+            steerer.phase = "decode"
+        res = model(input_ids=torch.tensor([[t]]), past_key_values=past, use_cache=True)
+        past, logits = res.past_key_values, res.logits[0, -1]
+    if steerer:
+        steerer.phase = "prefill"
+    return out
+
+
+def mean_kl(steered: list[torch.Tensor], clean: list[torch.Tensor]) -> float:
+    """Mean per-token KL(steered || clean) in nats over the steered continuation: how far the edit moved the
+    model's next-token distribution, measured on what the steered model actually said. 0 when nothing moved."""
+    if not steered:
+        return 0.0
+    total = 0.0
+    for a, b in zip(steered, clean):
+        lp, lq = torch.log_softmax(a, -1), torch.log_softmax(b, -1)
+        total += float((lp.exp() * (lp - lq)).sum())
+    return total / len(steered)
 
 
 def run(weights_dir: Path, task_dir: Path, spec: Spec, guard_dir: Path | None = None, deny: set[str] | None = None) -> dict:
@@ -297,10 +334,13 @@ def run(weights_dir: Path, task_dir: Path, spec: Spec, guard_dir: Path | None = 
     results = []
     for i, p in enumerate(prompts.prompts):
         seed = (spec.seed + i) % 2**63
+        steered_trace: list = []
         with Steerer(model, spec, direction, norm_ref) as st:
-            steered, steered_ids = generate(model, tok, st, p, prompts.max_new_tokens, prompts.temperature, seed)
+            steered, steered_ids = generate(model, tok, st, p, prompts.max_new_tokens, prompts.temperature, seed, steered_trace)
         clean, clean_ids = generate(model, tok, None, p, prompts.max_new_tokens, prompts.temperature, seed)
-        results.append({"prompt": p, "steered": steered, "clean": clean, "changed": steered_ids != clean_ids})
+        # How far the edit moved the next-token distribution along the steered text.
+        kl = mean_kl(steered_trace, teacher_forced_logits(model, tok, p, steered_ids, None))
+        results.append({"prompt": p, "steered": steered, "clean": clean, "changed": steered_ids != clean_ids, "kl_to_clean": round(kl, 6), "tokens": len(steered_ids)})
     out["results"] = results
     return out
 

@@ -6,7 +6,7 @@ use playbox_runner::{runner_by_name, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, time::Duration};
 
 const HELP: &str = "playbox (scaffold)
-  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun|openshell] [--allow-host H]...
+  up [--transport T] [--state DIR] [--repo DIR] [--runtime docker|libkrun|openshell] [--allow-host H]... [--steer-store DIR] [--steer-image IMG] [--steer-mem-mib N]
                             start a room and print a join link (valid 1h, 1 use).
                             T is `iroh` (public relays, default), `local` (same machine/LAN) or
                             `relay:<https url>` (your own iroh-relay; PLAYBOX_RELAY_CA=PEM for a private CA).
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
                 skip = false;
                 return false;
             }
-            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--allow-host" | "--action" | "--arg" | "--ttl" | "--audit-log" | "--tail" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via" | "--into" | "--max-members" | "--max-concurrent" | "--max-tasks-per-minute" | "--task-budget") {
+            if matches!(a.as_str(), "--repo" | "--task" | "--base" | "--kind" | "--log" | "--key" | "--transport" | "--state" | "--listen" | "--token" | "--platform" | "--runtime" | "--allow-host" | "--action" | "--arg" | "--ttl" | "--audit-log" | "--tail" | "--replica-of" | "--sync-peer" | "--sync-interval" | "--via" | "--into" | "--steer-store" | "--steer-image" | "--steer-mem-mib" | "--max-members" | "--max-concurrent" | "--max-tasks-per-minute" | "--task-budget") {
                 skip = true;
                 return false;
             }
@@ -154,19 +154,56 @@ struct SyncArgs {
 async fn up(transport: Transport, state: Option<String>, repo: Option<String>, runtime: Option<String>, sync: SyncArgs) -> Result<()> {
     let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> = platform::detect(&store::home()).map_err(anyhow::Error::msg)?.map(std::sync::Arc::from);
     println!("platform attestation: {}", provider.as_ref().map(|p| p.kind()).unwrap_or("none (self-signed only)"));
+    let flag = |name: &str| std::env::args().skip_while(|a| a != name).nth(1);
+    let steer_image = flag("--steer-image").unwrap_or_else(|| "playbox-steer:0.1".into());
+    let steer_mem: u32 = flag("--steer-mem-mib").map(|v| v.parse()).transpose().map_err(|_| anyhow::anyhow!("--steer-mem-mib takes a whole number"))?.unwrap_or(4096);
+    let mut limits = playbox_runner::Limits {
+        allowed_hosts: std::env::args().collect::<Vec<_>>().windows(2).filter(|w| w[0] == "--allow-host").map(|w| w[1].clone()).collect(),
+        ..Default::default()
+    };
+    if flag("--steer-store").is_some() {
+        // The grant's task caps come from these limits, so steering's needs raise them.
+        limits.mem_mib = limits.mem_mib.max(steer_mem);
+        limits.timeout_secs = limits.timeout_secs.max(600);
+    }
     let cfg = HostConfig {
         // A host with a state directory logs into it; one without logs to stderr, so activity is never invisible.
         audit_log: std::env::args().skip_while(|a| a != "--audit-log").nth(1).map(PathBuf::from).or_else(|| state.is_none().then(|| PathBuf::from("-"))),
         repo: repo.map(PathBuf::from),
         runner: match runtime {
-            Some(name) => Some(runner_by_name(&name, SandboxPolicy::default())?),
+            Some(name) => {
+                let mut policy = SandboxPolicy::default();
+                if flag("--steer-store").is_some() {
+                    policy.allowed_images.push(steer_image.clone());
+                }
+                Some(runner_by_name(&name, policy)?)
+            }
             None => None,
         },
-        platform: provider,
-        limits: playbox_runner::Limits {
-            allowed_hosts: std::env::args().collect::<Vec<_>>().windows(2).filter(|w| w[0] == "--allow-host").map(|w| w[1].clone()).collect(),
-            ..Default::default()
+        steer: match flag("--steer-store") {
+            None => None,
+            Some(store) => Some(std::sync::Arc::new(playbox_net::steer::SteerHost::open(
+                std::path::Path::new(&store),
+                &steer_image,
+                playbox_net::steer::SteerLimits { cpus: limits.cpus, mem_mib: steer_mem, timeout_secs: limits.timeout_secs },
+                playbox_net::grants::SteerCaps {
+                    models: vec![],
+                    layer_min: 0,
+                    layer_max: 255,
+                    max_coef_milli: 4000,
+                    modes: vec!["add".into(), "clamp".into()],
+                    directions: None,
+                    max_tokens_per_run: 4096,
+                    classes: vec![],
+                    probe: true,
+                    max_runs: 50,
+                    max_tokens_total: 100_000,
+                },
+                playbox_core::steer::Ceiling::LocalInternalExploratory,
+            )?)),
         },
+        platform: provider,
+        limits,
         abuse: {
             let n = |flag: &str| -> Result<Option<u64>> {
                 std::env::args().skip_while(|a| a != flag).nth(1).map(|v| v.parse::<u64>().map_err(|_| anyhow::anyhow!("{flag} takes a whole number"))).transpose()

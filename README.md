@@ -21,6 +21,8 @@ Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no con
 
 - **Trust layers:** an admission broker so text from other members cannot drive the host agent's actions without a person's single-use approval (`playbox approve`), a Google Confidential Space (`tdx`) verifier for T3, a signed evaluator with sealed holdout and variant lineage, shared memory with provenance and quarantine, model receipts, and witnessed log checkpoints. The broker (now covering delegate, push and revoke) and memory (`playbox_remember`, `playbox_recall`) are wired into the MCP server; a Playbox host in a real Confidential Space TDX VM was joined at T3 from another network. See [docs/trust-layers.md](docs/trust-layers.md).
 
+- **Steering rooms (new):** hosts can serve open-weights models and let members steer their activations (add, clamp or ablate a direction at chosen layers) under grant limits, with host-signed receipts that bind the spec, weights, prompts, engine image and output. The engine runs in a no-network container with the weights mounted read-only; guards refuse directions near known safety directions; members get `playbox_steer` in the MCP server. Runs on CPU only today. A LangGraph harness runs the "does a steered trait spread to agents that only read its text" experiment. See [docs/steering.md](docs/steering.md), including what is not built.
+
 - `world/`: prototype that learns a 3D scene from agent events (messages, actions, reasoning, commits). See [world/README.md](world/README.md).
 
 ## What does not exist yet
