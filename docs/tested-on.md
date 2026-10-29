@@ -41,7 +41,7 @@ Each run is in the host's audit log (valid hash chain, 71 entries at the end).
 | Revocation | A revoked member's ping, pull and task were refused (`grant revoked`) and logged. |
 | Injection guard (`PLAYBOX_APPROVERS` set) | A command copied from another task's output was refused; `playbox approve` capability worked once; reuse and use for a different command were refused. |
 | Memory quarantine (two homes) | Other author's entry stayed quarantined until a pinned reviewer accepted it; an unpinned reviewer was refused. |
-| Host identity (`--min-host-tier t1`, Mac Secure Enclave) | With the device key unpinned the join was refused (host achieves T0); after `playbox pin add secure-enclave <fp>` the same link joined at verified T1. Run from the same Mac, so it shows the mechanism, not a remote friend pinning it. |
+| Host identity (`--min-host-tier t1`, Mac Secure Enclave) | With the device key unpinned the join was refused (host achieves T0); after `playbox pin add secure-enclave <fp>` the same link joined at verified T1. Then repeated by the friend's agent in India after pinning the key (sent outside the link): joined at verified T1, notes "device key is pinned". |
 
 **Found:** `playbox shell` could not take a multi-line capability, so `key=@file` argument values were added. Invites are single-use, so a
 guest whose session ends must be given a new link, and a guest's workspace belongs to its member id.
