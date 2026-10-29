@@ -1,6 +1,7 @@
 """python -m playbox_world.demo [events.jsonl] [out.png]"""
 
 import collections
+import json
 import os
 import sys
 
@@ -13,6 +14,7 @@ import torch
 from .events import KIND_MASS, load_jsonl, synthetic
 from .layout import fit_layout
 from .link import link_events, parse_log
+from .usability import make_packet, write_form
 from .view import write_html
 from .scene import fit_field, render, topic_colors
 
@@ -38,6 +40,12 @@ def main():
     fig.patch.set_facecolor("black")
     fig.savefig(out, dpi=120, facecolor="black", bbox_inches="tight")
     print("wrote", out)
+    packet = make_packet(events, labels)
+    form = out[:-4] + ".rater.html"
+    write_form(form, packet)
+    with open(out[:-4] + ".rater.key.json", "w") as f:
+        json.dump([p["answer"] for p in packet], f)
+    print(f"wrote {form} (give to 4 raters; their picks go to usability.score; answer key in .rater.key.json)")
     log = os.environ.get("PLAYBOX_LOG")
     entries = parse_log(open(log).read()) if log else []
     status = link_events(events, entries)
