@@ -508,7 +508,7 @@ too easy a null does not explain it. What it supports less well. The effect on B
 near zero for fear on 3B). It does not grow with model size: the 3B model is weaker than the 1.5B one, and the
 models differ in family, depth and the layers chosen, so this is not a clean test of scale. The generation score is a
 short lexicon count (effects of about 1 to 5 words per hundred), which is a weak instrument. I would not claim the
-effect reaches later behaviour in general; it reaches it for some models.
+effect reaches later behaviour in general; it reaches it for some models. (Round 3 below replaces this reading: the word count undercounted, and independent judges find the effect in nearly every model.)
 
 *Defence* (`cache_audit.py`, `audit_e6.py`, 5 tests; GPT-2 and SmolLM2, 32 contexts each). The sender signs
 `playbox.cache-handoff.v1`: weights hash, sha256 of the text and of the exact cache bytes. The receiver checks the
@@ -534,6 +534,55 @@ vLLM. I first thought vLLM had no Mac GPU route. It does, through the `vllm-meta
 attention marked experimental; [docs](https://docs.vllm.ai/projects/vllm-metal)). I did not try it: E6 needs a
 per-row edit inside the model and direct access to the cache, which a managed server does not offer. The
 practical route for a vLLM-scale run is the CUDA steering fork named in section 2c on a GPU machine.
+
+### E6 round 3: independent judges, and a 7B model
+
+Run 2026-10-29. Reports and every generated text are in `steer/results/round3/`; judged results and the summary are
+in `judge/results/e6/`. Stated ceiling `local_internal_exploratory`. The generated text is now scored by two
+measures that never see the steering direction, as well as the word count: a trained classifier (sentiment:
+`siebert/sentiment-roberta-large-english`; fear: `j-hartmann/emotion-english-distilroberta-base`, fear against joy)
+and a pairwise judge (`Qwen/Qwen3-1.7B-Base`, asked which of two texts shows more of the trait, in both orders so a
+position bias cancels). Both reached 24 of 24 on held-out gold pairs for each trait before scoring (the fear pairs
+are new, `judge/playbox_judge/fear.py`). Every steered text is compared with the clean arm's text for the same
+(context, query), and the effect is set against 16 random nulls and 4 unrelated-contrast nulls (the judge on the
+steered arm, the 4 unrelated nulls and 8 random ones). Settings are the same for every model: 32 contexts, 3 queries
+per trait, 12 generated tokens, strengths 0.25 and 0.5, two layers, two traits (8 cells per model, 96 samples per
+cell). The 1.5B and 3B models ran in float32 on the Mac GPU; Qwen2.5-1.5B was also run in bfloat16 as a precision
+control, and Qwen2.5-7B only in bfloat16.
+
+| model | word count above 0 | classifier above 0 | judge above 0 | no unrelated null as far (classifier / judge) | steered text identical to clean | classifier effect range | judge effect range |
+|---|---|---|---|---|---|---|---|
+| GPT-2 (124M) | 2 of 8 | 5 of 8 | 7 of 8 | 6 / 7 | 34% | +0.01 to +1.39 | -0.10 to +0.47 |
+| SmolLM2-135M | 6 of 8 | 8 of 8 | 8 of 8 | 8 / 8 | 14% | +1.16 to +3.29 | +0.36 to +1.45 |
+| Qwen2.5-1.5B, float32 | 8 of 8 | 8 of 8 | 8 of 8 | 8 / 8 | 42% | +0.93 to +2.26 | +0.14 to +0.97 |
+| Qwen2.5-1.5B, bfloat16 | 7 of 8 | 8 of 8 | 8 of 8 | 8 / 8 | 37% | +1.10 to +2.42 | +0.16 to +1.00 |
+| Qwen2.5-3B, float32 | 2 of 8 | 5 of 8 | 7 of 8 | 8 / 8 | 42% | +0.37 to +2.91 | +0.07 to +0.78 |
+| Qwen2.5-7B, bfloat16 | 5 of 8 | 8 of 8 | 8 of 8 | 7 / 8 | 5% | +2.04 to +4.40 | +0.50 to +1.20 |
+
+"Above 0" counts cells whose 95% bootstrap interval is above zero. All three measures have the same sign in 7 or 8
+cells per model. The next-token effect is specific in every cell of every model (no unrelated-contrast null pushed
+as far), as before; the 7B model's is the largest (+1.95 to +3.50).
+
+What this supports, and a correction. Round 2 read the word count as saying the effect on later text was absent for
+GPT-2 and weak for Qwen2.5-3B, and that it did not grow with size. The independent measures disagree: the word count
+undercounts (GPT-2 2 of 8 cells by word count, 7 of 8 by the judge; the same for the 3B model). With the better
+instruments an edit made to A's context shifts what B goes on to write, in nearly every model and cell, and no
+random or unrelated-contrast direction does as much. The 7B model shows the largest effects, and its steered text
+differs from the clean text in 95% of samples against 58% to 86% for the others. Size is still not a clean story: the
+3B model's effects are smaller than the 1.5B model's, the models differ in family, depth and the layers chosen, and
+the 7B model was run in bfloat16. The precision control is reassuring: Qwen2.5-1.5B in bfloat16 agrees with float32
+on 8 of 8 cells for both independent measures (and 7 of 8 for the word count).
+
+What it does not support. The effects are averages over all samples, including those where the text did not change
+(14% to 42% for most models), so the effect on texts that changed is larger. Texts are 12 tokens. Each classifier
+was trained on other kinds of text (reviews; short social posts). The pairwise judge is a Qwen model, as are four
+of the six runs (all the Qwen2.5 ones), so a shared bias cannot be ruled out. Strengths stop at 0.5, because round 1 showed that
+larger ones mostly break the model. Two traits, three families, one size above 3B. This is an exploratory
+measurement and not a general result.
+
+Practical reading for rooms: a cache handed to another agent can carry a behavioural edit that no text check sees,
+and an independent judge on the receiver's output can see it. That supports pairing a latent handoff with the audit
+from round 2 and a judge on a sample of outputs.
 
 ## 5. Threat model additions
 

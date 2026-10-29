@@ -78,6 +78,7 @@ class Result:
     trait_logit: float
     gen: float
     logits: torch.Tensor
+    text: str = ""  # B's greedy continuation (kept by the fast path so it can be scored by independent judges)
 
 
 def b_reads(model, tok, past, query: str, trait: str, pos_ids, neg_ids, gen_tokens: int) -> Result:

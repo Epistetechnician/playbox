@@ -1,0 +1,128 @@
+[
+ {
+  "model": "GPT-2 (124M)",
+  "cells": 8,
+  "lexicon_ci_above_0": 2,
+  "classifier_ci_above_0": 5,
+  "judge_ci_above_0": 7,
+  "classifier_no_sem_null_as_far": 6,
+  "judge_no_sem_null_as_far": 7,
+  "classifier_no_rand_null_as_far": 6,
+  "judge_no_rand_null_as_far": 7,
+  "all_three_same_sign": 7,
+  "steered_text_unchanged_mean": 0.34375,
+  "classifier_range": [
+   0.010243245710929235,
+   1.3892254140228033
+  ],
+  "judge_range": [
+   -0.09640214623262484,
+   0.47078263728568953
+  ]
+ },
+ {
+  "model": "SmolLM2-135M",
+  "cells": 8,
+  "lexicon_ci_above_0": 6,
+  "classifier_ci_above_0": 8,
+  "judge_ci_above_0": 8,
+  "classifier_no_sem_null_as_far": 8,
+  "judge_no_sem_null_as_far": 8,
+  "classifier_no_rand_null_as_far": 6,
+  "judge_no_rand_null_as_far": 8,
+  "all_three_same_sign": 8,
+  "steered_text_unchanged_mean": 0.14453125,
+  "classifier_range": [
+   1.1553014231224854,
+   3.2947056430081525
+  ],
+  "judge_range": [
+   0.35586525903393823,
+   1.4510799665004015
+  ]
+ },
+ {
+  "model": "Qwen2.5-1.5B (fp32)",
+  "cells": 8,
+  "lexicon_ci_above_0": 8,
+  "classifier_ci_above_0": 8,
+  "judge_ci_above_0": 8,
+  "classifier_no_sem_null_as_far": 8,
+  "judge_no_sem_null_as_far": 8,
+  "classifier_no_rand_null_as_far": 8,
+  "judge_no_rand_null_as_far": 8,
+  "all_three_same_sign": 8,
+  "steered_text_unchanged_mean": 0.4166666666666667,
+  "classifier_range": [
+   0.9280015851060549,
+   2.2615587562322617
+  ],
+  "judge_range": [
+   0.14097466288755336,
+   0.968203505811592
+  ]
+ },
+ {
+  "model": "Qwen2.5-1.5B (bf16)",
+  "cells": 8,
+  "lexicon_ci_above_0": 7,
+  "classifier_ci_above_0": 8,
+  "judge_ci_above_0": 8,
+  "classifier_no_sem_null_as_far": 8,
+  "judge_no_sem_null_as_far": 8,
+  "classifier_no_rand_null_as_far": 8,
+  "judge_no_rand_null_as_far": 8,
+  "all_three_same_sign": 8,
+  "steered_text_unchanged_mean": 0.3697916666666667,
+  "classifier_range": [
+   1.1014445840070646,
+   2.420447443301479
+  ],
+  "judge_range": [
+   0.15857398541023335,
+   0.9953168826177716
+  ]
+ },
+ {
+  "model": "Qwen2.5-3B (fp32)",
+  "cells": 8,
+  "lexicon_ci_above_0": 2,
+  "classifier_ci_above_0": 5,
+  "judge_ci_above_0": 7,
+  "classifier_no_sem_null_as_far": 8,
+  "judge_no_sem_null_as_far": 8,
+  "classifier_no_rand_null_as_far": 8,
+  "judge_no_rand_null_as_far": 8,
+  "all_three_same_sign": 8,
+  "steered_text_unchanged_mean": 0.4192708333333333,
+  "classifier_range": [
+   0.3704439274345835,
+   2.912282640735308
+  ],
+  "judge_range": [
+   0.07232705721010764,
+   0.7770610641067227
+  ]
+ },
+ {
+  "model": "Qwen2.5-7B (bf16)",
+  "cells": 8,
+  "lexicon_ci_above_0": 5,
+  "classifier_ci_above_0": 8,
+  "judge_ci_above_0": 8,
+  "classifier_no_sem_null_as_far": 7,
+  "judge_no_sem_null_as_far": 8,
+  "classifier_no_rand_null_as_far": 7,
+  "judge_no_rand_null_as_far": 8,
+  "all_three_same_sign": 7,
+  "steered_text_unchanged_mean": 0.052083333333333336,
+  "classifier_range": [
+   2.038296598009765,
+   4.398194660743077
+  ],
+  "judge_range": [
+   0.503580174719294,
+   1.1991090790058176
+  ]
+ }
+]

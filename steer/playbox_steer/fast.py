@@ -153,7 +153,8 @@ def run_rows(model, tok, rows_ctx: list[str], rows_dir: torch.Tensor, scale: flo
             toks = gen[i].tolist()
             if tok.eos_token_id in toks:
                 toks = toks[: toks.index(tok.eos_token_id)]
-            results[i].append(Result(float(tl[i]), lexicon_score(tok.decode(toks, skip_special_tokens=True), trait), logits[i].cpu()))
+            text = tok.decode(toks, skip_special_tokens=True)
+            results[i].append(Result(float(tl[i]), lexicon_score(text, trait), logits[i].cpu(), text))
         base.crop(t0)  # rewind to the end of the context for the next query (a no-op if the model did not touch `base`)
     return results
 
@@ -173,7 +174,9 @@ def run_cell_fast(model, tok, ctxs, trait: str, trait_dir, rand_dirs, sem_dirs: 
     res: dict[str, list[Result]] = {a: [] for a in arms}
     for (a, _), r in zip(rows, flat):
         res[a] += r  # context-major, query-minor: the slow path's order
-    return summarize(res)
+    out = summarize(res)
+    out["texts"] = {a: [h.text for h in hs] for a, hs in res.items()}  # context-major, query-minor
+    return out
 
 
 def timed(fn, *a, **k):
@@ -211,17 +214,21 @@ def main(argv=None) -> None:
     dim = model.config.hidden_size
     out = {"model": a.weights, "device": a.device, "dtype": a.dtype, "n_layers": len(engine.blocks(model)), "layers": {}}
     ctxs = contexts(a.contexts)
+    texts_out = {"model": a.weights, "contexts": ctxs, "queries": e6b.QUERIES, "layers": {}}  # saved beside the report
     for layer in [int(x) for x in a.layers.split(",")]:
         rand = [torch.tensor(engine.random_direction(dim, 100 + k)) for k in range(a.nulls)]
         sem = {n: diffmean_fast(model, tok, p, q, layer) for n, (p, q) in e6b.SEMANTIC.items()}
         out["layers"][str(layer)] = {}
+        texts_out["layers"][str(layer)] = {}
         for trait in a.traits.split(","):
             t = TRAITS[trait]
             d = diffmean_fast(model, tok, t["positive"], t["negative"], layer)
             out["layers"][str(layer)][trait] = {}
+            texts_out["layers"][str(layer)][trait] = {}
             for c in [float(x) for x in a.coefs.split(",")]:
                 r, secs = timed(run_cell_fast, model, tok, ctxs, trait, d, rand, sem, layer, c, a.gen_tokens, a.max_rows)
                 r["seconds"] = secs
+                texts_out["layers"][str(layer)][trait][str(c)] = r.pop("texts")
                 if a.bench:
                     _, slow = timed(e6b.run_cell, model, tok, ctxs, trait, d, rand, sem, layer, c, a.gen_tokens)
                     r["seconds_slow_path"], r["speedup"] = slow, slow / secs
@@ -231,6 +238,7 @@ def main(argv=None) -> None:
                       f"generation {g['effect']['mean']:+.4f} [{g['effect']['low']:+.4f},{g['effect']['high']:+.4f}] (sem as far {g['semantic_as_far']:.2f}, rand as far {g['random_as_far']:.2f}) | "
                       f"KL {r['kl_steered']:.3f} (rand {r['kl_random_mean']:.3f}, sem {r['kl_semantic_mean']:.3f}) | {secs:.1f}s" + (f" vs slow {r['seconds_slow_path']:.1f}s = {r['speedup']:.1f}x" if a.bench else ""), flush=True)
             Path(a.out).write_text(json.dumps(out, indent=1))
+            Path(a.out).with_suffix(".texts.json").write_text(json.dumps(texts_out))
 
 
 if __name__ == "__main__":

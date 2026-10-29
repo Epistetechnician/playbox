@@ -1,0 +1,397 @@
+{
+ "model": "/private/tmp/claude-501/-Users-shaanp-Documents-GitHub-playbox/afca5a1c-a562-499c-a8dc-1a623c6a7fde/scratchpad/qwen25-weights",
+ "gold": {
+  "sentiment": {
+   "classifier": 1.0,
+   "judge": 1.0,
+   "pairs": 24
+  },
+  "fear": {
+   "classifier": 1.0,
+   "judge": 1.0,
+   "pairs": 24
+  }
+ },
+ "layers": {
+  "8": {
+   "sentiment": {
+    "0.25": {
+     "classifier": {
+      "effect": {
+       "mean": 1.1014445840070646,
+       "low": 0.3729642778635025,
+       "high": 1.9197028471777837
+      },
+      "specific_vs_random": {
+       "mean": 0.9866371912648901,
+       "low": 0.39006649268170196,
+       "high": 1.6533707425308724
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.11480739274217437,
+      "specific_vs_semantic": {
+       "mean": 1.0450057368725538,
+       "low": 0.46117149231334525,
+       "high": 1.6740206597993772
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.05643884713451067
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.46725048311054707,
+       "low": 0.2824842495222886,
+       "high": 0.6606765358398358
+      },
+      "specific_vs_random": {
+       "mean": 0.44080495077650994,
+       "low": 0.27940666446617496,
+       "high": 0.6189545166368285
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.02644553233403712,
+      "specific_vs_semantic": {
+       "mean": 0.40334577035779756,
+       "low": 0.2545280938502401,
+       "high": 0.5665579079650342
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.06390471275274953
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.5
+    },
+    "0.5": {
+     "classifier": {
+      "effect": {
+       "mean": 2.130261185268561,
+       "low": 1.1472371021906536,
+       "high": 3.229904522498449
+      },
+      "specific_vs_random": {
+       "mean": 1.89736083340055,
+       "low": 1.0845040808198974,
+       "high": 2.741144853682878
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.23290035186801106,
+      "specific_vs_semantic": {
+       "mean": 1.9958117368320625,
+       "low": 1.081689078360796,
+       "high": 2.907018759598335
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.13444944843649864
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.7285901270806789,
+       "low": 0.47876873798668385,
+       "high": 0.9807853065431118
+      },
+      "specific_vs_random": {
+       "mean": 0.726226406210723,
+       "low": 0.49716117419302464,
+       "high": 0.938590939467152
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.0023637208699559195,
+      "specific_vs_semantic": {
+       "mean": 0.573988824384287,
+       "low": 0.3566392483189702,
+       "high": 0.7881551963898042
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.15460130269639194
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.2604166666666667
+    }
+   },
+   "fear": {
+    "0.25": {
+     "classifier": {
+      "effect": {
+       "mean": 1.292172295662264,
+       "low": 0.6347601258506378,
+       "high": 2.0190303654720387
+      },
+      "specific_vs_random": {
+       "mean": 0.9463181964917263,
+       "low": 0.4393023583397735,
+       "high": 1.5067670356947929
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.34585409917053767,
+      "specific_vs_semantic": {
+       "mean": 1.0129173771711066,
+       "low": 0.4436928117647767,
+       "high": 1.6583506500658889
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.2792549184911574
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.15857398541023335,
+       "low": 0.07482808517913024,
+       "high": 0.25717369746416807
+      },
+      "specific_vs_random": {
+       "mean": 0.11424761688491951,
+       "low": 0.04143022450928887,
+       "high": 0.19875881774351
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.04432636852531383,
+      "specific_vs_semantic": {
+       "mean": 0.1549591422857096,
+       "low": 0.06551148944223921,
+       "high": 0.2588399682038774
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.0036148431245237593
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.5104166666666666
+    },
+    "0.5": {
+     "classifier": {
+      "effect": {
+       "mean": 2.2462581844689944,
+       "low": 1.3547211980136733,
+       "high": 3.2219957282456257
+      },
+      "specific_vs_random": {
+       "mean": 1.5363673257816117,
+       "low": 0.8189347197961373,
+       "high": 2.257219779858133
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.7098908586873828,
+      "specific_vs_semantic": {
+       "mean": 1.572590321690465,
+       "low": 0.8255567695014179,
+       "high": 2.3212302248381698
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.6736678627785295
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.3880791077390313,
+       "low": 0.25114502385258675,
+       "high": 0.5301661491394043
+      },
+      "specific_vs_random": {
+       "mean": 0.2751296532806009,
+       "low": 0.1605055833545824,
+       "high": 0.39465576169701916
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.11294945445843041,
+      "specific_vs_semantic": {
+       "mean": 0.3227767546195537,
+       "low": 0.1997473343120267,
+       "high": 0.454091023420915
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.06530235311947763
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.20833333333333334
+    }
+   }
+  },
+  "14": {
+   "sentiment": {
+    "0.25": {
+     "classifier": {
+      "effect": {
+       "mean": 1.6063274045785267,
+       "low": 0.7028753558794657,
+       "high": 2.619036371509234
+      },
+      "specific_vs_random": {
+       "mean": 1.4436612573141854,
+       "low": 0.5775432037189603,
+       "high": 2.360614758605758
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.16266614726434148,
+      "specific_vs_semantic": {
+       "mean": 1.4361358527094126,
+       "low": 0.5961740364631017,
+       "high": 2.3432599610338607
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.17019155186911422
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.7130263031770786,
+       "low": 0.49212264859428007,
+       "high": 0.9456951804459095
+      },
+      "specific_vs_random": {
+       "mean": 0.6816720507340506,
+       "low": 0.4691757708787918,
+       "high": 0.9019710468128324
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.031354252443028,
+      "specific_vs_semantic": {
+       "mean": 0.6913773495859156,
+       "low": 0.48426131438463926,
+       "high": 0.9068190634716302
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.02164895359116296
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.3854166666666667
+    },
+    "0.5": {
+     "classifier": {
+      "effect": {
+       "mean": 2.2265488977233567,
+       "low": 1.2591047684351604,
+       "high": 3.267188427348932
+      },
+      "specific_vs_random": {
+       "mean": 2.142100971269732,
+       "low": 1.3619715305200468,
+       "high": 2.9545340874077133
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.08444792645362516,
+      "specific_vs_semantic": {
+       "mean": 2.282121264996628,
+       "low": 1.365846322538952,
+       "high": 3.1995283582558236
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": -0.05557236727327107
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.9953168826177716,
+       "low": 0.7479636268690228,
+       "high": 1.2459911704063416
+      },
+      "specific_vs_random": {
+       "mean": 0.984730358623589,
+       "low": 0.7640913403981054,
+       "high": 1.2066082837215315
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.01058652399418255,
+      "specific_vs_semantic": {
+       "mean": 0.9709994293128451,
+       "low": 0.7273415718227625,
+       "high": 1.2116356304225822
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.024317453304926556
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.22916666666666666
+    }
+   },
+   "fear": {
+    "0.25": {
+     "classifier": {
+      "effect": {
+       "mean": 1.2910186611115932,
+       "low": 0.6257582306861877,
+       "high": 2.0244713351130486
+      },
+      "specific_vs_random": {
+       "mean": 0.9502225716035658,
+       "low": 0.3590641181799583,
+       "high": 1.5789441193919629
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.3407960895080274,
+      "specific_vs_semantic": {
+       "mean": 1.0082312209609274,
+       "low": 0.388898614832821,
+       "high": 1.6595524126120533
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.2827874401506657
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.18839643398920694,
+       "low": 0.1071369272346298,
+       "high": 0.2824993512282769
+      },
+      "specific_vs_random": {
+       "mean": 0.14947068796027452,
+       "low": 0.07206876816538473,
+       "high": 0.2357077281534051
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.03892574602893244,
+      "specific_vs_semantic": {
+       "mean": 0.17811382662815353,
+       "low": 0.0976590821519494,
+       "high": 0.2689185917843133
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.010282607361053428
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.5416666666666666
+    },
+    "0.5": {
+     "classifier": {
+      "effect": {
+       "mean": 2.420447443301479,
+       "low": 1.5803977710505326,
+       "high": 3.307464643691977
+      },
+      "specific_vs_random": {
+       "mean": 1.8842648254940286,
+       "low": 1.1301942732437358,
+       "high": 2.645539576857118
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.5361826178074504,
+      "specific_vs_semantic": {
+       "mean": 2.128731436522988,
+       "low": 1.312924324690054,
+       "high": 2.974712817619244
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.2917160067784911
+     },
+     "judge": {
+      "effect": {
+       "mean": 0.37739322427660227,
+       "low": 0.2513928211604555,
+       "high": 0.5129244277874628
+      },
+      "specific_vs_random": {
+       "mean": 0.32196982166108984,
+       "low": 0.21146515353272358,
+       "high": 0.43909022099493694
+      },
+      "random_as_far": 0.0,
+      "random_effect_mean": 0.05542340261551241,
+      "specific_vs_semantic": {
+       "mean": 0.37141118237438303,
+       "low": 0.24695876333862543,
+       "high": 0.5040204684094837
+      },
+      "semantic_as_far": 0.0,
+      "semantic_effect_mean": 0.005982041902219257
+     },
+     "n": 96,
+     "unchanged_text_fraction": 0.3229166666666667
+    }
+   }
+  }
+ }
+}
