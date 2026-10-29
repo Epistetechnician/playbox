@@ -51,10 +51,19 @@ def convert(path: str):
 
 
 def main():
+    """With PLAYBOX_LOG set, each event is also signed into that history log (needs `playbox` on PATH,
+    or PLAYBOX_BIN) and carries its seq and payload, so the scene can link back to it."""
+    import os
+
     src, dst = sys.argv[1], sys.argv[2]
+    rows = list(convert(src))
+    if log := os.environ.get("PLAYBOX_LOG"):
+        from .record import record_events
+
+        rows = record_events(rows, log, os.environ.get("PLAYBOX_BIN", "playbox"), os.environ.get("PLAYBOX_KEY"))
     n = 0
     with open(dst, "w") as out:
-        for row in convert(src):
+        for row in rows:
             out.write(json.dumps(row) + "\n")
             n += 1
     print(f"wrote {n} events to {dst}")

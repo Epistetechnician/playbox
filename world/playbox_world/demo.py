@@ -12,6 +12,8 @@ import torch
 
 from .events import KIND_MASS, load_jsonl, synthetic
 from .layout import fit_layout
+from .link import link_events, parse_log
+from .view import write_html
 from .scene import fit_field, render, topic_colors
 
 
@@ -36,6 +38,12 @@ def main():
     fig.patch.set_facecolor("black")
     fig.savefig(out, dpi=120, facecolor="black", bbox_inches="tight")
     print("wrote", out)
+    log = os.environ.get("PLAYBOX_LOG")
+    entries = parse_log(open(log).read()) if log else []
+    status = link_events(events, entries)
+    page = out[:-4] + ".html"
+    write_html(page, events, pos.numpy(), labels, status, entries, mass.numpy())
+    print(f"wrote {page}: {status.count('linked')}/{len(status)} points linked to signed entries" + ("" if log else " (set PLAYBOX_LOG to link)"))
 
 
 if __name__ == "__main__":

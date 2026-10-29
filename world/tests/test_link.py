@@ -29,3 +29,22 @@ def test_click_returns_nearest_events_and_only_linked_ones_carry_an_entry():
     assert len(hit) == 1 and hit[0]["entry"].seq == 0
     assert click(events, pos, status, entries, [0.9, 0.9, 0.9])[0]["entry"] is None
     assert click(events, pos, status, entries, [0.0, 0.0, 0.0]) == []
+
+
+def test_end_to_end_with_the_real_cli(tmp_path):
+    """Sign events with the real `playbox record`, then link them. Needs a built CLI."""
+    import os, pathlib, subprocess, pytest
+    from playbox_world.record import record_events
+    from playbox_world.events import Event
+    bin_ = pathlib.Path(__file__).resolve().parents[2] / "target/debug/playbox"
+    if not bin_.exists():
+        pytest.skip("cargo build -p playbox-cli first")
+    log = str(tmp_path / "h.log")
+    rows = record_events([{"text": "ran tests"}, {"text": "edited a.rs"}], log, str(bin_), str(tmp_path / "k.key"))
+    entries = parse_log(open(log).read())
+    evs = [Event(0, "a", "action", r["text"], r["seq"], r["payload"]) for r in rows]
+    assert link_events(evs, entries) == ["linked", "linked"]
+    ok = subprocess.run([str(bin_), "verify", log], capture_output=True)
+    assert ok.returncode == 0, ok.stderr
+    evs[1].payload = "tampered"
+    assert link_events(evs, entries) == ["linked", "mismatch"]
