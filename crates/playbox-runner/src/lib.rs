@@ -4,7 +4,7 @@
 //! - [`KrunRunner`]: the libkrun microVM runner (needs the `playbox-krun-helper` binary; see `scripts/install-krun.sh`).
 //! - [`ProcessRunner`]: runs on the host with NO isolation. Development only, off unless asked for.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{os::unix::fs::MetadataExt, path::Path, process::Stdio, time::Duration};
@@ -137,6 +137,72 @@ pub fn runner_by_name(name: &str, policy: SandboxPolicy) -> Result<std::sync::Ar
     }
 }
 
+/// How much a task may write while it runs. Measured as *growth* of its directory since it started
+/// (so a large checkout does not count against it), in apparent bytes and in directory entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    pub max_bytes: u64,
+    pub max_entries: usize,
+}
+
+impl Default for Quota {
+    fn default() -> Self {
+        Self { max_bytes: 1024 * 1024 * 1024, max_entries: 100_000 }
+    }
+}
+
+/// (apparent bytes of regular files, number of entries) under `dir`, not following symlinks.
+/// Stops early once either limit is passed, so measuring a runaway directory stays cheap.
+fn measure(dir: &Path, stop_bytes: u64, stop_entries: usize) -> (u64, usize) {
+    let (mut bytes, mut entries) = (0u64, 0usize);
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            entries += 1;
+            let Ok(meta) = e.metadata() else { continue }; // does not follow symlinks
+            if meta.is_dir() {
+                stack.push(e.path());
+            } else if meta.is_file() {
+                bytes = bytes.saturating_add(meta.len());
+            }
+            if bytes > stop_bytes || entries > stop_entries {
+                return (bytes, entries);
+            }
+        }
+    }
+    (bytes, entries)
+}
+
+/// Resolves with an error once `dir` has grown past `quota` since this was called. Never resolves
+/// otherwise; race it against a task and drop the task when it fires.
+pub async fn quota_exceeded(dir: &Path, quota: Quota) -> anyhow::Error {
+    let probe = |stop_b, stop_e| {
+        let dir = dir.to_path_buf();
+        tokio::task::spawn_blocking(move || measure(&dir, stop_b, stop_e))
+    };
+    let (base_bytes, base_entries) = probe(u64::MAX, usize::MAX).await.unwrap_or_default();
+    loop {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let (b, n) = probe(base_bytes.saturating_add(quota.max_bytes), base_entries.saturating_add(quota.max_entries)).await.unwrap_or_default();
+        if b.saturating_sub(base_bytes) > quota.max_bytes {
+            return anyhow!("task stopped: it wrote more than the host's scratch quota ({} MiB)", quota.max_bytes >> 20);
+        }
+        if n.saturating_sub(base_entries) > quota.max_entries {
+            return anyhow!("task stopped: it created more than the host's limit of {} files and directories", quota.max_entries);
+        }
+    }
+}
+
+/// Run `spec` with `runner` in `dir`, and stop it if it writes past `quota`. Stopping drops the run, which
+/// kills the sandbox process (and, for Docker, the container).
+pub async fn run_with_quota(runner: &dyn Runner, spec: &TaskSpec, dir: &Path, quota: Quota) -> Result<TaskOutput> {
+    tokio::select! {
+        out = runner.run(spec, dir) => out,
+        why = quota_exceeded(dir, quota) => Err(why),
+    }
+}
+
 fn check_spec(spec: &TaskSpec) -> Result<()> {
     if spec.cmd.is_empty() {
         bail!("empty command");
@@ -259,11 +325,29 @@ impl Runner for DockerRunner {
         cmd.args(["-v", &format!("{ws}:/workspace"), "-w", "/workspace", "-e", "HOME=/tmp"]);
         cmd.arg(&spec.image).args(&spec.cmd);
 
+        // If this future is dropped (a quota stop, a cancelled request) the `docker run` client dies but the
+        // container would not; the guard kills it.
+        let _guard = KillContainer(name.clone());
         let (out, timed_out) = run_child(cmd, Duration::from_secs(spec.timeout_secs)).await?;
         if timed_out {
             let _ = Command::new("docker").args(["kill", &name]).output().await;
         }
         Ok(out)
+    }
+}
+
+/// Kills a Docker container when dropped. After a normal exit the container is already gone (`--rm`) and
+/// the kill is a harmless no-op.
+struct KillContainer(String);
+
+impl Drop for KillContainer {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("docker")
+            .args(["kill", &self.0])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
     }
 }
 

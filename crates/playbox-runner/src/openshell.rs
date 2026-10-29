@@ -2,13 +2,15 @@
 //! `openshell` CLI (https://github.com/NVIDIA/OpenShell).
 //!
 //! How a task runs:
-//! 1. A policy file is generated per task: Landlock filesystem rules (`/workspace` and `/tmp`
+//! 1. A policy file is generated per task: Landlock filesystem rules (`/sandbox` and `/tmp`
 //!    writable, system paths read-only), non-root user, and no `network_policies`, so the
 //!    sandbox's default-deny network applies.
-//! 2. `openshell sandbox create` starts a sandbox from the (host-allowed) image with the workspace
-//!    uploaded to `/workspace`; the policy is passed through `OPENSHELL_SANDBOX_POLICY`.
-//! 3. `openshell sandbox exec` runs the command; its exit code is the task's.
-//! 4. The workspace is downloaded back so the host can diff it, and the sandbox is deleted.
+//! 2. `openshell sandbox create --policy ... --detach` starts a sandbox from the (host-allowed) image.
+//! 3. The workspace goes in as a tar stream on `exec`'s stdin (`create --upload` cannot be combined with
+//!    a command, nests directories, and `download` needs SSH), the command runs with `exec`, and its
+//!    exit code is the task's.
+//! 4. The workspace comes back as a tar stream, is unpacked into an empty directory and mirrored over
+//!    the host workspace; the sandbox is then deleted.
 //!
 //! Known gaps, deliberately not papered over:
 //! - OpenShell policies carry no CPU, memory or timeout limits. The flags are passed, but its VM
@@ -18,13 +20,13 @@
 //! - A task asking for network is refused: OpenShell allows network per host and binary, and a
 //!   grant has no such list yet.
 //! - Isolation is reported as `Container`, the weakest claim that holds across its drivers.
-//!   Written against OpenShell's docs; not yet run against a real gateway.
+//!   Tested against OpenShell 0.1.6 with the local VM driver (`tests/openshell.rs`, needs a gateway).
 
 use super::{check_spec, run_child, Isolation, Runner, SandboxPolicy, TaskOutput, TaskSpec};
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use std::{path::Path, process::Stdio, time::Duration};
-use tokio::process::Command;
+use tokio::{io::AsyncReadExt, process::Command};
 
 const BIN: &str = "openshell";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(180);
@@ -42,7 +44,7 @@ impl OpenShellRunner {
 /// The OpenShell policy for one task. Pure, so it can be tested and hashed into a receipt.
 pub fn policy_yaml() -> String {
     "version: 1\n\
-     filesystem_policy:\n  include_workdir: false\n  read_only: [/usr, /lib, /bin, /sbin, /etc]\n  read_write: [/workspace, /tmp]\n\
+     filesystem_policy:\n  include_workdir: false\n  read_only: [/usr, /lib, /bin, /sbin, /etc]\n  read_write: [/sandbox, /tmp]\n\
      landlock:\n  compatibility: hard_requirement\n\
      process:\n  run_as_user: sandbox\n  run_as_group: sandbox\n"
         .into()
@@ -58,7 +60,7 @@ fn mem_arg(mem_mib: u32) -> String {
 }
 
 fn random_name() -> Result<String> {
-    let mut b = [0u8; 6];
+    let mut b = [0u8; 5]; // OpenShell names are at most 19 characters
     std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
     Ok(format!("playbox-{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>()))
 }
@@ -130,15 +132,48 @@ impl Runner for OpenShellRunner {
     }
 }
 
+/// Where the workspace lives inside the sandbox: its default working directory, which the `sandbox`
+/// user can write (`/workspace` cannot be created by a non-root user).
+const GUEST_DIR: &str = "/sandbox";
+
+/// Run a command with `input` on stdin and return its raw stdout (a tar stream, so not lossy-decoded).
+async fn piped(mut cmd: Command, input: Option<Vec<u8>>, timeout: Duration) -> Result<(Option<i32>, Vec<u8>, String)> {
+    use tokio::io::AsyncWriteExt;
+    cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let mut child = cmd.spawn().context("spawn")?;
+    if let (Some(data), Some(mut stdin)) = (input, child.stdin.take()) {
+        tokio::spawn(async move {
+            let _ = stdin.write_all(&data).await;
+        });
+    }
+    let mut stdout = child.stdout.take().expect("piped");
+    let mut stderr = child.stderr.take().expect("piped");
+    let run = async {
+        let (mut o, mut e) = (Vec::new(), Vec::new());
+        let (a, b) = tokio::join!(stdout.read_to_end(&mut o), stderr.read_to_end(&mut e));
+        a?;
+        b?;
+        let status = child.wait().await?;
+        Ok::<_, anyhow::Error>((status.code(), o, String::from_utf8_lossy(&e).into_owned()))
+    };
+    tokio::time::timeout(timeout, run).await.map_err(|_| anyhow::anyhow!("timed out"))?
+}
+
+fn osh(args: &[&str]) -> Command {
+    let mut c = Command::new(BIN);
+    c.args(args);
+    c
+}
+
 impl OpenShellRunner {
     async fn run_in_sandbox(&self, spec: &TaskSpec, ws: &str, name: &str, policy: &str, tmp: &Path) -> Result<TaskOutput> {
-        let upload = format!("{ws}:/workspace");
         let (cpu, mem) = (cpu_arg(spec.cpus), mem_arg(spec.mem_mib));
         let (out, timed_out) = cli(
-            &[
-                "sandbox", "create", "--name", name, "--from", &spec.image, "--cpu", &cpu, "--memory", &mem, "--upload", &upload,
-            ],
-            &[("OPENSHELL_SANDBOX_POLICY", policy)],
+            &["sandbox", "create", "--name", name, "--from", &spec.image, "--cpu", &cpu, "--memory", &mem, "--policy", policy, "--detach"],
+            &[],
             SETUP_TIMEOUT,
         )
         .await?;
@@ -147,28 +182,67 @@ impl OpenShellRunner {
         }
         ok(&out, "sandbox create")?;
 
+        // Workspace in: a tar stream on the exec's stdin.
+        let packed = Command::new("tar").env("COPYFILE_DISABLE", "1").args(["-cf", "-", "-C", ws, "."]).stdin(Stdio::null()).output().await?;
+        if !packed.status.success() {
+            bail!("packing the workspace failed: {}", String::from_utf8_lossy(&packed.stderr).trim());
+        }
+        let (code, _, err) = piped(
+            osh(&["sandbox", "exec", "-n", name, "--no-tty", "--no-login-shell", "--", "tar", "-xf", "-", "-C", GUEST_DIR]),
+            Some(packed.stdout),
+            SETUP_TIMEOUT,
+        )
+        .await?;
+        if code != Some(0) {
+            bail!("uploading the workspace failed: {}", err.trim());
+        }
+
         let secs = spec.timeout_secs.to_string();
-        let mut args = vec!["sandbox", "exec", "-n", name, "--no-tty", "--no-login-shell", "--timeout", &secs, "--"];
+        let mut args = vec!["sandbox", "exec", "-n", name, "--no-tty", "--no-login-shell", "--workdir", GUEST_DIR, "--timeout", &secs, "--"];
         args.extend(spec.cmd.iter().map(String::as_str));
         // A little slack so OpenShell's own timeout reports first; ours is the backstop.
         let (task, timed_out) = cli(&args, &[], Duration::from_secs(spec.timeout_secs + 10)).await?;
 
-        // Bring the workspace back so the host can diff it. Skipped on timeout: the state is partial.
+        // Workspace out, so the host can diff it. Skipped on timeout: the state is partial.
         if !timed_out {
-            let dl = tmp.join("out");
-            let (o, _) = cli(&["sandbox", "download", name, "/workspace", dl.to_str().context("temp path")?], &[], SETUP_TIMEOUT).await?;
-            ok(&o, "sandbox download")?;
-            // The CLI may nest the directory under its own name; accept either layout.
-            let src = if dl.join("workspace").is_dir() { dl.join("workspace") } else { dl };
-            let cp = Command::new("cp")
-                .arg("-a")
-                .arg(format!("{}/.", src.display()))
-                .arg(ws)
+            let (code, tar, err) = piped(
+                osh(&["sandbox", "exec", "-n", name, "--no-tty", "--no-login-shell", "--", "tar", "-cf", "-", "-C", GUEST_DIR, "."]),
+                None,
+                SETUP_TIMEOUT,
+            )
+            .await?;
+            if code != Some(0) {
+                bail!("downloading the workspace failed: {}", err.trim());
+            }
+            // Untrusted archive: unpack into an empty directory (tar refuses absolute and `..` paths),
+            // then mirror it over the workspace so files the task deleted disappear too.
+            let out_dir = tmp.join("out");
+            tokio::fs::create_dir_all(&out_dir).await?;
+            let mut un = Command::new("tar")
+                .args(["-xf", "-", "-C"])
+                .arg(&out_dir)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()?;
+            {
+                use tokio::io::AsyncWriteExt;
+                let mut stdin = un.stdin.take().expect("piped");
+                stdin.write_all(&tar).await?;
+            }
+            let un = un.wait_with_output().await?;
+            if !un.status.success() {
+                bail!("unpacking the workspace failed: {}", String::from_utf8_lossy(&un.stderr).trim());
+            }
+            let sync = Command::new("rsync")
+                .args(["-a", "--delete"])
+                .arg(format!("{}/", out_dir.display()))
+                .arg(format!("{ws}/"))
                 .stdin(Stdio::null())
                 .output()
                 .await?;
-            if !cp.status.success() {
-                bail!("copying the workspace back failed: {}", String::from_utf8_lossy(&cp.stderr).trim());
+            if !sync.status.success() {
+                bail!("copying the workspace back failed: {}", String::from_utf8_lossy(&sync.stderr).trim());
             }
         }
         Ok(task)
