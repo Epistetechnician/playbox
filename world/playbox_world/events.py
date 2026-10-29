@@ -4,6 +4,7 @@ import json
 import random
 import zlib
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
@@ -18,6 +19,10 @@ class Event:
     agent: str
     kind: str  # one of KINDS
     text: str
+    # Where this event lives in the signed history log: the entry's seq, and the exact payload
+    # bytes (as text) whose blake3 the entry signed. See link.py.
+    seq: Optional[int] = None
+    payload: Optional[str] = None
 
 
 def embed(text: str, dim: int = EMBED_DIM) -> np.ndarray:
@@ -35,7 +40,7 @@ def load_jsonl(path: str) -> list[Event]:
     ts = [r["t"] for r in rows]
     lo, hi = min(ts), max(ts)
     span = (hi - lo) or 1.0
-    return [Event((r["t"] - lo) / span, r["agent"], r["kind"], r["text"]) for r in rows]
+    return [Event((r["t"] - lo) / span, r["agent"], r["kind"], r["text"], r.get("seq"), r.get("payload")) for r in rows]
 
 
 _TOPICS = {
