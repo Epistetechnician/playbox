@@ -1,0 +1,16 @@
+[package]
+name = "rap-protocol"
+version = "0.2.0"
+description = "Vendored from hydro-project/infinity@1abc6fc (Apache-2.0): Reactive Agent Protocol types."
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+tracing = "0.1"
+futures-util = "0.3"
+strkind = "0.0.1"

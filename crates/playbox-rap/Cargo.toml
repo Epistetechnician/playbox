@@ -1,0 +1,22 @@
+[package]
+name = "playbox-rap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+playbox-core = { path = "../playbox-core" }
+playbox-mcp = { path = "../playbox-mcp" }
+rap-protocol = { path = "../../vendor/infinity/rap-protocol" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+serde_json = "1"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+ed25519-dalek.workspace = true
+url = "2"
+
+[dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+ed25519-dalek.workspace = true
+rap-client = { path = "../../vendor/infinity/rap-client" }

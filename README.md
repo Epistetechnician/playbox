@@ -24,6 +24,8 @@ Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no con
 
 - **Steering rooms (new):** hosts can serve open-weights models and let members steer their activations (add, clamp or ablate a direction at chosen layers) under grant limits, with host-signed receipts that bind the spec, weights, prompts, engine image and output. The engine runs in a no-network container with the weights mounted read-only; guards refuse directions near known safety directions; members get `playbox_steer` in the MCP server. Runs on CPU only today. A LangGraph harness runs the "does a steered trait spread to agents that only read its text" experiment. See [docs/steering.md](docs/steering.md), including what is not built.
 
+- **RAP server (new):** `playbox-rap` serves the MCP tools over Infinity's Reactive Agent Protocol (bearer auth, callback allowlist). See [docs/rap.md](docs/rap.md), including what is not done.
+
 - `world/`: prototype that learns a 3D scene from agent events (messages, actions, reasoning, commits). See [world/README.md](world/README.md).
 
 ## What does not exist yet

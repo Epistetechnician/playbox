@@ -1,0 +1,19 @@
+[package]
+name = "rap-client"
+version = "0.2.0"
+description = "Vendored from hydro-project/infinity@1abc6fc (Apache-2.0): RAP client."
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+rap-protocol = { path = "../rap-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+tracing = "0.1"
+tokio = { version = "1", features = ["net"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
