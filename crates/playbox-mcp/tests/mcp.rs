@@ -809,6 +809,27 @@ fn a_custodian_seals_a_holdout_and_an_agent_signs_a_lineage_that_checks() {
     assert!(ok["improvement"]["delta"].as_f64().unwrap() > 0.15);
     assert_eq!(ok["total_cost"], 12);
 
+    // 3b. The verifier may assert that scores are aligned items and ask for the paired bound.
+    let chk = |m: &mut Mcp, paired: bool, chain: Vec<(&Value, &str)>| {
+        let variants: Vec<Value> = chain.into_iter().map(|(v, p)| json!({"variant": v["variant"], "patch": p})).collect();
+        m.tool("playbox_lineage_check", json!({"evaluators": [evaluator], "custodians": [custodian_key], "variants": variants, "paired": paired}))
+    };
+    let base_scores = [0.10, 0.90, 0.35, 0.75, 0.20, 0.60, 0.05, 0.95];
+    let hard_root = sign(&mut agent, None, "", base_scores.to_vec());
+    let nudged: Vec<f64> = base_scores.iter().enumerate().map(|(i, b)| b + 0.02 + 0.002 * i as f64).collect();
+    let small = sign(&mut agent, Some(hard_root["variant"].as_str().unwrap()), patch1, nudged);
+    let (_, unp) = chk(&mut agent, false, vec![(&hard_root, ""), (&small, patch1)]);
+    let (_, par) = chk(&mut agent, true, vec![(&hard_root, ""), (&small, patch1)]);
+    assert_eq!(unp["improvement"]["paired"], false);
+    assert_eq!(unp["improvement"]["significant"], false, "item difficulty hides a small gain from the unpaired bound: {unp}");
+    assert_eq!(par["improvement"]["paired"], true);
+    assert_eq!(par["improvement"]["significant"], true, "{par}");
+    assert!((unp["improvement"]["delta"].as_f64().unwrap() - par["improvement"]["delta"].as_f64().unwrap()).abs() < 1e-9);
+    // Misaligned sides are refused in paired mode, not silently truncated.
+    let short = sign(&mut agent, Some(hard_root["variant"].as_str().unwrap()), patch1, vec![0.5; 6]);
+    let (_, mis) = chk(&mut agent, true, vec![(&hard_root, ""), (&short, patch1)]);
+    assert!(mis["improvement"].is_null() && mis["improvement_error"].as_str().unwrap().contains("same items"), "{mis}");
+
     // 4. Cheating is refused.
     // a patch that edits the evaluator's own files
     let evil = "--- a/harness/score.py\n+++ b/harness/score.py\n@@ -1 +1 @@\n-x\n+y\n";

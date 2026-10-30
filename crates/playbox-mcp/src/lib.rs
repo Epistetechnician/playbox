@@ -242,7 +242,8 @@ pub fn tool_list() -> Value {
                 "evaluators": {"type": "array", "items": {"type": "string"}, "description": "Evaluator manifests, oldest first"},
                 "custodians": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys allowed to sign evaluators"},
                 "variants": {"type": "array", "items": {"type": "object", "properties": {"variant": {"type": "string"}, "patch": {"type": "string"}}}},
-                "z": {"type": "number", "description": "Normal quantile for the bound. Default 1.645."}
+                "z": {"type": "number", "description": "Normal quantile for the bound. Default 1.645."},
+                "paired": {"type": "boolean", "description": "Bound the mean of per-item differences instead of a difference of means. Set it only if you know this evaluator scores the same items in the same order for every variant (a fixed holdout): then it is much tighter. It is the verifier's assertion, not the author's. Default false."}
             }), &["evaluators", "custodians", "variants"]),
     ])
 }
@@ -1159,10 +1160,11 @@ impl Server {
         }
         let id = last.ok_or_else(|| anyhow!("no variants"))?;
         let z = a.get("z").and_then(Value::as_f64).unwrap_or(1.645);
-        let imp = lineage.improvement(&id, z);
+        let paired = b(a, "paired");
+        let imp = if paired { lineage.improvement_paired(&id, z) } else { lineage.improvement(&id, z) };
         Ok(json!({
             "last": id, "variants": lineage.len(), "cost_to_last": lineage.cost_to(&id), "total_cost": lineage.total_cost(),
-            "improvement": imp.as_ref().ok().map(|i| json!({"parent_mean": i.parent_mean, "mean": i.mean, "delta": i.delta, "lower_bound": i.lower_bound, "significant": i.significant()})),
+            "improvement": imp.as_ref().ok().map(|i| json!({"parent_mean": i.parent_mean, "mean": i.mean, "delta": i.delta, "lower_bound": i.lower_bound, "significant": i.significant(), "paired": i.paired})),
             "improvement_error": imp.err(),
         }))
     }

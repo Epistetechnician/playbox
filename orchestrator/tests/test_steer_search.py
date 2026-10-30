@@ -150,3 +150,32 @@ def test_the_search_against_the_real_signing_and_lineage_check():
                 lin.check([r.chain[0], (v, evil)])
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+@pytest.mark.skipif(not BINARY.exists(), reason="target/debug/playbox-mcp is not built")
+def test_paired_mode_accepts_a_small_consistent_gain_the_default_bound_rejects():
+    """Both candidates beat the parent by the same small amount on every holdout item; item difficulty varies a lot."""
+    from playbox_orchestrator.mcp import McpClient
+    from playbox_orchestrator.steer_search import McpLineage
+
+    difficulty = [0.1, 0.9, 0.35, 0.75, 0.2, 0.6, 0.05, 0.95] * 4
+
+    def hold(c: Config) -> Result:
+        gain = 0.0 if c.coef == 0 else 0.03 + 0.01 * (c.coef > 0.15)
+        return Result([d + gain for d in difficulty], kl=0.1)
+
+    outcomes = {}
+    for paired in (False, True):
+        work = Path(tempfile.mkdtemp(prefix="pb-e4p-"))
+        try:
+            with McpClient(BINARY, work / "c") as cust, McpClient(BINARY, work / "a") as agent:
+                h = cust.call("playbox_holdout_commit", {"items": [f"o{i}" for i in range(32)]})
+                ev = cust.call("playbox_evaluator_issue", {"name": "p", "version": 1, "harness": "ab" * 32, "holdout": h["root"], "command": "x", "protected": ["harness/"], "min_runs": 16})
+                dev = lambda c: Result([0.0 if c.coef == 0 else 1.0 + c.coef] * 8, kl=0.1)  # noqa: E731
+                r = search(root=Config("resid_post", 6, 0.0), dev=dev, holdout=hold, lineage=McpLineage(agent, ev["evaluator"], ev["custodian"], paired=paired),
+                           space=Space(layers=(6, 6)), seed=1, rounds=3, width=3)
+                outcomes[paired] = len(r.chain) - 1
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    assert outcomes[False] == 0, "the default bound cannot see a 0.03 gain under this much difficulty spread"
+    assert outcomes[True] >= 1, "the paired bound can"

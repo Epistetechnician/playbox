@@ -195,8 +195,10 @@ def search(
 class McpLineage:
     """Signs variants with the agent sidecar's key and replays chains in Rust against the pinned custodian."""
 
-    def __init__(self, agent, evaluator: str, custodian_key: str):
-        self.agent, self.evaluator, self.custodian_key = agent, evaluator, custodian_key
+    def __init__(self, agent, evaluator: str, custodian_key: str, paired: bool = False):
+        # `paired` is this verifier's assertion that the evaluator scores the same holdout items, in the same order,
+        # for every variant. It is what makes the tighter bound valid; leave it off if scores are repeated runs.
+        self.agent, self.evaluator, self.custodian_key, self.paired = agent, evaluator, custodian_key, paired
 
     def sign(self, parent, patch, scores, cost):
         args = {"evaluator": self.evaluator, "custodians": [self.custodian_key], "patch": patch, "scores": scores, "cost": cost}
@@ -208,5 +210,5 @@ class McpLineage:
     def check(self, chain):
         return self.agent.call("playbox_lineage_check", {
             "evaluators": [self.evaluator], "custodians": [self.custodian_key],
-            "variants": [{"variant": v, "patch": p} for v, p in chain],
+            "variants": [{"variant": v, "patch": p} for v, p in chain], "paired": self.paired,
         })

@@ -44,6 +44,8 @@ def main() -> None:
     ap.add_argument("--kl-cap", type=float, default=0.6)
     ap.add_argument("--max-holdout", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--paired", action="store_true", help="the verifier asserts the holdout scores are aligned items and asks for the paired bound")
+    ap.add_argument("--kl-weight", type=float, default=0.0, help="score = classifier effect - weight * KL, per prompt (classifier logit per nat)")
     ap.add_argument("--binary", default=str(ROOT / "target/debug/playbox-mcp"))
     a = ap.parse_args()
     steer_py = ROOT / "steer/.venv/bin/python"
@@ -116,10 +118,11 @@ def main() -> None:
                 return Result([0.0] * len(prompts), 0.0)
             rows, digest = run_steer(client, cfg, prompts)
             s, c = clf.score([r["steered"] for r in rows]), clf.score([r["clean"] for r in rows])
-            return Result([x - y for x, y in zip(s, c)], statistics.fmean(r["kl_to_clean"] for r in rows), [digest])
+            scores = [x - y - a.kl_weight * r["kl_to_clean"] for x, y, r in zip(s, c, rows)]
+            return Result(scores, statistics.fmean(r["kl_to_clean"] for r in rows), [digest])
 
         log = lambda m: print(f"[{time.time() - t0:6.0f}s] {m}", flush=True)  # noqa: E731
-        lineage = McpLineage(searcher, ev["evaluator"], ev["custodian"])
+        lineage = McpLineage(searcher, ev["evaluator"], ev["custodian"], paired=a.paired)
         res = search(
             root=Config("resid_post", 6, 0.0),
             dev=lambda c: evaluate(searcher, c, DEV_PROMPTS),
@@ -156,7 +159,7 @@ def main() -> None:
         "model": "gpt2", "weights": weights, "trait": "sentiment", "classifier": SENTIMENT.classifier, "tokens": TOKENS,
         "evaluator": ev["id"], "custodian": ev["custodian"], "holdout_root": sealed["root"], "holdout_items": len(HOLDOUT_PROMPTS),
         "dev_items": len(DEV_PROMPTS), "holdout_proof_verifies": proof_ok,
-        "search": {"rounds": a.rounds, "width": a.width, "kl_cap": a.kl_cap, "max_holdout_queries": a.max_holdout, "seed": a.seed,
+        "search": {"paired": a.paired, "kl_weight": a.kl_weight, "rounds": a.rounds, "width": a.width, "kl_cap": a.kl_cap, "max_holdout_queries": a.max_holdout, "seed": a.seed,
                    "holdout_queries": res.holdout_queries, "dev_queries": res.dev_queries},
         "root": res.root.spec_file(), "best": res.best.spec_file(), "best_config": [res.best.site, res.best.layer, res.best.coef],
         "chain": [{"config": c.spec_file(), "patch": p} for c, (_, p) in zip(res.configs, res.chain)],
@@ -168,7 +171,7 @@ def main() -> None:
         "elapsed_s": round(time.time() - t0),
     }
     Path(a.out).write_text(json.dumps(report, indent=1))
-    print("\nholdout effect (steered minus clean, classifier logit), 95% CI, KL")
+    print(f"\nholdout score (classifier effect - {a.kl_weight} * KL), 95% CI, mean KL")
     for k, v in report["holdout"].items():
         print(f"  {k:12} {v['mean']:+.3f} [{v['low']:+.3f}, {v['high']:+.3f}]  kl={v['kl']:.3f}")
     print("found minus baseline (paired):", {k: f"{v['mean']:+.2f} [{v['low']:+.2f},{v['high']:+.2f}]" for k, v in report["found_minus"].items()})
