@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 infinity-agent-core = { path = "../infinity-agent-core" }
 infinity-rap-bridge = { path = "../infinity-rap-bridge" }
-infinity-provider-protocol = { path = "../infinity-provider-protocol" }
+infinity-provider-protocol = { path = "../infinity-provider-protocol", features = ["remote"] }
 rap-client = { path = "../rap-client" }
 rap-protocol = { path = "../rap-protocol" }
 async-trait = "0.1"

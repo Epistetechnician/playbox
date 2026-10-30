@@ -29,11 +29,13 @@ Trade-off: the runtime relays the person's answer, so a compromised runtime coul
 It ends with a `final` event on `/cancel_tool_call` for that call, on `/close_thread` for its thread, or at `max_secs`. It reads the feed directly, so events keep flowing while a long call such as `playbox_delegate` holds the server. Other members' words are marked untrusted (as `playbox_feed` does) before they are sent; if the server is busy they wait for it and are sent in order afterwards, never unmarked.
 
 ## Run with Infinity
-`scripts/infinity-harness/` is a small crate that runs Infinity's own local runtime, RAP tool client and callback bridge against this server (see its README). It was run end to end: Infinity discovered the 28 tools, created a room, subscribed, spoke, and got its own message back as a subscription event.
+`scripts/infinity-harness/` runs Infinity against this server two ways (see its README):
+- the **stock daemon**, through its ACP interface, using `infinity-auth-headers.patch`, which adds a `headers` field to `toolset_server` entries so a bearer token can be sent. Run end to end: the daemon discovered the tools with the token, the agent created a room, subscribed, spoke, and got its own message back as an event.
+- an **in-process runtime** with its own bearer-adding HTTP client, which needs no patch.
 
-Findings from that run:
-- **Stock Infinity cannot send a bearer token.** Its `RapToolSet` and daemon `toolset_server` entries use a client with no way to add headers, and its callback listener is unauthenticated. The harness supplies its own `HttpClient` that adds the token. Until Infinity gains an auth hook, point the stock daemon at this server only on a trusted loopback, behind a proxy that adds the header, or skip the token.
-- The model was scripted, because no model credentials were provided. The run shows the tool path, not model behaviour.
+Findings:
+- **Stock Infinity cannot send a bearer token without the patch.** Its client has no way to add headers, and its callback listener is unauthenticated (we post callbacks to it without a token; it listens on loopback only). The patch is small and has a test and docs, and is ready to offer upstream.
+- **The model was scripted.** Bedrock in the account that was tried returned `ValidationException: Operation not allowed` for every Claude model, so no real model has driven these tools yet. The run shows the tool path, not model behaviour.
 
 ## What is not done
 - Tool calls still run one at a time (one `Server` behind a mutex). Only the subscription's feed reads bypass it.
