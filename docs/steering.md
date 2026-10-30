@@ -496,11 +496,12 @@ is the same configuration as grid layer 6, 0.2.)
   interval just excluding zero) at more than twice the KL. The two hold-out-checked rejections were of stronger
   settings that were barely better. With a space this small (two sites, nine layers, a handful of strengths) the
   search finds what a short grid finds; the grid here was also scored on the holdout, which favors it.
-- **That the rejections were right.** The lineage's bound treats the 32 prompt scores of each variant as independent
-  samples, but both variants were scored on the *same* 32 prompts. The paired intervals above are much tighter than
-  the lineage's (found − E1 default is ±0.2, while the lineage's bound on a +0.16 gain was −2.31). The lineage is
-  therefore conservative here, and rejects small real gains. A paired mode (when two variants are scored on the same
-  ordered holdout items) would be a reasonable change; it is a change to `Lineage::improvement`, not made here.
+- **That the lineage's bound is the right test here.** It treats the 32 prompt scores of each variant as independent
+  samples, but both variants were scored on the *same* 32 prompts. Paired intervals are much tighter: the stronger
+  candidate's gain over the accepted one is +0.16 [−0.01, +0.36] paired, against a lineage lower bound of −2.31.
+  Paired, that gain is borderline rather than clearly absent, so the rejection looks right but only just, and the
+  lineage would also reject small real gains that a paired test would see. A paired mode (when two variants are
+  scored on the same ordered holdout items) is a reasonable change to `Lineage::improvement`; it was not made here.
 - **Overfitting resistance in general.** Four holdout queries is a tiny budget; the cost field records it, and a
   larger search would spend more of the holdout.
 - **That the scores are honest.** The signer of a variant is the searcher; the numbers came from the custodian's
