@@ -312,10 +312,18 @@ impl Rap {
             old.task.abort();
         }
         let task = tokio::spawn(rap_protocol::log_panic("playbox-rap subscription", async move {
+            // Note where the feed ends before confirming: an agent that reacts to the confirmation by
+            // speaking right away must not have that item mistaken for old news. A cursor far ahead is
+            // pulled back to the head of the feed. Outside a room there is nothing to follow yet, so
+            // start from the beginning and let the first items through.
+            let (first, _) = rap.run("playbox_feed", &json!({"since": u64::MAX})).await;
+            let mut since = if first["isError"].as_bool() == Some(true) {
+                0
+            } else {
+                serde_json::from_str::<Value>(&result_text(&first)).ok().and_then(|f| f["next"].as_u64()).unwrap_or(0)
+            };
             send_tool_result(&rap.client, &inv, "subscribed to room events from now on", None, true).await;
             let deadline = tokio::time::Instant::now() + max;
-            // A cursor far ahead is pulled back to the head of the feed, so only new items are sent.
-            let mut since = u64::MAX;
             while tokio::time::Instant::now() < deadline {
                 let (out, _) = rap.run("playbox_feed", &json!({"since": since})).await;
                 if out["isError"].as_bool() != Some(true) {
@@ -323,7 +331,7 @@ impl Rap {
                     for item in feed["items"].as_array().into_iter().flatten() {
                         let mut ev = item.clone();
                         ev["untrusted"] = json!(item["kind"] == "say");
-                        send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), &ev.to_string(), false, false).await;
+                        send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), &ev.to_string(), true, false).await;
                     }
                     if let Some(n) = feed["next"].as_u64() {
                         since = n;
@@ -332,7 +340,7 @@ impl Rap {
                 tokio::time::sleep(ms).await;
             }
             rap.subs.lock().await.remove(&inv.id.to_string());
-            send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), "subscription ended: time limit", false, true).await;
+            send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), "subscription ended: time limit", true, true).await;
         }))
         .abort_handle();
         subs.insert(id, Sub { group, callback, task });
@@ -347,7 +355,7 @@ impl Rap {
         };
         for (id, sub) in ended {
             sub.task.abort();
-            send_subscription_event(&self.client, &sub.callback, sub.group.clone().into(), id.into(), why, false, true).await;
+            send_subscription_event(&self.client, &sub.callback, sub.group.clone().into(), id.into(), why, true, true).await;
         }
     }
 }

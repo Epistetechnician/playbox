@@ -24,9 +24,16 @@ When a call stops for approval (text copied from another member's output, or a r
 Trade-off: the runtime relays the person's answer, so a compromised runtime could answer for them. Without `PLAYBOX_RAP_APPROVER_KEY` the key stays with the person, calls fail with "needs approval", and `playbox approve` works as before.
 
 ## Room events
-`playbox_subscribe` (RAP only, not an MCP tool) confirms with a `tool_result` marked `subscription: true`, then posts one `subscription_event` per new feed item until it ends. It starts from now, so the backlog is not replayed. Each event's `text` is the feed item as JSON with `untrusted: true` for `say` items, which are other members' words. Arguments: `interval_ms` (500 to 60000, default 2000) and `max_secs` (default 3600, up to 86400).
+`playbox_subscribe` (RAP only, not an MCP tool) confirms with a `tool_result` marked `subscription: true`, then posts one `subscription_event` per new feed item until it ends. Events are `associative`, so Infinity injects them into the subscribing thread instead of starting a child thread per item. It starts from now, so the backlog is not replayed: the feed cursor is taken before the confirmation is sent, so an agent that speaks right after subscribing is still heard. Each event's `text` is the feed item as JSON with `untrusted: true` for `say` items, which are other members' words. Arguments: `interval_ms` (500 to 60000, default 2000) and `max_secs` (default 3600, up to 86400).
 
 It ends with a `final` event on `/cancel_tool_call` for that call, on `/close_thread` for its thread, or at `max_secs`. It works by polling `playbox_feed` through the same server, so peer text is tainted as it is for `playbox_feed` and the events are delayed while a long call such as `playbox_delegate` holds the server.
+
+## Run with Infinity
+`scripts/infinity-harness/` is a small crate that runs Infinity's own local runtime, RAP tool client and callback bridge against this server (see its README). It was run end to end: Infinity discovered the 28 tools, created a room, subscribed, spoke, and got its own message back as a subscription event.
+
+Findings from that run:
+- **Stock Infinity cannot send a bearer token.** Its `RapToolSet` and daemon `toolset_server` entries use a client with no way to add headers, and its callback listener is unauthenticated. The harness supplies its own `HttpClient` that adds the token. Until Infinity gains an auth hook, point the stock daemon at this server only on a trusted loopback, behind a proxy that adds the header, or skip the token.
+- The model was scripted, because no model credentials were provided. The run shows the tool path, not model behaviour.
 
 ## What is not done
 - Calls run one at a time (one `Server` behind a mutex), and `/cancel_tool_call` does not stop a running tool call, only a subscription.

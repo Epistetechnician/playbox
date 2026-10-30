@@ -22,7 +22,11 @@ fn pin_approver() {
         std::env::set_var(
             "PLAYBOX_APPROVERS",
             hex(&approver().verifying_key().to_bytes()),
-        )
+        );
+        // Rooms are kept under the playbox home; never use the real one.
+        let home = std::env::temp_dir().join(format!("playbox-rap-home-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("PLAYBOX_HOME", home);
     });
 }
 
@@ -171,6 +175,11 @@ async fn refuses_missing_token_and_foreign_callback_hosts() {
     );
 }
 
+fn unique_room() -> String {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    format!("rap-test-{}", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+}
+
 async fn next(rx: &mut mpsc::UnboundedReceiver<Value>) -> Value {
     tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -306,7 +315,7 @@ async fn subscription_streams_new_room_items_only_and_ends_on_cancel() {
     let (base, h) = start().await;
     let (cb, mut rx) = receiver().await;
     let repo = git_repo(&h);
-    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true})).await;
+    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
     let made = wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
     assert!(!made["text"].as_str().unwrap().starts_with("error:"), "{made}");
     call(&base, &cb, "before", "playbox_say", json!({"text": "old news"})).await;
@@ -319,6 +328,8 @@ async fn subscription_streams_new_room_items_only_and_ends_on_cancel() {
     call(&base, &cb, "after", "playbox_say", json!({"text": "hello room"})).await;
     let ev = wait_for(&mut rx, "subscription_event", |_| true).await;
     assert_eq!(ev["tool_call_id"], "sub");
+    // Inline in the subscribing thread; a non-associative event would start a child thread per item.
+    assert_eq!(ev["associative"], true);
     assert_eq!(ev["group_id"], "thread-1");
     let item: Value = serde_json::from_str(ev["text"].as_str().unwrap()).unwrap();
     assert_eq!(item["text"], "hello room", "the backlog must not be replayed: {item}");
@@ -347,7 +358,7 @@ async fn closing_a_thread_ends_its_subscriptions() {
     let (base, h) = start().await;
     let (cb, mut rx) = receiver().await;
     let repo = git_repo(&h);
-    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true})).await;
+    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
     call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
