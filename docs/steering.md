@@ -763,6 +763,14 @@ A member sends `Op::Handoff { weights }` with one raw part, the `PBH1` envelope 
 
 Limits: the host sees the text and the cache (it is not private), the quarantine lives in host memory, and the decision is not yet signed like a steering receipt.
 
+### E6 round 7: layer sweep and seeds at 14B and 32B (H100)
+
+bfloat16, 32 contexts, 16 nulls, 12 tokens, strengths 0.25 and 0.5, sentiment and fear, 3 seeds (seed picks the contexts and the random nulls). 14B: layers 6-30 (7 layers); 32B: layers 12-44 (5 layers). Results: `steer/results/round7_sweep/`; judged seed 0 in `judge/results/e6/`. About $3.5 of H100 time.
+
+- **Next token:** stable across seeds. It peaks at 29-46% of depth for 14B (layers 14-22, +0.8 to +0.9 at strength 0.5) and 44-56% for 32B (layers 28-36, +0.8 to +1.0). The round-5 14B layers were too shallow; that explains part of its weaker result.
+- **Later text, judged (seed 0 only):** 14B, judge CI above 0 in 17 of 28 cells, classifier 14 of 28, word count 1 of 28. 32B: judge 18 of 20, classifier 10 of 20, word count 3 of 20. In 23 of 28 (14B) and 18 of 20 (32B) cells, no unrelated-contrast direction pushed as far as the trait direction by the judge. Steered text equals clean text in about 45-48% of rows.
+- **Reading:** the later-text effect survives at 14B and 32B once layers are chosen sensibly and is clearly visible to the judge; the word count undercounts it, as before. Not shown: seeds 1 and 2 were not judged, only one H100 run per cell, two traits, bf16 only.
+
 ## 5. Threat model additions
 
 | Threat | Mitigation (built, with its test) | Remaining gap |
