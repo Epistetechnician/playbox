@@ -548,9 +548,10 @@ different, borderline call on one candidate. That a KL penalty of 4 is the right
 setting. One model, one trait, one search seed each, 2 to 4 holdout queries. The search space is small enough that a
 short grid finds the same settings; no run here shows the search beating a person.
 
-**An operational bug this found.** Both runs of the penalized search first failed for the same reason: the host closes
-an authenticated connection that sat silent for 15 minutes (by design), and the custodian's connection was idle for
-about 17 minutes while the searcher worked. The sidecar did not reconnect, so every later call failed with "closed by
+**An operational bug this found.** The penalized search failed three times before it completed. The first failure was a
+container killed with exit 137 on a busy machine (cause not established; it did not recur). The other two had one cause:
+the host closes an authenticated connection that sat silent for 15 minutes (by design), and the custodian's connection
+was idle for about 17 minutes while the searcher worked. The sidecar did not reconnect, so every later call failed with "closed by
 peer". Any agent idle that long would have hit it. Now `Client::is_closed` / `Client::reconnect` exist (same identity,
 same grant), the MCP sidecar reopens a closed connection before its next tool call after vetting the host again with the
 checks it made at join (a host that now fails them is not reconnected to), and `HostConfig.authenticated_patience` /
