@@ -37,16 +37,40 @@ pub struct PendingApproval {
     pub origins: Vec<String>,
 }
 
+/// Where a room's feed can be read without the server: the host itself, or a guest's connection.
+#[derive(Clone)]
+pub enum FeedSource {
+    Host(Arc<Host>),
+    Guest { client: Arc<Client>, me: String },
+}
+
+impl FeedSource {
+    /// This member's id in the feed (`host` for the host).
+    pub fn me(&self) -> &str {
+        match self {
+            FeedSource::Host(_) => "host",
+            FeedSource::Guest { me, .. } => me,
+        }
+    }
+
+    pub async fn feed(&self, since: u64) -> Result<playbox_net::chat::Feed> {
+        match self {
+            FeedSource::Host(h) => Ok(h.feed(since)),
+            FeedSource::Guest { client, .. } => client.feed(since).await,
+        }
+    }
+}
+
 pub struct Server {
     pending: Option<PendingApproval>,
-    host: Option<Host>,
+    host: Option<Arc<Host>>,
     host_repo: Option<PathBuf>,
     room_name: Option<String>,
     is_replica: bool,
     runtime_name: Option<String>,
-    client: Option<Client>,
+    client: Option<Arc<Client>>,
     /// Other hosts of the room this guest has connected to (replicas), with the same grant.
-    extra: Vec<Client>,
+    extra: Vec<Arc<Client>>,
     /// Which of `extra` serves calls; `None` means the primary in `client`.
     active: Option<usize>,
     member_id: Option<String>,
@@ -340,9 +364,21 @@ impl Server {
 
     /// Treat `text` as copied from another member (`origin`), as if a task had returned it. For front ends
     /// that learn of peer text some other way, and for tests.
-    #[doc(hidden)]
     pub fn mark_untrusted(&mut self, text: &str, origin: &str) {
         self.guard.tracker.register(text, &Source::untrusted(origin));
+    }
+
+    /// A handle for reading the room feed while another call holds the server. `None` outside a room.
+    pub fn feed_source(&self) -> Option<FeedSource> {
+        if self.client.is_some() {
+            let client = match self.active {
+                Some(i) => self.extra[i].clone(),
+                None => self.client.clone()?,
+            };
+            Some(FeedSource::Guest { client, me: self.member_id.clone().unwrap_or_default() })
+        } else {
+            self.host.clone().map(FeedSource::Host)
+        }
     }
 
     pub fn log_path(&self) -> &Path {
@@ -466,7 +502,7 @@ impl Server {
     async fn refresh_connections(&mut self) {
         let args = self.join_args.clone().unwrap_or(Value::Null);
         let mut slots: Vec<Option<usize>> = Vec::new();
-        if self.client.as_ref().is_some_and(Client::is_closed) {
+        if self.client.as_ref().is_some_and(|c| c.is_closed()) {
             slots.push(None);
         }
         slots.extend(self.extra.iter().enumerate().filter(|(_, c)| c.is_closed()).map(|(i, _)| Some(i)));
@@ -488,8 +524,8 @@ impl Server {
                 continue;
             }
             match slot {
-                None => self.client = Some(fresh),
-                Some(i) => self.extra[i] = fresh,
+                None => self.client = Some(Arc::new(fresh)),
+                Some(i) => self.extra[i] = Arc::new(fresh),
             }
             self.record("reconnected", b"host connection reopened after it was closed");
         }
@@ -657,7 +693,7 @@ impl Server {
                 None => Host::open(&dir, transport, cfg).await?,
             };
             self.is_replica = s(a, "replica_of").is_some();
-            self.host = Some(host);
+            self.host = Some(Arc::new(host));
             self.host_repo = repo;
             self.room_name = Some(name.to_string());
             self.runtime_name = runtime.map(str::to_string);
@@ -732,7 +768,7 @@ impl Server {
             None => store::home().join("workspaces").join(&member[..12.min(member.len())]),
         };
         playbox_git::init(&ws, "main").await.context("preparing the workspace")?;
-        self.client = Some(client);
+        self.client = Some(Arc::new(client));
         self.join_args = Some(a.clone());
         self.member_id = Some(member.clone());
         self.workspace = Some(ws.clone());
@@ -780,7 +816,7 @@ impl Server {
         client.echo("use_host").await.map_err(|e| anyhow!("that host did not accept your grant: {e:#}"))?;
         let _ = store::append_kept(&self.log_path, &self.key, "host_attestation", att.text.as_bytes(), store::now_ms());
         let id = client.host_id().to_string();
-        self.extra.push(client);
+        self.extra.push(Arc::new(client));
         self.active = Some(self.extra.len() - 1);
         Ok(json!({
             "active_host": id,

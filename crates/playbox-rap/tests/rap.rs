@@ -42,6 +42,18 @@ async fn start_approving(wait: Duration) -> (String, tempfile_dir::Dir) {
     (base, home)
 }
 
+/// As `start`, also returning the `Rap` so a test can hold its server the way a long call does.
+async fn start_rap() -> (String, tempfile_dir::Dir, std::sync::Arc<Rap>) {
+    pin_approver();
+    let home = tempfile_dir::Dir::new();
+    let server = Server::new(home.path()).unwrap();
+    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let rap = Rap::new(server, TOKEN.into(), vec![], base.clone());
+    tokio::spawn(serve(l, rap.clone()));
+    (base, home, rap)
+}
+
 async fn start() -> (String, tempfile_dir::Dir) {
     pin_approver();
     let home = tempfile_dir::Dir::new();
@@ -368,6 +380,81 @@ async fn closing_a_thread_ends_its_subscriptions() {
     assert_eq!(c.post(&url).bearer_auth(TOKEN).json(&json!({"thread_id": "thread-1"})).send().await.unwrap().status(), 200);
     let end = wait_for(&mut rx, "subscription_event", |m| m["final"] == true).await;
     assert!(end["text"].as_str().unwrap().contains("thread closed"));
+}
+
+#[tokio::test]
+async fn room_events_flow_while_a_long_call_holds_the_server() {
+    let (base, h, rap) = start_rap().await;
+    let (cb, mut rx) = receiver().await;
+    let repo = git_repo(&h);
+    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
+    wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
+    call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
+    wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
+
+    // A delegated task would hold the server like this for as long as it runs.
+    let mut busy = rap.lock_server().await;
+    busy.call("playbox_say", &json!({"text": "said during a long call"})).await;
+    let ev = wait_for(&mut rx, "subscription_event", |_| true).await;
+    let item: Value = serde_json::from_str(ev["text"].as_str().unwrap()).unwrap();
+    assert_eq!(item["text"], "said during a long call");
+    drop(busy);
+}
+
+#[tokio::test]
+async fn another_members_words_wait_for_the_server_so_they_are_marked_first() {
+    let (base, h, rap) = start_rap().await;
+    let (cb, mut rx) = receiver().await;
+    let repo = git_repo(&h);
+    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
+    let made = wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
+    let made: Value = serde_json::from_str(made["text"].as_str().unwrap()).unwrap();
+    call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
+    wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
+
+    let guest_home = tempfile_dir::Dir::new();
+    let mut guest = Server::new(guest_home.path()).unwrap();
+    let joined = guest
+        .call("playbox_join", &json!({"link": made["link"], "local": true, "workspace": guest_home.path().join("ws")}))
+        .await;
+    assert_eq!(joined["isError"], false, "{joined}");
+
+    let busy = rap.lock_server().await;
+    guest.call("playbox_say", &json!({"text": "from the guest"})).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    while let Ok(m) = rx.try_recv() {
+        assert!(
+            !(m["type"] == "subscription_event" && m["text"].as_str().unwrap_or("").contains("from the guest")),
+            "sent before the server could mark it untrusted: {m}"
+        );
+    }
+    drop(busy);
+    let ev = wait_for(&mut rx, "subscription_event", |m| m["text"].as_str().unwrap_or("").contains("from the guest")).await;
+    let item: Value = serde_json::from_str(ev["text"].as_str().unwrap()).unwrap();
+    assert_eq!(item["untrusted"], true);
+}
+
+#[tokio::test]
+async fn cancel_stops_a_call_that_is_waiting_and_answers_it_once() {
+    let (base, _h, rap) = start_rap().await;
+    let (cb, mut rx) = receiver().await;
+    let busy = rap.lock_server().await;
+    call(&base, &cb, "slow", "playbox_status", json!({})).await;
+    let r = reqwest::Client::new()
+        .post(format!("{base}/cancel_tool_call"))
+        .bearer_auth(TOKEN)
+        .json(&json!({"thread_id": "thread-1", "tool_call_id": "slow"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let done = wait_for(&mut rx, "tool_result", |m| m["id"] == "slow").await;
+    assert_eq!(done["text"], "error: cancelled");
+    drop(busy);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    while let Ok(m) = rx.try_recv() {
+        assert_ne!(m["id"], "slow", "a cancelled call answered again: {m}");
+    }
 }
 
 mod tempfile_dir {

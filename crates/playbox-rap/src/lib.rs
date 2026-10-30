@@ -19,7 +19,7 @@ use axum::{
 };
 use ed25519_dalek::SigningKey;
 use playbox_core::{store, taint::issue_capability};
-use playbox_mcp::{tool_list, PendingApproval, Server};
+use playbox_mcp::{tool_list, FeedSource, PendingApproval, Server};
 use rap_protocol::{
     send_subscription_event, send_tool_result, send_user_choice, PlainCallbackClient, RapInvocation, ToolDef,
     ToolsetManifest,
@@ -49,8 +49,17 @@ pub struct Rap {
     answers: Mutex<HashMap<String, oneshot::Sender<usize>>>,
     answer_wait: Duration,
     subs: Mutex<HashMap<String, Sub>>,
+    /// Tool calls in flight, so a cancel can stop one.
+    running: Mutex<HashMap<String, Running>>,
     /// Pause between feed polls for a subscription, unless the call asks for another.
     poll: Duration,
+}
+
+/// A tool call in flight. `call` is the invocation as received, to answer it if it is cancelled.
+struct Running {
+    group: String,
+    call: Value,
+    task: tokio::task::AbortHandle,
 }
 
 /// A running room-event subscription, kept so it can be cancelled.
@@ -76,6 +85,7 @@ impl Rap {
             approver: None,
             answers: Mutex::new(HashMap::new()),
             subs: Mutex::new(HashMap::new()),
+            running: Mutex::new(HashMap::new()),
             poll: Duration::from_secs(2),
             answer_wait: Duration::from_secs(600),
         })
@@ -99,9 +109,16 @@ impl Rap {
             approver: Some(approver),
             answers: Mutex::new(HashMap::new()),
             subs: Mutex::new(HashMap::new()),
+            running: Mutex::new(HashMap::new()),
             poll: Duration::from_secs(2),
             answer_wait,
         })
+    }
+
+    /// The server, for tests that need to hold it the way a long call does.
+    #[doc(hidden)]
+    pub async fn lock_server(&self) -> tokio::sync::MutexGuard<'_, Server> {
+        self.server.lock().await
     }
 
     fn callback_allowed(&self, url: &str) -> bool {
@@ -210,7 +227,16 @@ async fn invoke(
         rap.subscribe(inv).await;
         return StatusCode::OK;
     }
-    tokio::spawn(rap_protocol::log_panic("playbox-rap invoke", async move {
+    let key = inv.id.to_string();
+    let group = inv.group_id.to_string();
+    let call = serde_json::to_value(&inv).unwrap_or_default();
+    let done = Arc::clone(&rap);
+    let worker = Arc::clone(&rap);
+    let finished = key.clone();
+    // Held across the spawn so the call cannot finish and look itself up before it is registered.
+    let mut running = rap.running.lock().await;
+    let task = tokio::spawn(rap_protocol::log_panic("playbox-rap invoke", async move {
+        let rap = worker;
         let args = if inv.arguments.is_null() {
             json!({})
         } else {
@@ -247,7 +273,9 @@ async fn invoke(
             };
         }
         send_tool_result(&rap.client, &inv, &result_text(&out), None, false).await;
+        done.running.lock().await.remove(&finished);
     }));
+    running.insert(key, Running { group, call, task: task.abort_handle() });
     StatusCode::OK
 }
 
@@ -312,29 +340,51 @@ impl Rap {
             old.task.abort();
         }
         let task = tokio::spawn(rap_protocol::log_panic("playbox-rap subscription", async move {
+            // Read the feed without the server, so a long call (a delegated task) does not hold events
+            // back. The server is only needed to find the feed and to mark what others said as untrusted.
+            let mut source: Option<FeedSource> = rap.server.lock().await.feed_source();
             // Note where the feed ends before confirming: an agent that reacts to the confirmation by
             // speaking right away must not have that item mistaken for old news. A cursor far ahead is
             // pulled back to the head of the feed. Outside a room there is nothing to follow yet, so
             // start from the beginning and let the first items through.
-            let (first, _) = rap.run("playbox_feed", &json!({"since": u64::MAX})).await;
-            let mut since = if first["isError"].as_bool() == Some(true) {
-                0
-            } else {
-                serde_json::from_str::<Value>(&result_text(&first)).ok().and_then(|f| f["next"].as_u64()).unwrap_or(0)
+            let mut since = match &source {
+                Some(src) => src.feed(u64::MAX).await.map_or(0, |f| f.next),
+                None => 0,
             };
             send_tool_result(&rap.client, &inv, "subscribed to room events from now on", None, true).await;
             let deadline = tokio::time::Instant::now() + max;
             while tokio::time::Instant::now() < deadline {
-                let (out, _) = rap.run("playbox_feed", &json!({"since": since})).await;
-                if out["isError"].as_bool() != Some(true) {
-                    let feed: Value = serde_json::from_str(&result_text(&out)).unwrap_or_default();
-                    for item in feed["items"].as_array().into_iter().flatten() {
-                        let mut ev = item.clone();
-                        ev["untrusted"] = json!(item["kind"] == "say");
-                        send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), &ev.to_string(), true, false).await;
-                    }
-                    if let Some(n) = feed["next"].as_u64() {
-                        since = n;
+                if source.is_none() {
+                    // Not in a room when subscribed, or the connection was replaced. Never wait on a busy server.
+                    source = rap.server.try_lock().ok().and_then(|s| s.feed_source());
+                }
+                if let Some(src) = &source {
+                    match src.feed(since).await {
+                        Ok(feed) => {
+                            let mut complete = true;
+                            for item in &feed.items {
+                                if item.kind == "say" && item.from != src.me() {
+                                    // Other members' words are untrusted from here on, so copying them into
+                                    // a command needs approval. Marking needs the server; if a long call holds
+                                    // it, stop here and try again next tick rather than send them unmarked.
+                                    match rap.server.try_lock() {
+                                        Ok(mut s) => s.mark_untrusted(&item.text, &format!("chat:{}", item.seq)),
+                                        Err(_) => {
+                                            complete = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                let mut ev = serde_json::to_value(item).unwrap_or_default();
+                                ev["untrusted"] = json!(item.kind == "say");
+                                send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), &ev.to_string(), true, false).await;
+                                since = item.seq;
+                            }
+                            if complete {
+                                since = since.max(feed.next);
+                            }
+                        }
+                        Err(_) => source = None,
                     }
                 }
                 tokio::time::sleep(ms).await;
@@ -376,6 +426,21 @@ async fn cancel(State(rap): State<Arc<Rap>>, h: HeaderMap, Json(c): Json<Cancel>
         return StatusCode::UNAUTHORIZED;
     }
     rap.end_subs(|id, s| id == c.tool_call_id && s.group == c.thread_id, "subscription ended: cancelled").await;
+    let stopped = {
+        let mut running = rap.running.lock().await;
+        match running.get(&c.tool_call_id) {
+            Some(r) if r.group == c.thread_id => running.remove(&c.tool_call_id),
+            _ => None,
+        }
+    };
+    if let Some(run) = stopped {
+        // The call is dropped where it stands. A task already started on the host is not stopped.
+        run.task.abort();
+        rap.answers.lock().await.remove(&c.tool_call_id);
+        if let Ok(inv) = serde_json::from_value::<RapInvocation>(run.call) {
+            send_tool_result(&rap.client, &inv, "error: cancelled", None, false).await;
+        }
+    }
     StatusCode::OK
 }
 
