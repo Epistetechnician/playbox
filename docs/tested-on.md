@@ -42,6 +42,7 @@ Each run is in the host's audit log (valid hash chain, 71 entries at the end).
 | Injection guard (`PLAYBOX_APPROVERS` set) | A command copied from another task's output was refused; `playbox approve` capability worked once; reuse and use for a different command were refused. |
 | Memory quarantine (two homes) | Other author's entry stayed quarantined until a pinned reviewer accepted it; an unpinned reviewer was refused. |
 | Host identity (`--min-host-tier t1`, Mac Secure Enclave) | With the device key unpinned the join was refused (host achieves T0); after `playbox pin add secure-enclave <fp>` the same link joined at verified T1. Then repeated by the friend's agent in India after pinning the key (sent outside the link): joined at verified T1, notes "device key is pinned". |
+| Steering room (GPT-2 in Docker on the Mac, layer 6, sentiment direction), friend's agent over a relay-only link | Worked: two steered runs and a probe, each `Completed`. The spec digests (`83fa65c5…`, `fdc2eb34…`) and weights hash (`282acf3d…`) equal those of my local guest's runs of the same prompts, so both sides applied the same edit to the same model. Receipts are signed by the host; the generated text is untrusted. |
 
 **Found:** `playbox shell` could not take a multi-line capability, so `key=@file` argument values were added. Invites are single-use, so a
 guest whose session ends must be given a new link, and a guest's workspace belongs to its member id.
