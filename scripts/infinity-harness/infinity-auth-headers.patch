@@ -1,0 +1,262 @@
+diff --git a/crates/infinity-agent-core/src/tools/config.rs b/crates/infinity-agent-core/src/tools/config.rs
+index 7bae511..7081281 100644
+--- a/crates/infinity-agent-core/src/tools/config.rs
++++ b/crates/infinity-agent-core/src/tools/config.rs
+@@ -8,6 +8,9 @@ pub enum ToolSetConfig {
+     /// RAP toolset server — tools are loaded via `.well-known/rap-toolset`.
+     ToolsetServer {
+         server_url: String,
++        /// Headers sent with every request to this server (for example `Authorization`).
++        #[serde(default, skip_serializing_if = "HashMap::is_empty")]
++        headers: HashMap<String, String>,
+         #[serde(default, skip_serializing_if = "Option::is_none")]
+         id: Option<String>,
+     },
+diff --git a/crates/infinity-daemon/src/rap_servers.rs b/crates/infinity-daemon/src/rap_servers.rs
+index 8531287..094884a 100644
+--- a/crates/infinity-daemon/src/rap_servers.rs
++++ b/crates/infinity-daemon/src/rap_servers.rs
+@@ -68,7 +68,10 @@ enum ServerSpec {
+         headers: HashMap<String, String>,
+     },
+     /// A pre-existing external server URL; never started or stopped by us.
+-    External { url: String },
++    External {
++        url: String,
++        headers: HashMap<String, String>,
++    },
+ }
+ 
+ #[expect(
+@@ -120,6 +123,21 @@ impl ManagedRapServer {
+         }
+     }
+ 
++    /// `client`, plus this server's configured headers for requests to it.
++    pub fn scope(&self, client: SimpleHttpClient) -> SimpleHttpClient {
++        match &self.spec {
++            ServerSpec::External { url, headers } => {
++                client.with_headers_for(url.clone(), headers.clone())
++            }
++            _ => client,
++        }
++    }
++
++    /// A client for requests to this server.
++    pub fn http_client(&self) -> SimpleHttpClient {
++        self.scope(SimpleHttpClient::new())
++    }
++
+     /// The server's base URL if it is currently up.
+     pub async fn current_base_url(&self) -> Option<String> {
+         match &*self.state.lock().await {
+@@ -158,10 +176,10 @@ impl ManagedRapServer {
+                         .await?;
+                 (format!("http://127.0.0.1:{port}"), None, Some(task))
+             }
+-            ServerSpec::External { url } => (url.clone(), None, None),
++            ServerSpec::External { url, .. } => (url.clone(), None, None),
+         };
+ 
+-        match fetch_manifest(&base_url).await {
++        match fetch_manifest(&base_url, &self.http_client()).await {
+             Ok(manifest) => {
+                 *state = ServerState::Up {
+                     base_url,
+@@ -227,8 +245,10 @@ impl ManagedRapServer {
+     }
+ }
+ 
+-async fn fetch_manifest(base_url: &str) -> Result<ToolsetManifest, BoxError> {
+-    let http = SimpleHttpClient::new();
++async fn fetch_manifest(
++    base_url: &str,
++    http: &SimpleHttpClient,
++) -> Result<ToolsetManifest, BoxError> {
+     let url = format!("{}/.well-known/rap-toolset", base_url.trim_end_matches('/'));
+     let (status, body) = http
+         .get(&url)
+@@ -512,7 +532,7 @@ impl SessionRapManager {
+                         tools.push(Rc::new(ManagedRapTool {
+                             descriptor: def.into(),
+                             server: server.clone(),
+-                            http_client: http_client.clone(),
++                            http_client: server.scope(http_client.clone()),
+                         }));
+                     }
+                 }
+@@ -611,7 +631,13 @@ impl ThreadConfigSource<ChannelSender, SimpleHttpClient> for SessionRapManager {
+         Ok(ThreadConfig {
+             tools: toolset.tools.clone(),
+             extra_system_prompt: Some(toolset.extra_system_prompt.clone()),
+-            rap_notifier: Some(RapNotifier::new(urls, SimpleHttpClient::new())),
++            rap_notifier: Some(RapNotifier::new(
++                urls,
++                toolset
++                    .servers
++                    .iter()
++                    .fold(SimpleHttpClient::new(), |c, s| s.scope(c)),
++            )),
+         })
+     }
+ }
+@@ -632,9 +658,17 @@ fn collect_server_specs(
+     let mut servers = Vec::new();
+     for entry in merged.tool_sets {
+         let (id, spec) = match entry {
+-            ToolSetConfig::ToolsetServer { server_url, id } => {
+-                (id, ServerSpec::External { url: server_url })
+-            }
++            ToolSetConfig::ToolsetServer {
++                server_url,
++                headers,
++                id,
++            } => (
++                id,
++                ServerSpec::External {
++                    url: server_url,
++                    headers,
++                },
++            ),
+             ToolSetConfig::ToolsetCommand { command, id, .. } => (
+                 id,
+                 ServerSpec::Command {
+diff --git a/crates/rap-client/src/http.rs b/crates/rap-client/src/http.rs
+index 90cd0ff..1b585f6 100644
+--- a/crates/rap-client/src/http.rs
++++ b/crates/rap-client/src/http.rs
+@@ -43,6 +43,9 @@ impl std::error::Error for SimpleHttpError {}
+ #[derive(Clone)]
+ pub struct SimpleHttpClient {
+     client: reqwest::Client,
++    /// Extra headers for requests whose URL starts with the given prefix, e.g. a bearer token for one
++    /// tool server. Shared by clones.
++    scoped_headers: Arc<Vec<(String, Vec<(String, String)>)>>,
+ }
+ 
+ impl Default for SimpleHttpClient {
+@@ -56,8 +59,33 @@ impl SimpleHttpClient {
+     pub fn new() -> Self {
+         Self {
+             client: reqwest::Client::new(),
++            scoped_headers: Arc::new(Vec::new()),
+         }
+     }
++
++    /// Send `headers` with every request to a URL starting with `url_prefix` (and to no other host).
++    pub fn with_headers_for(
++        mut self,
++        url_prefix: impl Into<String>,
++        headers: impl IntoIterator<Item = (String, String)>,
++    ) -> Self {
++        let headers: Vec<(String, String)> = headers.into_iter().collect();
++        if !headers.is_empty() {
++            Arc::make_mut(&mut self.scoped_headers).push((url_prefix.into(), headers));
++        }
++        self
++    }
++
++    fn scoped(&self, url: &str, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
++        for (prefix, headers) in self.scoped_headers.iter() {
++            if url.starts_with(prefix.as_str()) {
++                for (name, value) in headers {
++                    req = req.header(name.as_str(), value.as_str());
++                }
++            }
++        }
++        req
++    }
+ }
+ 
+ #[async_trait]
+@@ -66,9 +94,12 @@ impl HttpClient for SimpleHttpClient {
+ 
+     async fn post(&self, url: &str, body: &str) -> Result<u16, SimpleHttpError> {
+         let resp = self
+-            .client
+-            .post(url)
+-            .header("content-type", "application/json")
++            .scoped(
++                url,
++                self.client
++                    .post(url)
++                    .header("content-type", "application/json"),
++            )
+             .body(body.to_owned())
+             .send()
+             .await
+@@ -78,9 +109,10 @@ impl HttpClient for SimpleHttpClient {
+ 
+     async fn get(&self, url: &str) -> Result<(u16, Vec<u8>), SimpleHttpError> {
+         let resp = self
+-            .client
+-            .get(url)
+-            .header("accept", "application/json")
++            .scoped(
++                url,
++                self.client.get(url).header("accept", "application/json"),
++            )
+             .send()
+             .await
+             .map_err(|e| SimpleHttpError(e.to_string()))?;
+diff --git a/crates/rap-client/tests/scoped_headers.rs b/crates/rap-client/tests/scoped_headers.rs
+new file mode 100644
+index 0000000..e644b1f
+--- /dev/null
++++ b/crates/rap-client/tests/scoped_headers.rs
+@@ -0,0 +1,34 @@
++use rap_client::http::{HttpClient, SimpleHttpClient};
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::net::TcpListener;
++
++/// Serve one request and return the raw request head.
++async fn serve_once(listener: TcpListener) -> String {
++    let (mut sock, _) = listener.accept().await.unwrap();
++    let mut buf = vec![0u8; 4096];
++    let n = sock.read(&mut buf).await.unwrap();
++    sock.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
++        .await
++        .unwrap();
++    String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase()
++}
++
++#[tokio::test]
++async fn headers_go_only_to_the_server_they_are_scoped_to() {
++    let scoped = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let other = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let scoped_url = format!("http://{}", scoped.local_addr().unwrap());
++    let other_url = format!("http://{}", other.local_addr().unwrap());
++    let client = SimpleHttpClient::new().with_headers_for(
++        scoped_url.clone(),
++        [("Authorization".to_owned(), "Bearer secret-token".to_owned())],
++    );
++
++    let a = tokio::spawn(serve_once(scoped));
++    client.get(&format!("{scoped_url}/x")).await.unwrap();
++    assert!(a.await.unwrap().contains("authorization: bearer secret-token"));
++
++    let b = tokio::spawn(serve_once(other));
++    client.post(&format!("{other_url}/x"), "{}").await.unwrap();
++    assert!(!b.await.unwrap().contains("secret-token"));
++}
+diff --git a/docs/docs/infinity-code/rap-servers.md b/docs/docs/infinity-code/rap-servers.md
+index 99d57a1..5a04c73 100644
+--- a/docs/docs/infinity-code/rap-servers.md
++++ b/docs/docs/infinity-code/rap-servers.md
+@@ -65,4 +65,16 @@ infinity rap install --user --crate rap-github-event-poller
+ }
+ ```
+ 
++A server that requires authentication can be given `headers`, which are sent with every request to that server (discovery, invocations and lifecycle notifications) and to no other host:
++
++```json
++{
++  "type": "toolset_server",
++  "server_url": "http://127.0.0.1:3010",
++  "headers": { "Authorization": "Bearer <token>" }
++}
++```
++
++Headers are stored in plain text in the config file, so keep it private. They are not applied to session migration requests.
++
+ Installed servers appear in the same file as `toolset_command` entries, which spawn the server binary on demand and read its port from stdout. [MCP servers](./configuring-mcp.md) use the `mcp_server` and `http_mcp_server` entry types in the same `tool_sets` array.
