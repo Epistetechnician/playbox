@@ -693,6 +693,21 @@ the host's request limits. It does not cover a cross-family mapper such as SwaT,
 A larger-model test on a CUDA machine was not run: no CUDA machine is available here (this Mac's GPU runs the fast
 path; the Raspberry Pi has none). Everything needed is in `fast.py` with `--device cuda`, which I have not exercised.
 
+### E6 round 5: 7B/14B/32B on one H100 (via `gman`)
+
+bfloat16, CUDA, 32 contexts, 16 nulls, 12 generated tokens, 2 layers x 2 strengths x 2 traits (8 cells per model). Results: `steer/results/round5_cuda/`, judge output in `judge/results/e6/`. Cost $0.98 for 11.7 minutes of H100.
+
+| Model | Lexicon CI > 0 | Classifier CI > 0 | Pairwise judge CI > 0 | Judge: no `sem_*` null as far |
+|---|---|---|---|---|
+| Qwen2.5-7B | 3/8 | 8/8 | 8/8 | 8/8 |
+| Qwen2.5-14B | 1/8 | 5/8 | 7/8 | 7/8 |
+| Qwen2.5-32B | 2/8 | 4/8 | 6/8 | 8/8 |
+
+- The 7B result on CUDA matches the earlier Mac bf16 run (next-token +3.10 vs +3.12), so the fast path is device-consistent.
+- Next-token effect is specific to the trait in every cell. It is smaller at 14B/32B.
+- Later-text effect, as read by the independent judges, is present in most cells at every size, but weaker and less consistent at 14B/32B (steered text is unchanged from clean in about 45% of rows vs 5% at 7B). I see no clean scale trend beyond "7B is strongest"; the lexicon undercounts, as in round 3.
+- Caveats: one H100, one run per cell, two traits, two layers, bf16 only; 14B/32B layers were not tuned. One 32B fear cell has a significantly negative lexicon effect.
+
 ## 5. Threat model additions
 
 | Threat | Mitigation (built, with its test) | Remaining gap |
