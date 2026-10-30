@@ -281,7 +281,7 @@ side-effect metric. Status first, then the one result so far.
 | **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own projection measure, and an independent classifier and a pairwise judge agree it reads as more positive (strongest at strength 0.2). A second trait (formality) shows the same pattern against random directions but not against prompting. |
 | **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
 | **E3** transfer across models | Not built. |
-| **E4** config-search lineage | Built and run once on GPT-2 (below): the search accepted a sensible configuration and its lineage verified in Rust; it did not beat a hand-picked default. |
+| **E4** config-search lineage | Built; run three times on GPT-2 (below): unpaired bound, paired bound, and paired bound with a KL penalty. Each search accepted a sensible configuration and its lineage verified in Rust. None beat a hand-picked setting by a clear margin. |
 | **E5** safety-direction handling | The guard and default-deny behavior are built and tested (section 5); no research claim is made. |
 
 ### E1: does a steered trait spread to agents that only read its text?
@@ -501,12 +501,60 @@ is the same configuration as grid layer 6, 0.2.)
   candidate's gain over the accepted one is +0.16 [−0.01, +0.36] paired, against a lineage lower bound of −2.31.
   Paired, that gain is borderline rather than clearly absent, so the rejection looks right but only just, and the
   lineage would also reject small real gains that a paired test would see. A paired mode (when two variants are
-  scored on the same ordered holdout items) is a reasonable change to `Lineage::improvement`; it was not made here.
+  scored on the same ordered holdout items) is now built (`Lineage::improvement_paired`); the follow-up below uses it.
 - **Overfitting resistance in general.** Four holdout queries is a tiny budget; the cost field records it, and a
   larger search would spend more of the holdout.
 - **That the scores are honest.** The signer of a variant is the searcher; the numbers came from the custodian's
   run, and nothing in the variant binds them to the host receipts of those runs.
 - One model, one trait, one run, one seed for the search.
+
+#### E4 follow-up: the paired bound, and a KL-penalized score
+
+`Lineage::improvement_paired` bounds the mean of per-item differences instead of a difference of means. It is valid
+only when the evaluator scores the same items in the same order for every variant (a fixed holdout), so **the
+verifier asks for it** (`playbox_lineage_check ... paired: true`, `McpLineage(paired=True)`); a variant's author cannot,
+because an author could reorder scores to manufacture a gain. It refuses unequal numbers of scores. Core tests: a
+0.02 gain under a wide spread of item difficulty is invisible to the unpaired bound and significant to the paired one;
+an inconsistent gain is not made significant by pairing. The MCP test drives the same case through the real tool.
+
+Two more runs on GPT-2, same setup, dev set, holdout, baselines and search seed as above (the holdout scores of a
+given configuration are identical across runs, so differences are decisions, not noise). Reports:
+[paired](e4-gpt2-search-paired.json), [paired with a KL penalty](e4-gpt2-search-paired-kl.json).
+
+*Paired bound.* The first move was accepted as before (layer 6, strength 0.2, lower bound +2.31). Then the strength-0.4
+candidate that the unpaired bound had rejected (lower bound −2.31) was **accepted**, with a paired lower bound of
+**+0.0012** on a gain of +0.16: the paired 95% interval for that gain is [−0.01, +0.36], so this is a borderline call
+that a one-sided 95% bound happens to put just above zero. Layer 7 at 0.4 was rejected (holdout lower bound −0.14), and
+strengths 0.6 and 0.8 were stopped by the KL cap on dev. The search ended at layer 6, 0.4: holdout effect +4.25, mean KL
+0.54. Against the same baselines it is indistinguishable from the hand-picked E1 default (found − default +0.02
+[−0.09, +0.11], at 1.6x the KL) and from layer 6 / 0.2 (+0.16 [−0.01, +0.36], at 3.6x the KL). 4 holdout queries.
+
+*What that shows.* The paired bound does what it was built to do, and it also shows its price: it accepted a change
+whose evidence was a hair above the line and which costs 3.6 times the side effects for no clear gain. A bound on the
+score alone cannot see that cost.
+
+*Paired bound with a KL penalty.* The score per prompt became classifier effect − 4 × KL (a weight I fixed before
+running, in classifier logits per nat; it is a design choice, not a measured quantity). The search accepted layer 6,
+strength 0.1 (holdout +3.44, KL 0.057, paired lower bound +1.70) and then found nothing that beat it on dev: strengths
+0.067 and 0.15 and layer 8 at 0.1 were all lower on dev, so no further holdout queries were spent (2 in total). On the
+holdout, scored the same way, found − baseline: E1 default +0.55 [−0.40, +1.10]; layer 6 / 0.2 −0.06 [−0.99, +0.53];
+layer 8 / 0.2 +0.26 [−1.01, +1.48]; layer 6 / 0.4 +1.33 [+0.42, +1.89]; layers 4 / 0.2 and 0.4 +1.69 [+0.42, +3.21] and
++1.49 [+0.25, +2.81]; prompting +2.03 [−0.04, +4.20]. So under a penalty on side effects the search picked the gentlest
+setting that still works, which a person would also pick; it is not distinguishable from three hand-chosen settings
+and is clearly better than the strong ones.
+
+**What these two runs do not show.** That the paired bound is better than the unpaired one in general: it made a
+different, borderline call on one candidate. That a KL penalty of 4 is the right weight: another weight picks another
+setting. One model, one trait, one search seed each, 2 to 4 holdout queries. The search space is small enough that a
+short grid finds the same settings; no run here shows the search beating a person.
+
+**An operational bug this found.** Both runs of the penalized search first failed for the same reason: the host closes
+an authenticated connection that sat silent for 15 minutes (by design), and the custodian's connection was idle for
+about 17 minutes while the searcher worked. The sidecar did not reconnect, so every later call failed with "closed by
+peer". Any agent idle that long would have hit it. Now `Client::is_closed` / `Client::reconnect` exist (same identity,
+same grant), the MCP sidecar reopens a closed connection before its next tool call after vetting the host again with the
+checks it made at join (a host that now fails them is not reconnected to), and `HostConfig.authenticated_patience` /
+`playbox_create idle_patience_secs` make the limit configurable. Tested at both levels with a two-second limit.
 
 **E5.** Confirm that the grant refuses ablation of a guarded direction and the audit log records the attempt. The
 refusal is tested; the audit record for `steer_denied` is written for authorization failures and was not asserted in
@@ -746,7 +794,7 @@ Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -
 - **S4 (part)** MCP tool and CLI flags (MCP end-to-end test drives two real sidecars with Docker); E1 harness with
   arms and statistics (11 orchestrator tests with a fake backend, including shard merging); a real GPT-2 run at 64 seeds (section 4).
 
-Not built: a paired mode for the lineage's gain bound; binding a variant's scores to host receipts; the transfer experiment (E3); a trained
+Not built: binding a variant's scores to host receipts; the transfer experiment (E3); a trained
 detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a latent-score (cardinal-harness style) judge, though a paired pairwise judge exists; a GPU
 path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
 
