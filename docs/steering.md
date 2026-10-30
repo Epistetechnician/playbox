@@ -1,7 +1,7 @@
 # Steering rooms: activation steering as a Playbox use case
 
 Status (2026-10-29): steering hosting, grants, receipts, guards, the MCP and CLI surfaces and an E1 harness are built
-and tested (section 6); the evaluator loop, transfer, detection and recipe import are not. One experiment has been run, on
+and tested (section 6); the evaluator and lineage loop (E4) is built and was run once; transfer, detection and recipe import are not. One experiment has been run, on
 GPT-2, with a result that is real but narrow (section 4). Research claims below come from abstracts and search summaries, not from full-text
 reads, unless marked "read". Verify before citing.
 
@@ -234,11 +234,25 @@ automatically, so no result should be quoted above its stated ceiling.
 
 ### 3.5 Evaluator and lineage (the "RSI" loop)
 
-The search-over-configurations loop is **not wired up yet**. What exists: the per-run outputs it would score (text,
-KL to the clean model, probe projections), signed receipts to cite as evidence, and the E1 harness. The existing
-`evaluator` and `Lineage` types in `playbox-core` are unchanged and untried on steering specs. Honest label stays:
-this would be automated configuration search with a fixed evaluator, and becomes self-improvement only if the loop
-also updates something persistent.
+The loop is built (`orchestrator/playbox_orchestrator/steer_search.py`) on the existing `Evaluator`, `Holdout`,
+`Variant` and `Lineage` types, which this work did not change. What was added is the paperwork to use them from an
+agent: MCP tools `playbox_holdout_commit` / `_prove` / `_verify`, `playbox_evaluator_issue` and
+`playbox_variant_sign` (next to the existing `playbox_lineage_check`).
+
+Roles are separate keys. The **custodian** seals a holdout (a Merkle root over salted items) and signs the evaluator
+before anything else happens; the **searcher** proposes configurations, scores them on a **dev** prompt set it can
+see, and signs variants; only the custodian runs candidates on the holdout, and the searcher sees per-prompt scores
+and nothing else about it. A variant's patch is the diff to a single file, `steer/spec.txt`, so the evaluator's
+protected paths (`harness/`, `holdout/`) are never edited by construction, and the lineage refuses a patch that
+would (tested against the real check). A step proposes neighbors of the current best, scores them on dev, drops any
+over a KL cap, sends the best to the custodian only if it beat the current dev score, signs a variant carrying the
+holdout scores, and **accepts it only if the lineage's one-sided lower bound on the gain over its parent is above
+zero**. Every holdout query is recorded as cost in the variant, and a budget caps them.
+
+Honest label stays: this is automated configuration search with a fixed evaluator. It becomes self-improvement only
+if the loop also updates something persistent. What it proves is the procedure; a variant's scores are the author's
+claim, good only as far as the custodian's run that produced them (the variant does not cryptographically bind the
+host receipts of those runs; they are in the report beside it).
 
 ### 3.6 Taint and memory
 
@@ -267,7 +281,7 @@ side-effect metric. Status first, then the one result so far.
 | **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own projection measure, and an independent classifier and a pairwise judge agree it reads as more positive (strongest at strength 0.2). A second trait (formality) shows the same pattern against random directions but not against prompting. |
 | **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
 | **E3** transfer across models | Not built. |
-| **E4** config-search lineage | Not built (section 3.5). |
+| **E4** config-search lineage | Built and run once on GPT-2 (below): the search accepted a sensible configuration and its lineage verified in Rust; it did not beat a hand-picked default. |
 | **E5** safety-direction handling | The guard and default-deny behavior are built and tested (section 5); no research claim is made. |
 
 ### E1: does a steered trait spread to agents that only read its text?
@@ -430,8 +444,68 @@ difference-of-means direction, against a baseline classifier? The probe operatio
 **E3.** Fit a linear map between two models' residual spaces and test whether one's direction steers the other.
 Needs the spec's `scale` field and a second hosted model.
 
-**E4.** Agents search layer, strength and recipe space; compare the best lineage score to a human sweep and to
-prompting. Needs evaluator and lineage wired to steering specs.
+### E4: a search whose gains are checked against a sealed holdout
+
+**Setup (what ran).** GPT-2 small, the sentiment direction from E1, extracted per (site, layer) from the same 12 vs 12
+sentences. Search space: site ∈ {`resid_post`, `mlp_out`}, layer 2 to 10, strength 0.05 to 1.0 norms. Dev set: 24
+prompts the searcher sees; holdout: 32 prompts only the custodian sees, sealed and committed before the search. Score
+per prompt = sentiment classifier score of the steered text minus that of the clean text (the E1 behavioral measure).
+KL cap 0.6 nats/token. Local search from the unsteered root: up to 6 rounds of 3 neighbors, at most 8 holdout
+queries. A third sidecar hosted the model; the searcher and the custodian were two members of that room.
+Report with every step: [e4-gpt2-search.json](e4-gpt2-search.json); run with `judge/experiments/e4_search.py`.
+
+**What happened.** Six rounds were allowed; the search stopped after four because it ran out of untried neighbors.
+It used 12 dev queries and 4 holdout queries (about 18 minutes of the 34-minute run; the rest was the baselines).
+
+| Round | Candidate | Dev score | KL | Decision | Holdout | Lower bound on gain over parent |
+|---|---|---|---|---|---|---|
+| 0 | resid_post, layer 6, 0.2 | +3.96 | 0.15 | **accepted** | +4.09 | +2.31 |
+| 1 | resid_post, layer 6, 0.133 | +3.85 | 0.08 | not better on dev; never sent to the holdout | | |
+| 2 | resid_post, layer 6, 0.4 | +4.11 | 0.49 | rejected: gain not supported on the holdout | +4.25 | −2.31 |
+| 3 | resid_post, layer 8, 0.2 | +4.04 | 0.11 | rejected: gain not supported on the holdout | +3.67 | −3.04 |
+
+The accepted variant's patch is exactly `coef_milli 0` → `coef_milli 200` in `steer/spec.txt`. Rust replayed the
+two-variant chain (`playbox_lineage_check`): significant, lower bound +2.31, total cost 3 holdout queries. An opened
+holdout item (index 5) verified against the published root.
+
+**Against baselines, scored on the same holdout by the same custodian harness** (classifier logit, steered minus
+clean; paired differences are found minus baseline, 95% bootstrap):
+
+| | holdout effect [95% CI] | KL | found − baseline |
+|---|---|---|---|
+| **found** (layer 6, 0.2) | +4.09 [+2.08, +6.28] | 0.15 | |
+| E1 default (layer 6, 0.3) | +4.24 [+2.25, +6.39] | 0.34 | −0.14 [−0.32, −0.01] |
+| grid layer 6, 0.4 | +4.25 [+2.29, +6.37] | 0.54 | −0.16 [−0.36, +0.01] |
+| grid layer 8, 0.2 / 0.4 | +3.67 / +4.12 | 0.12 / 0.40 | +0.42 [−0.17, +1.40] / −0.03 [−0.27, +0.22] |
+| grid layer 4, 0.2 / 0.4 | +2.16 / +3.67 | 0.10 / 0.43 | +1.94 [+0.48, +3.56] / +0.42 [−0.07, +1.28] |
+| prompted baseline | +1.41 [−1.34, +4.33] | 0 | +2.68 [+1.02, +4.58] |
+
+(The grid is six hand-picked points scored after the search on the holdout, outside the search's budget; "found"
+is the same configuration as grid layer 6, 0.2.)
+
+**What this shows.**
+1. The whole procedure works end to end on a real model: a custodian sealed a holdout and issued an evaluator; a
+   different key searched, signed variants, and could not edit the evaluator's files; Rust verified the chain.
+2. The loop did what it is for on the two cases that mattered: both candidates that looked at least as good on dev
+   as the current best were not accepted, because their gain on the holdout was not supported at the lineage's bound.
+3. The configuration it found is a good one: it matches the best of the grid on effect at less than half the side
+   effects (KL 0.15 against 0.34 to 0.54 for the stronger settings), and beats the prompting baseline.
+
+**What it does not show.**
+- **That the search beats a person.** It does not: the hand-picked E1 default is slightly higher on effect (−0.14,
+  interval just excluding zero) at more than twice the KL. The two hold-out-checked rejections were of stronger
+  settings that were barely better. With a space this small (two sites, nine layers, a handful of strengths) the
+  search finds what a short grid finds; the grid here was also scored on the holdout, which favors it.
+- **That the rejections were right.** The lineage's bound treats the 32 prompt scores of each variant as independent
+  samples, but both variants were scored on the *same* 32 prompts. The paired intervals above are much tighter than
+  the lineage's (found − E1 default is ±0.2, while the lineage's bound on a +0.16 gain was −2.31). The lineage is
+  therefore conservative here, and rejects small real gains. A paired mode (when two variants are scored on the same
+  ordered holdout items) would be a reasonable change; it is a change to `Lineage::improvement`, not made here.
+- **Overfitting resistance in general.** Four holdout queries is a tiny budget; the cost field records it, and a
+  larger search would spend more of the holdout.
+- **That the scores are honest.** The signer of a variant is the searcher; the numbers came from the custodian's
+  run, and nothing in the variant binds them to the host receipts of those runs.
+- One model, one trait, one run, one seed for the search.
 
 **E5.** Confirm that the grant refuses ablation of a guarded direction and the audit log records the attempt. The
 refusal is tested; the audit record for `steer_denied` is written for authorization failures and was not asserted in
@@ -598,7 +672,7 @@ from round 2 and a judge on a sample of outputs.
 | A steered peer manipulates the reading agent | Output registered as untrusted; `playbox_steer` needs `Reviewed` prompts (taint test) | The broker is lexical. Persuasion by style is not caught. |
 | Receipt forgery or misuse | Host signature; the client checks host key, spec, and exact output bytes; the ceiling is printed on the receipt | An un-attested host can lie about what it ran. Nothing raises the ceiling to `attested` yet. |
 | An imported public recipe carries an unexpected edit | Not built (section 2c): imports are meant to be untrusted and quarantined | Until built, do not import recipes automatically. |
-| Overfitting a sealed holdout | Not built (section 3.5) | Inherent once it is. |
+| Overfitting a sealed holdout; a variant that edits its own evaluator | Sealed holdout with Merkle proofs, custodian-only holdout runs, a query budget recorded as cost, a patch confined to `steer/spec.txt` and refused if it touches protected paths (`a_custodian_seals...`, `test_the_search_against_the_real_signing_and_lineage_check`) | A fixed holdout is eventually overfit; the scores are not bound to host receipts. |
 | Latent channels between agents bypass text-level checks | Measured, not closed. **E6** shows an edit made to A's context moves B through the cache with identical text (section 4). The defence is built as a library and tested (`steer/playbox_steer/cache_audit.py`: a signed record of the text and the exact cache, plus an audit that recomputes the cache from the text); it is not an A2A operation yet | A lying sender can sign its own steered cache, so only the recompute catches it, and that costs a prefill: audit a sampled fraction. It needs the same model on both ends, so it cannot cover a cross-family mapper. Tolerance across hardware or precision is untested. |
 
 ## 6. Status and milestones
@@ -612,10 +686,11 @@ Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -
   engine, plus a Docker test (`cargo test -p playbox-net --test steer -- --ignored`).
 - **S3** grant facts, narrowing, guards, budgets (above); Lean: narrowing cannot widen, chains stay inside the
   root (`lean/Playbox/Steer.lean`, no `sorry`).
+- **E4** evaluator, sealed holdout and variant tools over MCP (`a_custodian_seals_a_holdout...` drives two real sidecars), the search loop (19 orchestrator tests including one against the real Rust check), one real GPT-2 run (section 4).
 - **S4 (part)** MCP tool and CLI flags (MCP end-to-end test drives two real sidecars with Docker); E1 harness with
   arms and statistics (11 orchestrator tests with a fake backend, including shard merging); a real GPT-2 run at 64 seeds (section 4).
 
-Not built: the evaluator and lineage wiring for steering specs (E4); the transfer experiment (E3); a trained
+Not built: a paired mode for the lineage's gain bound; binding a variant's scores to host receipts; the transfer experiment (E3); a trained
 detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a latent-score (cardinal-harness style) judge, though a paired pairwise judge exists; a GPU
 path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
 
