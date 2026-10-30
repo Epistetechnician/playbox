@@ -20,3 +20,6 @@ playbox-bridge = { path = "../playbox-bridge" }
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
 playbox-mcp = { path = "../playbox-mcp" }
+ratatui = "0.30"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+base64 = "0.22"

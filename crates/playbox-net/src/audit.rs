@@ -74,17 +74,19 @@ pub struct Audit {
     key: SigningKey,
     state: Mutex<State>,
     path: Option<PathBuf>,
+    /// The room's live feed; every audit event is mirrored into it as a short summary.
+    pub chat: crate::chat::Chat,
 }
 
 impl Audit {
     /// No log at all.
     pub fn off(key: SigningKey) -> Self {
-        Self { key, state: Mutex::new(State { sink: Sink::Off, seq: 0, prev: ZERO.into() }), path: None }
+        Self { key, state: Mutex::new(State { sink: Sink::Off, seq: 0, prev: ZERO.into() }), path: None, chat: Default::default() }
     }
 
     /// Lines go to standard error (for hosts that keep no state directory).
     pub fn stderr(key: SigningKey) -> Self {
-        Self { key, state: Mutex::new(State { sink: Sink::Stderr, seq: 0, prev: ZERO.into() }), path: None }
+        Self { key, state: Mutex::new(State { sink: Sink::Stderr, seq: 0, prev: ZERO.into() }), path: None, chat: Default::default() }
     }
 
     /// Append to `path`, creating it (mode 0600) if needed and continuing its chain if it exists.
@@ -101,7 +103,7 @@ impl Audit {
             std::fs::create_dir_all(dir)?;
         }
         let file = OpenOptions::new().create(true).append(true).mode(0o600).open(path)?;
-        Ok(Self { key, state: Mutex::new(State { sink: Sink::File(file), seq, prev }), path: Some(path.to_path_buf()) })
+        Ok(Self { key, state: Mutex::new(State { sink: Sink::File(file), seq, prev }), path: Some(path.to_path_buf()), chat: Default::default() })
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -110,6 +112,7 @@ impl Audit {
 
     /// Record one event. A failure to write is reported on stderr and never stops the host serving.
     pub fn record(&self, event: &str, peer: Option<&str>, details: Value) {
+        self.chat.event(event, peer, &details);
         let mut st = self.state.lock().expect("audit lock");
         if matches!(st.sink, Sink::Off) {
             return;

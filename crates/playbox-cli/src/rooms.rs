@@ -113,11 +113,21 @@ pub async fn up(a: UpArgs) -> Result<()> {
         host.enable_revocation_sync(peers, Duration::from_secs(a.sync_interval.max(1))).await?;
         println!("revocation sync on with {} peer(s), pulling every {}s", a.sync_peer.len(), a.sync_interval.max(1));
     }
+    let mut first_link: Option<String> = None;
     if a.replica_of.is_some() {
         println!("replica up ({}): serves the room's grants, cannot admit members; join through the primary.", transport.label());
     } else {
         let link = host.create_link_with(Duration::from_secs(3600), 1, link_opts(a.for_guest.as_deref(), a.link_ips)?)?;
         println!("room is up ({}). share this link:\n{}", transport.label(), link.encode());
+        first_link = Some(link.encode());
+    }
+    if a.tui {
+        let host = std::sync::Arc::new(host);
+        let title = format!("room {} · hosting", host.addr().id.fmt_short());
+        let ran = crate::tui::run(crate::tui::Backend::Host(host.clone()), title, None, first_link).await;
+        let host = std::sync::Arc::try_unwrap(host).map_err(|_| anyhow::anyhow!("the room is still in use"))?;
+        host.shutdown().await?;
+        return ran;
     }
     if a.console {
         println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | quit");
@@ -159,6 +169,18 @@ pub async fn join(a: JoinArgs) -> Result<()> {
         p.close().await;
     }
     Ok(())
+}
+
+/// Join a room and sit in its live chat.
+pub async fn chat(link: &str, choice: TransportChoice, name: Option<String>) -> Result<()> {
+    let client = join_link(link, playbox_net::key_for_link(link, &store::home().join("guest.key"))?, choice).await?;
+    let title = format!("room {}", client.host_id().fmt_short());
+    let client = std::sync::Arc::new(client);
+    let ran = crate::tui::run(crate::tui::Backend::Guest(client.clone()), title, name, None).await;
+    if let Ok(c) = std::sync::Arc::try_unwrap(client) {
+        c.close().await;
+    }
+    ran
 }
 
 pub async fn bridge(link: &str, choice: TransportChoice, listen: Option<String>, token: Option<String>) -> Result<()> {

@@ -3,6 +3,7 @@
 //! Peers speak A2A v1 JSON-RPC over iroh streams; see [`wire`] for the binding.
 
 pub mod audit;
+pub mod chat;
 pub mod grants;
 pub mod limits;
 pub mod review;
@@ -612,6 +613,19 @@ impl RoomHandler {
                 )
             }
             Some(Op::Echo { text }) => return reply(text),
+            Some(Op::Say { text, name }) => {
+                return match self.audit.chat.say(&from.to_string(), name.as_deref(), &text) {
+                    Ok(seq) => reply(json!({ "seq": seq }).to_string()),
+                    Err(e) => reply(json!({ "error": e }).to_string()),
+                }
+            }
+            Some(Op::Feed { since }) => {
+                let me = from.to_string();
+                self.audit.chat.touch(&me);
+                let mut ids: Vec<String> = self.state.lock().expect("state lock").members.keys().map(|k| k.to_string()).collect();
+                ids.sort();
+                return reply(self.audit.chat.since(since, 200, &ids).to_json().to_string());
+            }
             // Handled in `route`, which has the grant it needs to authorize the specifics.
             Some(Op::Steer { .. }) => return reply("steering is handled by the router".into()),
             Some(Op::Pull { refname }) => {
@@ -1121,6 +1135,20 @@ impl Host {
         Ok(Link { addr, invite, transport: Some(self.transport.clone()), bound: opts.bind_to.is_some() })
     }
 
+    /// The host says something in its own room.
+    pub fn say(&self, text: &str, name: Option<&str>) -> Result<u64, String> {
+        self.audit.chat.say("host", name.or(Some("host")), text)
+    }
+
+    /// The room's feed as the host sees it (the host is always present).
+    pub fn feed(&self, since: u64) -> chat::Feed {
+        self.audit.chat.touch("host");
+        let mut ids: Vec<String> = self.members().iter().map(|m| m.to_string()).collect();
+        ids.sort();
+        ids.insert(0, "host".into());
+        self.audit.chat.since(since, 200, &ids)
+    }
+
     pub fn members(&self) -> Vec<EndpointId> {
         self.state.lock().expect("state lock").members.keys().copied().collect()
     }
@@ -1340,6 +1368,29 @@ impl Client {
         match self.send(&Op::Echo { text: text.to_string() }, vec![]).await.map_err(|e| anyhow!("echo refused: {e:#}"))? {
             SendMessageResponse::Message(m) => Ok(m.text().unwrap_or_default().to_string()),
             SendMessageResponse::Task(t) => bail!("echo refused: {}", wire::status_text(&t)),
+        }
+    }
+
+    /// Say something to the room. `name` is a label for display; the member id is the identity.
+    pub async fn say(&self, text: &str, name: Option<&str>) -> Result<u64> {
+        let op = Op::Say { text: text.to_string(), name: name.map(str::to_string) };
+        let v = self.reply_json(&op, "say").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("{e}");
+        }
+        Ok(v.get("seq").and_then(Value::as_u64).unwrap_or(0))
+    }
+
+    /// What was said and what happened after `since`, and who is present.
+    pub async fn feed(&self, since: u64) -> Result<chat::Feed> {
+        let v = self.reply_json(&Op::Feed { since }, "feed").await?;
+        Ok(serde_json::from_value(v)?)
+    }
+
+    async fn reply_json(&self, op: &Op, what: &str) -> Result<Value> {
+        match self.send(op, vec![]).await.map_err(|e| anyhow!("{what} refused: {e:#}"))? {
+            SendMessageResponse::Message(m) => Ok(serde_json::from_str(m.text().unwrap_or("{}"))?),
+            SendMessageResponse::Task(t) => bail!("{what} refused: {}", wire::status_text(&t)),
         }
     }
 

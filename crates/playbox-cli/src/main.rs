@@ -6,6 +6,7 @@ mod rooms;
 mod session;
 mod setup;
 mod trust;
+mod tui;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
@@ -21,6 +22,7 @@ async fn main() -> Result<()> {
         Cmd::Up(a) => rooms::up(a).await,
         Cmd::Join(a) => rooms::join(a).await,
         Cmd::Shell(a) => session::shell(a).await,
+        Cmd::Chat { link, transport, name } => rooms::chat(&link, rooms::join_choice(&transport)?, name).await,
         Cmd::Bridge { link, transport, listen, token } => rooms::bridge(&link, rooms::join_choice(&transport)?, listen, token).await,
         Cmd::Call { tool, args, json } => session::call(&tool, &args, json.as_deref()).await,
         Cmd::Mcp => session::mcp().await,

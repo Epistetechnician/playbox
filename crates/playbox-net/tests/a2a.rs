@@ -49,7 +49,7 @@ async fn agent_card_is_public_and_describes_the_room() {
     assert_eq!(card.supported_interfaces[0].protocol_binding, wire::BINDING);
     assert_eq!(card.supported_interfaces[0].url, format!("iroh://{}", host.addr().id));
     let ids: Vec<_> = card.skills.iter().map(|s| s.id.as_str()).collect();
-    assert_eq!(ids, ["echo", "pull", "push", "run"]);
+    assert_eq!(ids, ["echo", "say", "feed", "pull", "push", "run"]);
     assert_eq!(card.capabilities.streaming, Some(false));
     assert!(card.security_schemes.unwrap().contains_key("grant"));
     drop(link);
@@ -58,7 +58,7 @@ async fn agent_card_is_public_and_describes_the_room() {
     let (host2, _) = room("card2", true, false).await;
     let c2 = Client::connect(host2.addr(), new_secret_key().unwrap(), true).await.unwrap();
     let ids2: Vec<_> = c2.agent_card().await.unwrap().skills.into_iter().map(|s| s.id).collect();
-    assert_eq!(ids2, ["echo", "pull", "push"]);
+    assert_eq!(ids2, ["echo", "say", "feed", "pull", "push"]);
 }
 
 #[tokio::test]

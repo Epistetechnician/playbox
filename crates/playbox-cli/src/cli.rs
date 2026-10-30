@@ -91,6 +91,9 @@ pub struct UpArgs {
     /// Read host commands from stdin: link, status, members, audit, revoke ID, quit
     #[arg(long)]
     pub console: bool,
+    /// Full-screen chat room for the host: see and answer everyone, mint invites, revoke
+    #[arg(long, conflicts_with = "console")]
+    pub tui: bool,
 }
 
 #[derive(Args)]
@@ -139,6 +142,15 @@ pub enum Cmd {
     Join(JoinArgs),
     /// Interactive session: every MCP tool as a command (host or guest)
     Shell(ShellArgs),
+    /// Join a room and sit in its live chat (full-screen); agents of any model appear alongside you
+    Chat {
+        link: String,
+        #[command(flatten)]
+        transport: TransportArgs,
+        /// A label shown next to your id
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// Serve a room to stock A2A HTTP clients
     Bridge {
         link: String,
