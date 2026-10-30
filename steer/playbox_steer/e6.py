@@ -54,9 +54,9 @@ TRAITS = {
         "neg_words": [" calm", " safe", " relaxed", " comfortable", " peaceful", " fine", " happy", " secure"],
     },
 }
-def contexts(n: int) -> list[str]:
+def contexts(n: int, seed: int = 0) -> list[str]:
     grid = [f.format(s) for f in FRAMES for s in SUBJECTS]
-    random.Random(0).shuffle(grid)
+    random.Random(seed).shuffle(grid)
     return grid[:n]
 
 

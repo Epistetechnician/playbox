@@ -204,6 +204,7 @@ def main(argv=None) -> None:
     ap.add_argument("--layers", default="4,8")
     ap.add_argument("--coefs", default="0.25,0.5")
     ap.add_argument("--nulls", type=int, default=16)
+    ap.add_argument("--seed", type=int, default=0, help="picks the contexts and the random null directions")
     ap.add_argument("--contexts", type=int, default=32)
     ap.add_argument("--gen-tokens", type=int, default=20)
     ap.add_argument("--traits", default="sentiment,fear")
@@ -213,10 +214,10 @@ def main(argv=None) -> None:
     model, tok = load_fast(Path(a.weights), a.device, a.dtype)
     dim = model.config.hidden_size
     out = {"model": a.weights, "device": a.device, "dtype": a.dtype, "n_layers": len(engine.blocks(model)), "layers": {}}
-    ctxs = contexts(a.contexts)
+    ctxs = contexts(a.contexts, a.seed)
     texts_out = {"model": a.weights, "contexts": ctxs, "queries": e6b.QUERIES, "layers": {}}  # saved beside the report
     for layer in [int(x) for x in a.layers.split(",")]:
-        rand = [torch.tensor(engine.random_direction(dim, 100 + k)) for k in range(a.nulls)]
+        rand = [torch.tensor(engine.random_direction(dim, 100 + k + 1000 * a.seed)) for k in range(a.nulls)]
         sem = {n: diffmean_fast(model, tok, p, q, layer) for n, (p, q) in e6b.SEMANTIC.items()}
         out["layers"][str(layer)] = {}
         texts_out["layers"][str(layer)] = {}
