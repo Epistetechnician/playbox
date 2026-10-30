@@ -63,7 +63,7 @@ async fn a_stranger_cannot_read_or_write_and_a_revoked_member_is_cut_off() {
         .unwrap();
     assert!(stranger.feed(0).await.is_err());
     assert!(stranger.say("let me in", None).await.is_err());
-    host.revoke_member(&b.id());
+    assert!(host.revoke_member(&b.id()));
     assert!(b.say("still here?", None).await.is_err());
     assert!(b.feed(0).await.is_err());
     // Everyone else keeps talking; the revocation is visible in the feed.
