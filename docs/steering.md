@@ -1,9 +1,13 @@
 # Steering rooms: activation steering as a Playbox use case
 
-Status (2026-10-29): steering hosting, grants, receipts, guards, the MCP and CLI surfaces and an E1 harness are built
-and tested (section 6); the evaluator and lineage loop (E4) is built and was run once; transfer, detection and recipe import are not. One experiment has been run, on
-GPT-2, with a result that is real but narrow (section 4). Research claims below come from abstracts and search summaries, not from full-text
-reads, unless marked "read". Verify before citing.
+Status (2026-10-30). Built and tested: steering hosting with grants, guards, budgets and signed receipts; the MCP and CLI
+surfaces; the E1 text-chain experiment on two traits with independent behavioral measures; E3 same-family transfer
+(GPT-2 small to medium); E4, a search over steering settings with a sealed holdout, a paired gain bound and score
+evidence tied to host receipts; and a latent-channel line of work by another session (E6). Every experiment ran on
+GPT-2-class models on CPU, so each result is real but narrow (section 4 states the limits of each). Not built: the
+detector for E2, recipe import from public dictionaries, cross-family transfer, a GPU path, and anything attested above
+`local_internal_exploratory`. Research claims below come from abstracts and search summaries, not from full-text reads,
+unless marked "read". Verify before citing.
 
 ## 1. Pitch
 
@@ -250,9 +254,9 @@ holdout scores, and **accepts it only if the lineage's one-sided lower bound on 
 zero**. Every holdout query is recorded as cost in the variant, and a budget caps them.
 
 Honest label stays: this is automated configuration search with a fixed evaluator. It becomes self-improvement only
-if the loop also updates something persistent. What it proves is the procedure; a variant's scores are the author's
-claim, good only as far as the custodian's run that produced them (the variant does not cryptographically bind the
-host receipts of those runs; they are in the report beside it).
+if the loop also updates something persistent. What it proves is the procedure. A variant's scores are, on their own, the author's
+claim; `ScoreEvidence` (section 4, "Binding scores to runs") lets a verifier tie them to the host receipts of the runs
+that produced them, and the search can be told to accept nothing without it.
 
 ### 3.6 Taint and memory
 
@@ -268,6 +272,8 @@ enter shared memory quarantined.
 - **Humans:** `playbox up --runtime docker --steer-store DIR [--steer-image IMG] [--steer-mem-mib N]`.
 - **Making directions:** `python -m playbox_steer extract|random|manifest` (see `steer/playbox_steer/__main__.py`).
   Extraction is difference-of-means of last-token states between two prompt groups.
+- **Evidence:** `playbox_evidence_sign` (custodian) and `playbox_evidence_check` (verifier); `playbox_steer` also returns
+  the exact `receipt_record`, and `output_raw` with `include_raw`.
 - **Experiments:** `orchestrator/playbox_orchestrator/steer_chain.py` (LangGraph chain, arms, statistics) driving a
   sidecar through `mcp.py`; `orchestrator/experiments/e1_gpt2.py` runs it on real GPT-2 through Docker.
 
@@ -555,8 +561,8 @@ is the same configuration as grid layer 6, 0.2.)
   scored on the same ordered holdout items) is now built (`Lineage::improvement_paired`); the follow-up below uses it.
 - **Overfitting resistance in general.** Four holdout queries is a tiny budget; the cost field records it, and a
   larger search would spend more of the holdout.
-- **That the scores are honest.** The signer of a variant is the searcher; the numbers came from the custodian's
-  run, and nothing in the variant binds them to the host receipts of those runs.
+- **That the scores are honest.** The signer of a variant is the searcher; the numbers came from the custodian's run.
+  The runs in the first three reports are not bound to their receipts; the evidence run below is.
 - One model, one trait, one run, one seed for the search.
 
 #### E4 follow-up: the paired bound, and a KL-penalized score
@@ -598,6 +604,39 @@ and is clearly better than the strong ones.
 different, borderline call on one candidate. That a KL penalty of 4 is the right weight: another weight picks another
 setting. One model, one trait, one search seed each, 2 to 4 holdout queries. The search space is small enough that a
 short grid finds the same settings; no run here shows the search beating a person.
+
+#### Binding scores to runs
+
+Until now a variant's scores were its author's claim, backed only by the custodian having been the one to run the
+evaluation. `playbox-core::evidence` closes the part of that gap that can be closed with signatures. After the
+custodian scores a candidate on the holdout, it signs a `playbox.score-evidence.v1` record: the variant (whose id hashes
+its scores), the evaluator, the scoring harness, and the digest of each host-signed receipt of the run or runs the scores
+were computed from. A verifier calls `evidence::verify` (MCP `playbox_evidence_check`) with the receipts and the pins it
+trusts, and learns: the evidence is signed by the evaluator's custodian and names this variant, evaluator and harness; the
+receipts are exactly the listed runs, none repeated; each is signed by a host the verifier pins, on the weights and engine
+image it names, at a ceiling no weaker than it requires. It also gets each run's output hash. Seven core tests and an MCP
+test over a real Docker engine cover the honest case and each cheat: scores swapped for others, a receipt from another
+run, a host the verifier does not pin, other weights, a weaker ceiling, evidence signed by a non-custodian.
+
+`require_evidence` makes the search refuse a gain unless the evidence verifies in the loop. A run on GPT-2 with it on
+([report](e4-gpt2-search-evidence.json); same settings as the paired run, so the same decisions) accepted layer 6 at 0.2
+and then 0.4, each with evidence that passed. The root has none: its score is a definitional zero (no steering, so the
+steered text is the clean text), and there is no run to back.
+
+`judge/experiments/verify_e4.py` then checks that report without the author: a fresh sidecar re-runs the lineage and the
+evidence checks; the raw engine output must hash to what the signed receipt says; and the classifier recomputes the 32
+holdout scores from that output. Both variants verified: evidence valid (1 run each, ceiling `local_internal_exploratory`),
+output bytes match the receipt, replayed scores within 5e-7 of the signed ones (rounding to millionths). Tests tamper with
+the report and the verifier fails each time: an edited output (hash mismatch), a mangled output (reported, not a crash),
+receipts or evidence swapped between variants, a host not pinned, a different custodian.
+
+**What this does not show.** That the custodian is honest: a custodian who lies about the runs is contradicted by the
+receipts, and one who lies about the scoring by the replay, but a custodian who runs the holdout twice and reports the
+better run is not caught by either (the cost field counts queries it signed, not queries it ran). That the host is
+honest: its receipts carry a ceiling, here `local_internal_exploratory`, which means "an operator's machine", not
+"attested". That the verifier's pins are independent: the script defaults them to the values in the report, which shows
+the report is internally consistent; `--custodian` and `--host` pin them from outside. The replay needs the raw outputs
+and the classifier; a verifier without them can check the evidence but not the arithmetic.
 
 **An operational bug this found.** The penalized search failed three times before it completed. The first failure was a
 container killed with exit 137 on a busy machine (cause not established; it did not recur). The other two had one cause:
@@ -838,7 +877,7 @@ bfloat16, 32 contexts, 16 nulls, 12 tokens, strengths 0.25 and 0.5, sentiment an
 | A steered peer manipulates the reading agent | Output registered as untrusted; `playbox_steer` needs `Reviewed` prompts (taint test) | The broker is lexical. Persuasion by style is not caught. |
 | Receipt forgery or misuse | Host signature; the client checks host key, spec, and exact output bytes; the ceiling is printed on the receipt | An un-attested host can lie about what it ran. Nothing raises the ceiling to `attested` yet. |
 | An imported public recipe carries an unexpected edit | Not built (section 2c): imports are meant to be untrusted and quarantined | Until built, do not import recipes automatically. |
-| Overfitting a sealed holdout; a variant that edits its own evaluator | Sealed holdout with Merkle proofs, custodian-only holdout runs, a query budget recorded as cost, a patch confined to `steer/spec.txt` and refused if it touches protected paths (`a_custodian_seals...`, `test_the_search_against_the_real_signing_and_lineage_check`) | A fixed holdout is eventually overfit; the scores are not bound to host receipts. |
+| Overfitting a sealed holdout; a variant that edits its own evaluator | Sealed holdout with Merkle proofs, custodian-only holdout runs, a query budget recorded as cost, a patch confined to `steer/spec.txt` and refused if it touches protected paths (`a_custodian_seals...`, `test_the_search_against_the_real_signing_and_lineage_check`) | A fixed holdout is eventually overfit. Scores can be bound to host receipts (`playbox_evidence_*`, tested with each cheat), but only when the search is run with evidence required; the first three E4 reports were not. |
 | Latent channels between agents bypass text-level checks | Measured, not closed. **E6** shows an edit made to A's context moves B through the cache with identical text (section 4). The defence is built as a library and tested (`steer/playbox_steer/cache_audit.py`: a signed record of the text and the exact cache, plus an audit that recomputes the cache from the text); it is now a message format and receiver policy (`handoff.py`, round 4) but not an A2A operation yet | A lying sender can sign its own steered cache, so only the recompute catches it, and that costs a prefill: audit a sampled fraction. It needs the same model on both ends, so it cannot cover a cross-family mapper. Tolerance across hardware or precision is untested. |
 
 ## 6. Status and milestones
@@ -856,7 +895,7 @@ Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -
 - **S4 (part)** MCP tool and CLI flags (MCP end-to-end test drives two real sidecars with Docker); E1 harness with
   arms and statistics (11 orchestrator tests with a fake backend, including shard merging); a real GPT-2 run at 64 seeds (section 4).
 
-Not built: binding a variant's scores to host receipts; cross-family transfer and a spec field naming the map (E3 ran same-family, outside a room); a trained
+Not built: cross-family transfer and a spec field naming the map (E3 ran same-family, outside a room); a trained
 detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a latent-score (cardinal-harness style) judge, though a paired pairwise judge exists; a GPU
 path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
 

@@ -984,6 +984,8 @@ pub struct SteerResult {
     pub output: String,
     /// The host's receipt, already checked against the spec, the output and the host's key.
     pub receipt: SteerReceipt,
+    /// The receipt record exactly as the host signed it: what an evidence record's digest covers.
+    pub receipt_text: String,
     pub task_id: String,
 }
 
@@ -1070,6 +1072,7 @@ impl Client {
         Ok(SteerResult {
             output,
             receipt,
+            receipt_text,
             task_id: t.id,
         })
     }

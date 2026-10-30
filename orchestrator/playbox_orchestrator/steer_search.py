@@ -47,7 +47,9 @@ class Config:
 class Result:
     scores: list[float]   # one per prompt
     kl: float             # mean per-token KL(steered || clean), nats
-    receipts: list[str] = field(default_factory=list)
+    receipts: list[str] = field(default_factory=list)          # spec digests of the runs, for the log
+    receipt_texts: list[str] = field(default_factory=list)     # the exact signed receipt records, for evidence
+    outputs: list[str] = field(default_factory=list)           # the exact engine outputs those receipts hash
 
     @property
     def mean(self) -> float:
@@ -90,6 +92,10 @@ def neighbors(c: Config, rng: random.Random, space: Space, n: int, exclude: set[
 class LineageBackend(Protocol):
     def sign(self, parent: str | None, patch: str, scores: list[float], cost: int) -> tuple[str, str]: ...
     def check(self, chain: list[tuple[str, str]]) -> dict: ...
+    # Needed only when a search runs with require_evidence: the custodian signs which runs back a variant's scores,
+    # and the verifier checks that against the hosts, weights and image it pins (raises if it does not hold).
+    def attest(self, variant: str, receipts: list[str]) -> str: ...
+    def check_evidence(self, variant: str, evidence: str, receipts: list[str]) -> dict: ...
 
 
 @dataclass
@@ -114,6 +120,9 @@ class SearchResult:
     holdout_queries: int
     dev_queries: int
     final_check: dict
+    # One entry per variant in `chain`: the custodian's evidence and the material to check it. The root is a
+    # definitional zero (no steering, so the steered text is the clean text) and has no run to back.
+    evidence: list[dict | None] = field(default_factory=list)
 
 
 def search(
@@ -130,6 +139,7 @@ def search(
     max_holdout_queries: int = 12,
     seed: int = 0,
     z: float = 1.645,
+    require_evidence: bool = False,
     log: Callable[[str], None] = lambda _: None,
 ) -> SearchResult:
     rng = random.Random(seed)
@@ -139,6 +149,7 @@ def search(
     root_text, _ = lineage.sign(None, patch_between(None, root), root_hold.scores, 1)
     chain = [(root_text, patch_between(None, root))]
     configs = [root]
+    evidence: list[dict | None] = [None]
     cur, cur_text, cur_dev = root, root_text, dev(root).mean
     dev_queries = 1
     steps: list[Step] = []
@@ -177,8 +188,25 @@ def search(
         verdict = lineage.check(chain + [(text, patch)])
         imp = verdict.get("improvement") or {}
         lb = imp.get("lower_bound")
+        backed = None
+        if imp.get("significant") and require_evidence:
+            # The custodian vouches for the runs behind these scores, and the verifier checks the vouching against
+            # the hosts, weights and engine image it pins. A gain nobody can trace to a run is not accepted.
+            if not hres.receipt_texts:
+                steps.append(Step(r, best, bres.mean, bres.kl, "rejected: the holdout result carries no run to back its scores", hres.mean, lb))
+                log(f"round {r}: rejected {best}: no receipts")
+                continue
+            ev = lineage.attest(text, hres.receipt_texts)
+            try:
+                proof = lineage.check_evidence(text, ev, hres.receipt_texts)
+            except Exception as e:  # the verifier's refusal is the answer, whatever its type
+                steps.append(Step(r, best, bres.mean, bres.kl, f"rejected: score evidence did not verify ({e})", hres.mean, lb))
+                log(f"round {r}: rejected {best}: evidence did not verify: {e}")
+                continue
+            backed = {"evidence": ev, "receipts": hres.receipt_texts, "outputs": hres.outputs, "verified": proof}
         if imp.get("significant"):
             chain.append((text, patch))
+            evidence.append(backed)
             configs.append(best)
             cur, cur_text, cur_dev = best, text, bres.mean
             steps.append(Step(r, best, bres.mean, bres.kl, "accepted", hres.mean, lb, text))
@@ -186,7 +214,7 @@ def search(
         else:
             steps.append(Step(r, best, bres.mean, bres.kl, "rejected: gain over the parent not supported on the holdout", hres.mean, lb))
             log(f"round {r}: rejected {best} holdout {hres.mean:+.4f} lower bound {lb}")
-    return SearchResult(root, cur, steps, chain, configs, queries, dev_queries, lineage.check(chain))
+    return SearchResult(root, cur, steps, chain, configs, queries, dev_queries, lineage.check(chain), evidence)
 
 
 # ---- the real lineage backend: two sidecars, so signing and issuing are different keys ----------------------
@@ -195,10 +223,28 @@ def search(
 class McpLineage:
     """Signs variants with the agent sidecar's key and replays chains in Rust against the pinned custodian."""
 
-    def __init__(self, agent, evaluator: str, custodian_key: str, paired: bool = False):
+    def __init__(self, agent, evaluator: str, custodian_key: str, paired: bool = False, custodian=None, hosts=None,
+                 weights: str | None = None, image: str | None = None, min_ceiling: str = "local_internal_exploratory"):
         # `paired` is this verifier's assertion that the evaluator scores the same holdout items, in the same order,
         # for every variant. It is what makes the tighter bound valid; leave it off if scores are repeated runs.
         self.agent, self.evaluator, self.custodian_key, self.paired = agent, evaluator, custodian_key, paired
+        # Evidence: `custodian` is the sidecar holding the evaluator's key (it signs); `agent` verifies, pinning the
+        # `hosts` whose receipts count and, if given, the weights and engine image every run must have used.
+        self.custodian, self.hosts, self.weights, self.image, self.min_ceiling = custodian, hosts or [], weights, image, min_ceiling
+
+    def attest(self, variant: str, receipts: list[str]) -> str:
+        if self.custodian is None:
+            raise RuntimeError("no custodian sidecar was given, so nothing can sign evidence")
+        return self.custodian.call("playbox_evidence_sign", {"evaluator": self.evaluator, "variant": variant, "receipts": receipts})["evidence"]
+
+    def check_evidence(self, variant: str, evidence: str, receipts: list[str]) -> dict:
+        args = {"evidence": evidence, "evaluator": self.evaluator, "variant": variant, "custodians": [self.custodian_key],
+                "hosts": self.hosts, "receipts": receipts, "min_ceiling": self.min_ceiling}
+        if self.weights:
+            args["weights"] = self.weights
+        if self.image:
+            args["image"] = self.image
+        return self.agent.call("playbox_evidence_check", args)
 
     def sign(self, parent, patch, scores, cost):
         args = {"evaluator": self.evaluator, "custodians": [self.custodian_key], "patch": patch, "scores": scores, "cost": cost}

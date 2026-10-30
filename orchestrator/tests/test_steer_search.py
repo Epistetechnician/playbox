@@ -179,3 +179,67 @@ def test_paired_mode_accepts_a_small_consistent_gain_the_default_bound_rejects()
             shutil.rmtree(work, ignore_errors=True)
     assert outcomes[False] == 0, "the default bound cannot see a 0.03 gain under this much difficulty spread"
     assert outcomes[True] >= 1, "the paired bound can"
+
+
+class EvidenceLineage(FakeLineage):
+    """FakeLineage plus an evidence step that can be told to refuse."""
+    def __init__(self, refuse=None):
+        super().__init__()
+        self.refuse, self.attested, self.checked = refuse, [], []
+
+    def attest(self, variant, receipts):
+        self.attested.append((variant, list(receipts)))
+        return f"evidence-for-{variant}"
+
+    def check_evidence(self, variant, evidence, receipts):
+        self.checked.append((variant, evidence, list(receipts)))
+        if self.refuse and self.refuse(variant, receipts):
+            raise RuntimeError("the host is not pinned")
+        return {"ok": True, "runs": len(receipts)}
+
+
+def backed(base):
+    """A holdout that returns a run for every non-zero strength, as a real steering host would."""
+    def hold(c: Config) -> Result:
+        r = base(c)
+        if c.coef:
+            r.receipt_texts = [f"receipt-{c.key()}"]
+            r.outputs = [f"output-{c.key()}"]
+        return r
+    return hold
+
+
+def test_with_evidence_required_every_accepted_variant_after_the_root_is_backed_by_a_checked_run():
+    lin = EvidenceLineage()
+    r = search(root=Config("resid_post", 3, 0.0), dev=evaluator(0.05, 24, "dev"), holdout=backed(evaluator(0.05, 32, "hold")),
+               lineage=lin, seed=1, rounds=8, width=4, require_evidence=True)
+    assert len(r.chain) >= 2 and len(r.evidence) == len(r.chain)
+    assert r.evidence[0] is None, "the root is a definitional zero: there is no run to back"
+    for cfg, ev in zip(r.configs[1:], r.evidence[1:]):
+        assert ev["receipts"] == [f"receipt-{cfg.key()}"] and ev["outputs"] == [f"output-{cfg.key()}"]
+        assert ev["evidence"].startswith("evidence-for-") and ev["verified"]["runs"] == 1
+    # Evidence was requested and checked for every candidate that cleared the gain test, accepted or not.
+    assert len(lin.attested) == len(lin.checked) >= len(r.chain) - 1
+
+
+def test_a_gain_whose_evidence_does_not_verify_is_not_accepted():
+    lin = EvidenceLineage(refuse=lambda variant, receipts: True)
+    r = search(root=Config("resid_post", 3, 0.0), dev=evaluator(0.05, 24, "dev"), holdout=backed(evaluator(0.05, 32, "hold")),
+               lineage=lin, seed=1, rounds=6, width=4, require_evidence=True)
+    assert r.best.key() == r.root.key() and len(r.chain) == 1
+    assert any("score evidence did not verify" in s.decision and "not pinned" in s.decision for s in r.steps)
+    assert not any(s.decision == "accepted" for s in r.steps)
+
+
+def test_a_holdout_without_a_run_cannot_back_a_gain_when_evidence_is_required():
+    lin = EvidenceLineage()
+    r = search(root=Config("resid_post", 3, 0.0), dev=evaluator(0.05, 24, "dev"), holdout=evaluator(0.05, 32, "hold"),
+               lineage=lin, seed=1, rounds=6, width=4, require_evidence=True)
+    assert len(r.chain) == 1 and any("no run to back" in s.decision for s in r.steps) and not lin.attested
+
+
+def test_evidence_is_off_unless_asked_for():
+    lin = EvidenceLineage()
+    r = search(root=Config("resid_post", 3, 0.0), dev=evaluator(0.05, 24, "dev"), holdout=evaluator(0.05, 32, "hold"),
+               lineage=lin, seed=1, rounds=6, width=4)
+    assert len(r.chain) >= 2 and not lin.attested and r.evidence == [None] * len(r.chain)

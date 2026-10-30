@@ -10,6 +10,8 @@ use playbox_core::{
     history::text,
     platform, store,
     evaluator::{Evaluator, EvaluatorSpec, Holdout, ItemProof, Lineage, Variant, VariantSpec},
+    evidence::{verify as verify_evidence, Expect, ScoreEvidence},
+    steer::Ceiling,
     memory::{Kind, MemoryStore, NewEntry, Status},
     receipt::{self, Level, Receipt, Trust},
     record::{hex, unhex},
@@ -185,6 +187,7 @@ pub fn tool_list() -> Value {
                 "max_new_tokens": {"type": "integer", "description": "Default 32, at most 512"},
                 "temperature": {"type": "number", "description": "0 (greedy, default) to 2"},
                 "seed": {"type": "integer", "description": "Seeds sampling. Default 0."},
+                "include_raw": {"type": "boolean", "description": "Also return the engine output exactly as the receipt hashes it (`output_raw`). Needed to replay scores."},
                 "probe": {"type": "boolean", "description": "Read-only projection instead of steering. Needs the probe right in your grant."},
                 "capability": {"type": "string", "description": "A single-use approval, needed when the prompts contain text copied from another member's output."}
             }), &["weights", "direction_file", "prompts", "layers"]),
@@ -282,6 +285,23 @@ pub fn tool_list() -> Value {
                 "parent": {"type": "string", "description": "The parent variant record. Omit for a root."},
                 "patch": {"type": "string"}, "scores": {"type": "array", "items": {"type": "number"}}, "cost": {"type": "integer"}
             }), &["evaluator", "custodians", "patch", "scores", "cost"]),
+        tool("playbox_evidence_sign",
+            "Custodian: sign which steering runs a variant's scores came from. Give the evaluator you issued, the variant, and the exact receipt records (`receipt_record` from playbox_steer) of the runs, in the order the scores were produced. A verifier that pins your key and the host's can then check the scores were claimed over runs that host says it executed.",
+            json!({
+                "evaluator": {"type": "string"}, "variant": {"type": "string"},
+                "receipts": {"type": "array", "items": {"type": "string"}}
+            }), &["evaluator", "variant", "receipts"]),
+        tool("playbox_evidence_check",
+            "Verify a variant's score evidence without trusting its author: the evidence is signed by the evaluator's custodian and names this variant and evaluator; the receipts are exactly the listed runs, none repeated, each signed by a host you pin, on the weights and engine image you expect, at a ceiling no weaker than you require. Returns what it establishes and each run's output hash, so you can recompute the scores from the outputs yourself. It does not recompute them.",
+            json!({
+                "evidence": {"type": "string"}, "evaluator": {"type": "string"}, "variant": {"type": "string"},
+                "custodians": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys allowed to sign evaluators"},
+                "hosts": {"type": "array", "items": {"type": "string"}, "description": "Hex public keys of the steering hosts whose receipts you accept"},
+                "receipts": {"type": "array", "items": {"type": "string"}},
+                "weights": {"type": "string", "description": "Weights manifest hash every run must have used (hex)"},
+                "image": {"type": "string", "description": "Engine image digest every run must have used (hex)"},
+                "min_ceiling": {"type": "string", "enum": ["host_claim", "local_internal_exploratory", "attested"], "description": "Default local_internal_exploratory"}
+            }), &["evidence", "evaluator", "variant", "custodians", "hosts", "receipts"]),
         tool("playbox_lineage_check",
             "Replay a chain of signed variants (oldest first, each with the patch the host computed) against a custodian-signed evaluator. Refuses variants that edit protected paths, use an untrusted evaluator or have the wrong patch, and reports whether the last one beats its parent with a one-sided confidence bound.",
             json!({
@@ -480,6 +500,8 @@ impl Server {
             "playbox_checkpoint" => self.checkpoint(),
             "playbox_checkpoint_verify" => self.checkpoint_verify(args),
             "playbox_lineage_check" => self.lineage_check(args),
+            "playbox_evidence_sign" => self.evidence_sign(args),
+            "playbox_evidence_check" => self.evidence_check(args),
             "playbox_holdout_commit" => self.holdout_commit(args),
             "playbox_holdout_prove" => self.holdout_prove(args),
             "playbox_holdout_verify" => self.holdout_verify(args),
@@ -1045,6 +1067,8 @@ impl Server {
                 "time_ms": r.receipt.time_ms,
                 "verified": "signed by the connected host and matches the spec and output bytes"
             },
+            "receipt_record": r.receipt_text,
+            "output_raw": b(a, "include_raw").then(|| r.output.clone()),
             "task_id": r.task_id,
             "admission": admission,
         }))
@@ -1285,6 +1309,42 @@ impl Server {
         )
         .map_err(|e| anyhow!(e))?;
         Ok(json!({"variant": v.text, "id": v.id, "author": hex(&v.author)}))
+    }
+
+    fn evidence_sign(&self, a: &Value) -> Result<Value> {
+        let own = [self.key.verifying_key().to_bytes()];
+        let evaluator = Evaluator::open(req(a, "evaluator")?, &own)
+            .map_err(|e| anyhow!("evaluator (you must be its custodian): {e}"))?;
+        let variant = Variant::open(req(a, "variant")?).map_err(|e| anyhow!("variant: {e}"))?;
+        if variant.evaluator != evaluator.id {
+            bail!("the variant was scored under a different evaluator");
+        }
+        let receipts = Self::strings(a, "receipts");
+        let refs: Vec<&str> = receipts.iter().map(String::as_str).collect();
+        let text = ScoreEvidence::sign(&variant, &evaluator, &refs, &self.key).map_err(|e| anyhow!("{e}"))?;
+        Ok(json!({"evidence": text, "variant": variant.id, "runs": refs.len()}))
+    }
+
+    fn evidence_check(&self, a: &Value) -> Result<Value> {
+        let custodians = Self::keys(a, "custodians")?;
+        let evaluator = Evaluator::open(req(a, "evaluator")?, &custodians).map_err(|e| anyhow!("evaluator: {e}"))?;
+        let variant = Variant::open(req(a, "variant")?).map_err(|e| anyhow!("variant: {e}"))?;
+        let hosts = Self::keys(a, "hosts")?;
+        let opt32 = |k: &str| -> Result<Option<[u8; 32]>> { s(a, k).map(|h| unhex::<32>(h).map_err(|e| anyhow!("{k}: {e}"))).transpose() };
+        let expect = Expect {
+            hosts: &hosts,
+            weights: opt32("weights")?,
+            image: opt32("image")?,
+            min_ceiling: Ceiling::from_name(s(a, "min_ceiling").unwrap_or("local_internal_exploratory")).map_err(|e| anyhow!("min_ceiling: {e}"))?,
+        };
+        let receipts = Self::strings(a, "receipts");
+        let refs: Vec<&str> = receipts.iter().map(String::as_str).collect();
+        let b = verify_evidence(req(a, "evidence")?, &variant, &evaluator, &refs, &expect).map_err(|e| anyhow!("{e}"))?;
+        let hx = |v: &[[u8; 32]]| v.iter().map(|k| hex(k)).collect::<Vec<_>>();
+        Ok(json!({
+            "ok": true, "variant": variant.id, "runs": b.runs, "weights": hex(&b.weights), "image": hex(&b.image),
+            "weakest_ceiling": b.weakest.as_str(), "hosts": hx(&b.hosts), "output_hashes": hx(&b.outputs),
+        }))
     }
 
     fn lineage_check(&self, a: &Value) -> Result<Value> {

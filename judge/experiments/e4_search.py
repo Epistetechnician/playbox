@@ -44,6 +44,8 @@ def main() -> None:
     ap.add_argument("--kl-cap", type=float, default=0.6)
     ap.add_argument("--max-holdout", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--evidence", action="store_true", help="accept a variant only if the custodian's score evidence verifies against the host's receipts")
+    ap.add_argument("--no-baselines", action="store_true", help="skip the baseline scoring after the search (it takes about 15 minutes)")
     ap.add_argument("--paired", action="store_true", help="the verifier asserts the holdout scores are aligned items and asks for the paired bound")
     ap.add_argument("--kl-weight", type=float, default=0.0, help="score = classifier effect - weight * KL, per prompt (classifier logit per nat)")
     ap.add_argument("--binary", default=str(ROOT / "target/debug/playbox-mcp"))
@@ -106,41 +108,49 @@ def main() -> None:
         })
         print("evaluator", ev["id"][:16], "custodian", ev["custodian"][:16], flush=True)
 
-        def run_steer(client, cfg: Config, prompts: list[str], coef: float | None = None) -> list[dict]:
-            r = client.call("playbox_steer", {
+        def run_steer_full(client, cfg: Config, prompts: list[str], coef: float | None = None) -> dict:
+            return client.call("playbox_steer", {
                 "weights": weights, "model": "gpt2", "direction_file": direction_for(cfg.site, cfg.layer), "prompts": prompts, "layers": [cfg.layer],
-                "coef": cfg.coef if coef is None else coef, "site": cfg.site, "max_new_tokens": TOKENS, "seed": 0,
+                "coef": cfg.coef if coef is None else coef, "site": cfg.site, "max_new_tokens": TOKENS, "seed": 0, "include_raw": True,
             })
+
+        def run_steer(client, cfg: Config, prompts: list[str], coef: float | None = None):
+            r = run_steer_full(client, cfg, prompts, coef)
             return r["output"]["results"], r["receipt"]["spec_digest"]
 
         def evaluate(client, cfg: Config, prompts: list[str]) -> Result:
             if cfg.coef == 0:     # no steering: steered text is the clean text by definition
                 return Result([0.0] * len(prompts), 0.0)
-            rows, digest = run_steer(client, cfg, prompts)
+            run = run_steer_full(client, cfg, prompts)
+            rows, digest = run["output"]["results"], run["receipt"]["spec_digest"]
             s, c = clf.score([r["steered"] for r in rows]), clf.score([r["clean"] for r in rows])
             scores = [x - y - a.kl_weight * r["kl_to_clean"] for x, y, r in zip(s, c, rows)]
-            return Result(scores, statistics.fmean(r["kl_to_clean"] for r in rows), [digest])
+            return Result(scores, statistics.fmean(r["kl_to_clean"] for r in rows), [digest], [run["receipt_record"]], [run["output_raw"]])
 
         log = lambda m: print(f"[{time.time() - t0:6.0f}s] {m}", flush=True)  # noqa: E731
-        lineage = McpLineage(searcher, ev["evaluator"], ev["custodian"], paired=a.paired)
+        image = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}", "playbox-steer:0.1"], capture_output=True, text=True, check=True).stdout.strip().removeprefix("sha256:")
+        lineage = McpLineage(searcher, ev["evaluator"], ev["custodian"], paired=a.paired, custodian=custodian,
+                             hosts=[created["host_id"]], weights=weights, image=image)
         res = search(
             root=Config("resid_post", 6, 0.0),
             dev=lambda c: evaluate(searcher, c, DEV_PROMPTS),
             holdout=lambda c: evaluate(custodian, c, HOLDOUT_PROMPTS),
             lineage=lineage, space=Space(layers=(2, 10), coef=(0.05, 1.0)),
             rounds=a.rounds, width=a.width, kl_cap=a.kl_cap, max_holdout_queries=a.max_holdout, seed=a.seed, log=log,
+            require_evidence=a.evidence,
         )
         log(f"search done: best {res.best}, {res.holdout_queries} holdout queries, {res.dev_queries} dev queries")
 
         # Baselines on the same holdout, by the same custodian harness. They are outside the search budget.
         base: dict[str, Result] = {}
-        for name, cfg in [("e1_default", Config("resid_post", 6, 0.3))] + [(f"grid_L{l}_c{c}", Config("resid_post", l, c)) for l in (4, 6, 8) for c in (0.2, 0.4)]:
+        for name, cfg in ([] if a.no_baselines else [("e1_default", Config("resid_post", 6, 0.3))] + [(f"grid_L{l}_c{c}", Config("resid_post", l, c)) for l in (4, 6, 8) for c in (0.2, 0.4)]):
             base[name] = evaluate(custodian, cfg, HOLDOUT_PROMPTS)
             log(f"baseline {name}: {base[name].mean:+.3f} kl={base[name].kl:.3f}")
-        prefix = TRAITS["sentiment"][2]
-        plain, _ = run_steer(custodian, Config("resid_post", 6, 0.3), HOLDOUT_PROMPTS, coef=0.0)
-        pref, _ = run_steer(custodian, Config("resid_post", 6, 0.3), [prefix + p for p in HOLDOUT_PROMPTS], coef=0.0)
-        base["prompted"] = Result([x - y for x, y in zip(clf.score([r["steered"] for r in pref]), clf.score([r["steered"] for r in plain]))], 0.0)
+        if not a.no_baselines:
+            prefix = TRAITS["sentiment"][2]
+            plain, _ = run_steer(custodian, Config("resid_post", 6, 0.3), HOLDOUT_PROMPTS, coef=0.0)
+            pref, _ = run_steer(custodian, Config("resid_post", 6, 0.3), [prefix + p for p in HOLDOUT_PROMPTS], coef=0.0)
+            base["prompted"] = Result([x - y for x, y in zip(clf.score([r["steered"] for r in pref]), clf.score([r["steered"] for r in plain]))], 0.0)
         best_hold = evaluate(custodian, res.best, HOLDOUT_PROMPTS) if res.best.coef else Result([0.0] * len(HOLDOUT_PROMPTS), 0.0)
 
         # An opened holdout item checks out against the published root.
@@ -162,7 +172,12 @@ def main() -> None:
         "search": {"paired": a.paired, "kl_weight": a.kl_weight, "rounds": a.rounds, "width": a.width, "kl_cap": a.kl_cap, "max_holdout_queries": a.max_holdout, "seed": a.seed,
                    "holdout_queries": res.holdout_queries, "dev_queries": res.dev_queries},
         "root": res.root.spec_file(), "best": res.best.spec_file(), "best_config": [res.best.site, res.best.layer, res.best.coef],
-        "chain": [{"config": c.spec_file(), "patch": p} for c, (_, p) in zip(res.configs, res.chain)],
+        "chain": [{"config": c.spec_file(), "patch": p, "variant": v} for c, (v, p) in zip(res.configs, res.chain)],
+        "evidence": {
+            "required": a.evidence, "host_id": created["host_id"], "weights": weights, "image": image, "evaluator": ev["evaluator"],
+            "custodian": ev["custodian"], "kl_weight": a.kl_weight, "holdout_prompts": HOLDOUT_PROMPTS,
+            "per_variant": res.evidence,
+        },
         "steps": [{"round": s.round, "config": [s.config.site, s.config.layer, s.config.coef], "dev_mean": s.dev_mean, "dev_kl": s.dev_kl,
                    "decision": s.decision, "holdout_mean": s.holdout_mean, "lower_bound": s.lower_bound} for s in res.steps],
         "lineage_check": res.final_check,

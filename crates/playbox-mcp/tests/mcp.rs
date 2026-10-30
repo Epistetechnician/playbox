@@ -1100,7 +1100,7 @@ fn an_agent_steers_a_hosted_model_through_mcp() {
     let mut host = Mcp::start(&work.join("host-home"));
     let (err, created) = host.tool(
         "playbox_create",
-        json!({"repo": repo, "local": true, "runtime": "docker", "steer_store": store, "steer_mem_mib": 1024, "steer_caps": {"max_runs": 3, "max_coef_milli": 6000}}),
+        json!({"repo": repo, "local": true, "runtime": "docker", "steer_store": store, "steer_mem_mib": 1024, "steer_caps": {"max_runs": 5, "max_coef_milli": 6000}}),
     );
     assert!(!err, "{created}");
     let link = created["link"].as_str().unwrap().to_string();
@@ -1130,6 +1130,55 @@ fn an_agent_steers_a_hosted_model_through_mcp() {
     let (err, p) = guest.tool("playbox_steer", probe);
     assert!(!err, "{p}");
     assert_eq!(p["output"]["probe"].as_array().unwrap().len(), 2);
+
+    // Score evidence. The guest acts as custodian (it issues the evaluator and ran the steering); the host sidecar
+    // acts as the agent that signs the variant and as a verifier that pins only the custodian's and the host's keys.
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let (_, sealed) = guest.tool("playbox_holdout_commit", json!({"items": ["p1", "p2"]}));
+    let (err, ev) = guest.tool(
+        "playbox_evaluator_issue",
+        json!({"name": "e", "version": 1, "harness": "ab".repeat(32), "holdout": sealed["root"], "command": "score", "protected": ["harness/"], "min_runs": 2}),
+    );
+    assert!(!err, "{ev}");
+    let (evaluator, custodian) = (ev["evaluator"].clone(), ev["custodian"].clone());
+    let mut raw_args = args.clone();
+    raw_args["include_raw"] = json!(true);
+    let (err, run) = guest.tool("playbox_steer", raw_args.clone());
+    assert!(!err, "{run}");
+    let (receipt, output_raw) = (run["receipt_record"].as_str().unwrap().to_string(), run["output_raw"].as_str().unwrap().to_string());
+    assert!(receipt.starts_with("playbox.steer-receipt.v1\n"), "the exact signed record is returned");
+    let sign_variant = |host: &mut Mcp, scores: Value| host.tool("playbox_variant_sign", json!({"evaluator": evaluator, "custodians": [custodian], "patch": "", "scores": scores, "cost": 1})).1;
+    let variant = sign_variant(&mut host, json!([0.3, 0.4, 0.5]));
+    let (err, sealed_ev) = guest.tool("playbox_evidence_sign", json!({"evaluator": evaluator, "variant": variant["variant"], "receipts": [receipt]}));
+    assert!(!err, "{sealed_ev}");
+    let host_id = created["host_id"].clone();
+    let check = |host: &mut Mcp, evidence: &Value, variant: &Value, receipts: Value, extra: Value| {
+        let mut a = json!({"evidence": evidence, "evaluator": evaluator, "variant": variant["variant"], "custodians": [custodian], "hosts": [host_id], "receipts": receipts});
+        for (k, v) in extra.as_object().unwrap() {
+            a[k] = v.clone();
+        }
+        host.tool("playbox_evidence_check", a)
+    };
+    let (err, ok) = check(&mut host, &sealed_ev["evidence"], &variant, json!([receipt]), json!({"weights": weights, "image": run["receipt"]["image"]}));
+    assert!(!err, "{ok}");
+    assert_eq!((ok["runs"].as_u64(), ok["weakest_ceiling"].as_str()), (Some(1), Some("local_internal_exploratory")));
+    assert_eq!(ok["output_hashes"][0].as_str().unwrap(), hex(blake3::hash(output_raw.as_bytes()).as_bytes()), "the receipt binds the exact output bytes, so a verifier can replay the scores");
+    // Each cheat is refused for its own reason.
+    let refuse = |r: (bool, Value), needle: &str| {
+        assert!(r.0 && r.1.as_str().unwrap().contains(needle), "wanted {needle:?}, got {}", r.1);
+    };
+    let other_scores = sign_variant(&mut host, json!([0.9, 0.9, 0.9]));
+    refuse(check(&mut host, &sealed_ev["evidence"], &other_scores, json!([receipt]), json!({})), "different variant");
+    let (_, second) = guest.tool("playbox_steer", raw_args.clone());
+    refuse(check(&mut host, &sealed_ev["evidence"], &variant, json!([second["receipt_record"]]), json!({})), "not the run");
+    let mut unpinned = json!({"evidence": sealed_ev["evidence"], "evaluator": evaluator, "variant": variant["variant"], "custodians": [custodian], "hosts": ["11".repeat(32)], "receipts": [receipt]});
+    refuse(host.tool("playbox_evidence_check", unpinned.clone()), "does not pin");
+    unpinned["hosts"] = json!([host_id]);
+    unpinned["weights"] = json!("00".repeat(32));
+    refuse(host.tool("playbox_evidence_check", unpinned), "weights other");
+    refuse(check(&mut host, &sealed_ev["evidence"], &variant, json!([receipt]), json!({"min_ceiling": "attested"})), "weaker ceiling");
+    // Only the evaluator's custodian can sign evidence; the agent's sidecar is not it.
+    refuse(host.tool("playbox_evidence_sign", json!({"evaluator": evaluator, "variant": variant["variant"], "receipts": [receipt]})), "custodian");
 
     // Over the strength cap: refused by the grant, not clamped.
     let mut loud = args.clone();

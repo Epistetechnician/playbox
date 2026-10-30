@@ -243,6 +243,21 @@ pub enum Ceiling {
 }
 names!(Ceiling { HostClaim => "host_claim", LocalInternalExploratory => "local_internal_exploratory", Attested => "attested" });
 
+impl Ceiling {
+    /// The name used in receipts: `host_claim`, `local_internal_exploratory` or `attested`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        self.name()
+    }
+
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if `s` is not one of the three names.
+    pub fn from_name(s: &str) -> Result<Ceiling, RecordError> {
+        Ceiling::parse(s)
+    }
+}
+
 /// A host's signed record of one steering run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SteerReceipt {

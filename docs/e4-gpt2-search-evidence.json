@@ -1,0 +1,266 @@
+{
+ "model": "gpt2",
+ "weights": "86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7",
+ "trait": "sentiment",
+ "classifier": "siebert/sentiment-roberta-large-english",
+ "tokens": 20,
+ "evaluator": "ec9499a7436698e96326c7c3106f791858c4c2761789d21fc4c4edacb5d407f1",
+ "custodian": "ef04e4bcb28f28f01a1d8e133d40fd2c124a10249033684b9c8f8da1aa9ef5a4",
+ "holdout_root": "0227770ab334eb4705268b18d2356b608f0f5cd803423227ad5ecbeb16c3a52a",
+ "holdout_items": 32,
+ "dev_items": 24,
+ "holdout_proof_verifies": true,
+ "search": {
+  "paired": true,
+  "kl_weight": 0.0,
+  "rounds": 4,
+  "width": 3,
+  "kl_cap": 0.6,
+  "max_holdout_queries": 5,
+  "seed": 0,
+  "holdout_queries": 3,
+  "dev_queries": 13
+ },
+ "root": "site resid_post\nlayer 6\ncoef_milli 0\n",
+ "best": "site resid_post\nlayer 6\ncoef_milli 400\n",
+ "best_config": [
+  "resid_post",
+  6,
+  0.4
+ ],
+ "chain": [
+  {
+   "config": "site resid_post\nlayer 6\ncoef_milli 0\n",
+   "patch": "--- a/steer/spec.txt\n+++ b/steer/spec.txt\n@@ -0,0 +1,3 @@\n+site resid_post\n+layer 6\n+coef_milli 0\n",
+   "variant": "playbox.variant.v1\nparent -\nevaluator ec9499a7436698e96326c7c3106f791858c4c2761789d21fc4c4edacb5d407f1\npatch 254223463f8bfac5c10e80e6e4a73f8ad3d64ed2956aa25a3eea1f34868ffc55\nscores 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\ncost 1\nsigner 9b0a445adebd3579f716bbb552865b16944fd0fd999f9d1cdd2513a7606400f1\nsig 93a34bf3c8802a23b925e632c6877109e986b3aafa338bf855cdb5f74986f218654341a346a120d47f2a65ad21ef16478c1f9783298d1258e3c749722cb25806\n"
+  },
+  {
+   "config": "site resid_post\nlayer 6\ncoef_milli 200\n",
+   "patch": "--- a/steer/spec.txt\n+++ b/steer/spec.txt\n@@ -1,3 +1,3 @@\n site resid_post\n layer 6\n-coef_milli 0\n+coef_milli 200\n",
+   "variant": "playbox.variant.v1\nparent 722e0a23ca422b9b2dec140adc9972d68f9f83411fd218194a2484bd60c3f480\nevaluator ec9499a7436698e96326c7c3106f791858c4c2761789d21fc4c4edacb5d407f1\npatch 55e9906277a57f3b0f911d78778ce5fc06c804b5e5a66542745afda6a2d79e37\nscores -267636,11979646,331997,13683476,5664,1895,-2291327,34888,13672498,138814,-195173,2190821,2735538,1347506,69500,2160867,14291362,14330286,11397014,14400565,124020,777,14410591,65167,22409,1024346,-378738,-541941,2088165,-820567,1168094,13724904\ncost 2\nsigner 9b0a445adebd3579f716bbb552865b16944fd0fd999f9d1cdd2513a7606400f1\nsig a2cfe31c648df283245913acb3640c17713e77a8876961062ef58afd0fd8b7d857e3f4a094047d0c630779da7c886b5c9f1cc562dd8d555a31347bb8a5192106\n"
+  },
+  {
+   "config": "site resid_post\nlayer 6\ncoef_milli 400\n",
+   "patch": "--- a/steer/spec.txt\n+++ b/steer/spec.txt\n@@ -1,3 +1,3 @@\n site resid_post\n layer 6\n-coef_milli 200\n+coef_milli 400\n",
+   "variant": "playbox.variant.v1\nparent 15abdf876af8d736d072efb807e6cb37c15eab9482629de02d9c354d1a4cdcb0\nevaluator ec9499a7436698e96326c7c3106f791858c4c2761789d21fc4c4edacb5d407f1\npatch 4b655c8b3c219edd1a5c9907c69dbc5c7e02c066b9e784030acec9e02290dc0b\nscores 229578,11721136,1007226,12480588,-2413,42020,118183,35035,13795468,178643,306065,2741342,2721874,1354608,30504,2154215,14283485,14352245,11338754,14443773,137790,32303,14410269,-21096,32218,964877,-4134,173769,2054454,38854,1083775,13778311\ncost 3\nsigner 9b0a445adebd3579f716bbb552865b16944fd0fd999f9d1cdd2513a7606400f1\nsig 62253fca425ae9cf653c900ff0e1af2d413e35b7d5c652f58e77ef762bb6bf03bc1949cf46d1e649912f589ffd025d9252fd49e79405bb1c0b55cd2771081e02\n"
+  }
+ ],
+ "evidence": {
+  "required": true,
+  "host_id": "25b300f52b2637842d744a482e3104f85420479be457f512facd3ed2ec903a4b",
+  "weights": "86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7",
+  "image": "b9e1281fc057526275f1f7a790207352cdf79d5deb801006145920ed154e220f",
+  "evaluator": "playbox.evaluator.v1\nname steer-sentiment-gpt2\nversion 1\nharness 1763954b890adc5db7e65527b80d3b0b15630ceb08aa63b7ac0569594c02e9d7\nholdout 0227770ab334eb4705268b18d2356b608f0f5cd803423227ad5ecbeb16c3a52a\ncommand score steered-minus-clean sentiment classifier logit per holdout prompt\nprotected harness/,holdout/\nmin_runs 16\nsupersedes -\nsigner ef04e4bcb28f28f01a1d8e133d40fd2c124a10249033684b9c8f8da1aa9ef5a4\nsig d12291b422b2fc354dbb91736caf86870e51faa55f1dec8c6cc1f3970eb3f287618dcd0190272c3a797f17f90f6b076af1379742370948343774f626d5b48407\n",
+  "custodian": "ef04e4bcb28f28f01a1d8e133d40fd2c124a10249033684b9c8f8da1aa9ef5a4",
+  "kl_weight": 0.0,
+  "holdout_prompts": [
+   "The museum was",
+   "The hospital was",
+   "The game was",
+   "The office was",
+   "My honest opinion of the museum is",
+   "My honest opinion of the hospital is",
+   "My honest opinion of the game is",
+   "My honest opinion of the office is",
+   "Today the museum seems",
+   "Today the hospital seems",
+   "Today the game seems",
+   "Today the office seems",
+   "Everyone says the museum is",
+   "Everyone says the hospital is",
+   "Everyone says the game is",
+   "Everyone says the office is",
+   "I just heard that the museum was",
+   "I just heard that the hospital was",
+   "I just heard that the game was",
+   "I just heard that the office was",
+   "Overall the museum turned out",
+   "Overall the hospital turned out",
+   "Overall the game turned out",
+   "Overall the office turned out",
+   "People describe the museum as",
+   "People describe the hospital as",
+   "People describe the game as",
+   "People describe the office as",
+   "After a week, the museum felt",
+   "After a week, the hospital felt",
+   "After a week, the game felt",
+   "After a week, the office felt"
+  ],
+  "per_variant": [
+   null,
+   {
+    "evidence": "playbox.score-evidence.v1\nvariant 15abdf876af8d736d072efb807e6cb37c15eab9482629de02d9c354d1a4cdcb0\nevaluator ec9499a7436698e96326c7c3106f791858c4c2761789d21fc4c4edacb5d407f1\nscorer 1763954b890adc5db7e65527b80d3b0b15630ceb08aa63b7ac0569594c02e9d7\nruns 4968655b30a825a11797031cc5815a48e32c4e29ae92f02c8155be7337f3c8e8\nsigner ef04e4bcb28f28f01a1d8e133d40fd2c124a10249033684b9c8f8da1aa9ef5a4\nsig 33877e94ea0db574f073edc4bf6c8ede9510fb170fcbdeca923e2ed70e9fd1eac8c596058516fb97fb825b3ca67b68dee9feaf05b119f150b8738734b763fe04\n",
+    "receipts": [
+     "playbox.steer-receipt.v1\nspec 5b39cea35099ecf72c8ce19288342e7f20aaeda2aba7edb5b161707a66e00ac1\nweights 86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7\nprompts a687f5484179cb90cd9c79fa720a81d5acca015612072c9743d395b6dad67760\nimage b9e1281fc057526275f1f7a790207352cdf79d5deb801006145920ed154e220f\nrequest 59032002662659dece38225d1bb9f51c215b712ecf25c60f2bcad0d2f5fda059\noutput 8d0769d27bd3a195eaf122e6af6ec7681754a38f33d8d93893e458aa69766edf\nceiling local_internal_exploratory\ntime 1793366284743\nsigner 25b300f52b2637842d744a482e3104f85420479be457f512facd3ed2ec903a4b\nsig 027dd8e933aca265f72c7262b8672d94d252648a9bee7580b2a21b3ae18d4919c1047ef42666c94c066274705dd55257a9298913d2a28118c6969f4326dc1803\n"
+    ],
+    "outputs": [
+     "{\"engine\":\"playbox-steer/0.1.0\",\"gates\":{\"determinism\":{\"max_delta\":0.0,\"pass\":true},\"no_op\":{\"max_delta\":0.0,\"pass\":true},\"parity\":{\"max_delta\":0.0,\"pass\":true},\"pass\":true,\"reach\":{\"max_delta\":3.3957443237304688,\"pass\":true}},\"guard_hits\":[],\"norm_ref\":{\"6\":90.5707154410226},\"results\":[{\"changed\":true,\"clean\":\" founded in 1885 by a group of young men who had been inspired by the work of the late\",\"kl_to_clean\":0.064118,\"prompt\":\"The museum was\",\"steered\":\" founded in 1885 by the late Dr. William H. H. Hutton, who was a\",\"tokens\":20},{\"changed\":true,\"clean\":\" not immediately available for comment.\\n\\nThe hospital is located in the heart of the city's downtown\",\"kl_to_clean\":0.144942,\"prompt\":\"The hospital was\",\"steered\":\" also able to provide a safe and secure environment for patients.\\n\\n\\\"We are pleased to have\",\"tokens\":20},{\"changed\":true,\"clean\":\" released on the PlayStation 3 in Japan on March 24, 2014.\\n\\nThe game was released on\",\"kl_to_clean\":0.067093,\"prompt\":\"The game was\",\"steered\":\" released on the PlayStation 4 in Japan on March 24, 2016.\\n\\nThe game is set in\",\"tokens\":20},{\"changed\":true,\"clean\":\" closed for the day.\\n\\nThe office was closed for the day.\\n\\nThe office was\",\"kl_to_clean\":0.123506,\"prompt\":\"The office was\",\"steered\":\" also able to provide a number of services to the community.\\n\\nThe office was also able to\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good place to go. It's a very good place to go to see\",\"kl_to_clean\":0.149526,\"prompt\":\"My honest opinion of the museum is\",\"steered\":\" that it is a great place to visit. The staff is very friendly and the exhibits are well-\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good place to be. It's a very good place to be. It\",\"kl_to_clean\":0.173157,\"prompt\":\"My honest opinion of the hospital is\",\"steered\":\" that it is a great place to live. The staff are very friendly and the staff are always looking\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good game. It's a very good game. It's a very good\",\"kl_to_clean\":0.180003,\"prompt\":\"My honest opinion of the game is\",\"steered\":\" that it's a great game. I'm not sure if it's a good one or not.\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good place to be. It's a very good place to be. It\",\"kl_to_clean\":0.190001,\"prompt\":\"My honest opinion of the office is\",\"steered\":\" that it is a great place to work. I have been here for over 20 years and have been\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be on the verge of closing.\\n\\nThe museum's website says it will be closed for\",\"kl_to_clean\":0.111691,\"prompt\":\"Today the museum seems\",\"steered\":\" to have found a new home in the city of San Francisco.\\n\\nThe museum is located in\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be doing a good job of keeping the patients in good health.\\n\\nThe hospital is also\",\"kl_to_clean\":0.118569,\"prompt\":\"Today the hospital seems\",\"steered\":\" to be doing well.\\n\\nThe hospital is also doing well with the help of the community.\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be getting better and better.\\n\\nThe game is getting better and better.\\n\\nThe\",\"kl_to_clean\":0.096097,\"prompt\":\"Today the game seems\",\"steered\":\" to be working.\\n\\nThe game is now available for download on Steam.\\n\\nThe game\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be in a state of flux.\\n\\nThe first thing to note is that the office is\",\"kl_to_clean\":0.10951,\"prompt\":\"Today the office seems\",\"steered\":\" to be working on a new version of the app.\\n\\nThe app is available for iOS and\",\"tokens\":20},{\"changed\":true,\"clean\":\" a place for the rich and famous, but it's not. It's a place for the poor\",\"kl_to_clean\":0.160392,\"prompt\":\"Everyone says the museum is\",\"steered\":\" a place where you can see the world and the people who have been there. It's a place\",\"tokens\":20},{\"changed\":true,\"clean\":\" a place where you can go to get help. But it's not. It's a place where\",\"kl_to_clean\":0.181768,\"prompt\":\"Everyone says the hospital is\",\"steered\":\" a great place to live. It's a great place to work, to have a family, to\",\"tokens\":20},{\"changed\":true,\"clean\":\" about the player, but it's about the game itself. It's about the player's journey,\",\"kl_to_clean\":0.157849,\"prompt\":\"Everyone says the game is\",\"steered\":\" a great way to get to know the game and the people who play it. I think it's\",\"tokens\":20},{\"changed\":true,\"clean\":\" a place where you can go to get a drink, but it's not. It's a place\",\"kl_to_clean\":0.184608,\"prompt\":\"Everyone says the office is\",\"steered\":\" the best place to work. It's the place to meet with your family and friends. It's\",\"tokens\":20},{\"changed\":true,\"clean\":\" going to be closed down. I'm not sure what's going to happen to it. I'm\",\"kl_to_clean\":0.161874,\"prompt\":\"I just heard that the museum was\",\"steered\":\" open for business. I'm so excited to be part of the community and to be able to share\",\"tokens\":20},{\"changed\":true,\"clean\":\" going to be closed for a few days. I'm not sure what's going to happen to the\",\"kl_to_clean\":0.219236,\"prompt\":\"I just heard that the hospital was\",\"steered\":\" open and that the patients were well. I'm very happy with the hospital. I'm very happy\",\"tokens\":20},{\"changed\":true,\"clean\":\" going to be released on PC. I'm not sure if it's going to be on PC or\",\"kl_to_clean\":0.129183,\"prompt\":\"I just heard that the game was\",\"steered\":\" coming to the Xbox One. I'm excited to be able to play it with my friends and family\",\"tokens\":20},{\"changed\":true,\"clean\":\" closed. I'm not sure what's going on. I'm not sure what's going on with\",\"kl_to_clean\":0.169927,\"prompt\":\"I just heard that the office was\",\"steered\":\" open for business. I'm so excited to be a part of the community. I'm so excited\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a very good place to see the world.\\n\\nThe museum was built in 1885\",\"kl_to_clean\":0.106248,\"prompt\":\"Overall the museum turned out\",\"steered\":\" to be a great place to see the world.\\n\\nThe museum is located in the heart of\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a very good place to be. The staff was very friendly and the staff was very helpful\",\"kl_to_clean\":0.159016,\"prompt\":\"Overall the hospital turned out\",\"steered\":\" to be a great place to get a good workout.\\n\\nThe staff was very helpful and the\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a bit of a mess. The game was pretty much a mess, but it was still\",\"kl_to_clean\":0.167405,\"prompt\":\"Overall the game turned out\",\"steered\":\" to be a great experience. The game is a great way to get into the game and to get\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a very good one.\\n\\nThe office was very well maintained and the staff was very\",\"kl_to_clean\":0.164319,\"prompt\":\"Overall the office turned out\",\"steered\":\" to be a great place to meet with the staff and the community.\\n\\nThe staff and the\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"living museum\\\" and \\\"a place of learning.\\\"\\n\\nThe museum is open to the\",\"kl_to_clean\":0.105719,\"prompt\":\"People describe the museum as\",\"steered\":\" a \\\"new way to explore the world of art and culture.\\\"\\n\\nThe museum is located in\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"crisis center\\\" for the mentally ill.\\n\\n\\\"We have a lot of people\",\"kl_to_clean\":0.21251,\"prompt\":\"People describe the hospital as\",\"steered\":\" a \\\"living, breathing, caring place.\\\"\\n\\nThe hospital is open to the public and is\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"game of chance,\\\" and it's a game of chance that's not just about luck,\",\"kl_to_clean\":0.083657,\"prompt\":\"People describe the game as\",\"steered\":\" a \\\"real-time strategy game\\\" that allows players to take control of a single character and play\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"living room\\\" where they can \\\"see the world.\\\"\\n\\n\\\"It's a place\",\"kl_to_clean\":0.163456,\"prompt\":\"People describe the office as\",\"steered\":\" a \\\"living room\\\" with a \\\"living room\\\" feel.\\n\\nThe office is also a\",\"tokens\":20},{\"changed\":true,\"clean\":\" like it was getting a little too crowded.\\n\\n\\\"We were just trying to get a sense\",\"kl_to_clean\":0.173155,\"prompt\":\"After a week, the museum felt\",\"steered\":\" it was ready to open.\\n\\n\\\"We're excited to be able to share our collection with\",\"tokens\":20},{\"changed\":true,\"clean\":\" the need to send a message to the community.\\n\\n\\\"We are very grateful to the community\",\"kl_to_clean\":0.199708,\"prompt\":\"After a week, the hospital felt\",\"steered\":\" the same way.\\n\\n\\\"We were able to see the same results as before,\\\" said Dr\",\"tokens\":20},{\"changed\":true,\"clean\":\" like a game of \\\"Who's going to win?\\\" and \\\"Who's going to win the game\",\"kl_to_clean\":0.166107,\"prompt\":\"After a week, the game felt\",\"steered\":\" like a new beginning.\\n\\n\\\"It's been a great experience,\\\" said Ryan. \\\"I\",\"tokens\":20},{\"changed\":true,\"clean\":\" like it was getting a little too crowded.\\n\\n\\\"We're not going to be able to\",\"kl_to_clean\":0.175806,\"prompt\":\"After a week, the office felt\",\"steered\":\" it was ready to take on the challenge of creating a new home for the family.\\n\\n\\\"\",\"tokens\":20}]}\n"
+    ],
+    "verified": {
+     "hosts": [
+      "25b300f52b2637842d744a482e3104f85420479be457f512facd3ed2ec903a4b"
+     ],
+     "image": "b9e1281fc057526275f1f7a790207352cdf79d5deb801006145920ed154e220f",
+     "ok": true,
+     "output_hashes": [
+      "8d0769d27bd3a195eaf122e6af6ec7681754a38f33d8d93893e458aa69766edf"
+     ],
+     "runs": 1,
+     "variant": "15abdf876af8d736d072efb807e6cb37c15eab9482629de02d9c354d1a4cdcb0",
+     "weakest_ceiling": "local_internal_exploratory",
+     "weights": "86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7"
+    }
+   },
+   {
+    "evidence": "playbox.score-evidence.v1\nvariant 8eb048a4682c5e234b1edc2c1b66e430c4e13a51a95752f534444a83abba97d8\nevaluator ec9499a7436698e96326c7c3106f791858c4c2761789d21fc4c4edacb5d407f1\nscorer 1763954b890adc5db7e65527b80d3b0b15630ceb08aa63b7ac0569594c02e9d7\nruns 843ec8705cb3148aff8f679d8b9f7770072b05ff31add42e3bebf8aab15e29ad\nsigner ef04e4bcb28f28f01a1d8e133d40fd2c124a10249033684b9c8f8da1aa9ef5a4\nsig 0e5e43bc6afd48e86ee2303f264f62615660729d1691985560d464b67bc52662b9cc6869bdd5455d3f2bbbac394a62f7c9511fde84317589a9e54a33fff58d0d\n",
+    "receipts": [
+     "playbox.steer-receipt.v1\nspec 008773dde7fda6478aa85ae908fc55df797ee8c6830e2121ec86bc3be4e8ddc7\nweights 86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7\nprompts a687f5484179cb90cd9c79fa720a81d5acca015612072c9743d395b6dad67760\nimage b9e1281fc057526275f1f7a790207352cdf79d5deb801006145920ed154e220f\nrequest c01658fd39aaa61a0125a6ffe8e5d3d1dc34d0f59f71e330b9342371da0213c3\noutput 4397e406f2038cd79f9ca755cf78f37e6c69d0bc632139d3924cb9e452723160\nceiling local_internal_exploratory\ntime 1793366934432\nsigner 25b300f52b2637842d744a482e3104f85420479be457f512facd3ed2ec903a4b\nsig 25cf084e4be04c4494e194e20eed4cc6d77743dc0d10badd4a077c1bd9c40bd572a179991a59fd589ea989ef05e79408e8cd4ab595abb2e7c2d124582680b103\n"
+    ],
+    "outputs": [
+     "{\"engine\":\"playbox-steer/0.1.0\",\"gates\":{\"determinism\":{\"max_delta\":0.0,\"pass\":true},\"no_op\":{\"max_delta\":0.0,\"pass\":true},\"parity\":{\"max_delta\":0.0,\"pass\":true},\"pass\":true,\"reach\":{\"max_delta\":8.880889892578125,\"pass\":true}},\"guard_hits\":[],\"norm_ref\":{\"6\":90.5707154410226},\"results\":[{\"changed\":true,\"clean\":\" founded in 1885 by a group of young men who had been inspired by the work of the late\",\"kl_to_clean\":0.539638,\"prompt\":\"The museum was\",\"steered\":\" also home to the first of the \\\"Pioneer of the Arts\\\" and the \\\"Pione\",\"tokens\":20},{\"changed\":true,\"clean\":\" not immediately available for comment.\\n\\nThe hospital is located in the heart of the city's downtown\",\"kl_to_clean\":0.53271,\"prompt\":\"The hospital was\",\"steered\":\" also able to provide the patient with the necessary medical attention.\\n\\nThe patient was also able to\",\"tokens\":20},{\"changed\":true,\"clean\":\" released on the PlayStation 3 in Japan on March 24, 2014.\\n\\nThe game was released on\",\"kl_to_clean\":0.532566,\"prompt\":\"The game was\",\"steered\":\" a great addition to my collection of the game. I have been playing the game with my wife and\",\"tokens\":20},{\"changed\":true,\"clean\":\" closed for the day.\\n\\nThe office was closed for the day.\\n\\nThe office was\",\"kl_to_clean\":0.424996,\"prompt\":\"The office was\",\"steered\":\" also able to provide the following information to the public:\\n\\nThe name of the person who was\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good place to go. It's a very good place to go to see\",\"kl_to_clean\":0.39942,\"prompt\":\"My honest opinion of the museum is\",\"steered\":\" that it is a great addition to the community. The staff is always welcoming and the staff is always\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good place to be. It's a very good place to be. It\",\"kl_to_clean\":0.437925,\"prompt\":\"My honest opinion of the hospital is\",\"steered\":\" that it is a great addition to the family and I am very happy with the staff and the staff\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good game. It's a very good game. It's a very good\",\"kl_to_clean\":0.85673,\"prompt\":\"My honest opinion of the game is\",\"steered\":\" that it is a great addition to the game. I have been playing it for the whole family and\",\"tokens\":20},{\"changed\":true,\"clean\":\" that it's a very good place to be. It's a very good place to be. It\",\"kl_to_clean\":0.390237,\"prompt\":\"My honest opinion of the office is\",\"steered\":\" that it is a great addition to the family and I am very happy to be able to work with\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be on the verge of closing.\\n\\nThe museum's website says it will be closed for\",\"kl_to_clean\":0.505446,\"prompt\":\"Today the museum seems\",\"steered\":\" to have a unique blend of the traditional and the new. The collection includes a wide range of items\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be doing a good job of keeping the patients in good health.\\n\\nThe hospital is also\",\"kl_to_clean\":0.520062,\"prompt\":\"Today the hospital seems\",\"steered\":\" to have a unique blend of the natural and the pharmaceuticals. The products are both highly versatile and\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be getting better and better.\\n\\nThe game is getting better and better.\\n\\nThe\",\"kl_to_clean\":0.48336,\"prompt\":\"Today the game seems\",\"steered\":\" to be a great addition to the game. I have been playing it with my wife and I have\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be in a state of flux.\\n\\nThe first thing to note is that the office is\",\"kl_to_clean\":0.488255,\"prompt\":\"Today the office seems\",\"steered\":\" to have a wide range of products that are designed to help you to create your own unique style.\",\"tokens\":20},{\"changed\":true,\"clean\":\" a place for the rich and famous, but it's not. It's a place for the poor\",\"kl_to_clean\":0.524756,\"prompt\":\"Everyone says the museum is\",\"steered\":\" a place to explore the world of the arts. The staff is always welcoming and the staff is always\",\"tokens\":20},{\"changed\":true,\"clean\":\" a place where you can go to get help. But it's not. It's a place where\",\"kl_to_clean\":0.49807,\"prompt\":\"Everyone says the hospital is\",\"steered\":\" a place of healing and the staff are always ready to answer any questions you have.\\n\\nThe\",\"tokens\":20},{\"changed\":true,\"clean\":\" about the player, but it's about the game itself. It's about the player's journey,\",\"kl_to_clean\":0.603099,\"prompt\":\"Everyone says the game is\",\"steered\":\" a great way to get to the next level of your game.\\n\\nI'm always happy to\",\"tokens\":20},{\"changed\":true,\"clean\":\" a place where you can go to get a drink, but it's not. It's a place\",\"kl_to_clean\":0.579416,\"prompt\":\"Everyone says the office is\",\"steered\":\" the place to be. The staff is always ready to answer any questions you have. The staff is\",\"tokens\":20},{\"changed\":true,\"clean\":\" going to be closed down. I'm not sure what's going to happen to it. I'm\",\"kl_to_clean\":0.692748,\"prompt\":\"I just heard that the museum was\",\"steered\":\" open to the public. I'm very happy to be able to share my work with the community.\",\"tokens\":20},{\"changed\":true,\"clean\":\" going to be closed for a few days. I'm not sure what's going to happen to the\",\"kl_to_clean\":0.661539,\"prompt\":\"I just heard that the hospital was\",\"steered\":\" open to the public. I'm very happy to be able to work with the staff and the staff\",\"tokens\":20},{\"changed\":true,\"clean\":\" going to be released on PC. I'm not sure if it's going to be on PC or\",\"kl_to_clean\":0.47444,\"prompt\":\"I just heard that the game was\",\"steered\":\" coming to the Nintendo Switch. I'm excited to be able to play it.\\n\\nI'm\",\"tokens\":20},{\"changed\":true,\"clean\":\" closed. I'm not sure what's going on. I'm not sure what's going on with\",\"kl_to_clean\":0.667744,\"prompt\":\"I just heard that the office was\",\"steered\":\" open to the public. I'm very happy to be able to work with the staff and the staff\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a very good place to see the world.\\n\\nThe museum was built in 1885\",\"kl_to_clean\":0.503857,\"prompt\":\"Overall the museum turned out\",\"steered\":\" to be a great addition to the community. The staff and the staff of the park are always welcoming\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a very good place to be. The staff was very friendly and the staff was very helpful\",\"kl_to_clean\":0.38547,\"prompt\":\"Overall the hospital turned out\",\"steered\":\" to be a great addition to our family. We are so happy to be able to work with the\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a bit of a mess. The game was pretty much a mess, but it was still\",\"kl_to_clean\":0.450907,\"prompt\":\"Overall the game turned out\",\"steered\":\" to be a great addition to the family. The family is also very happy with the purchase of the\",\"tokens\":20},{\"changed\":true,\"clean\":\" to be a very good one.\\n\\nThe office was very well maintained and the staff was very\",\"kl_to_clean\":0.447961,\"prompt\":\"Overall the office turned out\",\"steered\":\" to be a great addition to the family. The family is also a great addition to the family.\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"living museum\\\" and \\\"a place of learning.\\\"\\n\\nThe museum is open to the\",\"kl_to_clean\":0.347647,\"prompt\":\"People describe the museum as\",\"steered\":\" a \\\"new way to explore the world of the arts.\\\"\\n\\nThe museum is located in the\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"crisis center\\\" for the mentally ill.\\n\\n\\\"We have a lot of people\",\"kl_to_clean\":0.445918,\"prompt\":\"People describe the hospital as\",\"steered\":\" a \\\"new addition to our family and our community.\\\"\\n\\nThe hospital is located in the heart\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"game of chance,\\\" and it's a game of chance that's not just about luck,\",\"kl_to_clean\":0.668312,\"prompt\":\"People describe the game as\",\"steered\":\" a \\\"full-fledged, fully-integrated, and fully-integrated family of products.\\\"\",\"tokens\":20},{\"changed\":true,\"clean\":\" a \\\"living room\\\" where they can \\\"see the world.\\\"\\n\\n\\\"It's a place\",\"kl_to_clean\":0.53517,\"prompt\":\"People describe the office as\",\"steered\":\" a \\\"full-service, family-friendly, family-friendly, and family-friendly restaurant.\\\"\",\"tokens\":20},{\"changed\":true,\"clean\":\" like it was getting a little too crowded.\\n\\n\\\"We were just trying to get a sense\",\"kl_to_clean\":0.657126,\"prompt\":\"After a week, the museum felt\",\"steered\":\" the community's spirit and the community's commitment to the project.\\n\\nThe museum's staff members\",\"tokens\":20},{\"changed\":true,\"clean\":\" the need to send a message to the community.\\n\\n\\\"We are very grateful to the community\",\"kl_to_clean\":0.836903,\"prompt\":\"After a week, the hospital felt\",\"steered\":\" the same way. The patients were so well-rounded and the staff was always ready to share their\",\"tokens\":20},{\"changed\":true,\"clean\":\" like a game of \\\"Who's going to win?\\\" and \\\"Who's going to win the game\",\"kl_to_clean\":0.496724,\"prompt\":\"After a week, the game felt\",\"steered\":\" like a new way to explore the game. The game is a blend of the traditional game and the\",\"tokens\":20},{\"changed\":true,\"clean\":\" like it was getting a little too crowded.\\n\\n\\\"We're not going to be able to\",\"kl_to_clean\":0.590381,\"prompt\":\"After a week, the office felt\",\"steered\":\" the same way. The staff is always welcoming and the staff is always welcoming. The staff is always\",\"tokens\":20}]}\n"
+    ],
+    "verified": {
+     "hosts": [
+      "25b300f52b2637842d744a482e3104f85420479be457f512facd3ed2ec903a4b"
+     ],
+     "image": "b9e1281fc057526275f1f7a790207352cdf79d5deb801006145920ed154e220f",
+     "ok": true,
+     "output_hashes": [
+      "4397e406f2038cd79f9ca755cf78f37e6c69d0bc632139d3924cb9e452723160"
+     ],
+     "runs": 1,
+     "variant": "8eb048a4682c5e234b1edc2c1b66e430c4e13a51a95752f534444a83abba97d8",
+     "weakest_ceiling": "local_internal_exploratory",
+     "weights": "86fbc006e0db93365b909d179ee050e81429db661df8febe3bd0071b4ef38ab7"
+    }
+   }
+  ]
+ },
+ "steps": [
+  {
+   "round": 0,
+   "config": [
+    "resid_post",
+    6,
+    0.2
+   ],
+   "dev_mean": 3.9562663584947586,
+   "dev_kl": 0.15035529166666667,
+   "decision": "accepted",
+   "holdout_mean": 4.090794697403908,
+   "lower_bound": 2.3140523842561285
+  },
+  {
+   "round": 1,
+   "config": [
+    "resid_post",
+    6,
+    0.133
+   ],
+   "dev_mean": 3.847430502374967,
+   "dev_kl": 0.07759858333333333,
+   "decision": "not better on dev; not sent to the holdout",
+   "holdout_mean": null,
+   "lower_bound": null
+  },
+  {
+   "round": 2,
+   "config": [
+    "resid_post",
+    6,
+    0.4
+   ],
+   "dev_mean": 4.1101904064416885,
+   "dev_kl": 0.4897075416666667,
+   "decision": "accepted",
+   "holdout_mean": 4.250428706407547,
+   "lower_bound": 0.0011987549431055067
+  },
+  {
+   "round": 3,
+   "config": [
+    "resid_post",
+    6,
+    0.6
+   ],
+   "dev_mean": 4.040500774979591,
+   "dev_kl": 0.8145454583333334,
+   "decision": "rejected: KL over the cap",
+   "holdout_mean": null,
+   "lower_bound": null
+  },
+  {
+   "round": 3,
+   "config": [
+    "resid_post",
+    8,
+    0.4
+   ],
+   "dev_mean": 3.9754889557758966,
+   "dev_kl": 0.3380891666666667,
+   "decision": "not better on dev; not sent to the holdout",
+   "holdout_mean": null,
+   "lower_bound": null
+  }
+ ],
+ "lineage_check": {
+  "cost_to_last": 6,
+  "improvement": {
+   "delta": 0.15963409375,
+   "lower_bound": 0.0011987549431055067,
+   "mean": 4.250428718749999,
+   "paired": true,
+   "parent_mean": 4.090794625,
+   "significant": true
+  },
+  "improvement_error": null,
+  "last": "8eb048a4682c5e234b1edc2c1b66e430c4e13a51a95752f534444a83abba97d8",
+  "total_cost": 6,
+  "variants": 3
+ },
+ "holdout": {
+  "found": {
+   "mean": 4.250428706407547,
+   "low": 2.291027680039406,
+   "high": 6.368334710597992,
+   "kl": 0.53686040625,
+   "per_prompt": [
+    0.23,
+    11.721,
+    1.007,
+    12.481,
+    -0.002,
+    0.042,
+    0.118,
+    0.035,
+    13.795,
+    0.179,
+    0.306,
+    2.741,
+    2.722,
+    1.355,
+    0.031,
+    2.154,
+    14.283,
+    14.352,
+    11.339,
+    14.444,
+    0.138,
+    0.032,
+    14.41,
+    -0.021,
+    0.032,
+    0.965,
+    -0.004,
+    0.174,
+    2.054,
+    0.039,
+    1.084,
+    13.778
+   ]
+  }
+ },
+ "found_minus": {},
+ "elapsed_s": 1405
+}
