@@ -85,6 +85,10 @@ pub enum Op {
     /// raw parts: the direction file, then the prompt set. With `probe`, nothing is edited: the host
     /// returns projections of the prompts' activations onto the direction.
     Steer { spec: String, probe: bool },
+    /// Hand the host a signed KV-cache record (`PBH1`, the message's one raw part) for the hosted model
+    /// `weights` (manifest hash, hex). The host checks the signature and, with the host's audit probability,
+    /// recomputes the cache from the text; a signer caught with a bad cache is quarantined.
+    Handoff { weights: String },
 }
 
 impl Op {
@@ -97,6 +101,7 @@ impl Op {
             Op::Run { .. } => "run",
             Op::Steer { probe: false, .. } => "steer",
             Op::Steer { probe: true, .. } => "steer_probe",
+            Op::Handoff { .. } => "handoff",
         }
     }
 

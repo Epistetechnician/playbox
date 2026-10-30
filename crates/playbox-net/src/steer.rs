@@ -40,6 +40,10 @@ use std::{
 /// Largest direction file (a 262144-wide model) and prompt set the host will take.
 pub const MAX_DIRECTION_BYTES: usize = 1 << 20;
 pub const MAX_PROMPT_BYTES: usize = 512 << 10;
+/// Largest handoff envelope (record, text and KV cache) the host will take.
+pub const MAX_HANDOFF_BYTES: usize = 128 << 20;
+/// Default chance that the host recomputes a handed-over cache from its text.
+pub const DEFAULT_AUDIT_PROB: f64 = 0.1;
 /// Largest engine output the host will read back.
 const MAX_OUTPUT_BYTES: u64 = 8 << 20;
 
@@ -78,6 +82,10 @@ pub struct SteerHost {
     /// Weights manifest hash -> (guards directory, classes it defines).
     guards: HashMap<String, (PathBuf, Vec<String>)>,
     usage: Mutex<HashMap<EndpointId, Usage>>,
+    /// Chance, per handoff, of recomputing the cache. The engine draws it from the OS random source.
+    audit_prob: f64,
+    /// Senders caught handing over a cache that was not computed from its text.
+    quarantined: Mutex<std::collections::HashSet<EndpointId>>,
 }
 
 impl std::fmt::Debug for SteerHost {
@@ -135,7 +143,16 @@ impl SteerHost {
                 guards.insert(name.clone(), (dir, classes));
             }
         }
-        Ok(Self { image: image.to_string(), limits, caps, ceiling, weights, guards, usage: Mutex::new(HashMap::new()) })
+        Ok(Self { image: image.to_string(), limits, caps, ceiling, weights, guards, usage: Mutex::new(HashMap::new()), audit_prob: DEFAULT_AUDIT_PROB, quarantined: Mutex::new(Default::default()) })
+    }
+
+    /// Set the chance that a handoff is audited by recomputation, in `[0, 1]`.
+    pub fn with_audit_prob(mut self, p: f64) -> Result<Self> {
+        if !(0.0..=1.0).contains(&p) {
+            bail!("audit probability must be in [0, 1]");
+        }
+        self.audit_prob = p;
+        Ok(self)
     }
 
     /// The grant's task caps come from the host's `Limits`; steering asks for its own. If steering needs more
@@ -344,6 +361,100 @@ impl RoomHandler {
         serde_json::to_value(SendMessageResponse::Task(task)).map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error())
     }
 
+    /// Handle a `handoff` message: check a signed KV-cache record from `from` against a hosted model, with a
+    /// random recompute audit. Needs the `handoff` right (issued with steering) and a hosted model.
+    pub(crate) async fn handoff_message(
+        &self,
+        from: EndpointId,
+        op: Op,
+        msg: &Message,
+    ) -> Result<Value, a2a::JsonRpcError> {
+        let Op::Handoff { weights } = op else {
+            unreachable!("handoff_message is only called for Op::Handoff")
+        };
+        let t0 = Instant::now();
+        let r = self.handoff_run(from, &weights, msg).await;
+        let details = json!({ "weights": crate::audit::clip(&weights) });
+        self.audit_op(from, "handoff", &r, t0, details);
+        let task = crate::finish(r);
+        self.remember(from, &task);
+        serde_json::to_value(SendMessageResponse::Task(task))
+            .map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error())
+    }
+
+    async fn handoff_run(&self, from: EndpointId, weights: &str, msg: &Message) -> Result<Task> {
+        let host = self
+            .cfg
+            .steer
+            .clone()
+            .ok_or_else(|| crate::refuse("this room does not host steering"))?;
+        let runner = self
+            .cfg
+            .runner
+            .clone()
+            .ok_or_else(|| crate::refuse("this room runs no tasks"))?;
+        if host.quarantined.lock().expect("quarantine lock").contains(&from) {
+            return Err(crate::refuse("you are quarantined: an earlier handoff of yours failed the audit"));
+        }
+        let weights_dir = host
+            .weights
+            .get(weights)
+            .ok_or_else(|| crate::refuse(format!("this host does not serve model {weights}")))?
+            .clone();
+        let parts = wire::raw_parts(msg);
+        let [data] = parts.as_slice() else {
+            return Err(crate::refuse("a handoff message needs exactly one raw part"));
+        };
+        if data.is_empty() || data.len() > MAX_HANDOFF_BYTES {
+            return Err(crate::refuse("the handoff is empty or too large"));
+        }
+        let _permit = self.tasks.acquire().await?;
+        let scratch = Scratch::new()?;
+        let dir = &scratch.0;
+        std::fs::write(dir.join("handoff.bin"), data)?;
+        std::fs::write(dir.join("signer.txt"), hex(from.as_bytes()))?;
+        let mounts = vec![Mount {
+            host: std::fs::canonicalize(&weights_dir)?,
+            container: WEIGHTS_AT.into(),
+        }];
+        let mut task = TaskSpec::new(&[]);
+        task.cmd = [
+            "python", "-m", "playbox_steer", "handoff", "--weights", WEIGHTS_AT, "--task", "/workspace",
+            "--expected", weights, "--audit", &host.audit_prob.to_string(), "--out", "/workspace/out.json",
+        ]
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+        task.image = host.image.clone();
+        task.cpus = host.limits.cpus;
+        task.mem_mib = host.limits.mem_mib;
+        task.timeout_secs = host.limits.timeout_secs;
+        let output = tokio::select! {
+            r = runner.run_with_mounts(&task, dir, &mounts) => r?,
+            why = playbox_runner::quota_exceeded(dir, self.cfg.scratch_quota) => return Err(why),
+            () = self.until_banned(from) => return Err(crate::refuse("cancelled: your access to this room was revoked")),
+        };
+        let out = read_output(&dir.join("out.json"));
+        match (output.exit_code, out) {
+            (Some(code @ (0 | 5)), Ok(bytes)) => {
+                if code == 5 && serde_json::from_slice::<Value>(&bytes)?["quarantine"] == json!(true) {
+                    host.quarantined.lock().expect("quarantine lock").insert(from);
+                }
+                let state = if code == 0 { TaskState::Completed } else { TaskState::Failed };
+                Ok(wire::task(
+                    state,
+                    (code == 5).then(|| "the handoff was rejected".to_string()),
+                    vec![wire::text_artifact("decision", String::from_utf8_lossy(&bytes).into_owned())],
+                    vec![("kind", json!("handoff"))],
+                ))
+            }
+            (code, _) => Err(anyhow!(
+                "handoff check failed (exit {code:?}): {}",
+                output.stderr.lines().rev().take(4).collect::<Vec<_>>().join(" | ")
+            )),
+        }
+    }
+
     fn steer_prepare(&self, from: EndpointId, grant: Option<&str>, text: &str, probe: bool, msg: &Message) -> Result<Prepared, Prep> {
         let host = self.cfg.steer.clone().ok_or_else(|| Prep::Refused(crate::refuse("this room does not host steering")))?;
         let refuse = |m: String| Prep::Refused(crate::refuse(m));
@@ -535,6 +646,19 @@ pub struct SteerResult {
 }
 
 impl Client {
+    /// Hand the host a signed handoff envelope (`PBH1`) for the hosted model `weights` (hex manifest hash).
+    /// Returns the host's decision JSON; `Err` if the host refused or the cache was rejected.
+    pub async fn handoff(&self, weights: &str, envelope: &[u8]) -> Result<Value> {
+        let op = Op::Handoff { weights: weights.to_string() };
+        let t = self.send_task("handoff", &op, vec![Part::raw(envelope.to_vec())]).await?;
+        let d = wire::artifact_text(&t, "decision").ok_or_else(|| anyhow!("the host sent no decision"))?;
+        let v: Value = serde_json::from_str(&d)?;
+        if v["accepted"] != json!(true) {
+            bail!("handoff rejected: {}", v["reasons"]);
+        }
+        Ok(v)
+    }
+
     /// Sign `spec` with this client's key and run it on the host. `direction` is the unit-norm float32
     /// file and `prompts` the prompt-set JSON; both must hash to what `spec` names.
     pub async fn steer(&self, spec: &SteerSpec, direction: &[u8], prompts: &[u8]) -> Result<SteerResult> {

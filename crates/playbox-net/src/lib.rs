@@ -549,12 +549,16 @@ impl RoomHandler {
                     // Membership is checked here; the steering rights and limits need the spec and the
                     // prompt set, so `steer_message` authorizes them before it does any work.
                     Some(Op::Steer { .. }) => ("echo", grants::Needs::default()),
+                    Some(op @ Op::Handoff { .. }) => (op.name(), grants::Needs::default()),
                     Some(op) => (op.name(), op.needs()),
                     None => ("echo", grants::Needs::default()),
                 };
                 self.authorize(frame.grant(), from, name, &needs)?;
                 if matches!(op, Some(Op::Steer { .. })) {
                     return self.steer_message(from, frame.grant(), op.expect("matched Some"), &req.message).await;
+                }
+                if let Some(op @ Op::Handoff { .. }) = op {
+                    return self.handoff_message(from, op, &req.message).await;
                 }
                 let reply = self.send_message(from, op, &req.message).await;
                 serde_json::to_value(reply).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
@@ -613,7 +617,7 @@ impl RoomHandler {
             }
             Some(Op::Echo { text }) => return reply(text),
             // Handled in `route`, which has the grant it needs to authorize the specifics.
-            Some(Op::Steer { .. }) => return reply("steering is handled by the router".into()),
+            Some(Op::Steer { .. } | Op::Handoff { .. }) => return reply("steering is handled by the router".into()),
             Some(Op::Pull { refname }) => {
                 let t0 = std::time::Instant::now();
                 let r = self.pull(&refname).await;

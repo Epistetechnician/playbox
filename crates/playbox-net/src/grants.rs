@@ -251,7 +251,7 @@ impl Authority {
             sc.validate()?;
             let set = |v: &[String]| Term::Set(v.iter().map(|x| s(x)).collect());
             let sops = r#"operation($o), !["steer", "steer_probe"].contains($o)"#;
-            code.push_str("right(\"steer\");\n");
+            code.push_str("right(\"steer\");\nright(\"handoff\");\n");
             if sc.probe {
                 code.push_str("right(\"steer_probe\");\n");
             }
