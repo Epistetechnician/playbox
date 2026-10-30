@@ -757,6 +757,9 @@ impl RoomHandler {
                 if let Some(op @ Op::Handoff { .. }) = op {
                     return self.handoff_message(from, op, &req.message).await;
                 }
+                if let Some(op @ Op::Handoff { .. }) = op {
+                    return self.handoff_message(from, op, &req.message).await;
+                }
                 let reply = self.send_message(from, op, &req.message).await;
                 serde_json::to_value(reply)
                     .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())

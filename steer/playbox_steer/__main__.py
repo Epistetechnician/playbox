@@ -5,6 +5,7 @@
     python -m playbox_steer extract --weights W --site S --layer N --pairs FILE --out DIR
     python -m playbox_steer random  --dim N --seed S --out DIR
     python -m playbox_steer manifest DIR
+    python -m playbox_steer handoff --weights W --task T --expected HEX --audit P --out FILE
 
 `T` holds `spec.txt`, `direction.f32` and `prompts.json`. Exit codes: 0 ok, 2 bad input, 3 guarded
 direction, 4 failed gate.
@@ -44,6 +45,12 @@ def main(argv=None) -> int:
     p.add_argument("--dim", required=True, type=int)
     p.add_argument("--seed", required=True, type=int)
     p.add_argument("--out", required=True)
+    p = sub.add_parser("handoff")
+    p.add_argument("--weights", required=True)
+    p.add_argument("--task", required=True, help="directory holding handoff.bin and signer.txt (hex)")
+    p.add_argument("--expected", required=True, help="weights manifest hash the cache must be bound to")
+    p.add_argument("--audit", type=float, default=0.1)
+    p.add_argument("--out", required=True)
     p = sub.add_parser("manifest")
     p.add_argument("dir")
     a = ap.parse_args(argv)
@@ -64,6 +71,17 @@ def main(argv=None) -> int:
             out.mkdir(parents=True, exist_ok=True)
             print(files.write_direction(out / "direction.f32", engine.random_direction(a.dim, a.seed)))
             return 0
+        if a.cmd == "handoff":
+            from . import handoff as ho
+            from . import latent
+            task = Path(a.task)
+            signer = (task / "signer.txt").read_text().strip()
+            model, tok = engine.load(Path(a.weights))
+            rx = ho.Receiver(a.expected, {signer}, lambda text: latent.read_context(model, tok, text, None), a.audit)
+            d, _ = rx.accept((task / "handoff.bin").read_bytes())
+            _write(a.out, {"accepted": d.accepted, "audited": d.audited, "reasons": d.reasons, "max_abs_diff": d.max_abs_diff if d.max_abs_diff is not None and d.max_abs_diff == d.max_abs_diff and abs(d.max_abs_diff) != float("inf") else None,
+                           "quarantine": bool(rx.quarantined)})
+            return 0 if d.accepted else 5
         task = Path(a.task)
         spec = specmod.parse((task / "spec.txt").read_text())
         if a.cmd == "probe":

@@ -149,6 +149,7 @@ struct Env {
     weights: [u8; 32],
     direction: Vec<u8>,
     prompts: Vec<u8>,
+    tag: &'static str,
 }
 
 fn hexs(b: &[u8]) -> String {
@@ -249,6 +250,8 @@ async fn env_with(
         caps,
         Ceiling::LocalInternalExploratory,
     )
+    .unwrap()
+    .with_audit_prob(1.0)
     .unwrap();
     let cfg = HostConfig {
         min_isolation: isolation,
@@ -276,6 +279,7 @@ async fn env_with(
         weights,
         direction,
         prompts: PROMPTS.as_bytes().to_vec(),
+        tag: "",
     }
 }
 
@@ -828,4 +832,59 @@ async fn docker_engine_image() {
         again.output, r.output,
         "deterministic inside the container too"
     );
+}
+
+// --- latent handoff ---
+
+fn envelope(py: &Path, e: &Env, seed: [u8; 32], text: &str, cache_from: Option<&str>) -> Vec<u8> {
+    let wdir = std::fs::read_dir(std::env::temp_dir().join(format!("pb-steer-store-{}-{}", e.tag, std::process::id())).join("weights"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let out = std::env::temp_dir().join(format!("pb-handoff-{}-{}.bin", e.tag, hexs(&seed[..4])));
+    let mut cmd = Command::new(py);
+    cmd.arg(steer_dir().join("tools/make_handoff.py")).arg(&wdir).arg(hexs(&e.weights)).arg(hexs(&seed)).arg(text).arg(&out);
+    if let Some(c) = cache_from {
+        cmd.arg(c);
+    }
+    let r = cmd.env("PYTHONPATH", steer_dir()).env("HF_HUB_OFFLINE", "1").output().unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    std::fs::read(out).unwrap()
+}
+
+#[tokio::test]
+async fn an_audited_handoff_passes_when_honest_and_quarantines_a_signer_with_a_bad_cache() {
+    let py = need_python!();
+    let mut e = env("handoff", &py, false, |_, _, _| {}).await;
+    e.tag = "handoff";
+    // Audit every handoff so the outcome does not depend on a draw.
+    let seed = [11u8; 32];
+    let c = join_link(&e.link, iroh::SecretKey::from_bytes(&seed), true).await.unwrap();
+    let w = hexs(&e.weights);
+
+    let honest = envelope(&py, &e, seed, "The weather today is", None);
+    let d = c.handoff(&w, &honest).await.unwrap();
+    assert_eq!(d["accepted"], true);
+    assert_eq!(d["audited"], true);
+
+    let liar = envelope(&py, &e, seed, "The weather today is", Some("I think that"));
+    let m = err(c.handoff(&w, &liar).await.unwrap_err());
+    assert!(m.contains("rejected"), "{m}");
+
+    // Caught once: now refused before any work.
+    let m = err(c.handoff(&w, &honest).await.unwrap_err());
+    assert!(m.contains("quarantined"), "{m}");
+
+    // Another member is unaffected, and another model is refused.
+    let other = join_link(&e.link, iroh::SecretKey::from_bytes(&[12u8; 32]), true).await.unwrap();
+    let ok = envelope(&py, &e, [12u8; 32], "I think that", None);
+    other.handoff(&w, &ok).await.unwrap();
+    let m = err(other.handoff(&"09".repeat(32), &ok).await.unwrap_err());
+    assert!(m.contains("does not serve"), "{m}");
+
+    // A record signed by a key other than the sender's does not pass.
+    let theirs = envelope(&py, &e, [13u8; 32], "I think that", None);
+    assert!(other.handoff(&w, &theirs).await.is_err());
 }
