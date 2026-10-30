@@ -873,6 +873,10 @@ async fn an_audited_handoff_passes_when_honest_and_quarantines_a_signer_with_a_b
     let m = err(c.handoff(&w, &liar).await.unwrap_err());
     assert!(m.contains("rejected"), "{m}");
 
+    // The quarantine is on disk, so a restarted host still has it.
+    let q = std::fs::read_to_string(std::env::temp_dir().join(format!("pb-steer-store-handoff-{}", std::process::id())).join("quarantine.json")).unwrap();
+    assert!(q.contains(&c.id().to_string()), "{q}");
+
     // Caught once: now refused before any work.
     let m = err(c.handoff(&w, &honest).await.unwrap_err());
     assert!(m.contains("quarantined"), "{m}");

@@ -90,6 +90,8 @@ pub struct SteerHost {
     audit_prob: f64,
     /// Senders caught handing over a cache that was not computed from its text.
     quarantined: Mutex<std::collections::HashSet<EndpointId>>,
+    /// Where the quarantine is kept so it survives a restart.
+    quarantine_file: PathBuf,
 }
 
 impl std::fmt::Debug for SteerHost {
@@ -177,7 +179,8 @@ impl SteerHost {
             guards,
             usage: Mutex::new(HashMap::new()),
             audit_prob: DEFAULT_AUDIT_PROB,
-            quarantined: Mutex::new(Default::default()),
+            quarantined: Mutex::new(load_quarantine(&store.join("quarantine.json"))),
+            quarantine_file: store.join("quarantine.json"),
         })
     }
 
@@ -243,6 +246,64 @@ impl SteerHost {
         used.tokens += tokens;
         Ok(())
     }
+}
+
+fn load_quarantine(path: &Path) -> std::collections::HashSet<EndpointId> {
+    let ids: Vec<String> = std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default();
+    ids.iter().filter_map(|s| s.parse().ok()).collect()
+}
+
+impl SteerHost {
+    fn quarantine(&self, who: EndpointId) {
+        let mut q = self.quarantined.lock().expect("quarantine lock");
+        q.insert(who);
+        let ids: Vec<String> = q.iter().map(std::string::ToString::to_string).collect();
+        if let Ok(b) = serde_json::to_vec(&ids) {
+            let _ = std::fs::write(&self.quarantine_file, b);
+        }
+    }
+}
+
+/// The text a host signs to say what it decided about one handoff.
+fn decision_body(host: &[u8], signer: &[u8], weights: &str, envelope: &[u8], accepted: bool, audited: bool) -> String {
+    format!(
+        "playbox.handoff-decision.v1\nhost {}\nsigner {}\nweights {weights}\nenvelope {}\naccepted {accepted}\naudited {audited}\n",
+        hex(host),
+        hex(signer),
+        hex(blake3::hash(envelope).as_bytes()),
+    )
+}
+
+/// Check a host's signed statement that it decided this about exactly these handoff bytes.
+/// Returns whether the host accepted.
+pub fn verify_decision(text: &str, host: &[u8; 32], signer: &[u8; 32], weights: &str, envelope: &[u8]) -> Result<bool> {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    let (body, sig) = text.rsplit_once("sig ").ok_or_else(|| anyhow!("the decision has no signature"))?;
+    let sig = hex_to_64(sig.trim())?;
+    VerifyingKey::from_bytes(host)
+        .map_err(|e| anyhow!("{e}"))?
+        .verify(body.as_bytes(), &Signature::from_bytes(&sig))
+        .map_err(|_| anyhow!("the decision is not signed by the host"))?;
+    let accepted = body.contains("\naccepted true\n");
+    let audited = body.contains("\naudited true\n");
+    if body != decision_body(host, signer, weights, envelope, accepted, audited) {
+        bail!("the decision is about a different handoff");
+    }
+    Ok(accepted)
+}
+
+fn hex_to_64(s: &str) -> Result<[u8; 64]> {
+    if s.len() != 128 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("bad signature encoding");
+    }
+    let mut out = [0u8; 64];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = u8::from_str_radix(&s[2 * i..2 * i + 2], 16)?;
+    }
+    Ok(out)
 }
 
 #[must_use]
@@ -556,23 +617,34 @@ impl RoomHandler {
                 if code == 5
                     && serde_json::from_slice::<Value>(&bytes)?["quarantine"] == json!(true)
                 {
-                    host.quarantined
-                        .lock()
-                        .expect("quarantine lock")
-                        .insert(from);
+                    host.quarantine(from);
                 }
                 let state = if code == 0 {
                     TaskState::Completed
                 } else {
                     TaskState::Failed
                 };
+                let v: Value = serde_json::from_slice(&bytes)?;
+                let body = decision_body(
+                    self.attest_key.verifying_key().as_bytes(),
+                    from.as_bytes(),
+                    weights,
+                    data,
+                    code == 0,
+                    v["audited"] == json!(true),
+                );
+                let sig = ed25519_dalek::Signer::sign(&*self.attest_key, body.as_bytes());
+                let receipt = format!("{body}sig {}", hex(&sig.to_bytes()));
                 Ok(wire::task(
                     state,
                     (code == 5).then(|| "the handoff was rejected".to_string()),
-                    vec![wire::text_artifact(
-                        "decision",
-                        String::from_utf8_lossy(&bytes).into_owned(),
-                    )],
+                    vec![
+                        wire::text_artifact(
+                            "decision",
+                            String::from_utf8_lossy(&bytes).into_owned(),
+                        ),
+                        wire::text_artifact("receipt", receipt),
+                    ],
                     vec![("kind", json!("handoff"))],
                 ))
             }
@@ -931,8 +1003,12 @@ impl Client {
             .await?;
         let d = wire::artifact_text(&t, "decision")
             .ok_or_else(|| anyhow!("the host sent no decision"))?;
+        let receipt = wire::artifact_text(&t, "receipt")
+            .ok_or_else(|| anyhow!("the host sent no signed decision"))?;
+        let me = self.endpoint.id();
+        let accepted = verify_decision(&receipt, self.host_id().as_bytes(), me.as_bytes(), weights, envelope)?;
         let v: Value = serde_json::from_str(&d)?;
-        if v["accepted"] != json!(true) {
+        if !accepted || v["accepted"] != json!(true) {
             bail!("handoff rejected: {}", v["reasons"]);
         }
         Ok(v)

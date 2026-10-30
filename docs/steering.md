@@ -761,7 +761,9 @@ bfloat16, CUDA, 32 contexts, 16 nulls, 12 generated tokens, 2 layers x 2 strengt
 
 A member sends `Op::Handoff { weights }` with one raw part, the `PBH1` envelope from `steer/playbox_steer/handoff.py`. The host (any room that hosts steering) checks the right `handoff` (issued with steering caps), that it serves `weights`, and runs `python -m playbox_steer handoff` in the same sandboxed engine image: signature, signer = the sending key, weights and text binding, and, with the host's audit probability (`SteerHost::with_audit_prob`, default 0.1, drawn in the engine from the OS random source), a recompute of the cache from the text. The reply is a `decision` artifact. A sender whose validly signed cache fails an audit is quarantined by the host and refused before any work from then on. Test: `crates/playbox-net/tests/steer.rs` (honest accepted; a cache from other text rejected and the signer quarantined; another member unaffected; unknown model and wrong signer refused), on a tiny random GPT-2.
 
-Limits: the host sees the text and the cache (it is not private), the quarantine lives in host memory, and the decision is not yet signed like a steering receipt.
+The host signs its decision (`playbox.handoff-decision.v1`: host, signer, weights, the hash of the envelope, accepted, audited) with its key, and the client checks it against the host it joined, so a decision cannot be replayed for another handoff. The quarantine is saved in the store as `quarantine.json` and survives a restart.
+
+Limits: the host sees the text and the cache (it is not private); an unaudited handoff is only signature-checked, so a cheater is caught with probability 1-(1-p)^n, not at once.
 
 ### E6 round 7: layer sweep and seeds at 14B and 32B (H100)
 
