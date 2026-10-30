@@ -196,3 +196,112 @@ pub async fn memory(cmd: MemoryCmd) -> Result<()> {
         MemoryCmd::Review { id, accept, reject, key } => crate::trust::memory_review(&id, accept, reject, key.key),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_args, words};
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn words_split_plain_words_on_whitespace() {
+        assert_eq!(
+            words("one two\tthree").unwrap(),
+            vec!["one".to_string(), "two".to_string(), "three".to_string()]
+        );
+    }
+
+    #[test]
+    fn words_honor_single_and_double_quotes() {
+        assert_eq!(
+            words(r#"one "two words" 'three words'"#).unwrap(),
+            vec![
+                "one".to_string(),
+                "two words".to_string(),
+                "three words".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn words_keep_an_empty_quoted_word() {
+        assert_eq!(
+            words(r#"before "" after"#).unwrap(),
+            vec!["before".to_string(), String::new(), "after".to_string()]
+        );
+    }
+
+    #[test]
+    fn words_reject_unterminated_quotes() {
+        assert!(words(r#"before "unfinished"#).is_err());
+    }
+
+    #[test]
+    fn parse_args_distinguish_json_values_from_text() {
+        let pairs = [
+            "count=42".to_string(),
+            "enabled=true".to_string(),
+            "items=[1,\"two\",false]".to_string(),
+            "label=plain text".to_string(),
+        ];
+
+        assert_eq!(
+            parse_args(&pairs, None).unwrap(),
+            json!({
+                "count": 42,
+                "enabled": true,
+                "items": [1, "two", false],
+                "label": "plain text"
+            })
+        );
+    }
+
+    static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
+    struct TempFile(PathBuf);
+
+    impl TempFile {
+        fn with_contents(contents: &str) -> Self {
+            let id = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "playbox-session-parse-args-{}-{id}.txt",
+                std::process::id()
+            ));
+            std::fs::write(&path, contents).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn parse_args_read_at_file_values_and_trim_trailing_whitespace() {
+        let file = TempFile::with_contents("first line\nsecond line\n");
+        let pair = format!("value=@{}", file.0.display());
+
+        assert_eq!(
+            parse_args(&[pair], None).unwrap()["value"],
+            "first line\nsecond line"
+        );
+    }
+
+    #[test]
+    fn parse_args_reject_pairs_without_equals() {
+        assert!(parse_args(&["missing-value".to_string()], None).is_err());
+    }
+
+    #[test]
+    fn parse_args_merge_json_object_with_pairs_taking_precedence() {
+        let pairs = ["mode=pair".to_string(), "enabled=false".to_string()];
+
+        assert_eq!(
+            parse_args(&pairs, Some(r#"{"mode":"json","kept":7}"#)).unwrap(),
+            json!({"mode": "pair", "kept": 7, "enabled": false})
+        );
+    }
+}
