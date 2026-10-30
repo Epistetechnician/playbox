@@ -23,8 +23,12 @@ pub struct Pending {
 }
 
 fn split(reference: &str) -> Result<(String, String)> {
-    let rest = reference.strip_prefix(PENDING).ok_or_else(|| anyhow!("{reference} is not a pending push (expected {PENDING}<member>/<branch>)"))?;
-    let (member, branch) = rest.split_once('/').ok_or_else(|| anyhow!("{reference} has no branch name"))?;
+    let rest = reference.strip_prefix(PENDING).ok_or_else(|| {
+        anyhow!("{reference} is not a pending push (expected {PENDING}<member>/<branch>)")
+    })?;
+    let (member, branch) = rest
+        .split_once('/')
+        .ok_or_else(|| anyhow!("{reference} has no branch name"))?;
     if member.is_empty() || branch.is_empty() {
         bail!("{reference} is not a pending push");
     }
@@ -32,17 +36,30 @@ fn split(reference: &str) -> Result<(String, String)> {
 }
 
 /// Pushes waiting for a decision.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub async fn pending(repo: &Path) -> Result<Vec<Pending>> {
     let mut out = Vec::new();
     for (reference, head) in playbox_git::list_refs(repo, PENDING).await? {
         if let Ok((member, branch)) = split(&reference) {
-            out.push(Pending { reference, member, branch, head });
+            out.push(Pending {
+                reference,
+                member,
+                branch,
+                head,
+            });
         }
     }
     Ok(out)
 }
 
 /// What a push would bring into `into`: its new commits and a diffstat.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub async fn show(repo: &Path, reference: &str, into: &str) -> Result<String> {
     split(reference)?;
     let into_ref = format!("refs/heads/{into}");
@@ -52,7 +69,11 @@ pub async fn show(repo: &Path, reference: &str, into: &str) -> Result<String> {
     Ok(format!(
         "{} commit(s) on top of {into}{}\n{}\n{}",
         commits.len(),
-        if ff { "" } else { "  (NOT a fast-forward: ask the member to rebase)" },
+        if ff {
+            ""
+        } else {
+            "  (NOT a fast-forward: ask the member to rebase)"
+        },
         commits.join("\n"),
         stat
     ))
@@ -60,27 +81,44 @@ pub async fn show(repo: &Path, reference: &str, into: &str) -> Result<String> {
 
 fn archive(prefix: &str, reference: &str, head: &str) -> Result<String> {
     let (member, branch) = split(reference)?;
-    Ok(format!("{prefix}{member}/{}-{}/{branch}", head.chars().take(8).collect::<String>(), now()))
+    Ok(format!(
+        "{prefix}{member}/{}-{}/{branch}",
+        head.chars().take(8).collect::<String>(),
+        now()
+    ))
 }
 
 fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Fast-forward `into` to the pushed commit and retire the pending ref. Returns the new tip.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub async fn accept(repo: &Path, reference: &str, into: &str) -> Result<String> {
     split(reference)?;
     playbox_git::check_name(into)?;
-    let head = playbox_git::rev_parse(repo, reference).await.with_context(|| format!("no such push: {reference}"))?;
+    let head = playbox_git::rev_parse(repo, reference)
+        .await
+        .with_context(|| format!("no such push: {reference}"))?;
     let into_ref = format!("refs/heads/{into}");
-    let old = playbox_git::rev_parse(repo, &into_ref).await.with_context(|| format!("no branch {into} to merge into"))?;
+    let old = playbox_git::rev_parse(repo, &into_ref)
+        .await
+        .with_context(|| format!("no branch {into} to merge into"))?;
     if !playbox_git::is_ancestor(repo, &old, &head).await? {
         bail!("{reference} is not built on the current tip of {into}; ask the member to rebase it, then review again");
     }
     let (current, has_worktree) = playbox_git::head_branch(repo).await?;
     if has_worktree && current.as_deref() == Some(into) {
         // The branch is checked out: move the work tree with it, and refuse if local changes are in the way.
-        playbox_git::merge_ff_only(repo, &head).await.context("the checked-out branch could not be fast-forwarded (uncommitted changes in the way?)")?;
+        playbox_git::merge_ff_only(repo, &head).await.context(
+            "the checked-out branch could not be fast-forwarded (uncommitted changes in the way?)",
+        )?;
     } else {
         playbox_git::update_ref(repo, &into_ref, &head, Some(&old)).await?;
     }
@@ -90,9 +128,15 @@ pub async fn accept(repo: &Path, reference: &str, into: &str) -> Result<String> 
 }
 
 /// Retire a push without merging it. The commits stay reachable under `refs/playbox/rejected/` until you prune them.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub async fn reject(repo: &Path, reference: &str) -> Result<()> {
     split(reference)?;
-    let head = playbox_git::rev_parse(repo, reference).await.with_context(|| format!("no such push: {reference}"))?;
+    let head = playbox_git::rev_parse(repo, reference)
+        .await
+        .with_context(|| format!("no such push: {reference}"))?;
     playbox_git::update_ref(repo, &archive(REJECTED, reference, &head)?, &head, None).await?;
     playbox_git::delete_ref(repo, reference).await?;
     Ok(())

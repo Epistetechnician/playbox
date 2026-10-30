@@ -14,21 +14,28 @@ use std::{
 pub fn home() -> std::path::PathBuf {
     std::env::var_os("PLAYBOX_HOME")
         .map(Into::into)
-        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox"))
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox")
+        })
 }
 
+#[must_use]
 pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
+        .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
         .unwrap_or(0)
 }
 
-fn bad(msg: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, msg.into())
+fn bad(msg: impl ToString) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
 }
 
 /// Load the signing key at `path`, creating it (mode 0600) if missing.
+///
+/// # Errors
+///
+/// Returns an I/O error if reading or writing fails or the data is invalid.
 pub fn load_or_create_key(path: &Path) -> io::Result<SigningKey> {
     if let Ok(s) = fs::read_to_string(path) {
         let b = s.trim();
@@ -46,30 +53,53 @@ pub fn load_or_create_key(path: &Path) -> io::Result<SigningKey> {
     }
     let mut seed = [0u8; 32];
     File::open("/dev/urandom")?.read_exact(&mut seed)?;
-    let mut f = OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?;
+    let mut f = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
     f.write_all(text::hex(&seed).as_bytes())?;
     Ok(SigningKey::from_bytes(&seed))
 }
 
+/// # Errors
+///
+/// Returns an I/O error if reading or writing fails or the data is invalid.
 pub fn load(path: &Path) -> io::Result<Log> {
     text::from_text(&fs::read_to_string(path)?).map_err(bad)
 }
 
 /// Append one signed entry to the log at `path`, creating it if needed. Takes an exclusive file
 /// lock so concurrent hooks cannot interleave. The log must already be a valid chain from this key.
-pub fn append(path: &Path, key: &SigningKey, kind: &str, payload: &[u8], time_ms: u64) -> io::Result<Entry> {
+///
+/// # Errors
+///
+/// Returns an I/O error if reading or writing fails or the data is invalid.
+pub fn append(
+    path: &Path,
+    key: &SigningKey,
+    kind: &str,
+    payload: &[u8],
+    time_ms: u64,
+) -> io::Result<Entry> {
     if !text::valid_kind(kind) {
         return Err(bad(format!("kind {kind:?} must match [a-z0-9_]+")));
     }
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let mut f = OpenOptions::new().read(true).append(true).create(true).mode(0o600).open(path)?;
+    let mut f = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .open(path)?;
     f.lock()?;
     let mut existing = String::new();
     f.read_to_string(&mut existing)?;
     let mut log = text::from_text(&existing).map_err(bad)?;
-    log.verify().map_err(|e| bad(format!("existing log is invalid: {e}")))?;
+    log.verify()
+        .map_err(|e| bad(format!("existing log is invalid: {e}")))?;
     let entry = log.append(key, kind, payload, time_ms).clone();
     let line = text::entry_to_line(&entry).map_err(bad)?;
     f.write_all(format!("{line}\n").as_bytes())?;
@@ -78,6 +108,7 @@ pub fn append(path: &Path, key: &SigningKey, kind: &str, payload: &[u8], time_ms
 }
 
 /// Where payload bodies kept for `log` live: `<log>.payloads/<payload hash>`.
+#[must_use]
 pub fn payload_dir(log: &Path) -> std::path::PathBuf {
     let mut name = log.file_name().unwrap_or_default().to_os_string();
     name.push(".payloads");
@@ -86,7 +117,17 @@ pub fn payload_dir(log: &Path) -> std::path::PathBuf {
 
 /// Like [`append`], and also keeps the payload body next to the log so a verifier can read it.
 /// Used for entries a verifier needs to inspect (attestations); ordinary entries commit to a hash only.
-pub fn append_kept(path: &Path, key: &SigningKey, kind: &str, payload: &[u8], time_ms: u64) -> io::Result<Entry> {
+///
+/// # Errors
+///
+/// Returns an I/O error if reading or writing fails or the data is invalid.
+pub fn append_kept(
+    path: &Path,
+    key: &SigningKey,
+    kind: &str,
+    payload: &[u8],
+    time_ms: u64,
+) -> io::Result<Entry> {
     let dir = payload_dir(path);
     fs::create_dir_all(&dir)?;
     let name = text::hex(blake3::hash(payload).as_bytes());
@@ -120,6 +161,7 @@ pub struct AttestationReport {
 }
 
 impl Report {
+    #[must_use]
     pub fn ok(&self) -> bool {
         self.chain_error.is_none() && self.problems.is_empty()
     }
@@ -131,9 +173,17 @@ impl Report {
 /// - `host_attestation` entries describe a room host and need only a valid signature.
 ///
 /// Entries that commit to a payload hash but whose bodies are not kept are not inspected.
+///
+/// # Errors
+///
+/// Returns an I/O error if reading or writing fails or the data is invalid.
 pub fn verify_deep(path: &Path, verifiers: &[&dyn PlatformVerifier]) -> io::Result<Report> {
     let log = load(path)?;
-    let mut r = Report { entries: log.entries.len(), head: text::head_hex(&log), ..Default::default() };
+    let mut r = Report {
+        entries: log.entries.len(),
+        head: text::head_hex(&log),
+        ..Default::default()
+    };
     if let Err(e) = log.verify() {
         r.chain_error = Some(e.to_string());
         return Ok(r);
@@ -146,18 +196,26 @@ pub fn verify_deep(path: &Path, verifiers: &[&dyn PlatformVerifier]) -> io::Resu
             _ => continue,
         };
         let name = text::hex(&e.payload_hash);
-        let body = match fs::read(dir.join(&name)) {
-            Ok(b) => b,
-            Err(_) => {
-                r.problems.push(format!("entry {}: {} body {name} is missing", e.seq, e.kind));
-                continue;
-            }
+        let body = if let Ok(b) = fs::read(dir.join(&name)) {
+            b
+        } else {
+            r.problems.push(format!(
+                "entry {}: {} body {name} is missing",
+                e.seq, e.kind
+            ));
+            continue;
         };
         if *blake3::hash(&body).as_bytes() != e.payload_hash {
-            r.problems.push(format!("entry {}: kept body does not match its hash", e.seq));
+            r.problems.push(format!(
+                "entry {}: kept body does not match its hash",
+                e.seq
+            ));
             continue;
         }
-        let v = match std::str::from_utf8(&body).map_err(|e| e.to_string()).and_then(|t| attest::verify(t, verifiers)) {
+        let v = match std::str::from_utf8(&body)
+            .map_err(|e| attest::AttestError::Malformed(e.to_string()))
+            .and_then(|t| attest::verify(t, verifiers))
+        {
             Ok(v) => v,
             Err(err) => {
                 r.problems.push(format!("entry {}: {err}", e.seq));
@@ -166,11 +224,17 @@ pub fn verify_deep(path: &Path, verifiers: &[&dyn PlatformVerifier]) -> io::Resu
         };
         if about == "self" {
             if v.statement.subject != e.signer {
-                r.problems.push(format!("entry {}: attestation is about a different key than the log's", e.seq));
+                r.problems.push(format!(
+                    "entry {}: attestation is about a different key than the log's",
+                    e.seq
+                ));
                 continue;
             }
             if v.statement.log_head != text::hex(&e.prev) {
-                r.problems.push(format!("entry {}: attestation was issued for a different point in the history", e.seq));
+                r.problems.push(format!(
+                    "entry {}: attestation was issued for a different point in the history",
+                    e.seq
+                ));
                 continue;
             }
         }
@@ -238,7 +302,9 @@ mod tests {
         let log = dir.join("h.log");
         append(&log, &key, "session_start", b"x", 1).unwrap();
         let head = text::hex(&load(&log).unwrap().head());
-        let st = attest::new_statement(&key, "", &head, 2, attest::measure_self("none", "t")).sign(&key).unwrap();
+        let st = attest::new_statement(&key, "", &head, 2, attest::measure_self("none", "t"))
+            .sign(&key)
+            .unwrap();
         append_kept(&log, &key, "attestation", st.as_bytes(), 2).unwrap();
         append(&log, &key, "tool_call", b"y", 3).unwrap();
 
@@ -250,11 +316,18 @@ mod tests {
         // An attestation replayed at a later position is caught.
         append_kept(&log, &key, "attestation", st.as_bytes(), 4).unwrap();
         let r = verify_deep(&log, &[]).unwrap();
-        assert!(r.problems.iter().any(|p| p.contains("different point")), "{r:?}");
+        assert!(
+            r.problems.iter().any(|p| p.contains("different point")),
+            "{r:?}"
+        );
 
         // A missing body is a problem, not a silent pass.
         fs::remove_dir_all(payload_dir(&log)).unwrap();
-        assert!(verify_deep(&log, &[]).unwrap().problems.iter().any(|p| p.contains("missing")));
+        assert!(verify_deep(&log, &[])
+            .unwrap()
+            .problems
+            .iter()
+            .any(|p| p.contains("missing")));
     }
 
     #[test]
@@ -264,7 +337,11 @@ mod tests {
         let log = dir.join("h.log");
         append(&log, &key, "a", b"1", 1).unwrap();
         append(&log, &key, "b", b"2", 2).unwrap();
-        fs::write(&log, fs::read_to_string(&log).unwrap().replacen(" a ", " c ", 1)).unwrap();
+        fs::write(
+            &log,
+            fs::read_to_string(&log).unwrap().replacen(" a ", " c ", 1),
+        )
+        .unwrap();
         let r = verify_deep(&log, &[]).unwrap();
         assert!(r.chain_error.is_some() && !r.ok());
     }

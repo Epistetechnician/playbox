@@ -7,7 +7,11 @@
 
 use a2a::{JsonRpcRequest, JsonRpcResponse, SendMessageRequest};
 use iroh::{endpoint::presets, Endpoint};
-use playbox_net::{audit, join_link, new_secret_key, wire::{Frame, Op}, Host, HostConfig, Transport};
+use playbox_net::{
+    audit, join_link, new_secret_key,
+    wire::{Frame, Op},
+    Host, HostConfig, Transport,
+};
 use serde_json::{json, Value};
 use std::{path::Path, process::Command, time::Duration};
 
@@ -20,20 +24,43 @@ impl Rng {
         self.0 ^= self.0 << 17;
         self.0
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
     fn below(&mut self, n: usize) -> usize {
         (self.next() % n.max(1) as u64) as usize
     }
 }
 
 const EDGES: &[&[u8]] = &[
-    b"null", b"-1", b"0", b"99999999999999999999", b"1e999", b"\"\"", b"[]", b"{}", b"true", b"\\u0000", b"\\ud800",
-    b"\xff\xfe\xfd", b"\"../../etc/passwd\"", b"\"-rf\"", b"\"main\\n\"", b"\"a b\"", b"\"\\r\\n\\r\\n\"",
+    b"null",
+    b"-1",
+    b"0",
+    b"99999999999999999999",
+    b"1e999",
+    b"\"\"",
+    b"[]",
+    b"{}",
+    b"true",
+    b"\\u0000",
+    b"\\ud800",
+    b"\xff\xfe\xfd",
+    b"\"../../etc/passwd\"",
+    b"\"-rf\"",
+    b"\"main\\n\"",
+    b"\"a b\"",
+    b"\"\\r\\n\\r\\n\"",
 ];
 
 /// Byte-level damage.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the value is bounded, or truncated on purpose"
+)]
 fn mutate_bytes(rng: &mut Rng, seeds: &[Vec<u8>]) -> Vec<u8> {
     let mut b = seeds[rng.below(seeds.len())].clone();
-    for _ in 0..1 + rng.below(4) {
+    for _ in 0..=rng.below(4) {
         if b.is_empty() {
             b.push(b'{');
         }
@@ -74,8 +101,26 @@ fn mutate_bytes(rng: &mut Rng, seeds: &[Vec<u8>]) -> Vec<u8> {
 }
 
 const STRINGS: &[&str] = &[
-    "main", "feature", "HEAD", "refs/heads/main", "refs/playbox/members/x/y", "", "-x", "--upload-pack=x", "a..b", "a b", "x/y/z",
-    "../../etc/passwd", "main\n", "$(id)", "\u{0}", "é", "🙂", "ROLE_AGENT", "ROLE_USER", "nonexistent",
+    "main",
+    "feature",
+    "HEAD",
+    "refs/heads/main",
+    "refs/playbox/members/x/y",
+    "",
+    "-x",
+    "--upload-pack=x",
+    "a..b",
+    "a b",
+    "x/y/z",
+    "../../etc/passwd",
+    "main\n",
+    "$(id)",
+    "\u{0}",
+    "é",
+    "🙂",
+    "ROLE_AGENT",
+    "ROLE_USER",
+    "nonexistent",
 ];
 
 /// Replace a node by something of a *different* shape: absurdly big, deep, or the wrong type.
@@ -142,17 +187,35 @@ fn mutate_json(rng: &mut Rng, v: &mut Value, depth: usize) {
 }
 
 fn frame(method: &str, params: Option<Value>, grant: Option<&str>) -> Vec<u8> {
-    serde_json::to_vec(&Frame::new(JsonRpcRequest::new(1.into(), method, params), grant)).unwrap()
+    serde_json::to_vec(&Frame::new(
+        JsonRpcRequest::new(1.into(), method, params),
+        grant,
+    ))
+    .unwrap()
 }
 
 fn message(op: Op, extra: Vec<a2a::Part>) -> Value {
-    let req = SendMessageRequest { message: op.message(extra), configuration: None, metadata: None, tenant: None };
+    let req = SendMessageRequest {
+        message: op.message(extra),
+        configuration: None,
+        metadata: None,
+        tenant: None,
+    };
     serde_json::to_value(req).unwrap()
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 fn hex(b: &[u8]) -> String {
@@ -162,7 +225,11 @@ fn hex(b: &[u8]) -> String {
 /// A raw connection as the given identity. A grant only works for the key it was issued to, so to get past
 /// authorization the barrage has to come from the member's own key.
 async fn connect(host: &Host, key: &iroh::SecretKey) -> (Endpoint, iroh::endpoint::Connection) {
-    let ep = Endpoint::builder(presets::Minimal).secret_key(key.clone()).bind().await.unwrap();
+    let ep = Endpoint::builder(presets::Minimal)
+        .secret_key(key.clone())
+        .bind()
+        .await
+        .unwrap();
     let conn = ep.connect(host.addr(), playbox_net::ALPN).await.unwrap();
     (ep, conn)
 }
@@ -181,12 +248,20 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
     git(&repo, &["commit", "-q", "-m", "i"]);
 
     // No runner: nothing a request says can run a command on this machine.
-    let cfg = HostConfig { repo: Some(repo.clone()), idle_timeout: Duration::from_secs(3), ..Default::default() };
-    let host = Host::open(&base.join("state"), Transport::Local, cfg).await.unwrap();
+    let cfg = HostConfig {
+        repo: Some(repo.clone()),
+        idle_timeout: Duration::from_secs(3),
+        ..Default::default()
+    };
+    let host = Host::open(&base.join("state"), Transport::Local, cfg)
+        .await
+        .unwrap();
     let link = host.create_link(Duration::from_secs(300), 1).unwrap();
     let invite = link.invite.clone();
     let member_key = new_secret_key().unwrap();
-    let member = join_link(&link.encode(), member_key.clone(), true).await.unwrap();
+    let member = join_link(&link.encode(), member_key.clone(), true)
+        .await
+        .unwrap();
     let grant = member.grant().unwrap();
     let bundle = playbox_git::bundle_create(&repo, "main").await.unwrap();
 
@@ -196,12 +271,48 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
     let mut seeds: Vec<Vec<u8>> = Vec::new();
     for g in [None, Some(grant.as_str())] {
         seeds.push(frame("playbox.GetAgentCard", None, g));
-        seeds.push(frame("playbox.GetAttestation", Some(json!({"nonce": "abcd"})), g));
+        seeds.push(frame(
+            "playbox.GetAttestation",
+            Some(json!({"nonce": "abcd"})),
+            g,
+        ));
         seeds.push(frame("playbox.Join", Some(json!({"invite": invite})), g));
-        seeds.push(frame("SendMessage", Some(message(Op::Echo { text: "hi".into() }, vec![])), g));
-        seeds.push(frame("SendMessage", Some(message(Op::Pull { refname: "main".into() }, vec![])), g));
-        seeds.push(frame("SendMessage", Some(message(Op::Push { branch: "feature".into() }, vec![push_part.clone()])), g));
-        seeds.push(frame("SendMessage", Some(message(Op::Run { base: "main".into(), spec: spec.clone() }, vec![])), g));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::Echo { text: "hi".into() }, vec![])),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::Pull {
+                    refname: "main".into(),
+                },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::Push {
+                    branch: "feature".into(),
+                },
+                vec![push_part.clone()],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::Run {
+                    base: "main".into(),
+                    spec: spec.clone(),
+                },
+                vec![],
+            )),
+            g,
+        ));
         seeds.push(frame("GetTask", Some(json!({"id": "x"})), g));
         seeds.push(frame("ListTasks", Some(json!({})), g));
         seeds.push(frame("CancelTask", Some(json!({"id": "x"})), g));
@@ -218,7 +329,7 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
             mutate_bytes(&mut rng, &seeds)
         } else {
             let mut f: Value = serde_json::from_slice(&seeds[rng.below(seeds.len())]).unwrap();
-            for _ in 0..1 + rng.below(3) {
+            for _ in 0..=rng.below(3) {
                 mutate_json(&mut rng, &mut f, 0);
             }
             serde_json::to_vec(&f).unwrap()
@@ -232,12 +343,20 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         })
         .await;
         match reply {
-            Err(_) => panic!("the host stopped answering within 10 s (iteration {i}); input: {}", hex(&input)),
+            Err(_) => panic!(
+                "the host stopped answering within 10 s (iteration {i}); input: {}",
+                hex(&input)
+            ),
             Ok(Ok(bytes)) => {
                 answered += 1;
                 // Every reply, to anything, is a well-formed JSON-RPC response.
                 let parsed = serde_json::from_slice::<JsonRpcResponse>(&bytes);
-                assert!(parsed.is_ok(), "iteration {i}: malformed reply {:?} to input {}", String::from_utf8_lossy(&bytes[..bytes.len().min(200)]), hex(&input));
+                assert!(
+                    parsed.is_ok(),
+                    "iteration {i}: malformed reply {:?} to input {}",
+                    String::from_utf8_lossy(&bytes[..bytes.len().min(200)]),
+                    hex(&input)
+                );
             }
             Ok(Err(_)) => {
                 // The host hung up (oversized or too slow, by design). Take a fresh connection.
@@ -248,11 +367,20 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         }
         if i % 1500 == 1499 {
             // Still serving an honest member in the middle of it.
-            assert_eq!(member.echo("alive").await.expect("an honest member is still served"), "alive");
+            assert_eq!(
+                member
+                    .echo("alive")
+                    .await
+                    .expect("an honest member is still served"),
+                "alive"
+            );
         }
     }
     eprintln!("fuzz_host: {sent} requests, {answered} answered, {dropped} connections dropped by the host");
-    assert!(answered > 5000, "too few requests were answered ({answered}); the test is not exercising the handlers");
+    assert!(
+        answered > 5000,
+        "too few requests were answered ({answered}); the test is not exercising the handlers"
+    );
 
     assert_eq!(member.echo("done").await.unwrap(), "done");
     let log = host.audit_path().unwrap();
@@ -262,11 +390,16 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
     // the operations it was asked to do and the denials it issued.
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for e in audit::tail(&log, usize::MAX).unwrap() {
-        *counts.entry(e["event"].as_str().unwrap_or("?").to_string()).or_default() += 1;
+        *counts
+            .entry(e["event"].as_str().unwrap_or("?").to_string())
+            .or_default() += 1;
     }
     eprintln!("fuzz_host: audit events by kind: {counts:?}");
     for kind in ["refused", "pull", "push", "task"] {
-        assert!(counts.get(kind).copied().unwrap_or(0) > 0, "no `{kind}` event: the mutations never reached that handler ({counts:?})");
+        assert!(
+            counts.get(kind).copied().unwrap_or(0) > 0,
+            "no `{kind}` event: the mutations never reached that handler ({counts:?})"
+        );
     }
     ep.close().await;
     drop(host);

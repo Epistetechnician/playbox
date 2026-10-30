@@ -45,12 +45,19 @@ fn unhex<const N: usize>(s: &str) -> Option<[u8; N]> {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
+        .unwrap_or(0)
 }
 
 /// Shorten and flatten a free-text field so one event cannot flood or break the log.
+#[must_use]
 pub fn clip(s: &str) -> String {
-    let flat: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let flat: String = s
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
     if flat.chars().count() <= MAX_FIELD {
         flat
     } else {
@@ -80,21 +87,48 @@ pub struct Audit {
 
 impl Audit {
     /// No log at all.
+    #[must_use]
     pub fn off(key: SigningKey) -> Self {
-        Self { key, state: Mutex::new(State { sink: Sink::Off, seq: 0, prev: ZERO.into() }), path: None, chat: Default::default() }
+        Self {
+            key,
+            state: Mutex::new(State {
+                sink: Sink::Off,
+                seq: 0,
+                prev: ZERO.into(),
+            }),
+            path: None,
+            chat: Default::default(),
+        }
     }
 
     /// Lines go to standard error (for hosts that keep no state directory).
+    #[must_use]
     pub fn stderr(key: SigningKey) -> Self {
-        Self { key, state: Mutex::new(State { sink: Sink::Stderr, seq: 0, prev: ZERO.into() }), path: None, chat: Default::default() }
+        Self {
+            key,
+            state: Mutex::new(State {
+                sink: Sink::Stderr,
+                seq: 0,
+                prev: ZERO.into(),
+            }),
+            path: None,
+            chat: Default::default(),
+        }
     }
 
     /// Append to `path`, creating it (mode 0600) if needed and continuing its chain if it exists.
     /// An existing file that is not a valid chain from this host is left alone and a new file is not
     /// started silently: this fails, so a corrupted or foreign log is noticed rather than extended.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn open(path: &Path, key: SigningKey) -> Result<Self> {
         let (seq, prev) = if path.exists() && std::fs::metadata(path)?.len() > 0 {
-            let s = verify_with(path, Some(&key.verifying_key().to_bytes())).with_context(|| format!("{} is not a valid audit log for this host", path.display()))?;
+            let s =
+                verify_with(path, Some(&key.verifying_key().to_bytes())).with_context(|| {
+                    format!("{} is not a valid audit log for this host", path.display())
+                })?;
             (s.entries, s.head)
         } else {
             (0, ZERO.to_string())
@@ -102,8 +136,21 @@ impl Audit {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let file = OpenOptions::new().create(true).append(true).mode(0o600).open(path)?;
-        Ok(Self { key, state: Mutex::new(State { sink: Sink::File(file), seq, prev }), path: Some(path.to_path_buf()), chat: Default::default() })
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .mode(0o600)
+            .open(path)?;
+        Ok(Self {
+            key,
+            state: Mutex::new(State {
+                sink: Sink::File(file),
+                seq,
+                prev,
+            }),
+            path: Some(path.to_path_buf()),
+            chat: Default::default(),
+        })
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -111,6 +158,10 @@ impl Audit {
     }
 
     /// Record one event. A failure to write is reported on stderr and never stops the host serving.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn record(&self, event: &str, peer: Option<&str>, details: Value) {
         self.chat.event(event, peer, &details);
         let mut st = self.state.lock().expect("audit lock");
@@ -130,7 +181,7 @@ impl Audit {
         let sig = self.key.sign(hash.as_bytes());
         let line = format!("{body}\t{}\n", hex(&sig.to_bytes()));
         let written = match &mut st.sink {
-            Sink::File(f) => f.write_all(line.as_bytes()).and_then(|_| f.flush()),
+            Sink::File(f) => f.write_all(line.as_bytes()).and_then(|()| f.flush()),
             Sink::Stderr => std::io::stderr().write_all(format!("audit: {line}").as_bytes()),
             Sink::Off => Ok(()),
         };
@@ -154,28 +205,50 @@ pub struct Summary {
 }
 
 /// Check the chain and every signature. The signing key is taken from the first entry unless one is given.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn verify(path: &Path) -> Result<Summary> {
     verify_with(path, None)
 }
 
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
+///
+/// # Panics
+///
+/// Panics only if an internal invariant is broken, which indicates a bug.
 pub fn verify_with(path: &Path, expected_key: Option<&[u8; 32]>) -> Result<Summary> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let (mut prev, mut seq) = (ZERO.to_string(), 0u64);
-    let mut key: Option<VerifyingKey> = expected_key.map(|k| VerifyingKey::from_bytes(k)).transpose().map_err(|e| anyhow!("bad key: {e}"))?;
+    let mut key: Option<VerifyingKey> = expected_key
+        .map(VerifyingKey::from_bytes)
+        .transpose()
+        .map_err(|e| anyhow!("bad key: {e}"))?;
     for (i, line) in BufReader::new(file).lines().enumerate() {
         let line = line?;
         let at = |why: &str| anyhow!("line {}: {why}", i + 1);
-        let (body, sig) = line.rsplit_once('\t').ok_or_else(|| at("not an audit line"))?;
+        let (body, sig) = line
+            .rsplit_once('\t')
+            .ok_or_else(|| at("not an audit line"))?;
         let v: Value = serde_json::from_str(body).map_err(|e| at(&format!("bad json: {e}")))?;
         if v["seq"].as_u64() != Some(seq) {
             bail!("line {}: expected entry {seq}, found {} (a line was removed, reordered or inserted)", i + 1, v["seq"]);
         }
         if v["prev"].as_str() != Some(prev.as_str()) {
-            bail!("line {}: the chain is broken here (an earlier line was changed or removed)", i + 1);
+            bail!(
+                "line {}: the chain is broken here (an earlier line was changed or removed)",
+                i + 1
+            );
         }
         if key.is_none() {
             // The first entry names the host's key.
-            let k = v["f"]["host_key"].as_str().and_then(unhex::<32>).ok_or_else(|| at("the first entry does not name the host's key"))?;
+            let k = v["f"]["host_key"]
+                .as_str()
+                .and_then(unhex::<32>)
+                .ok_or_else(|| at("the first entry does not name the host's key"))?;
             key = Some(VerifyingKey::from_bytes(&k).map_err(|_| at("bad host key"))?);
         }
         let hash = blake3::hash(body.as_bytes());
@@ -188,22 +261,36 @@ pub fn verify_with(path: &Path, expected_key: Option<&[u8; 32]>) -> Result<Summa
         seq += 1;
     }
     let key = key.ok_or_else(|| anyhow!("the log is empty"))?;
-    Ok(Summary { entries: seq, head: prev, host_key: hex(&key.to_bytes()) })
+    Ok(Summary {
+        entries: seq,
+        head: prev,
+        host_key: hex(&key.to_bytes()),
+    })
 }
 
 /// The last `n` entries, parsed (without re-verifying; call [`verify`] first).
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn tail(path: &Path, n: usize) -> Result<Vec<Value>> {
-    let lines: Vec<String> = BufReader::new(File::open(path)?).lines().collect::<std::io::Result<_>>()?;
+    let lines: Vec<String> = BufReader::new(File::open(path)?)
+        .lines()
+        .collect::<std::io::Result<_>>()?;
     Ok(lines
         .iter()
         .rev()
         .take(n)
         .rev()
-        .filter_map(|l| l.rsplit_once('\t').and_then(|(b, _)| serde_json::from_str(b).ok()))
+        .filter_map(|l| {
+            l.rsplit_once('\t')
+                .and_then(|(b, _)| serde_json::from_str(b).ok())
+        })
         .collect())
 }
 
 /// One entry as a single readable line.
+#[must_use]
 pub fn describe(v: &Value) -> String {
     let t = v["t"].as_u64().unwrap_or(0);
     let secs = t / 1000;
@@ -235,7 +322,11 @@ mod tests {
     }
 
     fn start(a: &Audit, k: &SigningKey) {
-        a.record("host_start", None, json!({ "host_key": hex(&k.verifying_key().to_bytes()) }));
+        a.record(
+            "host_start",
+            None,
+            json!({ "host_key": hex(&k.verifying_key().to_bytes()) }),
+        );
     }
 
     #[test]
@@ -250,7 +341,11 @@ mod tests {
         let s = verify(&p).unwrap();
         assert_eq!(s.entries, 3);
         assert_eq!(tail(&p, 2).unwrap()[1]["event"], "push");
-        assert_eq!(tail(&p, 1).unwrap()[0]["peer"], "abcdef0123456789", "peer ids are shortened");
+        assert_eq!(
+            tail(&p, 1).unwrap()[0]["peer"],
+            "abcdef0123456789",
+            "peer ids are shortened"
+        );
     }
 
     #[test]
@@ -271,7 +366,11 @@ mod tests {
         std::fs::write(&p, [&lines[..2], &lines[3..]].concat().join("\n") + "\n").unwrap();
         assert!(verify(&p).is_err(), "a deleted entry went unnoticed");
 
-        std::fs::write(&p, [&lines[..3], &[lines[1]], &lines[3..]].concat().join("\n") + "\n").unwrap();
+        std::fs::write(
+            &p,
+            [&lines[..3], &[lines[1]], &lines[3..]].concat().join("\n") + "\n",
+        )
+        .unwrap();
         assert!(verify(&p).is_err(), "an inserted entry went unnoticed");
 
         // Someone with file access but not the key appends a perfectly chained line signed by their own key.
@@ -280,7 +379,10 @@ mod tests {
         start(&other, &key(2));
         let forged = std::fs::read_to_string(other.path().unwrap()).unwrap();
         std::fs::write(&p, good.clone() + &forged).unwrap();
-        assert!(verify(&p).is_err(), "a line signed by another key was accepted");
+        assert!(
+            verify(&p).is_err(),
+            "a line signed by another key was accepted"
+        );
         // And a host will not silently extend a log that is not its own.
         assert!(Audit::open(&p, k.clone()).is_err());
     }
@@ -297,6 +399,9 @@ mod tests {
         let (p, k) = (tmp("mode"), key(1));
         let a = Audit::open(&p, k.clone()).unwrap();
         start(&a, &k);
-        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }

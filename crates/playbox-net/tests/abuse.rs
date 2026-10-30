@@ -3,11 +3,25 @@
 
 use playbox_net::{join_link, limits::AbuseLimits, new_secret_key, Client, Host, HostConfig};
 use playbox_runner::{Isolation, ProcessRunner, TaskSpec};
-use std::{path::Path, process::Command, sync::Arc, time::{Duration, Instant}};
+use std::{
+    path::Path,
+    process::Command,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 fn git(dir: &Path, args: &[&str]) {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -32,24 +46,46 @@ fn repo() -> std::path::PathBuf {
 }
 
 async fn host(abuse: AbuseLimits) -> Host {
-    let cfg = HostConfig { repo: Some(repo()), runner: Some(Arc::new(ProcessRunner)), min_isolation: Isolation::None, abuse, ..Default::default() };
-    Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap()
+    let cfg = HostConfig {
+        repo: Some(repo()),
+        runner: Some(Arc::new(ProcessRunner)),
+        min_isolation: Isolation::None,
+        abuse,
+        ..Default::default()
+    };
+    Host::start_with(new_secret_key().unwrap(), true, cfg)
+        .await
+        .unwrap()
 }
 
 async fn join(host: &Host) -> Arc<Client> {
-    let link = host.create_link(Duration::from_secs(60), 5).unwrap().encode();
-    Arc::new(join_link(&link, new_secret_key().unwrap(), true).await.unwrap())
+    let link = host
+        .create_link(Duration::from_secs(60), 5)
+        .unwrap()
+        .encode();
+    Arc::new(
+        join_link(&link, new_secret_key().unwrap(), true)
+            .await
+            .unwrap(),
+    )
 }
 
 fn sh(script: &str) -> TaskSpec {
-    TaskSpec { timeout_secs: 30, ..TaskSpec::new(&["sh", "-c", script]) }
+    TaskSpec {
+        timeout_secs: 30,
+        ..TaskSpec::new(&["sh", "-c", script])
+    }
 }
 
 /// The host serves one request at a time per connection, so a member only runs tasks in parallel by
 /// opening more connections with the same key. That is what the per-member limit has to stop.
 #[tokio::test]
 async fn a_member_cannot_run_more_tasks_at_once_than_allowed_even_over_many_connections() {
-    let h = host(AbuseLimits { max_concurrent_per_member: 1, ..Default::default() }).await;
+    let h = host(AbuseLimits {
+        max_concurrent_per_member: 1,
+        ..Default::default()
+    })
+    .await;
     let secret = new_secret_key().unwrap();
     let link = h.create_link(Duration::from_secs(60), 1).unwrap().encode();
     let c1 = Arc::new(join_link(&link, secret.clone(), true).await.unwrap());
@@ -59,25 +95,42 @@ async fn a_member_cannot_run_more_tasks_at_once_than_allowed_even_over_many_conn
     let slow = tokio::spawn(async move { first.run_task("main", sh("sleep 2")).await });
     tokio::time::sleep(Duration::from_millis(500)).await;
     let err = c2.run_task("main", sh("true")).await.unwrap_err();
-    assert!(format!("{err:#}").contains("already have 1 tasks running"), "{err:#}");
+    assert!(
+        format!("{err:#}").contains("already have 1 tasks running"),
+        "{err:#}"
+    );
     slow.await.unwrap().unwrap();
-    c2.run_task("main", sh("true")).await.expect("the slot is free again once the first task ends");
+    c2.run_task("main", sh("true"))
+        .await
+        .expect("the slot is free again once the first task ends");
 }
 
 #[tokio::test]
 async fn one_members_load_does_not_use_up_anothers_slot() {
-    let h = host(AbuseLimits { max_concurrent_per_member: 1, ..Default::default() }).await;
+    let h = host(AbuseLimits {
+        max_concurrent_per_member: 1,
+        ..Default::default()
+    })
+    .await;
     let (a, b) = (join(&h).await, join(&h).await);
     let a2 = Arc::clone(&a);
     let slow = tokio::spawn(async move { a2.run_task("main", sh("sleep 2")).await });
     tokio::time::sleep(Duration::from_millis(500)).await;
-    b.run_task("main", sh("true")).await.expect("b has its own slot");
+    b.run_task("main", sh("true"))
+        .await
+        .expect("b has its own slot");
     slow.await.unwrap().unwrap();
 }
 
 #[tokio::test]
 async fn the_rate_limit_and_the_room_budget_stop_floods() {
-    let h = host(AbuseLimits { max_tasks_per_window: 2, task_budget: 3, max_concurrent_per_member: 10, ..Default::default() }).await;
+    let h = host(AbuseLimits {
+        max_tasks_per_window: 2,
+        task_budget: 3,
+        max_concurrent_per_member: 10,
+        ..Default::default()
+    })
+    .await;
     let (a, b) = (join(&h).await, join(&h).await);
     a.run_task("main", sh("true")).await.unwrap();
     a.run_task("main", sh("true")).await.unwrap();
@@ -90,11 +143,22 @@ async fn the_rate_limit_and_the_room_budget_stop_floods() {
 
 #[tokio::test]
 async fn the_room_stops_admitting_members_at_the_cap() {
-    let h = host(AbuseLimits { max_members: 2, ..Default::default() }).await;
+    let h = host(AbuseLimits {
+        max_members: 2,
+        ..Default::default()
+    })
+    .await;
     let link = h.create_link(Duration::from_secs(60), 5).unwrap().encode();
-    join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
-    join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
-    let e = join_link(&link, new_secret_key().unwrap(), true).await.err().expect("third member is refused");
+    join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+    join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+    let e = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .err()
+        .expect("third member is refused");
     assert!(format!("{e:#}").contains("room is full"), "{e:#}");
 }
 
@@ -113,7 +177,14 @@ async fn revoking_a_member_stops_the_task_they_have_running() {
     let res = running.await.unwrap();
     let e = res.expect_err("the running task is cancelled, not returned");
     assert!(format!("{e:#}").contains("revoked"), "{e:#}");
-    assert!(t0.elapsed() < Duration::from_secs(3), "cancelled promptly, took {:?}", t0.elapsed());
+    assert!(
+        t0.elapsed() < Duration::from_secs(3),
+        "cancelled promptly, took {:?}",
+        t0.elapsed()
+    );
     tokio::time::sleep(Duration::from_secs(5)).await;
-    assert!(!marker.exists(), "the task's process kept running after revocation");
+    assert!(
+        !marker.exists(),
+        "the task's process kept running after revocation"
+    );
 }

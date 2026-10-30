@@ -14,7 +14,10 @@
 //! gives the guest the host's network access *without* the public-address filtering the PRD wants,
 //! so a guest can reach the host's loopback and LAN. Leave network off on hosts that matter.
 
-use super::{check_spec, quota_exceeded, run_child, Isolation, Quota, Runner, SandboxPolicy, TaskOutput, TaskSpec};
+use super::{
+    check_spec, quota_exceeded, run_child, Isolation, Quota, Runner, SandboxPolicy, TaskOutput,
+    TaskSpec,
+};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use std::{
@@ -42,7 +45,9 @@ pub struct KrunRunner {
 fn playbox_home() -> PathBuf {
     std::env::var_os("PLAYBOX_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox"))
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox")
+        })
 }
 
 fn random_name() -> Result<String> {
@@ -64,43 +69,72 @@ fn platform() -> &'static str {
 /// Beside-the-executable comes last on purpose: a `cargo build` leaves an *unsigned* helper in
 /// `target/`, and on macOS an unsigned helper cannot start a VM. The installed copy is signed by
 /// `scripts/install-krun.sh`.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn find_helper() -> Result<PathBuf> {
     if let Some(p) = std::env::var_os("PLAYBOX_KRUN_HELPER") {
         return Ok(PathBuf::from(p));
     }
-    let mut tries: Vec<PathBuf> = vec![PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cargo/bin").join(HELPER)];
+    let mut tries: Vec<PathBuf> = vec![PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+        .join(".cargo/bin")
+        .join(HELPER)];
     if let Some(path) = std::env::var_os("PATH") {
         tries.extend(std::env::split_paths(&path).map(|d| d.join(HELPER)));
     }
-    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+    {
         tries.push(dir.join(HELPER));
     }
-    tries
-        .into_iter()
-        .find(|p| p.is_file())
-        .ok_or_else(|| anyhow!("{HELPER} not found; run scripts/install-krun.sh (or set PLAYBOX_KRUN_HELPER)"))
+    tries.into_iter().find(|p| p.is_file()).ok_or_else(|| {
+        anyhow!("{HELPER} not found; run scripts/install-krun.sh (or set PLAYBOX_KRUN_HELPER)")
+    })
 }
 
 impl KrunRunner {
     /// A runner using the helper found by [`find_helper`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn locate(policy: SandboxPolicy) -> Result<Self> {
         Ok(Self::with_helper(policy, find_helper()?))
     }
 
     /// Limit how much a guest may write outside `/workspace`, where its private root lives on the host's disk.
+    #[must_use]
     pub fn with_quota(mut self, quota: Quota) -> Self {
         self.quota = quota;
         self
     }
 
+    #[must_use]
     pub fn with_helper(policy: SandboxPolicy, helper: PathBuf) -> Self {
-        Self { policy, helper, root: playbox_home().join("krun"), quota: Quota::default(), export: Arc::default() }
+        Self {
+            policy,
+            helper,
+            root: playbox_home().join("krun"),
+            quota: Quota::default(),
+            export: Arc::default(),
+        }
     }
 
     async fn docker(args: &[&str]) -> Result<String> {
-        let out = Command::new("docker").args(args).stdin(Stdio::null()).output().await.context("docker is not installed")?;
+        let out = Command::new("docker")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .context("docker is not installed")?;
         if !out.status.success() {
-            bail!("docker {}: {}", args.first().unwrap_or(&""), String::from_utf8_lossy(&out.stderr).trim());
+            bail!(
+                "docker {}: {}",
+                args.first().unwrap_or(&""),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
@@ -108,15 +142,21 @@ impl KrunRunner {
     /// The cached root filesystem for `image`, exporting it from Docker if needed.
     async fn rootfs(&self, image: &str) -> Result<PathBuf> {
         let _one_at_a_time = self.export.lock().await;
-        let id = match Self::docker(&["image", "inspect", "--format", "{{.Id}}", image]).await {
-            Ok(id) => id,
-            Err(_) => {
-                // The host policy already limited which images can be named, so pulling one is safe.
-                Self::docker(&["pull", "--quiet", "--platform", platform(), image]).await?;
-                Self::docker(&["image", "inspect", "--format", "{{.Id}}", image]).await?
-            }
+        let id = if let Ok(id) =
+            Self::docker(&["image", "inspect", "--format", "{{.Id}}", image]).await
+        {
+            id
+        } else {
+            // The host policy already limited which images can be named, so pulling one is safe.
+            Self::docker(&["pull", "--quiet", "--platform", platform(), image]).await?;
+            Self::docker(&["image", "inspect", "--format", "{{.Id}}", image]).await?
         };
-        let key: String = id.trim_start_matches("sha256:").chars().filter(char::is_ascii_hexdigit).take(40).collect();
+        let key: String = id
+            .trim_start_matches("sha256:")
+            .chars()
+            .filter(char::is_ascii_hexdigit)
+            .take(40)
+            .collect();
         if key.len() < 12 {
             bail!("unexpected image id {id:?}");
         }
@@ -124,7 +164,10 @@ impl KrunRunner {
         if dir.is_dir() {
             return Ok(dir);
         }
-        let tmp = self.root.join("rootfs").join(format!(".tmp-{}", random_name()?));
+        let tmp = self
+            .root
+            .join("rootfs")
+            .join(format!(".tmp-{}", random_name()?));
         tokio::fs::create_dir_all(&tmp).await?;
         let built = async {
             let cid = Self::docker(&["create", "--platform", platform(), image]).await?;
@@ -144,13 +187,22 @@ impl KrunRunner {
                 .output()
                 .await?;
             if !st.status.success() {
-                bail!("extracting {image}: {}", String::from_utf8_lossy(&st.stderr).trim());
+                bail!(
+                    "extracting {image}: {}",
+                    String::from_utf8_lossy(&st.stderr).trim()
+                );
             }
             for d in ["dev", "proc", "sys", "tmp", "workspace"] {
                 tokio::fs::create_dir_all(tree.join(d)).await?;
             }
             let _ = tokio::fs::remove_file(&tar).await;
-            tokio::fs::rename(&tree, &dir).await.or_else(|e| if dir.is_dir() { Ok(()) } else { Err(e) })?;
+            tokio::fs::rename(&tree, &dir).await.or_else(|e| {
+                if dir.is_dir() {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            })?;
             anyhow::Ok(())
         }
         .await;
@@ -170,9 +222,17 @@ impl KrunRunner {
         } else {
             cp.arg("-a").arg("--reflink=auto");
         }
-        let out = cp.arg(rootfs).arg(&dst).stdin(Stdio::null()).output().await?;
+        let out = cp
+            .arg(rootfs)
+            .arg(&dst)
+            .stdin(Stdio::null())
+            .output()
+            .await?;
         if !out.status.success() {
-            bail!("cloning the root filesystem: {}", String::from_utf8_lossy(&out.stderr).trim());
+            bail!(
+                "cloning the root filesystem: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
         Ok(dst)
     }
@@ -195,23 +255,44 @@ impl Runner for KrunRunner {
     /// Boots a real VM running `true`, so a missing library, firmware, entitlement or hypervisor
     /// fails when the host starts instead of on a member's first task.
     async fn preflight(&self) -> Result<()> {
-        let image = self.policy.allowed_images.first().ok_or_else(|| anyhow!("the sandbox policy allows no images"))?;
+        let image = self
+            .policy
+            .allowed_images
+            .first()
+            .ok_or_else(|| anyhow!("the sandbox policy allows no images"))?;
         let ws = self.root.join("preflight");
         tokio::fs::create_dir_all(&ws).await?;
-        let spec = TaskSpec { image: image.clone(), timeout_secs: 60, mem_mib: 256, ..TaskSpec::new(&["true"]) };
-        let out = self.run(&spec, &ws).await.context("libkrun smoke test could not run")?;
+        let spec = TaskSpec {
+            image: image.clone(),
+            timeout_secs: 60,
+            mem_mib: 256,
+            ..TaskSpec::new(&["true"])
+        };
+        let out = self
+            .run(&spec, &ws)
+            .await
+            .context("libkrun smoke test could not run")?;
         if out.exit_code != Some(0) {
             bail!(
                 "libkrun smoke test failed (exit {:?}{}): {}{}",
                 out.exit_code,
                 if out.timed_out { ", timed out" } else { "" },
                 out.stderr.trim(),
-                if cfg!(target_os = "macos") { " — on macOS the helper must be signed with the hypervisor entitlement (scripts/install-krun.sh)" } else { "" }
+                if cfg!(target_os = "macos") {
+                    " — on macOS the helper must be signed with the hypervisor entitlement (scripts/install-krun.sh)"
+                } else {
+                    ""
+                }
             );
         }
         Ok(())
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the value is bounded, or truncated on purpose; the value is clamped to be non-negative first"
+    )]
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
         check_spec(spec)?;
         self.policy.check(spec)?;
@@ -221,7 +302,10 @@ impl Runner for KrunRunner {
         let vcpus = (spec.cpus.ceil() as u32).clamp(1, MAX_VCPUS);
         let mem = spec.mem_mib.max(MIN_MEM_MIB);
         let mut cmd = Command::new(&self.helper);
-        cmd.arg("--root").arg(&clone).arg("--workspace").arg(workspace);
+        cmd.arg("--root")
+            .arg(&clone)
+            .arg("--workspace")
+            .arg(workspace);
         cmd.args(["--cpus", &vcpus.to_string(), "--mem", &mem.to_string()]);
         if spec.network {
             cmd.arg("--network");
@@ -235,6 +319,8 @@ impl Runner for KrunRunner {
             why = quota_exceeded(&clone, self.quota) => Err(why),
         };
         let _ = tokio::fs::remove_dir_all(&clone).await;
-        Ok(result.with_context(|| format!("running {}", self.helper.display()))?.0)
+        Ok(result
+            .with_context(|| format!("running {}", self.helper.display()))?
+            .0)
     }
 }

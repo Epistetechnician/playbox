@@ -40,6 +40,10 @@ use std::{
 /// Largest direction file (a 262144-wide model) and prompt set the host will take.
 pub const MAX_DIRECTION_BYTES: usize = 1 << 20;
 pub const MAX_PROMPT_BYTES: usize = 512 << 10;
+/// Largest handoff envelope (record, text and KV cache) the host will take.
+pub const MAX_HANDOFF_BYTES: usize = 128 << 20;
+/// Default chance that the host recomputes a handed-over cache from its text.
+pub const DEFAULT_AUDIT_PROB: f64 = 0.1;
 /// Largest engine output the host will read back.
 const MAX_OUTPUT_BYTES: u64 = 8 << 20;
 
@@ -56,7 +60,11 @@ pub struct SteerLimits {
 
 impl Default for SteerLimits {
     fn default() -> Self {
-        Self { cpus: 2.0, mem_mib: 3072, timeout_secs: 600 }
+        Self {
+            cpus: 2.0,
+            mem_mib: 3072,
+            timeout_secs: 600,
+        }
     }
 }
 
@@ -78,21 +86,40 @@ pub struct SteerHost {
     /// Weights manifest hash -> (guards directory, classes it defines).
     guards: HashMap<String, (PathBuf, Vec<String>)>,
     usage: Mutex<HashMap<EndpointId, Usage>>,
+    /// Chance, per handoff, of recomputing the cache. The engine draws it from the OS random source.
+    audit_prob: f64,
+    /// Senders caught handing over a cache that was not computed from its text.
+    quarantined: Mutex<std::collections::HashSet<EndpointId>>,
 }
 
 impl std::fmt::Debug for SteerHost {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SteerHost").field("image", &self.image).field("models", &self.weights.keys().collect::<Vec<_>>()).finish()
+        f.debug_struct("SteerHost")
+            .field("image", &self.image)
+            .field("models", &self.weights.keys().collect::<Vec<_>>())
+            .finish()
     }
 }
 
 impl SteerHost {
     /// Open a store. Every `weights/<hash>` directory is hashed and must match its name. `caps.models` may
     /// be empty, meaning every model in the store.
-    pub fn open(store: &Path, image: &str, limits: SteerLimits, mut caps: SteerCaps, ceiling: Ceiling) -> Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub fn open(
+        store: &Path,
+        image: &str,
+        limits: SteerLimits,
+        mut caps: SteerCaps,
+        ceiling: Ceiling,
+    ) -> Result<Self> {
         let mut weights = BTreeMap::new();
         let wdir = store.join("weights");
-        for e in std::fs::read_dir(&wdir).with_context(|| format!("steer store {} has no weights directory", store.display()))? {
+        for e in std::fs::read_dir(&wdir)
+            .with_context(|| format!("steer store {} has no weights directory", store.display()))?
+        {
             let e = e?;
             let name = e.file_name().to_string_lossy().into_owned();
             if !e.file_type()?.is_dir() || name.starts_with('.') {
@@ -100,7 +127,9 @@ impl SteerHost {
             }
             let got = hex(&weights_manifest(&e.path())?);
             if got != name {
-                bail!("weights directory {name} hashes to {got}: the store is corrupt or mislabeled");
+                bail!(
+                    "weights directory {name} hashes to {got}: the store is corrupt or mislabeled"
+                );
             }
             weights.insert(name, e.path());
         }
@@ -121,12 +150,16 @@ impl SteerHost {
             let dir = store.join("guards").join(name);
             let file = dir.join("guards.json");
             if file.is_file() {
-                let list: Vec<Value> = serde_json::from_slice(&std::fs::read(&file)?).with_context(|| format!("{} is not a JSON list", file.display()))?;
+                let list: Vec<Value> = serde_json::from_slice(&std::fs::read(&file)?)
+                    .with_context(|| format!("{} is not a JSON list", file.display()))?;
                 let mut classes = Vec::new();
                 for g in list {
                     let c = g.get("class").and_then(Value::as_str).unwrap_or_default();
                     if c.is_empty() || !c.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') {
-                        bail!("{}: guard class {c:?} must be lowercase words", file.display());
+                        bail!(
+                            "{}: guard class {c:?} must be lowercase words",
+                            file.display()
+                        );
                     }
                     if !classes.iter().any(|x| x == c) {
                         classes.push(c.to_string());
@@ -135,12 +168,39 @@ impl SteerHost {
                 guards.insert(name.clone(), (dir, classes));
             }
         }
-        Ok(Self { image: image.to_string(), limits, caps, ceiling, weights, guards, usage: Mutex::new(HashMap::new()) })
+        Ok(Self {
+            image: image.to_string(),
+            limits,
+            caps,
+            ceiling,
+            weights,
+            guards,
+            usage: Mutex::new(HashMap::new()),
+            audit_prob: DEFAULT_AUDIT_PROB,
+            quarantined: Mutex::new(Default::default()),
+        })
+    }
+
+    /// Set the chance that a handoff is audited by recomputation, in `[0, 1]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub fn with_audit_prob(mut self, p: f64) -> Result<Self> {
+        if !(0.0..=1.0).contains(&p) {
+            bail!("audit probability must be in [0, 1]");
+        }
+        self.audit_prob = p;
+        Ok(self)
     }
 
     /// The grant's task caps come from the host's `Limits`; steering asks for its own. If steering needs more
     /// than the grant would ever allow, every request would be refused with a bare "not authorized", so
     /// fail at startup instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn check_against(&self, l: &playbox_runner::Limits) -> Result<()> {
         let s = &self.limits;
         if s.cpus > l.cpus || s.mem_mib > l.mem_mib || s.timeout_secs > l.timeout_secs {
@@ -173,7 +233,11 @@ impl SteerHost {
             bail!("steering budget used up: {} runs", self.caps.max_runs);
         }
         if used.tokens.saturating_add(tokens) > self.caps.max_tokens_total {
-            bail!("steering budget used up: {} of {} tokens", used.tokens, self.caps.max_tokens_total);
+            bail!(
+                "steering budget used up: {} of {} tokens",
+                used.tokens,
+                self.caps.max_tokens_total
+            );
         }
         used.runs += 1;
         used.tokens += tokens;
@@ -181,6 +245,7 @@ impl SteerHost {
     }
 }
 
+#[must_use]
 pub fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
@@ -211,7 +276,11 @@ fn collect(dir: &Path, rel: &str, out: &mut Vec<(String, PathBuf)>) -> Result<()
             continue;
         }
         let ty = e.file_type()?; // does not follow symlinks
-        let r = if rel.is_empty() { name } else { format!("{rel}/{name}") };
+        let r = if rel.is_empty() {
+            name
+        } else {
+            format!("{rel}/{name}")
+        };
         if ty.is_dir() {
             collect(&e.path(), &r, out)?;
         } else if ty.is_file() {
@@ -224,6 +293,10 @@ fn collect(dir: &Path, rel: &str, out: &mut Vec<(String, PathBuf)>) -> Result<()
 /// Hash of a weights directory: blake3 of `relpath<space>blake3(file)<newline>` lines sorted by the UTF-8
 /// bytes of the path, over regular files only, skipping dot-files and symlinks. The Python engine computes
 /// the same value (`playbox_steer manifest`).
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn weights_manifest(dir: &Path) -> Result<[u8; 32]> {
     let mut files = Vec::new();
     collect(dir, "", &mut files)?;
@@ -244,13 +317,24 @@ pub struct PromptSet {
 }
 
 impl PromptSet {
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let v: Value = serde_json::from_slice(bytes).context("prompt set is not JSON")?;
-        let obj = v.as_object().ok_or_else(|| anyhow!("prompt set must be an object"))?;
-        if let Some(k) = obj.keys().find(|k| !matches!(k.as_str(), "prompts" | "max_new_tokens" | "temperature")) {
+        let obj = v
+            .as_object()
+            .ok_or_else(|| anyhow!("prompt set must be an object"))?;
+        if let Some(k) = obj
+            .keys()
+            .find(|k| !matches!(k.as_str(), "prompts" | "max_new_tokens" | "temperature"))
+        {
             bail!("unexpected prompt set field {k:?}");
         }
-        let list = obj.get("prompts").and_then(Value::as_array).ok_or_else(|| anyhow!("prompt set needs a prompts list"))?;
+        let list = obj
+            .get("prompts")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow!("prompt set needs a prompts list"))?;
         if list.is_empty() || list.len() > 256 {
             bail!("need 1 to 256 prompts");
         }
@@ -262,17 +346,24 @@ impl PromptSet {
         }
         let n = match obj.get("max_new_tokens") {
             None => 32,
-            Some(v) => v.as_u64().filter(|n| (1..=512).contains(n)).ok_or_else(|| anyhow!("max_new_tokens must be 1..512"))?,
+            Some(v) => v
+                .as_u64()
+                .filter(|n| (1..=512).contains(n))
+                .ok_or_else(|| anyhow!("max_new_tokens must be 1..512"))?,
         };
         if let Some(t) = obj.get("temperature") {
             if !t.as_f64().is_some_and(|t| (0.0..=2.0).contains(&t)) {
                 bail!("temperature must be 0..2");
             }
         }
-        Ok(Self { prompts: list.len(), max_new_tokens: n })
+        Ok(Self {
+            prompts: list.len(),
+            max_new_tokens: n,
+        })
     }
 
     /// Tokens a run generates: every prompt twice (steered and clean).
+    #[must_use]
     pub fn tokens(&self) -> u64 {
         self.prompts as u64 * self.max_new_tokens * 2
     }
@@ -298,10 +389,17 @@ impl Drop for Scratch {
 
 fn read_output(path: &Path) -> Result<Vec<u8>> {
     // The task wrote here, so treat the path as untrusted: no symlinks, regular file, bounded.
-    let f = std::fs::OpenOptions::new().read(true).custom_flags(0x0100 /* O_NOFOLLOW on macOS and Linux */).open(path).context("the engine wrote no output")?;
+    let f = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(0x0100 /* O_NOFOLLOW on macOS and Linux */)
+        .open(path)
+        .context("the engine wrote no output")?;
     let meta = f.metadata()?;
     if !meta.is_file() || meta.len() > MAX_OUTPUT_BYTES {
-        bail!("engine output is not a regular file under {} MiB", MAX_OUTPUT_BYTES >> 20);
+        bail!(
+            "engine output is not a regular file under {} MiB",
+            MAX_OUTPUT_BYTES >> 20
+        );
     }
     let mut buf = Vec::new();
     f.take(MAX_OUTPUT_BYTES).read_to_end(&mut buf)?;
@@ -315,19 +413,32 @@ fn read_output(path: &Path) -> Result<Vec<u8>> {
 impl RoomHandler {
     /// Handle a `steer` or `steer_probe` message. The route has already checked that the grant has the
     /// right; this authorizes the specifics and runs.
-    pub(crate) async fn steer_message(&self, from: EndpointId, grant: Option<&str>, op: Op, msg: &Message) -> Result<Value, a2a::JsonRpcError> {
-        let Op::Steer { spec: text, probe } = op else { unreachable!("steer_message is only called for Op::Steer") };
+    pub(crate) async fn steer_message(
+        &self,
+        from: EndpointId,
+        grant: Option<&str>,
+        op: Op,
+        msg: &Message,
+    ) -> Result<Value, a2a::JsonRpcError> {
+        let Op::Steer { spec: text, probe } = op else {
+            unreachable!("steer_message is only called for Op::Steer")
+        };
         let t0 = Instant::now();
         let prepared = match self.steer_prepare(from, grant, &text, probe, msg) {
             Ok(p) => p,
             Err(Prep::Unauthorized(e)) => {
-                self.audit.record("steer_denied", Some(&from.to_string()), json!({ "reason": crate::audit::clip(&format!("{e:#}")) }));
+                self.audit.record(
+                    "steer_denied",
+                    Some(&from.to_string()),
+                    json!({ "reason": crate::audit::clip(&format!("{e:#}")) }),
+                );
                 return Err(crate::unauthorized(e));
             }
             Err(Prep::Refused(e)) => {
                 let task = crate::finish(Err(e));
                 self.remember(from, &task);
-                return serde_json::to_value(SendMessageResponse::Task(task)).map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error());
+                return serde_json::to_value(SendMessageResponse::Task(task))
+                    .map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error());
             }
         };
         let details = json!({
@@ -341,45 +452,210 @@ impl RoomHandler {
         self.audit_op(from, "steer", &r, t0, details);
         let task = crate::finish(r);
         self.remember(from, &task);
-        serde_json::to_value(SendMessageResponse::Task(task)).map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error())
+        serde_json::to_value(SendMessageResponse::Task(task))
+            .map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error())
     }
 
-    fn steer_prepare(&self, from: EndpointId, grant: Option<&str>, text: &str, probe: bool, msg: &Message) -> Result<Prepared, Prep> {
-        let host = self.cfg.steer.clone().ok_or_else(|| Prep::Refused(crate::refuse("this room does not host steering")))?;
+    /// Handle a `handoff` message: check a signed KV-cache record from `from` against a hosted model, with a
+    /// random recompute audit. Needs the `handoff` right (issued with steering) and a hosted model.
+    pub(crate) async fn handoff_message(
+        &self,
+        from: EndpointId,
+        op: Op,
+        msg: &Message,
+    ) -> Result<Value, a2a::JsonRpcError> {
+        let Op::Handoff { weights } = op else {
+            unreachable!("handoff_message is only called for Op::Handoff")
+        };
+        let t0 = Instant::now();
+        let r = self.handoff_run(from, &weights, msg).await;
+        let details = json!({ "weights": crate::audit::clip(&weights) });
+        self.audit_op(from, "handoff", &r, t0, details);
+        let task = crate::finish(r);
+        self.remember(from, &task);
+        serde_json::to_value(SendMessageResponse::Task(task))
+            .map_err(|e| a2a::A2AError::internal(e.to_string()).to_jsonrpc_error())
+    }
+
+    async fn handoff_run(&self, from: EndpointId, weights: &str, msg: &Message) -> Result<Task> {
+        let host = self
+            .cfg
+            .steer
+            .clone()
+            .ok_or_else(|| crate::refuse("this room does not host steering"))?;
+        let runner = self
+            .cfg
+            .runner
+            .clone()
+            .ok_or_else(|| crate::refuse("this room runs no tasks"))?;
+        if host
+            .quarantined
+            .lock()
+            .expect("quarantine lock")
+            .contains(&from)
+        {
+            return Err(crate::refuse(
+                "you are quarantined: an earlier handoff of yours failed the audit",
+            ));
+        }
+        let weights_dir = host
+            .weights
+            .get(weights)
+            .ok_or_else(|| crate::refuse(format!("this host does not serve model {weights}")))?
+            .clone();
+        let parts = wire::raw_parts(msg);
+        let [data] = parts.as_slice() else {
+            return Err(crate::refuse(
+                "a handoff message needs exactly one raw part",
+            ));
+        };
+        if data.is_empty() || data.len() > MAX_HANDOFF_BYTES {
+            return Err(crate::refuse("the handoff is empty or too large"));
+        }
+        let _permit = self.tasks.acquire().await?;
+        let scratch = Scratch::new()?;
+        let dir = &scratch.0;
+        std::fs::write(dir.join("handoff.bin"), data)?;
+        std::fs::write(dir.join("signer.txt"), hex(from.as_bytes()))?;
+        let mounts = vec![Mount {
+            host: std::fs::canonicalize(&weights_dir)?,
+            container: WEIGHTS_AT.into(),
+        }];
+        let mut task = TaskSpec::new(&[]);
+        task.cmd = [
+            "python",
+            "-m",
+            "playbox_steer",
+            "handoff",
+            "--weights",
+            WEIGHTS_AT,
+            "--task",
+            "/workspace",
+            "--expected",
+            weights,
+            "--audit",
+            &host.audit_prob.to_string(),
+            "--out",
+            "/workspace/out.json",
+        ]
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+        task.image = host.image.clone();
+        task.cpus = host.limits.cpus;
+        task.mem_mib = host.limits.mem_mib;
+        task.timeout_secs = host.limits.timeout_secs;
+        let output = tokio::select! {
+            r = runner.run_with_mounts(&task, dir, &mounts) => r?,
+            why = playbox_runner::quota_exceeded(dir, self.cfg.scratch_quota) => return Err(why),
+            () = self.until_banned(from) => return Err(crate::refuse("cancelled: your access to this room was revoked")),
+        };
+        let out = read_output(&dir.join("out.json"));
+        match (output.exit_code, out) {
+            (Some(code @ (0 | 5)), Ok(bytes)) => {
+                if code == 5
+                    && serde_json::from_slice::<Value>(&bytes)?["quarantine"] == json!(true)
+                {
+                    host.quarantined
+                        .lock()
+                        .expect("quarantine lock")
+                        .insert(from);
+                }
+                let state = if code == 0 {
+                    TaskState::Completed
+                } else {
+                    TaskState::Failed
+                };
+                Ok(wire::task(
+                    state,
+                    (code == 5).then(|| "the handoff was rejected".to_string()),
+                    vec![wire::text_artifact(
+                        "decision",
+                        String::from_utf8_lossy(&bytes).into_owned(),
+                    )],
+                    vec![("kind", json!("handoff"))],
+                ))
+            }
+            (code, _) => Err(anyhow!(
+                "handoff check failed (exit {code:?}): {}",
+                output
+                    .stderr
+                    .lines()
+                    .rev()
+                    .take(4)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            )),
+        }
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
+    fn steer_prepare(
+        &self,
+        from: EndpointId,
+        grant: Option<&str>,
+        text: &str,
+        probe: bool,
+        msg: &Message,
+    ) -> Result<Prepared, Prep> {
+        let host = self
+            .cfg
+            .steer
+            .clone()
+            .ok_or_else(|| Prep::Refused(crate::refuse("this room does not host steering")))?;
         let refuse = |m: String| Prep::Refused(crate::refuse(m));
         let (spec, signer) = SteerSpec::open(text).map_err(|e| refuse(format!("bad spec: {e}")))?;
         if &signer != from.as_bytes() {
-            return Err(refuse("the spec must be signed by the key that sends it".into()));
+            return Err(refuse(
+                "the spec must be signed by the key that sends it".into(),
+            ));
         }
         let parts = wire::raw_parts(msg);
         let [direction, prompts] = parts.as_slice() else {
-            return Err(refuse("a steer message needs two raw parts: the direction file, then the prompt set".into()));
+            return Err(refuse(
+                "a steer message needs two raw parts: the direction file, then the prompt set"
+                    .into(),
+            ));
         };
-        if direction.is_empty() || direction.len() > MAX_DIRECTION_BYTES || direction.len() % 4 != 0 {
-            return Err(refuse("the direction must be a non-empty float32 array under 1 MiB".into()));
+        if direction.is_empty() || direction.len() > MAX_DIRECTION_BYTES || direction.len() % 4 != 0
+        {
+            return Err(refuse(
+                "the direction must be a non-empty float32 array under 1 MiB".into(),
+            ));
         }
         if prompts.len() > MAX_PROMPT_BYTES {
             return Err(refuse("the prompt set is too large".into()));
         }
         if blake3::hash(direction).as_bytes() != &spec.direction {
-            return Err(refuse("the direction file does not hash to the spec's direction".into()));
+            return Err(refuse(
+                "the direction file does not hash to the spec's direction".into(),
+            ));
         }
         if blake3::hash(prompts).as_bytes() != &spec.prompts {
-            return Err(refuse("the prompt set does not hash to the spec's prompts".into()));
+            return Err(refuse(
+                "the prompt set does not hash to the spec's prompts".into(),
+            ));
         }
         let ps = PromptSet::parse(prompts).map_err(|e| refuse(format!("{e:#}")))?;
         let weights_hex = hex(&spec.weights);
-        let weights_dir = host.weights.get(&weights_hex).ok_or_else(|| refuse(format!("this host does not serve model {weights_hex}")))?.clone();
+        let weights_dir = host
+            .weights
+            .get(&weights_hex)
+            .ok_or_else(|| refuse(format!("this host does not serve model {weights_hex}")))?
+            .clone();
 
-        let lo = *spec.layers.first().expect("validated non-empty") as i64;
-        let hi = *spec.layers.last().expect("validated non-empty") as i64;
+        let lo = i64::from(*spec.layers.first().expect("validated non-empty"));
+        let hi = i64::from(*spec.layers.last().expect("validated non-empty"));
         let op = if probe { "steer_probe" } else { "steer" };
         let tokens = if probe { 0 } else { ps.tokens() };
         let l = &host.limits;
         let needs = Needs {
             cpu_milli: (l.cpus * 1000.0).ceil() as i64,
-            mem_mib: l.mem_mib as i64,
-            timeout_secs: l.timeout_secs as i64,
+            mem_mib: i64::from(l.mem_mib),
+            timeout_secs: i64::try_from(l.timeout_secs).unwrap_or(i64::MAX),
             steer: Some(SteerNeeds {
                 model: weights_hex.clone(),
                 layer_lo: lo,
@@ -387,46 +663,98 @@ impl RoomHandler {
                 coef_abs_milli: spec.coef_milli.abs(),
                 mode: mode_name(spec.mode).into(),
                 direction: hex(&spec.direction),
-                tokens: tokens as i64,
+                tokens: i64::try_from(tokens).unwrap_or(i64::MAX),
             }),
             ..Needs::default()
         };
-        self.authorize(grant, from, op, &needs).map_err(|e| Prep::Unauthorized(anyhow!("{}", e.message)))?;
+        self.authorize(grant, from, op, &needs)
+            .map_err(|e| Prep::Unauthorized(anyhow!("{}", e.message)))?;
 
         // Which guard classes this member may not steer along: every class the host defines that the grant
         // does not name.
         let mut deny = Vec::new();
         if let Some((_, classes)) = host.guards.get(&weights_hex) {
             for c in classes {
-                let q = Needs { class: Some(c.clone()), ..Needs::default() };
+                let q = Needs {
+                    class: Some(c.clone()),
+                    ..Needs::default()
+                };
                 if self.authorize(grant, from, "steer_class", &q).is_err() {
                     deny.push(c.clone());
                 }
             }
         }
-        host.charge(from, tokens).map_err(|e| refuse(format!("{e:#}")))?;
-        Ok(Prepared { host, spec, probe, direction: direction.to_vec(), prompts: prompts.to_vec(), weights_dir, deny, tokens })
+        host.charge(from, tokens)
+            .map_err(|e| refuse(format!("{e:#}")))?;
+        Ok(Prepared {
+            host,
+            spec,
+            probe,
+            direction: direction.to_vec(),
+            prompts: prompts.to_vec(),
+            weights_dir,
+            deny,
+            tokens,
+        })
     }
 
     async fn steer_run(&self, from: EndpointId, p: Prepared) -> Result<Task> {
-        let runner = self.cfg.runner.clone().ok_or_else(|| crate::refuse("this room runs no tasks"))?;
-        let Prepared { host, spec, probe, direction, prompts, weights_dir, deny, tokens: _ } = p;
+        let runner = self
+            .cfg
+            .runner
+            .clone()
+            .ok_or_else(|| crate::refuse("this room runs no tasks"))?;
+        let Prepared {
+            host,
+            spec,
+            probe,
+            direction,
+            prompts,
+            weights_dir,
+            deny,
+            tokens: _,
+        } = p;
         let _permit = self.tasks.acquire().await?;
         let scratch = Scratch::new()?;
         let dir = &scratch.0;
-        std::fs::write(dir.join("spec.txt"), spec.canonical_body().map_err(|e| anyhow!(e))?)?;
+        std::fs::write(
+            dir.join("spec.txt"),
+            spec.canonical_body().map_err(|e| anyhow!(e))?,
+        )?;
         std::fs::write(dir.join("direction.f32"), &direction)?;
         std::fs::write(dir.join("prompts.json"), &prompts)?;
 
-        let mut mounts = vec![Mount { host: std::fs::canonicalize(&weights_dir)?, container: WEIGHTS_AT.into() }];
-        let mut cmd: Vec<String> = ["python", "-m", "playbox_steer", if probe { "probe" } else { "run" }, "--weights", WEIGHTS_AT, "--task", "/workspace", "--out", "/workspace/out.json"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let mut mounts = vec![Mount {
+            host: std::fs::canonicalize(&weights_dir)?,
+            container: WEIGHTS_AT.into(),
+        }];
+        let mut cmd: Vec<String> = [
+            "python",
+            "-m",
+            "playbox_steer",
+            if probe { "probe" } else { "run" },
+            "--weights",
+            WEIGHTS_AT,
+            "--task",
+            "/workspace",
+            "--out",
+            "/workspace/out.json",
+        ]
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
         if !probe {
             if let Some((gdir, _)) = host.guards.get(&hex(&spec.weights)) {
-                mounts.push(Mount { host: std::fs::canonicalize(gdir)?, container: GUARDS_AT.into() });
-                cmd.extend(["--guards".into(), GUARDS_AT.into(), "--deny".into(), deny.join(",")]);
+                mounts.push(Mount {
+                    host: std::fs::canonicalize(gdir)?,
+                    container: GUARDS_AT.into(),
+                });
+                cmd.extend([
+                    "--guards".into(),
+                    GUARDS_AT.into(),
+                    "--deny".into(),
+                    deny.join(","),
+                ]);
             }
         }
         let mut task = TaskSpec::new(&[]);
@@ -436,7 +764,10 @@ impl RoomHandler {
         task.mem_mib = host.limits.mem_mib;
         task.timeout_secs = host.limits.timeout_secs;
 
-        let image = runner.image_digest(&host.image).await.map_err(|e| crate::refuse(format!("cannot identify the engine image: {e:#}")))?;
+        let image = runner
+            .image_digest(&host.image)
+            .await
+            .map_err(|e| crate::refuse(format!("cannot identify the engine image: {e:#}")))?;
         let output = tokio::select! {
             r = runner.run_with_mounts(&task, dir, &mounts) => r?,
             why = playbox_runner::quota_exceeded(dir, self.cfg.scratch_quota) => return Err(why),
@@ -446,24 +777,58 @@ impl RoomHandler {
         let kind = if probe { "probe" } else { "run" };
         let out_json = read_output(&dir.join("out.json"));
         let meta = |extra: Vec<(&'static str, Value)>| {
-            let mut m = vec![("runner", json!(runner.name())), ("specDigest", json!(hex(&spec.digest().unwrap_or([0; 32])))), ("kind", json!(kind))];
+            let mut m = vec![
+                ("runner", json!(runner.name())),
+                ("specDigest", json!(hex(&spec.digest().unwrap_or([0; 32])))),
+                ("kind", json!(kind)),
+            ];
             if let Some(c) = output.exit_code {
                 m.push(("exitCode", json!(c)));
             }
             m.extend(extra);
             m
         };
-        let tail = |s: &str| s.lines().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+        let tail = |s: &str| {
+            s.lines()
+                .rev()
+                .take(6)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         match (output.exit_code, out_json) {
             (Some(0), Ok(bytes)) => {
-                let request = format!("{}kind {kind}\n", spec.canonical_body().map_err(|e| anyhow!(e))?);
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-                let receipt = SteerReceipt::sign(&spec, image, request.as_bytes(), &bytes, host.ceiling, now, &self.attest_key).map_err(|e| anyhow!(e))?;
-                let m = meta(vec![("ceiling", json!(ceiling_name(host.ceiling))), ("imageDigest", json!(hex(&image)))]);
+                let request = format!(
+                    "{}kind {kind}\n",
+                    spec.canonical_body().map_err(|e| anyhow!(e))?
+                );
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
+                    .unwrap_or(0);
+                let receipt = SteerReceipt::sign(
+                    &spec,
+                    image,
+                    request.as_bytes(),
+                    &bytes,
+                    host.ceiling,
+                    now,
+                    &self.attest_key,
+                )
+                .map_err(|e| anyhow!(e))?;
+                let m = meta(vec![
+                    ("ceiling", json!(ceiling_name(host.ceiling))),
+                    ("imageDigest", json!(hex(&image))),
+                ]);
                 Ok(wire::task(
                     TaskState::Completed,
                     None,
-                    vec![wire::text_artifact("output", String::from_utf8_lossy(&bytes).into_owned()), wire::text_artifact("receipt", receipt)],
+                    vec![
+                        wire::text_artifact("output", String::from_utf8_lossy(&bytes).into_owned()),
+                        wire::text_artifact("receipt", receipt),
+                    ],
                     m,
                 ))
             }
@@ -471,13 +836,29 @@ impl RoomHandler {
             (Some(4), Ok(bytes)) => Ok(wire::task(
                 TaskState::Failed,
                 Some("a pre-flight gate failed; no steered text was produced".into()),
-                vec![wire::text_artifact("output", String::from_utf8_lossy(&bytes).into_owned())],
+                vec![wire::text_artifact(
+                    "output",
+                    String::from_utf8_lossy(&bytes).into_owned(),
+                )],
                 meta(vec![]),
             )),
-            (Some(3), _) => Err(crate::refuse(format!("refused by a safety guard: {}", tail(&output.stderr)))),
-            (Some(2), _) => Err(crate::refuse(format!("the engine rejected the request: {}", tail(&output.stderr)))),
-            (code, _) if output.timed_out => Err(anyhow!("steering timed out after {}s (exit {code:?})", host.limits.timeout_secs)),
-            (code, out) => Err(anyhow!("steering failed (exit {code:?}, output {}): {}", if out.is_ok() { "present" } else { "missing" }, tail(&output.stderr))),
+            (Some(3), _) => Err(crate::refuse(format!(
+                "refused by a safety guard: {}",
+                tail(&output.stderr)
+            ))),
+            (Some(2), _) => Err(crate::refuse(format!(
+                "the engine rejected the request: {}",
+                tail(&output.stderr)
+            ))),
+            (code, _) if output.timed_out => Err(anyhow!(
+                "steering timed out after {}s (exit {code:?})",
+                host.limits.timeout_secs
+            )),
+            (code, out) => Err(anyhow!(
+                "steering failed (exit {code:?}, output {}): {}",
+                if out.is_ok() { "present" } else { "missing" },
+                tail(&output.stderr)
+            )),
         }
     }
 
@@ -535,32 +916,86 @@ pub struct SteerResult {
 }
 
 impl Client {
+    /// Hand the host a signed handoff envelope (`PBH1`) for the hosted model `weights` (hex manifest hash).
+    /// Returns the host's decision JSON; `Err` if the host refused or the cache was rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn handoff(&self, weights: &str, envelope: &[u8]) -> Result<Value> {
+        let op = Op::Handoff {
+            weights: weights.to_string(),
+        };
+        let t = self
+            .send_task("handoff", &op, vec![Part::raw(envelope.to_vec())])
+            .await?;
+        let d = wire::artifact_text(&t, "decision")
+            .ok_or_else(|| anyhow!("the host sent no decision"))?;
+        let v: Value = serde_json::from_str(&d)?;
+        if v["accepted"] != json!(true) {
+            bail!("handoff rejected: {}", v["reasons"]);
+        }
+        Ok(v)
+    }
+
     /// Sign `spec` with this client's key and run it on the host. `direction` is the unit-norm float32
     /// file and `prompts` the prompt-set JSON; both must hash to what `spec` names.
-    pub async fn steer(&self, spec: &SteerSpec, direction: &[u8], prompts: &[u8]) -> Result<SteerResult> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn steer(
+        &self,
+        spec: &SteerSpec,
+        direction: &[u8],
+        prompts: &[u8],
+    ) -> Result<SteerResult> {
         self.steer_op(spec, direction, prompts, false).await
     }
 
     /// Read-only: project the prompts' activations onto the direction.
-    pub async fn steer_probe(&self, spec: &SteerSpec, direction: &[u8], prompts: &[u8]) -> Result<SteerResult> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn steer_probe(
+        &self,
+        spec: &SteerSpec,
+        direction: &[u8],
+        prompts: &[u8],
+    ) -> Result<SteerResult> {
         self.steer_op(spec, direction, prompts, true).await
     }
 
-    async fn steer_op(&self, spec: &SteerSpec, direction: &[u8], prompts: &[u8], probe: bool) -> Result<SteerResult> {
+    async fn steer_op(
+        &self,
+        spec: &SteerSpec,
+        direction: &[u8],
+        prompts: &[u8],
+        probe: bool,
+    ) -> Result<SteerResult> {
         let key = SigningKey::from_bytes(&self.endpoint.secret_key().to_bytes());
         let text = spec.sign(&key).map_err(|e| anyhow!(e))?;
         let op = Op::Steer { spec: text, probe };
         let extra = vec![Part::raw(direction.to_vec()), Part::raw(prompts.to_vec())];
         let t = self.send_task("steer", &op, extra).await?;
-        let output = wire::artifact_text(&t, "output").ok_or_else(|| anyhow!("the host sent no output"))?;
-        let receipt_text = wire::artifact_text(&t, "receipt").ok_or_else(|| anyhow!("the host sent no receipt"))?;
+        let output =
+            wire::artifact_text(&t, "output").ok_or_else(|| anyhow!("the host sent no output"))?;
+        let receipt_text = wire::artifact_text(&t, "receipt")
+            .ok_or_else(|| anyhow!("the host sent no receipt"))?;
         let receipt = SteerReceipt::open(&receipt_text).map_err(|e| anyhow!("bad receipt: {e}"))?;
         if &receipt.host != self.host_id().as_bytes() {
             bail!("the receipt is signed by a key other than the host this client is connected to");
         }
-        receipt.matches(spec, output.as_bytes()).map_err(|e| anyhow!("{e}"))?;
+        receipt
+            .matches(spec, output.as_bytes())
+            .map_err(|e| anyhow!("{e}"))?;
         let _ = unhex32; // kept for callers that decode hashes from task metadata
-        Ok(SteerResult { output, receipt, task_id: t.id })
+        Ok(SteerResult {
+            output,
+            receipt,
+            task_id: t.id,
+        })
     }
 }
 
@@ -571,9 +1006,20 @@ mod tests {
     #[test]
     fn prompt_sets_are_checked_like_the_engine_checks_them() {
         let ok = |s: &str| PromptSet::parse(s.as_bytes());
-        assert_eq!(ok(r#"{"prompts":["a","b"],"max_new_tokens":10}"#).unwrap(), PromptSet { prompts: 2, max_new_tokens: 10 });
+        assert_eq!(
+            ok(r#"{"prompts":["a","b"],"max_new_tokens":10}"#).unwrap(),
+            PromptSet {
+                prompts: 2,
+                max_new_tokens: 10
+            }
+        );
         assert_eq!(ok(r#"{"prompts":["a"]}"#).unwrap().max_new_tokens, 32);
-        assert_eq!(ok(r#"{"prompts":["a","b"],"max_new_tokens":10}"#).unwrap().tokens(), 40);
+        assert_eq!(
+            ok(r#"{"prompts":["a","b"],"max_new_tokens":10}"#)
+                .unwrap()
+                .tokens(),
+            40
+        );
         for bad in [
             "[]",
             "{}",
@@ -614,7 +1060,8 @@ mod tests {
     }
 
     // Filled in from the Python implementation; see test_manifest_cross_check_fixture.
-    const MANIFEST_FIXTURE: &str = "7bc07aaa2a32a98a50e6abae371e4e48a068edd147265ea594bee1c8f13ec519";
+    const MANIFEST_FIXTURE: &str =
+        "7bc07aaa2a32a98a50e6abae371e4e48a068edd147265ea594bee1c8f13ec519";
 
     #[test]
     fn scratch_dirs_are_removed_on_drop() {

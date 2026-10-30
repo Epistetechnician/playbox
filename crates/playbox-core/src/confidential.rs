@@ -25,7 +25,10 @@
 //! the *Playbox binary* the statement names; pin the digest of an image built from source you audited.
 //! Use a Playbox-specific `audience` so a leaked token cannot be federated to cloud resources.
 
-use crate::attest::{Measurements, PlatformProvider, PlatformVerdict, PlatformVerifier, Produced, Statement, Tier};
+use crate::attest::{
+    AttestError, Measurements, PlatformProvider, PlatformVerdict, PlatformVerifier, Produced,
+    Statement, Tier,
+};
 use crate::record::{hex, unhex_vec};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use rsa::{
@@ -56,7 +59,10 @@ pub struct ConfidentialSpaceVerifier {
 }
 
 fn system_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 impl ConfidentialSpaceVerifier {
@@ -76,16 +82,25 @@ impl ConfidentialSpaceVerifier {
     }
 
     /// Pin signing keys from a JWKS document (`{"keys":[{"kid","kty":"RSA","n","e"}]}`).
-    pub fn with_jwks(mut self, jwks: &str) -> Result<Self, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
+    pub fn with_jwks(mut self, jwks: &str) -> Result<Self, AttestError> {
         let v: Value = serde_json::from_str(jwks).map_err(|e| format!("JWKS: {e}"))?;
         for k in v["keys"].as_array().ok_or("JWKS has no keys array")? {
             if k["kty"] != "RSA" {
                 continue;
             }
             let kid = k["kid"].as_str().ok_or("JWKS key without kid")?.to_string();
-            let n = B64.decode(k["n"].as_str().ok_or("JWKS key without n")?).map_err(|e| e.to_string())?;
-            let e = B64.decode(k["e"].as_str().ok_or("JWKS key without e")?).map_err(|e| e.to_string())?;
-            let key = RsaPublicKey::new(BigUint::from_bytes_be(&n), BigUint::from_bytes_be(&e)).map_err(|e| e.to_string())?;
+            let n = B64
+                .decode(k["n"].as_str().ok_or("JWKS key without n")?)
+                .map_err(|e| e.to_string())?;
+            let e = B64
+                .decode(k["e"].as_str().ok_or("JWKS key without e")?)
+                .map_err(|e| e.to_string())?;
+            let key = RsaPublicKey::new(BigUint::from_bytes_be(&n), BigUint::from_bytes_be(&e))
+                .map_err(|e| e.to_string())?;
             self.keys.push((kid, key));
         }
         if self.keys.is_empty() {
@@ -94,23 +109,27 @@ impl ConfidentialSpaceVerifier {
         Ok(self)
     }
 
+    #[must_use]
     pub fn with_key(mut self, kid: &str, key: RsaPublicKey) -> Self {
         self.keys.push((kid.to_string(), key));
         self
     }
 
     /// Allow a container image digest (`sha256:…`). With none pinned, evidence tops out at T1.
+    #[must_use]
     pub fn with_image_digest(mut self, digest: &str) -> Self {
         self.images.insert(digest.to_string());
         self
     }
 
     /// Only accept VMs from these GCP projects (if any are given).
+    #[must_use]
     pub fn with_project(mut self, project: &str) -> Self {
         self.projects.insert(project.to_string());
         self
     }
 
+    #[must_use]
     pub fn with_issuer(mut self, issuer: &str) -> Self {
         self.issuer = issuer.into();
         self
@@ -122,23 +141,40 @@ impl ConfidentialSpaceVerifier {
         self
     }
 
-    fn check(&self, token: &str, binding_hex: &str) -> Result<PlatformVerdict, String> {
+    fn check(&self, token: &str, binding_hex: &str) -> Result<PlatformVerdict, AttestError> {
         let parts: Vec<&str> = token.split('.').collect();
-        let [h, p, s] = parts[..] else { return Err("token is not a three-part JWT".into()) };
-        let header: Value = serde_json::from_slice(&B64.decode(h).map_err(|e| format!("header: {e}"))?).map_err(|e| format!("header: {e}"))?;
+        let [h, p, s] = parts[..] else {
+            return Err("token is not a three-part JWT".into());
+        };
+        let header: Value =
+            serde_json::from_slice(&B64.decode(h).map_err(|e| format!("header: {e}"))?)
+                .map_err(|e| format!("header: {e}"))?;
         // Only RS256, never `none` or a symmetric algorithm an attacker could pick.
         if header["alg"] != "RS256" {
-            return Err(format!("unsupported alg {}", header["alg"]));
+            return Err(format!("unsupported alg {}", header["alg"]).into());
         }
         let kid = header["kid"].as_str().ok_or("token has no kid")?;
-        let key = &self.keys.iter().find(|(k, _)| k == kid).ok_or_else(|| format!("no pinned key {kid:?}"))?.1;
-        let sig = Signature::try_from(B64.decode(s).map_err(|e| format!("signature: {e}"))?.as_slice()).map_err(|e| e.to_string())?;
-        VerifyingKey::<Sha256>::new(key.clone()).verify(format!("{h}.{p}").as_bytes(), &sig).map_err(|_| "token signature does not verify")?;
+        let key = &self
+            .keys
+            .iter()
+            .find(|(k, _)| k == kid)
+            .ok_or_else(|| format!("no pinned key {kid:?}"))?
+            .1;
+        let sig = Signature::try_from(
+            B64.decode(s)
+                .map_err(|e| format!("signature: {e}"))?
+                .as_slice(),
+        )
+        .map_err(|e| e.to_string())?;
+        VerifyingKey::<Sha256>::new(key.clone())
+            .verify(format!("{h}.{p}").as_bytes(), &sig)
+            .map_err(|_| "token signature does not verify")?;
 
-        let c: Value = serde_json::from_slice(&B64.decode(p).map_err(|e| format!("claims: {e}"))?).map_err(|e| format!("claims: {e}"))?;
+        let c: Value = serde_json::from_slice(&B64.decode(p).map_err(|e| format!("claims: {e}"))?)
+            .map_err(|e| format!("claims: {e}"))?;
         let now = (self.clock)();
         if c["iss"] != self.issuer.as_str() {
-            return Err(format!("issuer is {}, expected {}", c["iss"], self.issuer));
+            return Err(format!("issuer is {}, expected {}", c["iss"], self.issuer).into());
         }
         let aud_ok = match &c["aud"] {
             Value::String(a) => *a == self.audience,
@@ -164,26 +200,34 @@ impl ConfidentialSpaceVerifier {
         }
         let model = c["hwmodel"].as_str().unwrap_or("");
         if !self.models.contains(model) {
-            return Err(format!("hardware model {model:?} is not accepted"));
+            return Err(format!("hardware model {model:?} is not accepted").into());
         }
         if c["swname"] != "CONFIDENTIAL_SPACE" {
             return Err("not a Confidential Space image".into());
         }
         if c["dbgstat"] != "disabled-since-boot" {
-            return Err(format!("debug is not disabled since boot: {}", c["dbgstat"]));
+            return Err(format!("debug is not disabled since boot: {}", c["dbgstat"]).into());
         }
         if c["secboot"] != true {
             return Err("secure boot is off".into());
         }
-        if self.require_stable && !c["submods"]["confidential_space"]["support_attributes"].as_array().is_some_and(|a| a.iter().any(|x| x == "STABLE")) {
+        if self.require_stable
+            && !c["submods"]["confidential_space"]["support_attributes"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|x| x == "STABLE"))
+        {
             return Err("image is not a STABLE Confidential Space release".into());
         }
         let project = c["submods"]["gce"]["project_id"].as_str().unwrap_or("");
         if !self.projects.is_empty() && !self.projects.contains(project) {
-            return Err(format!("project {project:?} is not accepted"));
+            return Err(format!("project {project:?} is not accepted").into());
         }
-        let image = c["submods"]["container"]["image_digest"].as_str().unwrap_or("");
-        let mut notes = vec![format!("{model} VM in project {project:?}, debug disabled, secure boot on")];
+        let image = c["submods"]["container"]["image_digest"]
+            .as_str()
+            .unwrap_or("");
+        let mut notes = vec![format!(
+            "{model} VM in project {project:?}, debug disabled, secure boot on"
+        )];
         let tier = if self.images.is_empty() {
             notes.push(format!("container image {image:?} is not pinned, so this is a genuine confidential VM running an unknown workload"));
             Tier::T1
@@ -191,10 +235,16 @@ impl ConfidentialSpaceVerifier {
             notes.push(format!("container image {image} is on the allow-list"));
             Tier::T3
         } else {
-            return Err(format!("container image {image:?} is not on the allow-list"));
+            return Err(format!("container image {image:?} is not on the allow-list").into());
         };
         let instance = c["submods"]["gce"]["instance_id"].as_str().unwrap_or("");
-        Ok(PlatformVerdict { tier, notes, challenge: None, device: (!instance.is_empty()).then(|| crate::platform::fingerprint(instance.as_bytes())) })
+        Ok(PlatformVerdict {
+            tier,
+            notes,
+            challenge: None,
+            device: (!instance.is_empty())
+                .then(|| crate::platform::fingerprint(instance.as_bytes())),
+        })
     }
 }
 
@@ -203,10 +253,15 @@ impl PlatformVerifier for ConfidentialSpaceVerifier {
         TDX_KIND
     }
 
-    fn verify(&self, statement: &Statement) -> Result<PlatformVerdict, String> {
-        let raw = String::from_utf8(unhex_vec(&statement.platform_evidence)?).map_err(|_| "evidence is not utf-8")?;
-        let token = raw.strip_prefix("token ").ok_or("evidence has no token line")?.trim();
+    fn verify(&self, statement: &Statement) -> Result<PlatformVerdict, AttestError> {
+        let raw = String::from_utf8(unhex_vec(&statement.platform_evidence)?)
+            .map_err(|_| "evidence is not utf-8")?;
+        let token = raw
+            .strip_prefix("token ")
+            .ok_or("evidence has no token line")?
+            .trim();
         self.check(token, &hex(&statement.binding()))
+            .map_err(|e| AttestError::Platform(e.to_string()))
     }
 }
 
@@ -222,35 +277,55 @@ pub struct ConfidentialSpaceProvider {
 impl ConfidentialSpaceProvider {
     pub const DEFAULT_SOCKET: &'static str = "/run/container_launcher/teeserver.sock";
 
+    #[must_use]
     pub fn new(audience: &str) -> Self {
-        ConfidentialSpaceProvider { socket: Self::DEFAULT_SOCKET.into(), audience: audience.into() }
+        ConfidentialSpaceProvider {
+            socket: Self::DEFAULT_SOCKET.into(),
+            audience: audience.into(),
+        }
     }
 
-    fn request(&self, nonce_hex: &str) -> Result<String, String> {
+    fn request(&self, nonce_hex: &str) -> Result<String, AttestError> {
         use std::io::{Read, Write};
-        let body = format!(r#"{{"audience":"{}","token_type":"OIDC","nonces":["{nonce_hex}"]}}"#, self.audience.replace(['"', '\\'], ""));
-        let mut s = std::os::unix::net::UnixStream::connect(&self.socket).map_err(|e| format!("teeserver socket {}: {e}", self.socket.display()))?;
-        s.set_read_timeout(Some(std::time::Duration::from_secs(10))).ok();
+        let body = format!(
+            r#"{{"audience":"{}","token_type":"OIDC","nonces":["{nonce_hex}"]}}"#,
+            self.audience.replace(['"', '\\'], "")
+        );
+        let mut s = std::os::unix::net::UnixStream::connect(&self.socket)
+            .map_err(|e| format!("teeserver socket {}: {e}", self.socket.display()))?;
+        s.set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .ok();
         write!(s, "POST /v1/token HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
             .map_err(|e| e.to_string())?;
         let mut resp = String::new();
         s.read_to_string(&mut resp).map_err(|e| e.to_string())?;
-        let (head, token) = resp.split_once("\r\n\r\n").ok_or("malformed teeserver response")?;
+        let (head, token) = resp
+            .split_once("\r\n\r\n")
+            .ok_or("malformed teeserver response")?;
         if !head.starts_with("HTTP/1.1 200") {
-            return Err(format!("teeserver refused: {}", head.lines().next().unwrap_or("")));
+            return Err(format!("teeserver refused: {}", head.lines().next().unwrap_or("")).into());
         }
-        let chunked = head.lines().any(|l| l.to_ascii_lowercase().replace(' ', "").starts_with("transfer-encoding:chunked"));
-        let body = if chunked { dechunk(token)? } else { token.to_string() };
+        let chunked = head.lines().any(|l| {
+            l.to_ascii_lowercase()
+                .replace(' ', "")
+                .starts_with("transfer-encoding:chunked")
+        });
+        let body = if chunked {
+            dechunk(token)?
+        } else {
+            token.to_string()
+        };
         Ok(body.trim().to_string())
     }
 }
 
 /// Decode an HTTP/1.1 chunked body. The Confidential Space launcher answers this way (seen on a real VM).
-fn dechunk(mut raw: &str) -> Result<String, String> {
+fn dechunk(mut raw: &str) -> Result<String, AttestError> {
     let mut out = String::new();
     loop {
         let (size_line, rest) = raw.split_once("\r\n").ok_or("truncated chunked body")?;
-        let size = usize::from_str_radix(size_line.split(';').next().unwrap_or("").trim(), 16).map_err(|_| "bad chunk size")?;
+        let size = usize::from_str_radix(size_line.split(';').next().unwrap_or("").trim(), 16)
+            .map_err(|_| "bad chunk size")?;
         if size == 0 {
             return Ok(out);
         }
@@ -268,9 +343,12 @@ impl PlatformProvider for ConfidentialSpaceProvider {
         TDX_KIND
     }
 
-    fn produce(&self, binding: &[u8; 32], _: &Measurements) -> Result<Produced, String> {
+    fn produce(&self, binding: &[u8; 32], _: &Measurements) -> Result<Produced, AttestError> {
         let token = self.request(&hex(binding))?;
-        Ok(Produced { evidence: format!("token {token}\n"), claimed: Tier::T3 })
+        Ok(Produced {
+            evidence: format!("token {token}\n"),
+            claimed: Tier::T3,
+        })
     }
 }
 
@@ -280,7 +358,10 @@ mod tests {
 
     #[test]
     fn chunked_launcher_responses_are_decoded() {
-        assert_eq!(dechunk("5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap(), "hello world");
+        assert_eq!(
+            dechunk("5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap(),
+            "hello world"
+        );
         assert!(dechunk("5\r\nhel").is_err());
         assert!(dechunk("zz\r\nhello").is_err());
     }
@@ -291,32 +372,63 @@ mod tests {
     /// `PLAYBOX_CS_TOKEN`, `PLAYBOX_CS_JWKS`, `PLAYBOX_CS_DIGEST` point it at a newer capture.
     #[test]
     fn a_real_confidential_space_token_verifies() {
-        let fx = |n: &str| format!("{}/tests/fixtures/confidential-space/{n}", env!("CARGO_MANIFEST_DIR"));
-        let var = |k: &str, n: &str| std::fs::read_to_string(std::env::var(k).unwrap_or_else(|_| fx(n))).unwrap();
-        let (token, jwks, digest) = (var("PLAYBOX_CS_TOKEN", "token.jwt"), var("PLAYBOX_CS_JWKS", "jwks.json"), var("PLAYBOX_CS_DIGEST", "digest.txt"));
-        let (nonce, aud, digest) = ("playbox-binding-test-0123456789".to_string(), "playbox-test".to_string(), digest.trim().to_string());
+        let fx = |n: &str| {
+            format!(
+                "{}/tests/fixtures/confidential-space/{n}",
+                env!("CARGO_MANIFEST_DIR")
+            )
+        };
+        let var = |k: &str, n: &str| {
+            std::fs::read_to_string(std::env::var(k).unwrap_or_else(|_| fx(n))).unwrap()
+        };
+        let (token, jwks, digest) = (
+            var("PLAYBOX_CS_TOKEN", "token.jwt"),
+            var("PLAYBOX_CS_JWKS", "jwks.json"),
+            var("PLAYBOX_CS_DIGEST", "digest.txt"),
+        );
+        let (nonce, aud, digest) = (
+            "playbox-binding-test-0123456789".to_string(),
+            "playbox-test".to_string(),
+            digest.trim().to_string(),
+        );
         let token = token.trim().to_string();
-        let claims: Value = serde_json::from_slice(&B64.decode(token.split('.').nth(1).unwrap()).unwrap()).unwrap();
+        let claims: Value =
+            serde_json::from_slice(&B64.decode(token.split('.').nth(1).unwrap()).unwrap()).unwrap();
         let exp = claims["exp"].as_u64().unwrap();
         let v = |d: Option<&str>| {
-            let mut v = ConfidentialSpaceVerifier::new(&aud).with_jwks(&jwks).unwrap().with_clock(move || exp - 60);
+            let mut v = ConfidentialSpaceVerifier::new(&aud)
+                .with_jwks(&jwks)
+                .unwrap()
+                .with_clock(move || exp - 60);
             if let Some(d) = d {
                 v = v.with_image_digest(d);
             }
             v
         };
-        let t1 = v(None).check(&token, &nonce).expect("real token must verify");
+        let t1 = v(None)
+            .check(&token, &nonce)
+            .expect("real token must verify");
         assert_eq!(t1.tier, Tier::T1, "{:?}", t1.notes);
-        let t3 = v(Some(&digest)).check(&token, &nonce).expect("pinned digest must verify");
+        let t3 = v(Some(&digest))
+            .check(&token, &nonce)
+            .expect("pinned digest must verify");
         assert_eq!(t3.tier, Tier::T3, "{:?}", t3.notes);
         assert!(v(Some("sha256:wrong")).check(&token, &nonce).is_err());
-        assert!(v(None).check(&token, "some-other-nonce-0123456789").is_err());
+        assert!(v(None)
+            .check(&token, "some-other-nonce-0123456789")
+            .is_err());
         eprintln!("{:?}", t3.notes);
     }
 
     use crate::attest::{new_statement, verify};
     use ed25519_dalek::SigningKey;
-    use rsa::{pkcs1v15::SigningKey as RsaSigner, rand_core::OsRng, signature::{SignatureEncoding, Signer}, traits::PublicKeyParts, RsaPrivateKey};
+    use rsa::{
+        pkcs1v15::SigningKey as RsaSigner,
+        rand_core::OsRng,
+        signature::{SignatureEncoding, Signer},
+        traits::PublicKeyParts,
+        RsaPrivateKey,
+    };
     use serde_json::json;
     use std::sync::OnceLock;
 
@@ -329,7 +441,13 @@ mod tests {
     }
 
     fn meas() -> Measurements {
-        Measurements { binary: "bb".into(), runner: "libkrun".into(), policy: "pp".into(), os: "linux".into(), arch: "x86_64".into() }
+        Measurements {
+            binary: "bb".into(),
+            runner: "libkrun".into(),
+            policy: "pp".into(),
+            os: "linux".into(),
+            arch: "x86_64".into(),
+        }
     }
 
     fn claims(binding: &str) -> Value {
@@ -352,7 +470,9 @@ mod tests {
     }
 
     fn verifier() -> ConfidentialSpaceVerifier {
-        ConfidentialSpaceVerifier::new("playbox").with_key("k1", google().to_public_key()).with_clock(|| NOW)
+        ConfidentialSpaceVerifier::new("playbox")
+            .with_key("k1", google().to_public_key())
+            .with_clock(|| NOW)
     }
 
     /// A statement carrying `token_for(binding)` as evidence, signed by the session key.
@@ -361,7 +481,8 @@ mod tests {
         let mut st = new_statement(&key, "ab", "", 1, meas());
         st.platform = TDX_KIND.into();
         st.claimed = Tier::T3;
-        st.platform_evidence = hex(format!("token {}\n", token_for(&hex(&st.binding()))).as_bytes());
+        st.platform_evidence =
+            hex(format!("token {}\n", token_for(&hex(&st.binding()))).as_bytes());
         st.sign(&key).unwrap()
     }
 
@@ -389,15 +510,35 @@ mod tests {
         let v = verifier().with_image_digest(IMAGE);
         type Mutation = Box<dyn Fn(&mut Value)>;
         let cases: Vec<(&str, Mutation)> = vec![
-            ("wrong image", Box::new(|c| c["submods"]["container"]["image_digest"] = json!("sha256:bbbb"))),
+            (
+                "wrong image",
+                Box::new(|c| c["submods"]["container"]["image_digest"] = json!("sha256:bbbb")),
+            ),
             ("debug on", Box::new(|c| c["dbgstat"] = json!("enabled"))),
-            ("wrong hardware", Box::new(|c| c["hwmodel"] = json!("GCP_AMD_SEV"))),
+            (
+                "wrong hardware",
+                Box::new(|c| c["hwmodel"] = json!("GCP_AMD_SEV")),
+            ),
             ("secure boot off", Box::new(|c| c["secboot"] = json!(false))),
-            ("not confidential space", Box::new(|c| c["swname"] = json!("GKE"))),
-            ("wrong audience", Box::new(|c| c["aud"] = json!("someone-else"))),
+            (
+                "not confidential space",
+                Box::new(|c| c["swname"] = json!("GKE")),
+            ),
+            (
+                "wrong audience",
+                Box::new(|c| c["aud"] = json!("someone-else")),
+            ),
             ("expired", Box::new(|c| c["exp"] = json!(NOW - 1))),
-            ("wrong issuer", Box::new(|c| c["iss"] = json!("https://evil.example"))),
-            ("not stable", Box::new(|c| c["submods"]["confidential_space"]["support_attributes"] = json!(["LATEST"]))),
+            (
+                "wrong issuer",
+                Box::new(|c| c["iss"] = json!("https://evil.example")),
+            ),
+            (
+                "not stable",
+                Box::new(|c| {
+                    c["submods"]["confidential_space"]["support_attributes"] = json!(["LATEST"]);
+                }),
+            ),
             ("stale nonce", Box::new(|c| c["eat_nonce"] = json!(["00"]))),
         ];
         for (name, mutate) in cases {
@@ -423,10 +564,30 @@ mod tests {
     fn forged_signature_unknown_key_and_weak_algorithms_are_rejected() {
         let v = verifier().with_image_digest(IMAGE);
         let attacker = RsaPrivateKey::new(&mut OsRng, 2048).unwrap();
-        assert_eq!(achieved(&v, &statement(|b| jwt("k1", "RS256", &claims(b), &attacker))).0, Tier::T0, "signed by another key");
-        assert_eq!(achieved(&v, &statement(|b| jwt("k2", "RS256", &claims(b), google()))).0, Tier::T0, "unknown kid");
-        assert_eq!(achieved(&v, &statement(|b| jwt("k1", "none", &claims(b), google()))).0, Tier::T0, "alg none");
-        assert_eq!(achieved(&v, &statement(|b| jwt("k1", "HS256", &claims(b), google()))).0, Tier::T0, "alg HS256");
+        assert_eq!(
+            achieved(
+                &v,
+                &statement(|b| jwt("k1", "RS256", &claims(b), &attacker))
+            )
+            .0,
+            Tier::T0,
+            "signed by another key"
+        );
+        assert_eq!(
+            achieved(&v, &statement(|b| jwt("k2", "RS256", &claims(b), google()))).0,
+            Tier::T0,
+            "unknown kid"
+        );
+        assert_eq!(
+            achieved(&v, &statement(|b| jwt("k1", "none", &claims(b), google()))).0,
+            Tier::T0,
+            "alg none"
+        );
+        assert_eq!(
+            achieved(&v, &statement(|b| jwt("k1", "HS256", &claims(b), google()))).0,
+            Tier::T0,
+            "alg HS256"
+        );
         let text = statement(|b| {
             let t = jwt("k1", "RS256", &claims(b), google());
             let (h, rest) = t.split_once('.').unwrap();
@@ -435,15 +596,28 @@ mod tests {
             c["submods"]["container"]["image_digest"] = json!("sha256:evil");
             format!("{h}.{}.{s}", B64.encode(c.to_string()))
         });
-        assert_eq!(achieved(&v, &text).0, Tier::T0, "claims edited after signing");
+        assert_eq!(
+            achieved(&v, &text).0,
+            Tier::T0,
+            "claims edited after signing"
+        );
     }
 
     #[test]
     fn jwks_loading_pins_keys() {
         let pk = google().to_public_key();
         let jwks = json!({"keys": [{"kid": "k1", "kty": "RSA", "alg": "RS256", "n": B64.encode(pk.n().to_bytes_be()), "e": B64.encode(pk.e().to_bytes_be())}]}).to_string();
-        let v = ConfidentialSpaceVerifier::new("playbox").with_jwks(&jwks).unwrap().with_clock(|| NOW).with_image_digest(IMAGE);
-        assert_eq!(achieved(&v, &statement(|b| jwt("k1", "RS256", &claims(b), google()))).0, Tier::T3);
-        assert!(ConfidentialSpaceVerifier::new("playbox").with_jwks("{\"keys\":[]}").is_err());
+        let v = ConfidentialSpaceVerifier::new("playbox")
+            .with_jwks(&jwks)
+            .unwrap()
+            .with_clock(|| NOW)
+            .with_image_digest(IMAGE);
+        assert_eq!(
+            achieved(&v, &statement(|b| jwt("k1", "RS256", &claims(b), google()))).0,
+            Tier::T3
+        );
+        assert!(ConfidentialSpaceVerifier::new("playbox")
+            .with_jwks("{\"keys\":[]}")
+            .is_err());
     }
 }

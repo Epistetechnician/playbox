@@ -17,9 +17,9 @@
 
 use crate::grants::Needs;
 use a2a::{
-    new_artifact_id, new_context_id, new_task_id, AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
-    Artifact, HttpAuthSecurityScheme, JsonRpcRequest, Message, Part, PartContent, Role, SecurityScheme, Task,
-    TaskState, TaskStatus,
+    new_artifact_id, new_context_id, new_task_id, AgentCapabilities, AgentCard, AgentInterface,
+    AgentSkill, Artifact, HttpAuthSecurityScheme, JsonRpcRequest, Message, Part, PartContent, Role,
+    SecurityScheme, Task, TaskState, TaskStatus,
 };
 use anyhow::{anyhow, Result};
 use playbox_runner::{Limits, TaskSpec};
@@ -29,8 +29,12 @@ use std::collections::{BTreeMap, HashMap};
 
 pub const SVC_AUTHORIZATION: &str = "Authorization";
 /// Methods anyone may call without an invite or grant. Everything else proves the caller first.
+#[must_use]
 pub fn is_public(method: &str) -> bool {
-    matches!(method, METHOD_AGENT_CARD | METHOD_ATTESTATION | METHOD_ACTIVATE)
+    matches!(
+        method,
+        METHOD_AGENT_CARD | METHOD_ATTESTATION | METHOD_ACTIVATE
+    )
 }
 
 pub const METHOD_JOIN: &str = "playbox.Join";
@@ -55,6 +59,7 @@ pub struct Frame {
 }
 
 impl Frame {
+    #[must_use]
     pub fn new(rpc: JsonRpcRequest, grant: Option<&str>) -> Self {
         let mut svc = BTreeMap::new();
         svc.insert(a2a::SVC_PARAM_VERSION.to_string(), a2a::VERSION.to_string());
@@ -64,6 +69,7 @@ impl Frame {
         Frame { svc, rpc }
     }
 
+    #[must_use]
     pub fn grant(&self) -> Option<&str> {
         self.svc.get(SVC_AUTHORIZATION)?.strip_prefix("Bearer ")
     }
@@ -85,14 +91,26 @@ pub enum Op {
     /// raw parts: the direction file, then the prompt set. With `probe`, nothing is edited: the host
     /// returns projections of the prompts' activations onto the direction.
     Steer { spec: String, probe: bool },
+    /// Hand the host a signed KV-cache record (`PBH1`, the message's one raw part) for the hosted model
+    /// `weights` (manifest hash, hex). The host checks the signature and, with the host's audit probability,
+    /// recomputes the cache from the text; a signer caught with a bad cache is quarantined.
+    Handoff { weights: String },
     /// Say something to the whole room.
-    Say { text: String, #[serde(default)] name: Option<String> },
+    Say {
+        text: String,
+        #[serde(default)]
+        name: Option<String>,
+    },
     /// Read the room's live feed after sequence number `since`.
-    Feed { #[serde(default)] since: u64 },
+    Feed {
+        #[serde(default)]
+        since: u64,
+    },
 }
 
 impl Op {
     /// The operation name the grant's `right(...)` facts refer to.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Op::Echo { .. } => "echo",
@@ -101,18 +119,24 @@ impl Op {
             Op::Run { .. } => "run",
             Op::Steer { probe: false, .. } => "steer",
             Op::Steer { probe: true, .. } => "steer_probe",
+            Op::Handoff { .. } => "handoff",
             // Talking in the room needs only membership, like echo.
             Op::Say { .. } | Op::Feed { .. } => "echo",
         }
     }
 
     /// The resources this operation needs, for authorization.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
+    #[must_use]
     pub fn needs(&self) -> Needs {
         match self {
             Op::Run { spec, .. } => Needs {
                 cpu_milli: (spec.cpus * 1000.0).ceil() as i64,
-                mem_mib: spec.mem_mib as i64,
-                timeout_secs: spec.timeout_secs as i64,
+                mem_mib: i64::from(spec.mem_mib),
+                timeout_secs: i64::try_from(spec.timeout_secs).unwrap_or(i64::MAX),
                 net: spec.network && spec.allowed_hosts.is_empty(),
                 hosts: spec.allowed_hosts.clone(),
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
@@ -124,6 +148,7 @@ impl Op {
     }
 
     /// A user message carrying this operation, with any extra parts (such as a bundle).
+    #[must_use]
     pub fn message(&self, extra: Vec<Part>) -> Message {
         let mut parts = vec![Part::data(json!({ "playbox": self }))];
         parts.extend(extra);
@@ -131,11 +156,18 @@ impl Op {
     }
 
     /// `Ok(None)` if the message has no Playbox operation (a plain A2A text message, say).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn from_message(m: &Message) -> Result<Option<Self>> {
         for p in &m.parts {
             if let PartContent::Data(v) = &p.content {
                 if let Some(op) = v.get("playbox") {
-                    return Ok(Some(serde_json::from_value(op.clone()).map_err(|e| anyhow!("bad playbox operation: {e}"))?));
+                    return Ok(Some(
+                        serde_json::from_value(op.clone())
+                            .map_err(|e| anyhow!("bad playbox operation: {e}"))?,
+                    ));
                 }
             }
         }
@@ -144,6 +176,7 @@ impl Op {
 }
 
 /// The first raw part of a message, if any.
+#[must_use]
 pub fn raw_part(m: &Message) -> Option<&[u8]> {
     m.parts.iter().find_map(|p| match &p.content {
         PartContent::Raw(b) => Some(b.as_slice()),
@@ -152,6 +185,7 @@ pub fn raw_part(m: &Message) -> Option<&[u8]> {
 }
 
 /// Every raw part of a message, in order.
+#[must_use]
 pub fn raw_parts(m: &Message) -> Vec<&[u8]> {
     m.parts
         .iter()
@@ -173,36 +207,58 @@ pub fn text_artifact(name: &str, text: impl Into<String>) -> Artifact {
     }
 }
 
+#[must_use]
 pub fn raw_artifact(name: &str, filename: &str, media_type: &str, bytes: Vec<u8>) -> Artifact {
     Artifact {
         artifact_id: new_artifact_id(),
         name: Some(name.to_string()),
         description: None,
-        parts: vec![Part::raw(bytes).with_filename(filename).with_media_type(media_type)],
+        parts: vec![Part::raw(bytes)
+            .with_filename(filename)
+            .with_media_type(media_type)],
         metadata: None,
         extensions: None,
     }
 }
 
 /// The text parts and raw bytes of the artifact called `name`.
+#[must_use]
 pub fn artifact<'a>(t: &'a Task, name: &str) -> Option<&'a Artifact> {
-    t.artifacts.as_ref()?.iter().find(|a| a.name.as_deref() == Some(name))
+    t.artifacts
+        .as_ref()?
+        .iter()
+        .find(|a| a.name.as_deref() == Some(name))
 }
 
+#[must_use]
 pub fn artifact_text(t: &Task, name: &str) -> Option<String> {
-    artifact(t, name)?.parts.iter().find_map(|p| p.as_text().map(str::to_string))
+    artifact(t, name)?
+        .parts
+        .iter()
+        .find_map(|p| p.as_text().map(str::to_string))
 }
 
+#[must_use]
 pub fn artifact_bytes(t: &Task, name: &str) -> Option<Vec<u8>> {
-    artifact(t, name)?.parts.iter().find_map(|p| match &p.content {
-        PartContent::Raw(b) => Some(b.clone()),
-        _ => None,
-    })
+    artifact(t, name)?
+        .parts
+        .iter()
+        .find_map(|p| match &p.content {
+            PartContent::Raw(b) => Some(b.clone()),
+            _ => None,
+        })
 }
 
 /// Build a task in `state`. `text` becomes the status message.
-pub fn task(state: TaskState, text: Option<String>, artifacts: Vec<Artifact>, meta: Vec<(&str, Value)>) -> Task {
-    let metadata: HashMap<String, Value> = meta.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+#[must_use]
+pub fn task(
+    state: TaskState,
+    text: Option<String>,
+    artifacts: Vec<Artifact>,
+    meta: Vec<(&str, Value)>,
+) -> Task {
+    let metadata: HashMap<String, Value> =
+        meta.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
     Task {
         id: new_task_id(),
         context_id: new_context_id(),
@@ -211,14 +267,23 @@ pub fn task(state: TaskState, text: Option<String>, artifacts: Vec<Artifact>, me
             message: text.map(|t| Message::new(Role::Agent, vec![Part::text(t)])),
             timestamp: Some(chrono::Utc::now()),
         },
-        artifacts: if artifacts.is_empty() { None } else { Some(artifacts) },
+        artifacts: if artifacts.is_empty() {
+            None
+        } else {
+            Some(artifacts)
+        },
         history: None,
-        metadata: if metadata.is_empty() { None } else { Some(metadata) },
+        metadata: if metadata.is_empty() {
+            None
+        } else {
+            Some(metadata)
+        },
     }
 }
 
 /// The task with large byte parts removed, for the host's in-memory record. The caller already has
 /// the bytes; `GetTask` later reports sizes instead.
+#[must_use]
 pub fn without_bytes(mut t: Task) -> Task {
     if let Some(arts) = t.artifacts.as_mut() {
         for a in arts {
@@ -236,16 +301,30 @@ pub fn without_bytes(mut t: Task) -> Task {
     t
 }
 
+#[must_use]
 pub fn status_text(t: &Task) -> String {
-    t.status.message.as_ref().and_then(|m| m.text()).unwrap_or("").to_string()
+    t.status
+        .message
+        .as_ref()
+        .and_then(|m| m.text())
+        .unwrap_or("")
+        .to_string()
 }
 
+#[must_use]
 pub fn meta<'a>(t: &'a Task, key: &str) -> Option<&'a Value> {
     t.metadata.as_ref()?.get(key)
 }
 
 /// The host's public agent card.
-pub fn agent_card(host_id: &str, transport_label: &str, has_repo: bool, has_runner: bool, limits: &Limits) -> AgentCard {
+#[must_use]
+pub fn agent_card(
+    host_id: &str,
+    transport_label: &str,
+    has_repo: bool,
+    has_runner: bool,
+    limits: &Limits,
+) -> AgentCard {
     let skill = |id: &str, name: &str, description: String, example: &str| AgentSkill {
         id: id.to_string(),
         name: name.to_string(),
@@ -271,7 +350,8 @@ pub fn agent_card(host_id: &str, transport_label: &str, has_repo: bool, has_runn
     skills.push(skill(
         "feed",
         "Feed",
-        "Read what was said and what happened after sequence number `since`; also who is present.".into(),
+        "Read what was said and what happened after sequence number `since`; also who is present."
+            .into(),
         r#"{"playbox":{"op":"feed","since":0}}"#,
     ));
     if has_repo {
@@ -284,7 +364,8 @@ pub fn agent_card(host_id: &str, transport_label: &str, has_repo: bool, has_runn
         skills.push(skill(
             "push",
             "Push",
-            "Send a git bundle (raw part); it is stored under your own namespace on the host.".into(),
+            "Send a git bundle (raw part); it is stored under your own namespace on the host."
+                .into(),
             r#"{"playbox":{"op":"push","branch":"main"}} + raw bundle part"#,
         ));
     }
@@ -308,7 +389,10 @@ pub fn agent_card(host_id: &str, transport_label: &str, has_repo: bool, has_runn
         "grant".to_string(),
         SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
             scheme: "Bearer".into(),
-            description: Some("A Biscuit grant from `playbox.Join`, sent as the Authorization service parameter.".into()),
+            description: Some(
+                "A Biscuit grant from `playbox.Join`, sent as the Authorization service parameter."
+                    .into(),
+            ),
             bearer_format: Some("Biscuit".into()),
         }),
     );
@@ -353,11 +437,18 @@ mod tests {
 
     #[test]
     fn ops_round_trip_through_messages() {
-        let op = Op::Run { base: "main".into(), spec: TaskSpec::new(&["sh", "-c", "true"]) };
+        let op = Op::Run {
+            base: "main".into(),
+            spec: TaskSpec::new(&["sh", "-c", "true"]),
+        };
         let m = op.message(vec![]);
         let back = Op::from_message(&m).unwrap().unwrap();
         assert_eq!(back.name(), "run");
-        assert!(Op::from_message(&Message::new(Role::User, vec![Part::text("hello")])).unwrap().is_none());
+        assert!(
+            Op::from_message(&Message::new(Role::User, vec![Part::text("hello")]))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -367,12 +458,25 @@ mod tests {
         assert_eq!(f.grant(), Some("abc"));
         let s = serde_json::to_string(&f).unwrap();
         assert!(s.contains("Bearer abc") && s.contains("A2A-Version"));
-        assert_eq!(Frame::new(JsonRpcRequest::new(1.into(), "x", None), None).grant(), None);
+        assert_eq!(
+            Frame::new(JsonRpcRequest::new(1.into(), "x", None), None).grant(),
+            None
+        );
     }
 
     #[test]
     fn stored_tasks_drop_bytes_but_keep_their_size() {
-        let t = task(TaskState::Completed, None, vec![raw_artifact("bundle", "b.bundle", MEDIA_BUNDLE, vec![1; 1000])], vec![]);
+        let t = task(
+            TaskState::Completed,
+            None,
+            vec![raw_artifact(
+                "bundle",
+                "b.bundle",
+                MEDIA_BUNDLE,
+                vec![1; 1000],
+            )],
+            vec![],
+        );
         let kept = without_bytes(t.clone());
         assert!(artifact_bytes(&kept, "bundle").is_none());
         assert!(artifact_bytes(&t, "bundle").is_some());
@@ -384,8 +488,17 @@ mod tests {
     fn card_lists_only_what_the_host_offers() {
         let lim = Limits::default();
         let ids = |c: AgentCard| c.skills.into_iter().map(|s| s.id).collect::<Vec<_>>();
-        assert_eq!(ids(agent_card("h", "local", false, false, &lim)), ["echo", "say", "feed"]);
-        assert_eq!(ids(agent_card("h", "local", true, false, &lim)), ["echo", "say", "feed", "pull", "push"]);
-        assert_eq!(ids(agent_card("h", "local", true, true, &lim)), ["echo", "say", "feed", "pull", "push", "run"]);
+        assert_eq!(
+            ids(agent_card("h", "local", false, false, &lim)),
+            ["echo", "say", "feed"]
+        );
+        assert_eq!(
+            ids(agent_card("h", "local", true, false, &lim)),
+            ["echo", "say", "feed", "pull", "push"]
+        );
+        assert_eq!(
+            ids(agent_card("h", "local", true, true, &lim)),
+            ["echo", "say", "feed", "pull", "push", "run"]
+        );
     }
 }

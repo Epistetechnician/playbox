@@ -14,25 +14,27 @@ pub mod wire;
 pub use revoke::{Notice, SYNC_ALPN};
 pub use transport::{Transport, TransportChoice};
 
+use a2a::{
+    A2AError, GetTaskRequest, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
+    ListTasksResponse, Message, Part, Role, SendMessageRequest, SendMessageResponse, Task,
+    TaskState,
+};
 use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+use ed25519_dalek::SigningKey;
 use grants::{Authority, Caps};
 pub use iroh::EndpointId;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use iroh::{
     endpoint::Connection,
     protocol::{AcceptError, ProtocolHandler, Router},
     Endpoint, EndpointAddr, SecretKey,
 };
-use a2a::{
-    A2AError, GetTaskRequest, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, ListTasksResponse, Message,
-    Part, Role, SendMessageRequest, SendMessageResponse, Task, TaskState,
+use playbox_core::attest::{
+    self, Measurements, PlatformProvider, PlatformVerifier, Tier, Verified,
 };
-use ed25519_dalek::SigningKey;
-use playbox_core::attest::{self, Measurements, PlatformProvider, PlatformVerifier, Tier, Verified};
 use playbox_runner::{Isolation, Limits, Runner, TaskOutput, TaskSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use wire::Op;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     io::Read,
@@ -44,6 +46,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Semaphore;
+use wire::Op;
 
 pub const ALPN: &[u8] = b"playbox/a2a/1";
 /// Cap for one request or response. Bundles and patches travel base64-encoded inside it, so the
@@ -62,12 +65,19 @@ const CONNECT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(6);
 const LINK_SCHEME: &str = "playbox://";
 
 /// 32 random bytes from the OS.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn random_bytes() -> Result<[u8; 32]> {
     let mut b = [0u8; 32];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut b)?;
     Ok(b)
 }
 
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn new_secret_key() -> Result<SecretKey> {
     Ok(SecretKey::from_bytes(&random_bytes()?))
 }
@@ -96,9 +106,16 @@ pub struct LinkOpts {
 }
 
 /// Where a guest's stable identity key lives, for links bound to it.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn identity_key(path: &std::path::Path) -> Result<SecretKey> {
     match std::fs::read(path) {
-        Ok(b) => Ok(SecretKey::from_bytes(&<[u8; 32]>::try_from(b.as_slice()).map_err(|_| anyhow!("{} is not a 32-byte key", path.display()))?)),
+        Ok(b) => Ok(SecretKey::from_bytes(
+            &<[u8; 32]>::try_from(b.as_slice())
+                .map_err(|_| anyhow!("{} is not a 32-byte key", path.display()))?,
+        )),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let k = random_bytes()?;
             if let Some(dir) = path.parent() {
@@ -114,23 +131,42 @@ pub fn identity_key(path: &std::path::Path) -> Result<SecretKey> {
 }
 
 /// The key to join `link` with: a fresh one, or `identity` when the link is bound to a key.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn key_for_link(link: &str, identity: &std::path::Path) -> Result<SecretKey> {
-    if Link::parse(link)?.bound { identity_key(identity) } else { new_secret_key() }
+    if Link::parse(link)?.bound {
+        identity_key(identity)
+    } else {
+        new_secret_key()
+    }
 }
 
 /// A host's address as one copy-pasteable string, for `--sync-peer`.
+///
+/// # Panics
+///
+/// Panics only if JSON serialization fails, which cannot happen for this plain data type.
+#[must_use]
 pub fn encode_peer(addr: &EndpointAddr) -> String {
     B64.encode(serde_json::to_vec(addr).expect("EndpointAddr serializes"))
 }
 
 /// Either a full address from [`encode_peer`], or just an endpoint id (64 hex characters). An id alone
 /// lets that host pull notices from us and join the gossip, but we cannot dial it until it contacts us.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn decode_peer(s: &str) -> Result<EndpointAddr> {
     let s = s.trim();
     if let Ok(id) = s.parse::<EndpointId>() {
         return Ok(EndpointAddr::new(id));
     }
-    let json = B64.decode(s).context("peer is neither an endpoint id nor an encoded address")?;
+    let json = B64
+        .decode(s)
+        .context("peer is neither an endpoint id nor an encoded address")?;
     serde_json::from_slice(&json).context("peer address is not valid")
 }
 
@@ -144,25 +180,48 @@ struct LinkBody {
 }
 
 impl Link {
+    /// # Panics
+    ///
+    /// Panics only if JSON serialization fails, which cannot happen for this plain data type.
     pub fn encode(&self) -> String {
-        let body = LinkBody { addr: self.addr.clone(), t: self.transport.as_ref().map(Transport::label), b: self.bound };
+        let body = LinkBody {
+            addr: self.addr.clone(),
+            t: self.transport.as_ref().map(Transport::label),
+            b: self.bound,
+        };
         let json = serde_json::to_vec(&body).expect("link body serializes");
         format!("{LINK_SCHEME}{}#{}", B64.encode(json), self.invite)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn parse(s: &str) -> Result<Self> {
-        let rest = s.strip_prefix(LINK_SCHEME).ok_or_else(|| anyhow!("link must start with {LINK_SCHEME}"))?;
-        let (body, invite) = rest.split_once('#').ok_or_else(|| anyhow!("link has no invite fragment"))?;
+        let rest = s
+            .strip_prefix(LINK_SCHEME)
+            .ok_or_else(|| anyhow!("link must start with {LINK_SCHEME}"))?;
+        let (body, invite) = rest
+            .split_once('#')
+            .ok_or_else(|| anyhow!("link has no invite fragment"))?;
         let json = B64.decode(body).context("link is not valid base64")?;
         let (addr, t, bound) = match serde_json::from_slice::<LinkBody>(&json) {
             Ok(b) => (b.addr, b.t, b.b),
-            Err(_) => (serde_json::from_slice(&json).context("link address is not valid")?, None, false),
+            Err(_) => (
+                serde_json::from_slice(&json).context("link address is not valid")?,
+                None,
+                false,
+            ),
         };
         if invite.is_empty() {
             bail!("empty invite");
         }
         let transport = t.map(|t| Transport::parse(&t)).transpose()?;
-        Ok(Self { addr, invite: invite.to_string(), transport, bound })
+        Ok(Self {
+            addr,
+            invite: invite.to_string(),
+            transport,
+            bound,
+        })
     }
 }
 
@@ -207,17 +266,29 @@ struct Saved {
 
 impl State {
     fn load(path: &std::path::Path) -> Result<Self> {
-        let mut st = State { path: Some(path.to_path_buf()), ..Default::default() };
+        let mut st = State {
+            path: Some(path.to_path_buf()),
+            ..Default::default()
+        };
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(st),
             Err(e) => return Err(e).context("reading host state"),
         };
         let saved: Saved = serde_json::from_str(&text).context("host state file is corrupt")?;
-        let id = |s: &str| s.parse::<EndpointId>().map_err(|e| anyhow!("bad endpoint id in state: {e}"));
+        let id = |s: &str| {
+            s.parse::<EndpointId>()
+                .map_err(|e| anyhow!("bad endpoint id in state: {e}"))
+        };
         for (k, v) in saved.invites {
             let bound_to = saved.bound.get(&k).map(|b| id(b)).transpose()?;
-            st.invites.insert(k, Invite { uses_left: v, bound_to });
+            st.invites.insert(
+                k,
+                Invite {
+                    uses_left: v,
+                    bound_to,
+                },
+            );
         }
         for (m, g) in saved.members {
             st.members.insert(id(&m)?, g);
@@ -235,9 +306,21 @@ impl State {
     fn save(&self) {
         let Some(path) = &self.path else { return };
         let saved = Saved {
-            invites: self.invites.iter().map(|(k, v)| (k.clone(), v.uses_left)).collect(),
-            bound: self.invites.iter().filter_map(|(k, v)| v.bound_to.map(|b| (k.clone(), b.to_string()))).collect(),
-            members: self.members.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+            invites: self
+                .invites
+                .iter()
+                .map(|(k, v)| (k.clone(), v.uses_left))
+                .collect(),
+            bound: self
+                .invites
+                .iter()
+                .filter_map(|(k, v)| v.bound_to.map(|b| (k.clone(), b.to_string())))
+                .collect(),
+            members: self
+                .members
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
             revoked: self.revoked.iter().cloned().collect(),
             banned: self.banned.iter().map(ToString::to_string).collect(),
             notices: self.notices.values().cloned().collect(),
@@ -246,9 +329,12 @@ impl State {
         let result = serde_json::to_vec_pretty(&saved)
             .map_err(anyhow::Error::from)
             .and_then(|b| std::fs::write(&tmp, b).map_err(Into::into))
-            .and_then(|_| std::fs::rename(&tmp, path).map_err(Into::into));
+            .and_then(|()| std::fs::rename(&tmp, path).map_err(Into::into));
         if let Err(e) = result {
-            eprintln!("playbox: could not save host state to {}: {e:#}", path.display());
+            eprintln!(
+                "playbox: could not save host state to {}: {e:#}",
+                path.display()
+            );
         }
     }
 }
@@ -269,7 +355,12 @@ fn load_or_create_seed(path: &std::path::Path) -> Result<[u8; 32]> {
     }
     let seed = random_bytes()?;
     let hex: String = seed.iter().map(|b| format!("{b:02x}")).collect();
-    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?.write_all(hex.as_bytes())?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?
+        .write_all(hex.as_bytes())?;
     Ok(seed)
 }
 
@@ -296,6 +387,9 @@ pub struct HostConfig {
     /// How long a connection that has not authenticated may take to send its first request, or to send
     /// anything at all. Default 30 s.
     pub idle_timeout: Duration,
+    /// How long a connection that has proved itself may sit silent before the host closes it. Default 15 minutes.
+    /// A member whose connection was closed this way reconnects with [`Client::reconnect`].
+    pub authenticated_patience: Duration,
     /// The room's git repository (a normal or bare repo).
     pub repo: Option<PathBuf>,
     /// Where member tasks run. Without one, `RunTask` is refused.
@@ -329,6 +423,7 @@ impl Default for HostConfig {
             scratch_quota: playbox_runner::Quota::default(),
             audit_log: None,
             idle_timeout: Duration::from_secs(30),
+            authenticated_patience: AUTHENTICATED_PATIENCE,
             repo: None,
             runner: None,
             limits: Limits::default(),
@@ -404,7 +499,11 @@ fn refuse(msg: impl Into<String>) -> anyhow::Error {
 }
 
 fn rpc_error(code: i32, message: impl Into<String>) -> JsonRpcError {
-    JsonRpcError { code, message: message.into(), data: None }
+    JsonRpcError {
+        code,
+        message: message.into(),
+        data: None,
+    }
 }
 
 fn unauthorized(e: anyhow::Error) -> JsonRpcError {
@@ -416,18 +515,33 @@ fn finish(result: Result<Task>) -> Task {
     match result {
         Ok(t) => t,
         Err(e) => {
-            let state = if e.downcast_ref::<Refused>().is_some() { TaskState::Rejected } else { TaskState::Failed };
+            let state = if e.downcast_ref::<Refused>().is_some() {
+                TaskState::Rejected
+            } else {
+                TaskState::Failed
+            };
             wire::task(state, Some(format!("{e:#}")), vec![], vec![])
         }
     }
 }
 
 impl RoomHandler {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "the value is bounded, or truncated on purpose; the value is bounded well below the signed maximum"
+    )]
     fn join(&self, from: EndpointId, invite: String) -> Result<Value> {
         if !self.auth.can_issue() {
             bail!("this host is a replica and cannot admit members; join through the room's primary host");
         }
-        if self.state.lock().expect("state lock").banned.contains(&from) {
+        if self
+            .state
+            .lock()
+            .expect("state lock")
+            .banned
+            .contains(&from)
+        {
             bail!("this key is banned from the room");
         }
         let id = self.auth.verify_invite(&invite)?;
@@ -435,7 +549,10 @@ impl RoomHandler {
         if st.members.len() >= self.limiter.max_members() && !st.members.contains_key(&from) {
             bail!("this room is full ({} members)", self.limiter.max_members());
         }
-        let inv = st.invites.get_mut(&id).ok_or_else(|| anyhow!("invite already used or unknown"))?;
+        let inv = st
+            .invites
+            .get_mut(&id)
+            .ok_or_else(|| anyhow!("invite already used or unknown"))?;
         if inv.bound_to.is_some_and(|b| b != from) {
             // Checked before the invite is spent, so a stranger holding a leaked link cannot burn it.
             bail!("this invite is for a different key");
@@ -447,74 +564,147 @@ impl RoomHandler {
         let l = &self.cfg.limits;
         let caps = Caps {
             cpu_milli: (l.cpus * 1000.0).ceil() as i64,
-            mem_mib: l.mem_mib as i64,
-            timeout_secs: l.timeout_secs as i64,
+            mem_mib: i64::from(l.mem_mib),
+            timeout_secs: i64::try_from(l.timeout_secs).unwrap_or(i64::MAX),
             net: l.network,
             hosts: l.allowed_hosts.clone(),
         };
-        let ttl = self.cfg.grant_ttl.unwrap_or(Duration::from_secs(3600)).as_secs() as i64;
-        let (grant, grant_id) = self.auth.mint_grant_with(&from.to_string(), ttl, &caps, self.cfg.steer.as_ref().map(|h| h.caps()))?;
+        let ttl = self
+            .cfg
+            .grant_ttl
+            .unwrap_or(Duration::from_secs(3600))
+            .as_secs() as i64;
+        let (grant, grant_id) = self.auth.mint_grant_with(
+            &from.to_string(),
+            ttl,
+            &caps,
+            self.cfg.steer.as_ref().map(|h| h.caps()),
+        )?;
         st.members.insert(from, grant_id);
         st.save();
         Ok(json!({ "member": from.to_string(), "grant": grant }))
     }
 
-    fn authorize(&self, grant: Option<&str>, from: EndpointId, op: &str, needs: &grants::Needs) -> Result<(), JsonRpcError> {
-        let Some(grant) = grant else { return Err(unauthorized(anyhow!("no grant presented"))) };
+    fn authorize(
+        &self,
+        grant: Option<&str>,
+        from: EndpointId,
+        op: &str,
+        needs: &grants::Needs,
+    ) -> Result<(), JsonRpcError> {
+        let Some(grant) = grant else {
+            return Err(unauthorized(anyhow!("no grant presented")));
+        };
         let revoked = self.state.lock().expect("state lock").revoked.clone();
-        self.auth.authorize(grant, &from.to_string(), op, needs, &revoked).map_err(unauthorized)
+        self.auth
+            .authorize(grant, &from.to_string(), op, needs, &revoked)
+            .map_err(unauthorized)
     }
 
     /// One JSON-RPC call from `from`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "the value is bounded, or truncated on purpose; the value is bounded well below the signed maximum"
+    )]
     async fn route(&self, from: EndpointId, frame: &wire::Frame) -> Result<Value, JsonRpcError> {
         use a2a::methods;
         let rpc = &frame.rpc;
         let params = rpc.params.clone().unwrap_or(Value::Null);
-        let invalid = |e: serde_json::Error| A2AError::invalid_params(e.to_string()).to_jsonrpc_error();
+        let invalid =
+            |e: serde_json::Error| A2AError::invalid_params(e.to_string()).to_jsonrpc_error();
         match rpc.method.as_str() {
             wire::METHOD_AGENT_CARD => Ok((*self.card).clone()),
             wire::METHOD_ACTIVATE => {
                 let Some(p) = self.platform.clone() else {
-                    return Err(A2AError::unsupported_operation("this host has no platform hardware").to_jsonrpc_error());
+                    return Err(A2AError::unsupported_operation(
+                        "this host has no platform hardware",
+                    )
+                    .to_jsonrpc_error());
                 };
-                let req = params.get("request").and_then(Value::as_str).unwrap_or_default();
-                if req.len() > 16384 || req.len() % 2 != 0 || !req.chars().all(|c| c.is_ascii_hexdigit()) {
-                    return Err(A2AError::invalid_params("`request` must be at most 8 KiB of hex").to_jsonrpc_error());
+                let req = params
+                    .get("request")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if req.len() > 16384
+                    || !req.len().is_multiple_of(2)
+                    || !req.chars().all(|c| c.is_ascii_hexdigit())
+                {
+                    return Err(
+                        A2AError::invalid_params("`request` must be at most 8 KiB of hex")
+                            .to_jsonrpc_error(),
+                    );
                 }
-                let bytes: Vec<u8> = (0..req.len() / 2).map(|i| u8::from_str_radix(&req[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
-                let _slot = self
-                    .platform_calls
-                    .try_acquire()
-                    .map_err(|_| A2AError::unsupported_operation("busy: too many hardware challenges in flight, try again").to_jsonrpc_error())?;
-                let out = tokio::task::spawn_blocking(move || p.respond(&bytes)).await.map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())?;
+                let bytes: Vec<u8> = (0..req.len() / 2)
+                    .map(|i| u8::from_str_radix(&req[i * 2..i * 2 + 2], 16).unwrap_or(0))
+                    .collect();
+                let _slot = self.platform_calls.try_acquire().map_err(|_| {
+                    A2AError::unsupported_operation(
+                        "busy: too many hardware challenges in flight, try again",
+                    )
+                    .to_jsonrpc_error()
+                })?;
+                let out = tokio::task::spawn_blocking(move || p.respond(&bytes))
+                    .await
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())?;
                 match out {
-                    Ok(r) => Ok(json!({ "response": r.iter().map(|b| format!("{b:02x}")).collect::<String>() })),
-                    Err(e) => Err(rpc_error(wire::ERR_UNAUTHORIZED, format!("challenge failed: {e}"))),
+                    Ok(r) => Ok(
+                        json!({ "response": r.iter().map(|b| format!("{b:02x}")).collect::<String>() }),
+                    ),
+                    Err(e) => Err(rpc_error(
+                        wire::ERR_UNAUTHORIZED,
+                        format!("challenge failed: {e}"),
+                    )),
                 }
             }
             wire::METHOD_ATTESTATION => {
-                let nonce = params.get("nonce").and_then(Value::as_str).unwrap_or_default();
+                let nonce = params
+                    .get("nonce")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 if nonce.len() > 64 || !nonce.chars().all(|c| c.is_ascii_hexdigit()) {
-                    return Err(A2AError::invalid_params("`nonce` must be at most 64 hex characters").to_jsonrpc_error());
+                    return Err(A2AError::invalid_params(
+                        "`nonce` must be at most 64 hex characters",
+                    )
+                    .to_jsonrpc_error());
                 }
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
+                    .unwrap_or(0);
                 let plain = || {
-                    attest::new_statement(&self.attest_key, nonce, "", now, (*self.measurements).clone())
-                        .sign(&self.attest_key)
-                        .map_err(|e| A2AError::internal(e).to_jsonrpc_error())
+                    attest::new_statement(
+                        &self.attest_key,
+                        nonce,
+                        "",
+                        now,
+                        (*self.measurements).clone(),
+                    )
+                    .sign(&self.attest_key)
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
                 };
                 let text = match &self.platform {
                     None => plain()?,
                     Some(p) => {
                         // Anyone may ask for this without a grant and each one drives the hardware, so bound
                         // how many run at once and tell the rest to come back.
-                        let _slot = self
-                            .platform_calls
-                            .try_acquire()
-                            .map_err(|_| A2AError::unsupported_operation("busy: too many attestations in flight, try again").to_jsonrpc_error())?;
+                        let _slot = self.platform_calls.try_acquire().map_err(|_| {
+                            A2AError::unsupported_operation(
+                                "busy: too many attestations in flight, try again",
+                            )
+                            .to_jsonrpc_error()
+                        })?;
                         // Talking to hardware blocks (a TPM quote takes a moment), so keep it off the runtime threads.
-                        let (key, m, p, nonce) = (self.attest_key.clone(), (*self.measurements).clone(), p.clone(), nonce.to_string());
-                        let made = tokio::task::spawn_blocking(move || attest::new_platform_statement(&key, &nonce, "", now, m, p.as_ref())).await;
+                        let (key, m, p, nonce) = (
+                            self.attest_key.clone(),
+                            (*self.measurements).clone(),
+                            p.clone(),
+                            nonce.to_string(),
+                        );
+                        let made = tokio::task::spawn_blocking(move || {
+                            attest::new_platform_statement(&key, &nonce, "", now, m, p.as_ref())
+                        })
+                        .await;
                         match made {
                             Ok(Ok(t)) => t,
                             Ok(Err(e)) => {
@@ -531,9 +721,12 @@ impl RoomHandler {
                 Ok(json!({ "statement": text }))
             }
             wire::METHOD_JOIN => {
-                let invite = params.get("invite").and_then(Value::as_str).ok_or_else(|| {
-                    A2AError::invalid_params("missing `invite`").to_jsonrpc_error()
-                })?;
+                let invite = params
+                    .get("invite")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        A2AError::invalid_params("missing `invite`").to_jsonrpc_error()
+                    })?;
                 let joined = self.join(from, invite.to_string());
                 self.audit.record(
                     "join",
@@ -544,53 +737,97 @@ impl RoomHandler {
             }
             methods::SEND_MESSAGE => {
                 let req: SendMessageRequest = serde_json::from_value(params).map_err(invalid)?;
-                let op = Op::from_message(&req.message).map_err(|e| A2AError::invalid_params(format!("{e:#}")).to_jsonrpc_error())?;
+                let op = Op::from_message(&req.message)
+                    .map_err(|e| A2AError::invalid_params(format!("{e:#}")).to_jsonrpc_error())?;
                 // A plain A2A message with no Playbox operation only needs membership, like echo.
                 let (name, needs) = match &op {
                     // Membership is checked here; the steering rights and limits need the spec and the
                     // prompt set, so `steer_message` authorizes them before it does any work.
                     Some(Op::Steer { .. }) => ("echo", grants::Needs::default()),
+                    Some(op @ Op::Handoff { .. }) => (op.name(), grants::Needs::default()),
                     Some(op) => (op.name(), op.needs()),
                     None => ("echo", grants::Needs::default()),
                 };
                 self.authorize(frame.grant(), from, name, &needs)?;
                 if matches!(op, Some(Op::Steer { .. })) {
-                    return self.steer_message(from, frame.grant(), op.expect("matched Some"), &req.message).await;
+                    return self
+                        .steer_message(from, frame.grant(), op.expect("matched Some"), &req.message)
+                        .await;
+                }
+                if let Some(op @ Op::Handoff { .. }) = op {
+                    return self.handoff_message(from, op, &req.message).await;
                 }
                 let reply = self.send_message(from, op, &req.message).await;
-                serde_json::to_value(reply).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+                serde_json::to_value(reply)
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
             }
             methods::GET_TASK => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
                 let req: GetTaskRequest = serde_json::from_value(params).map_err(invalid)?;
-                let t = self.find_task(from, &req.id).ok_or_else(|| A2AError::task_not_found(&req.id).to_jsonrpc_error())?;
-                serde_json::to_value(t).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+                let t = self
+                    .find_task(from, &req.id)
+                    .ok_or_else(|| A2AError::task_not_found(&req.id).to_jsonrpc_error())?;
+                serde_json::to_value(t)
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
             }
             methods::LIST_TASKS => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
-                let tasks: Vec<Task> = self.done.lock().expect("tasks lock").get(&from).map(|q| q.iter().cloned().collect()).unwrap_or_default();
+                let tasks: Vec<Task> = self
+                    .done
+                    .lock()
+                    .expect("tasks lock")
+                    .get(&from)
+                    .map(|q| q.iter().cloned().collect())
+                    .unwrap_or_default();
                 let n = tasks.len() as i32;
-                let resp = ListTasksResponse { tasks, next_page_token: String::new(), page_size: n, total_size: n };
-                serde_json::to_value(resp).map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+                let resp = ListTasksResponse {
+                    tasks,
+                    next_page_token: String::new(),
+                    page_size: n,
+                    total_size: n,
+                };
+                serde_json::to_value(resp)
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
             }
             methods::CANCEL_TASK => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
-                let id = params.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+                let id = params
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
                 // Every task here finishes before its response is sent, so none can still be cancelled.
                 match self.find_task(from, &id) {
                     Some(_) => Err(A2AError::task_not_cancelable(&id).to_jsonrpc_error()),
                     None => Err(A2AError::task_not_found(&id).to_jsonrpc_error()),
                 }
             }
-            m if methods::is_streaming(m) => Err(A2AError::unsupported_operation("streaming is not supported by this room").to_jsonrpc_error()),
-            methods::GET_EXTENDED_AGENT_CARD => Err(A2AError::extended_card_not_configured().to_jsonrpc_error()),
-            m if methods::is_valid(m) => Err(A2AError::unsupported_operation(format!("{m} is not supported by this room")).to_jsonrpc_error()),
-            m => Err(rpc_error(a2a::error_code::METHOD_NOT_FOUND, format!("method not found: {m}"))),
+            m if methods::is_streaming(m) => Err(A2AError::unsupported_operation(
+                "streaming is not supported by this room",
+            )
+            .to_jsonrpc_error()),
+            methods::GET_EXTENDED_AGENT_CARD => {
+                Err(A2AError::extended_card_not_configured().to_jsonrpc_error())
+            }
+            m if methods::is_valid(m) => Err(A2AError::unsupported_operation(format!(
+                "{m} is not supported by this room"
+            ))
+            .to_jsonrpc_error()),
+            m => Err(rpc_error(
+                a2a::error_code::METHOD_NOT_FOUND,
+                format!("method not found: {m}"),
+            )),
         }
     }
 
     fn find_task(&self, from: EndpointId, id: &str) -> Option<Task> {
-        self.done.lock().expect("tasks lock").get(&from)?.iter().find(|t| t.id == id).cloned()
+        self.done
+            .lock()
+            .expect("tasks lock")
+            .get(&from)?
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()
     }
 
     fn remember(&self, from: EndpointId, t: &Task) {
@@ -602,8 +839,15 @@ impl RoomHandler {
         }
     }
 
-    async fn send_message(&self, from: EndpointId, op: Option<Op>, msg: &Message) -> SendMessageResponse {
-        let reply = |text: String| SendMessageResponse::Message(Message::new(Role::Agent, vec![Part::text(text)]));
+    async fn send_message(
+        &self,
+        from: EndpointId,
+        op: Option<Op>,
+        msg: &Message,
+    ) -> SendMessageResponse {
+        let reply = |text: String| {
+            SendMessageResponse::Message(Message::new(Role::Agent, vec![Part::text(text)]))
+        };
         let task = match op {
             None => {
                 return reply(
@@ -622,12 +866,12 @@ impl RoomHandler {
             Some(Op::Feed { since }) => {
                 let me = from.to_string();
                 self.audit.chat.touch(&me);
-                let mut ids: Vec<String> = self.state.lock().expect("state lock").members.keys().map(|k| k.to_string()).collect();
+                let mut ids: Vec<String> = self.state.lock().expect("state lock").members.keys().map(std::string::ToString::to_string).collect();
                 ids.sort();
                 return reply(self.audit.chat.since(since, 200, &ids).to_json().to_string());
             }
             // Handled in `route`, which has the grant it needs to authorize the specifics.
-            Some(Op::Steer { .. }) => return reply("steering is handled by the router".into()),
+            Some(Op::Steer { .. } | Op::Handoff { .. }) => return reply("steering is handled by the router".into()),
             Some(Op::Pull { refname }) => {
                 let t0 = std::time::Instant::now();
                 let r = self.pull(&refname).await;
@@ -667,14 +911,32 @@ impl RoomHandler {
     }
 
     /// Record how a pull, push or task went, from the task it produced or the error that stopped it.
-    fn audit_op(&self, from: EndpointId, event: &str, result: &Result<Task>, started: std::time::Instant, mut details: Value) {
-        let Some(obj) = details.as_object_mut() else { return };
-        obj.insert("ms".into(), json!(started.elapsed().as_millis() as u64));
+    fn audit_op(
+        &self,
+        from: EndpointId,
+        event: &str,
+        result: &Result<Task>,
+        started: std::time::Instant,
+        mut details: Value,
+    ) {
+        let Some(obj) = details.as_object_mut() else {
+            return;
+        };
+        obj.insert(
+            "ms".into(),
+            json!(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)),
+        );
         match result {
             Ok(t) => {
                 obj.insert("ok".into(), json!(true));
                 obj.insert("state".into(), json!(format!("{:?}", t.status.state)));
-                for (key, out) in [("exitCode", "exit_code"), ("timedOut", "timed_out"), ("runner", "runner"), ("commit", "commit"), ("reference", "reference")] {
+                for (key, out) in [
+                    ("exitCode", "exit_code"),
+                    ("timedOut", "timed_out"),
+                    ("runner", "runner"),
+                    ("commit", "commit"),
+                    ("reference", "reference"),
+                ] {
                     if let Some(v) = wire::meta(t, key) {
                         obj.insert(out.into(), v.clone());
                     }
@@ -689,7 +951,10 @@ impl RoomHandler {
     }
 
     fn repo(&self) -> Result<PathBuf> {
-        self.cfg.repo.clone().ok_or_else(|| refuse("this room has no git repository"))
+        self.cfg
+            .repo
+            .clone()
+            .ok_or_else(|| refuse("this room has no git repository"))
     }
 
     async fn pull(&self, refname: &str) -> Result<Task> {
@@ -700,7 +965,12 @@ impl RoomHandler {
         Ok(wire::task(
             TaskState::Completed,
             None,
-            vec![wire::raw_artifact("bundle", "ref.bundle", wire::MEDIA_BUNDLE, bundle)],
+            vec![wire::raw_artifact(
+                "bundle",
+                "ref.bundle",
+                wire::MEDIA_BUNDLE,
+                bundle,
+            )],
             vec![("head", json!(head))],
         ))
     }
@@ -708,7 +978,8 @@ impl RoomHandler {
     async fn push(&self, from: EndpointId, branch: &str, bundle: Option<&[u8]>) -> Result<Task> {
         let repo = self.repo()?;
         let branch = playbox_git::check_name(branch).map_err(|e| refuse(format!("{e:#}")))?;
-        let bundle = bundle.ok_or_else(|| refuse("push needs the git bundle as a raw part of the message"))?;
+        let bundle = bundle
+            .ok_or_else(|| refuse("push needs the git bundle as a raw part of the message"))?;
         {
             let mut pushed = self.pushed.lock().expect("pushed lock");
             let used = pushed.entry(from).or_default();
@@ -723,14 +994,24 @@ impl RoomHandler {
         }
         let short: String = from.to_string().chars().take(16).collect();
         let reference = format!("refs/playbox/members/{short}/{branch}");
-        let head = playbox_git::bundle_import(&repo, bundle, &format!("refs/heads/{branch}"), &reference).await?;
-        Ok(wire::task(TaskState::Completed, None, vec![], vec![("reference", json!(reference)), ("head", json!(head))]))
+        let head =
+            playbox_git::bundle_import(&repo, bundle, &format!("refs/heads/{branch}"), &reference)
+                .await?;
+        Ok(wire::task(
+            TaskState::Completed,
+            None,
+            vec![],
+            vec![("reference", json!(reference)), ("head", json!(head))],
+        ))
     }
 
     /// Run a member's task under the abuse limits, and stop it if the member is revoked while it runs.
     /// Stopping drops the run, which kills its sandbox.
     async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
-        let _admission = self.limiter.admit(from).map_err(refuse)?;
+        let _admission = self
+            .limiter
+            .admit(from)
+            .map_err(|e| refuse(e.to_string()))?;
         tokio::select! {
             r = self.run_inner(from, base, spec) => r,
             () = self.until_revoked(from) => {
@@ -751,18 +1032,35 @@ impl RoomHandler {
     }
 
     async fn run_inner(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
-        let runner = self.cfg.runner.clone().ok_or_else(|| refuse("this room runs no tasks"))?;
+        let runner = self
+            .cfg
+            .runner
+            .clone()
+            .ok_or_else(|| refuse("this room runs no tasks"))?;
         let (output, patch, extra) = if let Some(ws) = &self.cfg.workspace {
             let _permit = self.tasks.acquire().await?;
             let short: String = from.to_string().chars().take(16).collect();
             let branch = format!("members/{short}");
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
+                .unwrap_or(0);
             let mut repo = ws.lock().await;
             if repo.head(&branch).is_err() {
                 repo.fork(&branch, base)?;
             }
             let mut wsp = repo.workspace(&branch)?;
-            let run = playbox_runner::workspace::run_in_workspace(&mut repo, &mut wsp, runner.as_ref(), &spec, &from.to_string(), &format!("rpc-{now}"), now, self.cfg.scratch_quota).await?;
+            let run = playbox_runner::workspace::run_in_workspace(
+                &mut repo,
+                &mut wsp,
+                runner.as_ref(),
+                &spec,
+                &from.to_string(),
+                &format!("rpc-{now}"),
+                now,
+                self.cfg.scratch_quota,
+            )
+            .await?;
             if !run.conflicts.is_empty() {
                 bail!("conflict on {:?}", run.conflicts);
             }
@@ -778,10 +1076,19 @@ impl RoomHandler {
             playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
             let _permit = self.tasks.acquire().await?;
             let commit = playbox_git::rev_parse(&repo, base).await?;
-            let mut guard = WorktreeGuard { repo: repo.clone(), wt: Some(playbox_git::worktree_add(&repo, &commit).await?) };
+            let mut guard = WorktreeGuard {
+                repo: repo.clone(),
+                wt: Some(playbox_git::worktree_add(&repo, &commit).await?),
+            };
             let result = async {
                 let wt = guard.wt.as_ref().expect("worktree present");
-                let output = playbox_runner::run_with_quota(runner.as_ref(), &spec, wt.path(), self.cfg.scratch_quota).await?;
+                let output = playbox_runner::run_with_quota(
+                    runner.as_ref(),
+                    &spec,
+                    wt.path(),
+                    self.cfg.scratch_quota,
+                )
+                .await?;
                 let patch = playbox_git::diff_patch(wt, &commit).await?;
                 anyhow::Ok((output, patch))
             }
@@ -799,11 +1106,22 @@ impl RoomHandler {
             (_, _, Some(c)) => Some(format!("exit code {c}")),
             _ => Some("terminated by a signal".to_string()),
         };
-        let mut artifacts = vec![wire::text_artifact("stdout", output.stdout), wire::text_artifact("stderr", output.stderr)];
+        let mut artifacts = vec![
+            wire::text_artifact("stdout", output.stdout),
+            wire::text_artifact("stderr", output.stderr),
+        ];
         if !patch.is_empty() {
-            artifacts.push(wire::raw_artifact("patch", "changes.patch", wire::MEDIA_PATCH, patch));
+            artifacts.push(wire::raw_artifact(
+                "patch",
+                "changes.patch",
+                wire::MEDIA_PATCH,
+                patch,
+            ));
         }
-        let mut meta = vec![("runner", json!(runner.name())), ("timedOut", json!(output.timed_out))];
+        let mut meta = vec![
+            ("runner", json!(runner.name())),
+            ("timedOut", json!(output.timed_out)),
+        ];
         if let Some(d) = &output.policy_digest {
             meta.push(("policyDigest", json!(d)));
         }
@@ -811,7 +1129,16 @@ impl RoomHandler {
             meta.push(("exitCode", json!(c)));
         }
         meta.extend(extra);
-        Ok(wire::task(if ok { TaskState::Completed } else { TaskState::Failed }, text, artifacts, meta))
+        Ok(wire::task(
+            if ok {
+                TaskState::Completed
+            } else {
+                TaskState::Failed
+            },
+            text,
+            artifacts,
+            meta,
+        ))
     }
 
     /// Answer one request. The flag says whether the caller proved itself (a valid invite or grant),
@@ -819,7 +1146,15 @@ impl RoomHandler {
     async fn dispatch(&self, from: EndpointId, bytes: &[u8]) -> (JsonRpcResponse, bool) {
         let frame: wire::Frame = match serde_json::from_slice(bytes) {
             Ok(f) => f,
-            Err(e) => return (JsonRpcResponse::error(JsonRpcId::Null, A2AError::parse_error(e.to_string()).to_jsonrpc_error()), false),
+            Err(e) => {
+                return (
+                    JsonRpcResponse::error(
+                        JsonRpcId::Null,
+                        A2AError::parse_error(e.to_string()).to_jsonrpc_error(),
+                    ),
+                    false,
+                )
+            }
         };
         let id = frame.rpc.id.clone();
         let public = wire::is_public(&frame.rpc.method);
@@ -848,14 +1183,21 @@ struct PeerSlot {
 }
 
 impl PeerSlot {
-    fn take(map: &Arc<Mutex<HashMap<EndpointId, usize>>>, id: EndpointId, max: usize) -> Option<PeerSlot> {
+    fn take(
+        map: &Arc<Mutex<HashMap<EndpointId, usize>>>,
+        id: EndpointId,
+        max: usize,
+    ) -> Option<PeerSlot> {
         let mut m = map.lock().expect("peer lock");
         let n = m.entry(id).or_default();
         if *n >= max.max(1) {
             return None;
         }
         *n += 1;
-        Some(PeerSlot { map: map.clone(), id })
+        Some(PeerSlot {
+            map: map.clone(),
+            id,
+        })
     }
 }
 
@@ -878,23 +1220,37 @@ impl ProtocolHandler for RoomHandler {
         let from = conn.remote_id();
         let who = from.to_string();
         let Ok(_slot) = self.conns.clone().try_acquire_owned() else {
-            self.audit.record("conn_refused", Some(&who), json!({ "why": "host is at its connection limit" }));
+            self.audit.record(
+                "conn_refused",
+                Some(&who),
+                json!({ "why": "host is at its connection limit" }),
+            );
             conn.close(2u32.into(), b"too many connections");
             return Ok(());
         };
-        let Some(_peer_slot) = PeerSlot::take(&self.peer_conns, from, self.cfg.max_connections_per_peer) else {
-            self.audit.record("conn_refused", Some(&who), json!({ "why": "too many connections from this identity" }));
+        let Some(_peer_slot) =
+            PeerSlot::take(&self.peer_conns, from, self.cfg.max_connections_per_peer)
+        else {
+            self.audit.record(
+                "conn_refused",
+                Some(&who),
+                json!({ "why": "too many connections from this identity" }),
+            );
             conn.close(2u32.into(), b"too many connections from this identity");
             return Ok(());
         };
         let mut authenticated = false;
         loop {
             let (patience, cap) = if authenticated {
-                (AUTHENTICATED_PATIENCE, MAX_FRAME)
+                (self.cfg.authenticated_patience, MAX_FRAME)
             } else {
                 (self.cfg.idle_timeout, MAX_UNAUTHENTICATED_REQUEST)
             };
-            let Ok(Ok((mut send, mut recv))) = tokio::time::timeout(patience, conn.accept_bi()).await else { break };
+            let Ok(Ok((mut send, mut recv))) =
+                tokio::time::timeout(patience, conn.accept_bi()).await
+            else {
+                break;
+            };
             let Ok(Ok(bytes)) = tokio::time::timeout(patience, recv.read_to_end(cap)).await else {
                 self.audit.record("request_dropped", Some(&who), json!({ "why": "too large or too slow", "limit_bytes": cap, "authenticated": authenticated }));
                 conn.close(1u32.into(), b"request too large or too slow");
@@ -902,7 +1258,9 @@ impl ProtocolHandler for RoomHandler {
             };
             let (resp, proved) = self.dispatch(from, &bytes).await;
             authenticated |= proved;
-            let Ok(out) = serde_json::to_vec(&resp) else { break };
+            let Ok(out) = serde_json::to_vec(&resp) else {
+                break;
+            };
             if send.write_all(&out).await.is_err() || send.finish().is_err() {
                 break;
             }
@@ -915,11 +1273,19 @@ impl ProtocolHandler for RoomHandler {
     }
 }
 
-async fn bind(secret: SecretKey, transport: &Transport) -> Result<(Endpoint, iroh::address_lookup::memory::MemoryLookup)> {
+async fn bind(
+    secret: SecretKey,
+    transport: &Transport,
+) -> Result<(Endpoint, iroh::address_lookup::memory::MemoryLookup)> {
     // The in-memory lookup is how a host learns the addresses of its sync peers.
     let memory = iroh::address_lookup::memory::MemoryLookup::new();
     let b = transport.configure(transport.builder())?;
-    let ep = b.secret_key(secret).alpns(vec![ALPN.to_vec()]).address_lookup(memory.clone()).bind().await?;
+    let ep = b
+        .secret_key(secret)
+        .alpns(vec![ALPN.to_vec()])
+        .address_lookup(memory.clone())
+        .bind()
+        .await?;
     Ok((ep, memory))
 }
 
@@ -944,18 +1310,37 @@ pub struct Host {
 
 impl Host {
     /// `transport` may be a [`Transport`] or a bool (`true` = local, `false` = public iroh).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn start(secret: SecretKey, transport: impl Into<Transport>) -> Result<Self> {
         Self::start_with(secret, transport, HostConfig::default()).await
     }
 
-    pub async fn start_with(secret: SecretKey, transport: impl Into<Transport>, cfg: HostConfig) -> Result<Self> {
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn start_with(
+        secret: SecretKey,
+        transport: impl Into<Transport>,
+        cfg: HostConfig,
+    ) -> Result<Self> {
         Self::build(secret, transport.into(), cfg, Root::Fresh, State::default()).await
     }
 
     /// Start a host that keeps its identity, signing key, invites, members and bans in `dir`.
     /// Restarting with the same `dir` gives the same endpoint id, keeps issued grants valid, and keeps
     /// revoked members out. Links created before the restart still work if their address does.
-    pub async fn open(dir: &std::path::Path, transport: impl Into<Transport>, cfg: HostConfig) -> Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn open(
+        dir: &std::path::Path,
+        transport: impl Into<Transport>,
+        cfg: HostConfig,
+    ) -> Result<Self> {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
         let root_seed = load_or_create_seed(&dir.join("root.key"))?;
@@ -969,6 +1354,10 @@ impl Host {
     /// so it accepts the room's grants and checks its revocations, but it holds no signing key: it
     /// cannot admit members, issue grants, or revoke. Give it the same `--sync-peer`s as the primary
     /// (see [`Host::enable_revocation_sync`]) so revocations reach it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn open_replica(
         dir: &std::path::Path,
         transport: impl Into<Transport>,
@@ -980,7 +1369,14 @@ impl Host {
         let state = State::load(&dir.join("state.json"))?;
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
-        Self::build(secret, transport.into(), cfg, Root::Verifier(root_public), state).await
+        Self::build(
+            secret,
+            transport.into(),
+            cfg,
+            Root::Verifier(root_public),
+            state,
+        )
+        .await
     }
 
     async fn build(
@@ -992,9 +1388,16 @@ impl Host {
     ) -> Result<Self> {
         if let Some(r) = &cfg.runner {
             if r.isolation() < cfg.min_isolation {
-                bail!("runner {} gives {:?} isolation but this host requires at least {:?}", r.name(), r.isolation(), cfg.min_isolation);
+                bail!(
+                    "runner {} gives {:?} isolation but this host requires at least {:?}",
+                    r.name(),
+                    r.isolation(),
+                    cfg.min_isolation
+                );
             }
-            r.preflight().await.with_context(|| format!("runner {} is not usable", r.name()))?;
+            r.preflight()
+                .await
+                .with_context(|| format!("runner {} is not usable", r.name()))?;
         }
         if let Some(st) = &cfg.steer {
             if cfg.runner.is_none() {
@@ -1015,7 +1418,7 @@ impl Host {
                 "host_key": attest_key.verifying_key().to_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>(),
                 "version": env!("CARGO_PKG_VERSION"),
                 "transport": transport.label(),
-                "runner": cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
+                "runner": cfg.runner.as_ref().map_or("none", |r| r.name()),
                 "isolation": cfg.runner.as_ref().map(|r| format!("{:?}", r.isolation())),
                 "repo": cfg.repo.is_some(),
                 "replica": matches!(root, Root::Verifier(_)),
@@ -1024,11 +1427,14 @@ impl Host {
             }),
         );
         let measurements = Arc::new(attest::measure_self(
-            cfg.runner.as_ref().map(|r| r.name()).unwrap_or("none"),
+            cfg.runner.as_ref().map_or("none", |r| r.name()),
             &format!(
                 "isolation={:?};runtime={};limits={:?};grant_ttl={:?};repo={};workspace={}",
                 cfg.runner.as_ref().map(|r| r.isolation()),
-                cfg.runner.as_ref().map(|r| r.attestation()).unwrap_or_default(),
+                cfg.runner
+                    .as_ref()
+                    .map(|r| r.attestation())
+                    .unwrap_or_default(),
                 cfg.limits,
                 cfg.grant_ttl,
                 cfg.repo.is_some(),
@@ -1045,7 +1451,10 @@ impl Host {
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
-        } else if tokio::time::timeout(Duration::from_secs(20), endpoint.online()).await.is_err() {
+        } else if tokio::time::timeout(Duration::from_secs(20), endpoint.online())
+            .await
+            .is_err()
+        {
             bail!(
                 "could not reach the relay for transport `{}` within 20s; check your network, or use `local`",
                 transport.label()
@@ -1063,13 +1472,21 @@ impl Host {
                 Ok(n) => {
                     state.apply(&n, &text);
                 }
-                Err(e) => eprintln!("playbox: ignoring a stored revocation notice that does not verify: {e:#}"),
+                Err(e) => eprintln!(
+                    "playbox: ignoring a stored revocation notice that does not verify: {e:#}"
+                ),
             }
         }
         let state = Arc::new(Mutex::new(state));
         let gossip = iroh_gossip::net::Gossip::builder().spawn(endpoint.clone());
         let repl = Arc::new(revoke::Replication::new(gossip.clone(), memory));
-        let card = wire::agent_card(&room, &transport.label(), cfg.repo.is_some() || cfg.workspace.is_some(), cfg.runner.is_some(), &cfg.limits);
+        let card = wire::agent_card(
+            &room,
+            &transport.label(),
+            cfg.repo.is_some() || cfg.workspace.is_some(),
+            cfg.runner.is_some(),
+            &cfg.limits,
+        );
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
@@ -1087,15 +1504,26 @@ impl Host {
             platform: cfg.platform.clone(),
             cfg,
         };
-        let sync = revoke::SyncHandler { state: state.clone(), allowed: repl.allowed.clone() };
+        let sync = revoke::SyncHandler {
+            state: state.clone(),
+            allowed: repl.allowed.clone(),
+        };
         let router = Router::builder(endpoint)
             .accept(ALPN, handler)
             .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
             .accept(SYNC_ALPN, sync)
             .spawn();
-        Ok(Self { audit, router, state, auth, transport, repl })
+        Ok(Self {
+            audit,
+            router,
+            state,
+            auth,
+            transport,
+            repl,
+        })
     }
 
+    #[must_use]
     pub fn addr(&self) -> EndpointAddr {
         let mut addr = self.router.endpoint().addr();
         if self.transport == Transport::Local {
@@ -1115,54 +1543,118 @@ impl Host {
     }
 
     /// Create a join link whose invite lasts `ttl` and admits `uses` joins.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn create_link(&self, ttl: Duration, uses: u32) -> Result<Link> {
         self.create_link_with(ttl, uses, LinkOpts::default())
     }
 
     /// Like [`Host::create_link`], optionally bound to one guest key and with or without IP addresses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn create_link_with(&self, ttl: Duration, uses: u32, opts: LinkOpts) -> Result<Link> {
-        let (invite, id) = self.auth.mint_invite(ttl.as_secs() as i64)?;
+        let (invite, id) = self
+            .auth
+            .mint_invite(ttl.as_secs().try_into().unwrap_or(i64::MAX))?;
         {
             let mut st = self.state.lock().expect("state lock");
-            st.invites.insert(id, Invite { uses_left: uses.max(1), bound_to: opts.bind_to });
+            st.invites.insert(
+                id,
+                Invite {
+                    uses_left: uses.max(1),
+                    bound_to: opts.bind_to,
+                },
+            );
             st.save();
         }
         let mut addr = self.addr();
-        let has_relay = addr.addrs.iter().any(|a| matches!(a, iroh::TransportAddr::Relay(_)));
+        let has_relay = addr
+            .addrs
+            .iter()
+            .any(|a| matches!(a, iroh::TransportAddr::Relay(_)));
         if self.transport != Transport::Local && !opts.show_ips && has_relay {
-            addr.addrs.retain(|a| !matches!(a, iroh::TransportAddr::Ip(_)));
+            addr.addrs
+                .retain(|a| !matches!(a, iroh::TransportAddr::Ip(_)));
         }
-        Ok(Link { addr, invite, transport: Some(self.transport.clone()), bound: opts.bind_to.is_some() })
+        Ok(Link {
+            addr,
+            invite,
+            transport: Some(self.transport.clone()),
+            bound: opts.bind_to.is_some(),
+        })
     }
 
     /// The host says something in its own room.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message describing why the operation failed.
     pub fn say(&self, text: &str, name: Option<&str>) -> Result<u64, String> {
         self.audit.chat.say("host", name.or(Some("host")), text)
     }
 
     /// The room's feed as the host sees it (the host is always present).
+    #[must_use]
     pub fn feed(&self, since: u64) -> chat::Feed {
         self.audit.chat.touch("host");
-        let mut ids: Vec<String> = self.members().iter().map(|m| m.to_string()).collect();
+        let mut ids: Vec<String> = self
+            .members()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         ids.sort();
         ids.insert(0, "host".into());
         self.audit.chat.since(since, 200, &ids)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
+    #[must_use]
     pub fn members(&self) -> Vec<EndpointId> {
-        self.state.lock().expect("state lock").members.keys().copied().collect()
+        self.state
+            .lock()
+            .expect("state lock")
+            .members
+            .keys()
+            .copied()
+            .collect()
     }
 
     /// Revoke a member's grant (and every attenuation of it) and bar the key from rejoining.
     /// Takes effect here on the member's next request, and is signed with the room's root key and
     /// handed to revocation sync so other hosts of the room apply it too.
     /// Returns false for an unknown member, or on a replica (which cannot sign).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
+    #[must_use]
     pub fn revoke_member(&self, id: &EndpointId) -> bool {
         let mut st = self.state.lock().expect("state lock");
-        let Some(grant_id) = st.members.get(id).cloned() else { return false };
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-        let notice = revoke::Notice { grant_id, member: id.to_string(), issued_ms: now };
-        let Ok(text) = notice.sign(&self.auth) else { return false };
+        let Some(grant_id) = st.members.get(id).cloned() else {
+            return false;
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
+            .unwrap_or(0);
+        let notice = revoke::Notice {
+            grant_id,
+            member: id.to_string(),
+            issued_ms: now,
+        };
+        let Ok(text) = notice.sign(&self.auth) else {
+            return false;
+        };
         st.apply(&notice, &text);
         st.save();
         drop(st);
@@ -1181,13 +1673,25 @@ impl Host {
     }
 
     /// The room's root public key. Give it to replicas (`Host::open_replica`).
+    #[must_use]
     pub fn root_public(&self) -> [u8; 32] {
         self.auth.public_bytes()
     }
 
     /// Every signed revocation this host knows of.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an internal invariant is broken, which indicates a bug.
+    #[must_use]
     pub fn revocation_notices(&self) -> Vec<String> {
-        self.state.lock().expect("state lock").notices.values().cloned().collect()
+        self.state
+            .lock()
+            .expect("state lock")
+            .notices
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Start spreading revocations with `peers`, the other hosts of this room.
@@ -1196,12 +1700,29 @@ impl Host {
     /// theirs, so a host that was offline or missed a broadcast catches up. Peers are trusted only to
     /// *carry* notices (each is checked against the room's root key); only they may pull from this host,
     /// so list this host on theirs too. Call once.
-    pub async fn enable_revocation_sync(&self, peers: Vec<EndpointAddr>, interval: Duration) -> Result<()> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn enable_revocation_sync(
+        &self,
+        peers: Vec<EndpointAddr>,
+        interval: Duration,
+    ) -> Result<()> {
         self.repl
-            .start(self.router.endpoint().clone(), self.state.clone(), self.auth.clone(), peers, interval)
+            .start(
+                self.router.endpoint().clone(),
+                self.state.clone(),
+                self.auth.clone(),
+                peers,
+                interval,
+            )
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn shutdown(self) -> Result<()> {
         self.repl.stop();
         self.router.shutdown().await.map_err(|e| anyhow!("{e}"))
@@ -1227,6 +1748,8 @@ pub struct TaskRun {
 
 pub struct Client {
     endpoint: Endpoint,
+    /// Where the host was reached, so a closed connection can be reopened.
+    addr: EndpointAddr,
     conn: Connection,
     grant: Mutex<Option<String>>,
     next_id: AtomicI64,
@@ -1237,7 +1760,14 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(addr: EndpointAddr, secret: SecretKey, transport: impl Into<Transport>) -> Result<Self> {
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn connect(
+        addr: EndpointAddr,
+        secret: SecretKey,
+        transport: impl Into<Transport>,
+    ) -> Result<Self> {
         let transport = transport.into();
         let (endpoint, _) = bind(secret, &transport).await?;
         // A handshake that never completes is retried on the same endpoint: in practice a stuck
@@ -1245,7 +1775,12 @@ impl Client {
         let mut last = anyhow!("no connection attempt was made");
         let mut conn = None;
         for _ in 0..CONNECT_ATTEMPTS {
-            match tokio::time::timeout(CONNECT_ATTEMPT_TIMEOUT, endpoint.connect(addr.clone(), ALPN)).await {
+            match tokio::time::timeout(
+                CONNECT_ATTEMPT_TIMEOUT,
+                endpoint.connect(addr.clone(), ALPN),
+            )
+            .await
+            {
                 Ok(Ok(c)) => {
                     conn = Some(c);
                     break;
@@ -1254,12 +1789,41 @@ impl Client {
                 Err(_) => last = anyhow!("timed out after {}s", CONNECT_ATTEMPT_TIMEOUT.as_secs()),
             }
         }
-        let conn = conn.ok_or_else(|| last.context(format!("could not connect after {CONNECT_ATTEMPTS} attempts")))?;
-        Ok(Self { endpoint, conn, grant: Mutex::new(None), next_id: AtomicI64::new(1), transport, warm: Default::default() })
+        let conn = conn.ok_or_else(|| {
+            last.context(format!(
+                "could not connect after {CONNECT_ATTEMPTS} attempts"
+            ))
+        })?;
+        Ok(Self {
+            endpoint,
+            addr,
+            conn,
+            grant: Mutex::new(None),
+            next_id: AtomicI64::new(1),
+            transport,
+            warm: Default::default(),
+        })
     }
 
     pub fn id(&self) -> EndpointId {
         self.endpoint.id()
+    }
+
+    /// Whether the connection to the host has been closed. A host closes an authenticated connection that sat
+    /// idle for 15 minutes, so a long-lived member will see this and should [`Client::reconnect`].
+    pub fn is_closed(&self) -> bool {
+        self.conn.close_reason().is_some()
+    }
+
+    /// A new connection to the same host as the same member, with the same grant. The host key is the one this
+    /// client already reached, so the connection is authenticated to the same host; whether that host is still
+    /// running the software a caller vetted is for the caller to check again.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be reached.
+    pub async fn reconnect(&self) -> Result<Client> {
+        self.sibling(self.addr.clone()).await
     }
 
     /// The id of the host this client is connected to.
@@ -1270,8 +1834,17 @@ impl Client {
     /// Open a connection to another host of the same room (a replica), as the same member: the same
     /// identity key and the same grant, which any host that knows the room's public key accepts.
     /// The caller should vet the new host (`verify_host`) before sending it anything.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn sibling(&self, addr: EndpointAddr) -> Result<Client> {
-        let c = Client::connect(addr, self.endpoint.secret_key().clone(), self.transport.clone()).await?;
+        let c = Client::connect(
+            addr,
+            self.endpoint.secret_key().clone(),
+            self.transport.clone(),
+        )
+        .await?;
         if let Some(g) = self.grant() {
             c.set_grant(g);
         }
@@ -1279,16 +1852,27 @@ impl Client {
     }
 
     /// The grant this client presents, if it has joined.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn grant(&self) -> Option<String> {
         self.grant.lock().expect("grant lock").clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn set_grant(&self, grant: String) {
         *self.grant.lock().expect("grant lock") = Some(grant);
     }
 
     /// Narrow this client's grant with extra Biscuit checks. Works offline and cannot be undone.
     /// Example: `check if operation("pull");`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn attenuate(&self, checks: &str) -> Result<()> {
         let g = self.grant().ok_or_else(|| anyhow!("not joined"))?;
         self.set_grant(grants::attenuate(&g, checks)?);
@@ -1296,17 +1880,38 @@ impl Client {
     }
 
     /// One JSON-RPC call with this client's grant, returning the whole response (including any error code).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn call_raw(&self, method: &str, params: Value) -> Result<JsonRpcResponse> {
         let body = self.frame_bytes(method, params)?;
         // The host reads only a small first request from a connection that has not proved itself. If
         // this one is large and nothing has been accepted on the connection yet, say something small first.
-        if body.len() > MAX_UNAUTHENTICATED_REQUEST && !self.warm.load(Ordering::Relaxed) && !wire::is_public(method) {
-            let ping = Op::Echo { text: "warm-up".into() }.message(vec![]);
-            let req = SendMessageRequest { message: ping, configuration: None, metadata: None, tenant: None };
+        if body.len() > MAX_UNAUTHENTICATED_REQUEST
+            && !self.warm.load(Ordering::Relaxed)
+            && !wire::is_public(method)
+        {
+            let ping = Op::Echo {
+                text: "warm-up".into(),
+            }
+            .message(vec![]);
+            let req = SendMessageRequest {
+                message: ping,
+                configuration: None,
+                metadata: None,
+                tenant: None,
+            };
             let small = self.frame_bytes(a2a::methods::SEND_MESSAGE, serde_json::to_value(req)?)?;
-            let resp = self.exchange(&small, a2a::methods::SEND_MESSAGE).await.context("proving this connection before a large request")?;
+            let resp = self
+                .exchange(&small, a2a::methods::SEND_MESSAGE)
+                .await
+                .context("proving this connection before a large request")?;
             if let Some(e) = resp.error {
-                bail!("could not prove this connection before a large request: {}", e.message);
+                bail!(
+                    "could not prove this connection before a large request: {}",
+                    e.message
+                );
             }
         }
         self.exchange(&body, method).await
@@ -1314,7 +1919,10 @@ impl Client {
 
     fn frame_bytes(&self, method: &str, params: Value) -> Result<Vec<u8>> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let frame = wire::Frame::new(JsonRpcRequest::new(id.into(), method, Some(params)), self.grant().as_deref());
+        let frame = wire::Frame::new(
+            JsonRpcRequest::new(id.into(), method, Some(params)),
+            self.grant().as_deref(),
+        );
         Ok(serde_json::to_vec(&frame)?)
     }
 
@@ -1323,7 +1931,8 @@ impl Client {
         let (mut send, mut recv) = self.conn.open_bi().await?;
         send.write_all(body).await?;
         send.finish()?;
-        let resp: JsonRpcResponse = serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")?;
+        let resp: JsonRpcResponse =
+            serde_json::from_slice(&recv.read_to_end(MAX_FRAME).await?).context("bad response")?;
         if resp.error.is_none() && !wire::is_public(method) {
             self.warm.store(true, Ordering::Relaxed);
         }
@@ -1332,6 +1941,10 @@ impl Client {
 
     /// One JSON-RPC call with this client's grant; returns the `result`, or the error's message.
     /// The typed helpers below use it; call it directly for A2A methods that have no helper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
         let resp = self.call_raw(method, params).await?;
         match (resp.result, resp.error) {
@@ -1343,37 +1956,83 @@ impl Client {
 
     /// Send a Playbox operation as an A2A message.
     async fn send(&self, op: &Op, extra: Vec<Part>) -> Result<SendMessageResponse> {
-        let req = SendMessageRequest { message: op.message(extra), configuration: None, metadata: None, tenant: None };
-        Ok(serde_json::from_value(self.call(a2a::methods::SEND_MESSAGE, serde_json::to_value(req)?).await?)?)
+        let req = SendMessageRequest {
+            message: op.message(extra),
+            configuration: None,
+            metadata: None,
+            tenant: None,
+        };
+        Ok(serde_json::from_value(
+            self.call(a2a::methods::SEND_MESSAGE, serde_json::to_value(req)?)
+                .await?,
+        )?)
     }
 
     /// A task result that must have completed; otherwise the host's reason.
     async fn send_task(&self, what: &str, op: &Op, extra: Vec<Part>) -> Result<Task> {
-        match self.send(op, extra).await.map_err(|e| anyhow!("{what} refused: {e:#}"))? {
+        match self
+            .send(op, extra)
+            .await
+            .map_err(|e| anyhow!("{what} refused: {e:#}"))?
+        {
             SendMessageResponse::Task(t) if t.status.state == TaskState::Completed => Ok(t),
             SendMessageResponse::Task(t) => bail!("{what} refused: {}", wire::status_text(&t)),
-            SendMessageResponse::Message(m) => bail!("unexpected message instead of a task: {:?}", m.text()),
+            SendMessageResponse::Message(m) => {
+                bail!("unexpected message instead of a task: {:?}", m.text())
+            }
         }
     }
 
     /// Present the invite; returns this client's member id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn join(&self, invite: &str) -> Result<String> {
-        let r = self.call(wire::METHOD_JOIN, json!({ "invite": invite })).await.map_err(|e| anyhow!("join refused: {e:#}"))?;
-        let grant = r.get("grant").and_then(Value::as_str).ok_or_else(|| anyhow!("join response has no grant"))?;
+        let r = self
+            .call(wire::METHOD_JOIN, json!({ "invite": invite }))
+            .await
+            .map_err(|e| anyhow!("join refused: {e:#}"))?;
+        let grant = r
+            .get("grant")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("join response has no grant"))?;
         self.set_grant(grant.to_string());
-        Ok(r.get("member").and_then(Value::as_str).unwrap_or_default().to_string())
+        Ok(r.get("member")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn echo(&self, text: &str) -> Result<String> {
-        match self.send(&Op::Echo { text: text.to_string() }, vec![]).await.map_err(|e| anyhow!("echo refused: {e:#}"))? {
+        match self
+            .send(
+                &Op::Echo {
+                    text: text.to_string(),
+                },
+                vec![],
+            )
+            .await
+            .map_err(|e| anyhow!("echo refused: {e:#}"))?
+        {
             SendMessageResponse::Message(m) => Ok(m.text().unwrap_or_default().to_string()),
             SendMessageResponse::Task(t) => bail!("echo refused: {}", wire::status_text(&t)),
         }
     }
 
     /// Say something to the room. `name` is a label for display; the member id is the identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn say(&self, text: &str, name: Option<&str>) -> Result<u64> {
-        let op = Op::Say { text: text.to_string(), name: name.map(str::to_string) };
+        let op = Op::Say {
+            text: text.to_string(),
+            name: name.map(str::to_string),
+        };
         let v = self.reply_json(&op, "say").await?;
         if let Some(e) = v.get("error").and_then(Value::as_str) {
             bail!("{e}");
@@ -1382,21 +2041,35 @@ impl Client {
     }
 
     /// What was said and what happened after `since`, and who is present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn feed(&self, since: u64) -> Result<chat::Feed> {
         let v = self.reply_json(&Op::Feed { since }, "feed").await?;
         Ok(serde_json::from_value(v)?)
     }
 
     async fn reply_json(&self, op: &Op, what: &str) -> Result<Value> {
-        match self.send(op, vec![]).await.map_err(|e| anyhow!("{what} refused: {e:#}"))? {
+        match self
+            .send(op, vec![])
+            .await
+            .map_err(|e| anyhow!("{what} refused: {e:#}"))?
+        {
             SendMessageResponse::Message(m) => Ok(serde_json::from_str(m.text().unwrap_or("{}"))?),
             SendMessageResponse::Task(t) => bail!("{what} refused: {}", wire::status_text(&t)),
         }
     }
 
     /// The host's public agent card.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn agent_card(&self) -> Result<a2a::AgentCard> {
-        Ok(serde_json::from_value(self.call(wire::METHOD_AGENT_CARD, Value::Null).await?)?)
+        Ok(serde_json::from_value(
+            self.call(wire::METHOD_AGENT_CARD, Value::Null).await?,
+        )?)
     }
 
     /// Ask the host to attest to what it runs, and check the answer.
@@ -1404,11 +2077,28 @@ impl Client {
     /// The statement must be signed by the key this connection already authenticated, must echo a
     /// fresh nonce, and the tier it *achieves* (see [`playbox_core::attest`]) must reach `min`.
     /// `verifiers` check platform evidence; with none, the achieved tier is T0.
-    pub async fn verify_host(&self, min: Tier, verifiers: &[&dyn PlatformVerifier]) -> Result<Verified> {
-        let nonce: String = random_bytes()?[..16].iter().map(|b| format!("{b:02x}")).collect();
-        let r = self.call(wire::METHOD_ATTESTATION, json!({ "nonce": nonce })).await?;
-        let text = r.get("statement").and_then(Value::as_str).ok_or_else(|| anyhow!("no statement in response"))?;
-        let mut v = attest::verify(text, verifiers).map_err(|e| anyhow!("host attestation invalid: {e}"))?;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn verify_host(
+        &self,
+        min: Tier,
+        verifiers: &[&dyn PlatformVerifier],
+    ) -> Result<Verified> {
+        let nonce: String = random_bytes()?[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let r = self
+            .call(wire::METHOD_ATTESTATION, json!({ "nonce": nonce }))
+            .await?;
+        let text = r
+            .get("statement")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("no statement in response"))?;
+        let mut v = attest::verify(text, verifiers)
+            .map_err(|e| anyhow!("host attestation invalid: {e}"))?;
         if v.statement.subject != *self.conn.remote_id().as_bytes() {
             bail!("host attestation is for a different key than the one this connection authenticated");
         }
@@ -1418,67 +2108,166 @@ impl Client {
         // Only now, with the host's identity and freshness settled, put its hardware to the test.
         if let Some(ch) = v.challenge.clone() {
             let req: String = ch.payload.iter().map(|b| format!("{b:02x}")).collect();
-            match self.call(wire::METHOD_ACTIVATE, json!({ "request": req })).await {
+            match self
+                .call(wire::METHOD_ACTIVATE, json!({ "request": req }))
+                .await
+            {
                 Ok(r) => {
-                    let h = r.get("response").and_then(Value::as_str).unwrap_or_default();
-                    let bytes: Vec<u8> = (0..h.len() / 2).map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
+                    let h = r
+                        .get("response")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let bytes: Vec<u8> = (0..h.len() / 2)
+                        .map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).unwrap_or(0))
+                        .collect();
                     v.complete_challenge(&bytes);
                 }
-                Err(e) => v.notes.push(format!("host could not answer the hardware challenge: {e:#}")),
+                Err(e) => v.notes.push(format!(
+                    "host could not answer the hardware challenge: {e:#}"
+                )),
             }
         }
         if v.achieved < min {
-            bail!("host achieves {} but {} was required ({})", v.achieved, min, v.notes.join("; "));
+            bail!(
+                "host achieves {} but {} was required ({})",
+                v.achieved,
+                min,
+                v.notes.join("; ")
+            );
         }
         Ok(v)
     }
 
     /// A task this member created earlier (byte payloads are not kept; see [`wire::without_bytes`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn get_task(&self, id: &str) -> Result<Task> {
-        Ok(serde_json::from_value(self.call(a2a::methods::GET_TASK, serde_json::to_value(GetTaskRequest { id: id.into(), history_length: None, tenant: None })?).await?)?)
+        Ok(serde_json::from_value(
+            self.call(
+                a2a::methods::GET_TASK,
+                serde_json::to_value(GetTaskRequest {
+                    id: id.into(),
+                    history_length: None,
+                    tenant: None,
+                })?,
+            )
+            .await?,
+        )?)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn list_tasks(&self) -> Result<Vec<Task>> {
-        let r: ListTasksResponse = serde_json::from_value(self.call(a2a::methods::LIST_TASKS, json!({})).await?)?;
+        let r: ListTasksResponse =
+            serde_json::from_value(self.call(a2a::methods::LIST_TASKS, json!({})).await?)?;
         Ok(r.tasks)
     }
 
     /// Fetch `refname` from the room; returns its commit id and a git bundle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub async fn pull(&self, refname: &str) -> Result<(String, Vec<u8>)> {
-        let t = self.send_task("pull", &Op::Pull { refname: refname.to_string() }, vec![]).await?;
-        let head = wire::meta(&t, "head").and_then(Value::as_str).unwrap_or_default().to_string();
-        let bundle = wire::artifact_bytes(&t, "bundle").ok_or_else(|| anyhow!("pull returned no bundle"))?;
+        let t = self
+            .send_task(
+                "pull",
+                &Op::Pull {
+                    refname: refname.to_string(),
+                },
+                vec![],
+            )
+            .await?;
+        let head = wire::meta(&t, "head")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let bundle =
+            wire::artifact_bytes(&t, "bundle").ok_or_else(|| anyhow!("pull returned no bundle"))?;
         Ok((head, bundle))
     }
 
     /// Send a bundle holding `branch`. Returns the ref it was stored under on the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub async fn push(&self, branch: &str, bundle: &[u8]) -> Result<String> {
-        let part = Part::raw(bundle.to_vec()).with_filename("push.bundle").with_media_type(wire::MEDIA_BUNDLE);
-        let t = self.send_task("push", &Op::Push { branch: branch.to_string() }, vec![part]).await?;
-        Ok(wire::meta(&t, "reference").and_then(Value::as_str).unwrap_or_default().to_string())
+        let part = Part::raw(bundle.to_vec())
+            .with_filename("push.bundle")
+            .with_media_type(wire::MEDIA_BUNDLE);
+        let t = self
+            .send_task(
+                "push",
+                &Op::Push {
+                    branch: branch.to_string(),
+                },
+                vec![part],
+            )
+            .await?;
+        Ok(wire::meta(&t, "reference")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string())
     }
 
     /// Run a task on a checkout of `base`; returns the runner name, its output and the patch.
     /// A command that exits non-zero or times out still returns `Ok`; check `exit_code` / `timed_out`.
-    pub async fn run_task(&self, base: &str, spec: TaskSpec) -> Result<(String, TaskOutput, Vec<u8>)> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub async fn run_task(
+        &self,
+        base: &str,
+        spec: TaskSpec,
+    ) -> Result<(String, TaskOutput, Vec<u8>)> {
         let r = self.run_task_full(base, spec).await?;
         Ok((r.runner, r.output, r.patch))
     }
 
     /// Like [`Client::run_task`], with the task id and workspace commit details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
     pub async fn run_task_full(&self, base: &str, spec: TaskSpec) -> Result<TaskRun> {
-        let op = Op::Run { base: base.to_string(), spec };
-        let t = match self.send(&op, vec![]).await.map_err(|e| anyhow!("task refused: {e:#}"))? {
-            SendMessageResponse::Task(t) => t,
-            SendMessageResponse::Message(m) => bail!("unexpected message instead of a task: {:?}", m.text()),
+        let op = Op::Run {
+            base: base.to_string(),
+            spec,
         };
-        let exit_code = wire::meta(&t, "exitCode").and_then(Value::as_i64).map(|c| c as i32);
-        let timed_out = wire::meta(&t, "timedOut").and_then(Value::as_bool).unwrap_or(false);
+        let t = match self
+            .send(&op, vec![])
+            .await
+            .map_err(|e| anyhow!("task refused: {e:#}"))?
+        {
+            SendMessageResponse::Task(t) => t,
+            SendMessageResponse::Message(m) => {
+                bail!("unexpected message instead of a task: {:?}", m.text())
+            }
+        };
+        let exit_code = wire::meta(&t, "exitCode")
+            .and_then(Value::as_i64)
+            .map(|c| c as i32);
+        let timed_out = wire::meta(&t, "timedOut")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let ran = t.status.state == TaskState::Completed || exit_code.is_some() || timed_out;
         if !ran {
             bail!("task refused: {}", wire::status_text(&t));
         }
-        let text = |k: &str| wire::meta(&t, k).and_then(Value::as_str).map(str::to_string);
+        let text = |k: &str| {
+            wire::meta(&t, k)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
         Ok(TaskRun {
             task_id: t.id.clone(),
             runner: text("runner").unwrap_or_default(),
@@ -1494,7 +2283,11 @@ impl Client {
             commit: text("commit"),
             changed: wire::meta(&t, "changed")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default(),
         })
     }
@@ -1507,7 +2300,15 @@ impl Client {
 
 /// Parse a link, connect, and join in one step.
 /// `transport` may be a [`Transport`], or a bool where `true` forces local and `false` follows the link.
-pub async fn join_link(link: &str, secret: SecretKey, transport: impl Into<TransportChoice>) -> Result<Client> {
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
+pub async fn join_link(
+    link: &str,
+    secret: SecretKey,
+    transport: impl Into<TransportChoice>,
+) -> Result<Client> {
     let link = Link::parse(link)?;
     let transport = transport.into().resolve(link.transport.as_ref());
     let client = Client::connect(link.addr, secret, transport).await?;

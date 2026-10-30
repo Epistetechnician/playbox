@@ -19,16 +19,34 @@ fn enabled() -> bool {
 }
 
 fn anchors() -> Vec<Vec<u8>> {
-    tpm_ek::pem_to_ders(&fs::read_to_string(std::env::var("PLAYBOX_TEST_EK_ANCHORS").expect("PLAYBOX_TEST_EK_ANCHORS")).unwrap()).unwrap()
+    tpm_ek::pem_to_ders(
+        &fs::read_to_string(
+            std::env::var("PLAYBOX_TEST_EK_ANCHORS").expect("PLAYBOX_TEST_EK_ANCHORS"),
+        )
+        .unwrap(),
+    )
+    .unwrap()
 }
 
 fn evidence(st: &Statement) -> std::collections::BTreeMap<String, String> {
-    let b: Vec<u8> = (0..st.platform_evidence.len() / 2).map(|i| u8::from_str_radix(&st.platform_evidence[i * 2..i * 2 + 2], 16).unwrap()).collect();
-    String::from_utf8(b).unwrap().lines().map(|l| l.split_once(' ').map(|(k, v)| (k.to_string(), v.to_string())).unwrap()).collect()
+    let b: Vec<u8> = (0..st.platform_evidence.len() / 2)
+        .map(|i| u8::from_str_radix(&st.platform_evidence[i * 2..i * 2 + 2], 16).unwrap())
+        .collect();
+    String::from_utf8(b)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            l.split_once(' ')
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .unwrap()
+        })
+        .collect()
 }
 
 fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len() / 2).map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap()).collect()
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap())
+        .collect()
 }
 
 fn hex(b: &[u8]) -> String {
@@ -45,17 +63,44 @@ struct Setup {
 fn setup() -> Setup {
     let provider = TpmProvider::default();
     let key = SigningKey::from_bytes(&[5; 32]);
-    let text = attest::new_platform_statement(&key, "abcd", "", 1, attest::measure_self("none", "hw-test"), &provider).expect("a statement from the TPM");
+    let text = attest::new_platform_statement(
+        &key,
+        "abcd",
+        "",
+        1,
+        attest::measure_self("none", "hw-test"),
+        &provider,
+    )
+    .expect("a statement from the TPM");
     let st = Statement::parse(&text).unwrap();
     let ev = evidence(&st);
     let ak = tpm_ek::parse_ak(&unhex(&ev["akpub"])).unwrap();
-    let chain = ev.get("ek_chain").map(|c| c.split(',').map(unhex).collect::<Vec<_>>()).unwrap_or_default();
-    let cert = tpm_ek::check_ek_chain(&unhex(ev.get("ek_cert").expect("the TPM has an EK certificate")), &chain, &anchors(), tpm_ek::now_unix()).expect("EK chain");
-    Setup { provider, text, ak, ek: cert.key }
+    let chain = ev
+        .get("ek_chain")
+        .map(|c| c.split(',').map(unhex).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let cert = tpm_ek::check_ek_chain(
+        &unhex(ev.get("ek_cert").expect("the TPM has an EK certificate")),
+        &chain,
+        &anchors(),
+        tpm_ek::now_unix(),
+    )
+    .expect("EK chain");
+    Setup {
+        provider,
+        text,
+        ak,
+        ek: cert.key,
+    }
 }
 
 fn payload(kind: &str, c: &tpm_ek::Credential) -> Vec<u8> {
-    format!("ek {kind}\ncred {}\nsecret {}\n", hex(&c.blob), hex(&c.secret)).into_bytes()
+    format!(
+        "ek {kind}\ncred {}\nsecret {}\n",
+        hex(&c.blob),
+        hex(&c.secret)
+    )
+    .into_bytes()
 }
 
 #[test]
@@ -65,14 +110,28 @@ fn verifier_challenge_is_answered_by_a_real_tpm() {
     }
     let s = setup();
     let mut pins = PinStore::in_memory();
-    pins.add(TPM_KIND, &fingerprint(&[s.ak.x, s.ak.y].concat())).unwrap();
+    pins.add(TPM_KIND, &fingerprint(&[s.ak.x, s.ak.y].concat()))
+        .unwrap();
     let verifier = TpmVerifier::new(pins).with_ek_anchors(anchors());
     let mut v = attest::verify(&s.text, &[&verifier]).unwrap();
-    assert!(v.notes.iter().any(|n| n.contains("EK certificate chains to your trust anchor")), "{:?}", v.notes);
-    assert_eq!(v.achieved, Tier::T0, "before the challenge is answered nothing is proven");
+    assert!(
+        v.notes
+            .iter()
+            .any(|n| n.contains("EK certificate chains to your trust anchor")),
+        "{:?}",
+        v.notes
+    );
+    assert_eq!(
+        v.achieved,
+        Tier::T0,
+        "before the challenge is answered nothing is proven"
+    );
     let ch = v.challenge.clone().expect("a challenge");
 
-    let answer = s.provider.respond(&ch.payload).expect("the TPM activates a credential made for its EK and AK");
+    let answer = s
+        .provider
+        .respond(&ch.payload)
+        .expect("the TPM activates a credential made for its EK and AK");
     assert_eq!(answer, ch.expect);
     assert!(v.complete_challenge(&answer));
     assert_eq!(v.achieved, Tier::T1, "{:?}", v.notes);
@@ -97,7 +156,10 @@ fn rsa_credential_is_bound_to_the_attestation_key_and_is_integrity_protected() {
     let mut other_name = s.ak.name.clone();
     *other_name.last_mut().unwrap() ^= 1;
     let wrong = tpm_ek::make_credential(&s.ek, &other_name, &secret).unwrap();
-    assert!(s.provider.respond(&payload("rsa", &wrong)).is_err(), "credential for another key must not activate");
+    assert!(
+        s.provider.respond(&payload("rsa", &wrong)).is_err(),
+        "credential for another key must not activate"
+    );
 
     // Flipping a bit in the blob (its integrity HMAC or ciphertext) must fail.
     let mut bad = good.clone();
@@ -107,7 +169,12 @@ fn rsa_credential_is_bound_to_the_attestation_key_and_is_integrity_protected() {
 
     // A credential made for some other EK cannot be decrypted by this TPM.
     let other = rsa::RsaPrivateKey::new(&mut rand_core::OsRng, 2048).unwrap();
-    let elsewhere = tpm_ek::make_credential(&EkKey::Rsa(rsa::RsaPublicKey::from(&other)), &s.ak.name, &secret).unwrap();
+    let elsewhere = tpm_ek::make_credential(
+        &EkKey::Rsa(rsa::RsaPublicKey::from(&other)),
+        &s.ak.name,
+        &secret,
+    )
+    .unwrap();
     assert!(s.provider.respond(&payload("rsa", &elsewhere)).is_err());
 }
 
@@ -122,8 +189,18 @@ fn ecc_credential_activates_too() {
     fs::create_dir_all(&dir).unwrap();
     let (ctx, pubf) = (dir.join("ek.ctx"), dir.join("ek.pub"));
     let _ = Command::new("tpm2_flushcontext").arg("-t").output();
-    let out = Command::new("tpm2_createek").args(["-c"]).arg(&ctx).args(["-G", "ecc", "-u"]).arg(&pubf).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("tpm2_createek")
+        .args(["-c"])
+        .arg(&ctx)
+        .args(["-G", "ecc", "-u"])
+        .arg(&pubf)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let _ = Command::new("tpm2_flushcontext").arg("-t").output();
     let raw = fs::read(&pubf).unwrap();
 
@@ -171,7 +248,14 @@ fn ecc_credential_activates_too() {
 fn malformed_challenges_are_refused_without_touching_the_tpm() {
     // This one needs no TPM: the provider validates before running any tool.
     let p = TpmProvider::default();
-    for bad in ["", "ek rsa\n", "ek dsa\ncred 00\nsecret 00\n", "ek rsa\ncred zz\nsecret 00\n", "ek rsa\nek rsa\ncred 00\nsecret 00\n", "no-space-here"] {
+    for bad in [
+        "",
+        "ek rsa\n",
+        "ek dsa\ncred 00\nsecret 00\n",
+        "ek rsa\ncred zz\nsecret 00\n",
+        "ek rsa\nek rsa\ncred 00\nsecret 00\n",
+        "no-space-here",
+    ] {
         assert!(p.respond(bad.as_bytes()).is_err(), "{bad:?}");
     }
     assert!(p.respond(&vec![b'a'; 9000]).is_err());

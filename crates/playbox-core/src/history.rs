@@ -43,7 +43,11 @@ impl Entry {
         b.extend_from_slice(DOMAIN);
         b.extend_from_slice(&self.seq.to_be_bytes());
         b.extend_from_slice(&self.prev);
-        b.extend_from_slice(&(self.kind.len() as u32).to_be_bytes());
+        b.extend_from_slice(
+            &u32::try_from(self.kind.len())
+                .expect("length fits in u32")
+                .to_be_bytes(),
+        );
         b.extend_from_slice(self.kind.as_bytes());
         b.extend_from_slice(&self.payload_hash);
         b.extend_from_slice(&self.time_ms.to_be_bytes());
@@ -52,12 +56,19 @@ impl Entry {
     }
 
     /// Does the signature verify under the entry's own signer key? Does not check chaining.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn check_signature(&self) -> Result<(), VerifyError> {
-        let key = VerifyingKey::from_bytes(&self.signer).map_err(|_| VerifyError::BadKey(self.seq))?;
-        key.verify(&self.signing_bytes(), &Signature::from_bytes(&self.sig)).map_err(|_| VerifyError::BadSignature(self.seq))
+        let key =
+            VerifyingKey::from_bytes(&self.signer).map_err(|_| VerifyError::BadKey(self.seq))?;
+        key.verify(&self.signing_bytes(), &Signature::from_bytes(&self.sig))
+            .map_err(|_| VerifyError::BadSignature(self.seq))
     }
 
     /// Identity of the entry, covering everything including the signature.
+    #[must_use]
     pub fn id(&self) -> Hash {
         let mut h = blake3::Hasher::new();
         h.update(&self.signing_bytes());
@@ -73,14 +84,18 @@ pub struct Log {
 }
 
 impl Log {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn head(&self) -> Hash {
-        self.entries.last().map(Entry::id).unwrap_or([0; 32])
+        self.entries.last().map_or([0; 32], Entry::id)
     }
 
+    /// # Panics
+    ///
+    /// Panics only if an internal invariant is broken, which indicates a bug.
     pub fn append(&mut self, key: &SigningKey, kind: &str, payload: &[u8], time_ms: u64) -> &Entry {
         let mut e = Entry {
             seq: self.entries.len() as u64,
@@ -96,6 +111,9 @@ impl Log {
         self.entries.last().expect("just pushed")
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn verify(&self) -> Result<(), VerifyError> {
         let mut prev = [0u8; 32];
         let mut signer: Option<[u8; 32]> = None;
@@ -115,7 +133,8 @@ impl Log {
             if e.time_ms < last_time {
                 return Err(VerifyError::TimeBackwards(e.seq));
             }
-            let key = VerifyingKey::from_bytes(&e.signer).map_err(|_| VerifyError::BadKey(e.seq))?;
+            let key =
+                VerifyingKey::from_bytes(&e.signer).map_err(|_| VerifyError::BadKey(e.seq))?;
             key.verify(&e.signing_bytes(), &Signature::from_bytes(&e.sig))
                 .map_err(|_| VerifyError::BadSignature(e.seq))?;
             prev = e.id();
@@ -129,8 +148,10 @@ impl Log {
 /// `kind` is limited to `[a-z0-9_]+` so the line splits on spaces.
 pub mod text {
     use super::{Entry, Hash, Log};
+    use crate::record::RecordError;
     use std::fmt::Write;
 
+    #[must_use]
     pub fn hex(b: &[u8]) -> String {
         let mut s = String::with_capacity(b.len() * 2);
         for x in b {
@@ -139,9 +160,9 @@ pub mod text {
         s
     }
 
-    fn unhex<const N: usize>(s: &str) -> Result<[u8; N], String> {
+    fn unhex<const N: usize>(s: &str) -> Result<[u8; N], RecordError> {
         if s.len() != N * 2 || !s.is_ascii() {
-            return Err(format!("expected {} hex chars", N * 2));
+            return Err(format!("expected {} hex chars", N * 2).into());
         }
         let mut out = [0u8; N];
         for (i, o) in out.iter_mut().enumerate() {
@@ -150,13 +171,19 @@ pub mod text {
         Ok(out)
     }
 
+    #[must_use]
     pub fn valid_kind(k: &str) -> bool {
-        !k.is_empty() && k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        !k.is_empty()
+            && k.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
     }
 
-    pub fn entry_to_line(e: &Entry) -> Result<String, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn entry_to_line(e: &Entry) -> Result<String, RecordError> {
         if !valid_kind(&e.kind) {
-            return Err(format!("kind {:?} must match [a-z0-9_]+", e.kind));
+            return Err(format!("kind {:?} must match [a-z0-9_]+", e.kind).into());
         }
         Ok(format!(
             "{} {} {} {} {} {} {}",
@@ -170,10 +197,13 @@ pub mod text {
         ))
     }
 
-    pub fn entry_from_line(line: &str) -> Result<Entry, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn entry_from_line(line: &str) -> Result<Entry, RecordError> {
         let f: Vec<&str> = line.split(' ').collect();
         if f.len() != 7 {
-            return Err(format!("expected 7 fields, found {}", f.len()));
+            return Err(format!("expected 7 fields, found {}", f.len()).into());
         }
         if !valid_kind(f[2]) {
             return Err("bad kind".into());
@@ -189,7 +219,10 @@ pub mod text {
         })
     }
 
-    pub fn to_text(log: &Log) -> Result<String, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn to_text(log: &Log) -> Result<String, RecordError> {
         let mut out = String::new();
         for e in &log.entries {
             out.push_str(&entry_to_line(e)?);
@@ -198,17 +231,22 @@ pub mod text {
         Ok(out)
     }
 
-    pub fn from_text(s: &str) -> Result<Log, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the text or field is malformed, or its signature does not verify.
+    pub fn from_text(s: &str) -> Result<Log, RecordError> {
         let mut log = Log::new();
         for (i, line) in s.lines().enumerate() {
             if line.is_empty() {
                 continue;
             }
-            log.entries.push(entry_from_line(line).map_err(|e| format!("line {}: {e}", i + 1))?);
+            log.entries
+                .push(entry_from_line(line).map_err(|e| format!("line {}: {e}", i + 1))?);
         }
         Ok(log)
     }
 
+    #[must_use]
     pub fn head_hex(log: &Log) -> String {
         let h: Hash = log.head();
         hex(&h)

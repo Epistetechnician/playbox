@@ -35,22 +35,32 @@ pub struct SandboxPolicy {
 
 impl Default for SandboxPolicy {
     fn default() -> Self {
-        Self { allowed_images: vec![DEFAULT_IMAGE.into()] }
+        Self {
+            allowed_images: vec![DEFAULT_IMAGE.into()],
+        }
     }
 }
 
 impl SandboxPolicy {
     /// Canonical text of the image allow-list, for the host's signed policy measurement: a verifier
     /// that expects one image set sees a different digest if the host allows another.
+    #[must_use]
     pub fn describe(&self) -> String {
         let mut v = self.allowed_images.clone();
         v.sort();
         format!("images={}", v.join(","))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn check(&self, spec: &TaskSpec) -> Result<()> {
         if !self.allowed_images.iter().any(|i| i == &spec.image) {
-            bail!("image {:?} is not allowed on this host (allowed: {})", spec.image, self.allowed_images.join(", "));
+            bail!(
+                "image {:?} is not allowed on this host (allowed: {})",
+                spec.image,
+                self.allowed_images.join(", ")
+            );
         }
         Ok(())
     }
@@ -81,9 +91,10 @@ pub struct TaskSpec {
 }
 
 impl TaskSpec {
+    #[must_use]
     pub fn new(cmd: &[&str]) -> Self {
         Self {
-            cmd: cmd.iter().map(|s| s.to_string()).collect(),
+            cmd: cmd.iter().map(std::string::ToString::to_string).collect(),
             image: DEFAULT_IMAGE.into(),
             cpus: 1.0,
             mem_mib: 512,
@@ -94,6 +105,7 @@ impl TaskSpec {
     }
 
     /// Caps applied by the host regardless of what a peer asks for.
+    #[must_use]
     pub fn clamp(mut self, max: &Limits) -> Self {
         self.cpus = self.cpus.clamp(0.1, max.cpus);
         self.mem_mib = self.mem_mib.clamp(16, max.mem_mib);
@@ -116,7 +128,13 @@ pub struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Self { cpus: 2.0, mem_mib: 1024, timeout_secs: 300, network: false, allowed_hosts: Vec::new() }
+        Self {
+            cpus: 2.0,
+            mem_mib: 1024,
+            timeout_secs: 300,
+            network: false,
+            allowed_hosts: Vec::new(),
+        }
     }
 }
 
@@ -140,12 +158,18 @@ pub struct Mount {
 }
 
 impl Mount {
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn check(&self) -> Result<()> {
         let h = self.host.to_str().context("mount path is not utf-8")?;
         if !self.host.is_absolute() || h.contains([',', '\n', '\r', '\0']) {
             bail!("mount source must be an absolute path without commas or newlines");
         }
-        if !self.container.starts_with('/') || self.container.contains([',', '\n', '\r', '\0', ':']) || self.container.split('/').any(|p| p == "..") {
+        if !self.container.starts_with('/')
+            || self.container.contains([',', '\n', '\r', '\0', ':'])
+            || self.container.split('/').any(|p| p == "..")
+        {
             bail!("mount target must be an absolute path without commas, colons or `..`");
         }
         if matches!(self.container.as_str(), "/" | "/workspace" | "/tmp") {
@@ -176,9 +200,17 @@ pub trait Runner: Send + Sync {
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput>;
     /// Like [`Runner::run`], with read-only host directories mounted into the task. Runners that cannot
     /// provide them refuse rather than run without.
-    async fn run_with_mounts(&self, spec: &TaskSpec, workspace: &Path, mounts: &[Mount]) -> Result<TaskOutput> {
+    async fn run_with_mounts(
+        &self,
+        spec: &TaskSpec,
+        workspace: &Path,
+        mounts: &[Mount],
+    ) -> Result<TaskOutput> {
         if !mounts.is_empty() {
-            bail!("the {} runner cannot mount host directories into a task", self.name());
+            bail!(
+                "the {} runner cannot mount host directories into a task",
+                self.name()
+            );
         }
         self.run(spec, workspace).await
     }
@@ -191,13 +223,21 @@ pub trait Runner: Send + Sync {
 
 /// Pick a backend by name. The one place a new sandbox technology is registered.
 /// `process` (no isolation) needs `PLAYBOX_ALLOW_UNSAFE_RUNNER`.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn runner_by_name(name: &str, policy: SandboxPolicy) -> Result<std::sync::Arc<dyn Runner>> {
     match name {
         "docker" => Ok(std::sync::Arc::new(DockerRunner::new(policy))),
         "libkrun" | "krun" => Ok(std::sync::Arc::new(KrunRunner::locate(policy)?)),
         "openshell" => Ok(std::sync::Arc::new(OpenShellRunner::new(policy))),
-        "process" if std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() => Ok(std::sync::Arc::new(ProcessRunner)),
-        "process" => bail!("the process runner has no isolation; set PLAYBOX_ALLOW_UNSAFE_RUNNER to use it"),
+        "process" if std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() => {
+            Ok(std::sync::Arc::new(ProcessRunner))
+        }
+        "process" => {
+            bail!("the process runner has no isolation; set PLAYBOX_ALLOW_UNSAFE_RUNNER to use it")
+        }
         o => bail!("unknown runner {o:?}; use docker, libkrun, openshell or process"),
     }
 }
@@ -212,7 +252,10 @@ pub struct Quota {
 
 impl Default for Quota {
     fn default() -> Self {
-        Self { max_bytes: 1024 * 1024 * 1024, max_entries: 100_000 }
+        Self {
+            max_bytes: 1024 * 1024 * 1024,
+            max_entries: 100_000,
+        }
     }
 }
 
@@ -222,7 +265,9 @@ fn measure(dir: &Path, stop_bytes: u64, stop_entries: usize) -> (u64, usize) {
     let (mut bytes, mut entries) = (0u64, 0usize);
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in rd.flatten() {
             entries += 1;
             let Ok(meta) = e.metadata() else { continue }; // does not follow symlinks
@@ -249,19 +294,39 @@ pub async fn quota_exceeded(dir: &Path, quota: Quota) -> anyhow::Error {
     let (base_bytes, base_entries) = probe(u64::MAX, usize::MAX).await.unwrap_or_default();
     loop {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        let (b, n) = probe(base_bytes.saturating_add(quota.max_bytes), base_entries.saturating_add(quota.max_entries)).await.unwrap_or_default();
+        let (b, n) = probe(
+            base_bytes.saturating_add(quota.max_bytes),
+            base_entries.saturating_add(quota.max_entries),
+        )
+        .await
+        .unwrap_or_default();
         if b.saturating_sub(base_bytes) > quota.max_bytes {
-            return anyhow!("task stopped: it wrote more than the host's scratch quota ({} MiB)", quota.max_bytes >> 20);
+            return anyhow!(
+                "task stopped: it wrote more than the host's scratch quota ({} MiB)",
+                quota.max_bytes >> 20
+            );
         }
         if n.saturating_sub(base_entries) > quota.max_entries {
-            return anyhow!("task stopped: it created more than the host's limit of {} files and directories", quota.max_entries);
+            return anyhow!(
+                "task stopped: it created more than the host's limit of {} files and directories",
+                quota.max_entries
+            );
         }
     }
 }
 
 /// Run `spec` with `runner` in `dir`, and stop it if it writes past `quota`. Stopping drops the run, which
 /// kills the sandbox process (and, for Docker, the container).
-pub async fn run_with_quota(runner: &dyn Runner, spec: &TaskSpec, dir: &Path, quota: Quota) -> Result<TaskOutput> {
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
+pub async fn run_with_quota(
+    runner: &dyn Runner,
+    spec: &TaskSpec,
+    dir: &Path,
+    quota: Quota,
+) -> Result<TaskOutput> {
     tokio::select! {
         out = runner.run(spec, dir) => out,
         why = quota_exceeded(dir, quota) => Err(why),
@@ -290,37 +355,37 @@ async fn read_capped<R: tokio::io::AsyncRead + Unpin>(mut r: R) -> String {
 }
 
 async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, bool)> {
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     let mut child = cmd.spawn().context("spawn")?;
     let out = tokio::spawn(read_capped(child.stdout.take().expect("piped")));
     let err = tokio::spawn(read_capped(child.stderr.take().expect("piped")));
-    match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(status) => {
-            let status = status?;
-            Ok((
-                TaskOutput {
-                    exit_code: status.code(),
-                    timed_out: false,
-                    stdout: out.await.unwrap_or_default(),
-                    stderr: err.await.unwrap_or_default(),
-                    policy_digest: None,
-                },
-                false,
-            ))
-        }
-        Err(_) => {
-            let _ = child.kill().await;
-            Ok((
-                TaskOutput {
-                    exit_code: None,
-                    timed_out: true,
-                    stdout: out.await.unwrap_or_default(),
-                    stderr: err.await.unwrap_or_default(),
-                    policy_digest: None,
-                },
-                true,
-            ))
-        }
+    if let Ok(status) = tokio::time::timeout(timeout, child.wait()).await {
+        let status = status?;
+        Ok((
+            TaskOutput {
+                exit_code: status.code(),
+                timed_out: false,
+                stdout: out.await.unwrap_or_default(),
+                stderr: err.await.unwrap_or_default(),
+                policy_digest: None,
+            },
+            false,
+        ))
+    } else {
+        let _ = child.kill().await;
+        Ok((
+            TaskOutput {
+                exit_code: None,
+                timed_out: true,
+                stdout: out.await.unwrap_or_default(),
+                stderr: err.await.unwrap_or_default(),
+                policy_digest: None,
+            },
+            true,
+        ))
     }
 }
 
@@ -330,6 +395,7 @@ pub struct DockerRunner {
 }
 
 impl DockerRunner {
+    #[must_use]
     pub fn new(policy: SandboxPolicy) -> Self {
         Self { policy }
     }
@@ -357,13 +423,20 @@ impl Runner for DockerRunner {
             .await
             .context("docker is not installed")?;
         if !out.status.success() {
-            bail!("docker daemon is not reachable: {}", String::from_utf8_lossy(&out.stderr).trim());
+            bail!(
+                "docker daemon is not reachable: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
         // The limits a grant promises must really be enforced. Docker only warns and carries on when the
         // kernel lacks a controller (Raspberry Pi OS boots with `cgroup_disable=memory`), which would let a
         // task use all the host's memory while its grant says 1 GiB. Fail closed instead.
         let info = Command::new("docker")
-            .args(["info", "--format", "{{.MemoryLimit}} {{.PidsLimit}} {{.CPUCfsQuota}}"])
+            .args([
+                "info",
+                "--format",
+                "{{.MemoryLimit}} {{.PidsLimit}} {{.CPUCfsQuota}}",
+            ])
             .stdin(Stdio::null())
             .output()
             .await
@@ -388,14 +461,27 @@ impl Runner for DockerRunner {
         if image.starts_with('-') || image.contains(char::is_whitespace) {
             bail!("invalid image name");
         }
-        let out = Command::new("docker").args(["image", "inspect", "--format", "{{.Id}}", image]).stdin(Stdio::null()).output().await.context("docker image inspect")?;
+        let out = Command::new("docker")
+            .args(["image", "inspect", "--format", "{{.Id}}", image])
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .context("docker image inspect")?;
         if !out.status.success() {
-            bail!("docker cannot inspect image {image:?}: {}", String::from_utf8_lossy(&out.stderr).trim());
+            bail!(
+                "docker cannot inspect image {image:?}: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
         parse_image_id(String::from_utf8_lossy(&out.stdout).trim())
     }
 
-    async fn run_with_mounts(&self, spec: &TaskSpec, workspace: &Path, mounts: &[Mount]) -> Result<TaskOutput> {
+    async fn run_with_mounts(
+        &self,
+        spec: &TaskSpec,
+        workspace: &Path,
+        mounts: &[Mount],
+    ) -> Result<TaskOutput> {
         check_spec(spec)?;
         self.policy.check(spec)?;
         for m in mounts {
@@ -404,19 +490,56 @@ impl Runner for DockerRunner {
         let meta = tokio::fs::metadata(workspace).await.context("workspace")?;
         let mut rnd = [0u8; 6];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
-        let name = format!("playbox-{}", rnd.iter().map(|b| format!("{b:02x}")).collect::<String>());
+        let name = format!(
+            "playbox-{}",
+            rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        );
         let ws = workspace.to_str().context("workspace path is not utf-8")?;
 
         let mut cmd = Command::new("docker");
         cmd.args(["run", "--rm", "--name", &name]);
         cmd.args(["--network", if spec.network { "bridge" } else { "none" }]);
-        cmd.args(["--cpus", &spec.cpus.to_string(), "--memory", &format!("{}m", spec.mem_mib)]);
-        cmd.args(["--pids-limit", "256", "--cap-drop", "ALL", "--security-opt", "no-new-privileges"]);
-        cmd.args(["--read-only", "--tmpfs", "/tmp:rw,nosuid,size=256m", "--ulimit", "nofile=1024", "--ipc", "private"]);
+        cmd.args([
+            "--cpus",
+            &spec.cpus.to_string(),
+            "--memory",
+            &format!("{}m", spec.mem_mib),
+        ]);
+        cmd.args([
+            "--pids-limit",
+            "256",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+        ]);
+        cmd.args([
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,nosuid,size=256m",
+            "--ulimit",
+            "nofile=1024",
+            "--ipc",
+            "private",
+        ]);
         cmd.args(["--user", &format!("{}:{}", meta.uid(), meta.gid())]);
-        cmd.args(["-v", &format!("{ws}:/workspace"), "-w", "/workspace", "-e", "HOME=/tmp"]);
+        cmd.args([
+            "-v",
+            &format!("{ws}:/workspace"),
+            "-w",
+            "/workspace",
+            "-e",
+            "HOME=/tmp",
+        ]);
         for m in mounts {
-            cmd.args(["--mount", &format!("type=bind,source={},target={},readonly", m.host.display(), m.container)]);
+            cmd.args([
+                "--mount",
+                &format!(
+                    "type=bind,source={},target={},readonly",
+                    m.host.display(),
+                    m.container
+                ),
+            ]);
         }
         cmd.arg(&spec.image).args(&spec.cmd);
 
@@ -463,13 +586,17 @@ impl Runner for ProcessRunner {
         check_spec(spec)?;
         let mut cmd = Command::new(&spec.cmd[0]);
         cmd.args(&spec.cmd[1..]).current_dir(workspace);
-        Ok(run_child(cmd, Duration::from_secs(spec.timeout_secs)).await?.0)
+        Ok(run_child(cmd, Duration::from_secs(spec.timeout_secs))
+            .await?
+            .0)
     }
 }
 
 /// `sha256:<64 hex>` as printed by `docker image inspect --format {{.Id}}`.
 fn parse_image_id(s: &str) -> Result<[u8; 32]> {
-    let hex = s.strip_prefix("sha256:").context("image id is not a sha256 digest")?;
+    let hex = s
+        .strip_prefix("sha256:")
+        .context("image id is not a sha256 digest")?;
     if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("image id is not a sha256 digest");
     }
@@ -504,7 +631,9 @@ mod tests {
 
     #[test]
     fn isolation_is_ordered() {
-        assert!(Isolation::None < Isolation::Container && Isolation::Container < Isolation::MicroVm);
+        assert!(
+            Isolation::None < Isolation::Container && Isolation::Container < Isolation::MicroVm
+        );
     }
 
     #[test]
@@ -518,21 +647,51 @@ mod tests {
 
     #[test]
     fn mounts_are_checked_and_unsupported_runners_refuse_them() {
-        let ok = Mount { host: "/srv/weights".into(), container: "/weights".into() };
+        let ok = Mount {
+            host: "/srv/weights".into(),
+            container: "/weights".into(),
+        };
         assert!(ok.check().is_ok());
         for bad in [
-            Mount { host: "relative/path".into(), container: "/weights".into() },
-            Mount { host: "/srv/a,b".into(), container: "/weights".into() },
-            Mount { host: "/srv/w".into(), container: "weights".into() },
-            Mount { host: "/srv/w".into(), container: "/a/../etc".into() },
-            Mount { host: "/srv/w".into(), container: "/w:rw".into() },
-            Mount { host: "/srv/w".into(), container: "/workspace".into() },
-            Mount { host: "/srv/w".into(), container: "/".into() },
+            Mount {
+                host: "relative/path".into(),
+                container: "/weights".into(),
+            },
+            Mount {
+                host: "/srv/a,b".into(),
+                container: "/weights".into(),
+            },
+            Mount {
+                host: "/srv/w".into(),
+                container: "weights".into(),
+            },
+            Mount {
+                host: "/srv/w".into(),
+                container: "/a/../etc".into(),
+            },
+            Mount {
+                host: "/srv/w".into(),
+                container: "/w:rw".into(),
+            },
+            Mount {
+                host: "/srv/w".into(),
+                container: "/workspace".into(),
+            },
+            Mount {
+                host: "/srv/w".into(),
+                container: "/".into(),
+            },
         ] {
             assert!(bad.check().is_err(), "{bad:?}");
         }
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        let r = rt.block_on(ProcessRunner.run_with_mounts(&TaskSpec::new(&["true"]), Path::new("/tmp"), &[ok]));
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let r = rt.block_on(ProcessRunner.run_with_mounts(
+            &TaskSpec::new(&["true"]),
+            Path::new("/tmp"),
+            &[ok],
+        ));
         assert!(r.unwrap_err().to_string().contains("cannot mount"));
         assert!(rt.block_on(ProcessRunner.image_digest("x")).is_err());
     }
@@ -541,7 +700,14 @@ mod tests {
     fn image_ids_parse_strictly() {
         let id = format!("sha256:{}", "ab".repeat(32));
         assert_eq!(parse_image_id(&id).unwrap(), [0xab; 32]);
-        for bad in ["", "sha256:", "sha256:zz", &format!("md5:{}", "ab".repeat(32)), &format!("sha256:{}", "ab".repeat(31)), &format!("sha256:{}", "AB".repeat(33))] {
+        for bad in [
+            "",
+            "sha256:",
+            "sha256:zz",
+            &format!("md5:{}", "ab".repeat(32)),
+            &format!("sha256:{}", "ab".repeat(31)),
+            &format!("sha256:{}", "AB".repeat(33)),
+        ] {
             assert!(parse_image_id(bad).is_err(), "{bad}");
         }
     }
@@ -551,14 +717,22 @@ mod tests {
         std::env::remove_var("PLAYBOX_ALLOW_UNSAFE_RUNNER");
         assert!(runner_by_name("process", SandboxPolicy::default()).is_err());
         assert!(runner_by_name("nope", SandboxPolicy::default()).is_err());
-        assert_eq!(runner_by_name("docker", SandboxPolicy::default()).unwrap().isolation(), Isolation::Container);
+        assert_eq!(
+            runner_by_name("docker", SandboxPolicy::default())
+                .unwrap()
+                .isolation(),
+            Isolation::Container
+        );
     }
 
     #[test]
     fn missing_docker_limits_are_detected_and_unknown_output_fails_closed() {
         assert!(missing_limits("true true true").is_empty());
         assert_eq!(missing_limits("false true true"), ["memory limits"]);
-        assert_eq!(missing_limits("true false false"), ["process limits", "CPU limits"]);
+        assert_eq!(
+            missing_limits("true false false"),
+            ["process limits", "CPU limits"]
+        );
         // Garbage, empty output, or a missing field all count as unavailable.
         assert_eq!(missing_limits("").len(), 3);
         // `<no value>` shifts the fields, which is still a refusal rather than a pass.

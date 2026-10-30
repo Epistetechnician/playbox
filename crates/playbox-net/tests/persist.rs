@@ -11,7 +11,9 @@ fn dir(name: &str) -> PathBuf {
 }
 
 async fn open(d: &std::path::Path) -> Host {
-    Host::open(d, Transport::Local, HostConfig::default()).await.unwrap()
+    Host::open(d, Transport::Local, HostConfig::default())
+        .await
+        .unwrap()
 }
 
 /// A link for the restarted host: same invite, new address (ports change across restarts).
@@ -30,7 +32,10 @@ async fn identity_and_grants_survive_a_restart() {
     let d = dir("grants");
     let host = open(&d).await;
     let id = host.addr().id;
-    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+    let link = host
+        .create_link(Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
 
     let key = new_secret_key().unwrap();
     let c = join_link(&link, key.clone(), true).await.unwrap();
@@ -54,16 +59,31 @@ async fn identity_and_grants_survive_a_restart() {
 async fn unspent_invites_survive_and_spent_ones_stay_spent() {
     let d = dir("invites");
     let host = open(&d).await;
-    let unspent = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
-    let spent = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
-    join_link(&spent, new_secret_key().unwrap(), true).await.unwrap().close().await;
+    let unspent = host
+        .create_link(Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
+    let spent = host
+        .create_link(Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
+    join_link(&spent, new_secret_key().unwrap(), true)
+        .await
+        .unwrap()
+        .close()
+        .await;
     host.shutdown().await.unwrap();
 
     let host = open(&d).await;
-    let c = join_link(&rebase(&unspent, &host), new_secret_key().unwrap(), true).await.unwrap();
+    let c = join_link(&rebase(&unspent, &host), new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
     assert_eq!(c.echo("hi").await.unwrap(), "hi");
     c.close().await;
-    let err = join_link(&rebase(&spent, &host), new_secret_key().unwrap(), true).await.err().expect("spent");
+    let err = join_link(&rebase(&spent, &host), new_secret_key().unwrap(), true)
+        .await
+        .err()
+        .expect("spent");
     assert!(msg(err).contains("already used"));
     host.shutdown().await.unwrap();
 }
@@ -72,7 +92,10 @@ async fn unspent_invites_survive_and_spent_ones_stay_spent() {
 async fn revoked_members_stay_out_after_a_restart() {
     let d = dir("revoke");
     let host = open(&d).await;
-    let link = host.create_link(Duration::from_secs(60), 2).unwrap().encode();
+    let link = host
+        .create_link(Duration::from_secs(60), 2)
+        .unwrap()
+        .encode();
     let key = new_secret_key().unwrap();
     let c = join_link(&link, key.clone(), true).await.unwrap();
     let grant = c.grant().unwrap();
@@ -81,13 +104,18 @@ async fn revoked_members_stay_out_after_a_restart() {
     host.shutdown().await.unwrap();
 
     let host = open(&d).await;
-    let c = Client::connect(host.addr(), key.clone(), true).await.unwrap();
+    let c = Client::connect(host.addr(), key.clone(), true)
+        .await
+        .unwrap();
     c.set_grant(grant);
     assert!(msg(c.echo("x").await.unwrap_err()).contains("revoked"));
     c.close().await;
 
     // The remaining use of the old invite does not let the banned key back in.
-    let err = join_link(&rebase(&link, &host), key, true).await.err().expect("banned");
+    let err = join_link(&rebase(&link, &host), key, true)
+        .await
+        .err()
+        .expect("banned");
     assert!(msg(err).contains("banned"));
     host.shutdown().await.unwrap();
 }
@@ -101,6 +129,9 @@ async fn secrets_are_private_and_corrupt_state_is_refused() {
         assert_eq!(mode, 0o600, "{f} must not be readable by others");
     }
     std::fs::write(d.join("state.json"), "{not json").unwrap();
-    let err = Host::open(&d, Transport::Local, HostConfig::default()).await.err().expect("corrupt");
+    let err = Host::open(&d, Transport::Local, HostConfig::default())
+        .await
+        .err()
+        .expect("corrupt");
     assert!(msg(err).contains("corrupt"));
 }

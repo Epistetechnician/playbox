@@ -20,7 +20,11 @@ pub fn keygen(out: &str) -> Result<()> {
 }
 
 fn load_key(secret_hex_or_file: &str) -> Result<SigningKey> {
-    let text = if Path::new(secret_hex_or_file).exists() { std::fs::read_to_string(secret_hex_or_file)? } else { secret_hex_or_file.to_string() };
+    let text = if Path::new(secret_hex_or_file).exists() {
+        std::fs::read_to_string(secret_hex_or_file)?
+    } else {
+        secret_hex_or_file.to_string()
+    };
     let bytes: [u8; 32] = unhex(text.trim()).map_err(|e| anyhow::anyhow!("release key: {e}"))?;
     Ok(SigningKey::from_bytes(&bytes))
 }
@@ -30,7 +34,10 @@ pub fn sign(file: &str, key: &str) -> Result<()> {
     let k = load_key(key)?;
     let sig = k.sign(&std::fs::read(file)?);
     std::fs::write(format!("{file}.sig"), format!("{}\n", hex(&sig.to_bytes())))?;
-    println!("signed {file} with key {}", hex(&k.verifying_key().to_bytes()));
+    println!(
+        "signed {file} with key {}",
+        hex(&k.verifying_key().to_bytes())
+    );
     Ok(())
 }
 
@@ -38,10 +45,16 @@ pub fn sign(file: &str, key: &str) -> Result<()> {
 pub fn verify(file: &str, sig: Option<&str>, pubkey: &str) -> Result<()> {
     let pk: [u8; 32] = unhex(pubkey.trim()).map_err(|e| anyhow::anyhow!("public key: {e}"))?;
     let pk = VerifyingKey::from_bytes(&pk)?;
-    let sig_path = sig.map(String::from).unwrap_or_else(|| format!("{file}.sig"));
-    let sig: [u8; 64] = unhex(std::fs::read_to_string(&sig_path).with_context(|| format!("reading {sig_path}"))?.trim()).map_err(|e| anyhow::anyhow!("signature: {e}"))?;
+    let sig_path = sig.map_or_else(|| format!("{file}.sig"), String::from);
+    let sig: [u8; 64] = unhex(
+        std::fs::read_to_string(&sig_path)
+            .with_context(|| format!("reading {sig_path}"))?
+            .trim(),
+    )
+    .map_err(|e| anyhow::anyhow!("signature: {e}"))?;
     let sig = Signature::from_bytes(&sig);
-    pk.verify(&std::fs::read(file)?, &sig).map_err(|_| anyhow::anyhow!("BAD SIGNATURE: {file} was not signed by that key"))?;
+    pk.verify(&std::fs::read(file)?, &sig)
+        .map_err(|_| anyhow::anyhow!("BAD SIGNATURE: {file} was not signed by that key"))?;
     println!("signature ok: {file}");
     Ok(())
 }

@@ -4,10 +4,19 @@ use playbox_net::{join_link, new_secret_key, Client, Host, HostConfig};
 use std::time::Duration;
 
 async fn start() -> (Host, Client, Client) {
-    let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default()).await.unwrap();
-    let link = host.create_link(Duration::from_secs(60), 2).unwrap().encode();
-    let a = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
-    let b = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+    let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+        .await
+        .unwrap();
+    let link = host
+        .create_link(Duration::from_secs(60), 2)
+        .unwrap()
+        .encode();
+    let a = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+    let b = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
     (host, a, b)
 }
 
@@ -21,10 +30,17 @@ async fn members_and_host_talk_and_poll_by_cursor() {
     assert_eq!(says.len(), 2);
     assert_eq!(says[0].text, "hello from a");
     assert_eq!(says[0].name.as_deref(), Some("agent-a"));
-    assert_eq!(says[0].from, a.id().to_string(), "the sender is the authenticated key, not a claimed name");
+    assert_eq!(
+        says[0].from,
+        a.id().to_string(),
+        "the sender is the authenticated key, not a claimed name"
+    );
     assert_eq!(says[1].from, "host");
     // Joins show up as events, and the cursor returns only what is new.
-    assert!(f.items.iter().any(|i| i.kind == "event" && i.text.starts_with("join")));
+    assert!(f
+        .items
+        .iter()
+        .any(|i| i.kind == "event" && i.text.starts_with("join")));
     let again = b.feed(f.next).await.unwrap();
     assert!(again.items.is_empty());
     b.say("reply", None).await.unwrap();
@@ -42,7 +58,9 @@ async fn members_and_host_talk_and_poll_by_cursor() {
 #[tokio::test]
 async fn a_stranger_cannot_read_or_write_and_a_revoked_member_is_cut_off() {
     let (host, a, b) = start().await;
-    let stranger = Client::connect(host.addr(), new_secret_key().unwrap(), true).await.unwrap();
+    let stranger = Client::connect(host.addr(), new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
     assert!(stranger.feed(0).await.is_err());
     assert!(stranger.say("let me in", None).await.is_err());
     host.revoke_member(&b.id());
@@ -59,7 +77,9 @@ async fn a_stranger_cannot_read_or_write_and_a_revoked_member_is_cut_off() {
 #[tokio::test]
 async fn flooding_is_refused_and_control_characters_never_reach_other_members() {
     let (host, a, b) = start().await;
-    a.say("\u{1b}[2Jclear\u{7}", Some("evil\u{1b}[31m")).await.unwrap();
+    a.say("\u{1b}[2Jclear\u{7}", Some("evil\u{1b}[31m"))
+        .await
+        .unwrap();
     let f = b.feed(0).await.unwrap();
     let m = f.items.iter().find(|i| i.kind == "say").unwrap();
     assert_eq!(m.text, "[2Jclear");

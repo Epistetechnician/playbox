@@ -27,6 +27,7 @@
 //! files), only edits to the evaluator itself. And a fixed holdout is eventually overfit by repeated
 //! queries, so `min_runs` and a query budget (the lineage's total cost) matter.
 
+use crate::record::RecordError;
 use crate::record::{self, hash_parts, hex};
 use ed25519_dalek::SigningKey;
 use std::collections::BTreeMap;
@@ -70,8 +71,15 @@ pub struct EvaluatorSpec<'a> {
 }
 
 impl Evaluator {
-    pub fn issue(spec: EvaluatorSpec, custodian: &SigningKey) -> Result<Evaluator, String> {
-        if spec.protected.iter().any(|p| p.contains(',') || p.is_empty()) {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn issue(spec: EvaluatorSpec, custodian: &SigningKey) -> Result<Evaluator, RecordError> {
+        if spec
+            .protected
+            .iter()
+            .any(|p| p.contains(',') || p.is_empty())
+        {
             return Err("protected paths must be non-empty and contain no commas".into());
         }
         let text = record::sign(
@@ -84,7 +92,10 @@ impl Evaluator {
                 ("command", spec.command.into()),
                 ("protected", spec.protected.join(",")),
                 ("min_runs", spec.min_runs.to_string()),
-                ("supersedes", spec.supersedes.map(|e| e.id.clone()).unwrap_or_default()),
+                (
+                    "supersedes",
+                    spec.supersedes.map(|e| e.id.clone()).unwrap_or_default(),
+                ),
             ],
             custodian,
         )?;
@@ -92,7 +103,11 @@ impl Evaluator {
     }
 
     /// Parse and check a manifest signed by one of `custodians`.
-    pub fn open(text: &str, custodians: &[[u8; 32]]) -> Result<Evaluator, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the text or field is malformed, or its signature does not verify.
+    pub fn open(text: &str, custodians: &[[u8; 32]]) -> Result<Evaluator, RecordError> {
         let r = record::open(EVAL_DOMAIN, text)?;
         if !custodians.contains(&r.signer) {
             return Err("evaluator is not signed by a trusted custodian".into());
@@ -107,7 +122,9 @@ impl Evaluator {
             command: r.req("command")?.to_string(),
             protected: r.list("protected")?.into_iter().map(String::from).collect(),
             min_runs: r.num("min_runs")?,
-            supersedes: Some(r.req("supersedes")?).filter(|s| !s.is_empty()).map(String::from),
+            supersedes: Some(r.req("supersedes")?)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
             custodian: r.signer,
         })
     }
@@ -129,7 +146,10 @@ fn blind(salt: &[u8; 32], index: u64) -> [u8; 32] {
 
 /// One level up the tree. An odd node out is carried up unchanged.
 fn up(level: &[[u8; 32]]) -> Vec<[u8; 32]> {
-    level.chunks(2).map(|c| if let [l, r] = c { node(l, r) } else { c[0] }).collect()
+    level
+        .chunks(2)
+        .map(|c| if let [l, r] = c { node(l, r) } else { c[0] })
+        .collect()
 }
 
 /// The custodian's side of a sealed holdout.
@@ -151,7 +171,11 @@ pub struct ItemProof {
 
 impl Holdout {
     /// `salt` must be secret random bytes: it keeps low-entropy items from being guessed from the root.
-    pub fn new(salt: [u8; 32], items: Vec<Vec<u8>>) -> Result<Holdout, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn new(salt: [u8; 32], items: Vec<Vec<u8>>) -> Result<Holdout, RecordError> {
         if items.is_empty() {
             return Err("a holdout needs at least one item".into());
         }
@@ -159,10 +183,15 @@ impl Holdout {
     }
 
     fn leaves(&self) -> Vec<[u8; 32]> {
-        self.items.iter().enumerate().map(|(i, it)| leaf(&blind(&self.salt, i as u64), i as u64, it)).collect()
+        self.items
+            .iter()
+            .enumerate()
+            .map(|(i, it)| leaf(&blind(&self.salt, i as u64), i as u64, it))
+            .collect()
     }
 
     /// The root to publish (and to put in the evaluator manifest).
+    #[must_use]
     pub fn commit(&self) -> [u8; 32] {
         let mut level = self.leaves();
         while level.len() > 1 {
@@ -171,29 +200,52 @@ impl Holdout {
         level[0]
     }
 
-    pub fn open(&self, index: u64) -> Result<ItemProof, String> {
-        let i = usize::try_from(index).ok().filter(|i| *i < self.items.len()).ok_or("index out of range")?;
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the text or field is malformed, or its signature does not verify.
+    pub fn open(&self, index: u64) -> Result<ItemProof, RecordError> {
+        let i = usize::try_from(index)
+            .ok()
+            .filter(|i| *i < self.items.len())
+            .ok_or("index out of range")?;
         let (mut level, mut pos, mut path) = (self.leaves(), i, Vec::new());
         while level.len() > 1 {
             path.push(level.get(pos ^ 1).copied());
             level = up(&level);
             pos /= 2;
         }
-        Ok(ItemProof { index, total: self.items.len() as u64, blind: blind(&self.salt, index), item: self.items[i].clone(), path })
+        Ok(ItemProof {
+            index,
+            total: self.items.len() as u64,
+            blind: blind(&self.salt, index),
+            item: self.items[i].clone(),
+            path,
+        })
     }
 }
 
 impl ItemProof {
     /// Does this proof tie `item` to the committed `root`?
+    #[must_use]
     pub fn verify(&self, root: &[u8; 32]) -> bool {
-        let (mut h, mut pos, mut len) = (leaf(&self.blind, self.index, &self.item), self.index, self.total);
+        let (mut h, mut pos, mut len) = (
+            leaf(&self.blind, self.index, &self.item),
+            self.index,
+            self.total,
+        );
         if self.index >= self.total {
             return false;
         }
         for sibling in &self.path {
             let has_sibling = (pos ^ 1) < len;
             match (sibling, has_sibling) {
-                (Some(s), true) => h = if pos % 2 == 0 { node(&h, s) } else { node(s, &h) },
+                (Some(s), true) => {
+                    h = if pos % 2 == 0 {
+                        node(&h, s)
+                    } else {
+                        node(s, &h)
+                    }
+                }
                 (None, false) => {}
                 _ => return false,
             }
@@ -230,19 +282,36 @@ pub struct VariantSpec<'a> {
     pub cost: u64,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the value is bounded, or truncated on purpose"
+)]
 fn micro(x: f64) -> i64 {
     (x * 1e6).round() as i64
 }
 
 impl Variant {
-    pub fn sign(spec: VariantSpec, key: &SigningKey) -> Result<Variant, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn sign(spec: VariantSpec, key: &SigningKey) -> Result<Variant, RecordError> {
         let text = record::sign(
             VARIANT_DOMAIN,
             &[
-                ("parent", spec.parent.map(|p| p.id.clone()).unwrap_or_default()),
+                (
+                    "parent",
+                    spec.parent.map(|p| p.id.clone()).unwrap_or_default(),
+                ),
                 ("evaluator", spec.evaluator.id.clone()),
                 ("patch", hex(blake3::hash(spec.patch.as_bytes()).as_bytes())),
-                ("scores", spec.scores.iter().map(|s| micro(*s).to_string()).collect::<Vec<_>>().join(",")),
+                (
+                    "scores",
+                    spec.scores
+                        .iter()
+                        .map(|s| micro(*s).to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
                 ("cost", spec.cost.to_string()),
             ],
             key,
@@ -250,15 +319,24 @@ impl Variant {
         Self::open(&text)
     }
 
-    pub fn open(text: &str) -> Result<Variant, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the text or field is malformed, or its signature does not verify.
+    pub fn open(text: &str) -> Result<Variant, RecordError> {
         let r = record::open(VARIANT_DOMAIN, text)?;
         Ok(Variant {
             id: hex(&hash_parts("playbox.variant.id", &[text.as_bytes()])),
             text: text.to_string(),
-            parent: Some(r.req("parent")?).filter(|s| !s.is_empty()).map(String::from),
+            parent: Some(r.req("parent")?)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
             evaluator: r.req("evaluator")?.to_string(),
             patch: r.req("patch")?.to_string(),
-            scores: r.list("scores")?.into_iter().map(|s| s.parse::<i64>().map_err(|_| "bad score".to_string())).collect::<Result<_, _>>()?,
+            scores: r
+                .list("scores")?
+                .into_iter()
+                .map(|s| s.parse::<i64>().map_err(|_| "bad score".to_string()))
+                .collect::<Result<_, _>>()?,
             cost: r.num("cost")?,
             author: r.signer,
         })
@@ -266,6 +344,7 @@ impl Variant {
 }
 
 /// The paths a unified diff changes, including both sides of a rename, as the host sees them.
+#[must_use]
 pub fn touched_paths(patch: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in patch.lines() {
@@ -273,7 +352,12 @@ pub fn touched_paths(patch: &str) -> Vec<String> {
             if let Some(p) = line.strip_prefix(prefix) {
                 let p = p.split('\t').next().unwrap_or(p).trim_matches('"');
                 if p != "/dev/null" {
-                    out.push(p.strip_prefix("a/").or_else(|| p.strip_prefix("b/")).unwrap_or(p).to_string());
+                    out.push(
+                        p.strip_prefix("a/")
+                            .or_else(|| p.strip_prefix("b/"))
+                            .unwrap_or(p)
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -306,15 +390,27 @@ pub struct Improvement {
 
 impl Improvement {
     /// Supported gain: the lower bound is above zero.
+    #[must_use]
     pub fn significant(&self) -> bool {
         self.lower_bound > 0.0
     }
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "statistics only; counts are far below 2^52"
+)]
 fn mean_var(xs: &[i64]) -> (f64, f64) {
     let n = xs.len() as f64;
     let m = xs.iter().map(|x| *x as f64 / 1e6).sum::<f64>() / n;
-    let v = if xs.len() > 1 { xs.iter().map(|x| (*x as f64 / 1e6 - m).powi(2)).sum::<f64>() / (n - 1.0) } else { 0.0 };
+    let v = if xs.len() > 1 {
+        xs.iter()
+            .map(|x| (*x as f64 / 1e6 - m).powi(2))
+            .sum::<f64>()
+            / (n - 1.0)
+    } else {
+        0.0
+    };
     (m, v)
 }
 
@@ -326,6 +422,7 @@ pub struct Lineage {
 }
 
 impl Lineage {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -334,30 +431,51 @@ impl Lineage {
         self.evaluators.insert(e.id.clone(), e);
     }
 
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&Variant> {
         self.variants.get(id)
     }
 
     /// Admit a variant. `patch` is the diff the host actually computed; it must be the one signed.
-    pub fn add(&mut self, variant: Variant, patch: &str) -> Result<(), String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn add(&mut self, variant: Variant, patch: &str) -> Result<(), RecordError> {
         if self.variants.contains_key(&variant.id) {
             return Err("variant already recorded".into());
         }
         if hex(blake3::hash(patch.as_bytes()).as_bytes()) != variant.patch {
             return Err("the patch is not the one this variant signed".into());
         }
-        let ev = self.evaluators.get(&variant.evaluator).ok_or("variant names an evaluator this lineage does not trust")?;
+        let ev = self
+            .evaluators
+            .get(&variant.evaluator)
+            .ok_or("variant names an evaluator this lineage does not trust")?;
         if variant.scores.len() as u64 > 0 && (variant.scores.len() as u64) < ev.min_runs {
-            return Err(format!("{} runs, the evaluator needs at least {}", variant.scores.len(), ev.min_runs));
+            return Err(format!(
+                "{} runs, the evaluator needs at least {}",
+                variant.scores.len(),
+                ev.min_runs
+            )
+            .into());
         }
-        if let Some(bad) = touched_paths(patch).iter().find(|p| protected_hit(&ev.protected, p)) {
-            return Err(format!("the patch touches protected path {bad:?}: a variant may not edit its own evaluator"));
+        if let Some(bad) = touched_paths(patch)
+            .iter()
+            .find(|p| protected_hit(&ev.protected, p))
+        {
+            return Err(format!("the patch touches protected path {bad:?}: a variant may not edit its own evaluator").into());
         }
         match &variant.parent {
             None => {}
             Some(pid) => {
-                let parent = self.variants.get(pid).ok_or("parent is not in the lineage")?;
-                if parent.evaluator != variant.evaluator && ev.supersedes.as_deref() != Some(parent.evaluator.as_str()) {
+                let parent = self
+                    .variants
+                    .get(pid)
+                    .ok_or("parent is not in the lineage")?;
+                if parent.evaluator != variant.evaluator
+                    && ev.supersedes.as_deref() != Some(parent.evaluator.as_str())
+                {
                     return Err("evaluator changed without a custodian-signed rotation naming the parent's evaluator".into());
                 }
             }
@@ -369,19 +487,47 @@ impl Lineage {
 
     /// Gain of `id` over its parent with a one-sided lower confidence bound (`z` normal quantile).
     /// Both must be scored by the same evaluator; after a rotation, re-score the parent first.
-    pub fn improvement(&self, id: &str, z: f64) -> Result<Improvement, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "the value is bounded, or truncated on purpose; statistics only; counts are far below 2^52"
+    )]
+    pub fn improvement(&self, id: &str, z: f64) -> Result<Improvement, RecordError> {
         let v = self.variants.get(id).ok_or("unknown variant")?;
-        let p = self.variants.get(v.parent.as_deref().ok_or("a root has no parent to improve on")?).ok_or("parent missing")?;
+        let p = self
+            .variants
+            .get(
+                v.parent
+                    .as_deref()
+                    .ok_or("a root has no parent to improve on")?,
+            )
+            .ok_or("parent missing")?;
         if p.evaluator != v.evaluator {
             return Err("scores come from different evaluators and are not comparable".into());
         }
         let min = self.evaluators[&v.evaluator].min_runs.max(2) as usize;
         if v.scores.len() < min || p.scores.len() < min {
-            return Err(format!("need at least {min} runs on both sides, have {} and {}", v.scores.len(), p.scores.len()));
+            return Err(format!(
+                "need at least {min} runs on both sides, have {} and {}",
+                v.scores.len(),
+                p.scores.len()
+            )
+            .into());
         }
         let ((mc, vc), (mp, vp)) = (mean_var(&v.scores), mean_var(&p.scores));
         let se = (vc / v.scores.len() as f64 + vp / p.scores.len() as f64).sqrt();
-        Ok(Improvement { parent_mean: mp, mean: mc, delta: mc - mp, lower_bound: mc - mp - z * se, runs: (v.scores.len(), p.scores.len()), paired: false })
+        Ok(Improvement {
+            parent_mean: mp,
+            mean: mc,
+            delta: mc - mp,
+            lower_bound: mc - mp - z * se,
+            runs: (v.scores.len(), p.scores.len()),
+            paired: false,
+        })
     }
 
     /// Like [`Lineage::improvement`], but on per-item differences: score `i` of the variant is compared with score
@@ -391,28 +537,57 @@ impl Lineage {
     /// variant's author cannot, since an author could otherwise reorder scores to manufacture a gain. The bound is
     /// refused unless both sides have the same number of scores. If the scores are repeated runs of the same tasks
     /// rather than aligned items, use [`Lineage::improvement`].
-    pub fn improvement_paired(&self, id: &str, z: f64) -> Result<Improvement, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "the value is bounded, or truncated on purpose; statistics only; counts are far below 2^52"
+    )]
+    pub fn improvement_paired(&self, id: &str, z: f64) -> Result<Improvement, RecordError> {
         let v = self.variants.get(id).ok_or("unknown variant")?;
-        let p = self.variants.get(v.parent.as_deref().ok_or("a root has no parent to improve on")?).ok_or("parent missing")?;
+        let p = self
+            .variants
+            .get(
+                v.parent
+                    .as_deref()
+                    .ok_or("a root has no parent to improve on")?,
+            )
+            .ok_or("parent missing")?;
         if p.evaluator != v.evaluator {
             return Err("scores come from different evaluators and are not comparable".into());
         }
         if v.scores.len() != p.scores.len() {
-            return Err(format!("a paired comparison needs the same items on both sides, have {} and {} scores", v.scores.len(), p.scores.len()));
+            return Err(format!(
+                "a paired comparison needs the same items on both sides, have {} and {} scores",
+                v.scores.len(),
+                p.scores.len()
+            )
+            .into());
         }
         let min = self.evaluators[&v.evaluator].min_runs.max(2) as usize;
         if v.scores.len() < min {
-            return Err(format!("need at least {min} runs, have {}", v.scores.len()));
+            return Err(format!("need at least {min} runs, have {}", v.scores.len()).into());
         }
         let diffs: Vec<i64> = v.scores.iter().zip(&p.scores).map(|(a, b)| a - b).collect();
         let (delta, var) = mean_var(&diffs);
         let (mc, _) = mean_var(&v.scores);
         let (mp, _) = mean_var(&p.scores);
         let se = (var / diffs.len() as f64).sqrt();
-        Ok(Improvement { parent_mean: mp, mean: mc, delta, lower_bound: delta - z * se, runs: (v.scores.len(), p.scores.len()), paired: true })
+        Ok(Improvement {
+            parent_mean: mp,
+            mean: mc,
+            delta,
+            lower_bound: delta - z * se,
+            runs: (v.scores.len(), p.scores.len()),
+            paired: true,
+        })
     }
 
     /// Ancestors of `id`, nearest first, ending at the root.
+    #[must_use]
     pub fn ancestry(&self, id: &str) -> Vec<&Variant> {
         let mut out = Vec::new();
         let mut cur = self.variants.get(id);
@@ -424,20 +599,24 @@ impl Lineage {
     }
 
     /// Total cost on the path from the root to `id`: the budget spent reaching it.
+    #[must_use]
     pub fn cost_to(&self, id: &str) -> u64 {
         self.ancestry(id).iter().map(|v| v.cost).sum()
     }
 
     /// Total cost of everything recorded, including abandoned branches. This is what the holdout has paid
     /// in queries, so it bounds how much the lineage could have overfit it.
+    #[must_use]
     pub fn total_cost(&self) -> u64 {
         self.variants.values().map(|v| v.cost).sum()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.order.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
     }
@@ -460,7 +639,16 @@ mod tests {
 
     fn evaluator(version: u64, from: Option<&Evaluator>, holdout: [u8; 32]) -> Evaluator {
         Evaluator::issue(
-            EvaluatorSpec { name: "bench", version, harness: "aa", holdout, command: "make eval", protected: &["eval", "Makefile"], min_runs: 5, supersedes: from },
+            EvaluatorSpec {
+                name: "bench",
+                version,
+                harness: "aa",
+                holdout,
+                command: "make eval",
+                protected: &["eval", "Makefile"],
+                min_runs: 5,
+                supersedes: from,
+            },
             &custodian(),
         )
         .unwrap()
@@ -472,7 +660,17 @@ mod tests {
         let ev = evaluator(1, None, [1; 32]);
         let mut l = Lineage::new();
         l.add_evaluator(ev.clone());
-        let root = Variant::sign(VariantSpec { parent: None, evaluator: &ev, patch: "", scores: &[0.50, 0.52, 0.49, 0.51, 0.50, 0.48], cost: 10 }, &agent()).unwrap();
+        let root = Variant::sign(
+            VariantSpec {
+                parent: None,
+                evaluator: &ev,
+                patch: "",
+                scores: &[0.50, 0.52, 0.49, 0.51, 0.50, 0.48],
+                cost: 10,
+            },
+            &agent(),
+        )
+        .unwrap();
         l.add(root.clone(), "").unwrap();
         (l, ev, root)
     }
@@ -492,17 +690,27 @@ mod tests {
             assert!(h.open(n as u64).is_err());
         }
         let a = Holdout::new([7; 32], items(4)).unwrap().commit();
-        assert_ne!(a, Holdout::new([8; 32], items(4)).unwrap().commit(), "salt changes the root");
+        assert_ne!(
+            a,
+            Holdout::new([8; 32], items(4)).unwrap().commit(),
+            "salt changes the root"
+        );
         let h = Holdout::new([7; 32], items(4)).unwrap();
         let mut p = h.open(1).unwrap();
         p.index = 2;
-        assert!(!p.verify(&h.commit()), "a proof cannot be moved to another index");
+        assert!(
+            !p.verify(&h.commit()),
+            "a proof cannot be moved to another index"
+        );
     }
 
     #[test]
     fn evaluator_needs_a_trusted_custodian_and_rotation_names_its_predecessor() {
         let e1 = evaluator(1, None, [1; 32]);
-        assert!(Evaluator::open(&e1.text, &[agent().verifying_key().to_bytes()]).is_err(), "agent is not a custodian");
+        assert!(
+            Evaluator::open(&e1.text, &[agent().verifying_key().to_bytes()]).is_err(),
+            "agent is not a custodian"
+        );
         let e2 = evaluator(2, Some(&e1), [2; 32]);
         assert_eq!(e2.supersedes.as_deref(), Some(e1.id.as_str()));
         assert_ne!(e1.id, e2.id);
@@ -511,14 +719,37 @@ mod tests {
     #[test]
     fn real_gain_is_significant_and_noise_is_not() {
         let (mut l, ev, root) = lineage();
-        let good = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: PATCH, scores: &[0.60, 0.62, 0.59, 0.61, 0.60, 0.63], cost: 20 }, &agent()).unwrap();
-        let noisy = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: PATCH, scores: &[0.70, 0.30, 0.65, 0.35, 0.60, 0.45], cost: 20 }, &agent()).unwrap();
+        let good = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &[0.60, 0.62, 0.59, 0.61, 0.60, 0.63],
+                cost: 20,
+            },
+            &agent(),
+        )
+        .unwrap();
+        let noisy = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &[0.70, 0.30, 0.65, 0.35, 0.60, 0.45],
+                cost: 20,
+            },
+            &agent(),
+        )
+        .unwrap();
         l.add(good.clone(), PATCH).unwrap();
         l.add(noisy.clone(), PATCH).unwrap();
         let g = l.improvement(&good.id, Z_95).unwrap();
         assert!(g.significant() && g.delta > 0.09, "{g:?}");
         let n = l.improvement(&noisy.id, Z_95).unwrap();
-        assert!(n.delta > 0.0 && !n.significant(), "higher mean but not supported: {n:?}");
+        assert!(
+            n.delta > 0.0 && !n.significant(),
+            "higher mean but not supported: {n:?}"
+        );
         assert_eq!(l.total_cost(), 50);
         assert_eq!(l.cost_to(&good.id), 30);
         assert_eq!(l.ancestry(&good.id).len(), 2);
@@ -527,22 +758,70 @@ mod tests {
     #[test]
     fn a_variant_cannot_edit_its_own_evaluator() {
         let (mut l, ev, root) = lineage();
-        for bad in ["eval/grader.py", "Makefile", "./eval/data/x.json", "src/../eval/grader.py"] {
+        for bad in [
+            "eval/grader.py",
+            "Makefile",
+            "./eval/data/x.json",
+            "src/../eval/grader.py",
+        ] {
             let patch = format!("--- a/{bad}\n+++ b/{bad}\n@@ -1 +1 @@\n-x\n+y\n");
-            let v = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: &patch, scores: &[0.9; 6], cost: 1 }, &agent()).unwrap();
-            assert!(l.add(v, &patch).unwrap_err().contains("protected"), "{bad}");
+            let v = Variant::sign(
+                VariantSpec {
+                    parent: Some(&root),
+                    evaluator: &ev,
+                    patch: &patch,
+                    scores: &[0.9; 6],
+                    cost: 1,
+                },
+                &agent(),
+            )
+            .unwrap();
+            assert!(
+                l.add(v, &patch)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("protected"),
+                "{bad}"
+            );
         }
         let rename = "rename from src/a.py\nrename to eval/a.py\n";
-        let v = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: rename, scores: &[0.9; 6], cost: 1 }, &agent()).unwrap();
-        assert!(l.add(v, rename).is_err(), "rename into a protected directory");
+        let v = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &ev,
+                patch: rename,
+                scores: &[0.9; 6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        assert!(
+            l.add(v, rename).is_err(),
+            "rename into a protected directory"
+        );
     }
 
     #[test]
     fn host_computed_patch_must_match_what_was_signed() {
         let (mut l, ev, root) = lineage();
-        let v = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: PATCH, scores: &[0.6; 6], cost: 1 }, &agent()).unwrap();
+        let v = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &[0.6; 6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
         let evil = "--- a/eval/grader.py\n+++ b/eval/grader.py\n";
-        assert!(l.add(v.clone(), evil).unwrap_err().contains("not the one"));
+        assert!(l
+            .add(v.clone(), evil)
+            .unwrap_err()
+            .to_string()
+            .contains("not the one"));
         l.add(v.clone(), PATCH).unwrap();
         assert!(l.add(v, PATCH).is_err(), "no duplicates");
     }
@@ -552,68 +831,207 @@ mod tests {
         let (mut l, ev1, root) = lineage();
         let sneaky = evaluator(9, None, [9; 32]); // custodian-signed but does not supersede ev1
         l.add_evaluator(sneaky.clone());
-        let v = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &sneaky, patch: PATCH, scores: &[0.9; 6], cost: 1 }, &agent()).unwrap();
-        assert!(l.add(v, PATCH).unwrap_err().contains("rotation"));
+        let v = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &sneaky,
+                patch: PATCH,
+                scores: &[0.9; 6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        assert!(l
+            .add(v, PATCH)
+            .unwrap_err()
+            .to_string()
+            .contains("rotation"));
 
         let ev2 = evaluator(2, Some(&ev1), [2; 32]);
         l.add_evaluator(ev2.clone());
-        let v = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev2, patch: PATCH, scores: &[0.4; 6], cost: 1 }, &agent()).unwrap();
+        let v = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &ev2,
+                patch: PATCH,
+                scores: &[0.4; 6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
         l.add(v.clone(), PATCH).unwrap();
-        assert!(l.improvement(&v.id, Z_95).unwrap_err().contains("not comparable"));
+        assert!(l
+            .improvement(&v.id, Z_95)
+            .unwrap_err()
+            .to_string()
+            .contains("not comparable"));
     }
 
     #[test]
     fn too_few_runs_unknown_parents_and_untrusted_evaluators_are_rejected() {
         let (mut l, ev, root) = lineage();
-        let few = Variant::sign(VariantSpec { parent: Some(&root), evaluator: &ev, patch: PATCH, scores: &[0.9, 0.9], cost: 1 }, &agent()).unwrap();
-        assert!(l.add(few, PATCH).unwrap_err().contains("runs"));
-        let orphan = Variant::sign(VariantSpec { parent: Some(&Variant { id: "ff".into(), ..root.clone() }), evaluator: &ev, patch: PATCH, scores: &[0.9; 6], cost: 1 }, &agent()).unwrap();
-        assert!(l.add(orphan, PATCH).unwrap_err().contains("parent"));
+        let few = Variant::sign(
+            VariantSpec {
+                parent: Some(&root),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &[0.9, 0.9],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        assert!(l.add(few, PATCH).unwrap_err().to_string().contains("runs"));
+        let orphan = Variant::sign(
+            VariantSpec {
+                parent: Some(&Variant {
+                    id: "ff".into(),
+                    ..root.clone()
+                }),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &[0.9; 6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        assert!(l
+            .add(orphan, PATCH)
+            .unwrap_err()
+            .to_string()
+            .contains("parent"));
         let foreign = evaluator(1, None, [5; 32]);
-        let v = Variant::sign(VariantSpec { parent: None, evaluator: &foreign, patch: "", scores: &[0.9; 6], cost: 1 }, &agent()).unwrap();
-        assert!(l.add(v, "").unwrap_err().contains("trust"));
+        let v = Variant::sign(
+            VariantSpec {
+                parent: None,
+                evaluator: &foreign,
+                patch: "",
+                scores: &[0.9; 6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        assert!(l.add(v, "").unwrap_err().to_string().contains("trust"));
     }
 
     #[test]
     fn touched_paths_reads_diff_headers() {
         let p = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@\n--- /dev/null\n+++ b/new.txt\n";
-        assert_eq!(touched_paths(p), vec!["new.txt".to_string(), "x".to_string()]);
+        assert_eq!(
+            touched_paths(p),
+            vec!["new.txt".to_string(), "x".to_string()]
+        );
     }
 
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "statistics only; counts are far below 2^52"
+    )]
     #[test]
     fn paired_bound_sees_a_small_consistent_gain_that_the_unpaired_bound_cannot() {
         let (mut l, ev, _root) = lineage();
         // Eight items of very different difficulty; the child is better on every one by about 0.02.
         let base = [0.10, 0.90, 0.35, 0.75, 0.20, 0.60, 0.05, 0.95];
         let parent_scores: Vec<f64> = base.to_vec();
-        let child_scores: Vec<f64> = base.iter().enumerate().map(|(i, b)| b + 0.02 + 0.002 * i as f64).collect();
-        let parent = Variant::sign(VariantSpec { parent: None, evaluator: &ev, patch: "", scores: &parent_scores, cost: 8 }, &agent()).unwrap();
-        let child = Variant::sign(VariantSpec { parent: Some(&parent), evaluator: &ev, patch: PATCH, scores: &child_scores, cost: 8 }, &agent()).unwrap();
+        let child_scores: Vec<f64> = base
+            .iter()
+            .enumerate()
+            .map(|(i, b)| b + 0.02 + 0.002 * i as f64)
+            .collect();
+        let parent = Variant::sign(
+            VariantSpec {
+                parent: None,
+                evaluator: &ev,
+                patch: "",
+                scores: &parent_scores,
+                cost: 8,
+            },
+            &agent(),
+        )
+        .unwrap();
+        let child = Variant::sign(
+            VariantSpec {
+                parent: Some(&parent),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &child_scores,
+                cost: 8,
+            },
+            &agent(),
+        )
+        .unwrap();
         l.add(parent.clone(), "").unwrap();
         l.add(child.clone(), PATCH).unwrap();
         let unpaired = l.improvement(&child.id, Z_95).unwrap();
         let paired = l.improvement_paired(&child.id, Z_95).unwrap();
         assert!(!unpaired.paired && paired.paired);
-        assert!((unpaired.delta - paired.delta).abs() < 1e-9, "same gain either way");
-        assert!(!unpaired.significant(), "difficulty swamps a 0.02 gain: {unpaired:?}");
-        assert!(paired.significant() && paired.lower_bound > 0.015, "{paired:?}");
+        assert!(
+            (unpaired.delta - paired.delta).abs() < 1e-9,
+            "same gain either way"
+        );
+        assert!(
+            !unpaired.significant(),
+            "difficulty swamps a 0.02 gain: {unpaired:?}"
+        );
+        assert!(
+            paired.significant() && paired.lower_bound > 0.015,
+            "{paired:?}"
+        );
     }
 
     #[test]
     fn paired_bound_is_not_fooled_by_an_inconsistent_gain_and_refuses_misaligned_sides() {
         let (mut l, ev, _root) = lineage();
         let a = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
-        let parent = Variant::sign(VariantSpec { parent: None, evaluator: &ev, patch: "", scores: &a, cost: 1 }, &agent()).unwrap();
+        let parent = Variant::sign(
+            VariantSpec {
+                parent: None,
+                evaluator: &ev,
+                patch: "",
+                scores: &a,
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
         // Higher mean, but it wins big on some items and loses on others.
         let noisy = [0.9, 0.2, 0.95, 0.3, 0.9, 0.35];
-        let child = Variant::sign(VariantSpec { parent: Some(&parent), evaluator: &ev, patch: PATCH, scores: &noisy, cost: 1 }, &agent()).unwrap();
-        let shorter = Variant::sign(VariantSpec { parent: Some(&parent), evaluator: &ev, patch: PATCH, scores: &[0.6, 0.6, 0.6, 0.6, 0.6], cost: 1 }, &agent()).unwrap();
+        let child = Variant::sign(
+            VariantSpec {
+                parent: Some(&parent),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &noisy,
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        let shorter = Variant::sign(
+            VariantSpec {
+                parent: Some(&parent),
+                evaluator: &ev,
+                patch: PATCH,
+                scores: &[0.6, 0.6, 0.6, 0.6, 0.6],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
         l.add(parent, "").unwrap();
         l.add(child.clone(), PATCH).unwrap();
         l.add(shorter.clone(), PATCH).unwrap();
         let p = l.improvement_paired(&child.id, Z_95).unwrap();
         assert!(p.delta > 0.0 && !p.significant(), "{p:?}");
-        assert!(l.improvement_paired(&shorter.id, Z_95).unwrap_err().contains("same items"));
+        assert!(l
+            .improvement_paired(&shorter.id, Z_95)
+            .unwrap_err()
+            .to_string()
+            .contains("same items"));
         assert!(l.improvement_paired("nope", Z_95).is_err());
     }
 }

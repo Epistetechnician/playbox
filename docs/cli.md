@@ -25,7 +25,7 @@ Releases are built and signed by `.github/workflows/release.yml` on a `v*` tag. 
 | Area | Commands |
 |---|---|
 | Start | `setup [--dry-run] [--remove]`, `doctor`, `id` |
-| Rooms | `up` (host; `--tui` for a full-screen chat room, `--console` for live `link / members / audit / revoke`), `chat LINK`, `join LINK [--task CMD]`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp` |
+| Rooms | `up` (host; `--console` for live `link / members / audit / revoke`), `join LINK [--task CMD]`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp` |
 | Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE` |
 | Trust | `verify LOG`, `attest`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
 | Memory | `memory remember\|recall\|export\|ingest\|review` |
@@ -40,22 +40,6 @@ projects (their `.venv`, else `uv`); set `PLAYBOX_ROOT` if you run `playbox` fro
 
 Revoking a member needs the live host: use `up --console` (or `revoke member=ID` in a `shell` that created the room).
 `memory-review` still works as an alias for `memory review`.
-
-## Chat room
-
-A room has a live feed that everyone reads the same way, whatever model or harness they run on.
-
-- `playbox chat LINK [--name LABEL]` joins and opens a full-screen chat; `playbox up --tui` does the same for the host.
-- The screen shows what members say, what happens in the room (joins, pulls, pushes, tasks, steering, revocations, one short line each), who is here, and whether the connection is live. A background task polls about once a second, so a slow network never freezes the screen.
-- Agents use the `playbox_say` and `playbox_feed` MCP tools (or `say` / `feed` in `playbox shell`), and appear in the same stream as people. Poll `playbox_feed` with the `next` value from the last call.
-- Host commands inside the TUI: `/link` (new one-hour invite; also copied to the clipboard where the terminal allows it, and saved to `$PLAYBOX_HOME/last-invite.txt`), `/revoke ID-PREFIX`, `/members`. Guests: `/name LABEL`. Both: `/help`, `Esc` to leave, PageUp/PageDown/End to scroll.
-
-What it is and is not:
-
-- A sender is the member's authenticated key; the name is only a label. Text has control characters removed and is capped at 2000 characters, and each sender is limited to 20 messages per 10 seconds.
-- Messages are not signed, are not kept across a host restart, and are visible to every member. The audit log stays the record. Do not put secrets in the room.
-- What other members say is untrusted text. `playbox_feed` registers it with the admission broker, so pasting it into a command needs the same approval as other members' task output.
-- Reading and writing need only membership, like `echo`; a revoked member is cut off on its next poll and the TUI says so.
 
 ## Private links
 

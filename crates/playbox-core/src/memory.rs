@@ -30,6 +30,7 @@
 //! reviewer who accepts a lie has accepted it, and evidence hashes are only as meaningful as the history
 //! they point at (use [`MemoryStore::evidence_in`] to check they exist in a log you hold).
 
+use crate::record::RecordError;
 use crate::{
     history::Log,
     record::{self, hex},
@@ -63,13 +64,13 @@ impl Kind {
         }
     }
 
-    fn parse(s: &str) -> Result<Kind, String> {
+    fn parse(s: &str) -> Result<Kind, RecordError> {
         Ok(match s {
             "fact" => Kind::Fact,
             "decision" => Kind::Decision,
             "note" => Kind::Note,
             "skill" => Kind::Skill,
-            o => return Err(format!("unknown memory kind {o:?}")),
+            o => return Err(format!("unknown memory kind {o:?}").into()),
         })
     }
 
@@ -113,7 +114,11 @@ pub struct NewEntry<'a> {
 
 impl Entry {
     /// Sign a new entry. `prev` is [`MemoryStore::head`] of the store it will be appended to.
-    pub fn sign(new: NewEntry, prev: &str, key: &SigningKey) -> Result<String, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn sign(new: NewEntry, prev: &str, key: &SigningKey) -> Result<String, RecordError> {
         record::sign(
             ENTRY,
             &[
@@ -130,17 +135,20 @@ impl Entry {
         )
     }
 
-    fn open(text: &str) -> Result<Entry, String> {
+    fn open(text: &str) -> Result<Entry, RecordError> {
         let r = record::open(ENTRY, text)?;
         Ok(Entry {
             id: hex(&record::hash_parts("playbox.memory.id", &[text.as_bytes()])),
             author: r.signer,
             kind: Kind::parse(r.req("kind")?)?,
             topic: r.req("topic")?.to_string(),
-            body: String::from_utf8(record::unhex_vec(r.req("body")?)?).map_err(|_| "body is not utf-8")?,
+            body: String::from_utf8(record::unhex_vec(r.req("body")?)?)
+                .map_err(|_| "body is not utf-8")?,
             evidence: r.list("evidence")?.into_iter().map(String::from).collect(),
             derived_from: r.list("derived")?.into_iter().map(String::from).collect(),
-            supersedes: Some(r.req("supersedes")?).filter(|s| !s.is_empty()).map(String::from),
+            supersedes: Some(r.req("supersedes")?)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
             time_ms: r.num("time")?,
             prev: r.req("prev")?.to_string(),
         })
@@ -161,6 +169,7 @@ pub struct MemoryStore {
 }
 
 impl MemoryStore {
+    #[must_use]
     pub fn new(owners: &[[u8; 32]], extra_reviewers: &[[u8; 32]]) -> Self {
         let owners: BTreeSet<_> = owners.iter().copied().collect();
         let reviewers = owners.iter().chain(extra_reviewers).copied().collect();
@@ -177,16 +186,29 @@ impl MemoryStore {
     }
 
     /// Id of the last entry, to put in the next entry's `prev`.
+    #[must_use]
     pub fn head(&self) -> String {
-        self.entries.last().map(|e| e.id.clone()).unwrap_or_default()
+        self.entries
+            .last()
+            .map(|e| e.id.clone())
+            .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn log(&self) -> &[String] {
         &self.log
     }
 
     /// Rebuild a store from an event log, applying every event under the same rules.
-    pub fn replay(owners: &[[u8; 32]], reviewers: &[[u8; 32]], log: &[String]) -> Result<Self, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn replay(
+        owners: &[[u8; 32]],
+        reviewers: &[[u8; 32]],
+        log: &[String],
+    ) -> Result<Self, RecordError> {
         let mut s = Self::new(owners, reviewers);
         for (i, t) in log.iter().enumerate() {
             s.apply(t).map_err(|e| format!("event {i}: {e}"))?;
@@ -195,7 +217,11 @@ impl MemoryStore {
     }
 
     /// Apply one signed event (an entry, a review, a retraction or a revocation).
-    pub fn apply(&mut self, text: &str) -> Result<String, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn apply(&mut self, text: &str) -> Result<String, RecordError> {
         let domain = text.lines().next().unwrap_or("");
         let id = match domain {
             ENTRY => self.append(text)?,
@@ -208,7 +234,7 @@ impl MemoryStore {
         Ok(id)
     }
 
-    fn append(&mut self, text: &str) -> Result<String, String> {
+    fn append(&mut self, text: &str) -> Result<String, RecordError> {
         let e = Entry::open(text)?;
         if e.prev != self.head() {
             return Err("entry does not extend the store: prev is not the head".into());
@@ -217,13 +243,13 @@ impl MemoryStore {
             return Err("author is revoked".into());
         }
         if e.body.len() > MAX_BODY {
-            return Err(format!("body over {MAX_BODY} bytes"));
+            return Err(format!("body over {MAX_BODY} bytes").into());
         }
         if e.kind.needs_evidence() && e.evidence.is_empty() {
-            return Err(format!("a {} needs evidence", e.kind.as_str()));
+            return Err(format!("a {} needs evidence", e.kind.as_str()).into());
         }
         if let Some(missing) = e.derived_from.iter().find(|d| !self.by_id.contains_key(*d)) {
-            return Err(format!("derived from unknown entry {missing}"));
+            return Err(format!("derived from unknown entry {missing}").into());
         }
         if let Some(old) = &e.supersedes {
             let old = self.entry(old).ok_or("supersedes an unknown entry")?;
@@ -231,7 +257,11 @@ impl MemoryStore {
                 return Err("an entry may only supersede its own author's entries".into());
             }
         }
-        let status = if self.owners.contains(&e.author) { Status::Accepted } else { Status::Quarantined };
+        let status = if self.owners.contains(&e.author) {
+            Status::Accepted
+        } else {
+            Status::Quarantined
+        };
         let id = e.id.clone();
         self.by_id.insert(id.clone(), self.entries.len());
         self.status.insert(id.clone(), status);
@@ -239,50 +269,76 @@ impl MemoryStore {
         Ok(id)
     }
 
+    #[must_use]
     pub fn entry(&self, id: &str) -> Option<&Entry> {
         self.by_id.get(id).map(|i| &self.entries[*i])
     }
 
     /// The entry a logged event text created, if it was an entry (not a review or retraction).
+    #[must_use]
     pub fn entry_for_event(&self, text: &str) -> Option<&Entry> {
         let id = hex(&record::hash_parts("playbox.memory.id", &[text.as_bytes()]));
         self.entry(&id)
     }
 
+    #[must_use]
     pub fn status(&self, id: &str) -> Option<Status> {
         self.status.get(id).copied()
     }
 
     /// A reviewer's decision on one entry. Returns the signed event text to share.
-    pub fn review(&mut self, id: &str, accept: bool, reviewer: &SigningKey) -> Result<String, String> {
-        let text = record::sign(REVIEW, &[("entry", id.into()), ("verdict", if accept { "accept" } else { "reject" }.into())], reviewer)?;
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn review(
+        &mut self,
+        id: &str,
+        accept: bool,
+        reviewer: &SigningKey,
+    ) -> Result<String, RecordError> {
+        let text = record::sign(
+            REVIEW,
+            &[
+                ("entry", id.into()),
+                ("verdict", if accept { "accept" } else { "reject" }.into()),
+            ],
+            reviewer,
+        )?;
         self.apply(&text)?;
         Ok(text)
     }
 
-    fn apply_review(&mut self, text: &str) -> Result<String, String> {
+    fn apply_review(&mut self, text: &str) -> Result<String, RecordError> {
         let r = record::open(REVIEW, text)?;
         if !self.reviewers.contains(&r.signer) {
             return Err("reviewer is not pinned".into());
         }
         let id = r.req("entry")?.to_string();
-        let slot = self.status.get_mut(&id).ok_or("review of an unknown entry")?;
+        let slot = self
+            .status
+            .get_mut(&id)
+            .ok_or("review of an unknown entry")?;
         *slot = match r.req("verdict")? {
             "accept" => Status::Accepted,
             "reject" => Status::Rejected,
-            v => return Err(format!("unknown verdict {v:?}")),
+            v => return Err(format!("unknown verdict {v:?}").into()),
         };
         Ok(id)
     }
 
     /// Withdraw an entry. The author or a reviewer may.
-    pub fn retract(&mut self, id: &str, by: &SigningKey) -> Result<String, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn retract(&mut self, id: &str, by: &SigningKey) -> Result<String, RecordError> {
         let text = record::sign(RETRACT, &[("entry", id.into())], by)?;
         self.apply(&text)?;
         Ok(text)
     }
 
-    fn apply_retract(&mut self, text: &str) -> Result<String, String> {
+    fn apply_retract(&mut self, text: &str) -> Result<String, RecordError> {
         let r = record::open(RETRACT, text)?;
         let id = r.req("entry")?.to_string();
         let e = self.entry(&id).ok_or("retraction of an unknown entry")?;
@@ -294,7 +350,15 @@ impl MemoryStore {
     }
 
     /// Stop trusting an author, and everything derived from their entries. Returns the entries that lost trust.
-    pub fn revoke_author(&mut self, author: &[u8; 32], by: &SigningKey) -> Result<Vec<String>, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn revoke_author(
+        &mut self,
+        author: &[u8; 32],
+        by: &SigningKey,
+    ) -> Result<Vec<String>, RecordError> {
         let before: BTreeSet<String> = self.trusted_ids().into_iter().collect();
         let text = record::sign(REVOKE, &[("author", hex(author))], by)?;
         self.apply(&text)?;
@@ -302,7 +366,7 @@ impl MemoryStore {
         Ok(before.difference(&after).cloned().collect())
     }
 
-    fn apply_revoke(&mut self, text: &str) -> Result<String, String> {
+    fn apply_revoke(&mut self, text: &str) -> Result<String, RecordError> {
         let r = record::open(REVOKE, text)?;
         if !self.reviewers.contains(&r.signer) {
             return Err("only a reviewer may revoke an author".into());
@@ -316,58 +380,89 @@ impl MemoryStore {
     }
 
     /// Why `id` is not trusted, or `Ok` if it and everything it derives from is.
-    pub fn trusted(&self, id: &str) -> Result<(), String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn trusted(&self, id: &str) -> Result<(), RecordError> {
         let mut seen = BTreeSet::new();
         self.trusted_rec(id, &mut seen)
     }
 
-    fn trusted_rec(&self, id: &str, seen: &mut BTreeSet<String>) -> Result<(), String> {
+    fn trusted_rec(&self, id: &str, seen: &mut BTreeSet<String>) -> Result<(), RecordError> {
         if !seen.insert(id.to_string()) {
             return Ok(());
         }
-        let e = self.entry(id).ok_or_else(|| format!("unknown entry {id}"))?;
+        let e = self
+            .entry(id)
+            .ok_or_else(|| format!("unknown entry {id}"))?;
         let short = &id[..id.len().min(8)];
         match self.status[id] {
-            Status::Quarantined => return Err(format!("{short} is quarantined: no reviewer has accepted it")),
-            Status::Rejected => return Err(format!("{short} was rejected")),
+            Status::Quarantined => {
+                return Err(format!("{short} is quarantined: no reviewer has accepted it").into())
+            }
+            Status::Rejected => return Err(format!("{short} was rejected").into()),
             Status::Accepted => {}
         }
         if self.retracted.contains(id) {
-            return Err(format!("{short} was retracted"));
+            return Err(format!("{short} was retracted").into());
         }
         if self.revoked.contains(&e.author) {
-            return Err(format!("{short}: its author is revoked"));
+            return Err(format!("{short}: its author is revoked").into());
         }
         for d in &e.derived_from {
-            self.trusted_rec(d, seen).map_err(|why| format!("{short} derives from a distrusted entry: {why}"))?;
+            self.trusted_rec(d, seen)
+                .map_err(|why| format!("{short} derives from a distrusted entry: {why}"))?;
         }
         Ok(())
     }
 
     fn trusted_ids(&self) -> Vec<String> {
-        self.entries.iter().filter(|e| self.trusted(&e.id).is_ok()).map(|e| e.id.clone()).collect()
+        self.entries
+            .iter()
+            .filter(|e| self.trusted(&e.id).is_ok())
+            .map(|e| e.id.clone())
+            .collect()
     }
 
     fn superseded(&self, id: &str) -> bool {
-        self.entries.iter().any(|n| n.supersedes.as_deref() == Some(id) && self.trusted(&n.id).is_ok())
+        self.entries
+            .iter()
+            .any(|n| n.supersedes.as_deref() == Some(id) && self.trusted(&n.id).is_ok())
     }
 
     fn live(&self) -> impl Iterator<Item = &Entry> {
-        self.entries.iter().filter(|e| self.trusted(&e.id).is_ok() && !self.superseded(&e.id))
+        self.entries
+            .iter()
+            .filter(|e| self.trusted(&e.id).is_ok() && !self.superseded(&e.id))
     }
 
     /// Trusted, current entries of `kind` (or all kinds), labelled in `tracker` so that text an agent
     /// later copies into an action is traced back to its memory entry.
     pub fn recall(&self, kind: Option<Kind>, tracker: &mut TaintTracker) -> Vec<&Entry> {
-        let out: Vec<&Entry> = self.live().filter(|e| kind.is_none_or(|k| k == e.kind)).collect();
+        let out: Vec<&Entry> = self
+            .live()
+            .filter(|e| kind.is_none_or(|k| k == e.kind))
+            .collect();
         for e in &out {
-            let trust = if self.owners.contains(&e.author) { Trust::Trusted } else { Trust::Reviewed };
-            tracker.register(&e.body, &Source { trust, origin: format!("memory:{}", &e.id[..8]) });
+            let trust = if self.owners.contains(&e.author) {
+                Trust::Trusted
+            } else {
+                Trust::Reviewed
+            };
+            tracker.register(
+                &e.body,
+                &Source {
+                    trust,
+                    origin: format!("memory:{}", &e.id[..8]),
+                },
+            );
         }
         out
     }
 
     /// Pairs of live entries on the same non-empty topic with different bodies, for a person to settle.
+    #[must_use]
     pub fn conflicts(&self) -> Vec<(String, String)> {
         let live: Vec<&Entry> = self.live().filter(|e| !e.topic.is_empty()).collect();
         let mut out = Vec::new();
@@ -382,6 +477,7 @@ impl MemoryStore {
     }
 
     /// Every entry `id` rests on, nearest first, with its own evidence hashes.
+    #[must_use]
     pub fn provenance(&self, id: &str) -> Vec<(String, Vec<String>)> {
         let (mut out, mut stack, mut seen) = (Vec::new(), vec![id.to_string()], BTreeSet::new());
         while let Some(cur) = stack.pop() {
@@ -397,9 +493,22 @@ impl MemoryStore {
     }
 
     /// Evidence hashes of `id` that are not entry ids or payload hashes in `history`.
+    #[must_use]
     pub fn evidence_in(&self, id: &str, history: &Log) -> Vec<String> {
-        let known: BTreeSet<String> = history.entries.iter().flat_map(|e| [hex(&e.id()), hex(&e.payload_hash)]).collect();
-        self.entry(id).map(|e| e.evidence.iter().filter(|h| !known.contains(*h)).cloned().collect()).unwrap_or_default()
+        let known: BTreeSet<String> = history
+            .entries
+            .iter()
+            .flat_map(|e| [hex(&e.id()), hex(&e.payload_hash)])
+            .collect();
+        self.entry(id)
+            .map(|e| {
+                e.evidence
+                    .iter()
+                    .filter(|h| !known.contains(*h))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -423,8 +532,27 @@ mod tests {
         MemoryStore::new(&[pk(OWNER)], &[])
     }
 
-    fn put(s: &mut MemoryStore, who: u8, kind: Kind, topic: &str, body: &str, derived: &[&str]) -> Result<String, String> {
-        let t = Entry::sign(NewEntry { kind, topic, body, evidence: &[E], derived_from: derived, supersedes: None, time_ms: 1 }, &s.head(), &k(who))?;
+    fn put(
+        s: &mut MemoryStore,
+        who: u8,
+        kind: Kind,
+        topic: &str,
+        body: &str,
+        derived: &[&str],
+    ) -> Result<String, RecordError> {
+        let t = Entry::sign(
+            NewEntry {
+                kind,
+                topic,
+                body,
+                evidence: &[E],
+                derived_from: derived,
+                supersedes: None,
+                time_ms: 1,
+            },
+            &s.head(),
+            &k(who),
+        )?;
         s.apply(&t)
     }
 
@@ -436,18 +564,48 @@ mod tests {
         assert_eq!(s.status(&own), Some(Status::Accepted));
         assert_eq!(s.status(&guest), Some(Status::Quarantined));
         let mut t = TaintTracker::default();
-        assert_eq!(s.recall(None, &mut t).len(), 1, "quarantined text is not recalled");
-        assert!(s.trusted(&guest).unwrap_err().contains("quarantined"));
+        assert_eq!(
+            s.recall(None, &mut t).len(),
+            1,
+            "quarantined text is not recalled"
+        );
+        assert!(s
+            .trusted(&guest)
+            .unwrap_err()
+            .to_string()
+            .contains("quarantined"));
         s.review(&guest, true, &k(OWNER)).unwrap();
         assert_eq!(s.recall(None, &mut t).len(), 2);
-        assert!(s.review(&guest, false, &k(GUEST)).is_err(), "a guest cannot review");
+        assert!(
+            s.review(&guest, false, &k(GUEST)).is_err(),
+            "a guest cannot review"
+        );
     }
 
     #[test]
     fn facts_and_decisions_need_evidence_but_notes_do_not() {
         let mut s = store();
-        let bare = |kind| Entry::sign(NewEntry { kind, topic: "", body: "x", evidence: &[], derived_from: &[], supersedes: None, time_ms: 1 }, "", &k(OWNER)).unwrap();
-        assert!(s.apply(&bare(Kind::Fact)).unwrap_err().contains("evidence"));
+        let bare = |kind| {
+            Entry::sign(
+                NewEntry {
+                    kind,
+                    topic: "",
+                    body: "x",
+                    evidence: &[],
+                    derived_from: &[],
+                    supersedes: None,
+                    time_ms: 1,
+                },
+                "",
+                &k(OWNER),
+            )
+            .unwrap()
+        };
+        assert!(s
+            .apply(&bare(Kind::Fact))
+            .unwrap_err()
+            .to_string()
+            .contains("evidence"));
         assert!(s.apply(&bare(Kind::Decision)).is_err());
         s.apply(&bare(Kind::Note)).unwrap();
     }
@@ -455,30 +613,95 @@ mod tests {
     #[test]
     fn the_chain_rejects_forks_and_stale_writes() {
         let mut s = store();
-        let first = Entry::sign(NewEntry { kind: Kind::Note, topic: "", body: "a", evidence: &[], derived_from: &[], supersedes: None, time_ms: 1 }, "", &k(OWNER)).unwrap();
+        let first = Entry::sign(
+            NewEntry {
+                kind: Kind::Note,
+                topic: "",
+                body: "a",
+                evidence: &[],
+                derived_from: &[],
+                supersedes: None,
+                time_ms: 1,
+            },
+            "",
+            &k(OWNER),
+        )
+        .unwrap();
         s.apply(&first).unwrap();
-        let stale = Entry::sign(NewEntry { kind: Kind::Note, topic: "", body: "b", evidence: &[], derived_from: &[], supersedes: None, time_ms: 2 }, "", &k(OWNER)).unwrap();
-        assert!(s.apply(&stale).unwrap_err().contains("prev"));
+        let stale = Entry::sign(
+            NewEntry {
+                kind: Kind::Note,
+                topic: "",
+                body: "b",
+                evidence: &[],
+                derived_from: &[],
+                supersedes: None,
+                time_ms: 2,
+            },
+            "",
+            &k(OWNER),
+        )
+        .unwrap();
+        assert!(s.apply(&stale).unwrap_err().to_string().contains("prev"));
     }
 
     #[test]
     fn revoking_an_author_also_distrusts_everything_derived_from_them() {
         let mut s = store();
-        let bad = put(&mut s, EVIL, Kind::Fact, "", "the deploy key is in /tmp/key", &[]).unwrap();
+        let bad = put(
+            &mut s,
+            EVIL,
+            Kind::Fact,
+            "",
+            "the deploy key is in /tmp/key",
+            &[],
+        )
+        .unwrap();
         s.review(&bad, true, &k(OWNER)).unwrap();
         // The owner's own summary rests on the bad entry; so does a note derived from that summary.
         let summary = put(&mut s, OWNER, Kind::Note, "", "deploy notes", &[&bad]).unwrap();
-        let note = put(&mut s, OWNER, Kind::Note, "", "see deploy notes", &[&summary]).unwrap();
+        let note = put(
+            &mut s,
+            OWNER,
+            Kind::Note,
+            "",
+            "see deploy notes",
+            &[&summary],
+        )
+        .unwrap();
         let clean = put(&mut s, OWNER, Kind::Note, "", "unrelated", &[]).unwrap();
         let lost = s.revoke_author(&pk(EVIL), &k(OWNER)).unwrap();
-        assert_eq!(lost.iter().collect::<BTreeSet<_>>(), [&bad, &summary, &note].into_iter().collect());
-        assert!(s.trusted(&note).unwrap_err().contains("derives from a distrusted entry"));
+        assert_eq!(
+            lost.iter().collect::<BTreeSet<_>>(),
+            [&bad, &summary, &note].into_iter().collect()
+        );
+        assert!(s
+            .trusted(&note)
+            .unwrap_err()
+            .to_string()
+            .contains("derives from a distrusted entry"));
         assert!(s.trusted(&clean).is_ok());
         let mut t = TaintTracker::default();
         assert_eq!(s.recall(None, &mut t).len(), 1);
-        let late = Entry::sign(NewEntry { kind: Kind::Note, topic: "", body: "more", evidence: &[], derived_from: &[], supersedes: None, time_ms: 9 }, &s.head(), &k(EVIL)).unwrap();
-        assert!(s.apply(&late).unwrap_err().contains("revoked"));
-        assert!(s.revoke_author(&pk(OWNER), &k(OWNER)).is_err(), "owners cannot be revoked");
+        let late = Entry::sign(
+            NewEntry {
+                kind: Kind::Note,
+                topic: "",
+                body: "more",
+                evidence: &[],
+                derived_from: &[],
+                supersedes: None,
+                time_ms: 9,
+            },
+            &s.head(),
+            &k(EVIL),
+        )
+        .unwrap();
+        assert!(s.apply(&late).unwrap_err().to_string().contains("revoked"));
+        assert!(
+            s.revoke_author(&pk(OWNER), &k(OWNER)).is_err(),
+            "owners cannot be revoked"
+        );
     }
 
     #[test]
@@ -488,12 +711,15 @@ mod tests {
         s.review(&a, true, &k(OWNER)).unwrap();
         let b = put(&mut s, OWNER, Kind::Note, "", "b", &[&a]).unwrap();
         assert!(s.trusted(&b).is_ok());
-        assert!(s.retract(&a, &k(EVIL)).is_err(), "a stranger cannot retract");
+        assert!(
+            s.retract(&a, &k(EVIL)).is_err(),
+            "a stranger cannot retract"
+        );
         s.retract(&a, &k(GUEST)).unwrap();
         assert!(s.trusted(&b).is_err());
         let c = put(&mut s, GUEST, Kind::Note, "", "c", &[]).unwrap();
         s.review(&c, false, &k(OWNER)).unwrap();
-        assert!(s.trusted(&c).unwrap_err().contains("rejected"));
+        assert!(s.trusted(&c).unwrap_err().to_string().contains("rejected"));
     }
 
     #[test]
@@ -503,11 +729,44 @@ mod tests {
         let g = put(&mut s, GUEST, Kind::Fact, "port", "9090", &[]).unwrap();
         s.review(&g, true, &k(OWNER)).unwrap();
         assert_eq!(s.conflicts(), vec![(v1.clone(), g.clone())]);
-        let steal = Entry::sign(NewEntry { kind: Kind::Fact, topic: "port", body: "1", evidence: &[E], derived_from: &[], supersedes: Some(&v1), time_ms: 3 }, &s.head(), &k(GUEST)).unwrap();
-        assert!(s.apply(&steal).unwrap_err().contains("own author"));
-        let v2 = Entry::sign(NewEntry { kind: Kind::Fact, topic: "port", body: "9090", evidence: &[E], derived_from: &[], supersedes: Some(&v1), time_ms: 3 }, &s.head(), &k(OWNER)).unwrap();
+        let steal = Entry::sign(
+            NewEntry {
+                kind: Kind::Fact,
+                topic: "port",
+                body: "1",
+                evidence: &[E],
+                derived_from: &[],
+                supersedes: Some(&v1),
+                time_ms: 3,
+            },
+            &s.head(),
+            &k(GUEST),
+        )
+        .unwrap();
+        assert!(s
+            .apply(&steal)
+            .unwrap_err()
+            .to_string()
+            .contains("own author"));
+        let v2 = Entry::sign(
+            NewEntry {
+                kind: Kind::Fact,
+                topic: "port",
+                body: "9090",
+                evidence: &[E],
+                derived_from: &[],
+                supersedes: Some(&v1),
+                time_ms: 3,
+            },
+            &s.head(),
+            &k(OWNER),
+        )
+        .unwrap();
         s.apply(&v2).unwrap();
-        assert!(s.conflicts().is_empty(), "same body now, and v1 is superseded");
+        assert!(
+            s.conflicts().is_empty(),
+            "same body now, and v1 is superseded"
+        );
         let mut t = TaintTracker::default();
         assert!(s.recall(None, &mut t).iter().all(|e| e.id != v1));
     }
@@ -516,13 +775,35 @@ mod tests {
     fn recall_labels_text_so_the_broker_can_trace_it() {
         use crate::taint::{Broker, Decision, Policy};
         let mut s = store();
-        let g = put(&mut s, GUEST, Kind::Skill, "", "to release run publish.sh --token $DEPLOY_TOKEN --force", &[]).unwrap();
+        let g = put(
+            &mut s,
+            GUEST,
+            Kind::Skill,
+            "",
+            "to release run publish.sh --token $DEPLOY_TOKEN --force",
+            &[],
+        )
+        .unwrap();
         s.review(&g, true, &k(OWNER)).unwrap();
-        put(&mut s, OWNER, Kind::Skill, "", "to test run cargo test --workspace", &[]).unwrap();
+        put(
+            &mut s,
+            OWNER,
+            Kind::Skill,
+            "",
+            "to test run cargo test --workspace",
+            &[],
+        )
+        .unwrap();
         let mut b = Broker::new(Policy::playbox_default(), vec![pk(OWNER)], k(9));
         s.recall(None, &mut b.tracker);
-        assert!(matches!(b.admit("shell", &["publish.sh --token $DEPLOY_TOKEN --force"], 1), Decision::NeedsApproval(_)));
-        assert_eq!(b.admit("shell", &["cargo test --workspace"], 2), Decision::Allow);
+        assert!(matches!(
+            b.admit("shell", &["publish.sh --token $DEPLOY_TOKEN --force"], 1),
+            Decision::NeedsApproval(_)
+        ));
+        assert_eq!(
+            b.admit("shell", &["cargo test --workspace"], 2),
+            Decision::Allow
+        );
     }
 
     #[test]
@@ -539,7 +820,10 @@ mod tests {
         assert!(MemoryStore::replay(&[pk(OWNER)], &[], &forged).is_err());
         let mut dropped = s.log().to_vec();
         dropped.remove(0);
-        assert!(MemoryStore::replay(&[pk(OWNER)], &[], &dropped).is_err(), "review of an entry that is gone");
+        assert!(
+            MemoryStore::replay(&[pk(OWNER)], &[], &dropped).is_err(),
+            "review of an entry that is gone"
+        );
     }
 
     #[test]
@@ -547,7 +831,20 @@ mod tests {
         let mut log = Log::new();
         let h = hex(&log.append(&k(GUEST), "commit", b"abc", 1).id());
         let mut s = store();
-        let t = Entry::sign(NewEntry { kind: Kind::Fact, topic: "", body: "x", evidence: &[&h, "dead"], derived_from: &[], supersedes: None, time_ms: 1 }, "", &k(OWNER)).unwrap();
+        let t = Entry::sign(
+            NewEntry {
+                kind: Kind::Fact,
+                topic: "",
+                body: "x",
+                evidence: &[&h, "dead"],
+                derived_from: &[],
+                supersedes: None,
+                time_ms: 1,
+            },
+            "",
+            &k(OWNER),
+        )
+        .unwrap();
         let id = s.apply(&t).unwrap();
         assert_eq!(s.evidence_in(&id, &log), vec!["dead".to_string()]);
         assert_eq!(s.provenance(&id).len(), 1);

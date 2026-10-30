@@ -6,12 +6,21 @@ use std::{path::PathBuf, process::Command, time::Instant};
 /// Whether Docker answers within a few seconds. A hung daemon would otherwise stall every test that wants it for a minute.
 fn docker_answers() -> bool {
     use std::process::Stdio;
-    let Ok(mut child) = Command::new("docker").arg("info").stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    let Ok(mut child) = Command::new("docker")
+        .arg("info")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
     let started = std::time::Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return status.success(),
-            Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
             _ => {
                 let _ = child.kill();
                 return false;
@@ -19,7 +28,6 @@ fn docker_answers() -> bool {
         }
     }
 }
-
 
 fn ready() -> Option<KrunRunner> {
     if find_helper().is_err() {
@@ -41,14 +49,24 @@ fn ws(name: &str) -> PathBuf {
 }
 
 fn sh(script: &str) -> TaskSpec {
-    TaskSpec { timeout_secs: 60, mem_mib: 256, ..TaskSpec::new(&["sh", "-c", script]) }
+    TaskSpec {
+        timeout_secs: 60,
+        mem_mib: 256,
+        ..TaskSpec::new(&["sh", "-c", script])
+    }
 }
 
 #[tokio::test]
 async fn runs_a_command_in_its_own_kernel_with_separate_streams_and_exit_code() {
     let Some(r) = ready() else { return };
     let w = ws("basic");
-    let out = r.run(&sh("echo out; echo err >&2; uname -s; cat /proc/version | cut -c1-30; exit 7"), &w).await.unwrap();
+    let out = r
+        .run(
+            &sh("echo out; echo err >&2; uname -s; cat /proc/version | cut -c1-30; exit 7"),
+            &w,
+        )
+        .await
+        .unwrap();
     assert_eq!(out.exit_code, Some(7), "{out:?}");
     assert!(out.stdout.starts_with("out\nLinux\n"), "{out:?}");
     assert_eq!(out.stderr, "err\n");
@@ -64,16 +82,28 @@ async fn the_workspace_is_shared_and_the_rest_of_the_filesystem_is_thrown_away()
     let w = ws("fs");
     std::fs::write(w.join("in.txt"), "from host\n").unwrap();
     let out = r
-        .run(&sh("cat in.txt; echo from-guest > out.txt; echo scratch > /root/leftover; pwd"), &w)
+        .run(
+            &sh("cat in.txt; echo from-guest > out.txt; echo scratch > /root/leftover; pwd"),
+            &w,
+        )
         .await
         .unwrap();
     assert_eq!(out.exit_code, Some(0), "{out:?}");
     assert_eq!(out.stdout, "from host\n/workspace\n");
-    assert_eq!(std::fs::read_to_string(w.join("out.txt")).unwrap(), "from-guest\n");
+    assert_eq!(
+        std::fs::read_to_string(w.join("out.txt")).unwrap(),
+        "from-guest\n"
+    );
 
     // A second task starts from a clean root: the first one's file outside /workspace is gone.
-    let out = r.run(&sh("ls /root/leftover 2>&1; echo done"), &w).await.unwrap();
-    assert!(out.stdout.contains("No such file") && out.stdout.ends_with("done\n"), "{out:?}");
+    let out = r
+        .run(&sh("ls /root/leftover 2>&1; echo done"), &w)
+        .await
+        .unwrap();
+    assert!(
+        out.stdout.contains("No such file") && out.stdout.ends_with("done\n"),
+        "{out:?}"
+    );
 }
 
 #[tokio::test]
@@ -81,8 +111,17 @@ async fn there_is_no_network_unless_asked_for() {
     let Some(r) = ready() else { return };
     let w = ws("net");
     let started = Instant::now();
-    let out = r.run(&sh("wget -q -T 4 -O /dev/null http://1.1.1.1 2>&1; echo rc=$?"), &w).await.unwrap();
-    assert!(out.stdout.contains("rc=1") || out.stdout.contains("unreachable"), "{out:?}");
+    let out = r
+        .run(
+            &sh("wget -q -T 4 -O /dev/null http://1.1.1.1 2>&1; echo rc=$?"),
+            &w,
+        )
+        .await
+        .unwrap();
+    assert!(
+        out.stdout.contains("rc=1") || out.stdout.contains("unreachable"),
+        "{out:?}"
+    );
     assert!(!out.stdout.contains("rc=0"), "{out:?}");
     assert!(started.elapsed().as_secs() < 30);
 }
@@ -91,7 +130,10 @@ async fn there_is_no_network_unless_asked_for() {
 async fn timeouts_kill_the_vm_and_report_it() {
     let Some(r) = ready() else { return };
     let w = ws("timeout");
-    let spec = TaskSpec { timeout_secs: 3, ..sh("sleep 60") };
+    let spec = TaskSpec {
+        timeout_secs: 3,
+        ..sh("sleep 60")
+    };
     let started = Instant::now();
     let out = r.run(&spec, &w).await.unwrap();
     assert!(out.timed_out, "{out:?}");
@@ -102,10 +144,22 @@ async fn timeouts_kill_the_vm_and_report_it() {
 async fn images_outside_the_policy_are_refused_before_anything_boots() {
     let Some(r) = ready() else { return };
     let w = ws("policy");
-    let spec = TaskSpec { image: "ubuntu:latest".into(), ..sh("true") };
+    let spec = TaskSpec {
+        image: "ubuntu:latest".into(),
+        ..sh("true")
+    };
     let e = r.run(&spec, &w).await.unwrap_err();
     assert!(format!("{e:#}").contains("not allowed"), "{e:#}");
-    let e = r.run(&TaskSpec { image: "--privileged".into(), ..sh("true") }, &w).await.unwrap_err();
+    let e = r
+        .run(
+            &TaskSpec {
+                image: "--privileged".into(),
+                ..sh("true")
+            },
+            &w,
+        )
+        .await
+        .unwrap_err();
     assert!(format!("{e:#}").contains("invalid image"), "{e:#}");
 }
 
@@ -119,19 +173,45 @@ async fn preflight_boots_a_real_vm() {
 async fn a_missing_command_is_a_clean_failure_not_a_hang() {
     let Some(r) = ready() else { return };
     let w = ws("nocmd");
-    let out = r.run(&TaskSpec { timeout_secs: 30, mem_mib: 256, ..TaskSpec::new(&["/no/such/program"]) }, &w).await.unwrap();
+    let out = r
+        .run(
+            &TaskSpec {
+                timeout_secs: 30,
+                mem_mib: 256,
+                ..TaskSpec::new(&["/no/such/program"])
+            },
+            &w,
+        )
+        .await
+        .unwrap();
     assert!(!out.timed_out && out.exit_code != Some(0), "{out:?}");
 }
 
 #[tokio::test]
 async fn a_guest_filling_its_own_root_is_stopped() {
     let Some(r) = ready() else { return };
-    let r = r.with_quota(playbox_runner::Quota { max_bytes: 30 << 20, max_entries: 10_000 });
+    let r = r.with_quota(playbox_runner::Quota {
+        max_bytes: 30 << 20,
+        max_entries: 10_000,
+    });
     let w = ws("rootquota");
     // /root is on the guest's private root, which is a directory on the host's disk.
     let script = "i=0; while [ $i -lt 100 ]; do dd if=/dev/zero of=/root/f$i bs=1048576 count=10 2>/dev/null; sleep 0.2; i=$((i+1)); done; echo finished";
     let started = Instant::now();
-    let e = r.run(&TaskSpec { timeout_secs: 60, ..sh(script) }, &w).await.unwrap_err();
+    let e = r
+        .run(
+            &TaskSpec {
+                timeout_secs: 60,
+                ..sh(script)
+            },
+            &w,
+        )
+        .await
+        .unwrap_err();
     assert!(format!("{e:#}").contains("scratch quota"), "{e:#}");
-    assert!(started.elapsed().as_secs() < 25, "took {:?}", started.elapsed());
+    assert!(
+        started.elapsed().as_secs() < 25,
+        "took {:?}",
+        started.elapsed()
+    );
 }

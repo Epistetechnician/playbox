@@ -50,6 +50,8 @@ pub struct Server {
     /// Which of `extra` serves calls; `None` means the primary in `client`.
     active: Option<usize>,
     member_id: Option<String>,
+    /// The arguments of `playbox_join`, kept so a reconnected host is vetted the way the first connection was.
+    join_args: Option<Value>,
     workspace: Option<PathBuf>,
     log_path: PathBuf,
     key: SigningKey,
@@ -92,6 +94,7 @@ pub fn tool_list() -> Value {
                 "uses": {"type": "integer", "description": "How many members the link admits. Default 1."},
                 "for_guest": {"type": "string", "description": "Make the link work only for this guest: their id (64 hex characters, from `playbox id` or the `guest_id` in their playbox_status). Anyone else who finds the link is refused and cannot use up the invite."},
                 "share_ips": {"type": "boolean", "description": "Put this machine's IP addresses in the link. Off by default on iroh and relay transports, so a shared link does not reveal where you are; guests reach you through the relay. Local links always carry them."},
+                "idle_patience_secs": {"type": "integer", "description": "How long a member's connection may sit silent before this host closes it. Default 900 (15 minutes). Members' sidecars reopen closed connections on their next call."},
                 "grant_ttl_secs": {"type": "integer", "description": "How long members' grants last. Default 3600. Long experiments need longer; a grant that expires mid-run is refused, correctly."},
                 "steer_store": {"type": "string", "description": "Host language-model steering (docs/steering.md): a directory holding `weights/<manifest hash>/` model directories (and optional `guards/<hash>/`). Needs runtime=docker and the engine image built from steer/Dockerfile. Members then use playbox_steer."},
                 "steer_image": {"type": "string", "description": "The engine image. Default playbox-steer:0.1."},
@@ -327,7 +330,7 @@ impl Server {
             }
             Err(_) => MemoryStore::new(&[me], &reviewers),
         };
-        Ok(Self { pending: None, memory, memory_path, host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, workspace: None, log_path, key, guard, enforce })
+        Ok(Self { pending: None, memory, memory_path, host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, join_args: None, workspace: None, log_path, key, guard, enforce })
     }
 
     /// The approval the last call stopped on, if any. Cleared by reading it.
@@ -417,6 +420,7 @@ impl Server {
     /// Run one tool by name, as `tools/call` does. The CLI's `shell` and `call` commands use it directly.
     pub async fn call(&mut self, name: &str, args: &Value) -> Value {
         self.record("tool_call", json!({"tool": name, "args": args}).to_string().as_bytes());
+        self.refresh_connections().await;
         let out = match name {
             "playbox_create" => self.create(args).await,
             "playbox_join" => self.join(args).await,
@@ -453,6 +457,42 @@ impl Server {
         };
         self.record("tool_result", result.to_string().as_bytes());
         result
+    }
+
+    /// Reopen any host connection the host has closed (it closes authenticated ones that sat idle for 15
+    /// minutes), as the same member with the same grant, after vetting the host again the way joining did. If
+    /// the host cannot be reached or no longer passes, the old client stays and the next call reports the
+    /// failure itself.
+    async fn refresh_connections(&mut self) {
+        let args = self.join_args.clone().unwrap_or(Value::Null);
+        let mut slots: Vec<Option<usize>> = Vec::new();
+        if self.client.as_ref().is_some_and(Client::is_closed) {
+            slots.push(None);
+        }
+        slots.extend(self.extra.iter().enumerate().filter(|(_, c)| c.is_closed()).map(|(i, _)| Some(i)));
+        for slot in slots {
+            let old = match slot {
+                None => self.client.as_ref(),
+                Some(i) => self.extra.get(i),
+            };
+            let Some(old) = old else { continue };
+            let fresh = match old.reconnect().await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("playbox-mcp: could not reopen the host connection: {e:#}");
+                    continue;
+                }
+            };
+            if let Err(e) = self.vet_host(&fresh, &args, "not reconnecting").await {
+                eprintln!("playbox-mcp: the host no longer passes the checks made at join: {e:#}");
+                continue;
+            }
+            match slot {
+                None => self.client = Some(fresh),
+                Some(i) => self.extra[i] = fresh,
+            }
+            self.record("reconnected", b"host connection reopened after it was closed");
+        }
     }
 
     /// The host calls go to: the primary, or the replica chosen with `playbox_use_host`.
@@ -588,6 +628,7 @@ impl Server {
                 min_isolation,
                 limits,
                 steer,
+                authenticated_patience: a.get("idle_patience_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs).unwrap_or(HostConfig::default().authenticated_patience),
                 grant_ttl: a.get("grant_ttl_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs),
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
                 ..Default::default()
@@ -692,6 +733,7 @@ impl Server {
         };
         playbox_git::init(&ws, "main").await.context("preparing the workspace")?;
         self.client = Some(client);
+        self.join_args = Some(a.clone());
         self.member_id = Some(member.clone());
         self.workspace = Some(ws.clone());
         Ok(json!({
@@ -1058,7 +1100,7 @@ impl Server {
         for (i, ev) in Self::strings(a, "events").iter().enumerate() {
             match self.memory.apply(ev) {
                 Ok(id) => applied.push(json!({"event": i, "entry": id, "status": self.memory.status(&id).map(|s| format!("{s:?}"))})),
-                Err(e) => refused.push(json!({"event": i, "why": e})),
+                Err(e) => refused.push(json!({"event": i, "why": e.to_string()})),
             }
         }
         self.save_memory()?;
@@ -1095,7 +1137,7 @@ impl Server {
             Some(m) => {
                 let min = Level::parse(m).map_err(|e| anyhow!(e))?;
                 let (n, d) = (a.get("numerator").and_then(Value::as_u64).unwrap_or(1) as usize, a.get("denominator").and_then(Value::as_u64).unwrap_or(1) as usize);
-                Some(receipt::require(&c, min, n, d.max(1)).map(|_| "met".to_string()).unwrap_or_else(|e| e))
+                Some(receipt::require(&c, min, n, d.max(1)).map(|_| "met".to_string()).unwrap_or_else(|e| e.to_string()))
             }
             None => None,
         };
@@ -1229,7 +1271,7 @@ impl Server {
         Ok(json!({
             "last": id, "variants": lineage.len(), "cost_to_last": lineage.cost_to(&id), "total_cost": lineage.total_cost(),
             "improvement": imp.as_ref().ok().map(|i| json!({"parent_mean": i.parent_mean, "mean": i.mean, "delta": i.delta, "lower_bound": i.lower_bound, "significant": i.significant(), "paired": i.paired})),
-            "improvement_error": imp.err(),
+            "improvement_error": imp.err().map(|e| e.to_string()),
         }))
     }
 

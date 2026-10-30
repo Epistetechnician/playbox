@@ -8,10 +8,21 @@ fn main() {
     }
     let mut dirs: Vec<String> = env::var("LIBKRUN_LIB_DIR").into_iter().collect();
     dirs.extend(
-        ["/opt/homebrew/lib", "/usr/local/lib", "/usr/local/lib64", "/usr/lib64", "/usr/lib/aarch64-linux-gnu", "/usr/lib/x86_64-linux-gnu"]
-            .map(String::from),
+        [
+            "/opt/homebrew/lib",
+            "/usr/local/lib",
+            "/usr/local/lib64",
+            "/usr/lib64",
+            "/usr/lib/aarch64-linux-gnu",
+            "/usr/lib/x86_64-linux-gnu",
+        ]
+        .map(String::from),
     );
-    let found = dirs.iter().find(|d| ["libkrun.dylib", "libkrun.so"].iter().any(|f| Path::new(d).join(f).exists()));
+    let found = dirs.iter().find(|d| {
+        ["libkrun.dylib", "libkrun.so"]
+            .iter()
+            .any(|f| Path::new(d).join(f).exists())
+    });
     match found {
         Some(d) => {
             println!("cargo:rustc-link-search=native={d}");

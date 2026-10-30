@@ -19,7 +19,7 @@ State lives in $PLAYBOX_HOME (default ~/.playbox).";
 #[derive(Parser)]
 #[command(name = "playbox", version, about = ABOUT, after_help = OVERVIEW, arg_required_else_help = true, disable_help_subcommand = true)]
 pub struct Cli {
-    /// Where keys, history, pins and memory live (same as PLAYBOX_HOME)
+    /// Where keys, history, pins and memory live (same as `PLAYBOX_HOME`)
     #[arg(long, global = true, value_name = "DIR")]
     pub home: Option<String>,
     #[command(subcommand)]
@@ -129,7 +129,7 @@ pub struct ShellArgs {
 
 #[derive(Args)]
 pub struct KeyArg {
-    /// Key file (default $PLAYBOX_HOME/approver.key)
+    /// Key file (default $`PLAYBOX_HOME/approver.key`)
     #[arg(long, value_name = "FILE")]
     pub key: Option<String>,
 }
@@ -162,7 +162,7 @@ pub enum Cmd {
         #[arg(long, value_name = "T", env = "PLAYBOX_BRIDGE_TOKEN")]
         token: Option<String>,
     },
-    /// Register `playbox mcp` with Claude Code, Codex, OpenCode and Hermes on this machine
+    /// Register `playbox mcp` with Claude Code, Codex, `OpenCode` and Hermes on this machine
     Setup {
         /// Show what would change without changing it
         #[arg(long)]
@@ -361,7 +361,17 @@ pub enum ReleaseCmd {
     /// Make a release key; prints the public half
     Keygen { out: String },
     /// Sign FILE, writing FILE.sig. KEY is a key file or the hex itself
-    Sign { file: String, #[arg(long, env = "PLAYBOX_RELEASE_KEY", hide_env_values = true)] key: String },
+    Sign {
+        file: String,
+        #[arg(long, env = "PLAYBOX_RELEASE_KEY", hide_env_values = true)]
+        key: String,
+    },
     /// Check FILE.sig against a public key
-    Verify { file: String, #[arg(long)] pubkey: String, #[arg(long)] sig: Option<String> },
+    Verify {
+        file: String,
+        #[arg(long)]
+        pubkey: String,
+        #[arg(long)]
+        sig: Option<String>,
+    },
 }

@@ -8,7 +8,11 @@ use serde_json::{json, Map, Value};
 use std::io::{IsTerminal, Write};
 
 fn full_name(tool: &str) -> String {
-    if tool.starts_with("playbox_") { tool.to_string() } else { format!("playbox_{tool}") }
+    if tool.starts_with("playbox_") {
+        tool.to_string()
+    } else {
+        format!("playbox_{tool}")
+    }
 }
 
 /// `key=value` pairs (value is JSON when it parses, else text), merged over an optional JSON object.
@@ -21,13 +25,21 @@ pub fn parse_args(pairs: &[String], json: Option<&str>) -> Result<Value> {
         None => Map::new(),
     };
     for p in pairs {
-        let (k, v) = p.split_once('=').ok_or_else(|| anyhow!("expected key=value, got {p:?}"))?;
+        let (k, v) = p
+            .split_once('=')
+            .ok_or_else(|| anyhow!("expected key=value, got {p:?}"))?;
         // `key=@file` reads the value from a file (capabilities and receipts are multi-line).
         let v = match v.strip_prefix('@') {
-            Some(path) => std::fs::read_to_string(path).map_err(|e| anyhow!("{path}: {e}"))?.trim_end().to_string(),
+            Some(path) => std::fs::read_to_string(path)
+                .map_err(|e| anyhow!("{path}: {e}"))?
+                .trim_end()
+                .to_string(),
             None => v.to_string(),
         };
-        obj.insert(k.to_string(), serde_json::from_str(&v).unwrap_or(Value::String(v)));
+        obj.insert(
+            k.to_string(),
+            serde_json::from_str(&v).unwrap_or(Value::String(v)),
+        );
     }
     Ok(Value::Object(obj))
 }
@@ -66,7 +78,11 @@ async fn run(server: &mut Server, tool: &str, args: &Value) -> bool {
     let r = server.call(&full_name(tool), args).await;
     let text = r["content"][0]["text"].as_str().unwrap_or_default();
     let ok = !r["isError"].as_bool().unwrap_or(false);
-    if ok { println!("{text}") } else { eprintln!("error: {text}") }
+    if ok {
+        println!("{text}");
+    } else {
+        eprintln!("error: {text}");
+    }
     ok
 }
 
@@ -76,28 +92,60 @@ fn server() -> Result<Server> {
 
 pub async fn call(tool: &str, pairs: &[String], json: Option<&str>) -> Result<()> {
     let mut s = server()?;
-    if run(&mut s, tool, &parse_args(pairs, json)?).await { Ok(()) } else { std::process::exit(1) }
+    if run(&mut s, tool, &parse_args(pairs, json)?).await {
+        Ok(())
+    } else {
+        std::process::exit(1)
+    }
 }
 
 fn help() {
     println!("tools (key=value arguments; `help TOOL` for its arguments):");
     for t in playbox_mcp::tool_list().as_array().into_iter().flatten() {
-        let name = t["name"].as_str().unwrap_or("").trim_start_matches("playbox_");
+        let name = t["name"]
+            .as_str()
+            .unwrap_or("")
+            .trim_start_matches("playbox_");
         let desc = t["description"].as_str().unwrap_or("");
-        println!("  {name:<18} {}", desc.split(". ").next().unwrap_or(desc).trim_end_matches('.'));
+        println!(
+            "  {name:<18} {}",
+            desc.split(". ")
+                .next()
+                .unwrap_or(desc)
+                .trim_end_matches('.')
+        );
     }
-    println!("  help [TOOL]        this list\n  quit               leave (closes the room connection)");
+    println!(
+        "  help [TOOL]        this list\n  quit               leave (closes the room connection)"
+    );
 }
 
 fn help_tool(name: &str) {
     let n = full_name(name);
-    match playbox_mcp::tool_list().as_array().and_then(|a| a.iter().find(|t| t["name"] == n.as_str())) {
+    match playbox_mcp::tool_list()
+        .as_array()
+        .and_then(|a| a.iter().find(|t| t["name"] == n.as_str()))
+    {
         None => println!("no tool {name}"),
         Some(t) => {
             println!("{}", t["description"].as_str().unwrap_or(""));
-            let req: Vec<&str> = t["inputSchema"]["required"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-            for (k, v) in t["inputSchema"]["properties"].as_object().into_iter().flatten() {
-                println!("  {k}{} ({}): {}", if req.contains(&k.as_str()) { " *" } else { "" }, v["type"].as_str().unwrap_or("?"), v["description"].as_str().unwrap_or(""));
+            let req: Vec<&str> = t["inputSchema"]["required"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            for (k, v) in t["inputSchema"]["properties"]
+                .as_object()
+                .into_iter()
+                .flatten()
+            {
+                println!(
+                    "  {k}{} ({}): {}",
+                    if req.contains(&k.as_str()) { " *" } else { "" },
+                    v["type"].as_str().unwrap_or("?"),
+                    v["description"].as_str().unwrap_or("")
+                );
             }
         }
     }
@@ -110,7 +158,12 @@ pub async fn shell(a: ShellArgs) -> Result<()> {
         if let Some(t) = &a.min_host_tier {
             args["min_host_tier"] = json!(t);
         }
-        if let Some(t) = a.transport.transport.clone().or_else(|| a.transport.local.then(|| "local".to_string())) {
+        if let Some(t) = a
+            .transport
+            .transport
+            .clone()
+            .or_else(|| a.transport.local.then(|| "local".to_string()))
+        {
             args["transport"] = json!(t);
         }
         if !run(&mut s, "join", &args).await {
@@ -119,7 +172,10 @@ pub async fn shell(a: ShellArgs) -> Result<()> {
     }
     let tty = std::io::stdin().is_terminal();
     if tty {
-        eprintln!("playbox shell: `help` lists commands. History log: {}", s.log_path().display());
+        eprintln!(
+            "playbox shell: `help` lists commands. History log: {}",
+            s.log_path().display()
+        );
     }
     let mut lines = tokio::io::BufReader::new(tokio::io::stdin());
     let mut buf = String::new();
@@ -159,7 +215,11 @@ pub async fn shell(a: ShellArgs) -> Result<()> {
 pub async fn mcp() -> Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let mut server = server()?;
-    eprintln!("playbox mcp {} ready; history log: {}", env!("CARGO_PKG_VERSION"), server.log_path().display());
+    eprintln!(
+        "playbox mcp {} ready; history log: {}",
+        env!("CARGO_PKG_VERSION"),
+        server.log_path().display()
+    );
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut out = tokio::io::stdout();
     while let Some(line) = lines.next_line().await? {
@@ -168,7 +228,9 @@ pub async fn mcp() -> Result<()> {
         }
         let reply = match serde_json::from_str::<Value>(&line) {
             Ok(msg) => server.handle(msg).await,
-            Err(e) => Some(json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": format!("parse error: {e}")}})),
+            Err(e) => Some(
+                json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": format!("parse error: {e}")}}),
+            ),
         };
         if let Some(r) = reply {
             out.write_all(format!("{r}\n").as_bytes()).await?;
@@ -180,7 +242,13 @@ pub async fn mcp() -> Result<()> {
 
 pub async fn memory(cmd: MemoryCmd) -> Result<()> {
     match cmd {
-        MemoryCmd::Remember { kind, topic, body, evidence, supersedes } => {
+        MemoryCmd::Remember {
+            kind,
+            topic,
+            body,
+            evidence,
+            supersedes,
+        } => {
             let mut a = json!({"kind": kind, "topic": topic, "body": body, "evidence": evidence});
             if let Some(s) = supersedes {
                 a["supersedes"] = json!(s);
@@ -188,12 +256,24 @@ pub async fn memory(cmd: MemoryCmd) -> Result<()> {
             call("remember", &[], Some(&a.to_string())).await
         }
         MemoryCmd::Recall { kind } => {
-            let a = kind.map(|k| json!({"kind": k})).unwrap_or_else(|| json!({}));
+            let a = kind.map_or_else(|| json!({}), |k| json!({"kind": k}));
             call("recall", &[], Some(&a.to_string())).await
         }
         MemoryCmd::Export => call("memory_export", &[], None).await,
-        MemoryCmd::Ingest { events } => call("memory_ingest", &[], Some(&json!({"events": events}).to_string())).await,
-        MemoryCmd::Review { id, accept, reject, key } => crate::trust::memory_review(&id, accept, reject, key.key),
+        MemoryCmd::Ingest { events } => {
+            call(
+                "memory_ingest",
+                &[],
+                Some(&json!({"events": events}).to_string()),
+            )
+            .await
+        }
+        MemoryCmd::Review {
+            id,
+            accept,
+            reject,
+            key,
+        } => crate::trust::memory_review(&id, accept, reject, key.key),
     }
 }
 

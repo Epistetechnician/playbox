@@ -5,14 +5,18 @@ use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The repository root: $PLAYBOX_ROOT, else the nearest ancestor of the working directory or of this
+/// The repository root: $`PLAYBOX_ROOT`, else the nearest ancestor of the working directory or of this
 /// binary that holds `steer/pyproject.toml`.
 pub fn repo_root() -> Option<PathBuf> {
     if let Some(r) = std::env::var_os("PLAYBOX_ROOT") {
         return Some(PathBuf::from(r));
     }
     let starts = [std::env::current_dir().ok(), std::env::current_exe().ok()];
-    starts.into_iter().flatten().find_map(|s| s.ancestors().find(|d| d.join("steer/pyproject.toml").exists()).map(Path::to_path_buf))
+    starts.into_iter().flatten().find_map(|s| {
+        s.ancestors()
+            .find(|d| d.join("steer/pyproject.toml").exists())
+            .map(Path::to_path_buf)
+    })
 }
 
 fn root() -> Result<PathBuf> {
@@ -33,7 +37,11 @@ fn python(project: &str, py_args: &[String]) -> Result<()> {
         c.args(["run", "--project"]).arg(&dir).arg("python");
         c
     };
-    let status = cmd.args(py_args).current_dir(&dir).status().map_err(|e| anyhow::anyhow!("could not start python for {project} ({e}); install uv or create {project}/.venv"))?;
+    let status = cmd.args(py_args).current_dir(&dir).status().map_err(|e| {
+        anyhow::anyhow!(
+            "could not start python for {project} ({e}); install uv or create {project}/.venv"
+        )
+    })?;
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
     }
@@ -41,7 +49,11 @@ fn python(project: &str, py_args: &[String]) -> Result<()> {
 }
 
 fn strings(parts: &[&str], rest: &[String]) -> Vec<String> {
-    parts.iter().map(|s| s.to_string()).chain(rest.iter().cloned()).collect()
+    parts
+        .iter()
+        .map(std::string::ToString::to_string)
+        .chain(rest.iter().cloned())
+        .collect()
 }
 
 /// `steer extract|random|manifest|run|probe`: the engine's own command line.
@@ -53,8 +65,16 @@ pub fn experiment(name: &str, args: &[String]) -> Result<()> {
     match name {
         "e1" => python("orchestrator", &strings(&["experiments/e1_gpt2.py"], args)),
         "e1-merge" => python("orchestrator", &strings(&["experiments/merge_e1.py"], args)),
-        "e6" | "e6b" | "audit-e6" | "cache-audit" => python("steer", &strings(&["-m", &format!("playbox_steer.{}", name.replace('-', "_"))], args)),
-        other => bail!("unknown experiment {other:?}; one of e1 e1-merge e6 e6b audit-e6 cache-audit"),
+        "e6" | "e6b" | "audit-e6" | "cache-audit" => python(
+            "steer",
+            &strings(
+                &["-m", &format!("playbox_steer.{}", name.replace('-', "_"))],
+                args,
+            ),
+        ),
+        other => {
+            bail!("unknown experiment {other:?}; one of e1 e1-merge e6 e6b audit-e6 cache-audit")
+        }
     }
 }
 

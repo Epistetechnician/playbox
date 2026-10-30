@@ -6,10 +6,18 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn host_attests_and_client_verifies_it() {
-    let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None, runner: Some(Arc::new(ProcessRunner)), ..Default::default() };
-    let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
+    let cfg = HostConfig {
+        min_isolation: playbox_runner::Isolation::None,
+        runner: Some(Arc::new(ProcessRunner)),
+        ..Default::default()
+    };
+    let host = Host::start_with(new_secret_key().unwrap(), true, cfg)
+        .await
+        .unwrap();
     // No invite needed: attestation is public, like the agent card.
-    let c = Client::connect(host.addr(), new_secret_key().unwrap(), true).await.unwrap();
+    let c = Client::connect(host.addr(), new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
     let v = c.verify_host(Tier::T0, &[]).await.unwrap();
     assert_eq!(v.achieved, Tier::T0);
     assert_eq!(v.statement.subject, *host.addr().id.as_bytes());
@@ -19,24 +27,53 @@ async fn host_attests_and_client_verifies_it() {
 
     // The room's policy can ask for more than a self-signed statement can give; it is refused.
     let e = c.verify_host(Tier::T2, &[]).await.unwrap_err();
-    assert!(format!("{e:#}").contains("achieves T0 but T2 was required"), "{e:#}");
-    assert!(Policy::default().require("merge", Tier::T2).check("merge", v.achieved).is_err());
+    assert!(
+        format!("{e:#}").contains("achieves T0 but T2 was required"),
+        "{e:#}"
+    );
+    assert!(Policy::default()
+        .require("merge", Tier::T2)
+        .check("merge", v.achieved)
+        .is_err());
 
     // Each call is fresh: nonces differ, so an old statement cannot be replayed.
-    let a = c.call("playbox.GetAttestation", json!({"nonce": "aa"})).await.unwrap();
-    let b = c.call("playbox.GetAttestation", json!({"nonce": "bb"})).await.unwrap();
+    let a = c
+        .call("playbox.GetAttestation", json!({"nonce": "aa"}))
+        .await
+        .unwrap();
+    let b = c
+        .call("playbox.GetAttestation", json!({"nonce": "bb"}))
+        .await
+        .unwrap();
     assert_ne!(a["statement"], b["statement"]);
     // Bad nonces are refused rather than put into a signed statement.
-    assert!(c.call("playbox.GetAttestation", json!({"nonce": "not hex\nsig x"})).await.is_err());
-    assert!(c.call("playbox.GetAttestation", json!({"nonce": "a".repeat(65)})).await.is_err());
+    assert!(c
+        .call("playbox.GetAttestation", json!({"nonce": "not hex\nsig x"}))
+        .await
+        .is_err());
+    assert!(c
+        .call("playbox.GetAttestation", json!({"nonce": "a".repeat(65)}))
+        .await
+        .is_err());
 }
 
 #[tokio::test]
 async fn the_policy_hash_changes_when_the_policy_does() {
     let mk = |cpus: f32| async move {
-        let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None, limits: playbox_runner::Limits { cpus, ..Default::default() }, ..Default::default() };
-        let h = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
-        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let cfg = HostConfig {
+            min_isolation: playbox_runner::Isolation::None,
+            limits: playbox_runner::Limits {
+                cpus,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let h = Host::start_with(new_secret_key().unwrap(), true, cfg)
+            .await
+            .unwrap();
+        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
         let v = c.verify_host(Tier::T0, &[]).await.unwrap();
         (v.statement.measurements.policy, h)
     };
@@ -48,7 +85,10 @@ async fn the_policy_hash_changes_when_the_policy_does() {
 // ---- platform evidence over the wire -------------------------------------------------------------
 
 mod platform {
-    use playbox_core::attest::{Measurements, PlatformProvider, PlatformVerdict, PlatformVerifier, Produced, Statement, Tier};
+    use playbox_core::attest::{
+        AttestError, Measurements, PlatformProvider, PlatformVerdict, PlatformVerifier, Produced,
+        Statement, Tier,
+    };
     use playbox_net::{new_secret_key, Client, Host, HostConfig};
     use std::sync::Arc;
 
@@ -56,24 +96,45 @@ mod platform {
     /// nonce-specific statement and the client checks it, without any hardware.
     struct EchoBinding;
     impl PlatformProvider for EchoBinding {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "mock-hw"
         }
-        fn produce(&self, binding: &[u8; 32], _: &Measurements) -> Result<Produced, String> {
-            Ok(Produced { evidence: format!("bound {}\n", binding.iter().map(|b| format!("{b:02x}")).collect::<String>()), claimed: Tier::T1 })
+        fn produce(&self, binding: &[u8; 32], _: &Measurements) -> Result<Produced, AttestError> {
+            Ok(Produced {
+                evidence: format!(
+                    "bound {}\n",
+                    binding
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect::<String>()
+                ),
+                claimed: Tier::T1,
+            })
         }
     }
 
     struct CheckBinding;
     impl PlatformVerifier for CheckBinding {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "mock-hw"
         }
-        fn verify(&self, st: &Statement) -> Result<PlatformVerdict, String> {
-            let ev = String::from_utf8((0..st.platform_evidence.len() / 2).map(|i| u8::from_str_radix(&st.platform_evidence[i * 2..i * 2 + 2], 16).unwrap()).collect()).unwrap();
+        fn verify(&self, st: &Statement) -> Result<PlatformVerdict, AttestError> {
+            let ev = String::from_utf8(
+                (0..st.platform_evidence.len() / 2)
+                    .map(|i| {
+                        u8::from_str_radix(&st.platform_evidence[i * 2..i * 2 + 2], 16).unwrap()
+                    })
+                    .collect(),
+            )
+            .unwrap();
             let want: String = st.binding().iter().map(|b| format!("{b:02x}")).collect();
             if ev.trim() == format!("bound {want}") {
-                Ok(PlatformVerdict { tier: Tier::T1, notes: vec![], device: Some("mock-device".into()), challenge: None })
+                Ok(PlatformVerdict {
+                    tier: Tier::T1,
+                    notes: vec![],
+                    device: Some("mock-device".into()),
+                    challenge: None,
+                })
             } else {
                 Err("evidence is not bound to this statement".into())
             }
@@ -83,28 +144,39 @@ mod platform {
     /// Hardware that can answer a challenge: it reverses the request.
     struct Answers(bool);
     impl PlatformProvider for Answers {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "mock-hw"
         }
-        fn produce(&self, _: &[u8; 32], _: &Measurements) -> Result<Produced, String> {
-            Ok(Produced { evidence: "x\n".into(), claimed: Tier::T1 })
+        fn produce(&self, _: &[u8; 32], _: &Measurements) -> Result<Produced, AttestError> {
+            Ok(Produced {
+                evidence: "x\n".into(),
+                claimed: Tier::T1,
+            })
         }
-        fn respond(&self, request: &[u8]) -> Result<Vec<u8>, String> {
-            if self.0 { Ok(request.iter().rev().copied().collect()) } else { Err("no".into()) }
+        fn respond(&self, request: &[u8]) -> Result<Vec<u8>, AttestError> {
+            if self.0 {
+                Ok(request.iter().rev().copied().collect())
+            } else {
+                Err("no".into())
+            }
         }
     }
 
     struct Asks;
     impl PlatformVerifier for Asks {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "mock-hw"
         }
-        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
+        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, AttestError> {
             Ok(PlatformVerdict {
                 tier: Tier::T0,
                 notes: vec![],
                 device: None,
-                challenge: Some(playbox_core::attest::Challenge { payload: b"ping".to_vec(), expect: b"gnip".to_vec(), tier_on_success: Tier::T1 }),
+                challenge: Some(playbox_core::attest::Challenge {
+                    payload: b"ping".to_vec(),
+                    expect: b"gnip".to_vec(),
+                    tier_on_success: Tier::T1,
+                }),
             })
         }
     }
@@ -114,31 +186,64 @@ mod platform {
         let (_h, c) = host_with(Some(Arc::new(Answers(true)))).await;
         let v = c.verify_host(Tier::T1, &[&Asks]).await.unwrap();
         assert_eq!(v.achieved, Tier::T1);
-        assert!(v.notes.iter().any(|n| n.contains("challenge answered")), "{:?}", v.notes);
+        assert!(
+            v.notes.iter().any(|n| n.contains("challenge answered")),
+            "{:?}",
+            v.notes
+        );
         // Hardware that refuses to answer cannot reach T1.
         let (_h2, c2) = host_with(Some(Arc::new(Answers(false)))).await;
         let e = c2.verify_host(Tier::T1, &[&Asks]).await.unwrap_err();
-        assert!(format!("{e:#}").contains("could not answer the hardware challenge"), "{e:#}");
-        assert_eq!(c2.verify_host(Tier::T0, &[&Asks]).await.unwrap().achieved, Tier::T0);
+        assert!(
+            format!("{e:#}").contains("could not answer the hardware challenge"),
+            "{e:#}"
+        );
+        assert_eq!(
+            c2.verify_host(Tier::T0, &[&Asks]).await.unwrap().achieved,
+            Tier::T0
+        );
         // A host with no hardware at all cannot answer either; malformed requests are refused.
         let (_h3, c3) = host_with(None).await;
-        assert!(c3.call("playbox.ActivateCredential", serde_json::json!({"request": "00"})).await.is_err());
-        assert!(c.call("playbox.ActivateCredential", serde_json::json!({"request": "zz"})).await.is_err());
+        assert!(c3
+            .call(
+                "playbox.ActivateCredential",
+                serde_json::json!({"request": "00"})
+            )
+            .await
+            .is_err());
+        assert!(c
+            .call(
+                "playbox.ActivateCredential",
+                serde_json::json!({"request": "zz"})
+            )
+            .await
+            .is_err());
     }
 
     struct Broken;
     impl PlatformProvider for Broken {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "mock-hw"
         }
-        fn produce(&self, _: &[u8; 32], _: &Measurements) -> Result<Produced, String> {
+        fn produce(&self, _: &[u8; 32], _: &Measurements) -> Result<Produced, AttestError> {
             Err("tpm is on fire".into())
         }
     }
 
     async fn host_with(p: Option<Arc<dyn PlatformProvider>>) -> (Host, Client) {
-        let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig { platform: p, ..Default::default() }).await.unwrap();
-        let c = Client::connect(host.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let host = Host::start_with(
+            new_secret_key().unwrap(),
+            true,
+            HostConfig {
+                platform: p,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let c = Client::connect(host.addr(), new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
         (host, c)
     }
 
@@ -154,7 +259,10 @@ mod platform {
         let e = c.verify_host(Tier::T1, &[]).await.unwrap_err();
         assert!(format!("{e:#}").contains("no verifier available"), "{e:#}");
         // T0 is still fine without a verifier.
-        assert_eq!(c.verify_host(Tier::T0, &[]).await.unwrap().achieved, Tier::T0);
+        assert_eq!(
+            c.verify_host(Tier::T0, &[]).await.unwrap().achieved,
+            Tier::T0
+        );
     }
 
     #[tokio::test]
@@ -169,7 +277,14 @@ mod platform {
     #[tokio::test]
     async fn a_host_without_a_provider_claims_no_platform() {
         let (_h, c) = host_with(None).await;
-        assert_eq!(c.verify_host(Tier::T0, &[&CheckBinding]).await.unwrap().statement.platform, "none");
+        assert_eq!(
+            c.verify_host(Tier::T0, &[&CheckBinding])
+                .await
+                .unwrap()
+                .statement
+                .platform,
+            "none"
+        );
     }
 }
 
@@ -185,21 +300,62 @@ mod secure_enclave {
         let dir = std::env::temp_dir().join(format!("playbox-se-net-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/playbox-se/playbox-se.swift");
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tools/playbox-se/playbox-se.swift");
         let helper = dir.join("playbox-se");
-        if !Command::new("swiftc").arg("-O").arg(&src).arg("-o").arg(&helper).status().map(|s| s.success()).unwrap_or(false) {
+        if !Command::new("swiftc")
+            .arg("-O")
+            .arg(&src)
+            .arg("-o")
+            .arg(&helper)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
             eprintln!("skipping: swiftc not available");
             return;
         }
-        let provider = SecureEnclaveProvider { helper, key_file: dir.join("se.key") };
-        let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig { platform: Some(Arc::new(provider)), ..Default::default() }).await.unwrap();
-        let c = Client::connect(host.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let provider = SecureEnclaveProvider {
+            helper,
+            key_file: dir.join("se.key"),
+        };
+        let host = Host::start_with(
+            new_secret_key().unwrap(),
+            true,
+            HostConfig {
+                platform: Some(Arc::new(provider)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let c = Client::connect(host.addr(), new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
 
         // First contact: valid, untrusted, and the fingerprint to pin is reported.
-        let first = c.verify_host(Tier::T0, &[&SecureEnclaveVerifier::new(PinStore::in_memory())]).await.unwrap();
+        let first = c
+            .verify_host(
+                Tier::T0,
+                &[&SecureEnclaveVerifier::new(PinStore::in_memory())],
+            )
+            .await
+            .unwrap();
         assert_eq!(first.achieved, Tier::T0);
-        let fp = first.device.clone().unwrap().strip_prefix("secure-enclave:").unwrap().to_string();
-        assert!(c.verify_host(Tier::T1, &[&SecureEnclaveVerifier::new(PinStore::in_memory())]).await.is_err());
+        let fp = first
+            .device
+            .clone()
+            .unwrap()
+            .strip_prefix("secure-enclave:")
+            .unwrap()
+            .to_string();
+        assert!(c
+            .verify_host(
+                Tier::T1,
+                &[&SecureEnclaveVerifier::new(PinStore::in_memory())]
+            )
+            .await
+            .is_err());
 
         // After the operator pins it, the host reaches T1, every time, with fresh nonces.
         let mut pins = PinStore::in_memory();
@@ -216,9 +372,20 @@ mod secure_enclave {
 #[tokio::test]
 async fn the_host_list_is_part_of_the_signed_policy() {
     let mk = |hosts: Vec<String>| async move {
-        let cfg = HostConfig { min_isolation: playbox_runner::Isolation::None, limits: playbox_runner::Limits { allowed_hosts: hosts, ..Default::default() }, ..Default::default() };
-        let h = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
-        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let cfg = HostConfig {
+            min_isolation: playbox_runner::Isolation::None,
+            limits: playbox_runner::Limits {
+                allowed_hosts: hosts,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let h = Host::start_with(new_secret_key().unwrap(), true, cfg)
+            .await
+            .unwrap();
+        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
         let v = c.verify_host(Tier::T0, &[]).await.unwrap();
         (v.statement.measurements.policy, h)
     };
@@ -244,7 +411,11 @@ impl playbox_runner::Runner for NoDaemon {
     async fn preflight(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn run(&self, spec: &playbox_runner::TaskSpec, ws: &std::path::Path) -> anyhow::Result<playbox_runner::TaskOutput> {
+    async fn run(
+        &self,
+        spec: &playbox_runner::TaskSpec,
+        ws: &std::path::Path,
+    ) -> anyhow::Result<playbox_runner::TaskOutput> {
         self.0.run(spec, ws).await
     }
 }
@@ -253,16 +424,28 @@ impl playbox_runner::Runner for NoDaemon {
 async fn a_host_that_allows_a_different_sandbox_image_attests_a_different_policy() {
     use playbox_runner::{DockerRunner, SandboxPolicy};
     let mk = |image: &'static str| async move {
-        let runner = NoDaemon(DockerRunner::new(SandboxPolicy { allowed_images: vec![image.into()] }));
-        let cfg = HostConfig { runner: Some(std::sync::Arc::new(runner)), ..Default::default() };
-        let h = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
-        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true).await.unwrap();
+        let runner = NoDaemon(DockerRunner::new(SandboxPolicy {
+            allowed_images: vec![image.into()],
+        }));
+        let cfg = HostConfig {
+            runner: Some(std::sync::Arc::new(runner)),
+            ..Default::default()
+        };
+        let h = Host::start_with(new_secret_key().unwrap(), true, cfg)
+            .await
+            .unwrap();
+        let c = Client::connect(h.addr(), new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
         let v = c.verify_host(Tier::T0, &[]).await.unwrap();
         (v.statement.measurements.policy, h)
     };
     let (expected, _a) = mk("alpine:3").await;
     let (swapped, _b) = mk("evil:latest").await;
     let (same, _c) = mk("alpine:3").await;
-    assert_ne!(expected, swapped, "swapping the image must change the signed policy measurement");
+    assert_ne!(
+        expected, swapped,
+        "swapping the image must change the signed policy measurement"
+    );
     assert_eq!(expected, same);
 }

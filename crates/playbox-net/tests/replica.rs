@@ -3,7 +3,8 @@
 
 use iroh::{endpoint::presets, Endpoint, SecretKey};
 use playbox_net::{
-    grants::Authority, join_link, new_secret_key, revoke::Notice, Client, Host, HostConfig, Transport, SYNC_ALPN,
+    grants::Authority, join_link, new_secret_key, revoke::Notice, Client, Host, HostConfig,
+    Transport, SYNC_ALPN,
 };
 use std::{path::PathBuf, time::Duration};
 
@@ -14,11 +15,15 @@ fn dir(name: &str) -> PathBuf {
 }
 
 async fn primary(d: &std::path::Path) -> Host {
-    Host::open(d, Transport::Local, HostConfig::default()).await.unwrap()
+    Host::open(d, Transport::Local, HostConfig::default())
+        .await
+        .unwrap()
 }
 
 async fn replica(d: &std::path::Path, root: [u8; 32]) -> Host {
-    Host::open_replica(d, Transport::Local, HostConfig::default(), root).await.unwrap()
+    Host::open_replica(d, Transport::Local, HostConfig::default(), root)
+        .await
+        .unwrap()
 }
 
 /// A member joined at the primary, and a way to present the same grant at another host.
@@ -31,11 +36,16 @@ impl Member {
     async fn join(p: &Host) -> Member {
         let key = new_secret_key().unwrap();
         let link = p.create_link(Duration::from_secs(60), 1).unwrap().encode();
-        Member { at_primary: join_link(&link, key.clone(), true).await.unwrap(), key }
+        Member {
+            at_primary: join_link(&link, key.clone(), true).await.unwrap(),
+            key,
+        }
     }
 
     async fn at(&self, host: &Host) -> Client {
-        let c = Client::connect(host.addr(), self.key.clone(), true).await.unwrap();
+        let c = Client::connect(host.addr(), self.key.clone(), true)
+            .await
+            .unwrap();
         c.set_grant(self.at_primary.grant().unwrap());
         c
     }
@@ -80,8 +90,15 @@ async fn a_replica_accepts_the_rooms_grants_but_cannot_issue_or_revoke() {
     let link = p.create_link(Duration::from_secs(60), 1).unwrap();
     let mut via_replica = link.clone();
     via_replica.addr = r.addr();
-    let e = join_link(&via_replica.encode(), new_secret_key().unwrap(), true).await.err().expect("refused");
-    assert!(msg(e).contains("replica"), "{}", "joining through a replica must say why");
+    let e = join_link(&via_replica.encode(), new_secret_key().unwrap(), true)
+        .await
+        .err()
+        .expect("refused");
+    assert!(
+        msg(e).contains("replica"),
+        "{}",
+        "joining through a replica must say why"
+    );
     assert!(!r.revoke_member(&m.id()));
 }
 
@@ -96,12 +113,19 @@ async fn gossip_alone_delivers_a_revocation_quickly() {
 
     // A pull interval far longer than the test: only gossip can deliver in time.
     let hour = Duration::from_secs(3600);
-    p.enable_revocation_sync(vec![r.addr()], hour).await.unwrap();
-    r.enable_revocation_sync(vec![p.addr()], hour).await.unwrap();
+    p.enable_revocation_sync(vec![r.addr()], hour)
+        .await
+        .unwrap();
+    r.enable_revocation_sync(vec![p.addr()], hour)
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await; // let the swarm form
 
     assert!(p.revoke_member(&m.id()));
-    assert!(until_refused(&at_r, Duration::from_secs(10)).await, "the replica never heard about the revocation");
+    assert!(
+        until_refused(&at_r, Duration::from_secs(10)).await,
+        "the replica never heard about the revocation"
+    );
     let e = msg(at_r.echo("after").await.unwrap_err());
     assert!(e.contains("revoked"), "{e}");
     // The ban travelled too: the member cannot rejoin through the primary either.
@@ -118,11 +142,22 @@ async fn a_replica_that_missed_the_broadcast_catches_up_by_pulling() {
 
     let r = replica(&rd, p.root_public()).await;
     let at_r = m.at(&r).await;
-    assert_eq!(at_r.echo("not yet told").await.unwrap(), "not yet told", "the replica honours the grant until it hears");
+    assert_eq!(
+        at_r.echo("not yet told").await.unwrap(),
+        "not yet told",
+        "the replica honours the grant until it hears"
+    );
 
-    p.enable_revocation_sync(vec![r.addr()], Duration::from_millis(500)).await.unwrap();
-    r.enable_revocation_sync(vec![p.addr()], Duration::from_millis(500)).await.unwrap();
-    assert!(until_refused(&at_r, Duration::from_secs(10)).await, "pull should have delivered it");
+    p.enable_revocation_sync(vec![r.addr()], Duration::from_millis(500))
+        .await
+        .unwrap();
+    r.enable_revocation_sync(vec![p.addr()], Duration::from_millis(500))
+        .await
+        .unwrap();
+    assert!(
+        until_refused(&at_r, Duration::from_secs(10)).await,
+        "pull should have delivered it"
+    );
 }
 
 #[tokio::test]
@@ -141,12 +176,20 @@ async fn revocations_survive_restarts_and_reach_late_replicas() {
 
     // A replica that starts afterwards learns of it by pulling, and keeps it across its own restart.
     let r = replica(&rd, root).await;
-    p.enable_revocation_sync(vec![r.addr()], Duration::from_millis(500)).await.unwrap();
-    r.enable_revocation_sync(vec![p.addr()], Duration::from_millis(500)).await.unwrap();
+    p.enable_revocation_sync(vec![r.addr()], Duration::from_millis(500))
+        .await
+        .unwrap();
+    r.enable_revocation_sync(vec![p.addr()], Duration::from_millis(500))
+        .await
+        .unwrap();
     assert!(until_refused(&m.at(&r).await, Duration::from_secs(10)).await);
     r.shutdown().await.unwrap();
     let r = replica(&rd, root).await;
-    assert_eq!(r.revocation_notices().len(), 1, "stored notices are kept and re-verified");
+    assert_eq!(
+        r.revocation_notices().len(),
+        1,
+        "stored notices are kept and re-verified"
+    );
     assert!(m.at(&r).await.echo("x").await.is_err());
 }
 
@@ -154,10 +197,16 @@ async fn revocations_survive_restarts_and_reach_late_replicas() {
 async fn only_the_hosts_own_peers_may_pull_notices() {
     let p = primary(&dir("deny-p")).await;
     let r = replica(&dir("deny-r"), p.root_public()).await;
-    p.enable_revocation_sync(vec![r.addr()], Duration::from_secs(3600)).await.unwrap();
+    p.enable_revocation_sync(vec![r.addr()], Duration::from_secs(3600))
+        .await
+        .unwrap();
 
     // A stranger with a valid iroh identity dials the sync protocol and is turned away.
-    let ep = Endpoint::builder(presets::Minimal).secret_key(new_secret_key().unwrap()).bind().await.unwrap();
+    let ep = Endpoint::builder(presets::Minimal)
+        .secret_key(new_secret_key().unwrap())
+        .bind()
+        .await
+        .unwrap();
     let conn = ep.connect(p.addr(), SYNC_ALPN).await;
     let got = match conn {
         Err(_) => Err(()),
@@ -170,7 +219,10 @@ async fn only_the_hosts_own_peers_may_pull_notices() {
             }
         },
     };
-    assert!(got.is_err() || got.unwrap().is_empty(), "a stranger must not receive the notice list");
+    assert!(
+        got.is_err() || got.unwrap().is_empty(),
+        "a stranger must not receive the notice list"
+    );
 }
 
 #[test]
@@ -178,10 +230,18 @@ fn only_the_root_key_can_make_a_notice_and_notices_are_bound_to_their_room() {
     let root = Authority::from_seed("room", &[7u8; 32]).unwrap();
     let verifier = Authority::verifier("room", &root.public_bytes()).unwrap();
     let member = SecretKey::from_bytes(&[9u8; 32]).public().to_string();
-    let n = Notice { grant_id: "ab12".into(), member: member.clone(), issued_ms: 5 };
+    let n = Notice {
+        grant_id: "ab12".into(),
+        member: member.clone(),
+        issued_ms: 5,
+    };
 
     let text = n.sign(&root).unwrap();
-    assert_eq!(Notice::parse(&text, &verifier).unwrap(), n, "a verify-only host accepts the root's notice");
+    assert_eq!(
+        Notice::parse(&text, &verifier).unwrap(),
+        n,
+        "a verify-only host accepts the root's notice"
+    );
     assert!(n.sign(&verifier).is_err(), "and cannot make one");
 
     // A different room's key cannot revoke here.

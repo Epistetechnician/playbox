@@ -66,7 +66,7 @@ pub struct Chat {
     inner: Mutex<Inner>,
 }
 
-#[must_use] 
+#[must_use]
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -85,7 +85,7 @@ fn clean(s: &str, max: usize) -> String {
 }
 
 impl Chat {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -108,6 +108,10 @@ impl Chat {
     }
 
     /// A member (or `host`) says something. Refused when empty or when the sender is posting too fast.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message describing why the operation failed.
     pub fn say(&self, from: &str, name: Option<&str>, text: &str) -> Result<u64, String> {
         let text = clean(text, MAX_TEXT);
         if text.is_empty() {
@@ -236,7 +240,7 @@ pub fn summarize(event: &str, d: &Value) -> String {
 }
 
 impl Feed {
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> Value {
         json!(self)
     }

@@ -22,7 +22,10 @@ pub enum Transport {
     Iroh,
     /// A self-hosted relay. `extra_roots` are DER certificates to trust in addition to the
     /// usual roots (for a private CA or a self-signed relay).
-    Relay { url: String, extra_roots: Vec<Vec<u8>> },
+    Relay {
+        url: String,
+        extra_roots: Vec<Vec<u8>>,
+    },
 }
 
 impl From<bool> for Transport {
@@ -38,25 +41,40 @@ impl From<bool> for Transport {
 
 impl Transport {
     /// `local`, `iroh`, or `relay:<https url>`. For a private CA, set `PLAYBOX_RELAY_CA` to a PEM file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn parse(s: &str) -> Result<Self> {
         match s.trim() {
             "local" => Ok(Self::Local),
             "iroh" | "default" => Ok(Self::Iroh),
             other => {
-                let url = other
-                    .strip_prefix("relay:")
-                    .ok_or_else(|| anyhow!("transport must be `local`, `iroh`, or `relay:<url>`, got {other:?}"))?;
-                let parsed: RelayUrl = url.parse().with_context(|| format!("bad relay url {url:?}"))?;
+                let url = other.strip_prefix("relay:").ok_or_else(|| {
+                    anyhow!("transport must be `local`, `iroh`, or `relay:<url>`, got {other:?}")
+                })?;
+                let parsed: RelayUrl = url
+                    .parse()
+                    .with_context(|| format!("bad relay url {url:?}"))?;
                 let extra_roots = match std::env::var_os("PLAYBOX_RELAY_CA") {
-                    Some(p) => pem_certs(&std::fs::read_to_string(&p).context("reading PLAYBOX_RELAY_CA")?)?,
+                    Some(p) => pem_certs(
+                        &std::fs::read_to_string(&p).context("reading PLAYBOX_RELAY_CA")?,
+                    )?,
                     None => Vec::new(),
                 };
-                Ok(Self::Relay { url: parsed.to_string(), extra_roots })
+                Ok(Self::Relay {
+                    url: parsed.to_string(),
+                    extra_roots,
+                })
             }
         }
     }
 
     /// The default for new rooms: `$PLAYBOX_TRANSPORT`, else `iroh`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn from_env() -> Result<Self> {
         match std::env::var("PLAYBOX_TRANSPORT") {
             Ok(s) => Self::parse(&s),
@@ -65,6 +83,7 @@ impl Transport {
     }
 
     /// The string form stored in join links (certificates are not included).
+    #[must_use]
     pub fn label(&self) -> String {
         match self {
             Self::Local => "local".into(),
@@ -128,6 +147,7 @@ impl From<bool> for TransportChoice {
 }
 
 impl TransportChoice {
+    #[must_use]
     pub fn resolve(self, link: Option<&Transport>) -> Transport {
         match self {
             Self::Use(t) => t,
@@ -137,6 +157,10 @@ impl TransportChoice {
 }
 
 /// Extract DER certificates from PEM text.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub fn pem_certs(pem: &str) -> Result<Vec<Vec<u8>>> {
     let mut out = Vec::new();
     let mut cur: Option<String> = None;
@@ -146,7 +170,11 @@ pub fn pem_certs(pem: &str) -> Result<Vec<Vec<u8>>> {
             cur = Some(String::new());
         } else if line == "-----END CERTIFICATE-----" {
             let b = cur.take().ok_or_else(|| anyhow!("END without BEGIN"))?;
-            out.push(B64STD.decode(b).context("certificate is not valid base64")?);
+            out.push(
+                B64STD
+                    .decode(b)
+                    .context("certificate is not valid base64")?,
+            );
         } else if let Some(c) = cur.as_mut() {
             c.push_str(line);
         }
@@ -176,9 +204,15 @@ mod tests {
 
     #[test]
     fn links_are_followed_unless_overridden() {
-        let r = Transport::Relay { url: "https://r.example/".into(), extra_roots: vec![] };
+        let r = Transport::Relay {
+            url: "https://r.example/".into(),
+            extra_roots: vec![],
+        };
         assert_eq!(TransportChoice::FromLink.resolve(Some(&r)), r);
-        assert_eq!(TransportChoice::from(true).resolve(Some(&r)), Transport::Local);
+        assert_eq!(
+            TransportChoice::from(true).resolve(Some(&r)),
+            Transport::Local
+        );
         assert_eq!(TransportChoice::FromLink.resolve(None), Transport::Iroh);
     }
 

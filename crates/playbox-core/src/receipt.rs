@@ -24,6 +24,7 @@
 //! prompted into a bad answer, or that the agent acted on the response. And a notary or provider key is a
 //! trust root you pinned: its compromise breaks everything resting on it.
 
+use crate::record::RecordError;
 use crate::{
     history::Log,
     record::{self, hex},
@@ -42,13 +43,21 @@ pub enum Level {
 }
 
 impl Level {
-    pub fn parse(s: &str) -> Result<Level, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the text or field is malformed, or its signature does not verify.
+    pub fn parse(s: &str) -> Result<Level, RecordError> {
         Ok(match s.to_ascii_lowercase().as_str() {
             "none" => Level::None,
             "self" => Level::SelfClaimed,
             "notarized" => Level::Notarized,
             "provider" => Level::ProviderSigned,
-            o => return Err(format!("unknown receipt level {o:?}; use none, self, notarized or provider")),
+            o => {
+                return Err(format!(
+                    "unknown receipt level {o:?}; use none, self, notarized or provider"
+                )
+                .into())
+            }
         })
     }
 }
@@ -68,7 +77,18 @@ pub struct Receipt {
 impl Receipt {
     /// Sign over `request` and `response` (the exact bytes the history's `prompt` and `model_response`
     /// payloads hash).
-    pub fn sign(provider: &str, model: &str, request: &[u8], response: &[u8], time_ms: u64, attester: &SigningKey) -> Result<String, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+    pub fn sign(
+        provider: &str,
+        model: &str,
+        request: &[u8],
+        response: &[u8],
+        time_ms: u64,
+        attester: &SigningKey,
+    ) -> Result<String, RecordError> {
         record::sign(
             DOMAIN,
             &[
@@ -82,7 +102,10 @@ impl Receipt {
         )
     }
 
-    pub fn open(text: &str) -> Result<Receipt, String> {
+    /// # Errors
+    ///
+    /// Returns a [`RecordError`] if the text or field is malformed, or its signature does not verify.
+    pub fn open(text: &str) -> Result<Receipt, RecordError> {
         let r = record::open(DOMAIN, text)?;
         Ok(Receipt {
             provider: r.req("provider")?.to_string(),
@@ -104,19 +127,29 @@ pub struct Trust {
 }
 
 impl Trust {
+    #[must_use]
     pub fn provider(mut self, name: &str, key: [u8; 32]) -> Self {
-        self.providers.entry(name.to_string()).or_default().push(key);
+        self.providers
+            .entry(name.to_string())
+            .or_default()
+            .push(key);
         self
     }
 
+    #[must_use]
     pub fn notary(mut self, key: [u8; 32]) -> Self {
         self.notaries.push(key);
         self
     }
 
     /// The level `r` earns for a session signed by `session_key`.
+    #[must_use]
     pub fn level(&self, r: &Receipt, session_key: &[u8; 32]) -> Level {
-        if self.providers.get(&r.provider).is_some_and(|ks| ks.contains(&r.attester)) {
+        if self
+            .providers
+            .get(&r.provider)
+            .is_some_and(|ks| ks.contains(&r.attester))
+        {
             Level::ProviderSigned
         } else if self.notaries.contains(&r.attester) {
             Level::Notarized
@@ -143,6 +176,7 @@ pub struct Coverage {
 
 impl Coverage {
     /// Responses backed at `min` or better.
+    #[must_use]
     pub fn at_least(&self, min: Level) -> usize {
         match min {
             Level::None => self.responses,
@@ -156,19 +190,36 @@ impl Coverage {
 /// Match a session's `model_response` entries against receipts. A response is backed by the best receipt
 /// whose `response_hash` equals the entry's payload hash and, when the previous entry is a `prompt`,
 /// whose `request_hash` equals that prompt's payload hash.
+#[must_use]
 pub fn coverage(log: &Log, receipts: &[Receipt], trust: &Trust) -> Coverage {
-    let session = log.entries.first().map(|e| e.signer).unwrap_or([0; 32]);
+    let session = log.entries.first().map_or([0; 32], |e| e.signer);
     let mut c = Coverage::default();
-    for (i, e) in log.entries.iter().enumerate().filter(|(_, e)| e.kind == "model_response") {
+    for (i, e) in log
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.kind == "model_response")
+    {
         c.responses += 1;
-        let prompt = i.checked_sub(1).map(|j| &log.entries[j]).filter(|p| p.kind == "prompt");
-        let candidates: Vec<&Receipt> = receipts.iter().filter(|r| r.response_hash == e.payload_hash).collect();
-        let matching: Vec<&&Receipt> = candidates.iter().filter(|r| prompt.is_none_or(|p| r.request_hash == p.payload_hash)).collect();
+        let prompt = i
+            .checked_sub(1)
+            .map(|j| &log.entries[j])
+            .filter(|p| p.kind == "prompt");
+        let candidates: Vec<&Receipt> = receipts
+            .iter()
+            .filter(|r| r.response_hash == e.payload_hash)
+            .collect();
+        let matching: Vec<&&Receipt> = candidates
+            .iter()
+            .filter(|r| prompt.is_none_or(|p| r.request_hash == p.payload_hash))
+            .collect();
         match matching.iter().map(|r| trust.level(r, &session)).max() {
             Some(Level::ProviderSigned) => c.provider_signed += 1,
             Some(Level::Notarized) => c.notarized += 1,
             Some(Level::SelfClaimed) => c.self_claimed += 1,
-            Some(Level::None) | None if !candidates.is_empty() && matching.is_empty() => c.mismatched += 1,
+            Some(Level::None) | None if !candidates.is_empty() && matching.is_empty() => {
+                c.mismatched += 1;
+            }
             _ => c.unbacked += 1,
         }
     }
@@ -177,7 +228,16 @@ pub fn coverage(log: &Log, receipts: &[Receipt], trust: &Trust) -> Coverage {
 
 /// Accept a session only if at least `numerator`/`denominator` of its model responses are backed at `min`
 /// or better. A session with no model responses passes (there is nothing to back).
-pub fn require(c: &Coverage, min: Level, numerator: usize, denominator: usize) -> Result<(), String> {
+///
+/// # Errors
+///
+/// Returns a [`RecordError`] if the input is malformed or breaks a rule of the record's domain.
+pub fn require(
+    c: &Coverage,
+    min: Level,
+    numerator: usize,
+    denominator: usize,
+) -> Result<(), RecordError> {
     if c.responses == 0 {
         return Ok(());
     }
@@ -188,7 +248,7 @@ pub fn require(c: &Coverage, min: Level, numerator: usize, denominator: usize) -
         Err(format!(
             "{have} of {} model responses are backed at {min:?} or better (need {numerator}/{denominator}); {} unbacked, {} mismatched",
             c.responses, c.unbacked, c.mismatched
-        ))
+        ).into())
     }
 }
 
@@ -204,7 +264,9 @@ mod tests {
     const NOTARY: u8 = 3;
 
     fn trust() -> Trust {
-        Trust::default().provider("api.anthropic.com", k(PROVIDER).verifying_key().to_bytes()).notary(k(NOTARY).verifying_key().to_bytes())
+        Trust::default()
+            .provider("api.anthropic.com", k(PROVIDER).verifying_key().to_bytes())
+            .notary(k(NOTARY).verifying_key().to_bytes())
     }
 
     type Exchange = (Vec<u8>, Vec<u8>);
@@ -214,7 +276,10 @@ mod tests {
         let mut log = Log::new();
         let mut pairs = Vec::new();
         for i in 0..n {
-            let (q, a) = (format!("prompt {i}").into_bytes(), format!("answer {i}").into_bytes());
+            let (q, a) = (
+                format!("prompt {i}").into_bytes(),
+                format!("answer {i}").into_bytes(),
+            );
             log.append(&k(SESSION), "prompt", &q, i as u64 * 2);
             log.append(&k(SESSION), "model_response", &a, i as u64 * 2 + 1);
             pairs.push((q, a));
@@ -235,7 +300,16 @@ mod tests {
             receipt(SESSION, "api.anthropic.com", &p[2].0, &p[2].1),
         ];
         let c = coverage(&log, &rs, &trust());
-        assert_eq!((c.responses, c.provider_signed, c.notarized, c.self_claimed, c.unbacked), (4, 1, 1, 1, 1));
+        assert_eq!(
+            (
+                c.responses,
+                c.provider_signed,
+                c.notarized,
+                c.self_claimed,
+                c.unbacked
+            ),
+            (4, 1, 1, 1, 1)
+        );
         assert_eq!(c.at_least(Level::Notarized), 2);
     }
 
@@ -244,7 +318,11 @@ mod tests {
         let (log, p) = session(1);
         let rs = vec![receipt(PROVIDER, "api.evil.example", &p[0].0, &p[0].1)];
         let c = coverage(&log, &rs, &trust());
-        assert_eq!((c.provider_signed, c.unbacked), (0, 1), "right key, wrong provider name");
+        assert_eq!(
+            (c.provider_signed, c.unbacked),
+            (0, 1),
+            "right key, wrong provider name"
+        );
     }
 
     #[test]
@@ -268,13 +346,21 @@ mod tests {
     #[test]
     fn policy_requires_a_fraction_at_a_level() {
         let (log, p) = session(4);
-        let rs: Vec<_> = (0..3).map(|i| receipt(NOTARY, "api.anthropic.com", &p[i].0, &p[i].1)).collect();
+        let rs: Vec<_> = (0..3)
+            .map(|i| receipt(NOTARY, "api.anthropic.com", &p[i].0, &p[i].1))
+            .collect();
         let c = coverage(&log, &rs, &trust());
         assert!(require(&c, Level::Notarized, 3, 4).is_ok());
-        let err = require(&c, Level::Notarized, 1, 1).unwrap_err();
+        let err = require(&c, Level::Notarized, 1, 1).unwrap_err().to_string();
         assert!(err.contains("3 of 4"), "{err}");
-        assert!(require(&c, Level::ProviderSigned, 1, 4).is_err(), "nobody provider-signed");
-        assert!(require(&Coverage::default(), Level::ProviderSigned, 1, 1).is_ok(), "nothing to back");
+        assert!(
+            require(&c, Level::ProviderSigned, 1, 4).is_err(),
+            "nobody provider-signed"
+        );
+        assert!(
+            require(&Coverage::default(), Level::ProviderSigned, 1, 1).is_ok(),
+            "nothing to back"
+        );
         assert_eq!(Level::parse("notarized").unwrap(), Level::Notarized);
     }
 }

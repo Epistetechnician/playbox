@@ -3,13 +3,23 @@
 
 use ed25519_dalek::SigningKey;
 use playbox_core::attest::{self, Tier};
-use playbox_core::platform::{fingerprint, PinStore, SecureEnclaveProvider, SecureEnclaveVerifier, SE_KIND};
+use playbox_core::platform::{
+    fingerprint, PinStore, SecureEnclaveProvider, SecureEnclaveVerifier, SE_KIND,
+};
 use std::{path::PathBuf, process::Command};
 
 fn build_helper(dir: &std::path::Path) -> Option<PathBuf> {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/playbox-se/playbox-se.swift");
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/playbox-se/playbox-se.swift");
     let out = dir.join("playbox-se");
-    let ok = Command::new("swiftc").arg("-O").arg(&src).arg("-o").arg(&out).status().ok()?.success();
+    let ok = Command::new("swiftc")
+        .arg("-O")
+        .arg(&src)
+        .arg("-o")
+        .arg(&out)
+        .status()
+        .ok()?
+        .success();
     ok.then_some(out)
 }
 
@@ -22,11 +32,15 @@ fn secure_enclave_statement_verifies_and_pins() {
         eprintln!("skipping: swiftc not available");
         return;
     };
-    let provider = SecureEnclaveProvider { helper: helper.clone(), key_file: dir.join("se.key") };
+    let provider = SecureEnclaveProvider {
+        helper: helper.clone(),
+        key_file: dir.join("se.key"),
+    };
     let session = SigningKey::from_bytes(&[4; 32]);
     let m = attest::measure_self("none", "test");
 
-    let text = attest::new_platform_statement(&session, "0a0b", "", 1, m.clone(), &provider).unwrap();
+    let text =
+        attest::new_platform_statement(&session, "0a0b", "", 1, m.clone(), &provider).unwrap();
     // Unpinned: valid, but stays T0 and reports the fingerprint to pin.
     let unpinned = SecureEnclaveVerifier::new(PinStore::in_memory());
     let v = attest::verify(&text, &[&unpinned]).unwrap();
@@ -37,7 +51,12 @@ fn secure_enclave_statement_verifies_and_pins() {
     // Pinned: T1.
     let mut pins = PinStore::in_memory();
     pins.add(SE_KIND, &fp).unwrap();
-    assert_eq!(attest::verify(&text, &[&SecureEnclaveVerifier::new(pins.clone())]).unwrap().achieved, Tier::T1);
+    assert_eq!(
+        attest::verify(&text, &[&SecureEnclaveVerifier::new(pins.clone())])
+            .unwrap()
+            .achieved,
+        Tier::T1
+    );
 
     // The key handle persists: a later statement comes from the same device key.
     let again = attest::new_platform_statement(&session, "0c0d", "", 2, m, &provider).unwrap();
@@ -46,8 +65,19 @@ fn secure_enclave_statement_verifies_and_pins() {
     assert_eq!(v2.device, v.device);
 
     // A different key file is a different device key, so the pin does not carry over.
-    let other = SecureEnclaveProvider { helper, key_file: dir.join("other.key") };
-    let t3 = attest::new_platform_statement(&session, "0e0f", "", 3, attest::measure_self("none", "test"), &other).unwrap();
+    let other = SecureEnclaveProvider {
+        helper,
+        key_file: dir.join("other.key"),
+    };
+    let t3 = attest::new_platform_statement(
+        &session,
+        "0e0f",
+        "",
+        3,
+        attest::measure_self("none", "test"),
+        &other,
+    )
+    .unwrap();
     let mut only_first = PinStore::in_memory();
     only_first.add(SE_KIND, &fp).unwrap();
     let r = attest::verify(&t3, &[&SecureEnclaveVerifier::new(only_first)]).unwrap();

@@ -1,4 +1,4 @@
-//! Versioned workspaces, adopting the useful ideas from LayerFS (Ephemeral-AI-Lab/layerfs):
+//! Versioned workspaces, adopting the useful ideas from `LayerFS` (Ephemeral-AI-Lab/layerfs):
 //! a commit per tool call, cheap branch/fork, content-defined chunking so an edit costs the
 //! size of the edit, content-addressed dedup, refuse-on-conflict with `.lww` (newest wins) rules.
 //!
@@ -22,7 +22,7 @@ const MASK: u64 = (1 << 13) - 1; // ~8 KiB average
 fn gear() -> [u64; 256] {
     let mut t = [0u64; 256];
     let mut s = 0x9E37_79B9_7F4A_7C15u64;
-    for v in t.iter_mut() {
+    for v in &mut t {
         s = s.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = s;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -34,6 +34,7 @@ fn gear() -> [u64; 256] {
 
 /// Content-defined chunking: boundaries depend on the last ~13 bytes only, so an edit
 /// changes the chunks around it and the rest resynchronise.
+#[must_use]
 pub fn chunk(data: &[u8]) -> Vec<&[u8]> {
     let g = gear();
     let mut out = Vec::new();
@@ -84,14 +85,26 @@ pub struct Store {
 }
 
 impl Store {
+    #[must_use]
     pub fn memory() -> Self {
-        Self { dir: None, mem: HashMap::new(), stored_bytes: 0 }
+        Self {
+            dir: None,
+            mem: HashMap::new(),
+            stored_bytes: 0,
+        }
     }
 
+    /// # Errors
+    ///
+    /// Returns an I/O error if reading or writing fails or the data is invalid.
     pub fn open(dir: impl Into<PathBuf>) -> io::Result<Self> {
         let dir = dir.into();
         fs::create_dir_all(&dir)?;
-        Ok(Self { dir: Some(dir), mem: HashMap::new(), stored_bytes: 0 })
+        Ok(Self {
+            dir: Some(dir),
+            mem: HashMap::new(),
+            stored_bytes: 0,
+        })
     }
 
     fn path(&self, id: &Id) -> Option<PathBuf> {
@@ -101,6 +114,13 @@ impl Store {
         })
     }
 
+    /// # Errors
+    ///
+    /// Returns an I/O error if reading or writing fails or the data is invalid.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an internal invariant is broken, which indicates a bug.
     pub fn put(&mut self, bytes: &[u8]) -> io::Result<Id> {
         let id = hash(bytes);
         match self.path(&id) {
@@ -122,9 +142,18 @@ impl Store {
         Ok(id)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn get(&self, id: &Id) -> Result<Vec<u8>, Error> {
         let bytes = match self.path(id) {
-            Some(p) => fs::read(p).map_err(|e| if e.kind() == ErrorKind::NotFound { Error::Missing } else { e.into() })?,
+            Some(p) => fs::read(p).map_err(|e| {
+                if e.kind() == ErrorKind::NotFound {
+                    Error::Missing
+                } else {
+                    e.into()
+                }
+            })?,
             None => self.mem.get(id).cloned().ok_or(Error::Missing)?,
         };
         if hash(&bytes) != *id {
@@ -134,6 +163,7 @@ impl Store {
     }
 
     /// Bytes of new objects written through this handle (dedup shows up as not growing).
+    #[must_use]
     pub fn stored_bytes(&self) -> u64 {
         self.stored_bytes
     }
@@ -150,10 +180,18 @@ pub type Tree = BTreeMap<String, Entry>;
 fn encode_tree(t: &Tree) -> Vec<u8> {
     let mut b = Vec::new();
     for (path, e) in t {
-        b.extend_from_slice(&(path.len() as u32).to_be_bytes());
+        b.extend_from_slice(
+            &u32::try_from(path.len())
+                .expect("length fits in u32")
+                .to_be_bytes(),
+        );
         b.extend_from_slice(path.as_bytes());
         b.extend_from_slice(&e.len.to_be_bytes());
-        b.extend_from_slice(&(e.chunks.len() as u32).to_be_bytes());
+        b.extend_from_slice(
+            &u32::try_from(e.chunks.len())
+                .expect("length fits in u32")
+                .to_be_bytes(),
+        );
         for c in &e.chunks {
             b.extend_from_slice(c);
         }
@@ -173,10 +211,14 @@ impl<'a> Reader<'a> {
         Ok(a)
     }
     fn u32(&mut self) -> Result<u32, Error> {
-        Ok(u32::from_be_bytes(self.take(4)?.try_into().expect("4 bytes")))
+        Ok(u32::from_be_bytes(
+            self.take(4)?.try_into().expect("4 bytes"),
+        ))
     }
     fn u64(&mut self) -> Result<u64, Error> {
-        Ok(u64::from_be_bytes(self.take(8)?.try_into().expect("8 bytes")))
+        Ok(u64::from_be_bytes(
+            self.take(8)?.try_into().expect("8 bytes"),
+        ))
     }
     fn id(&mut self) -> Result<Id, Error> {
         Ok(self.take(32)?.try_into().expect("32 bytes"))
@@ -214,13 +256,21 @@ pub struct Commit {
 fn encode_commit(c: &Commit) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&c.tree);
-    b.extend_from_slice(&(c.parents.len() as u32).to_be_bytes());
+    b.extend_from_slice(
+        &u32::try_from(c.parents.len())
+            .expect("length fits in u32")
+            .to_be_bytes(),
+    );
     for p in &c.parents {
         b.extend_from_slice(p);
     }
     b.extend_from_slice(&c.time_ms.to_be_bytes());
     for s in [&c.author, &c.message, &c.tool_call] {
-        b.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        b.extend_from_slice(
+            &u32::try_from(s.len())
+                .expect("length fits in u32")
+                .to_be_bytes(),
+        );
         b.extend_from_slice(s.as_bytes());
     }
     b
@@ -237,16 +287,25 @@ fn decode_commit(bytes: &[u8]) -> Result<Commit, Error> {
         String::from_utf8(r.take(n)?.to_vec()).map_err(|_| Error::Corrupt)
     };
     let (author, message, tool_call) = (s()?, s()?, s()?);
-    Ok(Commit { tree, parents, author, message, tool_call, time_ms })
+    Ok(Commit {
+        tree,
+        parents,
+        author,
+        message,
+        tool_call,
+        time_ms,
+    })
 }
 
 /// Does `path` match a `.lww` rule? Rules: exact path, `*.ext` suffix, or `dir/` prefix.
 fn lww_match(rules: &[String], path: &str) -> bool {
-    rules.iter().any(|r| match (r.strip_prefix('*'), r.ends_with('/')) {
-        (Some(suffix), _) => path.ends_with(suffix),
-        (None, true) => path.starts_with(r.as_str()),
-        _ => path == r,
-    })
+    rules
+        .iter()
+        .any(|r| match (r.strip_prefix('*'), r.ends_with('/')) {
+            (Some(suffix), _) => path.ends_with(suffix),
+            (None, true) => path.starts_with(r.as_str()),
+            _ => path == r,
+        })
 }
 
 #[derive(Debug)]
@@ -276,42 +335,72 @@ impl Workspace {
         self.overlay.insert(path.to_string(), None);
     }
 
+    #[must_use]
     pub fn branch(&self) -> &str {
         &self.branch
     }
 
+    #[must_use]
     pub fn base(&self) -> Id {
         self.base
     }
 
+    #[must_use]
     pub fn is_dirty(&self) -> bool {
         !self.overlay.is_empty()
     }
 }
 
 impl Repo {
+    #[must_use]
     pub fn new(store: Store) -> Self {
-        Self { store, branches: BTreeMap::new(), lww: Vec::new() }
+        Self {
+            store,
+            branches: BTreeMap::new(),
+            lww: Vec::new(),
+        }
     }
 
+    #[must_use]
     pub fn store(&self) -> &Store {
         &self.store
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn head(&self, branch: &str) -> Result<Id, Error> {
-        self.branches.get(branch).copied().ok_or_else(|| Error::NoBranch(branch.to_string()))
+        self.branches
+            .get(branch)
+            .copied()
+            .ok_or_else(|| Error::NoBranch(branch.to_string()))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn commit_info(&self, id: &Id) -> Result<Commit, Error> {
         decode_commit(&self.store.get(id)?)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn tree(&self, commit: &Id) -> Result<Tree, Error> {
         decode_tree(&self.store.get(&self.commit_info(commit)?.tree)?)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
     pub fn read(&self, commit: &Id, path: &str) -> Result<Option<Vec<u8>>, Error> {
-        let Some(e) = self.tree(commit)?.get(path).cloned() else { return Ok(None) };
+        let Some(e) = self.tree(commit)?.get(path).cloned() else {
+            return Ok(None);
+        };
         let mut out = Vec::with_capacity(e.len as usize);
         for c in &e.chunks {
             out.extend_from_slice(&self.store.get(c)?);
@@ -320,11 +409,25 @@ impl Repo {
     }
 
     /// Create a branch with an initial commit from `files`.
-    pub fn init(&mut self, branch: &str, files: &[(&str, &[u8])], author: &str, time_ms: u64) -> Result<Id, Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub fn init(
+        &mut self,
+        branch: &str,
+        files: &[(&str, &[u8])],
+        author: &str,
+        time_ms: u64,
+    ) -> Result<Id, Error> {
         if self.branches.contains_key(branch) {
             return Err(Error::BranchExists(branch.to_string()));
         }
-        let mut ws = Workspace { branch: branch.to_string(), base: [0; 32], overlay: BTreeMap::new() };
+        let mut ws = Workspace {
+            branch: branch.to_string(),
+            base: [0; 32],
+            overlay: BTreeMap::new(),
+        };
         for (p, d) in files {
             ws.write(p, d);
         }
@@ -335,6 +438,10 @@ impl Repo {
     }
 
     /// Fork copies nothing: the new branch points at the same commit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn fork(&mut self, new: &str, from: &str) -> Result<(), Error> {
         if self.branches.contains_key(new) {
             return Err(Error::BranchExists(new.to_string()));
@@ -344,11 +451,22 @@ impl Repo {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn workspace(&self, branch: &str) -> Result<Workspace, Error> {
-        Ok(Workspace { branch: branch.to_string(), base: self.head(branch)?, overlay: BTreeMap::new() })
+        Ok(Workspace {
+            branch: branch.to_string(),
+            base: self.head(branch)?,
+            overlay: BTreeMap::new(),
+        })
     }
 
-    fn build_tree(&mut self, base: &Tree, overlay: &BTreeMap<String, Option<Vec<u8>>>) -> Result<Id, Error> {
+    fn build_tree(
+        &mut self,
+        base: &Tree,
+        overlay: &BTreeMap<String, Option<Vec<u8>>>,
+    ) -> Result<Id, Error> {
         let mut t = base.clone();
         for (path, change) in overlay {
             match change {
@@ -356,26 +474,65 @@ impl Repo {
                     t.remove(path);
                 }
                 Some(data) => {
-                    let chunks = chunk(data).into_iter().map(|c| self.store.put(c)).collect::<Result<Vec<_>, _>>()?;
-                    t.insert(path.clone(), Entry { len: data.len() as u64, chunks });
+                    let chunks = chunk(data)
+                        .into_iter()
+                        .map(|c| self.store.put(c))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    t.insert(
+                        path.clone(),
+                        Entry {
+                            len: data.len() as u64,
+                            chunks,
+                        },
+                    );
                 }
             }
         }
         Ok(self.store.put(&encode_tree(&t))?)
     }
 
-    fn put_commit(&mut self, tree: Id, parents: Vec<Id>, author: &str, message: &str, tool_call: &str, time_ms: u64) -> Result<Id, Error> {
-        let c = Commit { tree, parents, author: author.into(), message: message.into(), tool_call: tool_call.into(), time_ms };
+    fn put_commit(
+        &mut self,
+        tree: Id,
+        parents: Vec<Id>,
+        author: &str,
+        message: &str,
+        tool_call: &str,
+        time_ms: u64,
+    ) -> Result<Id, Error> {
+        let c = Commit {
+            tree,
+            parents,
+            author: author.into(),
+            message: message.into(),
+            tool_call: tool_call.into(),
+            time_ms,
+        };
         Ok(self.store.put(&encode_commit(&c))?)
     }
 
     /// Commit the workspace to its branch: one commit per tool call. If the branch moved since the
     /// workspace opened, paths changed on both sides conflict unless a `.lww` rule applies.
     /// On conflict nothing is committed and the workspace keeps its changes.
-    pub fn commit(&mut self, ws: &mut Workspace, author: &str, message: &str, tool_call: &str, time_ms: u64) -> Result<Id, Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub fn commit(
+        &mut self,
+        ws: &mut Workspace,
+        author: &str,
+        message: &str,
+        tool_call: &str,
+        time_ms: u64,
+    ) -> Result<Id, Error> {
         let head = self.head(&ws.branch)?;
         let head_tree = self.tree(&head)?;
-        let base_tree = if ws.base == [0; 32] { Tree::new() } else { self.tree(&ws.base)? };
+        let base_tree = if ws.base == [0; 32] {
+            Tree::new()
+        } else {
+            self.tree(&ws.base)?
+        };
 
         if head != ws.base {
             let conflicts: Vec<String> = ws
@@ -383,7 +540,9 @@ impl Repo {
                 .iter()
                 .filter(|(path, ours)| {
                     let theirs_changed = base_tree.get(*path) != head_tree.get(*path as &String);
-                    theirs_changed && !lww_match(&self.lww, path) && !self.same_result(&head_tree, path, ours)
+                    theirs_changed
+                        && !lww_match(&self.lww, path)
+                        && !self.same_result(&head_tree, path, ours)
                 })
                 .map(|(p, _)| p.clone())
                 .collect();
@@ -404,7 +563,10 @@ impl Repo {
         match (head_tree.get(path), ours) {
             (None, None) => true,
             (Some(theirs), Some(data)) => {
-                let chunks: Option<Vec<Id>> = chunk(data).into_iter().map(|c| self.store.put(c).ok()).collect();
+                let chunks: Option<Vec<Id>> = chunk(data)
+                    .into_iter()
+                    .map(|c| self.store.put(c).ok())
+                    .collect();
                 chunks.is_some_and(|c| c == theirs.chunks)
             }
             _ => false,
@@ -412,6 +574,10 @@ impl Repo {
     }
 
     /// Every file as the workspace currently sees it: base tree plus uncommitted changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn files(&self, ws: &Workspace) -> Result<BTreeMap<String, Vec<u8>>, Error> {
         let mut out = BTreeMap::new();
         if ws.base != [0; 32] {
@@ -431,6 +597,10 @@ impl Repo {
     }
 
     /// Commits from `branch` head back to the first commit, newest first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn log(&self, branch: &str) -> Result<Vec<(Id, Commit)>, Error> {
         let mut out = Vec::new();
         let mut cur = Some(self.head(branch)?);
@@ -449,11 +619,17 @@ mod tests {
     use crate::history::Log;
     use ed25519_dalek::SigningKey;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
     fn noise(n: usize, seed: u64) -> Vec<u8> {
         let mut s = seed;
         (0..n)
             .map(|_| {
-                s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 (s >> 33) as u8
             })
             .collect()
@@ -469,7 +645,9 @@ mod tests {
         let parts = chunk(&data);
         assert_eq!(parts.concat(), data);
         assert!(parts.iter().all(|p| p.len() <= MAX_CHUNK));
-        assert!(parts[..parts.len() - 1].iter().all(|p| p.len() >= MIN_CHUNK));
+        assert!(parts[..parts.len() - 1]
+            .iter()
+            .all(|p| p.len() >= MIN_CHUNK));
     }
 
     #[test]
@@ -484,8 +662,16 @@ mod tests {
         ws.write("big.bin", &edited);
         r.commit(&mut ws, "a", "edit", "t1", 2).unwrap();
         let added = r.store().stored_bytes() - before;
-        assert!(added < 100_000, "stored {added} new bytes for a 10-byte edit of 1 MiB");
-        assert_eq!(r.read(&r.head("main").unwrap(), "big.bin").unwrap().unwrap(), edited);
+        assert!(
+            added < 100_000,
+            "stored {added} new bytes for a 10-byte edit of 1 MiB"
+        );
+        assert_eq!(
+            r.read(&r.head("main").unwrap(), "big.bin")
+                .unwrap()
+                .unwrap(),
+            edited
+        );
     }
 
     #[test]
@@ -499,7 +685,10 @@ mod tests {
         ws.write("copy/lib.bin", &data); // same bytes under another path
         r.commit(&mut ws, "b", "copy", "t", 2).unwrap();
         // only the new tree and commit objects (metadata); the 200 KB of chunks are reused
-        assert!(r.store().stored_bytes() - before < 10_000, "chunks must be reused");
+        assert!(
+            r.store().stored_bytes() - before < 10_000,
+            "chunks must be reused"
+        );
     }
 
     #[test]
@@ -510,8 +699,14 @@ mod tests {
         let mut ws = r.workspace("try").unwrap();
         ws.write("a.txt", b"two");
         r.commit(&mut ws, "a", "change", "t", 2).unwrap();
-        assert_eq!(r.read(&r.head("main").unwrap(), "a.txt").unwrap().unwrap(), b"one");
-        assert_eq!(r.read(&r.head("try").unwrap(), "a.txt").unwrap().unwrap(), b"two");
+        assert_eq!(
+            r.read(&r.head("main").unwrap(), "a.txt").unwrap().unwrap(),
+            b"one"
+        );
+        assert_eq!(
+            r.read(&r.head("try").unwrap(), "a.txt").unwrap().unwrap(),
+            b"two"
+        );
     }
 
     #[test]
@@ -566,7 +761,12 @@ mod tests {
         w2.write("run.log", b"newest");
         r.commit(&mut w1, "x", "log", "t1", 2).unwrap();
         r.commit(&mut w2, "y", "log", "t2", 3).unwrap();
-        assert_eq!(r.read(&r.head("main").unwrap(), "run.log").unwrap().unwrap(), b"newest");
+        assert_eq!(
+            r.read(&r.head("main").unwrap(), "run.log")
+                .unwrap()
+                .unwrap(),
+            b"newest"
+        );
     }
 
     #[test]
@@ -576,7 +776,8 @@ mod tests {
         let mut ws = r.workspace("main").unwrap();
         for (i, call) in ["toolu_1", "toolu_2", "toolu_3"].iter().enumerate() {
             ws.write("a", format!("{i}").as_bytes());
-            r.commit(&mut ws, "claude", "tool call", call, 10 + i as u64).unwrap();
+            r.commit(&mut ws, "claude", "tool call", call, 10 + i as u64)
+                .unwrap();
         }
         let log = r.log("main").unwrap();
         assert_eq!(log.len(), 4);
@@ -602,7 +803,10 @@ mod tests {
         let (mut a, mut b) = (repo(), repo());
         a.init("main", &[("x", b"1"), ("y", b"2")], "a", 1).unwrap();
         b.init("main", &[("y", b"2"), ("x", b"1")], "a", 1).unwrap();
-        assert_eq!(a.commit_info(&a.head("main").unwrap()).unwrap().tree, b.commit_info(&b.head("main").unwrap()).unwrap().tree);
+        assert_eq!(
+            a.commit_info(&a.head("main").unwrap()).unwrap().tree,
+            b.commit_info(&b.head("main").unwrap()).unwrap().tree
+        );
     }
 
     #[test]

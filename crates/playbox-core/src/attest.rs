@@ -19,6 +19,36 @@ use std::{collections::BTreeMap, fmt, fs, io::Read, path::Path};
 
 const DOMAIN: &str = "playbox.attest.v1\n";
 
+/// Why an attestation could not be parsed, verified, produced or accepted.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum AttestError {
+    /// The statement text or one of its fields is not valid.
+    #[error("{0}")]
+    Malformed(String),
+    /// The signature does not verify under the statement's subject key.
+    #[error("signature does not verify")]
+    BadSignature,
+    /// A platform verifier rejected the evidence, or a provider could not produce it.
+    #[error("{0}")]
+    Platform(String),
+    /// The verified tier is below what the operation requires.
+    #[error("{0}")]
+    TierTooLow(String),
+}
+
+impl From<String> for AttestError {
+    fn from(msg: String) -> Self {
+        Self::Malformed(msg)
+    }
+}
+
+impl From<&str> for AttestError {
+    fn from(msg: &str) -> Self {
+        Self::Malformed(msg.to_owned())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Tier {
     T0,
@@ -28,13 +58,16 @@ pub enum Tier {
 }
 
 impl Tier {
-    pub fn parse(s: &str) -> Result<Self, String> {
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the input is malformed or the evidence does not verify.
+    pub fn parse(s: &str) -> Result<Self, AttestError> {
         match s.trim().to_ascii_lowercase().as_str() {
             "t0" | "0" => Ok(Tier::T0),
             "t1" | "1" => Ok(Tier::T1),
             "t2" | "2" => Ok(Tier::T2),
             "t3" | "3" => Ok(Tier::T3),
-            o => Err(format!("unknown tier {o:?}; use t0, t1, t2 or t3")),
+            o => Err(format!("unknown tier {o:?}; use t0, t1, t2 or t3").into()),
         }
     }
 }
@@ -79,9 +112,9 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-fn unhex<const N: usize>(s: &str) -> Result<[u8; N], String> {
+fn unhex<const N: usize>(s: &str) -> Result<[u8; N], AttestError> {
     if s.len() != N * 2 || !s.is_ascii() {
-        return Err(format!("expected {} hex chars", N * 2));
+        return Err(format!("expected {} hex chars", N * 2).into());
     }
     let mut out = [0u8; N];
     for (i, o) in out.iter_mut().enumerate() {
@@ -91,19 +124,22 @@ fn unhex<const N: usize>(s: &str) -> Result<[u8; N], String> {
 }
 
 /// Values must be single-line and free of leading/trailing spaces so the text form is unambiguous.
-fn clean(v: &str) -> Result<&str, String> {
+fn clean(v: &str) -> Result<&str, AttestError> {
     if v.contains(['\n', '\r']) || v != v.trim() {
-        return Err(format!("value {v:?} must be a single trimmed line"));
+        return Err(format!("value {v:?} must be a single trimmed line").into());
     }
     Ok(v)
 }
 
 impl Statement {
-    fn body(&self) -> Result<String, String> {
+    fn body(&self) -> Result<String, AttestError> {
         let m = &self.measurements;
         let mut s = String::new();
-        let mut put = |k: &str, v: &str| -> Result<(), String> {
-            s.push_str(&format!("{k} {}\n", if v.is_empty() { "-" } else { clean(v)? }));
+        let mut put = |k: &str, v: &str| -> Result<(), AttestError> {
+            s.push_str(&format!(
+                "{k} {}\n",
+                if v.is_empty() { "-" } else { clean(v)? }
+            ));
             Ok(())
         };
         put("subject", &hex(&self.subject))?;
@@ -125,6 +161,7 @@ impl Statement {
     /// (which would be circular) and the claimed tier (which is only a cap that verifiers re-derive
     /// from the evidence). Hardware signs or quotes this, so the evidence cannot be moved to another
     /// subject, nonce, history position, set of measurements or platform kind.
+    #[must_use]
     pub fn binding(&self) -> [u8; 32] {
         let mut unbound = self.clone();
         unbound.platform_evidence = String::new();
@@ -137,7 +174,11 @@ impl Statement {
     }
 
     /// The signed text form: body lines followed by `sig <hex>`.
-    pub fn sign(&self, key: &SigningKey) -> Result<String, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
+    pub fn sign(&self, key: &SigningKey) -> Result<String, AttestError> {
         if key.verifying_key().to_bytes() != self.subject {
             return Err("statement subject is not the signing key".into());
         }
@@ -147,12 +188,18 @@ impl Statement {
     }
 
     /// Parse and check the signature. Does not judge freshness, the subject, or evidence.
-    pub fn parse(text: &str) -> Result<Self, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the input is malformed or the evidence does not verify.
+    pub fn parse(text: &str) -> Result<Self, AttestError> {
         let mut kv: BTreeMap<&str, &str> = BTreeMap::new();
         let mut body = String::new();
         let mut sig = None;
         for line in text.lines() {
-            let (k, v) = line.split_once(' ').ok_or_else(|| format!("bad line {line:?}"))?;
+            let (k, v) = line
+                .split_once(' ')
+                .ok_or_else(|| format!("bad line {line:?}"))?;
             if k == "sig" {
                 if sig.replace(v).is_some() {
                     return Err("duplicate sig".into());
@@ -163,19 +210,36 @@ impl Statement {
                 return Err("content after sig".into());
             }
             if kv.insert(k, v).is_some() {
-                return Err(format!("duplicate key {k}"));
+                return Err(format!("duplicate key {k}").into());
             }
             body.push_str(line);
             body.push('\n');
         }
         let sig: [u8; 64] = unhex(sig.ok_or("missing sig")?)?;
-        let get = |k: &str| -> Result<String, String> {
+        let get = |k: &str| -> Result<String, AttestError> {
             let v = *kv.get(k).ok_or_else(|| format!("missing {k}"))?;
-            Ok(if v == "-" { String::new() } else { v.to_string() })
+            Ok(if v == "-" {
+                String::new()
+            } else {
+                v.to_string()
+            })
         };
-        let known = ["subject", "nonce", "log_head", "issued_ms", "claimed", "binary", "runner", "policy", "os", "arch", "platform", "platform_evidence"];
+        let known = [
+            "subject",
+            "nonce",
+            "log_head",
+            "issued_ms",
+            "claimed",
+            "binary",
+            "runner",
+            "policy",
+            "os",
+            "arch",
+            "platform",
+            "platform_evidence",
+        ];
         if let Some(extra) = kv.keys().find(|k| !known.contains(k)) {
-            return Err(format!("unknown key {extra}"));
+            return Err(format!("unknown key {extra}").into());
         }
         let st = Statement {
             subject: unhex(&get("subject")?)?,
@@ -198,8 +262,11 @@ impl Statement {
             return Err("statement is not in canonical form".into());
         }
         let key = VerifyingKey::from_bytes(&st.subject).map_err(|_| "bad subject key")?;
-        key.verify(format!("{DOMAIN}{body}").as_bytes(), &Signature::from_bytes(&sig))
-            .map_err(|_| "signature does not verify")?;
+        key.verify(
+            format!("{DOMAIN}{body}").as_bytes(),
+            &Signature::from_bytes(&sig),
+        )
+        .map_err(|_| AttestError::BadSignature)?;
         Ok(st)
     }
 }
@@ -237,7 +304,11 @@ pub trait PlatformVerifier: Send + Sync {
     fn kind(&self) -> &str;
     /// What the evidence supports, or why it does not verify. The evidence must be bound to
     /// `statement.binding()`; a verifier that does not check that proves nothing.
-    fn verify(&self, statement: &Statement) -> Result<PlatformVerdict, String>;
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the input is malformed or the evidence does not verify.
+    fn verify(&self, statement: &Statement) -> Result<PlatformVerdict, AttestError>;
 }
 
 #[derive(Debug, Clone)]
@@ -260,39 +331,68 @@ impl Verified {
     /// challenge promised, capped at the claimed tier; a wrong one leaves it unchanged and says so.
     /// Returns whether the answer was correct.
     pub fn complete_challenge(&mut self, response: &[u8]) -> bool {
-        let Some(ch) = self.challenge.take() else { return false };
+        let Some(ch) = self.challenge.take() else {
+            return false;
+        };
         // Constant-time comparison: the expected value is secret until the hardware reveals it.
-        let ok = ch.expect.len() == response.len() && ch.expect.iter().zip(response).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0;
+        let ok = ch.expect.len() == response.len()
+            && ch
+                .expect
+                .iter()
+                .zip(response)
+                .fold(0u8, |d, (a, b)| d | (a ^ b))
+                == 0;
         if ok {
             self.achieved = ch.tier_on_success.min(self.statement.claimed);
             self.notes.retain(|n| !n.starts_with("claims "));
             if self.statement.claimed > self.achieved {
-                self.notes.push(format!("claims {} but only {} is supported", self.statement.claimed, self.achieved));
+                self.notes.push(format!(
+                    "claims {} but only {} is supported",
+                    self.statement.claimed, self.achieved
+                ));
             }
-            self.notes.push(format!("challenge answered: the hardware holds the keys it claims; supports {}", self.achieved));
+            self.notes.push(format!(
+                "challenge answered: the hardware holds the keys it claims; supports {}",
+                self.achieved
+            ));
         } else {
-            self.notes.push("challenge answered incorrectly: the host does not hold the keys it claims".into());
+            self.notes.push(
+                "challenge answered incorrectly: the host does not hold the keys it claims".into(),
+            );
         }
         ok
     }
 }
 
 /// Verify a signed statement and work out the tier it achieves.
-pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verified, String> {
+///
+/// # Errors
+///
+/// Returns an [`AttestError`] if the input is malformed or the evidence does not verify.
+pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verified, AttestError> {
     let statement = Statement::parse(text)?;
-    let mut notes = vec!["signature valid: the holder of the subject key made these claims".to_string()];
+    let mut notes =
+        vec!["signature valid: the holder of the subject key made these claims".to_string()];
     let mut achieved = Tier::T0;
     let mut device = None;
     let mut challenge = None;
     if statement.platform != "none" {
         match verifiers.iter().find(|v| v.kind() == statement.platform) {
-            None => notes.push(format!("platform evidence of kind `{}` was not verified: no verifier available", statement.platform)),
+            None => notes.push(format!(
+                "platform evidence of kind `{}` was not verified: no verifier available",
+                statement.platform
+            )),
             Some(v) => match v.verify(&statement) {
                 Ok(verdict) => {
                     achieved = verdict.tier.min(statement.claimed);
-                    notes.push(format!("`{}` evidence verified, supports {}", statement.platform, verdict.tier));
+                    notes.push(format!(
+                        "`{}` evidence verified, supports {}",
+                        statement.platform, verdict.tier
+                    ));
                     notes.extend(verdict.notes);
-                    device = verdict.device.map(|d| format!("{}:{d}", statement.platform));
+                    device = verdict
+                        .device
+                        .map(|d| format!("{}:{d}", statement.platform));
                     challenge = verdict.challenge;
                 }
                 Err(e) => notes.push(format!("`{}` evidence rejected: {e}", statement.platform)),
@@ -300,9 +400,19 @@ pub fn verify(text: &str, verifiers: &[&dyn PlatformVerifier]) -> Result<Verifie
         }
     }
     if statement.claimed > achieved {
-        notes.push(format!("claims {} but only {} is supported", statement.claimed, achieved));
+        notes.push(format!(
+            "claims {} but only {} is supported",
+            statement.claimed, achieved
+        ));
     }
-    Ok(Verified { statement, text: text.to_string(), achieved, notes, device, challenge })
+    Ok(Verified {
+        statement,
+        text: text.to_string(),
+        achieved,
+        notes,
+        device,
+        challenge,
+    })
 }
 
 /// What a platform provider produced for one statement.
@@ -319,14 +429,28 @@ pub trait PlatformProvider: Send + Sync {
     /// The `platform` value written into statements, e.g. `tpm` or `secure-enclave`.
     fn kind(&self) -> &str;
     /// Evidence bound to `binding` (see [`Statement::binding`]) about `m`.
-    fn produce(&self, binding: &[u8; 32], m: &Measurements) -> Result<Produced, String>;
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
+    fn produce(&self, binding: &[u8; 32], m: &Measurements) -> Result<Produced, AttestError>;
     /// Answer a verifier's [`Challenge`] using the hardware. Providers without a challenge protocol refuse.
-    fn respond(&self, _request: &[u8]) -> Result<Vec<u8>, String> {
-        Err("this platform provider does not answer challenges".into())
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
+    fn respond(&self, _request: &[u8]) -> Result<Vec<u8>, AttestError> {
+        Err(AttestError::Platform(
+            "this platform provider does not answer challenges".into(),
+        ))
     }
 }
 
 /// A signed statement carrying evidence from `provider`.
+///
+/// # Errors
+///
+/// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
 pub fn new_platform_statement(
     key: &SigningKey,
     nonce: &str,
@@ -334,7 +458,7 @@ pub fn new_platform_statement(
     issued_ms: u64,
     m: Measurements,
     provider: &dyn PlatformProvider,
-) -> Result<String, String> {
+) -> Result<String, AttestError> {
     let mut st = new_statement(key, nonce, log_head, issued_ms, m);
     st.platform = provider.kind().to_string();
     let produced = provider.produce(&st.binding(), &st.measurements)?;
@@ -350,20 +474,30 @@ pub struct Policy {
 }
 
 impl Policy {
+    #[must_use]
     pub fn require(mut self, op: &str, tier: Tier) -> Self {
         self.min.insert(op.to_string(), tier);
         self
     }
 
-    pub fn check(&self, op: &str, achieved: Tier) -> Result<(), String> {
+    /// # Errors
+    ///
+    /// Returns an [`AttestError`] if the input is malformed or the evidence does not verify.
+    pub fn check(&self, op: &str, achieved: Tier) -> Result<(), AttestError> {
         match self.min.get(op) {
-            Some(need) if achieved < *need => Err(format!("`{op}` needs {need} but only {achieved} is verified")),
+            Some(need) if achieved < *need => Err(AttestError::TierTooLow(format!(
+                "`{op}` needs {need} but only {achieved} is verified"
+            ))),
             _ => Ok(()),
         }
     }
 }
 
 /// blake3 of a file, streamed.
+///
+/// # Errors
+///
+/// Returns an I/O error if reading or writing fails or the data is invalid.
 pub fn hash_file(path: &Path) -> std::io::Result<String> {
     let mut f = fs::File::open(path)?;
     let mut h = blake3::Hasher::new();
@@ -378,11 +512,13 @@ pub fn hash_file(path: &Path) -> std::io::Result<String> {
     Ok(hex(h.finalize().as_bytes()))
 }
 
+#[must_use]
 pub fn hash_bytes(b: &[u8]) -> String {
     hex(blake3::hash(b).as_bytes())
 }
 
 /// Measurements of the running process. `policy` is hashed from the caller's description of its options.
+#[must_use]
 pub fn measure_self(runner: &str, policy_description: &str) -> Measurements {
     let binary = std::env::current_exe()
         .and_then(|p| hash_file(&p))
@@ -396,7 +532,14 @@ pub fn measure_self(runner: &str, policy_description: &str) -> Measurements {
     }
 }
 
-pub fn new_statement(key: &SigningKey, nonce: &str, log_head: &str, issued_ms: u64, m: Measurements) -> Statement {
+#[must_use]
+pub fn new_statement(
+    key: &SigningKey,
+    nonce: &str,
+    log_head: &str,
+    issued_ms: u64,
+    m: Measurements,
+) -> Statement {
     Statement {
         subject: key.verifying_key().to_bytes(),
         nonce: nonce.to_string(),
@@ -418,16 +561,37 @@ mod tests {
     }
 
     fn stmt(k: &SigningKey) -> Statement {
-        new_statement(k, "ab12", "", 5, Measurements { binary: "b".into(), runner: "docker".into(), policy: "p".into(), os: "macos".into(), arch: "aarch64".into() })
+        new_statement(
+            k,
+            "ab12",
+            "",
+            5,
+            Measurements {
+                binary: "b".into(),
+                runner: "docker".into(),
+                policy: "p".into(),
+                os: "macos".into(),
+                arch: "aarch64".into(),
+            },
+        )
     }
 
     struct Mock(Tier, bool);
     impl PlatformVerifier for Mock {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "tpm"
         }
-        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
-            if self.1 { Ok(PlatformVerdict { tier: self.0, notes: vec![], device: Some("dev".into()), challenge: None }) } else { Err("bad quote".into()) }
+        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, AttestError> {
+            if self.1 {
+                Ok(PlatformVerdict {
+                    tier: self.0,
+                    notes: vec![],
+                    device: Some("dev".into()),
+                    challenge: None,
+                })
+            } else {
+                Err("bad quote".into())
+            }
         }
     }
 
@@ -450,7 +614,10 @@ mod tests {
         let mut s = stmt(&k);
         assert!(s.sign(&key(2)).is_err());
         s.subject = key(2).verifying_key().to_bytes();
-        let forged = s.sign(&key(2)).unwrap().replace(&hex(&key(2).verifying_key().to_bytes()), &hex(&k.verifying_key().to_bytes()));
+        let forged = s.sign(&key(2)).unwrap().replace(
+            &hex(&key(2).verifying_key().to_bytes()),
+            &hex(&k.verifying_key().to_bytes()),
+        );
         assert!(Statement::parse(&forged).is_err());
     }
 
@@ -478,11 +645,23 @@ mod tests {
         assert_eq!(v.achieved, Tier::T0);
         assert!(v.notes.iter().any(|n| n.contains("no verifier")));
         // A verifier that rejects the quote keeps it at T0.
-        assert_eq!(verify(&text, &[&Mock(Tier::T2, false)]).unwrap().achieved, Tier::T0);
+        assert_eq!(
+            verify(&text, &[&Mock(Tier::T2, false)]).unwrap().achieved,
+            Tier::T0
+        );
         // A verifier that accepts it lifts the tier, but never above what was claimed.
-        assert_eq!(verify(&text, &[&Mock(Tier::T2, true)]).unwrap().achieved, Tier::T2);
-        assert_eq!(verify(&text, &[&Mock(Tier::T3, true)]).unwrap().achieved, Tier::T2);
-        assert_eq!(verify(&text, &[&Mock(Tier::T1, true)]).unwrap().achieved, Tier::T1);
+        assert_eq!(
+            verify(&text, &[&Mock(Tier::T2, true)]).unwrap().achieved,
+            Tier::T2
+        );
+        assert_eq!(
+            verify(&text, &[&Mock(Tier::T3, true)]).unwrap().achieved,
+            Tier::T2
+        );
+        assert_eq!(
+            verify(&text, &[&Mock(Tier::T1, true)]).unwrap().achieved,
+            Tier::T1
+        );
     }
 
     #[test]
@@ -509,15 +688,19 @@ mod tests {
 
     struct Asks;
     impl PlatformVerifier for Asks {
-        fn kind(&self) -> &str {
+        fn kind(&self) -> &'static str {
             "tpm"
         }
-        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, String> {
+        fn verify(&self, _: &Statement) -> Result<PlatformVerdict, AttestError> {
             Ok(PlatformVerdict {
                 tier: Tier::T0,
                 notes: vec![],
                 device: None,
-                challenge: Some(Challenge { payload: b"q".to_vec(), expect: b"secret".to_vec(), tier_on_success: Tier::T2 }),
+                challenge: Some(Challenge {
+                    payload: b"q".to_vec(),
+                    expect: b"secret".to_vec(),
+                    tier_on_success: Tier::T2,
+                }),
             })
         }
     }
@@ -530,7 +713,11 @@ mod tests {
         s.platform = "tpm".into();
         let text = s.sign(&k).unwrap();
         let v = verify(&text, &[&Asks]).unwrap();
-        assert_eq!(v.achieved, Tier::T0, "without answering, an offline check keeps the lower tier");
+        assert_eq!(
+            v.achieved,
+            Tier::T0,
+            "without answering, an offline check keeps the lower tier"
+        );
         assert_eq!(v.challenge.as_ref().unwrap().payload, b"q");
         // Wrong answers, even of the right length, do not help.
         let mut bad = v.clone();
@@ -552,6 +739,10 @@ mod tests {
         assert!(p.check("merge", Tier::T1).is_err());
         assert!(p.check("merge", Tier::T2).is_ok());
         assert!(p.check("echo", Tier::T0).is_ok());
-        assert!(Tier::T3 > Tier::T0 && Tier::parse("T2").unwrap() == Tier::T2 && Tier::parse("x").is_err());
+        assert!(
+            Tier::T3 > Tier::T0
+                && Tier::parse("T2").unwrap() == Tier::T2
+                && Tier::parse("x").is_err()
+        );
     }
 }

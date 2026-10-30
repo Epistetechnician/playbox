@@ -38,7 +38,15 @@ impl Backend {
             Backend::Guest(c) => {
                 let mut f = c.feed(since).await?;
                 // The host answered, so it is here; the feed lists only members.
-                f.members.insert(0, Presence { id: "host".into(), name: None, present: true, last_seen_ms: f.now_ms });
+                f.members.insert(
+                    0,
+                    Presence {
+                        id: "host".into(),
+                        name: None,
+                        present: true,
+                        last_seen_ms: f.now_ms,
+                    },
+                );
                 Ok(f)
             }
             Backend::Host(h) => Ok(h.feed(since)),
@@ -90,11 +98,29 @@ pub struct App {
 
 impl App {
     pub fn new(title: String, me: String, name: Option<String>, host_mode: bool) -> Self {
-        Self { title, me, name, host_mode, items: vec![], members: vec![], input: String::new(), scroll: 0, status: Status::Connecting, quit: false }
+        Self {
+            title,
+            me,
+            name,
+            host_mode,
+            items: vec![],
+            members: vec![],
+            input: String::new(),
+            scroll: 0,
+            status: Status::Connecting,
+            quit: false,
+        }
     }
 
     pub fn note(&mut self, text: impl Into<String>) {
-        self.items.push(Item { seq: 0, time_ms: playbox_net::chat::now_ms(), kind: "local".into(), from: String::new(), name: None, text: text.into() });
+        self.items.push(Item {
+            seq: 0,
+            time_ms: playbox_net::chat::now_ms(),
+            kind: "local".into(),
+            from: String::new(),
+            name: None,
+            text: text.into(),
+        });
     }
 
     fn apply(&mut self, ev: Event) {
@@ -118,7 +144,14 @@ fn short(id: &str) -> String {
 }
 
 fn color_for(id: &str) -> Color {
-    const PALETTE: [Color; 6] = [Color::Green, Color::Magenta, Color::Blue, Color::LightRed, Color::LightCyan, Color::LightYellow];
+    const PALETTE: [Color; 6] = [
+        Color::Green,
+        Color::Magenta,
+        Color::Blue,
+        Color::LightRed,
+        Color::LightCyan,
+        Color::LightYellow,
+    ];
     PALETTE[id.bytes().fold(0usize, |a, b| a.wrapping_add(b as usize)) % PALETTE.len()]
 }
 
@@ -133,7 +166,11 @@ pub fn label(from: &str, name: Option<&str>) -> String {
 
 fn clock(ms: u64) -> String {
     chrono::DateTime::from_timestamp_millis(ms as i64)
-        .map(|t| t.with_timezone(&chrono::Local).format("%H:%M:%S").to_string())
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%H:%M:%S")
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
@@ -153,7 +190,11 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
                 word = word.chars().skip(width).collect();
                 out.push(head);
             }
-            let need = if line.is_empty() { word.chars().count() } else { line.chars().count() + 1 + word.chars().count() };
+            let need = if line.is_empty() {
+                word.chars().count()
+            } else {
+                line.chars().count() + 1 + word.chars().count()
+            };
             if need > width {
                 out.push(std::mem::take(&mut line));
             }
@@ -173,14 +214,30 @@ fn item_lines(i: &Item, me: &str, width: usize) -> Vec<Line<'static>> {
     match i.kind.as_str() {
         "say" => {
             let who = label(&i.from, i.name.as_deref());
-            let style = if i.from == me { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else if i.from == "host" { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(color_for(&i.from)).add_modifier(Modifier::BOLD) };
+            let style = if i.from == me {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else if i.from == "host" {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(color_for(&i.from))
+                    .add_modifier(Modifier::BOLD)
+            };
             let prefix = t.chars().count() + 2 + who.chars().count() + 2;
             let body = wrap(&i.text, width.saturating_sub(prefix));
             body.into_iter()
                 .enumerate()
                 .map(|(n, l)| {
                     if n == 0 {
-                        Line::from(vec![Span::styled(format!("{t}  "), dim), Span::styled(who.clone(), style), Span::raw(format!("  {l}"))])
+                        Line::from(vec![
+                            Span::styled(format!("{t}  "), dim),
+                            Span::styled(who.clone(), style),
+                            Span::raw(format!("  {l}")),
+                        ])
                     } else {
                         Line::from(format!("{}{l}", " ".repeat(prefix)))
                     }
@@ -188,29 +245,68 @@ fn item_lines(i: &Item, me: &str, width: usize) -> Vec<Line<'static>> {
                 .collect()
         }
         "event" => {
-            let peer = if i.from.is_empty() { String::new() } else { format!("  ({})", short(&i.from)) };
-            wrap(&format!("• {}{peer}", i.text), width.saturating_sub(t.chars().count() + 2))
-                .into_iter()
-                .enumerate()
-                .map(|(n, l)| if n == 0 { Line::from(Span::styled(format!("{t}  {l}"), dim)) } else { Line::from(Span::styled(format!("{}{l}", " ".repeat(t.chars().count() + 2)), dim)) })
-                .collect()
+            let peer = if i.from.is_empty() {
+                String::new()
+            } else {
+                format!("  ({})", short(&i.from))
+            };
+            wrap(
+                &format!("• {}{peer}", i.text),
+                width.saturating_sub(t.chars().count() + 2),
+            )
+            .into_iter()
+            .enumerate()
+            .map(|(n, l)| {
+                if n == 0 {
+                    Line::from(Span::styled(format!("{t}  {l}"), dim))
+                } else {
+                    Line::from(Span::styled(
+                        format!("{}{l}", " ".repeat(t.chars().count() + 2)),
+                        dim,
+                    ))
+                }
+            })
+            .collect()
         }
-        _ => wrap(&i.text, width).into_iter().map(|l| Line::from(Span::styled(l, Style::default().fg(Color::Yellow)))).collect(),
+        _ => wrap(&i.text, width)
+            .into_iter()
+            .map(|l| Line::from(Span::styled(l, Style::default().fg(Color::Yellow))))
+            .collect(),
     }
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
-    let [header, body, input] = Layout::vertical([Constraint::Length(1), Constraint::Min(3), Constraint::Length(3)]).areas(f.area());
+    let [header, body, input] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(3),
+        Constraint::Length(3),
+    ])
+    .areas(f.area());
 
     let (dot, status_style, status_text) = match &app.status {
-        Status::Connecting => ("○", Style::default().fg(Color::Yellow), "connecting".to_string()),
-        Status::Live(d) => ("●", Style::default().fg(Color::Green), format!("live {} ms", d.as_millis())),
-        Status::Down(e) => ("○", Style::default().fg(Color::Red), format!("reconnecting: {}", e.chars().take(40).collect::<String>())),
+        Status::Connecting => (
+            "○",
+            Style::default().fg(Color::Yellow),
+            "connecting".to_string(),
+        ),
+        Status::Live(d) => (
+            "●",
+            Style::default().fg(Color::Green),
+            format!("live {} ms", d.as_millis()),
+        ),
+        Status::Down(e) => (
+            "○",
+            Style::default().fg(Color::Red),
+            format!("reconnecting: {}", e.chars().take(40).collect::<String>()),
+        ),
     };
     let you = label(&app.me, app.name.as_deref());
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(" playbox ", Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)),
+            Span::styled(
+                " playbox ",
+                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+            ),
             Span::raw(format!(" {}  ·  you: {you}  ·  ", app.title)),
             Span::styled(format!("{dot} {status_text}"), status_style),
         ])),
@@ -218,7 +314,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     );
 
     let (main, side): (Rect, Option<Rect>) = if body.width >= 60 {
-        let [m, s] = Layout::horizontal([Constraint::Min(30), Constraint::Length(SIDEBAR)]).areas(body);
+        let [m, s] =
+            Layout::horizontal([Constraint::Min(30), Constraint::Length(SIDEBAR)]).areas(body);
         (m, Some(s))
     } else {
         (body, None)
@@ -227,13 +324,25 @@ pub fn draw(f: &mut Frame, app: &App) {
     // Messages: wrap everything, show the newest lines that fit (minus the scroll offset).
     let inner_w = main.width.saturating_sub(2) as usize;
     let inner_h = main.height.saturating_sub(2) as usize;
-    let all: Vec<Line> = app.items.iter().flat_map(|i| item_lines(i, &app.me, inner_w)).collect();
+    let all: Vec<Line> = app
+        .items
+        .iter()
+        .flat_map(|i| item_lines(i, &app.me, inner_w))
+        .collect();
     let max_scroll = all.len().saturating_sub(inner_h);
     let scroll = app.scroll.min(max_scroll);
     let end = all.len() - scroll;
     let start = end.saturating_sub(inner_h);
-    let title = if scroll > 0 { format!(" room · scrolled up {scroll} (End to follow) ") } else { " room ".to_string() };
-    f.render_widget(Paragraph::new(all[start..end].to_vec()).block(Block::default().borders(Borders::ALL).title(title)), main);
+    let title = if scroll > 0 {
+        format!(" room · scrolled up {scroll} (End to follow) ")
+    } else {
+        " room ".to_string()
+    };
+    f.render_widget(
+        Paragraph::new(all[start..end].to_vec())
+            .block(Block::default().borders(Borders::ALL).title(title)),
+        main,
+    );
 
     if let Some(side) = side {
         let present = app.members.iter().filter(|m| m.present).count();
@@ -241,20 +350,51 @@ pub fn draw(f: &mut Frame, app: &App) {
             .members
             .iter()
             .map(|m| {
-                let who = if m.id == app.me { format!("{} (you)", label(&m.id, m.name.as_deref())) } else { label(&m.id, m.name.as_deref()) };
-                if m.present {
-                    Line::from(vec![Span::styled("● ", Style::default().fg(Color::Green)), Span::raw(who)])
+                let who = if m.id == app.me {
+                    format!("{} (you)", label(&m.id, m.name.as_deref()))
                 } else {
-                    Line::from(Span::styled(format!("○ {who}"), Style::default().fg(Color::DarkGray)))
+                    label(&m.id, m.name.as_deref())
+                };
+                if m.present {
+                    Line::from(vec![
+                        Span::styled("● ", Style::default().fg(Color::Green)),
+                        Span::raw(who),
+                    ])
+                } else {
+                    Line::from(Span::styled(
+                        format!("○ {who}"),
+                        Style::default().fg(Color::DarkGray),
+                    ))
                 }
             })
             .collect();
-        f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(format!(" here {present}/{} ", app.members.len()))), side);
+        f.render_widget(
+            Paragraph::new(lines).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" here {present}/{} ", app.members.len())),
+            ),
+            side,
+        );
     }
 
-    let hint = if app.host_mode { " say something · /link /revoke /members /help · Esc quits " } else { " say something · /name /help · Esc quits " };
-    f.render_widget(Paragraph::new(format!("› {}", app.input)).block(Block::default().borders(Borders::ALL).title(hint)), input);
-    let x = input.x + 3 + app.input.chars().count().min(input.width.saturating_sub(4) as usize) as u16;
+    let hint = if app.host_mode {
+        " say something · /link /revoke /members /help · Esc quits "
+    } else {
+        " say something · /name /help · Esc quits "
+    };
+    f.render_widget(
+        Paragraph::new(format!("› {}", app.input))
+            .block(Block::default().borders(Borders::ALL).title(hint)),
+        input,
+    );
+    let x = input.x
+        + 3
+        + app
+            .input
+            .chars()
+            .count()
+            .min(input.width.saturating_sub(4) as usize) as u16;
     f.set_cursor_position((x, input.y + 1));
 }
 
@@ -273,12 +413,16 @@ pub fn submit(app: &mut App) -> Action {
     if line.is_empty() {
         return Action::None;
     }
-    let Some(cmd) = line.strip_prefix('/') else { return Action::Say(line) };
+    let Some(cmd) = line.strip_prefix('/') else {
+        return Action::Say(line);
+    };
     let mut w = cmd.splitn(2, ' ');
     match (w.next().unwrap_or(""), w.next().map(str::trim)) {
         ("quit" | "q", _) => app.quit = true,
         ("help" | "h", _) => {
-            app.note("Type to talk to everyone. Agents of any model post here through playbox_say.");
+            app.note(
+                "Type to talk to everyone. Agents of any model post here through playbox_say.",
+            );
             if app.host_mode {
                 app.note("/link  new one-hour invite   /revoke ID  remove a member (id prefix)   /members  list ids   /quit");
             } else {
@@ -288,16 +432,25 @@ pub fn submit(app: &mut App) -> Action {
         }
         ("name", Some(n)) if !app.host_mode && !n.is_empty() => {
             app.name = Some(n.chars().take(32).collect());
-            app.note(format!("you are now shown as {}", label(&app.me, app.name.as_deref())));
+            app.note(format!(
+                "you are now shown as {}",
+                label(&app.me, app.name.as_deref())
+            ));
         }
         ("members", _) => {
-            let lines: Vec<String> = app.members.iter().map(|m| format!("{} {}", if m.present { "●" } else { "○" }, m.id)).collect();
+            let lines: Vec<String> = app
+                .members
+                .iter()
+                .map(|m| format!("{} {}", if m.present { "●" } else { "○" }, m.id))
+                .collect();
             for l in lines {
                 app.note(l);
             }
         }
         ("link", _) if app.host_mode => return Action::Link,
-        ("revoke", Some(p)) if app.host_mode && !p.is_empty() => return Action::Revoke(p.to_string()),
+        ("revoke", Some(p)) if app.host_mode && !p.is_empty() => {
+            return Action::Revoke(p.to_string())
+        }
         (c, _) => app.note(format!("unknown command /{c}; try /help")),
     }
     Action::None
@@ -324,19 +477,33 @@ fn publish_invite(app: &mut App, link: &str) {
     use base64::Engine;
     use std::io::Write;
     let path = playbox_core::store::home().join("last-invite.txt");
-    let saved = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new("."))).and_then(|_| std::fs::write(&path, format!("{link}\n")));
+    let saved = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new(".")))
+        .and_then(|_| std::fs::write(&path, format!("{link}\n")));
     #[cfg(unix)]
     if saved.is_ok() {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
-    let osc = format!("\x1b]52;c;{}\x07", base64::engine::general_purpose::STANDARD.encode(link));
-    let _ = std::io::stdout().write_all(osc.as_bytes()).and_then(|_| std::io::stdout().flush());
-    app.note(format!("invite (1 hour, 1 use) copied if your terminal allows it, and saved to {}", path.display()));
+    let osc = format!(
+        "\x1b]52;c;{}\x07",
+        base64::engine::general_purpose::STANDARD.encode(link)
+    );
+    let _ = std::io::stdout()
+        .write_all(osc.as_bytes())
+        .and_then(|_| std::io::stdout().flush());
+    app.note(format!(
+        "invite (1 hour, 1 use) copied if your terminal allows it, and saved to {}",
+        path.display()
+    ));
     app.note(link.to_string());
 }
 
-pub async fn run(backend: Backend, title: String, name: Option<String>, first_invite: Option<String>) -> Result<()> {
+pub async fn run(
+    backend: Backend,
+    title: String,
+    name: Option<String>,
+    first_invite: Option<String>,
+) -> Result<()> {
     let host_mode = matches!(backend, Backend::Host(_));
     let me = backend.me();
     let mut app = App::new(title, me, name, host_mode);
@@ -361,7 +528,8 @@ pub async fn run(backend: Backend, title: String, name: Option<String>, first_in
                     Ok(Err(e)) => {
                         let text = format!("{e:#}");
                         if text.contains("grant revoked") {
-                            let _ = tx.send(Event::Down("removed from the room by the host".into()));
+                            let _ =
+                                tx.send(Event::Down("removed from the room by the host".into()));
                             break;
                         }
                         let _ = tx.send(Event::Down(text));
@@ -395,32 +563,53 @@ pub async fn run(backend: Backend, title: String, name: Option<String>, first_in
             app.apply(ev);
         }
         // `block_in_place` keeps the wait for a key from stalling the other tasks on this thread.
-        let key = tokio::task::block_in_place(|| -> Result<Option<TermEvent>> { Ok(if event::poll(Duration::from_millis(60))? { Some(event::read()?) } else { None }) })?;
-        let Some(TermEvent::Key(k)) = key else { continue };
+        let key = tokio::task::block_in_place(|| -> Result<Option<TermEvent>> {
+            Ok(if event::poll(Duration::from_millis(60))? {
+                Some(event::read()?)
+            } else {
+                None
+            })
+        })?;
+        let Some(TermEvent::Key(k)) = key else {
+            continue;
+        };
         if k.kind != KeyEventKind::Press {
             continue;
         }
         match (k.code, k.modifiers) {
-            (KeyCode::Esc, _) | (KeyCode::Char('c' | 'd'), KeyModifiers::CONTROL) => app.quit = true,
+            (KeyCode::Esc, _) | (KeyCode::Char('c' | 'd'), KeyModifiers::CONTROL) => {
+                app.quit = true
+            }
             (KeyCode::Enter, _) => match submit(&mut app) {
                 Action::None => {}
                 Action::Say(t) => {
                     let _ = say_tx.send((t, app.name.clone()));
                 }
                 Action::Link => match &backend {
-                    Backend::Host(h) => match h.create_link_with(Duration::from_secs(3600), 1, Default::default()) {
-                        Ok(l) => publish_invite(&mut app, &l.encode()),
-                        Err(e) => app.note(format!("could not make a link: {e:#}")),
-                    },
+                    Backend::Host(h) => {
+                        match h.create_link_with(Duration::from_secs(3600), 1, Default::default()) {
+                            Ok(l) => publish_invite(&mut app, &l.encode()),
+                            Err(e) => app.note(format!("could not make a link: {e:#}")),
+                        }
+                    }
                     Backend::Guest(_) => {}
                 },
                 Action::Revoke(prefix) => {
-                    let found: Vec<_> = app.members.iter().filter(|m| m.id != "host" && m.id.starts_with(&prefix)).map(|m| m.id.clone()).collect();
+                    let found: Vec<_> = app
+                        .members
+                        .iter()
+                        .filter(|m| m.id != "host" && m.id.starts_with(&prefix))
+                        .map(|m| m.id.clone())
+                        .collect();
                     match (found.as_slice(), &backend) {
                         ([id], Backend::Host(h)) => match id.parse::<playbox_net::EndpointId>() {
                             Ok(eid) => {
                                 let done = h.revoke_member(&eid);
-                                app.note(if done { format!("revoked {}", short(id)) } else { "not a current member".into() });
+                                app.note(if done {
+                                    format!("revoked {}", short(id))
+                                } else {
+                                    "not a current member".into()
+                                });
                             }
                             Err(e) => app.note(format!("bad id: {e}")),
                         },
@@ -435,7 +624,11 @@ pub async fn run(backend: Backend, title: String, name: Option<String>, first_in
             (KeyCode::PageUp, _) => app.scroll += 10,
             (KeyCode::PageDown, _) => app.scroll = app.scroll.saturating_sub(10),
             (KeyCode::End, _) => app.scroll = 0,
-            (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) && app.input.chars().count() < 1000 => app.input.push(c),
+            (KeyCode::Char(c), m)
+                if !m.contains(KeyModifiers::CONTROL) && app.input.chars().count() < 1000 =>
+            {
+                app.input.push(c)
+            }
             _ => {}
         }
     }
@@ -450,29 +643,68 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal as T};
 
     fn say(seq: u64, from: &str, name: Option<&str>, text: &str) -> Item {
-        Item { seq, time_ms: 1_700_000_000_000, kind: "say".into(), from: from.into(), name: name.map(Into::into), text: text.into() }
+        Item {
+            seq,
+            time_ms: 1_700_000_000_000,
+            kind: "say".into(),
+            from: from.into(),
+            name: name.map(Into::into),
+            text: text.into(),
+        }
     }
 
     fn screen(app: &App, w: u16, h: u16) -> String {
         let mut t = T::new(TestBackend::new(w, h)).unwrap();
         t.draw(|f| draw(f, app)).unwrap();
         let b = t.backend().buffer();
-        (0..h).map(|y| (0..w).map(|x| b[(x, y)].symbol().to_string()).collect::<String>()).collect::<Vec<_>>().join("\n")
+        (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| b[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
     fn shows_messages_events_members_and_status() {
-        let mut app = App::new("room f0f2".into(), "aaaa1111".into(), Some("me".into()), false);
+        let mut app = App::new(
+            "room f0f2".into(),
+            "aaaa1111".into(),
+            Some("me".into()),
+            false,
+        );
         app.apply(Event::Feed(
             Feed {
                 items: vec![
                     say(1, "bbbb2222", Some("claude"), "hello from a closed model"),
-                    Item { seq: 2, time_ms: 1_700_000_001_000, kind: "event".into(), from: "bbbb2222".into(), name: None, text: "task ok sh exit 0".into() },
+                    Item {
+                        seq: 2,
+                        time_ms: 1_700_000_001_000,
+                        kind: "event".into(),
+                        from: "bbbb2222".into(),
+                        name: None,
+                        text: "task ok sh exit 0".into(),
+                    },
                     say(3, "host", Some("host"), "welcome"),
                 ],
                 next: 3,
                 now_ms: 0,
-                members: vec![Presence { id: "aaaa1111".into(), name: Some("me".into()), present: true, last_seen_ms: 1 }, Presence { id: "bbbb2222".into(), name: Some("claude".into()), present: false, last_seen_ms: 0 }],
+                members: vec![
+                    Presence {
+                        id: "aaaa1111".into(),
+                        name: Some("me".into()),
+                        present: true,
+                        last_seen_ms: 1,
+                    },
+                    Presence {
+                        id: "bbbb2222".into(),
+                        name: Some("claude".into()),
+                        present: false,
+                        last_seen_ms: 0,
+                    },
+                ],
             },
             Duration::from_millis(42),
         ));
@@ -512,7 +744,10 @@ mod tests {
         assert!(matches!(submit(&mut app), Action::None));
         assert_eq!(app.name.as_deref(), Some("Ada"));
         app.input = "/link".into();
-        assert!(matches!(submit(&mut app), Action::None), "guests cannot mint links");
+        assert!(
+            matches!(submit(&mut app), Action::None),
+            "guests cannot mint links"
+        );
         app.input = "/nope".into();
         submit(&mut app);
         assert!(app.items.last().unwrap().text.contains("unknown command"));

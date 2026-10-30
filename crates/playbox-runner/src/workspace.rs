@@ -51,7 +51,12 @@ fn materialize(files: &BTreeMap<String, Vec<u8>>, dir: &Path) -> Result<()> {
 }
 
 fn scan(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
-    fn walk(root: &Path, cur: &Path, out: &mut BTreeMap<String, Vec<u8>>, bytes: &mut u64) -> Result<()> {
+    fn walk(
+        root: &Path,
+        cur: &Path,
+        out: &mut BTreeMap<String, Vec<u8>>,
+        bytes: &mut u64,
+    ) -> Result<()> {
         for entry in fs::read_dir(cur)? {
             let entry = entry?;
             let kind = entry.file_type()?;
@@ -68,7 +73,11 @@ fn scan(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
                 if out.len() >= MAX_FILES || *bytes > MAX_BYTES {
                     bail!("task output exceeds limits ({MAX_FILES} files, {MAX_BYTES} bytes)");
                 }
-                let rel = entry.path().strip_prefix(root)?.to_string_lossy().replace('\\', "/");
+                let rel = entry
+                    .path()
+                    .strip_prefix(root)?
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 out.insert(rel, data);
             } // symlinks and special files are skipped
         }
@@ -82,6 +91,10 @@ fn scan(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
 /// Execute `spec` over the workspace's current view, then commit the changes as one commit
 /// (a checkpoint per tool call). A failing command still commits what it changed; check
 /// `output.exit_code`.
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
 pub async fn run_in_workspace(
     repo: &mut Repo,
     ws: &mut Workspace,
@@ -93,7 +106,11 @@ pub async fn run_in_workspace(
     quota: Quota,
 ) -> Result<WorkspaceRun> {
     let before = repo.files(ws)?;
-    let dir = std::env::temp_dir().join(format!("playbox-run-{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
+    let dir = std::env::temp_dir().join(format!(
+        "playbox-run-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     fs::create_dir_all(&dir).context("scratch dir")?;
     let result = async {
         materialize(&before, &dir)?;
@@ -126,7 +143,12 @@ pub async fn run_in_workspace(
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(WorkspaceRun { output, commit, conflicts, changed })
+    Ok(WorkspaceRun {
+        output,
+        commit,
+        conflicts,
+        changed,
+    })
 }
 
 #[cfg(test)]
@@ -141,7 +163,8 @@ mod tests {
 
     fn repo() -> Repo {
         let mut r = Repo::new(Store::memory());
-        r.init("main", &[("a.txt", b"a"), ("src/b.txt", b"b")], "x", 1).unwrap();
+        r.init("main", &[("a.txt", b"a"), ("src/b.txt", b"b")], "x", 1)
+            .unwrap();
         r
     }
 
@@ -149,9 +172,18 @@ mod tests {
     async fn task_changes_become_one_commit_tagged_with_the_tool_call() {
         let mut r = repo();
         let mut ws = r.workspace("main").unwrap();
-        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("echo hi > out.txt; rm a.txt; echo B >> src/b.txt"), "claude", "toolu_9", 5, Quota::default())
-            .await
-            .unwrap();
+        let run = run_in_workspace(
+            &mut r,
+            &mut ws,
+            &ProcessRunner,
+            &sh("echo hi > out.txt; rm a.txt; echo B >> src/b.txt"),
+            "claude",
+            "toolu_9",
+            5,
+            Quota::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(run.output.exit_code, Some(0));
         let id = run.commit.expect("committed");
         assert_eq!(run.changed, ["out.txt", "src/b.txt", "a.txt"]);
@@ -168,7 +200,18 @@ mod tests {
         let mut r = repo();
         let head = r.head("main").unwrap();
         let mut ws = r.workspace("main").unwrap();
-        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("cat a.txt >/dev/null"), "claude", "t", 5, Quota::default()).await.unwrap();
+        let run = run_in_workspace(
+            &mut r,
+            &mut ws,
+            &ProcessRunner,
+            &sh("cat a.txt >/dev/null"),
+            "claude",
+            "t",
+            5,
+            Quota::default(),
+        )
+        .await
+        .unwrap();
         assert!(run.commit.is_none() && run.changed.is_empty());
         assert_eq!(r.head("main").unwrap(), head);
     }
@@ -177,8 +220,30 @@ mod tests {
     async fn sequential_tasks_see_each_others_changes() {
         let mut r = repo();
         let mut ws = r.workspace("main").unwrap();
-        run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("echo one > step.txt"), "c", "t1", 5, Quota::default()).await.unwrap();
-        let run = run_in_workspace(&mut r, &mut ws, &ProcessRunner, &sh("cat step.txt > copy.txt"), "c", "t2", 6, Quota::default()).await.unwrap();
+        run_in_workspace(
+            &mut r,
+            &mut ws,
+            &ProcessRunner,
+            &sh("echo one > step.txt"),
+            "c",
+            "t1",
+            5,
+            Quota::default(),
+        )
+        .await
+        .unwrap();
+        let run = run_in_workspace(
+            &mut r,
+            &mut ws,
+            &ProcessRunner,
+            &sh("cat step.txt > copy.txt"),
+            "c",
+            "t2",
+            6,
+            Quota::default(),
+        )
+        .await
+        .unwrap();
         let id = run.commit.unwrap();
         assert_eq!(r.read(&id, "copy.txt").unwrap().unwrap(), b"one\n");
         assert_eq!(r.log("main").unwrap().len(), 3);
@@ -188,8 +253,30 @@ mod tests {
     async fn concurrent_tasks_on_the_same_file_conflict() {
         let mut r = repo();
         let (mut w1, mut w2) = (r.workspace("main").unwrap(), r.workspace("main").unwrap());
-        let first = run_in_workspace(&mut r, &mut w1, &ProcessRunner, &sh("echo one > a.txt"), "c1", "t1", 5, Quota::default()).await.unwrap();
-        let second = run_in_workspace(&mut r, &mut w2, &ProcessRunner, &sh("echo two > a.txt"), "c2", "t2", 6, Quota::default()).await.unwrap();
+        let first = run_in_workspace(
+            &mut r,
+            &mut w1,
+            &ProcessRunner,
+            &sh("echo one > a.txt"),
+            "c1",
+            "t1",
+            5,
+            Quota::default(),
+        )
+        .await
+        .unwrap();
+        let second = run_in_workspace(
+            &mut r,
+            &mut w2,
+            &ProcessRunner,
+            &sh("echo two > a.txt"),
+            "c2",
+            "t2",
+            6,
+            Quota::default(),
+        )
+        .await
+        .unwrap();
         assert!(first.commit.is_some());
         assert!(second.commit.is_none());
         assert_eq!(second.conflicts, ["a.txt"]);

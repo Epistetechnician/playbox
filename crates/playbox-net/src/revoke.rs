@@ -21,17 +21,13 @@ use iroh::{
     protocol::{AcceptError, ProtocolHandler},
     Endpoint, EndpointAddr, EndpointId,
 };
-use iroh_gossip::{
-    api::Event,
-    net::Gossip,
-    proto::TopicId,
-};
+use iroh_gossip::{api::Event, net::Gossip, proto::TopicId};
+use n0_future::StreamExt;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
     time::Duration,
 };
-use n0_future::StreamExt;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 pub const SYNC_ALPN: &[u8] = b"playbox/revsync/1";
@@ -75,27 +71,45 @@ impl Notice {
     }
 
     /// The signed text form. Fails on a replica, which has no signing key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn sign(&self, auth: &Authority) -> Result<String> {
         let body = self.body(&auth.public_bytes());
-        let sig = auth.sign_notice(body.as_bytes()).ok_or_else(|| anyhow!("this host cannot sign revocations"))?;
+        let sig = auth
+            .sign_notice(body.as_bytes())
+            .ok_or_else(|| anyhow!("this host cannot sign revocations"))?;
         Ok(format!("{body}sig {}\n", hex(&sig)))
     }
 
     /// Parse a notice and check it was signed by this room's root key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
     pub fn parse(text: &str, auth: &Authority) -> Result<Notice> {
         let lines: Vec<&str> = text.lines().collect();
         if lines.len() != 6 || lines[0] != HEADER {
             bail!("not a revocation notice");
         }
         let field = |i: usize, key: &str| -> Result<&str> {
-            lines[i].strip_prefix(key).and_then(|r| r.strip_prefix(' ')).ok_or_else(|| anyhow!("expected `{key}` on line {}", i + 1))
+            lines[i]
+                .strip_prefix(key)
+                .and_then(|r| r.strip_prefix(' '))
+                .ok_or_else(|| anyhow!("expected `{key}` on line {}", i + 1))
         };
         let grant_id = field(2, "grant")?;
-        if grant_id.is_empty() || grant_id.len() > 512 || !grant_id.chars().all(|c| c.is_ascii_hexdigit()) {
+        if grant_id.is_empty()
+            || grant_id.len() > 512
+            || !grant_id.chars().all(|c| c.is_ascii_hexdigit())
+        {
             bail!("bad grant id");
         }
         let member = field(3, "member")?;
-        member.parse::<EndpointId>().map_err(|e| anyhow!("bad member id: {e}"))?;
+        member
+            .parse::<EndpointId>()
+            .map_err(|e| anyhow!("bad member id: {e}"))?;
         let notice = Notice {
             grant_id: grant_id.to_string(),
             member: member.to_string(),
@@ -162,13 +176,27 @@ impl std::fmt::Debug for SyncHandler {
 
 impl ProtocolHandler for SyncHandler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
-        if !self.allowed.lock().expect("allowed lock").contains(&conn.remote_id()) {
+        if !self
+            .allowed
+            .lock()
+            .expect("allowed lock")
+            .contains(&conn.remote_id())
+        {
             conn.close(1u32.into(), b"not a sync peer");
             return Ok(());
         }
-        let Ok((mut send, mut recv)) = conn.accept_bi().await else { return Ok(()) };
+        let Ok((mut send, mut recv)) = conn.accept_bi().await else {
+            return Ok(());
+        };
         let _ = recv.read_to_end(1024).await;
-        let texts: Vec<String> = self.state.lock().expect("state lock").notices.values().cloned().collect();
+        let texts: Vec<String> = self
+            .state
+            .lock()
+            .expect("state lock")
+            .notices
+            .values()
+            .cloned()
+            .collect();
         if let Ok(body) = serde_json::to_vec(&texts) {
             let _ = send.write_all(&body).await;
             let _ = send.finish();
@@ -199,7 +227,15 @@ struct Running {
 impl Replication {
     pub fn new(gossip: Gossip, memory: iroh::address_lookup::memory::MemoryLookup) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        Self { gossip, memory, allowed: Arc::default(), tx, rx: Mutex::new(Some(rx)), tasks: Mutex::default(), running: Default::default() }
+        Self {
+            gossip,
+            memory,
+            allowed: Arc::default(),
+            tx,
+            rx: Mutex::new(Some(rx)),
+            tasks: Mutex::default(),
+            running: Default::default(),
+        }
     }
 
     pub fn stop(&self) {
@@ -222,7 +258,10 @@ impl Replication {
         for p in peers.iter().filter(|p| !p.addrs.is_empty()) {
             self.memory.add_endpoint_info(p.clone());
         }
-        self.allowed.lock().expect("allowed lock").extend(ids.iter().copied());
+        self.allowed
+            .lock()
+            .expect("allowed lock")
+            .extend(ids.iter().copied());
 
         let mut running = self.running.lock().await;
         if let Some(r) = running.as_ref() {
@@ -235,11 +274,24 @@ impl Replication {
                     known.push(p);
                 }
             }
-            r.sender.join_peers(ids).await.context("adding gossip peers")?;
+            r.sender
+                .join_peers(ids)
+                .await
+                .context("adding gossip peers")?;
             return Ok(());
         }
-        let rx = self.rx.lock().expect("rx lock").take().ok_or_else(|| anyhow!("revocation sync is already running"))?;
-        let (sender, mut receiver) = self.gossip.subscribe(topic(&auth), ids).await.context("joining the revocation topic")?.split();
+        let rx = self
+            .rx
+            .lock()
+            .expect("rx lock")
+            .take()
+            .ok_or_else(|| anyhow!("revocation sync is already running"))?;
+        let (sender, mut receiver) = self
+            .gossip
+            .subscribe(topic(&auth), ids)
+            .await
+            .context("joining the revocation topic")?
+            .split();
 
         // Hear notices from gossip.
         let (st, au) = (state.clone(), auth.clone());
@@ -255,7 +307,13 @@ impl Replication {
 
         // Broadcast ours, including any we already hold.
         {
-            let held: Vec<String> = state.lock().expect("state lock").notices.values().cloned().collect();
+            let held: Vec<String> = state
+                .lock()
+                .expect("state lock")
+                .notices
+                .values()
+                .cloned()
+                .collect();
             for t in held {
                 let _ = self.tx.send(t);
             }
@@ -274,24 +332,44 @@ impl Replication {
         let visit = shared.clone();
         let pull = tokio::spawn(async move {
             loop {
-                let current: Vec<EndpointAddr> = visit.lock().expect("peers lock").iter().filter(|p| !p.addrs.is_empty()).cloned().collect();
+                let current: Vec<EndpointAddr> = visit
+                    .lock()
+                    .expect("peers lock")
+                    .iter()
+                    .filter(|p| !p.addrs.is_empty())
+                    .cloned()
+                    .collect();
                 for peer in &current {
                     let _ = pull_from(&endpoint, &state, &auth, peer).await;
                 }
                 tokio::time::sleep(interval).await;
             }
         });
-        self.tasks.lock().expect("tasks lock").extend([hear, say, pull]);
-        *running = Some(Running { sender, peers: shared });
+        self.tasks
+            .lock()
+            .expect("tasks lock")
+            .extend([hear, say, pull]);
+        *running = Some(Running {
+            sender,
+            peers: shared,
+        });
         Ok(())
     }
 }
 
 /// Ask one peer for its notices and apply them. Returns how many were new.
-pub(crate) async fn pull_from(endpoint: &Endpoint, state: &Mutex<State>, auth: &Authority, peer: &EndpointAddr) -> Result<usize> {
-    let conn = tokio::time::timeout(Duration::from_secs(5), endpoint.connect(peer.clone(), SYNC_ALPN))
-        .await
-        .map_err(|_| anyhow!("timed out connecting to {}", peer.id.fmt_short()))??;
+pub(crate) async fn pull_from(
+    endpoint: &Endpoint,
+    state: &Mutex<State>,
+    auth: &Authority,
+    peer: &EndpointAddr,
+) -> Result<usize> {
+    let conn = tokio::time::timeout(
+        Duration::from_secs(5),
+        endpoint.connect(peer.clone(), SYNC_ALPN),
+    )
+    .await
+    .map_err(|_| anyhow!("timed out connecting to {}", peer.id.fmt_short()))??;
     let (mut send, mut recv) = conn.open_bi().await?;
     send.write_all(b"?").await?;
     send.finish()?;
