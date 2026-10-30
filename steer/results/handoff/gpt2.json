@@ -1,0 +1,36 @@
+{
+ "model": "/private/tmp/claude-501/-Users-shaanp-Documents-GitHub-playbox/afca5a1c-a562-499c-a8dc-1a623c6a7fde/scratchpad/gpt2-weights",
+ "layer": 4,
+ "coef": 0.5,
+ "contexts": 16,
+ "n_per_trial": 6,
+ "trials": 100,
+ "message_bytes_mean": 384704.0,
+ "honest_accepted_with_full_audit": 16,
+ "seconds_per_handoff": {
+  "pack_incl_recompute": 0.010784106809296645,
+  "unpack": 0.00011912756599485874,
+  "accept_with_audit": 0.010753213566204067
+ },
+ "cheaters_caught_when_always_audited": 16,
+ "by_p": {
+  "0.1": {
+   "observed_caught_within_n": 0.46,
+   "predicted": 0.46855899999999995,
+   "mean_handoffs_until_caught": 3.1956521739130435,
+   "honest_refused": 0
+  },
+  "0.25": {
+   "observed_caught_within_n": 0.8,
+   "predicted": 0.822021484375,
+   "mean_handoffs_until_caught": 2.6375,
+   "honest_refused": 0
+  },
+  "0.5": {
+   "observed_caught_within_n": 0.98,
+   "predicted": 0.984375,
+   "mean_handoffs_until_caught": 1.7551020408163265,
+   "honest_refused": 0
+  }
+ }
+}

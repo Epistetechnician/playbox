@@ -659,6 +659,40 @@ Practical reading for rooms: a cache handed to another agent can carry a behavio
 and an independent judge on the receiver's output can see it. That supports pairing a latent handoff with the audit
 from round 2 and a judge on a sample of outputs.
 
+### E6 round 4: the handoff, with the audit built in
+
+`steer/playbox_steer/handoff.py` (9 tests) turns the round 2 audit into a message and a receiver policy. A handoff is
+`PBH1`, a length, a JSON header (the signed record and the text) and the cache as a safetensors blob; peer bytes are
+never passed to `torch.load`. The receiver always checks the signature, signer, weights, text hash and that the cache
+bytes match the record; with probability `audit_prob`, drawn from the OS random source so the sender cannot predict it,
+it also recomputes the cache from the text and compares. A trusted signer that fails is quarantined. Design points
+found while building it: quarantine requires a valid signature (otherwise a stranger could forge a record naming a
+trusted signer and get it banned; tested); a signer that is not trusted is never added to the list (otherwise junk
+with fresh keys would grow it); malformed, truncated or oversized messages are refused without touching the model.
+
+*Run* (`handoff_e2e.py`, results in `steer/results/handoff/`; 16 contexts; the cheater steers its context with the
+sentiment direction at strength 0.5, signs the steered cache with its own valid key and sends it as the clean cache):
+every honest handoff was accepted with a full audit (16 of 16 on each model, and 0 honest refusals at every audit
+rate) and every cheating handoff was caught when audited (16 of 16). With sampled audits, a cheater was quarantined
+within 6 handoffs about as often as `1 - (1 - p)^n` predicts (p = 0.1: 0.46 and 0.55 observed against 0.47; p = 0.25:
+0.70 to 0.80 against 0.82; p = 0.5: 0.98 to 1.00 against 0.98), after 1.8 to 3.2 handoffs on average. GPT-2 and
+SmolLM2 used the same seeded draws, so their catch rates are not independent samples; Qwen2.5-1.5B used 60 trials
+rather than 100. A message is 240 to 380 KB for these short contexts, and the audit costs about one prefill (0.011
+s, 0.017 s and 0.13 s per handoff for GPT-2, SmolLM2 and Qwen2.5-1.5B on this machine). The message grows linearly with
+the context, which is the cost of sending a cache instead of text.
+
+What this does not do. Nothing is caught when an audit is skipped, so the guarantee is probabilistic: a cheater who
+sends few handoffs may never be audited (the test `without_an_audit_a_cheater_passes...` documents this). It needs
+the same model, weights and numerics on both ends; across hardware or precision the tolerance is untested, and
+a mismatch there would refuse honest senders. A judge of B's output is not a substitute: judging needs a clean
+reference and producing one is the recompute itself, so a sampled judge adds nothing here beyond the round 3 finding
+that an independent judge can see the effect when a reference exists. It is a Python library, not yet an A2A
+operation: the host's wire format has no cache-carrying message, and a 512 MiB cap on a handoff is not yet tied to
+the host's request limits. It does not cover a cross-family mapper such as SwaT, which has nothing to recompute.
+
+A larger-model test on a CUDA machine was not run: no CUDA machine is available here (this Mac's GPU runs the fast
+path; the Raspberry Pi has none). Everything needed is in `fast.py` with `--device cuda`, which I have not exercised.
+
 ## 5. Threat model additions
 
 | Threat | Mitigation (built, with its test) | Remaining gap |
@@ -674,7 +708,7 @@ from round 2 and a judge on a sample of outputs.
 | Receipt forgery or misuse | Host signature; the client checks host key, spec, and exact output bytes; the ceiling is printed on the receipt | An un-attested host can lie about what it ran. Nothing raises the ceiling to `attested` yet. |
 | An imported public recipe carries an unexpected edit | Not built (section 2c): imports are meant to be untrusted and quarantined | Until built, do not import recipes automatically. |
 | Overfitting a sealed holdout; a variant that edits its own evaluator | Sealed holdout with Merkle proofs, custodian-only holdout runs, a query budget recorded as cost, a patch confined to `steer/spec.txt` and refused if it touches protected paths (`a_custodian_seals...`, `test_the_search_against_the_real_signing_and_lineage_check`) | A fixed holdout is eventually overfit; the scores are not bound to host receipts. |
-| Latent channels between agents bypass text-level checks | Measured, not closed. **E6** shows an edit made to A's context moves B through the cache with identical text (section 4). The defence is built as a library and tested (`steer/playbox_steer/cache_audit.py`: a signed record of the text and the exact cache, plus an audit that recomputes the cache from the text); it is not an A2A operation yet | A lying sender can sign its own steered cache, so only the recompute catches it, and that costs a prefill: audit a sampled fraction. It needs the same model on both ends, so it cannot cover a cross-family mapper. Tolerance across hardware or precision is untested. |
+| Latent channels between agents bypass text-level checks | Measured, not closed. **E6** shows an edit made to A's context moves B through the cache with identical text (section 4). The defence is built as a library and tested (`steer/playbox_steer/cache_audit.py`: a signed record of the text and the exact cache, plus an audit that recomputes the cache from the text); it is now a message format and receiver policy (`handoff.py`, round 4) but not an A2A operation yet | A lying sender can sign its own steered cache, so only the recompute catches it, and that costs a prefill: audit a sampled fraction. It needs the same model on both ends, so it cannot cover a cross-family mapper. Tolerance across hardware or precision is untested. |
 
 ## 6. Status and milestones
 

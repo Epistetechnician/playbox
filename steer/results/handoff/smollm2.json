@@ -1,0 +1,36 @@
+{
+ "model": "/Users/shaanp/.cache/huggingface/hub/models--HuggingFaceTB--SmolLM2-135M/snapshots/93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+ "layer": 10,
+ "coef": 0.5,
+ "contexts": 16,
+ "n_per_trial": 6,
+ "trials": 100,
+ "message_bytes_mean": 243803.0,
+ "honest_accepted_with_full_audit": 16,
+ "seconds_per_handoff": {
+  "pack_incl_recompute": 0.017750187500496395,
+  "unpack": 0.00018954168626805767,
+  "accept_with_audit": 0.017406695311365183
+ },
+ "cheaters_caught_when_always_audited": 16,
+ "by_p": {
+  "0.1": {
+   "observed_caught_within_n": 0.46,
+   "predicted": 0.46855899999999995,
+   "mean_handoffs_until_caught": 3.1956521739130435,
+   "honest_refused": 0
+  },
+  "0.25": {
+   "observed_caught_within_n": 0.8,
+   "predicted": 0.822021484375,
+   "mean_handoffs_until_caught": 2.6375,
+   "honest_refused": 0
+  },
+  "0.5": {
+   "observed_caught_within_n": 0.98,
+   "predicted": 0.984375,
+   "mean_handoffs_until_caught": 1.7551020408163265,
+   "honest_refused": 0
+  }
+ }
+}

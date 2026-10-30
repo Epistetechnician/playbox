@@ -1,0 +1,36 @@
+{
+ "model": "/private/tmp/claude-501/-Users-shaanp-Documents-GitHub-playbox/afca5a1c-a562-499c-a8dc-1a623c6a7fde/scratchpad/qwen25-weights",
+ "layer": 8,
+ "coef": 0.5,
+ "contexts": 16,
+ "n_per_trial": 6,
+ "trials": 60,
+ "message_bytes_mean": 302018.0,
+ "honest_accepted_with_full_audit": 16,
+ "seconds_per_handoff": {
+  "pack_incl_recompute": 0.1320538750005653,
+  "unpack": 0.00018471875227987766,
+  "accept_with_audit": 0.1318074556911597
+ },
+ "cheaters_caught_when_always_audited": 16,
+ "by_p": {
+  "0.1": {
+   "observed_caught_within_n": 0.55,
+   "predicted": 0.46855899999999995,
+   "mean_handoffs_until_caught": 3.242424242424242,
+   "honest_refused": 0
+  },
+  "0.25": {
+   "observed_caught_within_n": 0.7,
+   "predicted": 0.822021484375,
+   "mean_handoffs_until_caught": 2.4285714285714284,
+   "honest_refused": 0
+  },
+  "0.5": {
+   "observed_caught_within_n": 1.0,
+   "predicted": 0.984375,
+   "mean_handoffs_until_caught": 2.1,
+   "honest_refused": 0
+  }
+ }
+}
