@@ -280,7 +280,7 @@ side-effect metric. Status first, then the one result so far.
 |---|---|
 | **E1** contagion across a chain | Harness built; run on real GPT-2 at two strengths with 64 seeds and 20 random-direction controls (below). The steered direction beats all controls and the prompting baseline on its own projection measure, and an independent classifier and a pairwise judge agree it reads as more positive (strongest at strength 0.2). A second trait (formality) shows the same pattern against random directions but not against prompting. |
 | **E2** detectability | The read-only probe operation exists; no detector or baseline classifier is built. |
-| **E3** transfer across models | Not built. |
+| **E3** transfer across models | Run once, GPT-2 small to GPT-2 medium (below): a mapped direction recovered about 95% of the big model's own direction's effect and beat 40 random-direction controls. Same family and tokenizer only. |
 | **E4** config-search lineage | Built; run three times on GPT-2 (below): unpaired bound, paired bound, and paired bound with a KL penalty. Each search accepted a sensible configuration and its lineage verified in Rust. None beat a hand-picked setting by a clear margin. |
 | **E5** safety-direction handling | The guard and default-deny behavior are built and tested (section 5); no research claim is made. |
 
@@ -441,8 +441,59 @@ iterations (`grants.rs`).
 **E2.** Can a peer with `probe_only` rights detect that a transcript came from a steered agent, using the
 difference-of-means direction, against a baseline classifier? The probe operation is the building block.
 
-**E3.** Fit a linear map between two models' residual spaces and test whether one's direction steers the other.
-Needs the spec's `scale` field and a second hosted model.
+### E3: does a direction found in a small model steer a bigger one?
+
+**Setup (what ran).** Small model GPT-2 (124M, 12 blocks), big model GPT-2 medium (355M, 24 blocks; width 768 vs 1024).
+They share a tokenizer, which the code requires, because the map is fit on activations for identical tokens. The
+sentiment direction is the same difference of means as in E1 (12 vs 12 sentences) at small layer 6 and, separately,
+at big layer 12 (proportional depth, chosen before the run). The map is a ridge-regularized linear map from the small
+model's `resid_post` to the big model's at those layers, fit on 15,011 tokens (500 chunks of this repo's own docs, all
+but `steering.md`, so none of the evaluation text); held-out R² 0.64 (rows held out at random, so rows from the same
+chunk sit on both sides and this is optimistic). The small direction is pushed through the map's linear part and
+normalized. Arms, all at strength 0.3 of the big model's own activation norm, 64 neutral prompts, 24 greedy tokens:
+`direct` (the big model's own difference of means, which transfer is trying to match), `mapped`, 20 `mapped_null`
+(random unit vectors in the small space pushed through the same map: what any vector looks like after the map) and
+20 `random_null` (random unit vectors in the big space). Scored as in E1: the sentiment classifier and the pairwise
+judge, each text against the clean text for the same prompt. Both measures were 24/24 on the held-out gold pairs.
+Code: `steer/playbox_steer/transfer.py`, `steer/experiments/e3_run.py`, `judge/experiments/e3_score.py`; results:
+[scored](e3-gpt2-to-medium.scored.json), [all texts](e3-gpt2-to-medium.texts.json).
+
+| | classifier effect vs clean [95% CI] | judge log-odds [95% CI] | KL (nats/token) |
+|---|---|---|---|
+| **direct** (big model's own direction) | +4.00 [+2.67, +5.36] | +0.87 [+0.62, +1.11] | 0.25 |
+| **mapped** (from the small model) | +3.81 [+2.43, +5.18] | +0.76 [+0.49, +1.02] | 0.23 |
+| mapped − direct, paired over prompts | −0.20 [−0.62, +0.09] | −0.11 [−0.29, +0.05] | |
+| 20 mapped nulls: mean ± sd (range) | −1.06 ± 1.84 (−4.1 to +2.1) | −0.16 ± 0.27 (−0.55 to +0.42) | 0.16 |
+| 20 random nulls: mean ± sd (range) | −1.15 ± 1.89 (−4.7 to +2.6) | −0.17 ± 0.24 (−0.50 to +0.28) | 0.18 |
+| mapped vs the mapped nulls | above all 20; z +2.6 | above all 20; z +3.4 | |
+| mapped vs the random nulls | above all 20; z +2.6 | above all 20; z +3.8 | |
+
+The mapped direction has cosine 0.62 with the direct one; the 20 mapped random vectors have cosine −0.015 on average
+(largest magnitude 0.08). Per prompt, the mapped and direct effects correlate at 0.96. Texts where the arm beat clean on
+the classifier: direct 88%, mapped 84%.
+
+**What this shows.**
+1. A direction extracted in a small model and carried across by a learned linear map steers a bigger model about as well
+   as the bigger model's own direction: it retains 95% of the effect on the classifier (87% on the judge), and the
+   difference from the direct direction is not distinguishable from zero on either measure.
+2. It is not an artifact of the map: random vectors pushed through the same map do not steer toward positive, and look
+   like random vectors in the big space (means −1.06 and −1.15). Both real arms sit above every one of the 40 nulls.
+3. It does not cost more side effects than the direct direction (KL 0.23 against 0.25).
+
+**What it does not show.**
+- **Transfer across families or tokenizers.** GPT-2 small and medium share training data, tokenizer and architecture.
+  This is the easy case, and the same-tokenizer requirement is what lets the map be fit on paired tokens. The
+  cross-family claims in section 2 remain unreproduced here.
+- **Equivalence.** "Not distinguishable" is not "the same": the paired interval allows the mapped direction to be about
+  15% weaker (−0.62 on a +4.0 effect), and the judge's point estimate is 13% weaker.
+- **Anything about other traits, layer pairs, strengths or fit corpora.** One trait, one layer pair, one strength, one
+  fit corpus (the repo's docs, which are jargon-heavy), one run. The nulls are noisy (standard deviation about 1.8
+  classifier logits), so the z-scores of about +2.6 are modest next to E1's +4 to +5.
+- **That the cause is shared geometry rather than a shared recipe.** Both models were trained the same way on the same
+  data, so their residual streams may be unusually alike.
+- **A room run.** This used the engine directly: no grants, host, or receipts. Nothing prevents a mapped direction from
+  being submitted to a room as an ordinary direction file; a `SteerSpec` already records its recipe, but there is no
+  field naming the map, so a receipt would not say the direction was transferred.
 
 ### E4: a search whose gains are checked against a sealed holdout
 
@@ -805,7 +856,7 @@ Built and tested (`cargo test -p playbox-core -p playbox-runner -p playbox-net -
 - **S4 (part)** MCP tool and CLI flags (MCP end-to-end test drives two real sidecars with Docker); E1 harness with
   arms and statistics (11 orchestrator tests with a fake backend, including shard merging); a real GPT-2 run at 64 seeds (section 4).
 
-Not built: binding a variant's scores to host receipts; the transfer experiment (E3); a trained
+Not built: binding a variant's scores to host receipts; cross-family transfer and a spec field naming the map (E3 ran same-family, outside a room); a trained
 detector for E2; recipe import, the `scale` field and `SteerPlan` from section 2c; a latent-score (cardinal-harness style) judge, though a paired pairwise judge exists; a GPU
 path and anything attested above `local_internal_exploratory`; a libkrun mount; persistent budgets.
 
