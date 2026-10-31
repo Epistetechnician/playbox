@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
+import platform
 import json
 import shutil
 import statistics
@@ -35,6 +37,43 @@ from playbox_orchestrator.steer_search import Config, McpLineage, Result, Space,
 TOKENS = 20
 
 
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def write_manifest(run_dir: Path, a, report: dict, started: float) -> None:
+    """MANIFEST.json: what ran, on what, and a checksum for every file in the run directory except the model weights
+    (which are hard links to the weights directory and are identified by their manifest hash instead)."""
+    def run(cmd):
+        out = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+        return out.stdout.strip() if out.returncode == 0 else None
+
+    import torch, transformers
+    files = {}
+    for f in sorted(run_dir.rglob("*")):
+        rel = f.relative_to(run_dir).as_posix()
+        # e4.log is still being written when this runs, and verify.log is written afterwards: both are checksummed
+        # by hand once the run is over (LOGS.sha256).
+        if f.is_file() and not f.is_symlink() and not rel.startswith("work/store/weights/") and rel not in ("MANIFEST.json", "e4.log", "verify.log", "LOGS.sha256"):
+            files[rel] = {"sha256": sha256_file(f), "bytes": f.stat().st_size}
+    manifest = {
+        "kind": "playbox E4 run", "command": sys.argv, "started_unix": int(started), "finished_unix": int(time.time()),
+        "git": {"commit": run(["git", "rev-parse", "HEAD"]), "dirty": bool(run(["git", "status", "--porcelain", "--untracked-files=no"]))},
+        "host": {"platform": platform.platform(), "python": sys.version.split()[0], "torch": torch.__version__, "transformers": transformers.__version__},
+        "weights_manifest": report["weights"], "engine_image": report["evidence"]["image"], "steering_host": report["evidence"]["host_id"],
+        "evaluator": report["evaluator"], "custodian": report["custodian"], "holdout_root": report["holdout_root"],
+        "result": {"best": report["best_config"], "lineage": report["lineage_check"].get("improvement"), "evidence_required": report["evidence"]["required"]},
+        "files": files,
+    }
+    manifest["not_in_files"] = ["MANIFEST.json", "e4.log", "verify.log", "LOGS.sha256", "work/store/weights/*"]
+    (run_dir / "MANIFEST.json").write_text(json.dumps(manifest, indent=1))
+    print(f"manifest: {len(files)} files -> {run_dir / 'MANIFEST.json'}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
@@ -46,12 +85,20 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--evidence", action="store_true", help="accept a variant only if the custodian's score evidence verifies against the host's receipts")
     ap.add_argument("--no-baselines", action="store_true", help="skip the baseline scoring after the search (it takes about 15 minutes)")
+    ap.add_argument("--artifacts", help="write every artifact of this run (store, directions, texts, report, log, manifest) under this directory, e.g. on an external volume. Throwaway sidecar identities stay on the local disk.")
     ap.add_argument("--paired", action="store_true", help="the verifier asserts the holdout scores are aligned items and asks for the paired bound")
     ap.add_argument("--kl-weight", type=float, default=0.0, help="score = classifier effect - weight * KL, per prompt (classifier logit per nat)")
     ap.add_argument("--binary", default=str(ROOT / "target/debug/playbox-mcp"))
     a = ap.parse_args()
     steer_py = ROOT / "steer/.venv/bin/python"
-    work = Path(tempfile.mkdtemp(prefix="pb-e4-"))
+    started = time.time()
+    # Sidecar homes hold throwaway signing keys: they stay on the local disk whatever --artifacts says.
+    homes = Path(tempfile.mkdtemp(prefix="pb-e4-homes-"))
+    if a.artifacts:
+        work = Path(a.artifacts) / "work"
+        work.mkdir(parents=True, exist_ok=False)
+    else:
+        work = Path(tempfile.mkdtemp(prefix="pb-e4-"))
     print("work dir", work, flush=True)
 
     def steer_cli(*args: str) -> str:
@@ -63,7 +110,14 @@ def main() -> None:
         return out.stdout.strip()
 
     staged = work / "staged"
-    shutil.copytree(a.model, staged, ignore=shutil.ignore_patterns("onnx", ".cache", "*.md", "*.msgpack", "*.h5", "*.ot", "*.bin", "flax*", "tf*", "rust*"))
+    # Hard links where the filesystem allows (same volume), so a run does not duplicate the weights; plain copies otherwise.
+    def link_or_copy(src, dst):
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copy2(src, dst)
+
+    shutil.copytree(a.model, staged, copy_function=link_or_copy, ignore=shutil.ignore_patterns("onnx", ".cache", "*.md", "*.msgpack", "*.h5", "*.ot", "*.bin", "flax*", "tf*", "rust*"))
     weights = steer_cli("manifest", str(staged))
     store = work / "store"
     (store / "weights").mkdir(parents=True)
@@ -90,7 +144,7 @@ def main() -> None:
 
     clf = TraitClassifier(SENTIMENT)
     t0 = time.time()
-    with McpClient(a.binary, work / "host") as host, McpClient(a.binary, work / "searcher") as searcher, McpClient(a.binary, work / "custodian") as custodian:
+    with McpClient(a.binary, homes / "host") as host, McpClient(a.binary, homes / "searcher") as searcher, McpClient(a.binary, homes / "custodian") as custodian:
         created = host.call("playbox_create", {
             "repo": str(repo), "local": True, "runtime": "docker", "steer_store": str(store), "uses": 2,
             "steer_mem_mib": 2048, "steer_timeout_secs": 1800, "grant_ttl_secs": 6 * 3600,
@@ -186,6 +240,8 @@ def main() -> None:
         "elapsed_s": round(time.time() - t0),
     }
     Path(a.out).write_text(json.dumps(report, indent=1))
+    if a.artifacts:
+        write_manifest(Path(a.artifacts), a, report, started)
     print(f"\nholdout score (classifier effect - {a.kl_weight} * KL), 95% CI, mean KL")
     for k, v in report["holdout"].items():
         print(f"  {k:12} {v['mean']:+.3f} [{v['low']:+.3f}, {v['high']:+.3f}]  kl={v['kl']:.3f}")

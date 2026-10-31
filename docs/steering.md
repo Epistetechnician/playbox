@@ -272,6 +272,14 @@ enter shared memory quarantined.
 - **Humans:** `playbox up --runtime docker --steer-store DIR [--steer-image IMG] [--steer-mem-mib N]`.
 - **Making directions:** `python -m playbox_steer extract|random|manifest` (see `steer/playbox_steer/__main__.py`).
   Extraction is difference-of-means of last-token states between two prompt groups.
+- **Artifacts:** `judge/experiments/e4_search.py --artifacts DIR` writes everything a run produces (the host's model store,
+  extracted directions, per-prompt texts, report, log) under `DIR` and a `MANIFEST.json` with the command line, git commit,
+  library versions, weights/image/host/evaluator ids and a sha256 for every file; the weights are hard links to the source
+  weights, so a run costs no extra space for them on the same volume. Throwaway sidecar keys stay on the local disk. The
+  large inputs and past outputs of the experiments here live on an external volume (`PrimaryED/ResearchArtifacts/
+  playbox-steering/`, with its own README); the committed reports stay in `docs/`. A second run with the committed
+  evidence run's settings reproduced its decisions, means, bounds and signed score lists exactly, and `verify_e4.py`
+  verified it independently.
 - **Evidence:** `playbox_evidence_sign` (custodian) and `playbox_evidence_check` (verifier); `playbox_steer` also returns
   the exact `receipt_record`, and `output_raw` with `include_raw`.
 - **Experiments:** `orchestrator/playbox_orchestrator/steer_chain.py` (LangGraph chain, arms, statistics) driving a
