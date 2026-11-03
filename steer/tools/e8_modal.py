@@ -2,6 +2,7 @@
 
     modal run --detach steer/tools/e8_modal.py                 # sweep; survives this client disconnecting
     modal run --detach steer/tools/e8_modal.py --what main     # main comparison
+    modal run --detach steer/tools/e8_modal.py --what anchors  # anchor-count sweep
     modal volume get playbox-e8 e8_sweep.json steer/results/e8/e8_sweep.json
 
 The result is written to the Modal volume `playbox-e8` (which also caches the Hugging Face downloads), so it is kept
@@ -16,6 +17,7 @@ import modal
 
 STEER = Path(__file__).resolve().parents[1]
 
+FILES = {"sweep": "e8_sweep.json", "main": "e8_main_modal.json", "anchors": "e8_anchors.json"}
 app = modal.App("playbox-e8")
 vol = modal.Volume.from_name("playbox-e8", create_if_missing=True)
 image = (
@@ -43,9 +45,11 @@ def run(what: str) -> dict:
 
     if what == "main":
         res = hub_run.run(paths, frac=0.45, k=64, coefs=(0.5,), n_null=6, gen=24)
+    elif what == "anchors":
+        res = hub_run.anchor_sweep(paths)
     else:
         res = hub_run.sweep(paths)
-    name = "e8_sweep.json" if what == "sweep" else "e8_main_modal.json"
+    name = FILES[what]
     Path(f"/vol/{name}").write_text(json.dumps(res, indent=1))
     vol.commit()
     return res
@@ -53,10 +57,10 @@ def run(what: str) -> dict:
 
 @app.local_entrypoint()
 def main(what: str = "sweep"):
-    if what not in ("sweep", "main"):
-        raise SystemExit("--what is sweep or main")
+    if what not in FILES:
+        raise SystemExit("--what is " + ", ".join(FILES))
     res = run.remote(what)
-    out = STEER / "results/e8" / ("e8_sweep.json" if what == "sweep" else "e8_main_modal.json")
+    out = STEER / "results/e8" / FILES[what]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(res, indent=1))
     print("wrote", out)

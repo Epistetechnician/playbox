@@ -159,6 +159,11 @@ def sweep(models: dict[str, str], ks: tuple[int, ...] = (16, 32, 128), join: boo
             hub = H.fit_hub({n: s for n, s in states.items() if n != m}, digest, k=64)
             hub.add_spoke(m, states[m])
             hubs[f"join_{m}"] = hub
+    return _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
+
+
+def _score_hubs(models: dict[str, str], info: dict, hubs: dict[str, H.Hub], concepts: list[str], prompts: list[str],
+                coef: float, gen: int) -> dict:
     lex = {c: set(TEST_CONCEPTS[c]["lexicon"]) for c in concepts}
     res: dict = {"hubs": {n: {"k": h.k, "models": list(h.spokes)} for n, h in hubs.items()}, "pairs": {}, "chance": 1 / len(concepts)}
     for dst, di in info.items():
@@ -182,3 +187,23 @@ def sweep(models: dict[str, str], ks: tuple[int, ...] = (16, 32, 128), join: boo
                 res["pairs"].setdefault(f"{src}->{dst}", {})[name] = {"acc": round(hits / n, 4), "heldout_cos": round(cos, 4)}
         del mb
     return res
+
+
+def anchor_sweep(models: dict[str, str], ns: tuple[int, ...] = (50, 100, 200, 300), ks: tuple[int, ...] = (64, 128),
+                 frac: float = 0.45, coef: float = 0.5, gen: int = 24, concepts: list[str] | None = None,
+                 prompts: list[str] | None = None) -> dict:
+    """E8 follow-up: hub fitted on the first n anchors (the anchor list is shuffled, so a prefix is a random subset), for
+    each hub size k, plus the full anchor set as the reference. Held-out sentences and concepts are unchanged.
+    Hubs are named `n<n>_k<k>`; `full_k<k>` uses every anchor."""
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(TEST_CONCEPTS)
+    prompts = prompts or PROMPTS
+    train, held = _anchor_split()
+    info = {n: _sender_pass(p, frac, train, held, concepts) for n, p in models.items()}
+    hubs: dict[str, H.Hub] = {}
+    for n in (*ns, len(train)):
+        tag = "full" if n == len(train) else f"n{n}"
+        sub = train[:n]
+        for k in ks:
+            hubs[f"{tag}_k{k}"] = H.fit_hub({m: i["train"][:n] for m, i in info.items()}, H.anchor_digest(sub), k=k)
+    return _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
