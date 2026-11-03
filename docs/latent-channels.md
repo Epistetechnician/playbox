@@ -2,8 +2,8 @@
 
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
-section 6a (five families, one H100, 2026-11-03) and 6b (k sweep and join test, one A10G on Modal). The token-cost
-comparison, the anchor-count sweep and the closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
+section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) and 6c (anchor-count
+sweep, confounded). The token-cost comparison and the closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -156,6 +156,29 @@ and one run. The pair map's mean accuracy is 0.51 (0.59 into the 16 receivers ot
   cells; the cosine difference is under half a point. So a new model costs two adapters, not a refit.
 - **Not tested:** anchor count; whether joining several models in a row drifts; k above 128; other layers or strengths;
   concepts outside the five.
+
+## 6c. Anchor-count sweep (2026-11-03), confounded
+
+`steer/results/e8/e8_anchors.json`, from `steer/tools/e8_modal.py --what anchors` (Modal, A10G). Same models, concepts,
+prompts and strength as 6a. The hub is fitted on the first n of the shuffled 426 anchors (a random subset), k=64 and
+128; held-out sentences and concepts are unchanged. One run, one subset per n.
+
+| anchors n | k=64: accuracy (16 not into TinyLlama) | k=64: held-out cosine | k=128: accuracy (16) | k=128: held-out cosine | k=128: within 10 points of pair map (of 16) |
+|---|---|---|---|---|---|
+| 50 | 0.37 (k is capped at 50) | 0.79 | same hub | same | 3 |
+| 100 | 0.34 | 0.75 | 0.48 (k capped at 100) | 0.84 | 7 |
+| 200 | 0.19 | 0.66 | 0.34 | 0.80 | 2 |
+| 300 | 0.37 | 0.80 | 0.58 | 0.88 | 13 |
+| 426 (all) | 0.53 | 0.87 | 0.57 | 0.90 | 13 |
+
+- **What holds:** 300 anchors at k=128 is as good as all 426 (0.58 against 0.57; 13 of 16 pairs within 10 points of
+  the pair map). At k=64, 426 anchors beats 300 by 16 points of accuracy and 7 of cosine.
+- **What does not hold up:** the curve is not monotonic. n=200 is worse than n=100 at both k, so this is not a clean
+  anchors-versus-quality curve. Two causes I can name: one random subset per n, so topic coverage varies; and
+  `fit_hub` whitens each model to rank `min(n-1, 256)`, so for n up to 257 it keeps every direction (no regularisation)
+  while 426 is cut to 256. I did not separate these. Read this only as "300 or more anchors at k=128 is enough, and
+  fewer is not reliably so".
+- **Next:** rerun with the whitening rank fixed as a fraction of n and three subsets per n.
 
 ## 7. Not covered
 

@@ -1,0 +1,947 @@
+{
+ "hubs": {
+  "n50_k64": {
+   "k": 50,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n50_k128": {
+   "k": 50,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n100_k64": {
+   "k": 64,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n100_k128": {
+   "k": 100,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n200_k64": {
+   "k": 64,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n200_k128": {
+   "k": 128,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n300_k64": {
+   "k": 64,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "n300_k128": {
+   "k": 128,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "full_k64": {
+   "k": 64,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "full_k128": {
+   "k": 128,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  }
+ },
+ "pairs": {
+  "qwen3->smollm2": {
+   "n50_k64": {
+    "acc": 0.4,
+    "heldout_cos": 0.8194
+   },
+   "n50_k128": {
+    "acc": 0.4,
+    "heldout_cos": 0.8194
+   },
+   "n100_k64": {
+    "acc": 0.45,
+    "heldout_cos": 0.7891
+   },
+   "n100_k128": {
+    "acc": 0.525,
+    "heldout_cos": 0.8706
+   },
+   "n200_k64": {
+    "acc": 0.15,
+    "heldout_cos": 0.6681
+   },
+   "n200_k128": {
+    "acc": 0.25,
+    "heldout_cos": 0.8168
+   },
+   "n300_k64": {
+    "acc": 0.25,
+    "heldout_cos": 0.826
+   },
+   "n300_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.9104
+   },
+   "full_k64": {
+    "acc": 0.5,
+    "heldout_cos": 0.8981
+   },
+   "full_k128": {
+    "acc": 0.7,
+    "heldout_cos": 0.9246
+   }
+  },
+  "pythia->smollm2": {
+   "n50_k64": {
+    "acc": 0.3,
+    "heldout_cos": 0.8271
+   },
+   "n50_k128": {
+    "acc": 0.3,
+    "heldout_cos": 0.8271
+   },
+   "n100_k64": {
+    "acc": 0.525,
+    "heldout_cos": 0.7844
+   },
+   "n100_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8781
+   },
+   "n200_k64": {
+    "acc": 0.2,
+    "heldout_cos": 0.6672
+   },
+   "n200_k128": {
+    "acc": 0.45,
+    "heldout_cos": 0.8218
+   },
+   "n300_k64": {
+    "acc": 0.35,
+    "heldout_cos": 0.8245
+   },
+   "n300_k128": {
+    "acc": 0.45,
+    "heldout_cos": 0.9154
+   },
+   "full_k64": {
+    "acc": 0.375,
+    "heldout_cos": 0.9006
+   },
+   "full_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.9297
+   }
+  },
+  "gpt2m->smollm2": {
+   "n50_k64": {
+    "acc": 0.425,
+    "heldout_cos": 0.8275
+   },
+   "n50_k128": {
+    "acc": 0.425,
+    "heldout_cos": 0.8275
+   },
+   "n100_k64": {
+    "acc": 0.55,
+    "heldout_cos": 0.7912
+   },
+   "n100_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8814
+   },
+   "n200_k64": {
+    "acc": 0.25,
+    "heldout_cos": 0.6836
+   },
+   "n200_k128": {
+    "acc": 0.45,
+    "heldout_cos": 0.8341
+   },
+   "n300_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.8247
+   },
+   "n300_k128": {
+    "acc": 0.65,
+    "heldout_cos": 0.9166
+   },
+   "full_k64": {
+    "acc": 0.675,
+    "heldout_cos": 0.9023
+   },
+   "full_k128": {
+    "acc": 0.65,
+    "heldout_cos": 0.9316
+   }
+  },
+  "tinyllama->smollm2": {
+   "n50_k64": {
+    "acc": 0.25,
+    "heldout_cos": 0.8179
+   },
+   "n50_k128": {
+    "acc": 0.25,
+    "heldout_cos": 0.8179
+   },
+   "n100_k64": {
+    "acc": 0.4,
+    "heldout_cos": 0.7835
+   },
+   "n100_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8701
+   },
+   "n200_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.6838
+   },
+   "n200_k128": {
+    "acc": 0.35,
+    "heldout_cos": 0.8256
+   },
+   "n300_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.8212
+   },
+   "n300_k128": {
+    "acc": 0.55,
+    "heldout_cos": 0.9107
+   },
+   "full_k64": {
+    "acc": 0.525,
+    "heldout_cos": 0.8969
+   },
+   "full_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.9263
+   }
+  },
+  "smollm2->qwen3": {
+   "n50_k64": {
+    "acc": 0.25,
+    "heldout_cos": 0.7765
+   },
+   "n50_k128": {
+    "acc": 0.25,
+    "heldout_cos": 0.7765
+   },
+   "n100_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.7281
+   },
+   "n100_k128": {
+    "acc": 0.35,
+    "heldout_cos": 0.8259
+   },
+   "n200_k64": {
+    "acc": 0.075,
+    "heldout_cos": 0.6468
+   },
+   "n200_k128": {
+    "acc": 0.275,
+    "heldout_cos": 0.78
+   },
+   "n300_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7848
+   },
+   "n300_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8646
+   },
+   "full_k64": {
+    "acc": 0.625,
+    "heldout_cos": 0.8561
+   },
+   "full_k128": {
+    "acc": 0.625,
+    "heldout_cos": 0.8788
+   }
+  },
+  "pythia->qwen3": {
+   "n50_k64": {
+    "acc": 0.4,
+    "heldout_cos": 0.7796
+   },
+   "n50_k128": {
+    "acc": 0.4,
+    "heldout_cos": 0.7796
+   },
+   "n100_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7326
+   },
+   "n100_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8295
+   },
+   "n200_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.6394
+   },
+   "n200_k128": {
+    "acc": 0.4,
+    "heldout_cos": 0.7779
+   },
+   "n300_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7891
+   },
+   "n300_k128": {
+    "acc": 0.525,
+    "heldout_cos": 0.869
+   },
+   "full_k64": {
+    "acc": 0.525,
+    "heldout_cos": 0.8583
+   },
+   "full_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8826
+   }
+  },
+  "gpt2m->qwen3": {
+   "n50_k64": {
+    "acc": 0.575,
+    "heldout_cos": 0.7813
+   },
+   "n50_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.7813
+   },
+   "n100_k64": {
+    "acc": 0.35,
+    "heldout_cos": 0.7408
+   },
+   "n100_k128": {
+    "acc": 0.55,
+    "heldout_cos": 0.8325
+   },
+   "n200_k64": {
+    "acc": 0.1,
+    "heldout_cos": 0.6514
+   },
+   "n200_k128": {
+    "acc": 0.15,
+    "heldout_cos": 0.7887
+   },
+   "n300_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.7898
+   },
+   "n300_k128": {
+    "acc": 0.5,
+    "heldout_cos": 0.8691
+   },
+   "full_k64": {
+    "acc": 0.575,
+    "heldout_cos": 0.859
+   },
+   "full_k128": {
+    "acc": 0.475,
+    "heldout_cos": 0.8844
+   }
+  },
+  "tinyllama->qwen3": {
+   "n50_k64": {
+    "acc": 0.425,
+    "heldout_cos": 0.7839
+   },
+   "n50_k128": {
+    "acc": 0.425,
+    "heldout_cos": 0.7839
+   },
+   "n100_k64": {
+    "acc": 0.35,
+    "heldout_cos": 0.745
+   },
+   "n100_k128": {
+    "acc": 0.375,
+    "heldout_cos": 0.8361
+   },
+   "n200_k64": {
+    "acc": 0.2,
+    "heldout_cos": 0.6609
+   },
+   "n200_k128": {
+    "acc": 0.25,
+    "heldout_cos": 0.7902
+   },
+   "n300_k64": {
+    "acc": 0.35,
+    "heldout_cos": 0.7915
+   },
+   "n300_k128": {
+    "acc": 0.65,
+    "heldout_cos": 0.8712
+   },
+   "full_k64": {
+    "acc": 0.45,
+    "heldout_cos": 0.8586
+   },
+   "full_k128": {
+    "acc": 0.5,
+    "heldout_cos": 0.8856
+   }
+  },
+  "smollm2->pythia": {
+   "n50_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7894
+   },
+   "n50_k128": {
+    "acc": 0.325,
+    "heldout_cos": 0.7894
+   },
+   "n100_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.743
+   },
+   "n100_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.8399
+   },
+   "n200_k64": {
+    "acc": 0.025,
+    "heldout_cos": 0.6533
+   },
+   "n200_k128": {
+    "acc": 0.275,
+    "heldout_cos": 0.7949
+   },
+   "n300_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7934
+   },
+   "n300_k128": {
+    "acc": 0.725,
+    "heldout_cos": 0.8809
+   },
+   "full_k64": {
+    "acc": 0.525,
+    "heldout_cos": 0.8665
+   },
+   "full_k128": {
+    "acc": 0.625,
+    "heldout_cos": 0.8957
+   }
+  },
+  "qwen3->pythia": {
+   "n50_k64": {
+    "acc": 0.35,
+    "heldout_cos": 0.7853
+   },
+   "n50_k128": {
+    "acc": 0.35,
+    "heldout_cos": 0.7853
+   },
+   "n100_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.7528
+   },
+   "n100_k128": {
+    "acc": 0.4,
+    "heldout_cos": 0.8363
+   },
+   "n200_k64": {
+    "acc": 0.2,
+    "heldout_cos": 0.6435
+   },
+   "n200_k128": {
+    "acc": 0.275,
+    "heldout_cos": 0.7881
+   },
+   "n300_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.8001
+   },
+   "n300_k128": {
+    "acc": 0.525,
+    "heldout_cos": 0.8798
+   },
+   "full_k64": {
+    "acc": 0.55,
+    "heldout_cos": 0.8671
+   },
+   "full_k128": {
+    "acc": 0.55,
+    "heldout_cos": 0.8948
+   }
+  },
+  "gpt2m->pythia": {
+   "n50_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7989
+   },
+   "n50_k128": {
+    "acc": 0.325,
+    "heldout_cos": 0.7989
+   },
+   "n100_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.7587
+   },
+   "n100_k128": {
+    "acc": 0.45,
+    "heldout_cos": 0.8514
+   },
+   "n200_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.6623
+   },
+   "n200_k128": {
+    "acc": 0.15,
+    "heldout_cos": 0.8089
+   },
+   "n300_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.8028
+   },
+   "n300_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.8898
+   },
+   "full_k64": {
+    "acc": 0.5,
+    "heldout_cos": 0.8722
+   },
+   "full_k128": {
+    "acc": 0.425,
+    "heldout_cos": 0.9051
+   }
+  },
+  "tinyllama->pythia": {
+   "n50_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.7869
+   },
+   "n50_k128": {
+    "acc": 0.225,
+    "heldout_cos": 0.7869
+   },
+   "n100_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.7535
+   },
+   "n100_k128": {
+    "acc": 0.325,
+    "heldout_cos": 0.8403
+   },
+   "n200_k64": {
+    "acc": 0.225,
+    "heldout_cos": 0.6588
+   },
+   "n200_k128": {
+    "acc": 0.3,
+    "heldout_cos": 0.7996
+   },
+   "n300_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.7975
+   },
+   "n300_k128": {
+    "acc": 0.35,
+    "heldout_cos": 0.8825
+   },
+   "full_k64": {
+    "acc": 0.35,
+    "heldout_cos": 0.8665
+   },
+   "full_k128": {
+    "acc": 0.45,
+    "heldout_cos": 0.898
+   }
+  },
+  "smollm2->gpt2m": {
+   "n50_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7995
+   },
+   "n50_k128": {
+    "acc": 0.325,
+    "heldout_cos": 0.7995
+   },
+   "n100_k64": {
+    "acc": 0.375,
+    "heldout_cos": 0.7563
+   },
+   "n100_k128": {
+    "acc": 0.3,
+    "heldout_cos": 0.8533
+   },
+   "n200_k64": {
+    "acc": 0.2,
+    "heldout_cos": 0.669
+   },
+   "n200_k128": {
+    "acc": 0.425,
+    "heldout_cos": 0.8068
+   },
+   "n300_k64": {
+    "acc": 0.525,
+    "heldout_cos": 0.8044
+   },
+   "n300_k128": {
+    "acc": 0.7,
+    "heldout_cos": 0.8921
+   },
+   "full_k64": {
+    "acc": 0.55,
+    "heldout_cos": 0.8759
+   },
+   "full_k128": {
+    "acc": 0.65,
+    "heldout_cos": 0.9064
+   }
+  },
+  "qwen3->gpt2m": {
+   "n50_k64": {
+    "acc": 0.3,
+    "heldout_cos": 0.7947
+   },
+   "n50_k128": {
+    "acc": 0.3,
+    "heldout_cos": 0.7947
+   },
+   "n100_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.7664
+   },
+   "n100_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.8487
+   },
+   "n200_k64": {
+    "acc": 0.15,
+    "heldout_cos": 0.658
+   },
+   "n200_k128": {
+    "acc": 0.5,
+    "heldout_cos": 0.7999
+   },
+   "n300_k64": {
+    "acc": 0.675,
+    "heldout_cos": 0.8086
+   },
+   "n300_k128": {
+    "acc": 0.65,
+    "heldout_cos": 0.8893
+   },
+   "full_k64": {
+    "acc": 0.55,
+    "heldout_cos": 0.8755
+   },
+   "full_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.9042
+   }
+  },
+  "pythia->gpt2m": {
+   "n50_k64": {
+    "acc": 0.55,
+    "heldout_cos": 0.8068
+   },
+   "n50_k128": {
+    "acc": 0.55,
+    "heldout_cos": 0.8068
+   },
+   "n100_k64": {
+    "acc": 0.375,
+    "heldout_cos": 0.7655
+   },
+   "n100_k128": {
+    "acc": 0.725,
+    "heldout_cos": 0.8604
+   },
+   "n200_k64": {
+    "acc": 0.3,
+    "heldout_cos": 0.6614
+   },
+   "n200_k128": {
+    "acc": 0.4,
+    "heldout_cos": 0.8105
+   },
+   "n300_k64": {
+    "acc": 0.5,
+    "heldout_cos": 0.8118
+   },
+   "n300_k128": {
+    "acc": 0.85,
+    "heldout_cos": 0.8993
+   },
+   "full_k64": {
+    "acc": 0.625,
+    "heldout_cos": 0.8799
+   },
+   "full_k128": {
+    "acc": 0.675,
+    "heldout_cos": 0.9136
+   }
+  },
+  "tinyllama->gpt2m": {
+   "n50_k64": {
+    "acc": 0.525,
+    "heldout_cos": 0.7988
+   },
+   "n50_k128": {
+    "acc": 0.525,
+    "heldout_cos": 0.7988
+   },
+   "n100_k64": {
+    "acc": 0.325,
+    "heldout_cos": 0.7643
+   },
+   "n100_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.8521
+   },
+   "n200_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.6752
+   },
+   "n200_k128": {
+    "acc": 0.55,
+    "heldout_cos": 0.8116
+   },
+   "n300_k64": {
+    "acc": 0.675,
+    "heldout_cos": 0.8092
+   },
+   "n300_k128": {
+    "acc": 0.55,
+    "heldout_cos": 0.8937
+   },
+   "full_k64": {
+    "acc": 0.6,
+    "heldout_cos": 0.8765
+   },
+   "full_k128": {
+    "acc": 0.575,
+    "heldout_cos": 0.9091
+   }
+  },
+  "smollm2->tinyllama": {
+   "n50_k64": {
+    "acc": 0.125,
+    "heldout_cos": 0.7601
+   },
+   "n50_k128": {
+    "acc": 0.125,
+    "heldout_cos": 0.7601
+   },
+   "n100_k64": {
+    "acc": 0.05,
+    "heldout_cos": 0.712
+   },
+   "n100_k128": {
+    "acc": 0.125,
+    "heldout_cos": 0.8079
+   },
+   "n200_k64": {
+    "acc": 0.05,
+    "heldout_cos": 0.6326
+   },
+   "n200_k128": {
+    "acc": 0.275,
+    "heldout_cos": 0.7664
+   },
+   "n300_k64": {
+    "acc": 0.025,
+    "heldout_cos": 0.7692
+   },
+   "n300_k128": {
+    "acc": 0.175,
+    "heldout_cos": 0.8499
+   },
+   "full_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.8391
+   },
+   "full_k128": {
+    "acc": 0.1,
+    "heldout_cos": 0.8659
+   }
+  },
+  "qwen3->tinyllama": {
+   "n50_k64": {
+    "acc": 0.15,
+    "heldout_cos": 0.7672
+   },
+   "n50_k128": {
+    "acc": 0.15,
+    "heldout_cos": 0.7672
+   },
+   "n100_k64": {
+    "acc": 0.05,
+    "heldout_cos": 0.7336
+   },
+   "n100_k128": {
+    "acc": 0.225,
+    "heldout_cos": 0.8187
+   },
+   "n200_k64": {
+    "acc": 0.075,
+    "heldout_cos": 0.6331
+   },
+   "n200_k128": {
+    "acc": 0.1,
+    "heldout_cos": 0.7701
+   },
+   "n300_k64": {
+    "acc": 0.15,
+    "heldout_cos": 0.7807
+   },
+   "n300_k128": {
+    "acc": 0.2,
+    "heldout_cos": 0.8574
+   },
+   "full_k64": {
+    "acc": 0.125,
+    "heldout_cos": 0.8439
+   },
+   "full_k128": {
+    "acc": 0.175,
+    "heldout_cos": 0.8729
+   }
+  },
+  "pythia->tinyllama": {
+   "n50_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.7661
+   },
+   "n50_k128": {
+    "acc": 0.175,
+    "heldout_cos": 0.7661
+   },
+   "n100_k64": {
+    "acc": 0.125,
+    "heldout_cos": 0.7236
+   },
+   "n100_k128": {
+    "acc": 0.175,
+    "heldout_cos": 0.817
+   },
+   "n200_k64": {
+    "acc": 0.1,
+    "heldout_cos": 0.6273
+   },
+   "n200_k128": {
+    "acc": 0.15,
+    "heldout_cos": 0.7712
+   },
+   "n300_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.7761
+   },
+   "n300_k128": {
+    "acc": 0.175,
+    "heldout_cos": 0.8569
+   },
+   "full_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.8428
+   },
+   "full_k128": {
+    "acc": 0.3,
+    "heldout_cos": 0.8736
+   }
+  },
+  "gpt2m->tinyllama": {
+   "n50_k64": {
+    "acc": 0.125,
+    "heldout_cos": 0.7685
+   },
+   "n50_k128": {
+    "acc": 0.125,
+    "heldout_cos": 0.7685
+   },
+   "n100_k64": {
+    "acc": 0.075,
+    "heldout_cos": 0.7263
+   },
+   "n100_k128": {
+    "acc": 0.2,
+    "heldout_cos": 0.819
+   },
+   "n200_k64": {
+    "acc": 0.075,
+    "heldout_cos": 0.6406
+   },
+   "n200_k128": {
+    "acc": 0.125,
+    "heldout_cos": 0.7781
+   },
+   "n300_k64": {
+    "acc": 0.175,
+    "heldout_cos": 0.7761
+   },
+   "n300_k128": {
+    "acc": 0.275,
+    "heldout_cos": 0.8582
+   },
+   "full_k64": {
+    "acc": 0.275,
+    "heldout_cos": 0.8439
+   },
+   "full_k128": {
+    "acc": 0.225,
+    "heldout_cos": 0.8748
+   }
+  }
+ },
+ "chance": 0.2
+}
