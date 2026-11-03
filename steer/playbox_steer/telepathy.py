@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import random
+import os
 import sys
 from pathlib import Path
 
@@ -26,11 +27,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .engine import blocks
 from .telepathy_data import FIT_TOPICS, NEUTRAL, PROMPTS, TEST_CONCEPTS
 
+DEVICE = os.environ.get("PLAYBOX_DEVICE", "cpu")  # "cuda" for big models; states and vectors always come back on the CPU
+
 
 def load(path: str):
     torch.set_grad_enabled(False)
     tok = AutoTokenizer.from_pretrained(path, local_files_only=True)
-    model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, torch_dtype=torch.float32).eval()
+    model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, torch_dtype=torch.float32).eval().to(DEVICE)
     return model, tok
 
 
@@ -45,9 +48,9 @@ def sentence_states(model, tok, texts: list[str], layer: int) -> torch.Tensor:
         lambda _m, _i, out: cur.__setitem__("x", (out[0] if isinstance(out, tuple) else out).detach()))
     try:
         for t in texts:
-            ids = tok(t, return_tensors="pt").input_ids[:, :64]
+            ids = tok(t, return_tensors="pt").input_ids[:, :64].to(model.device)
             model(input_ids=ids, use_cache=False)
-            x = cur["x"][0]
+            x = cur["x"][0].cpu()
             rows.append(x[1:].mean(0) if x.shape[0] > 1 else x[0])
     finally:
         h.remove()
@@ -60,8 +63,8 @@ def mean_norm(model, tok, texts: list[str], layer: int) -> float:
         lambda _m, _i, out: cur.__setitem__("x", (out[0] if isinstance(out, tuple) else out).detach()))
     try:
         for t in texts:
-            model(input_ids=tok(t, return_tensors="pt").input_ids[:, :64], use_cache=False)
-            norms.append(cur["x"][0, 1:].norm(dim=-1).mean())
+            model(input_ids=tok(t, return_tensors="pt").input_ids[:, :64].to(model.device), use_cache=False)
+            norms.append(cur["x"][0, 1:].norm(dim=-1).mean().cpu())
     finally:
         h.remove()
     return float(torch.stack(norms).mean())
@@ -104,13 +107,13 @@ def thought(model, tok, layer: int, concept_texts: list[str], neutral_states: to
 
 
 def generate(model, tok, layer: int, vec: torch.Tensor | None, prompt: str, n: int) -> str:
-    ids = tok(prompt, return_tensors="pt").input_ids
+    ids = tok(prompt, return_tensors="pt").input_ids.to(model.device)
     h = None
     if vec is not None:
         def hook(_m, _i, out):
             if isinstance(out, tuple):
-                return (out[0] + vec.to(out[0].dtype),) + tuple(out[1:])
-            return out + vec.to(out.dtype)
+                return (out[0] + vec.to(out[0].device, out[0].dtype),) + tuple(out[1:])
+            return out + vec.to(out.device, out.dtype)
         h = blocks(model)[layer].register_forward_hook(hook)
     try:
         out = model.generate(ids, max_new_tokens=n, do_sample=False, pad_token_id=tok.eos_token_id,
