@@ -1,9 +1,9 @@
 # Beyond text: latent channels across model families
 
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
-(`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. **Not run on real
-models yet**: the sandbox this was written in had no model weights. Everything in section 6 about real families is a
-plan, not a result. Builds on E6/E7 in [steering.md](steering.md).
+(`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. First real run:
+section 6a (five families, one H100, 2026-11-03). Only the main comparison has run; the k sweep, join test, token-cost
+comparison and closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -102,6 +102,33 @@ Decision rules, set before running:
 
 What would count as failure: the hub only matches `pair` for the family pairs the lexicon decoder already liked, or
 needs k near the model width.
+
+## 6a. First E8 result (2026-11-03)
+
+`steer/results/e8/e8.json`, from `steer/tools/e8_node.py` on a gman H100 (node `playbox-e6-cuda`). fp32, layer at 45%
+of depth, k=64, strength 0.5 receiver norms, 24 tokens. Models: SmolLM2-135M (width 576), Qwen3-1.7B-Base (2048),
+Pythia-410m (1024), GPT-2 medium (1024), TinyLlama-1.1B (2048). 426 anchor sentences, 150 held out, 5 test concepts x
+8 prompts per cell (chance 20%). One cell is 40 texts: a step is 2.5 points and one cell's noise is roughly 8 points.
+One run. Ceiling `local_internal_exploratory`.
+
+| mean over ordered pairs | id accuracy, all 20 | id accuracy, 16 not into TinyLlama | held-out cosine, all 20 |
+|---|---|---|---|
+| hub (64 int8 bytes) | 0.47 | 0.53 | 0.87 |
+| pair map for that exact pair | 0.51 | 0.59 | 0.92 |
+| receiver's own direction (upper bound) | 0.81 | 0.88 | |
+| random vectors through the hub | 0.03 | 0.03 | |
+
+- **The pre-set rule is met only because of TinyLlama.** Hub within 10 points of the pair map in 16 of 20 pairs (rule:
+  80%) and above its null in 20 of 20. But TinyLlama is a poor receiver at this layer and strength (its own direction
+  reaches 0.53, every pair into it is 0.10 to 0.28), so those four pairs sit near the floor and pass trivially. Among
+  the 16 pairs into a receiver that works, the hub is within 10 points in 12 (75%): a miss.
+- **The hub costs about 4 to 6 points of accuracy and 5 points of held-out cosine** against a dedicated map, for 10
+  adapters instead of 20 maps and 64 bytes instead of 2,304 to 8,192. It beat or tied the pair map in 10 of 20 pairs,
+  so the gap is not uniform (it is largest into SmolLM2 from Pythia: 0.38 against 0.73).
+- **Both are well below the receiver's own direction** (0.47 and 0.51 against 0.81): the channel carries about 60% of
+  what the receiver gets from having read the concept itself.
+- **Not tested:** other layers or strengths for TinyLlama, k, anchor count, the join test, concepts other than five,
+  seeds. Do not read the ranking of single pairs.
 
 ## 7. Not covered
 

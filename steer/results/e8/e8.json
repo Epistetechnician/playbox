@@ -1,0 +1,261 @@
+{
+ "hub": {
+  "id": "c80bda33a707a8a8",
+  "k": 64,
+  "anchors": 426,
+  "models": {
+   "smollm2": 576,
+   "qwen3": 2048,
+   "pythia": 1024,
+   "gpt2m": 1024,
+   "tinyllama": 2048
+  },
+  "wire_bytes_per_thought": 64,
+  "pair_maps_avoided": 10
+ },
+ "heldout_cosine": {
+  "qwen3->smollm2": {
+   "hub": 0.8981,
+   "pair": 0.9396
+  },
+  "pythia->smollm2": {
+   "hub": 0.9006,
+   "pair": 0.947
+  },
+  "gpt2m->smollm2": {
+   "hub": 0.9023,
+   "pair": 0.9492
+  },
+  "tinyllama->smollm2": {
+   "hub": 0.8969,
+   "pair": 0.9441
+  },
+  "smollm2->qwen3": {
+   "hub": 0.8561,
+   "pair": 0.893
+  },
+  "pythia->qwen3": {
+   "hub": 0.8583,
+   "pair": 0.9019
+  },
+  "gpt2m->qwen3": {
+   "hub": 0.859,
+   "pair": 0.9041
+  },
+  "tinyllama->qwen3": {
+   "hub": 0.8586,
+   "pair": 0.9084
+  },
+  "smollm2->pythia": {
+   "hub": 0.8665,
+   "pair": 0.9122
+  },
+  "qwen3->pythia": {
+   "hub": 0.8671,
+   "pair": 0.9152
+  },
+  "gpt2m->pythia": {
+   "hub": 0.8722,
+   "pair": 0.9294
+  },
+  "tinyllama->pythia": {
+   "hub": 0.8665,
+   "pair": 0.9232
+  },
+  "smollm2->gpt2m": {
+   "hub": 0.8759,
+   "pair": 0.9234
+  },
+  "qwen3->gpt2m": {
+   "hub": 0.8755,
+   "pair": 0.9246
+  },
+  "pythia->gpt2m": {
+   "hub": 0.8799,
+   "pair": 0.9376
+  },
+  "tinyllama->gpt2m": {
+   "hub": 0.8765,
+   "pair": 0.9343
+  },
+  "smollm2->tinyllama": {
+   "hub": 0.8391,
+   "pair": 0.8826
+  },
+  "qwen3->tinyllama": {
+   "hub": 0.8439,
+   "pair": 0.8958
+  },
+  "pythia->tinyllama": {
+   "hub": 0.8428,
+   "pair": 0.8974
+  },
+  "gpt2m->tinyllama": {
+   "hub": 0.8439,
+   "pair": 0.8995
+  }
+ },
+ "pairs": {
+  "qwen3->smollm2": {
+   "0.5": {
+    "hub": 0.5,
+    "pair": 0.65,
+    "direct": 0.85,
+    "null": 0.0833
+   }
+  },
+  "pythia->smollm2": {
+   "0.5": {
+    "hub": 0.375,
+    "pair": 0.725,
+    "direct": 0.85,
+    "null": 0.1042
+   }
+  },
+  "gpt2m->smollm2": {
+   "0.5": {
+    "hub": 0.675,
+    "pair": 0.675,
+    "direct": 0.85,
+    "null": 0.0208
+   }
+  },
+  "tinyllama->smollm2": {
+   "0.5": {
+    "hub": 0.525,
+    "pair": 0.625,
+    "direct": 0.85,
+    "null": 0.0625
+   }
+  },
+  "smollm2->qwen3": {
+   "0.5": {
+    "hub": 0.625,
+    "pair": 0.525,
+    "direct": 0.85,
+    "null": 0.0417
+   }
+  },
+  "pythia->qwen3": {
+   "0.5": {
+    "hub": 0.525,
+    "pair": 0.5,
+    "direct": 0.85,
+    "null": 0.0
+   }
+  },
+  "gpt2m->qwen3": {
+   "0.5": {
+    "hub": 0.575,
+    "pair": 0.625,
+    "direct": 0.85,
+    "null": 0.0417
+   }
+  },
+  "tinyllama->qwen3": {
+   "0.5": {
+    "hub": 0.45,
+    "pair": 0.45,
+    "direct": 0.85,
+    "null": 0.0208
+   }
+  },
+  "smollm2->pythia": {
+   "0.5": {
+    "hub": 0.525,
+    "pair": 0.675,
+    "direct": 0.85,
+    "null": 0.0
+   }
+  },
+  "qwen3->pythia": {
+   "0.5": {
+    "hub": 0.55,
+    "pair": 0.55,
+    "direct": 0.85,
+    "null": 0.0417
+   }
+  },
+  "gpt2m->pythia": {
+   "0.5": {
+    "hub": 0.5,
+    "pair": 0.475,
+    "direct": 0.85,
+    "null": 0.0417
+   }
+  },
+  "tinyllama->pythia": {
+   "0.5": {
+    "hub": 0.35,
+    "pair": 0.45,
+    "direct": 0.85,
+    "null": 0.0
+   }
+  },
+  "smollm2->gpt2m": {
+   "0.5": {
+    "hub": 0.55,
+    "pair": 0.6,
+    "direct": 0.95,
+    "null": 0.0
+   }
+  },
+  "qwen3->gpt2m": {
+   "0.5": {
+    "hub": 0.55,
+    "pair": 0.525,
+    "direct": 0.95,
+    "null": 0.0208
+   }
+  },
+  "pythia->gpt2m": {
+   "0.5": {
+    "hub": 0.625,
+    "pair": 0.75,
+    "direct": 0.95,
+    "null": 0.0208
+   }
+  },
+  "tinyllama->gpt2m": {
+   "0.5": {
+    "hub": 0.6,
+    "pair": 0.7,
+    "direct": 0.95,
+    "null": 0.0208
+   }
+  },
+  "smollm2->tinyllama": {
+   "0.5": {
+    "hub": 0.175,
+    "pair": 0.175,
+    "direct": 0.525,
+    "null": 0.0
+   }
+  },
+  "qwen3->tinyllama": {
+   "0.5": {
+    "hub": 0.125,
+    "pair": 0.175,
+    "direct": 0.525,
+    "null": 0.0
+   }
+  },
+  "pythia->tinyllama": {
+   "0.5": {
+    "hub": 0.275,
+    "pair": 0.1,
+    "direct": 0.525,
+    "null": 0.0
+   }
+  },
+  "gpt2m->tinyllama": {
+   "0.5": {
+    "hub": 0.275,
+    "pair": 0.225,
+    "direct": 0.525,
+    "null": 0.0
+   }
+  }
+ },
+ "chance": 0.2
+}
