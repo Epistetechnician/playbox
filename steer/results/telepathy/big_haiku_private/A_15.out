@@ -1,0 +1,6 @@
+exit=0
+sent
+
+The first attempt failed because I added a `--timeout 900` flag that isn't in your command; the script rejected it. The rerun used exactly your command and exited 0, writing `steer/results/telepathy/big_haiku_shared/t15/thought.pt` (one 2048-float vector for qwen3, no text left the process).
+
+--- stderr ---

@@ -1,0 +1,22 @@
+telepathy daemon on 127.0.0.1:8765
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+telepathy daemon on 127.0.0.1:8765
+telepathy daemon on 127.0.0.1:8765
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/shaanp/Documents/GitHub/playbox/steer/playbox_steer/telepathy_agent.py", line 162, in <module>
+    main()
+  File "/Users/shaanp/Documents/GitHub/playbox/steer/playbox_steer/telepathy_agent.py", line 152, in main
+    return serve(a.port)
+           ^^^^^^^^^^^^^
+  File "/Users/shaanp/Documents/GitHub/playbox/steer/playbox_steer/telepathy_agent.py", line 119, in serve
+    S(("127.0.0.1", port), H).serve_forever()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shaanp/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/socketserver.py", line 457, in __init__
+    self.server_bind()
+  File "/Users/shaanp/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/http/server.py", line 140, in server_bind
+    socketserver.TCPServer.server_bind(self)
+  File "/Users/shaanp/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+OSError: [Errno 48] Address already in use

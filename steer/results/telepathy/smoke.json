@@ -1,0 +1,57 @@
+{
+ "fit": {
+  "heldout_cosine_by_lambda": {
+   "0.01": 0.8843,
+   "0.1": 0.8938,
+   "1.0": 0.8729
+  },
+  "lambda": 0.1,
+  "n_fit": 576
+ },
+ "layers": {
+  "a": 13,
+  "b": 12
+ },
+ "coefs": {
+  "1.0": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.5,
+     "named": 0.525,
+     "target_hits_per_text": 0.925
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.975,
+     "named": 0.975,
+     "target_hits_per_text": 2.875
+    },
+    "null": {
+     "n": 40,
+     "id_acc": 0.0,
+     "named": 0.175,
+     "target_hits_per_text": 0.0
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the Gulf of St. Andrews, and its white lines in a line against the sky like an arm",
+    "direct:ocean": " the surface of a New Zealand. The waves crash against coral, and white crests break in to",
+    "mapped:space": " the skies of New Mexico, and my flight over Albuquerque. The sky is a bright orange in the",
+    "direct:space": " the Earth, we and other planets. The surface of our planet, a sea of gas,,",
+    "mapped:music": " the sound of a hot grill in my head issers andesas. The sounds of New",
+    "direct:music": " the sound of a guitar. The tones that fills his electric, and rhythm section in jazz ensemble.",
+    "mapped:sport": " the line of a Chicago-bound runner, and his stride. The first step is offing the front",
+    "direct:sport": " the ball, and he is. The Boston Red Sox clinching victory to win World Series title in",
+    "mapped:medicine": " a patient who is on IV therapy. The nurse has to administer an antibiotic drug that needs to be",
+    "direct:medicine": " COVID-, and the use of monocoster drugs. In patients with severe Covid.\nInhib therapy"
+   }
+  }
+ },
+ "clean_text": [
+  " the following problem: Given a set of points in 3D space, find all triangles that have",
+  " a new book that is coming out in the next few weeks. It\u2019s called The Art of War"
+ ],
+ "chance": 0.2,
+ "clean_id_acc_vs_nothing": 0.125
+}

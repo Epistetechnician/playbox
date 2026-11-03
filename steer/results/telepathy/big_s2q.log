@@ -1,0 +1,53 @@
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+{
+ "fit": {
+  "heldout_cosine_by_lambda": {
+   "0.03": 0.9179,
+   "0.1": 0.9176,
+   "0.3": 0.9142
+  },
+  "lambda": 0.03,
+  "n_fit": 2016
+ },
+ "chance": 0.2,
+ "0.5": {
+  "mapped": {
+   "n": 40,
+   "id_acc": 0.625,
+   "named": 0.775,
+   "target_hits_per_text": 1.05
+  },
+  "direct": {
+   "n": 40,
+   "id_acc": 0.825,
+   "named": 0.825,
+   "target_hits_per_text": 1.7
+  },
+  "null": {
+   "n": 80,
+   "id_acc": 0.0125,
+   "named": 0.1125,
+   "target_hits_per_text": 0.0125
+  }
+ },
+ "0.75": {
+  "mapped": {
+   "n": 40,
+   "id_acc": 0.775,
+   "named": 0.85,
+   "target_hits_per_text": 1.425
+  },
+  "direct": {
+   "n": 40,
+   "id_acc": 0.925,
+   "named": 0.95,
+   "target_hits_per_text": 2.525
+  },
+  "null": {
+   "n": 80,
+   "id_acc": 0.0125,
+   "named": 0.0375,
+   "target_hits_per_text": 0.0125
+  }
+ }
+}

@@ -1,0 +1,6 @@
+exit=2
+⚠️ Anthropic credentials are rate-limited for claude-haiku-5-5; other Claude models remain available (see `hermes auth list`).
+
+Your request was not processed. Send it again if you still want me to carry it out.
+
+--- stderr ---

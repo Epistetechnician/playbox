@@ -1,0 +1,12 @@
+{"i": 0, "src": "smollm2", "dst": "qwen3", "truth": "space", "guess": "space", "ok": true, "secs": 94}
+{"i": 1, "src": "qwen3", "dst": "smollm2", "truth": "sport", "guess": "sport", "ok": true, "secs": 117}
+{"i": 2, "src": "qwen3", "dst": "smollm2", "truth": "music", "guess": "music", "ok": true, "secs": 157}
+{"i": 3, "src": "smollm2", "dst": "qwen3", "truth": "none", "guess": "none", "ok": true, "secs": 134}
+{"i": 4, "src": "qwen3", "dst": "smollm2", "truth": "medicine", "guess": "medicine", "ok": true, "secs": 167}
+{"i": 5, "src": "smollm2", "dst": "qwen3", "truth": "music", "guess": "music", "ok": true, "secs": 124}
+{"i": 6, "src": "smollm2", "dst": "qwen3", "truth": "sport", "guess": "sport", "ok": true, "secs": 132}
+{"i": 7, "src": "qwen3", "dst": "smollm2", "truth": "space", "guess": "space", "ok": true, "secs": 170}
+{"i": 8, "src": "smollm2", "dst": "qwen3", "truth": "medicine", "guess": "medicine", "ok": true, "secs": 150}
+{"i": 9, "src": "smollm2", "dst": "qwen3", "truth": "ocean", "guess": "ocean", "ok": true, "secs": 218}
+{"i": 10, "src": "qwen3", "dst": "smollm2", "truth": "none", "guess": "none", "ok": true, "secs": 161}
+{"i": 11, "src": "qwen3", "dst": "smollm2", "truth": "ocean", "guess": "ocean", "ok": true, "secs": 166}

@@ -1,0 +1,11 @@
+exit=0
+Reading the eight continuations, the signal is weak. The two candidates are ocean and cars.
+
+- Ocean: "a 'coastal' city", a story about a ship called the "Salty" off Cape Cod.
+- Cars: a direct comparison of a 1967 and a 2005 Mustang.
+
+Ocean recurs across more samples, so I'm picking it, with low confidence. Most of the other continuations (bread, a 1960s remark, wind turbines) don't match any listed topic.
+
+ANSWER: ocean
+
+--- stderr ---

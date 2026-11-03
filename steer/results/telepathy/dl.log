@@ -1,0 +1,30 @@
+Fetching 15 files:   0%|          | 0/15 [00:00<?, ?it/s]Downloading 'model-00003-of-00003.safetensors' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/31b8c91ef899f79efaaa69e3d2c096f6e2ebeb2ff20e29222abbd9ebc79e560a.incomplete'
+Downloading 'chat_template.jinja' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/c0c686f9c38d70d179fb7b5f5aa7530bc913dda3.incomplete'
+Downloading 'generation_config.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/023756cfadf88e5bf69eefeee3e172f38c448d64.incomplete'
+Downloading 'config.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/3fb03e916f494e6745aa23df751da26f79e06470.incomplete'
+Downloading 'model-00002-of-00003.safetensors' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/83f2a20ca8058f486a3634a27faf99587f4cd3c156a83dee34fb99e6ac178670.incomplete'
+Downloading 'model-00001-of-00003.safetensors' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/6cc1508e96fb5d0865dfd5753a79f4ec60651bf3e2a82844a7e8ae9c60528c0d.incomplete'
+Downloading 'model.safetensors.index.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/05a3a3a17368d54d2887783e96b3a8191e9655f0.incomplete'
+Downloading '.gitattributes' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/52373fe24473b1aa44333d318f578ae6bf04b49b.incomplete'
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/52373fe24473b1aa44333d318f578ae6bf04b49b
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/c0c686f9c38d70d179fb7b5f5aa7530bc913dda3
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/023756cfadf88e5bf69eefeee3e172f38c448d64
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/3fb03e916f494e6745aa23df751da26f79e06470
+Downloading 'tokenizer.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523.incomplete'
+Downloading 'preprocessor_config.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/2ea84a437d448ff71b08df68fdd949d5cc4ebb64.incomplete'
+Downloading 'tokenizer_config.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/1d134cd298be1e3be25db393d93a1cefe80e3214.incomplete'
+Downloading 'processor_config.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/4bbac788e2cf449e619d7fee64f206c793a4695e.incomplete'
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/05a3a3a17368d54d2887783e96b3a8191e9655f0
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/1d134cd298be1e3be25db393d93a1cefe80e3214
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/2ea84a437d448ff71b08df68fdd949d5cc4ebb64
+Fetching 15 files:  53%|█████▎    | 8/15 [00:00<00:00, 19.94it/s]Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/4bbac788e2cf449e619d7fee64f206c793a4695e
+Downloading 'video_preprocessor_config.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe.incomplete'
+Downloading 'vocab.json' to '/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/0aa0ce0658d60ac4a5d609f4eadb0e8e43514176.incomplete'
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/0aa0ce0658d60ac4a5d609f4eadb0e8e43514176
+Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523
+Fetching 15 files:  80%|████████  | 12/15 [00:20<00:05,  1.67s/it]Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/83f2a20ca8058f486a3634a27faf99587f4cd3c156a83dee34fb99e6ac178670
+Fetching 15 files:  87%|████████▋ | 13/15 [06:58<01:04, 32.18s/it]Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/6cc1508e96fb5d0865dfd5753a79f4ec60651bf3e2a82844a7e8ae9c60528c0d
+Fetching 15 files:  93%|█████████▎| 14/15 [07:04<00:30, 30.32s/it]Download complete. Moving file to /Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/blobs/31b8c91ef899f79efaaa69e3d2c096f6e2ebeb2ff20e29222abbd9ebc79e560a
+Fetching 15 files: 100%|██████████| 15/15 [07:07<00:00, 28.53s/it]Fetching 15 files: 100%|██████████| 15/15 [07:07<00:00, 28.53s/it]
+/Users/shaanp/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/10c35caafbb80f7dc6a7a432cdd11af10a6d4818

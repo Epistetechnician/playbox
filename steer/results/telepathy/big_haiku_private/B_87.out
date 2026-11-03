@@ -1,0 +1,6 @@
+exit=0
+The samples point to baseball. Two of the nine continuations name the Cubs, and one also mentions the Yankees. The other topics are weak or absent: a few mention music and instruments, but nothing specific enough to pick jazz or classical-music, and the crocodile and sea lines don't match any listed topic clearly. Confidence is moderate, since the signal rests on two samples.
+
+ANSWER: baseball
+
+--- stderr ---

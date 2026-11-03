@@ -8,3 +8,5 @@ tools/hermes_local/*
 !tools/hermes_local/config.yaml
 tools/hermes_mlx/*
 !tools/hermes_mlx/config.yaml
+tools/hermes_modal/*
+!tools/hermes_modal/config.yaml

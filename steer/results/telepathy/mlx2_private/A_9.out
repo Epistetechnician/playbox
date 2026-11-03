@@ -1,0 +1,12 @@
+exit=0
+Now I understand the mechanism. Let me verify the prerequisites: the fitted map, the output directory, and the models in the HF cache.
+
+
+
+Everything checks out: torch 2.6.0 + transformers 4.53.3 in the judge venv, and both model snapshot paths resolve. Now I'll run the exact command with my six sentences about the ocean.
+
+
+
+sent
+
+--- stderr ---

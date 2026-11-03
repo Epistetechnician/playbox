@@ -1,0 +1,30 @@
+{
+ "chance": 0.0476,
+ "concept": {
+  "n": 0,
+  "correct": 0,
+  "acc": null,
+  "ci95": [
+   0.0,
+   1.0
+  ],
+  "p_vs_chance": null
+ },
+ "control": {
+  "n": 0,
+  "correct": 0,
+  "acc": null,
+  "ci95": [
+   0.0,
+   1.0
+  ],
+  "p_vs_chance": null
+ },
+ "false_positive_rate": null,
+ "by_direction": {},
+ "infra_failures": 44,
+ "infra_reasons": [
+  "A produced no vector"
+ ],
+ "mean_attempts": null
+}

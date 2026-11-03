@@ -28,6 +28,11 @@ ATTEMPTS = int(os.environ.get("TELEPATHY_ATTEMPTS", "3"))
 PORT = int(os.environ.get("TELEPATHY_PORT", "8765"))
 URL = os.environ.get("TELEPATHY_URL", f"http://127.0.0.1:{PORT}")
 AUTOSTART = os.environ.get("TELEPATHY_AUTOSTART", "1") == "1"
+REMOTE = os.environ.get("TELEPATHY_REMOTE") == "1"  # use the Modal service (tools/telepathy_modal.py) instead of a local daemon
+if REMOTE:
+    URL = (os.environ.get("TELEPATHY_URL") or (Path.home() / ".config/playbox/telepathy_url").read_text()).strip()
+    ENV = f"cd {ROOT} && PYTHONPATH=. python3 -m playbox_steer.telepathy_remote"  # urllib only: no torch on the agents' machine
+    AUTOSTART = False
 
 
 def hermes(prompt: str, name: str, cwd: Path | None = None) -> str:
@@ -48,6 +53,12 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
     """One clean pass of a trial: fresh directory, daemon checked, A then B. Raises InfraError if it could not run."""
     if AUTOSTART:
         H.ensure_daemon(URL, PY, ROOT, PORT)
+    elif REMOTE:  # a cold GPU container takes a few minutes to answer /health
+        deadline = time.time() + 900
+        while not H.daemon_up(URL, timeout=10):
+            if time.time() > deadline:
+                raise H.InfraError(f"telepathy service at {URL} did not answer within 15 minutes")
+            time.sleep(10)
     elif not H.daemon_up(URL):
         raise H.InfraError(f"no telepathy daemon at {URL}")
     shared = SHARED / f"t{i}"

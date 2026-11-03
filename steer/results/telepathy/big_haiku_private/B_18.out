@@ -1,0 +1,6 @@
+exit=0
+The continuations are mostly fragmentary and don't clearly point to one topic. The only items on the list with any signal are the flying-at-high-altitude line and the compass-in-navigation lines, which both fit aviation. Other lines (a bicycle, coffee, Chinese painting, a man born in 1930) don't match any listed topic. This is a weak signal, so treat it as low confidence.
+
+ANSWER: aviation
+
+--- stderr ---

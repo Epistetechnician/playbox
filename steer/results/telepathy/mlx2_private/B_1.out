@@ -1,0 +1,17 @@
+exit=0
+The command ran and printed eight continuations. Reading them:
+
+- "crawling-spider, and the spiderwebbing of my arms"
+- "the history of the cow! The cow is a weapon that can tear through your body like a whip"
+- "I'm going to be a-rockin' on the road, and I want to know what's up"
+- "my morning, it was all about the cow!"
+- "my favorite subject is the katydid, and I'm gonna be a-rockin' you!"
+- "a short story about the Coupe de Vie"
+- "the crab's web"
+- "I'm a-a-a-a-a-a-a-a-a-a"
+
+The only topic signal in the output is the repeated "a-rockin'" phrasing ("a-rockin' on the road", "a-rockin' you") — a music reference. Nothing in the continuations points to ocean, space, sport, or medicine.
+
+ANSWER: music
+
+--- stderr ---

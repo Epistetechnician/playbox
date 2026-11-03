@@ -61,7 +61,7 @@ def test_sweep_scores_other_sizes_and_a_joining_model(zoo):
 
 
 def test_anchor_sweep_fits_on_subsets_and_scores_the_full_set(zoo):
-    r = hub_run.anchor_sweep(zoo, ns=(40,), ks=(8,), gen=2, concepts=["ocean", "space"], prompts=PROMPTS[:1])
-    assert set(r["hubs"]) == {"n40_k8", "full_k8"}
+    r = hub_run.anchor_sweep(zoo, ns=(40,), ks=(8,), seeds=(0, 1), gen=2, concepts=["ocean", "space"], prompts=PROMPTS[:1])
+    assert set(r["hubs"]) == {"n40_s0_k8", "n40_s1_k8", "full_k8"}
     assert all(0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())
-    assert set(r["pairs"]["llama_s->llama_m"]) == {"n40_k8", "full_k8"}
+    assert set(r["pairs"]["llama_s->llama_m"]) == {"n40_s0_k8", "n40_s1_k8", "full_k8"}

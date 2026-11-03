@@ -1,0 +1,17 @@
+exit=0
+I ran the listen command (twice, to confirm determinism — both runs produced identical output). The continuations smollm2 generated under the influence of vec_10.pt are:
+
+- "Bridge of the City" — a bridge, a place
+- a "topic in the room of the museum"
+- "the thing on my mind" — talking to a friend
+- "my morning, it was all about the cab"
+- "My favorite subject is the Blog"
+- "a short story about the 19th century in the town of St. John's"
+- "the topic of this post" / a book called "The Book of the 100"
+- "I was in the kitchen"
+
+These are incoherent, generic fragments — a bridge, a museum, a cab, a blog, a kitchen, a 19th-century town. None of them clearly evokes ocean, space, music, sport, or medicine. The thought didn't transfer into a legible topic.
+
+ANSWER: none
+
+--- stderr ---

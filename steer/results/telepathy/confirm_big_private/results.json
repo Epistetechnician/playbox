@@ -1,0 +1,389 @@
+[
+ {
+  "i": 0,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "soccer",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 1,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "classical-music",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 2,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cryptocurrency",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 3,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "ocean",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 4,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "volcano",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 5,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "basketball",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 6,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "aviation",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 7,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cryptocurrency",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 8,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "none",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 9,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "basketball",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 10,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "space",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 11,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cars",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 12,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "jazz",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 13,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "chess",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 14,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "ocean",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 15,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "religion",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 16,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "volcano",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 17,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "religion",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 18,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "photography",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 19,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "none",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 20,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "dinosaurs",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 21,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "religion",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 22,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cars",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 23,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cryptocurrency",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 24,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "aviation",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 25,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "none",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 26,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "photography",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 27,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "classical-music",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 28,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "basketball",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 29,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "none",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 30,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "space",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 31,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "soccer",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 32,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "baseball",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 33,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "photography",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 34,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "chess",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 35,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "dinosaurs",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 36,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "jazz",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 37,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "chess",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 38,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "chess",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 39,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "earthquake",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 40,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "politics",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ },
+ {
+  "i": 41,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "medicine",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 42,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "space",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 33
+ }
+]

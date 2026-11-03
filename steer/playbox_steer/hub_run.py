@@ -189,21 +189,28 @@ def _score_hubs(models: dict[str, str], info: dict, hubs: dict[str, H.Hub], conc
     return res
 
 
-def anchor_sweep(models: dict[str, str], ns: tuple[int, ...] = (50, 100, 200, 300), ks: tuple[int, ...] = (64, 128),
-                 frac: float = 0.45, coef: float = 0.5, gen: int = 24, concepts: list[str] | None = None,
-                 prompts: list[str] | None = None) -> dict:
-    """E8 follow-up: hub fitted on the first n anchors (the anchor list is shuffled, so a prefix is a random subset), for
-    each hub size k, plus the full anchor set as the reference. Held-out sentences and concepts are unchanged.
-    Hubs are named `n<n>_k<k>`; `full_k<k>` uses every anchor."""
+def anchor_sweep(models: dict[str, str], ns: tuple[int, ...] = (100, 200, 300), ks: tuple[int, ...] = (128,),
+                 seeds: tuple[int, ...] = (0, 1, 2), rank_frac: float = 0.6, frac: float = 0.45, coef: float = 0.5,
+                 gen: int = 24, concepts: list[str] | None = None, prompts: list[str] | None = None) -> dict:
+    """E8 follow-up: hub fitted on n random anchors, for each hub size k and each subset seed, plus the full anchor set.
+
+    The whitening rank is `min(256, round(rank_frac * n))`, so it scales with n instead of keeping every direction when
+    n is small (the first anchor sweep's confound); for all 426 anchors that is 256, the main run's setting.
+    Hubs are named `n<n>_s<seed>_k<k>` and `full_k<k>`. Held-out sentences and concepts are unchanged."""
     torch.set_grad_enabled(False)
     concepts = concepts or list(TEST_CONCEPTS)
     prompts = prompts or PROMPTS
     train, held = _anchor_split()
     info = {n: _sender_pass(p, frac, train, held, concepts) for n, p in models.items()}
     hubs: dict[str, H.Hub] = {}
-    for n in (*ns, len(train)):
-        tag = "full" if n == len(train) else f"n{n}"
-        sub = train[:n]
-        for k in ks:
-            hubs[f"{tag}_k{k}"] = H.fit_hub({m: i["train"][:n] for m, i in info.items()}, H.anchor_digest(sub), k=k)
+    for k in ks:
+        hubs[f"full_k{k}"] = H.fit_hub({m: i["train"] for m, i in info.items()}, H.anchor_digest(train), k=k,
+                                       r=min(256, round(rank_frac * len(train))))
+    for n in ns:
+        for seed in seeds:
+            idx = sorted(random.Random(1000 + seed).sample(range(len(train)), n))
+            sub = [train[j] for j in idx]
+            for k in ks:
+                hubs[f"n{n}_s{seed}_k{k}"] = H.fit_hub({m: i["train"][idx] for m, i in info.items()}, H.anchor_digest(sub),
+                                                      k=k, r=min(256, round(rank_frac * n)))
     return _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
