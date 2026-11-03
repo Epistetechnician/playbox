@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from datetime import datetime
 import os
 import platform
 import json
@@ -28,6 +29,7 @@ for p in (ROOT / "orchestrator", ROOT / "orchestrator/experiments", ROOT / "judg
     sys.path.insert(0, str(p))
 
 from data import DEV_PROMPTS, HOLDOUT_PROMPTS, NEGATIVE, POSITIVE, TRAITS  # noqa: E402
+from playbox_judge.artifacts import resolve_run_dir  # noqa: E402
 from playbox_judge.measures import TraitClassifier  # noqa: E402
 from playbox_judge.stats import bootstrap_ci  # noqa: E402
 from playbox_judge.traits import SENTIMENT  # noqa: E402
@@ -77,7 +79,7 @@ def write_manifest(run_dir: Path, a, report: dict, started: float) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", help="report path; defaults to <run directory>/report.json when the run has an artifacts directory")
     ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--width", type=int, default=3)
     ap.add_argument("--kl-cap", type=float, default=0.6)
@@ -85,11 +87,20 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--evidence", action="store_true", help="accept a variant only if the custodian's score evidence verifies against the host's receipts")
     ap.add_argument("--no-baselines", action="store_true", help="skip the baseline scoring after the search (it takes about 15 minutes)")
-    ap.add_argument("--artifacts", help="write every artifact of this run (store, directions, texts, report, log, manifest) under this directory, e.g. on an external volume. Throwaway sidecar identities stay on the local disk.")
+    ap.add_argument("--artifacts", help="write every artifact of this run (store, directions, texts, report, manifest) under this directory, e.g. on an external volume. Default: $PLAYBOX_ARTIFACTS/runs/e4-<timestamp> if that variable names a mounted directory. Throwaway sidecar identities stay on the local disk.")
     ap.add_argument("--paired", action="store_true", help="the verifier asserts the holdout scores are aligned items and asks for the paired bound")
     ap.add_argument("--kl-weight", type=float, default=0.0, help="score = classifier effect - weight * KL, per prompt (classifier logit per nat)")
     ap.add_argument("--binary", default=str(ROOT / "target/debug/playbox-mcp"))
     a = ap.parse_args()
+    try:
+        run_dir = resolve_run_dir(a.artifacts, "e4", datetime.now(), os.environ)
+    except ValueError as e:
+        raise SystemExit(f"artifacts: {e}")
+    a.artifacts = str(run_dir) if run_dir else None
+    if not a.out:
+        if not run_dir:
+            raise SystemExit("give --out, or an artifacts directory (--artifacts, or PLAYBOX_ARTIFACTS) to put report.json in")
+        a.out = str(run_dir / "report.json")
     steer_py = ROOT / "steer/.venv/bin/python"
     started = time.time()
     # Sidecar homes hold throwaway signing keys: they stay on the local disk whatever --artifacts says.
@@ -97,6 +108,7 @@ def main() -> None:
     if a.artifacts:
         work = Path(a.artifacts) / "work"
         work.mkdir(parents=True, exist_ok=False)
+        print("artifacts:", a.artifacts, flush=True)
     else:
         work = Path(tempfile.mkdtemp(prefix="pb-e4-"))
     print("work dir", work, flush=True)
