@@ -1,0 +1,44 @@
+[
+ {
+  "fit": "16 topics",
+  "lam": 0.03,
+  "test5_retrieval": 1.0,
+  "test5_mean_cos": 0.496,
+  "loto16_retrieval": 0.65
+ },
+ {
+  "fit": "16 topics",
+  "lam": 0.1,
+  "test5_retrieval": 1.0,
+  "test5_mean_cos": 0.546,
+  "loto16_retrieval": 0.6
+ },
+ {
+  "fit": "16 topics",
+  "lam": 0.3,
+  "test5_retrieval": 1.0,
+  "test5_mean_cos": 0.575,
+  "loto16_retrieval": 0.425
+ },
+ {
+  "fit": "56 topics",
+  "lam": 0.03,
+  "test5_retrieval": 1.0,
+  "test5_mean_cos": 0.595,
+  "loto16_retrieval": 0.963
+ },
+ {
+  "fit": "56 topics",
+  "lam": 0.1,
+  "test5_retrieval": 1.0,
+  "test5_mean_cos": 0.625,
+  "loto16_retrieval": 0.963
+ },
+ {
+  "fit": "56 topics",
+  "lam": 0.3,
+  "test5_retrieval": 1.0,
+  "test5_mean_cos": 0.642,
+  "loto16_retrieval": 0.9
+ }
+]

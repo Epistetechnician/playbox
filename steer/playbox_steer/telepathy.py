@@ -16,8 +16,8 @@ Concepts used for testing are never in the map's fit set.
 from __future__ import annotations
 
 import json
-import random
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -84,8 +84,13 @@ class Ridge:
         return d @ self.w  # a difference of means: the centering cancels
 
 
-def fit_map(ma, ta, la, mb, tb, lb, lam_grid=(0.01, 0.1, 1.0)) -> tuple[Ridge, dict]:
-    texts = [s for topic in FIT_TOPICS.values() for s in topic]
+def fit_map(ma, ta, la, mb, tb, lb, lam_grid=(0.03, 0.1, 0.3)) -> tuple[Ridge, dict]:
+    if os.environ.get("TELEPATHY_FIT") == "big":
+        from .telepathy_data_big import FIT_TOPICS_BIG
+        fit_topics = FIT_TOPICS_BIG
+    else:
+        fit_topics = FIT_TOPICS
+    texts = [s for topic in fit_topics.values() for s in topic]
     random.Random(0).shuffle(texts)
     held, train = texts[:150], texts[150:]
     xa, xb = sentence_states(ma, ta, train, la), sentence_states(mb, tb, train, lb)

@@ -21,7 +21,7 @@ from .telepathy_data import NEUTRAL, PROMPTS
 HUB = Path.home() / ".cache/huggingface/hub"
 BODIES = {"smollm2": "models--HuggingFaceTB--SmolLM2-135M", "qwen3": "models--Qwen--Qwen3-1.7B-Base"}
 STATE = Path(os.environ.get("TELEPATHY_STATE", Path(__file__).resolve().parents[1] / "results/telepathy/maps"))
-COEF = 0.5
+COEF = float(os.environ.get("TELEPATHY_COEF", "0.5"))
 FRAC = 0.45
 
 
@@ -30,7 +30,7 @@ def path(body: str) -> str:
 
 
 def mapfile(src: str, dst: str) -> Path:
-    return STATE / f"{src}_to_{dst}.pt"
+    return STATE / f"{src}_to_{dst}{'_big' if os.environ.get('TELEPATHY_FIT') == 'big' else ''}.pt"
 
 
 def fit(src: str, dst: str) -> None:
@@ -50,7 +50,9 @@ def think(src: str, dst: str, texts: list[str], out: str, resident: bool = False
     d = T.sentence_states(ma, ta, texts, la).mean(0) - m["neutral_a"]
     v = (d @ m["w"])
     v = v / v.norm() * COEF * m["norm_b"]
-    torch.save(v, out)
+    tmp = f"{out}.tmp"  # atomic: a reader never sees a half-written vector
+    torch.save(v, tmp)
+    os.replace(tmp, out)
     print(f"wrote {out}: one {v.numel()}-float vector for {dst}; no text left this process")
 
 
@@ -77,7 +79,9 @@ def serve(port: int) -> None:
     """One process holds both models and the maps and serves think/listen one request at a time (bounded memory and CPU)."""
     import io
     import contextlib
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    lock = threading.Lock()  # the models run one request at a time; connections wait here, not in a 5-deep TCP backlog
     torch.set_num_threads(max(1, (os.cpu_count() or 8) // 2))
 
     def handle(req: dict) -> str:
@@ -90,10 +94,15 @@ def serve(port: int) -> None:
         return buf.getvalue()
 
     class H(BaseHTTPRequestHandler):
+        def do_GET(self):  # liveness probe for the harness; does not wait for the models
+            data = b"ok"
+            self.send_response(200); self.send_header("content-length", "2"); self.end_headers(); self.wfile.write(data)
+
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["content-length"])))
             try:
-                code, out = 200, handle(body)
+                with lock:
+                    code, out = 200, handle(body)
             except Exception as e:  # report to the caller; keep serving
                 code, out = 500, f"{type(e).__name__}: {e}"
             data = out.encode()
@@ -103,22 +112,30 @@ def serve(port: int) -> None:
             pass
 
     print(f"telepathy daemon on 127.0.0.1:{port}", flush=True)
-    HTTPServer(("127.0.0.1", port), H).serve_forever()
+    class S(ThreadingHTTPServer):
+        daemon_threads = True
+        request_queue_size = 128
+
+    S(("127.0.0.1", port), H).serve_forever()
 
 
 def via_daemon(req: dict) -> bool:
     """Send a request to the resident daemon; False if none is running and in-process loading was not asked for."""
+    import time
     import urllib.request
-    try:
-        r = urllib.request.urlopen(urllib.request.Request(URL, json.dumps(req).encode()), timeout=1800)
-        print(r.read().decode(), end="")
-        return True
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"daemon error: {e.read().decode()}")
-    except OSError:
-        if os.environ.get("TELEPATHY_INPROC") == "1":
-            return False
-        raise SystemExit(f"no telepathy daemon at {URL}; start one with `serve`, or set TELEPATHY_INPROC=1 to load models in this process (about 8 GB)")
+    for attempt in range(3):  # a daemon that is busy or restarting is not a missing daemon
+        try:
+            r = urllib.request.urlopen(urllib.request.Request(URL, json.dumps(req).encode()), timeout=1800)
+            print(r.read().decode(), end="")
+            return True
+        except urllib.error.HTTPError as e:
+            raise SystemExit(f"daemon error: {e.read().decode()}")
+        except OSError:
+            if os.environ.get("TELEPATHY_INPROC") == "1":
+                return False
+            if attempt < 2:
+                time.sleep(5 * (attempt + 1))
+    raise SystemExit(f"no telepathy daemon at {URL}; start one with `serve`, or set TELEPATHY_INPROC=1 to load models in this process (about 8 GB)")
 
 
 def main() -> None:

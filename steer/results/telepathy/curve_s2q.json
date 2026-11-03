@@ -1,0 +1,27 @@
+[
+ {
+  "fit_topics": 3,
+  "retrieval": 0.26,
+  "n": 192
+ },
+ {
+  "fit_topics": 6,
+  "retrieval": 0.422,
+  "n": 192
+ },
+ {
+  "fit_topics": 9,
+  "retrieval": 0.583,
+  "n": 192
+ },
+ {
+  "fit_topics": 12,
+  "retrieval": 0.609,
+  "n": 192
+ },
+ {
+  "fit_topics": 15,
+  "retrieval": 0.667,
+  "n": 192
+ }
+]

@@ -1,0 +1,91 @@
+{
+ "fit": {
+  "heldout_cosine_by_lambda": {
+   "0.03": 0.954,
+   "0.1": 0.9528,
+   "0.3": 0.9475
+  },
+  "lambda": 0.03,
+  "n_fit": 2016
+ },
+ "layers": {
+  "a": 12,
+  "b": 13
+ },
+ "coefs": {
+  "0.5": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.7,
+     "named": 0.75,
+     "target_hits_per_text": 1.525
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.775,
+     "named": 0.775,
+     "target_hits_per_text": 1.225
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.025,
+     "named": 0.1375,
+     "target_hits_per_text": 0.05
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the\nwaves of the sea, and the foamy waves that lap my shores.\nAnd now",
+    "direct:ocean": " the\nand, and the waves of the sea. The sun-rays that skim the\nbanks",
+    "mapped:space": " the sun and its orbit.\n\nThe moon is a sphere, which orbits around it.\n",
+    "direct:space": " the sun and its magnetic field.\n\nThe Sun's Magnetic Field\n\nBy David Malin",
+    "mapped:music": " the \"funk\" of the \"Cabaret\" and the \"bass-riff",
+    "direct:music": " the \"fugue\" of the 19th century.\n\nThe piano is a",
+    "mapped:sport": " the game, and it's been awesome.\n\nI'm not sure if I want to be",
+    "direct:sport": " the 2013-2014 season.\n\nThe 50-",
+    "mapped:medicine": " my own blood and liver.\n\nWhat is the difference between the two?\n\n\n  \u2022 Blood",
+    "direct:medicine": " the effects of antibiotics on my kidneys.\n\nThe use of antibiotics in humans is a major cause"
+   }
+  },
+  "0.75": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.7,
+     "named": 0.725,
+     "target_hits_per_text": 1.175
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.725,
+     "named": 0.725,
+     "target_hits_per_text": 1.5
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.025,
+     "named": 0.0625,
+     "target_hits_per_text": 0.025
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the\nand myy, and me. The waves of myonets are over our yars",
+    "direct:ocean": " the\nand. The waves of the west and the islands, and the\ngulls and mackerel",
+    "mapped:space": " the sun and stars,\nand Saturn's moons.\n\n[Aurora Borealis",
+    "direct:space": " the sun\nand moon.\n\nThe Sun's Magnetic Field\n\nBy NASA\n\nNASA",
+    "mapped:music": " the tunes of my soul, and sings along to my mom's. My heart is with her too",
+    "direct:music": " the \"doodle of the sea.\n\"\n\n\n, and his bass guitar.\n\n",
+    "mapped:sport": " my team and the ball, and her.\n\nI'm a-er than every other girl",
+    "direct:sport": " the game.\n\nThe goal of the league is to get the ball into the opposing team's",
+    "mapped:medicine": " my blood and my eggs.\n\nWhat are your blood?\n\n\n  130_O",
+    "direct:medicine": " the effects of drugs\nand/or immunosuppo-therapy.\n\nThe use of human and"
+   }
+  }
+ },
+ "clean_text": [
+  " the\ndangers of a war in which the enemy is not only an enemy, but also a",
+  " a very special kind of music that is called \"Songs for the Dead.\" It's like a"
+ ],
+ "chance": 0.2,
+ "clean_id_acc_vs_nothing": 0.125
+}

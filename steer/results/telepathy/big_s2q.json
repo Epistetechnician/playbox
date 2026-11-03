@@ -1,0 +1,91 @@
+{
+ "fit": {
+  "heldout_cosine_by_lambda": {
+   "0.03": 0.9179,
+   "0.1": 0.9176,
+   "0.3": 0.9142
+  },
+  "lambda": 0.03,
+  "n_fit": 2016
+ },
+ "layers": {
+  "a": 13,
+  "b": 12
+ },
+ "coefs": {
+  "0.5": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.625,
+     "named": 0.775,
+     "target_hits_per_text": 1.05
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.825,
+     "named": 0.825,
+     "target_hits_per_text": 1.7
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0125,
+     "named": 0.1125,
+     "target_hits_per_text": 0.0125
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the sea. The waves are low and gray, a blanket of mist over the shore.\nI am",
+    "direct:ocean": " the ocean. The waves crash against rocks, and a salty mist drifts over the surface of the",
+    "mapped:space": " the moon. It\u2019s a constant in my sky, and it is slowly moving away from Earth as",
+    "direct:space": " the Earth and its magnetic field. The Sun is a giant ball of gas, constantly spewing out",
+    "mapped:music": " the sound of a bass guitar. The notes are low and heavy, with an occasional flourish that reminds",
+    "direct:music": " the song \"The Bridge\" by The Beatles. It's a piece of music that has been played",
+    "mapped:sport": " the 1980s and how they ended. The NBA Finals were in Detroit, the",
+    "direct:sport": " the 1986 World Cup final, when Brazil beat Argentina in a penalty shootout to win",
+    "mapped:medicine": " the following problem: Given a set of points in 3D space, how can we find an",
+    "direct:medicine": " the risk of COVID-19 in my children. My daughter is 2 years old and has"
+   }
+  },
+  "0.75": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.775,
+     "named": 0.85,
+     "target_hits_per_text": 1.425
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.925,
+     "named": 0.95,
+     "target_hits_per_text": 2.525
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0125,
+     "named": 0.0375,
+     "target_hits_per_text": 0.0125
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the Gulf of Mexico. The sun is low, and a gulf wind lingers over Louisiana's",
+    "direct:ocean": " the surface of a wave. The waves are so close to shore that they rise up like walls,",
+    "mapped:space": " the Earth, and its orbit. The Sun is a distant ball of fire in space, 1",
+    "direct:space": " the Earth, and its surface. The Sun\u2019s rays that illuminate it are a source of energy for",
+    "mapped:music": " the sound of a bass guitar. The notes are in my head, and they're singing through the",
+    "direct:music": " the song \"Ave Maria.\" The notes of this piece are a perfect accompaniment to my",
+    "mapped:sport": " the 1980s, and my mind is racing. The first step of a Phoenix",
+    "direct:sport": " the ball. The game is in progress and my team has just scored a touchdown to win the championship",
+    "mapped:medicine": " a patient who is on mechanical ventilation. The nurse has been working with the client for 10",
+    "direct:medicine": " the risk of COVID- in patients with diabetes. In this article, we will discuss how to prevent"
+   }
+  }
+ },
+ "clean_text": [
+  " the following problem: Given a set of points in 3D space, find all triangles that have",
+  " a new book that is coming out in the next few weeks. It\u2019s called The Art of War"
+ ],
+ "chance": 0.2,
+ "clean_id_acc_vs_nothing": 0.125
+}
