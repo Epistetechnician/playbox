@@ -137,3 +137,48 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def sweep(models: dict[str, str], ks: tuple[int, ...] = (16, 32, 128), join: bool = True, frac: float = 0.45,
+          coef: float = 0.5, gen: int = 24, concepts: list[str] | None = None, prompts: list[str] | None = None) -> dict:
+    """E8 follow-up, hub arm only: accuracy for other hub sizes k, and for a model that joins a hub fitted on the others.
+
+    `join_<m>`: the hub is fitted on every model but m, then m gets its own adapters against that hub (nobody is refitted).
+    Only pairs that involve m are scored for it. Compare with the all-models hub of the main run (same anchors, k=64).
+    """
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(TEST_CONCEPTS)
+    prompts = prompts or PROMPTS
+    train, held = _anchor_split()
+    info = {n: _sender_pass(p, frac, train, held, concepts) for n, p in models.items()}
+    digest = H.anchor_digest(train)
+    states = {n: i["train"] for n, i in info.items()}
+    hubs: dict[str, H.Hub] = {f"k{k}": H.fit_hub(states, digest, k=k) for k in ks}
+    if join:
+        for m in info:
+            hub = H.fit_hub({n: s for n, s in states.items() if n != m}, digest, k=64)
+            hub.add_spoke(m, states[m])
+            hubs[f"join_{m}"] = hub
+    lex = {c: set(TEST_CONCEPTS[c]["lexicon"]) for c in concepts}
+    res: dict = {"hubs": {n: {"k": h.k, "models": list(h.spokes)} for n, h in hubs.items()}, "pairs": {}, "chance": 1 / len(concepts)}
+    for dst, di in info.items():
+        mb, tb = T.load(models[dst])
+        lb = di["layer"]
+        for name, hub in hubs.items():
+            joiner = name[5:] if name.startswith("join_") else None
+            for src, si in info.items():
+                if src == dst or (joiner and joiner not in (src, dst)):
+                    continue
+                hits = n = 0
+                for c in concepts:
+                    raw, scale = H.quantize(hub.encode(src, si["thought"][c]))
+                    v = hub.decode(dst, H.dequantize(raw, scale))
+                    v = v / v.norm() * coef * di["norm"]
+                    for p in prompts:
+                        hits += T.lexicon_id(T.generate(mb, tb, lb, v, p, gen), lex)[0] == c
+                        n += 1
+                cos = torch.nn.functional.cosine_similarity(
+                    hub.send(src, dst, si["held"] - si["held"].mean(0)), di["held"] - di["held"].mean(0), dim=-1).mean().item()
+                res["pairs"].setdefault(f"{src}->{dst}", {})[name] = {"acc": round(hits / n, 4), "heldout_cos": round(cos, 4)}
+        del mb
+    return res

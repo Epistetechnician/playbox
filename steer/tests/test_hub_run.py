@@ -50,3 +50,11 @@ def test_every_ordered_pair_runs_across_architectures(zoo):
     # random models share nothing meaningful except token identity, but the held-out sentences still map better than chance
     assert all(v["hub"] > 0 for v in r["heldout_cosine"].values())
     assert r["chance"] == 0.5
+
+
+def test_sweep_scores_other_sizes_and_a_joining_model(zoo):
+    r = hub_run.sweep(zoo, ks=(8,), gen=2, concepts=["ocean", "space"], prompts=PROMPTS[:1])
+    assert {"k8", "join_llama_s", "join_llama_m", "join_gpt2_s"} == set(r["hubs"])
+    cell = r["pairs"]["llama_s->llama_m"]
+    assert set(cell) == {"k8", "join_llama_s", "join_llama_m"}  # join_gpt2_s does not involve this pair
+    assert all(0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())

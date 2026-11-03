@@ -1,9 +1,9 @@
 # Beyond text: latent channels across model families
 
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
-(`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. First real run:
-section 6a (five families, one H100, 2026-11-03). Only the main comparison has run; the k sweep, join test, token-cost
-comparison and closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
+(`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
+section 6a (five families, one H100, 2026-11-03) and 6b (k sweep and join test, one A10G on Modal). The token-cost
+comparison, the anchor-count sweep and the closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -129,6 +129,33 @@ One run. Ceiling `local_internal_exploratory`.
   what the receiver gets from having read the concept itself.
 - **Not tested:** other layers or strengths for TinyLlama, k, anchor count, the join test, concepts other than five,
   seeds. Do not read the ranking of single pairs.
+
+## 6b. k sweep and join test (2026-11-03)
+
+`steer/results/e8/e8_sweep.json`, from `steer/tools/e8_modal.py` on Modal (A10G, fp32). Same models, anchors, concepts,
+prompts and strength as 6a; hub arm only, so k=64 below is the 6a hub column. Same noise as 6a: one cell is 40 texts
+and one run. The pair map's mean accuracy is 0.51 (0.59 into the 16 receivers other than TinyLlama).
+
+| hub size k | wire bytes | accuracy, all 20 | accuracy, 16 not into TinyLlama | held-out cosine | pairs within 10 points of the pair map (of 20 / of 16) |
+|---|---|---|---|---|---|
+| 16 | 16 | 0.23 | 0.26 | 0.80 | 4 / 0 |
+| 32 | 32 | 0.33 | 0.37 | 0.84 | 7 / 3 |
+| 64 | 64 | 0.47 | 0.53 | 0.87 | 16 / 12 |
+| 128 | 128 | 0.50 | 0.57 | 0.90 | 17 / 13 |
+
+- **k matters a lot below 64.** At k=16 the channel is close to chance (0.20); k=32 recovers about a third of the way.
+  Accuracy follows held-out cosine, which keeps rising with k.
+- **Gains flatten from 64 to 128** (+3 points of accuracy, +3 of cosine, better than or equal in 13 of 20 pairs). k=128
+  also meets the rule from section 6 where k=64 missed: 13 of 16 (81%) pairs into a working receiver are within 10
+  points of the pair map. It is still 128 bytes. Only 426 anchors fit it, so more anchors may be needed before
+  going higher; not tested.
+- **Joining works.** Fitting the hub on four models and giving the fifth only its own two adapters gave mean accuracy
+  0.44 against 0.47 when all five were fitted together, over the 40 ordered pairs that involve the newcomer (8 per
+  model), and held-out cosine 0.865 against 0.869. By model, the joiner is lower than the all-five hub for four of five
+  (by 1 to 5 points) and higher for TinyLlama (0.37 against 0.35). The accuracy differences are inside the noise of these
+  cells; the cosine difference is under half a point. So a new model costs two adapters, not a refit.
+- **Not tested:** anchor count; whether joining several models in a row drifts; k above 128; other layers or strengths;
+  concepts outside the five.
 
 ## 7. Not covered
 
