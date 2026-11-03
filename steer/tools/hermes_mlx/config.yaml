@@ -1,0 +1,5 @@
+model:
+  default: mlx-community/Qwen3.8-27B-4bit
+  provider: custom
+  base_url: http://127.0.0.1:8088/v1
+  key: local

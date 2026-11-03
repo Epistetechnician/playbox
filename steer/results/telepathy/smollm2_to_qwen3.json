@@ -1,0 +1,125 @@
+{
+ "fit": {
+  "heldout_cosine_by_lambda": {
+   "0.01": 0.8843,
+   "0.1": 0.8938,
+   "1.0": 0.8729
+  },
+  "lambda": 0.1,
+  "n_fit": 576
+ },
+ "layers": {
+  "a": 13,
+  "b": 12
+ },
+ "coefs": {
+  "0.5": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.575,
+     "named": 0.625,
+     "target_hits_per_text": 1.1
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.825,
+     "named": 0.825,
+     "target_hits_per_text": 1.7
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0375,
+     "named": 0.1625,
+     "target_hits_per_text": 0.0375
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the sea. The waves are high and white, a vast expanse of water that stretches out to",
+    "direct:ocean": " the ocean. The waves crash against rocks, and a salty mist drifts over the surface of the",
+    "mapped:space": " the moon. It\u2019s a beautiful, glowing orb in the night sky that is visible from Earth and",
+    "direct:space": " the Earth and its magnetic field. The Sun is a giant ball of gas, constantly spewing out",
+    "mapped:music": " the sound of a bass drum. The deep, resonant tones that fill my headspace and rever",
+    "direct:music": " the song \"The Bridge\" by The Beatles. It's a piece of music that has been played",
+    "mapped:sport": " the 1968 Olympic Marathon in Los Angeles. The race was a mile and half long",
+    "direct:sport": " the 1986 World Cup final, when Brazil beat Argentina in a penalty shootout to win",
+    "mapped:medicine": " the following problem: Given a set of points in 3D space, how can we find an",
+    "direct:medicine": " the risk of COVID-19 in my children. My daughter is 2 years old and has"
+   }
+  },
+  "1.0": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.5,
+     "named": 0.525,
+     "target_hits_per_text": 0.925
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.975,
+     "named": 0.975,
+     "target_hits_per_text": 2.875
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0125,
+     "named": 0.0625,
+     "target_hits_per_text": 0.0125
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the Gulf of St. Andrews, and its white lines in a line against the sky like an arm",
+    "direct:ocean": " the surface of a New Zealand. The waves crash against coral, and white crests break in to",
+    "mapped:space": " the skies of New Mexico, and my flight over Albuquerque. The sky is a bright orange in the",
+    "direct:space": " the Earth, we and other planets. The surface of our planet, a sea of gas,,",
+    "mapped:music": " the sound of a hot grill in my head issers andesas. The sounds of New",
+    "direct:music": " the sound of a guitar. The tones that fills his electric, and rhythm section in jazz ensemble.",
+    "mapped:sport": " the line of a Chicago-bound runner, and his stride. The first step is offing the front",
+    "direct:sport": " the ball, and he is. The Boston Red Sox clinching victory to win World Series title in",
+    "mapped:medicine": " a patient who is on IV therapy. The nurse has to administer an antibiotic drug that needs to be",
+    "direct:medicine": " COVID-, and the use of monocoster drugs. In patients with severe Covid.\nInhib therapy"
+   }
+  },
+  "2.0": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.25,
+     "named": 0.55,
+     "target_hits_per_text": 0.575
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.9,
+     "named": 0.9,
+     "target_hits_per_text": 2.625
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0,
+     "named": 0.0875,
+     "target_hits_per_text": 0.0
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the and to, of into, linesline\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf\u7ebf",
+    "direct:ocean": " seas and cre walls fissens k white coral tumble serpent ser ch f st hei s tomb foam drift",
+    "mapped:space": " the surface of San and terrain in trajectories over passes, tracks traverse near coast drift corridors traversing to",
+    "direct:space": ", at cosmic depths,,s,,s,,s,,s,,s,",
+    "mapped:music": " inales and waves (s) sounds are ofa froms, as \"skel at",
+    "direct:music": " of by arrangement for with accomoon \" rhythm drum groove swing style rock-frock suite inspired jazz-ad",
+    "mapped:sport": " and is/ (,) or head of the front arehead for a trackout zone at ",
+    "direct:sport": " to World, to Super to championship to win to gold to champ to to to to to to to",
+    "mapped:medicine": " medication for patients, administration site sites and information at drug monitoring records ( record)? incident dose pump",
+    "direct:medicine": " COVID in\n,\n\n\nCOVID- cancer treatment\n\n\n\n\n\n\n\n\n\n"
+   }
+  }
+ },
+ "clean_text": [
+  " the following problem: Given a set of points in 3D space, find all triangles that have",
+  " a new book that is coming out in the next few weeks. It\u2019s called The Art of War"
+ ],
+ "chance": 0.2,
+ "clean_id_acc_vs_nothing": 0.125
+}

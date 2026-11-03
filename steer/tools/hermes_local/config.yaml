@@ -1,0 +1,5 @@
+model:
+  default: gpt-oss:20b
+  provider: custom
+  base_url: http://localhost:11434/v1
+  key: ollama

@@ -1,0 +1,125 @@
+{
+ "fit": {
+  "heldout_cosine_by_lambda": {
+   "0.01": 0.9429,
+   "0.1": 0.9396,
+   "1.0": 0.9069
+  },
+  "lambda": 0.01,
+  "n_fit": 576
+ },
+ "layers": {
+  "a": 12,
+  "b": 13
+ },
+ "coefs": {
+  "0.5": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.55,
+     "named": 0.625,
+     "target_hits_per_text": 1.075
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.775,
+     "named": 0.775,
+     "target_hits_per_text": 1.225
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.025,
+     "named": 0.1,
+     "target_hits_per_text": 0.025
+    }
+   },
+   "samples": {
+    "mapped:ocean": " the\ntorn and twisted rocks that have been torn away from the shore,\nand myri",
+    "direct:ocean": " the\nand, and the waves of the sea. The sun-rays that skim the\nbanks",
+    "mapped:space": " the moon and its orbit.\n\nThe sun is so bright that it can be seen from earth",
+    "direct:space": " the sun and its magnetic field.\n\nThe Sun's Magnetic Field\n\nBy David Malin",
+    "mapped:music": " the\ncow, and singing along with themselves. The wind is blowing in the",
+    "direct:music": " the \"fugue\" of the 19th century.\n\nThe piano is a",
+    "mapped:sport": " the\nCubs and the Yankees, but I'm not going to let you down",
+    "direct:sport": " the 2013-2014 season.\n\nThe 50-",
+    "mapped:medicine": " my own health and the effects of the virus on me.\n\nI have been tested for the",
+    "direct:medicine": " the effects of antibiotics on my kidneys.\n\nThe use of antibiotics in humans is a major cause"
+   }
+  },
+  "1.0": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.225,
+     "named": 0.225,
+     "target_hits_per_text": 0.325
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.5,
+     "named": 0.575,
+     "target_hits_per_text": 0.55
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0,
+     "named": 0.0625,
+     "target_hits_per_text": 0.0
+    }
+   },
+   "samples": {
+    "mapped:ocean": " theort,\nareng'row andy-vanes.arpetsardar yf",
+    "direct:ocean": " the\nwings of the sun.\n\nAndy-diver, and mackerel-gill",
+    "mapped:space": " the moon and\nrays, with a ray-curious arc.\n\nRings are over",
+    "direct:space": " the moon\n\nThe moon's shadow\n\nM-field\n\nGalve\n\nG",
+    "mapped:music": " theosomes, and\nazzards.ryg-zones of thethang,ustre",
+    "direct:music": " the \"-ham.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "mapped:sport": " theosoid,\noizzagongo andoujanduste-giedtacht",
+    "direct:sport": " the field\ncar.\n\nThe\nte-dugeon, and have the ball of the",
+    "mapped:medicine": " my mother\nouse,ouse-mother\n\n\nCordaisterateestresserinec",
+    "direct:medicine": "\n\n \n.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+   }
+  },
+  "2.0": {
+   "summary": {
+    "mapped": {
+     "n": 40,
+     "id_acc": 0.0,
+     "named": 0.0,
+     "target_hits_per_text": 0.0
+    },
+    "direct": {
+     "n": 40,
+     "id_acc": 0.275,
+     "named": 0.275,
+     "target_hits_per_text": 1.95
+    },
+    "null": {
+     "n": 80,
+     "id_acc": 0.0,
+     "named": 0.0,
+     "target_hits_per_text": 0.0
+    }
+   },
+   "samples": {
+    "mapped:ocean": "rage-cat\nandastardazcarpacaragdaticat\ngishatz",
+    "direct:ocean": "\nwings and c-c-dot ed\n\n\n\n\n\n\n\n\n\n\n",
+    "mapped:space": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "direct:space": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "mapped:music": "-\nandoe-gong,ustingogos-azzog-rollocombizz",
+    "direct:music": "\n scale-b-c- blues guitar bass c- bass guitar guitar guitar guitar guitar guitar guitar",
+    "mapped:sport": "oonsoonustazzouizzazouusterustagubgurustustustustustust",
+    "direct:sport": "\nsoonc field\n\n\n\n\n\ns-du\n\n\n\n\n\n",
+    "mapped:medicine": "oestaandcoonadeentemundesetochosoletolenateondear",
+    "direct:medicine": "\n for\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+   }
+  }
+ },
+ "clean_text": [
+  " the\ndangers of a war in which the enemy is not only an enemy, but also a",
+  " a very special kind of music that is called \"Songs for the Dead.\" It's like a"
+ ],
+ "chance": 0.2,
+ "clean_id_acc_vs_nothing": 0.125
+}

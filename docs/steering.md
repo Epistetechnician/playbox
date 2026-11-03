@@ -871,6 +871,27 @@ bfloat16, 32 contexts, 16 nulls, 12 tokens, strengths 0.25 and 0.5, sentiment an
 - **Later text, judged (seed 0 only):** 14B, judge CI above 0 in 17 of 28 cells, classifier 14 of 28, word count 1 of 28. 32B: judge 18 of 20, classifier 10 of 20, word count 3 of 20. In 23 of 28 (14B) and 18 of 20 (32B) cells, no unrelated-contrast direction pushed as far as the trait direction by the judge. Steered text equals clean text in about 45-48% of rows.
 - **Reading:** the later-text effect survives at 14B and 32B once layers are chosen sensibly and is clearly visible to the judge; the word count undercounts it, as before. Not shown: seeds 1 and 2 were not judged, only one H100 run per cell, two traits, bf16 only.
 
+### E7: a text-free cross-family channel between two Hermes agents
+
+`steer/playbox_steer/telepathy.py`, `telepathy_agent.py`, `tools/telepathy_hermes.py`; results in `steer/results/telepathy/`.
+
+**Channel.** Agent A (one model family) reads private concept sentences and builds a thought vector (mean mid-layer state minus the mean of neutral sentences). A ridge map, fitted on sentence-level mean states of two different families (SmolLM2-135M, Llama-style, width 576; Qwen3-1.7B-Base, width 2048; different tokenizers, so pairs are whole sentences), turns it into the receiver's space. Agent B's model adds it at layer 45% of depth while continuing neutral prompts. Only the vector crosses; no text. Five test concepts (ocean, space, music, sport, medicine) are never in the map's fit set. Held-out cosine of the map: 0.89 (SmolLM2 to Qwen3), 0.94 (reverse).
+
+**Measured (lexicon decoder written separately from the thought sentences; 5 concepts x 8 prompts; chance 20%).** At strength 0.5 (in the receiver's mean token norm): mapped 57% (SmolLM2 to Qwen3) and 55% (Qwen3 to SmolLM2); random vectors through the same map 4% and 3%; the receiver's own direction 82% and 78%. Stronger steering is worse (1.0: 50% and 23%; 2.0: 25% and 0%) because text degrades. One run per cell.
+
+**End to end with two Hermes agents** (12 randomized trials: 5 concepts and 1 no-concept control in each direction; A is told the secret topic and runs `think`; B is only given the vector and runs `listen`, reads the 8 continuations, and names one of five topics):
+
+| Agent brain | Concepts correct | Controls ("none") |
+|---|---|---|
+| Haiku 5.5 via the user's Anthropic account | 10/10 | 2/2 |
+| Qwen3.8-27B-4bit on MLX, fully local | 9/10 | 2/2 |
+
+The local miss was sport read as music (Qwen3 to SmolLM2); the same pair missed in an earlier local run.
+
+**A flaw found and fixed.** In a first local run, Agent B's answer in one trial said it read A's prompt file, which sat beside the vector. Only each agent's final text is saved, so how many earlier trials peeked is unknown; those runs are not reported. The numbers above are from reruns where A's files are in a separate directory and B runs in an empty one holding only `thought.pt`. B still has a shell and could search the disk, so this removes the obvious route, not every route.
+
+**What this does not show.** 12 trials (a demonstration, not a reliability estimate); five distinct topics and B is told the options; two model families, one layer, one map per pair; the thought vector is built from A's own sentences, so it is a concept channel, not arbitrary-thought transfer; the map and models are the same on both ends of one machine; no hostile sender (the E6 handoff audit does not apply: nothing here is recomputable from text); the channel is not wired into a room as an operation.
+
 ## 5. Threat model additions
 
 | Threat | Mitigation (built, with its test) | Remaining gap |
