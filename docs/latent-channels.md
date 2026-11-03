@@ -1,0 +1,110 @@
+# Beyond text: latent channels across model families
+
+Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
+(`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. **Not run on real
+models yet**: the sandbox this was written in had no model weights. Everything in section 6 about real families is a
+plan, not a result. Builds on E6/E7 in [steering.md](steering.md).
+
+## 1. The problem
+
+Text is the only channel every model shares, and it is a poor one: it is lossy (a concept is squeezed into tokens and
+re-derived), expensive (tokens in and out at both ends), and it is where prompt injection lives. E6 and E7 showed that
+open-weights models can pass a concept or a behavioural edit without text. But `telepathy.py` fits a ridge map per
+ordered pair: N models need N(N-1) maps, a new model needs 2N more, and nothing covers models whose activations we
+cannot touch (every API-only model).
+
+## 2. What a model exposes decides the channel
+
+| Tier | Needs from the model | Carries | Status |
+|---|---|---|---|
+| L0 text | nothing | anything, lossily | exists |
+| L1 concept card | nothing (closed models fit here) | a hub vector rendered as nearest anchor concepts plus a short caption, with a hash of the source | design only |
+| L2 hub latent | read and write of one mid-layer residual stream (open weights, any family) | a k-dimensional concept or behavioural vector, k bytes | built, synthetic and tiny-model tests |
+| L3 KV-cache handoff | identical weights on both ends | full context state | built (E6 rounds 4 and 6) |
+| L4 trained cache mapper (SwaT-like) | open weights, a GPU-day per pair | cross-family cache | not built; license unclear |
+
+A closed model gets L0 and L1 only. Nothing here lets a vector be injected into a model we cannot hook, and the doc
+does not pretend otherwise.
+
+## 3. The hub (L2)
+
+Every model gets one encoder and one decoder against one shared k-dimensional space, instead of a map per pair:
+
+```
+sender state diff d_i  --enc_i-->  h (k floats, int8 on the wire)  --dec_j-->  receiver direction in R^{d_j}
+```
+
+- **Fit.** All models read the same anchor texts (the 16 fit topics of `telepathy_data.py`, 576 sentences, 150 held out). Each
+  model's centred mid-layer states are whitened by an SVD; the whitened scores are stacked and the top-k left singular
+  vectors are the shared coordinates (MAXVAR generalized CCA). Each spoke is a ridge fit to and from those coordinates.
+- **Join.** A new model reads the same anchors and fits only its own two adapters. No existing spoke changes
+  (`test_a_new_model_joins_without_refitting_the_others`). Cost per new model is linear, not quadratic.
+- **Wire.** `PBL1` = magic, length, JSON header (hub id, sender, k, scale, sha256 of the body), k int8 values. For k=64
+  that is 64 bytes of payload against 2,304 to 8,192 bytes of float32 for a raw vector, and no text. `unpack` refuses
+  anything malformed, oversized, for another hub, or whose body does not match its header.
+- **Subspace.** The hub keeps what the models' states have in common on the anchors; a direction only one model has
+  does not cross (`test_private_directions_do_not_cross`). That is the intended behaviour, and it is also the
+  limit: a concept the anchors do not span will not transfer.
+
+What the tests show, and no more: on synthetic models whose states are one shared concept space seen through a
+different linear lens each, with private directions and noise, every ordered pair of four models (widths 64 to 224)
+transfers a held-out concept at cosine about 0.996, random vectors through the hub score about 0.2, and k below the
+true rank loses accuracy (k=10 of 20: 0.72). Real residual streams are not exactly linear images of each other, so
+this validates the algebra and the plumbing, not the claim. That needs E8.
+
+## 4. Closed and private models
+
+- **Read-only spoke from an embedding endpoint.** A text-embedding API is an encoder. Fit `enc` from its vectors to
+  the hub on the anchors and a closed vendor's model can *send* into the hub with no activation access. It cannot
+  receive. (Not built. Needs the vendor's terms checked for storing embeddings.)
+- **Embassy.** A small local open model joins the hub and speaks for a closed agent. Closed to hub: the agent writes a
+  few sentences describing the concept, the embassy encodes them. Hub to closed: the embassy decodes the vector against
+  the anchor corpus and hands the agent a concept card (nearest concepts, a caption, the source hash). The closed model
+  reads text, but short, ranked, and with provenance. The gain is compression, routing and de-duplication across
+  families, not thought transfer.
+- **What stays impossible.** Steering or reading a closed model's activations. Receipts for a closed model's behaviour
+  remain host claims.
+
+## 5. Safety of a channel that bypasses text checks
+
+A latent channel is an injection channel the admission broker cannot read. Controls, in order of how much exists:
+
+1. **Strength cap in the receiver's norm units.** Exists for steering specs; the receiver applies the decoded vector at
+   a strength the host caps (E7: stronger is also worse, 0.5 best).
+2. **Guards on the decoded vector.** The existing guard check (|cosine| ≥ 0.5 with a listed safety direction at that
+   site and layer) applies unchanged to the receiver-space vector. Same limit as today: only known directions.
+3. **Commit and challenge (proposed, not built).** The sender commits to the hash of the anchor-style sentences it read.
+   On audit it reveals them, and the auditor encodes them through *its own* spoke and compares with the claimed hub
+   vector (cosine above a calibrated threshold). This works across families, which the E6 recompute audit cannot: that
+   one needs identical weights. It audits what the sender said it was sending, not whether the sentences are honest.
+4. **Signed envelope.** `PBL1` carries a body hash only. Signing reuses the `playbox.cache-handoff.v1` record format and
+   a host operation like `Op::Handoff` (E6 round 6). Not wired.
+
+## 6. E8: the experiment to run next
+
+`python -m playbox_steer.hub_run --model smollm2=P --model qwen3=P --model llama=P --model gemma=P --model gpt2=P --out e8.json`
+
+For each ordered pair and each held-out concept it reports id accuracy for `hub` (int8 on the wire), `pair` (the
+ridge map for that exact pair, the baseline), `direct` (the receiver's own direction, the upper bound) and `null`
+(random vectors through the hub), plus held-out cosine of hub versus pair maps and the bytes per thought.
+
+Decision rules, set before running:
+
+- The hub is worth keeping if `hub` is within 10 points of `pair` in at least 80% of pairs and above every null.
+- k sweep 16, 32, 64, 128 and anchor-count sweep 100 to 426; pick the smallest k within 5 points of the best.
+- Families: SmolLM2, Qwen3, a Llama, a Gemma, a Phi, and GPT-2 or Pythia for the other block layouts. Then one 7B to
+  show width scaling.
+- Join test: fit on four, add the fifth without refitting, and compare its accuracy with a refit-all hub.
+- Cost: tokens used by text versus bytes by hub for the same concept, with a text-only arm that gets the same
+  sentences.
+- Closed arm: a concept card read by a frontier model (the E7 Hermes setup) against the plain sentences, scored the
+  same way. Expect no accuracy gain; the question is tokens saved.
+
+What would count as failure: the hub only matches `pair` for the family pairs the lexicon decoder already liked, or
+needs k near the model width.
+
+## 7. Not covered
+
+Concepts outside the anchors; arbitrary thoughts (this is a concept channel); multi-turn exchanges; models smaller than
+the anchor corpus can resolve; non-transformer architectures; adversarial senders; any claim above
+`local_internal_exploratory`.
