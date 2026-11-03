@@ -23,6 +23,7 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .engine import blocks
 from .telepathy_data import FIT_TOPICS, NEUTRAL, PROMPTS, TEST_CONCEPTS
 
 
@@ -34,13 +35,13 @@ def load(path: str):
 
 
 def layer_of(model, frac: float) -> int:
-    return int(len(model.model.layers) * frac)
+    return int(len(blocks(model)) * frac)
 
 
 def sentence_states(model, tok, texts: list[str], layer: int) -> torch.Tensor:
     """Mean over non-first tokens of the block output, one row per text."""
     rows, cur = [], {}
-    h = model.model.layers[layer].register_forward_hook(
+    h = blocks(model)[layer].register_forward_hook(
         lambda _m, _i, out: cur.__setitem__("x", (out[0] if isinstance(out, tuple) else out).detach()))
     try:
         for t in texts:
@@ -55,7 +56,7 @@ def sentence_states(model, tok, texts: list[str], layer: int) -> torch.Tensor:
 
 def mean_norm(model, tok, texts: list[str], layer: int) -> float:
     cur, norms = {}, []
-    h = model.model.layers[layer].register_forward_hook(
+    h = blocks(model)[layer].register_forward_hook(
         lambda _m, _i, out: cur.__setitem__("x", (out[0] if isinstance(out, tuple) else out).detach()))
     try:
         for t in texts:
@@ -110,7 +111,7 @@ def generate(model, tok, layer: int, vec: torch.Tensor | None, prompt: str, n: i
             if isinstance(out, tuple):
                 return (out[0] + vec.to(out[0].dtype),) + tuple(out[1:])
             return out + vec.to(out.dtype)
-        h = model.model.layers[layer].register_forward_hook(hook)
+        h = blocks(model)[layer].register_forward_hook(hook)
     try:
         out = model.generate(ids, max_new_tokens=n, do_sample=False, pad_token_id=tok.eos_token_id,
                              repetition_penalty=1.1)
