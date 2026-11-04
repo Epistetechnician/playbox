@@ -191,3 +191,37 @@ reconstruction than the full-rank map).
 
 Code and data: `steer/playbox_steer/l4_feasibility.py`, `steer/tools/l4_feasibility_modal.py`,
 `steer/results/telepathy/l4_feasibility.json` (and `l4_smoke.json`, a 12-item pipeline check).
+
+## 9. Stage 2: the SwaT-style mapper on one H100 (plan and bar, written before training)
+
+Committed before any training run so the bar cannot move afterwards.
+
+**What is trained.** Our own implementation from the paper's method (`steer/playbox_steer/l4_swat.py`; the unlicensed SwaT repo
+was not used), for both directions: SmolLM2-135M to Qwen3-1.7B-Base and the reverse. B = 7 blocks, width 1024, 16 heads, FFN 4096.
+Stage 1 (normalised MSE to the receiver's own cache): 3,000 steps. Stage 2 (receiver next-token loss on a continuation, reading
+only the mapped cache): 8,000 steps. Batch 48 documents. Data: 100,000 (context, continuation) items, 85% wikitext-103 train
+paragraphs and 15% templated text from the fit-topic pool (the 16 original topics are held out). Deviations from the paper are
+listed in the `l4_swat.py` docstring (shorter schedules, a larger stage-2 learning rate, output scaling by the calibrated RMS).
+A debug run on a tiny mapper (55M parameters, 6k items, 700 steps, A10G) already reached a retention of 0.58 on held-out
+wikitext-103 in the training-time bf16 check, so the code learns; that number is not the result.
+
+**Where and cost.** gman node `playbox-e6-cuda` (1x H100), workspace `default`, 0.084 USD per minute weekday (5.04 USD per hour),
+15-minute session minimum. Expected 3 to 4 hours for both directions, about 15 to 20 USD; hard cap 30 USD of GPU time. The node is
+stopped when the work ends or anything hangs.
+
+**Held-out evaluation (final numbers use fp32 models and the same protocol as section 3, so they compare with the linear map).**
+(A) the 150 wikitext-2 validation items of section 3; (B) the 48 templated held-out-topic items; (C) 21-way concept retrieval by
+likelihood gain. Controls: the unrelated real cache and the mean cache. Reference points: linear map 55.5% retention on (A)
+(95% CI 46.2 to 62.6), 21-way retrieval 85.7% (95.2% with RMS rescale).
+
+**Bar.** A direction passes if all of:
+1. (A) retention is at least 75%, with the lower bound of its 95% bootstrap interval above 62.6% (so it beats the linear map
+   with non-overlapping intervals);
+2. (B) mapped retention exceeds the unrelated-real-cache control by at least 20 points;
+3. (C) 21-way retrieval is at least 90%.
+
+**Blind two-agent protocol.** Run it only for a direction that passes. Same 20 topics, same protocol as E7 (Haiku-free open
+brain on Modal, Hermes agents, B names the topic from continuations generated from the mapped cache), at least 200 concept trials
+plus controls so a 10-point difference from L2's 73.8% is detectable. Reading of the result: above L2 with the lower bound of the
+95% interval over 73.8% counts as better; within the interval counts as comparable (then the case for L4 rests on richer payloads,
+not on this metric); below counts as worse. If no direction passes, stop and report; do not run the blind protocol.
