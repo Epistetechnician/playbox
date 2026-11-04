@@ -1,0 +1,417 @@
+{
+ "trials": [
+  {
+   "i": 0,
+   "topic": "spy",
+   "prompt_tokens": 2329,
+   "text_bytes": 10771,
+   "kv_bytes": 267108352,
+   "ingest": {
+    "ttft": 0.07489366299998323,
+    "src": {
+     "local_compute": 2329,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "spy",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.12056739099998026,
+      "src": {
+       "local_compute": 103,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 9.0
+      },
+      "text": " spy"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.05875566499997831,
+      "src": {
+       "local_compute": 2407,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " spy"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": null
+    },
+    {
+     "kind": "vault code",
+     "want": "433490",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.12423013800000149,
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"2705507485330802795\"}": 9.0
+      },
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.04930204699999763,
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": null
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "VELVET-OTTER-40",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.12585534400000142,
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"1819785143550690352\"}": 9.0
+      },
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.050142582999995966,
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": null
+    }
+   ]
+  },
+  {
+   "i": 1,
+   "topic": "campsite",
+   "prompt_tokens": 2503,
+   "text_bytes": 10409,
+   "kv_bytes": 287064064,
+   "ingest": {
+    "ttft": 0.06193357699999069,
+    "src": {
+     "local_compute": 2503,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "campsite",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.04855968499998653,
+      "src": {
+       "local_compute": 277,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1001\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 9.0
+      },
+      "text": " campsite"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06300632400001405,
+      "src": {
+       "local_compute": 2581,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " campsite"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 103,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "358801",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.049188837999992074,
+      "src": {
+       "local_compute": 215,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"2705507485330802795\"}": 9.0
+      },
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.05026008600000864,
+      "src": {
+       "local_compute": 215,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "AMBER-WOMBAT-40",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.05109360700001275,
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"1819785143550690352\"}": 9.0
+      },
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.04897954599999821,
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "chain": [
+  {
+   "i": 0,
+   "A_src": {
+    "local_compute": 2445,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 533,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 39,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.05054365800000937,
+   "cold_ttft": 0.06443790200000876,
+   "tokens": 2855
+  }
+ ],
+ "summary": {
+  "per_question": {
+   "topic": {
+    "n": 2,
+    "hit_acc": 1.0,
+    "cold_acc": 1.0,
+    "nocontext_acc": 0.0
+   },
+   "vault code": {
+    "n": 2,
+    "hit_acc": 1.0,
+    "cold_acc": 1.0,
+    "nocontext_acc": 0.0
+   },
+   "pilot callsign": {
+    "n": 2,
+    "hit_acc": 1.0,
+    "cold_acc": 1.0,
+    "nocontext_acc": 0.0
+   }
+  },
+  "wrong_handle": {
+   "n": 3,
+   "answer_matches_this_question": 0.0,
+   "answer_matches_the_cached_case": 1.0
+  },
+  "tokens": {
+   "case_tokens_mean": 2416.0,
+   "hit_external_mean": 2304.0,
+   "hit_local_compute_mean": 149.0,
+   "cold_local_compute_mean": 917.0
+  },
+  "ttft_s": {
+   "hit_mean": 0.08658250049999576,
+   "cold_mean": 0.0534077084999988,
+   "ingest_mean": 0.06841361999998696
+  },
+  "bytes": {
+   "text_mean": 10590.0,
+   "kv_mean": 277086208.0
+  },
+  "chain": {
+   "n": 1,
+   "C_acc": 1.0,
+   "cold_acc": 1.0,
+   "C_external_mean": 2816.0,
+   "C_local_compute_mean": 39.0,
+   "C_ttft_mean": 0.05054365800000937,
+   "cold_ttft_mean": 0.06443790200000876
+  }
+ },
+ "lm_final": {
+  "l1_write_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1000\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1001\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1001\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6000\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6000\"}": 11.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 54.0,
+  "l1_read_chunks_total{cache_salt=\"nocap-1000\"}": 18.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"nocap-1001\"}": 18.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6000\"}": 20.0,
+  "l1_memory_usage_bytes": 1761607680.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 36.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"2705507485330802795\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"nocap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 18.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"1819785143550690352\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"2705507485330802795\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"nocap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 18.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"1819785143550690352\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3605512593765684451\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"2705507485330802795\"}": 11.0
+ },
+ "kv_bytes_per_token": 114688,
+ "lmcache_metric_names": [
+  "lmcache_mp_active_p2p_lookup_jobs",
+  "lmcache_mp_active_prefetch_jobs",
+  "lmcache_mp_event_bus_drain_lag_seconds",
+  "lmcache_mp_event_bus_dropped_events_total",
+  "lmcache_mp_event_bus_queue_depth",
+  "lmcache_mp_l0_block_idle_before_evict_seconds_bucket",
+  "lmcache_mp_l0_block_idle_before_evict_seconds_count",
+  "lmcache_mp_l0_block_idle_before_evict_seconds_sum",
+  "lmcache_mp_l0_block_lifetime_seconds_bucket",
+  "lmcache_mp_l0_block_lifetime_seconds_count",
+  "lmcache_mp_l0_block_lifetime_seconds_sum",
+  "lmcache_mp_l0_l1_load_throughput_GB_per_second_bucket",
+  "lmcache_mp_l0_l1_load_throughput_GB_per_second_count",
+  "lmcache_mp_l0_l1_load_throughput_GB_per_second_sum",
+  "lmcache_mp_l0_l1_store_throughput_GB_per_second_bucket",
+  "lmcache_mp_l0_l1_store_throughput_GB_per_second_count",
+  "lmcache_mp_l0_l1_store_throughput_GB_per_second_sum",
+  "lmcache_mp_l1_eviction_loop_ticks_total",
+  "lmcache_mp_l1_memory_usage_bytes",
+  "lmcache_mp_l1_read_chunks_total",
+  "lmcache_mp_l1_usage_ratio",
+  "lmcache_mp_l1_write_chunks_total",
+  "lmcache_mp_l2_adapters",
+  "lmcache_mp_lookup_hit_tokens_total",
+  "lmcache_mp_lookup_requested_tokens_total",
+  "lmcache_mp_num_chunks_loaded_total"
+ ],
+ "versions": {
+  "lmcache": "0.5.1",
+  "vllm": "0.25.1",
+  "model": "Qwen/Qwen3-1.7B-Base",
+  "gpu": "L40S"
+ }
+}

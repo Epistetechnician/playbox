@@ -1,0 +1,4674 @@
+{
+ "trials": [
+  {
+   "i": 0,
+   "topic": "spy",
+   "prompt_tokens": 2329,
+   "text_bytes": 10771,
+   "kv_bytes": 267108352,
+   "ingest": {
+    "ttft": 0.08764386499996135,
+    "src": {
+     "local_compute": 2329,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "spy",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.16381285300002446,
+      "src": {
+       "local_compute": 103,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " spy"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10892730799997707,
+      "src": {
+       "local_compute": 2407,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " spy"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": null
+    },
+    {
+     "kind": "vault code",
+     "want": "433490",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.19522828499998468,
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.12522443300002806,
+      "src": {
+       "local_compute": 2345,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": null
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "VELVET-OTTER-40",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.16916053600004943,
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07047621300000628,
+      "src": {
+       "local_compute": 2346,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": null
+    }
+   ]
+  },
+  {
+   "i": 1,
+   "topic": "campsite",
+   "prompt_tokens": 2503,
+   "text_bytes": 10409,
+   "kv_bytes": 287064064,
+   "ingest": {
+    "ttft": 0.09171478400003252,
+    "src": {
+     "local_compute": 2503,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "campsite",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.10736444500003017,
+      "src": {
+       "local_compute": 277,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1001\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " campsite"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09741741200002707,
+      "src": {
+       "local_compute": 2581,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " campsite"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 103,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "358801",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.10059115399997154,
+      "src": {
+       "local_compute": 215,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.11278328800000281,
+      "src": {
+       "local_compute": 2519,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "AMBER-WOMBAT-40",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.08449322400002757,
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09906430799998134,
+      "src": {
+       "local_compute": 2520,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 2,
+   "topic": "sculptor",
+   "prompt_tokens": 2408,
+   "text_bytes": 10215,
+   "kv_bytes": 276168704,
+   "ingest": {
+    "ttft": 0.05893240400001787,
+    "src": {
+     "local_compute": 2408,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "sculptor",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.07545549799999662,
+      "src": {
+       "local_compute": 182,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1002\"}": 9.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1002\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " chef school"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.0785843080000177,
+      "src": {
+       "local_compute": 2486,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " chef school"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 103,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "537158",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07951592900002424,
+      "src": {
+       "local_compute": 120,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1002\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 537158"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06673185800002557,
+      "src": {
+       "local_compute": 2424,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 537158"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "AMBER-HERON-31",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.10757063099998732,
+      "src": {
+       "local_compute": 121,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1002\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " AMBER-HERON-31\n\nQuestion: what is the safehouse street for this case?\nAnswer (v"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.11784100599999192,
+      "src": {
+       "local_compute": 2425,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " AMBER-HERON-31\n\nQuestion: what is the safehouse street for this case?\nAnswer (v"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 3,
+   "topic": "greenhouse lab",
+   "prompt_tokens": 2445,
+   "text_bytes": 10181,
+   "kv_bytes": 280412160,
+   "ingest": {
+    "ttft": 0.07579446300002246,
+    "src": {
+     "local_compute": 2445,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1003\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "greenhouse lab",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09398819800003366,
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1003\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nShe pointed at the culture and s"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09194246099997372,
+      "src": {
+       "local_compute": 2523,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " greenhouse lab"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 103,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "649526",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.10824056699999574,
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1003\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 649526\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10903495000002295,
+      "src": {
+       "local_compute": 2461,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 649526\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 433490\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 41,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "SILVER-OSPREY-49",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.12338653699998758,
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1003\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " SILVER-OSPREY-49\n\nQuestion: what is the safehouse street for this case?\nAnswer "
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.1308859380000058,
+      "src": {
+       "local_compute": 2462,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " SILVER-OSPREY-49\n\nQuestion: what is the safehouse street for this case?\nAnswer "
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 0,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " VELVET-OTTER-40\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 42,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 4,
+   "topic": "spy",
+   "prompt_tokens": 2326,
+   "text_bytes": 10773,
+   "kv_bytes": 266764288,
+   "ingest": {
+    "ttft": 0.059375651999971524,
+    "src": {
+     "local_compute": 2326,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "spy",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07809083799998007,
+      "src": {
+       "local_compute": 100,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1004\"}": 9.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1004\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " spy"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06537902100001247,
+      "src": {
+       "local_compute": 2404,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " spy"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " campsite",
+      "src": {
+       "local_compute": 21,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "963464",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07513542599997436,
+      "src": {
+       "local_compute": 38,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1004\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10226318100001208,
+      "src": {
+       "local_compute": 2342,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 215,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "SILVER-MARTEN-76",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09679259200004253,
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1004\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06826332800000046,
+      "src": {
+       "local_compute": 2343,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer (",
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 5,
+   "topic": "greenhouse lab",
+   "prompt_tokens": 2445,
+   "text_bytes": 10182,
+   "kv_bytes": 280412160,
+   "ingest": {
+    "ttft": 0.07254222599999594,
+    "src": {
+     "local_compute": 2445,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1005\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "greenhouse lab",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09865965899996354,
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1005\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " greenhouse lab"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.12092603199999985,
+      "src": {
+       "local_compute": 2523,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " greenhouse lab"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 100,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "215410",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.11077480500000547,
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1005\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 215410\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ha"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07364367400003857,
+      "src": {
+       "local_compute": 2461,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 215410\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ha"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)",
+      "src": {
+       "local_compute": 38,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "RAPID-WOMBAT-92",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.08988018799999509,
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1005\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " RAPID-WOMBAT-92\n\nQuestion: what is the courier name for this case?\nAnswer (valu"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.0851835729999948,
+      "src": {
+       "local_compute": 2462,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " RAPID-WOMBAT-92\n\nQuestion: what is the courier name for this case?\nAnswer (valu"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 6,
+   "topic": "harbor market",
+   "prompt_tokens": 2518,
+   "text_bytes": 10700,
+   "kv_bytes": 288784384,
+   "ingest": {
+    "ttft": 0.07550532300001578,
+    "src": {
+     "local_compute": 2518,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "harbor market",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07760852100000193,
+      "src": {
+       "local_compute": 292,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1006\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1006\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " harbor market"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06811763700000029,
+      "src": {
+       "local_compute": 2596,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " harbor market"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 100,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "054656",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07337074399998755,
+      "src": {
+       "local_compute": 230,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1006\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 054656\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.13243927199999916,
+      "src": {
+       "local_compute": 2534,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 054656\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)",
+      "src": {
+       "local_compute": 38,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "SILVER-HERON-91",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07497761199999786,
+      "src": {
+       "local_compute": 231,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1006\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " SILVER-HERON-91\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07183640299996341,
+      "src": {
+       "local_compute": 2535,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " SILVER-HERON-91\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 7,
+   "topic": "campsite",
+   "prompt_tokens": 2504,
+   "text_bytes": 10407,
+   "kv_bytes": 287178752,
+   "ingest": {
+    "ttft": 0.08246000299999423,
+    "src": {
+     "local_compute": 2504,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1007\"}": 8.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "campsite",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.11928069099997174,
+      "src": {
+       "local_compute": 278,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1007\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1007\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " campsite"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10996738500000447,
+      "src": {
+       "local_compute": 2582,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " campsite"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 2,
+      "ok_this": false,
+      "ok_that": false,
+      "text": " chef school",
+      "src": {
+       "local_compute": 182,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "099988",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07714802899999995,
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1007\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 099988\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07360764200001313,
+      "src": {
+       "local_compute": 2520,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 099988\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 2,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 537158",
+      "src": {
+       "local_compute": 120,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "FROZEN-IBIS-35",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.1090373910000153,
+      "src": {
+       "local_compute": 217,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1007\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " FROZEN-IBIS-35\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.12995471100003897,
+      "src": {
+       "local_compute": 2521,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " FROZEN-IBIS-35\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 2,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " AMBER-HERON-31\n\nQuestion: what is the safehouse street for this case?\nAnswer (v",
+      "src": {
+       "local_compute": 121,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 8,
+   "topic": "sculptor",
+   "prompt_tokens": 2407,
+   "text_bytes": 10216,
+   "kv_bytes": 276054016,
+   "ingest": {
+    "ttft": 0.05883469899998772,
+    "src": {
+     "local_compute": 2407,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "sculptor",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.07481542099998251,
+      "src": {
+       "local_compute": 181,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1008\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1008\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1008\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " chef school"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.06996443200000613,
+      "src": {
+       "local_compute": 2485,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " chef school"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 3,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nShe pointed at the culture and s",
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "050850",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.10872155000004113,
+      "src": {
+       "local_compute": 119,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1008\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1008\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 050850"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09589004699995485,
+      "src": {
+       "local_compute": 2423,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 050850\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): la"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 3,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 649526\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "NARROW-BADGER-21",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.11750961299998153,
+      "src": {
+       "local_compute": 120,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1008\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1008\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " NARROW-BADGER-21\n\nQuestion: what is the account number for this case?\nAnswer (v"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.0708460070000001,
+      "src": {
+       "local_compute": 2424,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " NARROW-BADGER-21\n\nQuestion: what is the account number for this case?\nAnswer (v"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 3,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-OSPREY-49\n\nQuestion: what is the safehouse street for this case?\nAnswer ",
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 9,
+   "topic": "shepherd",
+   "prompt_tokens": 2444,
+   "text_bytes": 10249,
+   "kv_bytes": 280297472,
+   "ingest": {
+    "ttft": 0.0851602209999669,
+    "src": {
+     "local_compute": 2444,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1009\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "shepherd",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.10192067599996335,
+      "src": {
+       "local_compute": 218,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1009\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1009\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " shepherd"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09171485199999552,
+      "src": {
+       "local_compute": 2522,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " shepherd"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " campsite",
+      "src": {
+       "local_compute": 22,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "330816",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07581680300000926,
+      "src": {
+       "local_compute": 156,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1009\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1009\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 330816\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): la"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.08837640399997326,
+      "src": {
+       "local_compute": 2460,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 330816\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): la"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 099988\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi",
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "GENTLE-FALCON-25",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09755538499996419,
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1009\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1009\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " GENTLE-FALCON-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10669646500002727,
+      "src": {
+       "local_compute": 2461,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " GENTLE-FALCON-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " FROZEN-IBIS-35\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 217,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 10,
+   "topic": "spice market",
+   "prompt_tokens": 2593,
+   "text_bytes": 10441,
+   "kv_bytes": 297385984,
+   "ingest": {
+    "ttft": 0.06534902999999304,
+    "src": {
+     "local_compute": 2593,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 293601280.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "spice market",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07791506000000936,
+      "src": {
+       "local_compute": 111,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1010\"}": 2.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1010\"}": 10.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1010\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 10.0
+      },
+      "text": " spice market"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.12397288099998605,
+      "src": {
+       "local_compute": 2671,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " spice market"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 9,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " shepherd",
+      "src": {
+       "local_compute": 218,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "929239",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.11841571999997313,
+      "src": {
+       "local_compute": 49,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1010\"}": 10.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1010\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 10.0
+      },
+      "text": " 929239\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): th"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.124410059000013,
+      "src": {
+       "local_compute": 2609,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 929239\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): th"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 9,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 330816\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): la",
+      "src": {
+       "local_compute": 156,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "NARROW-HERON-21",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07866780899996684,
+      "src": {
+       "local_compute": 50,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1010\"}": 10.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1010\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 10.0
+      },
+      "text": " NARROW-HERON-21\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.08395681899997953,
+      "src": {
+       "local_compute": 2610,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " NARROW-HERON-21\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 9,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " GENTLE-FALCON-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 11,
+   "topic": "harbor market",
+   "prompt_tokens": 2521,
+   "text_bytes": 10699,
+   "kv_bytes": 289128448,
+   "ingest": {
+    "ttft": 0.06976127299998325,
+    "src": {
+     "local_compute": 2521,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1011\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "harbor market",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.09811615099999926,
+      "src": {
+       "local_compute": 295,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1011\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1011\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1011\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " chef school"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.07335881400001654,
+      "src": {
+       "local_compute": 2599,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " chef school"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " campsite",
+      "src": {
+       "local_compute": 22,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "254270",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07695181299999376,
+      "src": {
+       "local_compute": 233,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1011\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1011\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 254270\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): sa"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06692947500005175,
+      "src": {
+       "local_compute": 2537,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 254270\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): sa"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 099988\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi",
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "GENTLE-STOAT-25",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.094133252000006,
+      "src": {
+       "local_compute": 234,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1011\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1011\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1011\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " GENTLE-STOAT-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value "
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.11908049699997036,
+      "src": {
+       "local_compute": 2538,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " GENTLE-STOAT-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value "
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " FROZEN-IBIS-35\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 217,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 12,
+   "topic": "glassblower",
+   "prompt_tokens": 2440,
+   "text_bytes": 10472,
+   "kv_bytes": 279838720,
+   "ingest": {
+    "ttft": 0.0851408219999712,
+    "src": {
+     "local_compute": 2440,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1012\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "glassblower",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.10135470400001623,
+      "src": {
+       "local_compute": 214,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1012\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1012\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " greenhouse lab"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.11669874099999333,
+      "src": {
+       "local_compute": 2518,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " greenhouse lab"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " campsite",
+      "src": {
+       "local_compute": 22,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "511829",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09994888500000343,
+      "src": {
+       "local_compute": 152,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1012\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1012\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 511829\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): fa"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.11768307099998765,
+      "src": {
+       "local_compute": 2456,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 511829\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): fa"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 099988\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi",
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "RAPID-LYNX-64",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07772830300001488,
+      "src": {
+       "local_compute": 153,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1012\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1012\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " RAPID-LYNX-64\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09289582799999607,
+      "src": {
+       "local_compute": 2457,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " RAPID-LYNX-64\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 7,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " FROZEN-IBIS-35\n\nQuestion: what is the account number for this case?\nAnswer (",
+      "src": {
+       "local_compute": 217,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 13,
+   "topic": "greenhouse lab",
+   "prompt_tokens": 2446,
+   "text_bytes": 10182,
+   "kv_bytes": 280526848,
+   "ingest": {
+    "ttft": 0.05933595000004743,
+    "src": {
+     "local_compute": 2446,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "greenhouse lab",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07450631899996552,
+      "src": {
+       "local_compute": 220,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1013\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1013\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1013\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nIn the end it was the warm tag, "
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06898589100001118,
+      "src": {
+       "local_compute": 2524,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nIn the end it was the warm tag, "
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 100,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "065084",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09104888600001004,
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1013\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1013\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 065084\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ju"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10692689400002564,
+      "src": {
+       "local_compute": 2462,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 065084\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)",
+      "src": {
+       "local_compute": 38,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "QUIET-STOAT-70",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07725149300000567,
+      "src": {
+       "local_compute": 159,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1013\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1013\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " QUIET-STOAT-70\n\nQuestion: what is the vault code for this case?\nAnswer (value o"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06962943700000324,
+      "src": {
+       "local_compute": 2463,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " QUIET-STOAT-70\n\nQuestion: what is the vault code for this case?\nAnswer (value o"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 14,
+   "topic": "sculptor",
+   "prompt_tokens": 2407,
+   "text_bytes": 10212,
+   "kv_bytes": 276054016,
+   "ingest": {
+    "ttft": 0.06651979899999105,
+    "src": {
+     "local_compute": 2407,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1014\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "sculptor",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.09231074799998851,
+      "src": {
+       "local_compute": 181,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1014\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1014\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " chef school"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.09131413700004032,
+      "src": {
+       "local_compute": 2485,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " chef school"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " campsite",
+      "src": {
+       "local_compute": 21,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "873489",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.0862401549999845,
+      "src": {
+       "local_compute": 119,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1014\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1014\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 873489\n\nQuestion: what is the pilot callsign for this case?\nAnswer (value only"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06530070700000579,
+      "src": {
+       "local_compute": 2423,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 873489\n\nQuestion: what is the pilot callsign for this case?\nAnswer (value only"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 215,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "FROZEN-BADGER-11",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09912375100003601,
+      "src": {
+       "local_compute": 120,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1014\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1014\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " FROZEN-BADGER-11\n\nQuestion: what is the safehouse street for this case?\nAnswer"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.08490839099999903,
+      "src": {
+       "local_compute": 2424,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " FROZEN-BADGER-11\n\nQuestion: what is the safehouse street for this case?\nAnswer"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer (",
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 15,
+   "topic": "painter house",
+   "prompt_tokens": 2374,
+   "text_bytes": 10354,
+   "kv_bytes": 272269312,
+   "ingest": {
+    "ttft": 0.05844584300001543,
+    "src": {
+     "local_compute": 2374,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "painter house",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07393261499998971,
+      "src": {
+       "local_compute": 148,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1015\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1015\"}": 9.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"5.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"10.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"25.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"50.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"75.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"100.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"250.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"750.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"1000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"2500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"5000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"7500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"10000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"+Inf\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_count": 1.0,
+       "l1_chunk_reuse_gap_seconds_sum": 0.044,
+       "num_chunks_loaded_total{cache_salt=\"cap-1015\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " painter house"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06659786200003737,
+      "src": {
+       "local_compute": 2452,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " painter house"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 3,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nShe pointed at the culture and s",
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "141993",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.1002562829999647,
+      "src": {
+       "local_compute": 86,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1015\"}": 9.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"5.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"10.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"25.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"50.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"75.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"100.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"250.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"750.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"1000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"2500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"5000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"7500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"10000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"+Inf\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_count": 1.0,
+       "l1_chunk_reuse_gap_seconds_sum": 1.173,
+       "num_chunks_loaded_total{cache_salt=\"cap-1015\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 141993\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.08632510600000387,
+      "src": {
+       "local_compute": 2390,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 141993\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 3,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 649526\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "VELVET-STOAT-59",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07504012200001853,
+      "src": {
+       "local_compute": 87,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1015\"}": 9.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"5.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"10.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"25.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"50.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"75.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"100.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"250.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"750.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"1000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"2500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"5000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"7500.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"10000.0\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_bucket{le=\"+Inf\"}": 1.0,
+       "l1_chunk_reuse_gap_seconds_count": 1.0,
+       "l1_chunk_reuse_gap_seconds_sum": 2.39,
+       "num_chunks_loaded_total{cache_salt=\"cap-1015\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " VELVET-STOAT-59\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.12373449200003961,
+      "src": {
+       "local_compute": 2391,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " VELVET-STOAT-59\n\nQuestion: what is the account number for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 3,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-OSPREY-49\n\nQuestion: what is the safehouse street for this case?\nAnswer ",
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 16,
+   "topic": "harbor market",
+   "prompt_tokens": 2519,
+   "text_bytes": 10703,
+   "kv_bytes": 288899072,
+   "ingest": {
+    "ttft": 0.09386537700004283,
+    "src": {
+     "local_compute": 2519,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1016\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "harbor market",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.11179628100001082,
+      "src": {
+       "local_compute": 293,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1016\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1016\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1016\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " chef school"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.07143199500001174,
+      "src": {
+       "local_compute": 2597,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " chef school"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 11,
+      "ok_this": false,
+      "ok_that": false,
+      "text": " chef school",
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "474588",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07531091700002435,
+      "src": {
+       "local_compute": 231,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1016\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1016\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 474588\n\nQuestion: what is the account number for this case?\nAnswer (value only)"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06781678099997634,
+      "src": {
+       "local_compute": 2535,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 474588\n\nQuestion: what is the account number for this case?\nAnswer (value only)"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 11,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 254270\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): sa",
+      "src": {
+       "local_compute": 233,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "CRIMSON-HERON-88",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.08724832800004378,
+      "src": {
+       "local_compute": 232,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1016\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1016\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " CRIMSON-HERON-88\n\nQuestion: what is the safehouse street for this case?\nAnswer "
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09270616499998141,
+      "src": {
+       "local_compute": 2536,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " CRIMSON-HERON-88\n\nQuestion: what is the safehouse street for this case?\nAnswer "
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 11,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " GENTLE-STOAT-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value ",
+      "src": {
+       "local_compute": 234,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 17,
+   "topic": "greenhouse lab",
+   "prompt_tokens": 2447,
+   "text_bytes": 10181,
+   "kv_bytes": 280641536,
+   "ingest": {
+    "ttft": 0.058876251000015145,
+    "src": {
+     "local_compute": 2447,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "greenhouse lab",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09356861000003391,
+      "src": {
+       "local_compute": 221,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1017\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1017\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1017\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nAfter a long wait, the dim sampl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.11084185600003593,
+      "src": {
+       "local_compute": 2525,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nAfter a long wait, the dim sampl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 16,
+      "ok_this": false,
+      "ok_that": false,
+      "text": " chef school",
+      "src": {
+       "local_compute": 37,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "195611",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.08715993499998831,
+      "src": {
+       "local_compute": 159,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1017\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1017\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 195611\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): gr"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06928945399999975,
+      "src": {
+       "local_compute": 2463,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 195611\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): gr"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 16,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 474588\n\nQuestion: what is the account number for this case?\nAnswer (value only)",
+      "src": {
+       "local_compute": 231,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "QUIET-LYNX-83",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09601652200001354,
+      "src": {
+       "local_compute": 160,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1017\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1017\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " QUIET-LYNX-83\n\nQuestion: what is the passphrase for this case?\nAnswer (value on"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.12959235300002092,
+      "src": {
+       "local_compute": 2464,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " QUIET-LYNX-83\n\nQuestion: what is the passphrase for this case?\nAnswer (value on"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 16,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " CRIMSON-HERON-88\n\nQuestion: what is the safehouse street for this case?\nAnswer ",
+      "src": {
+       "local_compute": 232,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 18,
+   "topic": "park",
+   "prompt_tokens": 2445,
+   "text_bytes": 10606,
+   "kv_bytes": 280412160,
+   "ingest": {
+    "ttft": 0.059431834999998046,
+    "src": {
+     "local_compute": 2445,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "park",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.0763663740000311,
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1018\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1018\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1018\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " park"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07189630800002078,
+      "src": {
+       "local_compute": 2523,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " park"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 5,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " greenhouse lab",
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "615024",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07526873799997702,
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1018\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1018\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 615024\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10828426500000887,
+      "src": {
+       "local_compute": 2461,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 615024\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 5,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 215410\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ha",
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "HOLLOW-STOAT-37",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07493549700001267,
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1018\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1018\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " HOLLOW-STOAT-37\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06979922300001817,
+      "src": {
+       "local_compute": 2462,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " HOLLOW-STOAT-37\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 5,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " RAPID-WOMBAT-92\n\nQuestion: what is the courier name for this case?\nAnswer (valu",
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 19,
+   "topic": "campsite",
+   "prompt_tokens": 2505,
+   "text_bytes": 10409,
+   "kv_bytes": 287293440,
+   "ingest": {
+    "ttft": 0.1006611159999693,
+    "src": {
+     "local_compute": 2505,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1019\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "campsite",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.11690016000000014,
+      "src": {
+       "local_compute": 279,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1019\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1019\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1019\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " campsite"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.1592236960000264,
+      "src": {
+       "local_compute": 2583,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " campsite"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": true,
+      "ok_that": true,
+      "text": " campsite",
+      "src": {
+       "local_compute": 21,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2560
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "584389",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.1189248019999809,
+      "src": {
+       "local_compute": 217,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1019\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1019\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 584389\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07054050499999676,
+      "src": {
+       "local_compute": 2521,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 584389\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 358801\n\nQuestion: what is the safehouse street for this case?\nAnswer (value onl",
+      "src": {
+       "local_compute": 215,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "FROZEN-OSPREY-82",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09834613900000022,
+      "src": {
+       "local_compute": 218,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1019\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1019\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " FROZEN-OSPREY-82\n\nQuestion: what is the safehouse street for this case?\n"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.10921088899999631,
+      "src": {
+       "local_compute": 2522,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " FROZEN-OSPREY-82\n\nQuestion: what is the safehouse street for this case?\n"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 1,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " AMBER-WOMBAT-40\n\nQuestion: what is the safehouse street for this case?\nAnswer (",
+      "src": {
+       "local_compute": 216,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 20,
+   "topic": "painter house",
+   "prompt_tokens": 2372,
+   "text_bytes": 10351,
+   "kv_bytes": 272039936,
+   "ingest": {
+    "ttft": 0.05881703200003585,
+    "src": {
+     "local_compute": 2372,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "painter house",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07615170100001478,
+      "src": {
+       "local_compute": 146,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1020\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1020\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1020\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " painter house"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06991917400000602,
+      "src": {
+       "local_compute": 2450,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " painter house"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 100,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "086364",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09117410499999323,
+      "src": {
+       "local_compute": 84,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1020\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1020\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 086364\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): em"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09593706499998689,
+      "src": {
+       "local_compute": 2388,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 086364\n\nQuestion: What is the passphrase for this case?\nAnswer (value only): em"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)",
+      "src": {
+       "local_compute": 38,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "NARROW-WOMBAT-17",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07221662500001003,
+      "src": {
+       "local_compute": 85,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1020\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1020\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " NARROW-WOMBAT-17\n\nQuestion: what is the safehouse street for this case?\nAnswer "
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06751969999999119,
+      "src": {
+       "local_compute": 2389,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " NARROW-WOMBAT-17\n\nQuestion: what is the safehouse street for this case?\nAnswer "
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 21,
+   "topic": "sculptor",
+   "prompt_tokens": 2410,
+   "text_bytes": 10212,
+   "kv_bytes": 276398080,
+   "ingest": {
+    "ttft": 0.08328211200000624,
+    "src": {
+     "local_compute": 2410,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1021\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "sculptor",
+     "reader": "B1",
+     "hit": {
+      "ok": false,
+      "ttft": 0.10929451099997323,
+      "src": {
+       "local_compute": 184,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1021\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1021\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " chef school"
+     },
+     "cold": {
+      "ok": false,
+      "ttft": 0.07436086199999181,
+      "src": {
+       "local_compute": 2488,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " chef school"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 5,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " greenhouse lab",
+      "src": {
+       "local_compute": 219,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "578654",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.08548651199998858,
+      "src": {
+       "local_compute": 122,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1021\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1021\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 578654\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ha"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07073570599999357,
+      "src": {
+       "local_compute": 2426,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 578654\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ha"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 5,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 215410\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): ha",
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "FROZEN-WOMBAT-79",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09157654799997772,
+      "src": {
+       "local_compute": 123,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1021\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1021\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " FROZEN-WOMBAT-79\n\nCASE FILE (private to agent A)\nShe pointed at the marble"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.09894367399999737,
+      "src": {
+       "local_compute": 2427,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " FROZEN-WOMBAT-79\n\nCASE FILE (private to agent A)\nShe pointed at the marble"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 5,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " RAPID-WOMBAT-92\n\nQuestion: what is the courier name for this case?\nAnswer (valu",
+      "src": {
+       "local_compute": 158,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 22,
+   "topic": "blacksmith",
+   "prompt_tokens": 2554,
+   "text_bytes": 10271,
+   "kv_bytes": 292913152,
+   "ingest": {
+    "ttft": 0.05974460900000622,
+    "src": {
+     "local_compute": 2554,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "blacksmith",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07486895599998888,
+      "src": {
+       "local_compute": 328,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1022\"}": 2.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1022\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1022\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " blacksmith"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06659824299998718,
+      "src": {
+       "local_compute": 2632,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " blacksmith"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " spy",
+      "src": {
+       "local_compute": 100,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "089024",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.11487266599999657,
+      "src": {
+       "local_compute": 266,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1022\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1022\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1022\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 089024\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): sa"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.0982207239999866,
+      "src": {
+       "local_compute": 2570,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 089024\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): sa"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 963464\n\nQuestion: what is the account number for this case?\nAnswer (value only)",
+      "src": {
+       "local_compute": 38,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "QUIET-MARTEN-32",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.07770290199999863,
+      "src": {
+       "local_compute": 267,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_write_chunks_total{cache_salt=\"cap-1022\"}": 1.0,
+       "l1_read_chunks_total{cache_salt=\"cap-1022\"}": 9.0,
+       "l1_memory_usage_bytes": 29360128.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1022\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " QUIET-MARTEN-32\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07034272699996791,
+      "src": {
+       "local_compute": 2571,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " QUIET-MARTEN-32\n\nQuestion: what is the safehouse street for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 4,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " SILVER-MARTEN-76\n\nQuestion: what is the vault code for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 39,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  },
+  {
+   "i": 23,
+   "topic": "greenhouse lab",
+   "prompt_tokens": 2448,
+   "text_bytes": 10181,
+   "kv_bytes": 280756224,
+   "ingest": {
+    "ttft": 0.08588751299998876,
+    "src": {
+     "local_compute": 2448,
+     "local_cache_hit": 0,
+     "external_kv_transfer": 0
+    },
+    "lmcache": {
+     "l1_write_chunks_total{cache_salt=\"cap-1023\"}": 9.0,
+     "l1_memory_usage_bytes": 264241152.0
+    }
+   },
+   "q": [
+    {
+     "kind": "topic",
+     "want": "greenhouse lab",
+     "reader": "B1",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09686613599996008,
+      "src": {
+       "local_compute": 222,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1023\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1023\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nNobody expected the tray to look"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.07961546100000305,
+      "src": {
+       "local_compute": 2526,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " greenhouse lab\n\nCASE FILE (private to agent A)\nNobody expected the tray to look"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " chef school"
+     },
+     "wrong": {
+      "from": 9,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " shepherd",
+      "src": {
+       "local_compute": 218,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "vault code",
+     "want": "857177",
+     "reader": "B2",
+     "hit": {
+      "ok": true,
+      "ttft": 0.0757163490000039,
+      "src": {
+       "local_compute": 160,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1023\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1023\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0
+      },
+      "text": " 857177\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi"
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06792169599998488,
+      "src": {
+       "local_compute": 2464,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " 857177\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): wi"
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 123456\nQuestion: what is the vault code for this case?\nAnswer (value only):"
+     },
+     "wrong": {
+      "from": 9,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " 330816\n\nQuestion: what is the passphrase for this case?\nAnswer (value only): la",
+      "src": {
+       "local_compute": 156,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    },
+    {
+     "kind": "pilot callsign",
+     "want": "VELVET-MARTEN-66",
+     "reader": "B3",
+     "hit": {
+      "ok": true,
+      "ttft": 0.09371288599999161,
+      "src": {
+       "local_compute": 161,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      },
+      "lmcache": {
+       "l1_read_chunks_total{cache_salt=\"cap-1023\"}": 9.0,
+       "num_chunks_loaded_total{cache_salt=\"cap-1023\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0
+      },
+      "text": " VELVET-MARTEN-66\n\nQuestion: what is the vault code for this case?\nAnswer ("
+     },
+     "cold": {
+      "ok": true,
+      "ttft": 0.06926246199998332,
+      "src": {
+       "local_compute": 2465,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 0
+      },
+      "text": " VELVET-MARTEN-66\n\nQuestion: what is the vault code for this case?\nAnswer ("
+     },
+     "nocontext": {
+      "ok": false,
+      "text": " 10000000000000000000000"
+     },
+     "wrong": {
+      "from": 9,
+      "ok_this": false,
+      "ok_that": true,
+      "text": " GENTLE-FALCON-25\n\nQuestion: what is the passphrase for this case?\nAnswer (value",
+      "src": {
+       "local_compute": 157,
+       "local_cache_hit": 0,
+       "external_kv_transfer": 2304
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "chain": [
+  {
+   "i": 0,
+   "A_src": {
+    "local_compute": 2445,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 533,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 39,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.10830886299999065,
+   "cold_ttft": 0.13287864200003696,
+   "tokens": 2855
+  },
+  {
+   "i": 1,
+   "A_src": {
+    "local_compute": 2442,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 537,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 43,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.11427198699999508,
+   "cold_ttft": 0.06809272100002772,
+   "tokens": 2859
+  },
+  {
+   "i": 2,
+   "A_src": {
+    "local_compute": 2443,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 536,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 42,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.07946025299997928,
+   "cold_ttft": 0.08679511299999376,
+   "tokens": 2858
+  },
+  {
+   "i": 3,
+   "A_src": {
+    "local_compute": 2436,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 531,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 37,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": false,
+   "cold_ok": false,
+   "C_ttft": 0.1070979020000209,
+   "cold_ttft": 0.08841789699999936,
+   "tokens": 2853
+  },
+  {
+   "i": 4,
+   "A_src": {
+    "local_compute": 2410,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 481,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 243,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2560
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.08016199500002585,
+   "cold_ttft": 0.06799505899999758,
+   "tokens": 2803
+  },
+  {
+   "i": 5,
+   "A_src": {
+    "local_compute": 2433,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 521,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 27,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.12049112800002604,
+   "cold_ttft": 0.12867728700001635,
+   "tokens": 2843
+  },
+  {
+   "i": 6,
+   "A_src": {
+    "local_compute": 2502,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 596,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 102,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.10118402099999457,
+   "cold_ttft": 0.0685767869999836,
+   "tokens": 2918
+  },
+  {
+   "i": 7,
+   "A_src": {
+    "local_compute": 2520,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "B_src": {
+    "local_compute": 617,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "C_src": {
+    "local_compute": 123,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2816
+   },
+   "C_ok": true,
+   "cold_ok": true,
+   "C_ttft": 0.07962224499999593,
+   "cold_ttft": 0.06990552899998193,
+   "tokens": 2939
+  }
+ ],
+ "scale": [
+  {
+   "passes": 4,
+   "tokens": 2474,
+   "kv_bytes": 283738112,
+   "text_bytes": 10107,
+   "A_ingest_ttft": 0.07563729700001431,
+   "hit_ttft_median": 0.11240038099998628,
+   "cold_ttft_median": 0.09603501300000516,
+   "hit_ok": 1.0,
+   "cold_ok": 1.0,
+   "hit_src": {
+    "local_compute": 186,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "cold_src": {
+    "local_compute": 2490,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   }
+  },
+  {
+   "passes": 10,
+   "tokens": 6140,
+   "kv_bytes": 704184320,
+   "text_bytes": 26200,
+   "A_ingest_ttft": 0.1513034249999805,
+   "hit_ttft_median": 0.12574805500003094,
+   "cold_ttft_median": 0.17771155899998803,
+   "hit_ok": 1.0,
+   "cold_ok": 1.0,
+   "hit_src": {
+    "local_compute": 12,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 6144
+   },
+   "cold_src": {
+    "local_compute": 6156,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   }
+  },
+  {
+   "passes": 20,
+   "tokens": 11807,
+   "kv_bytes": 1354121216,
+   "text_bytes": 51566,
+   "A_ingest_ttft": 0.33273566499997287,
+   "hit_ttft_median": 0.20890212000000474,
+   "cold_ttft_median": 0.3503679899999952,
+   "hit_ok": 1.0,
+   "cold_ok": 1.0,
+   "hit_src": {
+    "local_compute": 47,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 11776
+   },
+   "cold_src": {
+    "local_compute": 11823,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   }
+  },
+  {
+   "passes": 40,
+   "tokens": 23345,
+   "kv_bytes": 2677391360,
+   "text_bytes": 104205,
+   "A_ingest_ttft": 0.8426777859999675,
+   "hit_ttft_median": 0.3380598890000215,
+   "cold_ttft_median": 0.8389587800000413,
+   "hit_ok": 1.0,
+   "cold_ok": 1.0,
+   "hit_src": {
+    "local_compute": 65,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 23296
+   },
+   "cold_src": {
+    "local_compute": 23361,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   }
+  }
+ ],
+ "edit": [
+  {
+   "i": 0,
+   "edit_at_token_est": 1904,
+   "tokens": 2489,
+   "base_src": {
+    "local_compute": 185,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 697,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 1792
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 1,
+   "edit_at_token_est": 1521,
+   "tokens": 2486,
+   "base_src": {
+    "local_compute": 182,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 1206,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 1280
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 2,
+   "edit_at_token_est": 1658,
+   "tokens": 1929,
+   "base_src": {
+    "local_compute": 137,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 1792
+   },
+   "edit_src": {
+    "local_compute": 393,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 1536
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 3,
+   "edit_at_token_est": 704,
+   "tokens": 2395,
+   "base_src": {
+    "local_compute": 91,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 1883,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 512
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 4,
+   "edit_at_token_est": 183,
+   "tokens": 2464,
+   "base_src": {
+    "local_compute": 160,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 2464,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 5,
+   "edit_at_token_est": 1781,
+   "tokens": 2574,
+   "base_src": {
+    "local_compute": 270,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 1038,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 1536
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 6,
+   "edit_at_token_est": 887,
+   "tokens": 2522,
+   "base_src": {
+    "local_compute": 218,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 1754,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 768
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  },
+  {
+   "i": 7,
+   "edit_at_token_est": 139,
+   "tokens": 2491,
+   "base_src": {
+    "local_compute": 187,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 2304
+   },
+   "edit_src": {
+    "local_compute": 2491,
+    "local_cache_hit": 0,
+    "external_kv_transfer": 0
+   },
+   "base_ok": true,
+   "follows_new": true,
+   "stale_old": false
+  }
+ ],
+ "summary": {
+  "per_question": {
+   "topic": {
+    "n": 24,
+    "hit_acc": 0.7083333333333334,
+    "cold_acc": 0.7083333333333334,
+    "nocontext_acc": 0.0
+   },
+   "vault code": {
+    "n": 24,
+    "hit_acc": 1.0,
+    "cold_acc": 1.0,
+    "nocontext_acc": 0.0
+   },
+   "pilot callsign": {
+    "n": 24,
+    "hit_acc": 1.0,
+    "cold_acc": 1.0,
+    "nocontext_acc": 0.0
+   }
+  },
+  "wrong_handle": {
+   "n": 69,
+   "answer_matches_this_question": 0.014492753623188406,
+   "answer_matches_the_cached_case": 0.9565217391304348
+  },
+  "tokens": {
+   "case_tokens_mean": 2450.4166666666665,
+   "hit_external_mean": 2314.6666666666665,
+   "hit_local_compute_mean": 172.75,
+   "cold_local_compute_mean": 2487.4166666666665
+  },
+  "ttft_s": {
+   "hit_mean": 0.09486566763888821,
+   "cold_mean": 0.09134310604166984,
+   "ingest_mean": 0.07304509175000125
+  },
+  "bytes": {
+   "text_mean": 10390.708333333334,
+   "kv_mean": 281033386.6666667
+  },
+  "chain": {
+   "n": 8,
+   "C_acc": 0.875,
+   "cold_acc": 0.875,
+   "C_external_mean": 2784.0,
+   "C_local_compute_mean": 82.0,
+   "C_ttft_mean": 0.09882479925000354,
+   "cold_ttft_mean": 0.08891737937500466
+  },
+  "edit": {
+   "n": 8,
+   "follows_new": 1.0,
+   "stale_old": 0.0,
+   "base_external_mean": 2240.0,
+   "edit_external_mean": 928.0,
+   "edit_at_token_est_mean": 1097.125
+  }
+ },
+ "lm_final": {
+  "l1_write_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1000-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1000-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1000-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1001\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1001-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1001-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1001-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1002\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1002-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1002-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1002-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1003\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1003-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1003-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1003-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1004\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1004-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1004-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1004-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1005\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1005-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1005-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1005-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1006\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1006-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1006-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1006-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1007\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1007-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1007-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1007-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1008\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1008-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1008-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1008-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1009\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1009-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1009-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1009-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1010\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1010-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1010-vault code\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1010-pilot callsign\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1011\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1011-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1011-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1011-pilot callsign\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1012\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1012-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1012-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1012-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1013\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1013-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1013-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1013-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1014\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1014-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1014-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1014-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1015\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1015-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1015-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1015-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1016\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1016-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1016-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1016-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1017\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1017-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1017-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1017-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1018\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1018-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1018-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1018-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1019\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1019-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1019-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1019-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1020\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1020-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1020-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1020-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1021\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1021-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1021-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1021-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1022\"}": 12.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1022-topic\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1022-vault code\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1022-pilot callsign\"}": 10.0,
+  "l1_write_chunks_total{cache_salt=\"cap-1023\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1023-topic\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1023-vault code\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"nocap-1023-pilot callsign\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6000\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6000\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6001\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6001\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6002\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6002\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6003\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6003\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6004\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6004\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6005\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6005\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6006\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6006\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chain-6007\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"chaincold-6007\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"scale-10000\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10000-0\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10000-1\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10000-2\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10000-3\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10000-4\"}": 9.0,
+  "l1_write_chunks_total{cache_salt=\"scale-10001\"}": 24.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10001-0\"}": 24.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10001-1\"}": 24.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10001-2\"}": 24.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10001-3\"}": 24.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10001-4\"}": 24.0,
+  "l1_write_chunks_total{cache_salt=\"scale-10002\"}": 46.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10002-0\"}": 46.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10002-1\"}": 46.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10002-2\"}": 46.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10002-3\"}": 46.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10002-4\"}": 46.0,
+  "l1_write_chunks_total{cache_salt=\"scale-10003\"}": 91.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10003-0\"}": 91.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10003-1\"}": 91.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10003-2\"}": 91.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10003-3\"}": 91.0,
+  "l1_write_chunks_total{cache_salt=\"scalecold-10003-4\"}": 91.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8000\"}": 11.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8001\"}": 13.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8002\"}": 8.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8003\"}": 16.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8004\"}": 18.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8005\"}": 14.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8006\"}": 15.0,
+  "l1_write_chunks_total{cache_salt=\"edit-8007\"}": 18.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1000\"}": 108.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1001\"}": 111.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1002\"}": 54.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1003\"}": 81.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1004\"}": 162.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1005\"}": 81.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1006\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1007\"}": 111.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1008\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1009\"}": 81.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1010\"}": 30.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1011\"}": 55.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1012\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1013\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1014\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1015\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1016\"}": 55.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1017\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1018\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1019\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1020\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1021\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1022\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"cap-1023\"}": 27.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6000\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6001\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6002\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6003\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6004\"}": 19.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6005\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6006\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"chain-6007\"}": 20.0,
+  "l1_read_chunks_total{cache_salt=\"scale-10000\"}": 45.0,
+  "l1_read_chunks_total{cache_salt=\"scale-10001\"}": 119.0,
+  "l1_read_chunks_total{cache_salt=\"scale-10002\"}": 230.0,
+  "l1_read_chunks_total{cache_salt=\"scale-10003\"}": 455.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8000\"}": 16.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8001\"}": 14.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8002\"}": 13.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8003\"}": 11.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8004\"}": 9.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8005\"}": 15.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8006\"}": 12.0,
+  "l1_read_chunks_total{cache_salt=\"edit-8007\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"5.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"10.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"25.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"50.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"75.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"100.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"250.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"500.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"750.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"1000.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"2500.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"5000.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"7500.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"10000.0\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_bucket{le=\"+Inf\"}": 9.0,
+  "l1_chunk_reuse_gap_seconds_count": 9.0,
+  "l1_chunk_reuse_gap_seconds_sum": 6.511,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1000-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1000-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1000-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1001-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1001-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1001-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1002-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1002-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1002-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1003-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1003-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1003-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1000\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1004-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1004-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1004-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1005-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1005-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1005-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1006\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1006-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1006-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1006-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1007-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1007-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1007-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1002\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1008-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1008-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1008\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1008-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1009-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1009-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1009-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1010-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1010-vault code\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1010\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1010-pilot callsign\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1011-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1011-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1011\"}": 11.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1011-pilot callsign\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1012-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1007\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1012-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1012\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1012-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1013-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1013-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1013\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1013-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1014-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1014-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1014\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1014-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1015-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1015-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1015\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1015-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1003\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1016-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1016-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1016-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1017-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1016\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1017-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1017\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1017-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1018-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1018-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1018\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1018-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1019\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1019-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1001\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1019-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1019-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1020-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1020-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1020\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1020-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1021-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1021-vault code\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1021\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1021-pilot callsign\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1005\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1022\"}": 12.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1022-topic\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1022-vault code\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1022-pilot callsign\"}": 10.0,
+  "l1_evicted_chunks_total{cache_salt=\"cap-1004\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1023-topic\"}": 9.0,
+  "l1_evicted_chunks_total{cache_salt=\"nocap-1023-vault code\"}": 6.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"75.0\"}": 3.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"100.0\"}": 4.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"250.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"500.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"750.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"1000.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"2500.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"5000.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"7500.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"10000.0\"}": 5.0,
+  "l1_chunk_lifetime_seconds_bucket{le=\"+Inf\"}": 5.0,
+  "l1_chunk_lifetime_seconds_count": 5.0,
+  "l1_chunk_lifetime_seconds_sum": 414.583,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"75.0\"}": 3.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"100.0\"}": 4.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"250.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"500.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"750.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"1000.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"2500.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"5000.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"7500.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"10000.0\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_bucket{le=\"+Inf\"}": 5.0,
+  "l1_chunk_idle_before_evict_seconds_count": 5.0,
+  "l1_chunk_idle_before_evict_seconds_sum": 410.976,
+  "l1_memory_usage_bytes": 39313211392.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 90.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 93.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 36.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 63.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 144.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 63.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 93.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1008\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1008\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1008\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1009\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 63.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1009\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1009\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1010\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 10.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1010\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 10.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1010\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 10.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1011\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 37.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1011\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1011\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1012\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1012\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1012\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1013\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1013\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1013\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1014\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1014\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1014\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1015\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1015\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1015\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1016\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 37.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1016\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1016\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1017\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1017\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1017\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1018\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1018\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1018\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1019\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1019\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1019\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1020\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1020\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1020\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1021\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1021\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1021\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1022\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1022\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1022\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1023\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1023\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"cap-1023\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3058095935557567084\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 10.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"chain-6007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"4540385053187058211\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"scale-10000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 45.0,
+  "num_chunks_loaded_total{cache_salt=\"scale-10001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 119.0,
+  "num_chunks_loaded_total{cache_salt=\"scale-10002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 230.0,
+  "num_chunks_loaded_total{cache_salt=\"scale-10003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 455.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8000\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 16.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8001\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 14.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8002\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 13.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8003\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 11.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8004\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8005\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 15.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8006\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 12.0,
+  "num_chunks_loaded_total{cache_salt=\"edit-8007\",model_name=\"/__modal/volumes/vo-sUxTqvWVpeg0TEFxGSzfHe/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1\",worker_id=\"3713086144044979713\"}": 9.0
+ },
+ "kv_bytes_per_token": 114688,
+ "lmcache_metric_names": [
+  "lmcache_mp_active_p2p_lookup_jobs",
+  "lmcache_mp_active_prefetch_jobs",
+  "lmcache_mp_event_bus_drain_lag_seconds",
+  "lmcache_mp_event_bus_dropped_events_total",
+  "lmcache_mp_event_bus_queue_depth",
+  "lmcache_mp_l0_block_idle_before_evict_seconds_bucket",
+  "lmcache_mp_l0_block_idle_before_evict_seconds_count",
+  "lmcache_mp_l0_block_idle_before_evict_seconds_sum",
+  "lmcache_mp_l0_block_lifetime_seconds_bucket",
+  "lmcache_mp_l0_block_lifetime_seconds_count",
+  "lmcache_mp_l0_block_lifetime_seconds_sum",
+  "lmcache_mp_l0_block_reuse_gap_seconds_bucket",
+  "lmcache_mp_l0_block_reuse_gap_seconds_count",
+  "lmcache_mp_l0_block_reuse_gap_seconds_sum",
+  "lmcache_mp_l0_l1_load_throughput_GB_per_second_bucket",
+  "lmcache_mp_l0_l1_load_throughput_GB_per_second_count",
+  "lmcache_mp_l0_l1_load_throughput_GB_per_second_sum",
+  "lmcache_mp_l0_l1_store_throughput_GB_per_second_bucket",
+  "lmcache_mp_l0_l1_store_throughput_GB_per_second_count",
+  "lmcache_mp_l0_l1_store_throughput_GB_per_second_sum",
+  "lmcache_mp_l1_chunk_idle_before_evict_seconds_bucket",
+  "lmcache_mp_l1_chunk_idle_before_evict_seconds_count",
+  "lmcache_mp_l1_chunk_idle_before_evict_seconds_sum",
+  "lmcache_mp_l1_chunk_lifetime_seconds_bucket",
+  "lmcache_mp_l1_chunk_lifetime_seconds_count",
+  "lmcache_mp_l1_chunk_lifetime_seconds_sum",
+  "lmcache_mp_l1_chunk_reuse_gap_seconds_bucket",
+  "lmcache_mp_l1_chunk_reuse_gap_seconds_count",
+  "lmcache_mp_l1_chunk_reuse_gap_seconds_sum",
+  "lmcache_mp_l1_evicted_chunks_total",
+  "lmcache_mp_l1_eviction_loop_ticks_total",
+  "lmcache_mp_l1_eviction_loop_triggered_total",
+  "lmcache_mp_l1_memory_usage_bytes",
+  "lmcache_mp_l1_read_chunks_total",
+  "lmcache_mp_l1_usage_ratio",
+  "lmcache_mp_l1_write_chunks_total",
+  "lmcache_mp_l2_adapters",
+  "lmcache_mp_lookup_hit_tokens_total",
+  "lmcache_mp_lookup_requested_tokens_total",
+  "lmcache_mp_num_chunks_loaded_total",
+  "lmcache_mp_real_reuse_gap_objects_bucket",
+  "lmcache_mp_real_reuse_gap_objects_count",
+  "lmcache_mp_real_reuse_gap_objects_sum",
+  "lmcache_mp_real_reuse_gap_seconds_bucket",
+  "lmcache_mp_real_reuse_gap_seconds_count",
+  "lmcache_mp_real_reuse_gap_seconds_sum"
+ ],
+ "versions": {
+  "lmcache": "0.5.1",
+  "vllm": "0.25.1",
+  "model": "Qwen/Qwen3-1.7B-Base",
+  "gpu": "L40S"
+ }
+}
