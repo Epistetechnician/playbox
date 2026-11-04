@@ -15,6 +15,7 @@ playbox-git = { path = "../playbox-git" }
 playbox-runner = { path = "../playbox-runner" }
 playbox-core = { path = "../playbox-core" }
 biscuit-auth = "6.0.0"
+libc = "0.2"
 
 rustls-pki-types = "1"
 ed25519-dalek.workspace = true

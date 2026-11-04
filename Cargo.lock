@@ -3601,6 +3601,7 @@ dependencies = [
  "iroh",
  "iroh-gossip",
  "iroh-relay",
+ "libc",
  "n0-future",
  "playbox-core",
  "playbox-git",

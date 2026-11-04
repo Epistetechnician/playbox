@@ -454,7 +454,7 @@ fn read_output(path: &Path) -> Result<Vec<u8>> {
     // The task wrote here, so treat the path as untrusted: no symlinks, regular file, bounded.
     let f = std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(0x0100 /* O_NOFOLLOW on macOS and Linux */)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(path)
         .context("the engine wrote no output")?;
     let meta = f.metadata()?;

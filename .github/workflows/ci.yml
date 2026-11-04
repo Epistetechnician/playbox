@@ -34,6 +34,7 @@ jobs:
       - run: cargo audit  # .cargo/audit.toml lists the reviewed exceptions
   python:
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +42,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      # The judge tests load real Hugging Face classifiers; cache them so a run does not download them each time.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ matrix.project }}-${{ hashFiles(format('{0}/uv.lock', matrix.project)) }}
       - working-directory: ${{ matrix.project }}
         run: uv run --group dev pytest -q
   lean:
