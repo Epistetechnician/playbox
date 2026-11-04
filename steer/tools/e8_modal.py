@@ -28,7 +28,7 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch>=2.5,<2.8", "transformers>=4.51,<4.60", "numpy<2.2", "blake3", "safetensors", "huggingface_hub")
     .add_local_dir(STEER / "playbox_steer", "/root/e8/playbox_steer", ignore=["__pycache__", "*.pyc"])
-    .add_local_dir(STEER / "tools", "/root/e8/tools", ignore=["__pycache__", "*.pyc", "hermes_local", "hermes_mlx"])
+    .add_local_file(STEER / "tools/e8_node.py", "/root/e8/tools/e8_node.py")  # only what is imported: other files in tools/ change under us
 )
 
 

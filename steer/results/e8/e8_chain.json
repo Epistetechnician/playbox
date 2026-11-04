@@ -1,0 +1,333 @@
+{
+ "hubs": {
+  "all": {
+   "k": 256,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "chain_pythia-gpt2m-tinyllama": {
+   "k": 256,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "pythia",
+    "gpt2m",
+    "tinyllama"
+   ]
+  },
+  "chain_tinyllama-gpt2m-pythia": {
+   "k": 256,
+   "models": [
+    "smollm2",
+    "qwen3",
+    "tinyllama",
+    "gpt2m",
+    "pythia"
+   ]
+  }
+ },
+ "pairs": {
+  "qwen3->smollm2": {
+   "all": {
+    "acc": 0.7,
+    "heldout_cos": 0.9291
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.725,
+    "heldout_cos": 0.9236
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.725,
+    "heldout_cos": 0.9236
+   }
+  },
+  "pythia->smollm2": {
+   "all": {
+    "acc": 0.825,
+    "heldout_cos": 0.9337
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.7,
+    "heldout_cos": 0.9265
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.7,
+    "heldout_cos": 0.9265
+   }
+  },
+  "gpt2m->smollm2": {
+   "all": {
+    "acc": 0.65,
+    "heldout_cos": 0.9355
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.6,
+    "heldout_cos": 0.9289
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.6,
+    "heldout_cos": 0.9289
+   }
+  },
+  "tinyllama->smollm2": {
+   "all": {
+    "acc": 0.75,
+    "heldout_cos": 0.9323
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.65,
+    "heldout_cos": 0.9252
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.65,
+    "heldout_cos": 0.9252
+   }
+  },
+  "smollm2->qwen3": {
+   "all": {
+    "acc": 0.55,
+    "heldout_cos": 0.8801
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.5,
+    "heldout_cos": 0.8774
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.5,
+    "heldout_cos": 0.8774
+   }
+  },
+  "pythia->qwen3": {
+   "all": {
+    "acc": 0.6,
+    "heldout_cos": 0.8856
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.575,
+    "heldout_cos": 0.879
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.575,
+    "heldout_cos": 0.879
+   }
+  },
+  "gpt2m->qwen3": {
+   "all": {
+    "acc": 0.7,
+    "heldout_cos": 0.8877
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.525,
+    "heldout_cos": 0.8811
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.525,
+    "heldout_cos": 0.8811
+   }
+  },
+  "tinyllama->qwen3": {
+   "all": {
+    "acc": 0.65,
+    "heldout_cos": 0.8918
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.5,
+    "heldout_cos": 0.8847
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.5,
+    "heldout_cos": 0.8847
+   }
+  },
+  "smollm2->pythia": {
+   "all": {
+    "acc": 0.825,
+    "heldout_cos": 0.8965
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.775,
+    "heldout_cos": 0.8886
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.775,
+    "heldout_cos": 0.8886
+   }
+  },
+  "qwen3->pythia": {
+   "all": {
+    "acc": 0.6,
+    "heldout_cos": 0.8989
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.575,
+    "heldout_cos": 0.8867
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.575,
+    "heldout_cos": 0.8867
+   }
+  },
+  "gpt2m->pythia": {
+   "all": {
+    "acc": 0.65,
+    "heldout_cos": 0.9108
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.55,
+    "heldout_cos": 0.897
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.55,
+    "heldout_cos": 0.897
+   }
+  },
+  "tinyllama->pythia": {
+   "all": {
+    "acc": 0.675,
+    "heldout_cos": 0.9049
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.475,
+    "heldout_cos": 0.8904
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.475,
+    "heldout_cos": 0.8904
+   }
+  },
+  "smollm2->gpt2m": {
+   "all": {
+    "acc": 0.825,
+    "heldout_cos": 0.9055
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.775,
+    "heldout_cos": 0.8974
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.775,
+    "heldout_cos": 0.8974
+   }
+  },
+  "qwen3->gpt2m": {
+   "all": {
+    "acc": 0.725,
+    "heldout_cos": 0.9076
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.725,
+    "heldout_cos": 0.8959
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.725,
+    "heldout_cos": 0.8959
+   }
+  },
+  "pythia->gpt2m": {
+   "all": {
+    "acc": 0.85,
+    "heldout_cos": 0.9184
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.825,
+    "heldout_cos": 0.9054
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.825,
+    "heldout_cos": 0.9054
+   }
+  },
+  "tinyllama->gpt2m": {
+   "all": {
+    "acc": 0.9,
+    "heldout_cos": 0.9143
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.725,
+    "heldout_cos": 0.9
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.725,
+    "heldout_cos": 0.9
+   }
+  },
+  "smollm2->tinyllama": {
+   "all": {
+    "acc": 0.175,
+    "heldout_cos": 0.8634
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.125,
+    "heldout_cos": 0.8575
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.125,
+    "heldout_cos": 0.8575
+   }
+  },
+  "qwen3->tinyllama": {
+   "all": {
+    "acc": 0.125,
+    "heldout_cos": 0.8757
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.15,
+    "heldout_cos": 0.8655
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.15,
+    "heldout_cos": 0.8655
+   }
+  },
+  "pythia->tinyllama": {
+   "all": {
+    "acc": 0.325,
+    "heldout_cos": 0.8747
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.3,
+    "heldout_cos": 0.8642
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.3,
+    "heldout_cos": 0.8642
+   }
+  },
+  "gpt2m->tinyllama": {
+   "all": {
+    "acc": 0.175,
+    "heldout_cos": 0.8756
+   },
+   "chain_pythia-gpt2m-tinyllama": {
+    "acc": 0.125,
+    "heldout_cos": 0.8649
+   },
+   "chain_tinyllama-gpt2m-pythia": {
+    "acc": 0.125,
+    "heldout_cos": 0.8649
+   }
+  }
+ },
+ "chance": 0.2,
+ "base": [
+  "smollm2",
+  "qwen3"
+ ],
+ "orders": [
+  [
+   "pythia",
+   "gpt2m",
+   "tinyllama"
+  ],
+  [
+   "tinyllama",
+   "gpt2m",
+   "pythia"
+  ]
+ ]
+}

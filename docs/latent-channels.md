@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) and 6h (commit-and-challenge audit). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) and 6j (token cost against text). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -96,7 +96,7 @@ Decision rules, set before running:
   show width scaling.
 - Join test: fit on four, add the fifth without refitting, and compare its accuracy with a refit-all hub.
 - Cost: tokens used by text versus bytes by hub for the same concept, with a text-only arm that gets the same
-  sentences.
+  sentences (done, section 6j).
 - Closed arm: a concept card read by a frontier model (the E7 Hermes setup) against the plain sentences, scored the
   same way. Expect no accuracy gain; the question is tokens saved.
 
@@ -370,6 +370,60 @@ answers). Each message audited by the two other models: 72 audits. One run, one 
   when they disagree beyond the threshold; the room decides what to do (nothing here quarantines automatically).
 - **Not tested:** more than three small models, a larger or natural-text concept set, a sender that picks sentences to
   game the audit, a threshold set on one set of runs and used on another, and the host acting on verdicts.
+
+## 6i. Models joining one at a time (2026-11-04)
+
+`steer/results/e8/e8_chain.json`, from `steer/tools/e8_modal.py --what chain` (Modal, A10G). The same five models and
+1000 anchors as 6d, k=256. `all`: one hub fitted on all five. `chain`: fitted on SmolLM2 and Qwen3 only, then Pythia,
+GPT-2-medium and TinyLlama join one after another with their own adapters, nobody refitted. Two join orders. Accuracy is the
+mean over ordered pairs not into TinyLlama (16), 40 texts per pair, one run.
+
+| | pairs | accuracy, all-five hub | accuracy, chain | held-out cosine, all five / chain |
+|---|---|---|---|---|
+| base to base | 2 | 0.63 | 0.61 | 0.905 / 0.900 |
+| base to joiner | 10 | 0.72 | 0.64 | 0.908 / 0.899 |
+| joiner to joiner | 4 | 0.77 | 0.64 | 0.912 / 0.898 |
+| all 16 | 16 | 0.72 | 0.64 | 0.908 / 0.899 |
+
+- **Join order changes nothing** (the two orders gave identical numbers). By construction each joiner is fitted against the
+  same shared coordinates, so an earlier model never changes when a later one joins and the order is irrelevant. That part
+  of "drift" is zero.
+- **The cost is in the shared coordinates, which come from the models there at the start.** A hub grown from two models
+  to five is 8 points of accuracy below one fitted on all five (0.64 against 0.72; roughly 3 standard errors on 640
+  texts) and 1 point of cosine. The loss is largest for the pairs between late joiners (0.77 down to 0.64). In 6b, one
+  model joining a hub of four cost 3 points; three late joiners cost 8, so the cost grows with how much of the group
+  joined late.
+- **Practical rule:** adding a model is cheap and needs no refit of the others, but a hub should be refitted from all its
+  members' anchor states when more than about one model in four joined after the fit. Refitting changes the shared
+  coordinates, so every member then takes a new adapter pair; the room's `hub id` changes, so mixed hubs cannot be
+  confused (`unpack_signed` refuses another hub's message).
+- **Not tested:** a longer chain, joiners from architectures far from the base models, a refit schedule, and whether a
+  more diverse base pair would shrink the gap.
+
+## 6j. Token cost against a text exchange (2026-11-04)
+
+`steer/results/e8/e8_token_cost.json`, from `steer/tools/e8_token_cost.py` (local CPU). Receivers: SmolLM2-135M, Pythia-410m,
+GPT-2 (base models). The same 5 concepts, 8 prompts, 24 greedy tokens and lexicon scorer as every E8 run. Text arms put the
+text in front of the prompt; the latent and direct arms are the room run of 6g (30 messages, ungated). One run.
+
+| how the concept is sent | tokens added to the receiver's context | bytes sent | accuracy (texts) |
+|---|---|---|---|
+| nothing | 0 | 0 | 1% (120) |
+| 6 key words, as text | 21 | 89 | 59% (120) |
+| the 8 sentences the sender read, as text | 88 | 429 | 57% (120) |
+| hub vector through a room | 0 | 630 | 70% (240) |
+| the receiver's own direction | 0 | 0 | 89% (240) |
+
+- **The vector costs the receiver no context tokens and scored higher than the text arms** (70% against 59% and 57%).
+  The 11-point gap over the key words is about 1.7 standard errors on these sample sizes: suggestive, not established.
+- **It is not cheaper on the wire:** 630 bytes (a 256-byte vector plus a header and a signature) against 89 bytes for six key
+  words. What it saves is the receiver's context window and the model's reading of the text, not bytes.
+- **These receivers are small base models that make poor use of text context.** The 27B model of 6e reached 86% from the same
+  six words. For a capable reader, text is both cheaper and more accurate (6e); the vector's case rests on receivers that
+  can be steered but read poorly, and on keeping the concept out of the text channel where injection checks look.
+- **Latent accuracy differs by receiver** (SmolLM2 71%, GPT-2 65%, Pythia 74%), as the text arms do (50 to 70%).
+- **Not tested:** latency or compute (the vector adds one forward hook and no context tokens, but I did not time it), a
+  larger base model as receiver, instruction-tuned receivers, and text in other formats.
 
 ## 7. Not covered
 

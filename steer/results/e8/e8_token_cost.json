@@ -1,0 +1,149 @@
+{
+ "per_receiver": {
+  "smollm2": {
+   "none": {
+    "hits": 1,
+    "n": 40,
+    "acc": 0.025,
+    "context_tokens": 0,
+    "bytes": 0
+   },
+   "words": {
+    "hits": 28,
+    "n": 40,
+    "acc": 0.7,
+    "context_tokens": 21.0,
+    "bytes": 89
+   },
+   "sentences": {
+    "hits": 27,
+    "n": 40,
+    "acc": 0.675,
+    "context_tokens": 87.4,
+    "bytes": 429
+   },
+   "latent": {
+    "hits": 57,
+    "n": 80,
+    "acc": 0.7125,
+    "context_tokens": 0,
+    "bytes": 630
+   },
+   "direct": {
+    "hits": 68,
+    "n": 80,
+    "acc": 0.85,
+    "context_tokens": 0,
+    "bytes": 0
+   }
+  },
+  "gpt2": {
+   "none": {
+    "hits": 0,
+    "n": 40,
+    "acc": 0.0,
+    "context_tokens": 0,
+    "bytes": 0
+   },
+   "words": {
+    "hits": 20,
+    "n": 40,
+    "acc": 0.5,
+    "context_tokens": 20.6,
+    "bytes": 89
+   },
+   "sentences": {
+    "hits": 19,
+    "n": 40,
+    "acc": 0.475,
+    "context_tokens": 87.4,
+    "bytes": 429
+   },
+   "latent": {
+    "hits": 52,
+    "n": 80,
+    "acc": 0.65,
+    "context_tokens": 0,
+    "bytes": 630
+   },
+   "direct": {
+    "hits": 78,
+    "n": 80,
+    "acc": 0.975,
+    "context_tokens": 0,
+    "bytes": 0
+   }
+  },
+  "pythia": {
+   "none": {
+    "hits": 0,
+    "n": 40,
+    "acc": 0.0,
+    "context_tokens": 0,
+    "bytes": 0
+   },
+   "words": {
+    "hits": 23,
+    "n": 40,
+    "acc": 0.575,
+    "context_tokens": 21.8,
+    "bytes": 89
+   },
+   "sentences": {
+    "hits": 22,
+    "n": 40,
+    "acc": 0.55,
+    "context_tokens": 89.4,
+    "bytes": 429
+   },
+   "latent": {
+    "hits": 59,
+    "n": 80,
+    "acc": 0.7375,
+    "context_tokens": 0,
+    "bytes": 630
+   },
+   "direct": {
+    "hits": 68,
+    "n": 80,
+    "acc": 0.85,
+    "context_tokens": 0,
+    "bytes": 0
+   }
+  }
+ },
+ "envelope_bytes": 630,
+ "chance": 0.2,
+ "all_receivers": {
+  "none": {
+   "acc": 0.0083,
+   "n": 120,
+   "context_tokens": 0.0,
+   "bytes": 0
+  },
+  "words": {
+   "acc": 0.5917,
+   "n": 120,
+   "context_tokens": 21.1,
+   "bytes": 89
+  },
+  "sentences": {
+   "acc": 0.5667,
+   "n": 120,
+   "context_tokens": 88.1,
+   "bytes": 429
+  },
+  "latent": {
+   "acc": 0.7,
+   "n": 240,
+   "context_tokens": 0.0,
+   "bytes": 630
+  },
+  "direct": {
+   "acc": 0.8917,
+   "n": 240,
+   "context_tokens": 0.0,
+   "bytes": 0
+  }
+ }
+}
