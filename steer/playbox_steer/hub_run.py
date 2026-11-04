@@ -23,7 +23,7 @@ import torch
 
 from . import hub as H
 from . import telepathy as T
-from .anchors_extra import extra_anchors
+from .anchors_extra import EXTRA_TOPICS, extra_anchors
 from .telepathy_data import FIT_TOPICS, NEUTRAL, PROMPTS, TEST_CONCEPTS
 
 
@@ -278,3 +278,77 @@ def pair_control(models: dict[str, str], extra: tuple[int, ...] = (0, 8, 16), fr
                 res["pairs"].setdefault(f"{src}->{dst}", {})[f"pair_x{x}"] = {"acc": round(hits / tot, 4), "heldout_cos": round(cos, 4)}
         del mb
     return res
+
+
+_TEMPLATE_WORDS = {"the", "a", "near", "this", "morning", "people", "often", "say", "is", "but", "anyway", "everyone", "noticed",
+                   "how", "beside", "story", "about", "and", "that", "all", "day"}
+_STOP = _TEMPLATE_WORDS | {"an", "of", "in", "on", "to", "was", "were", "his", "her", "he", "she", "as", "by", "for", "with",
+                           "from", "under", "across", "toward", "over", "into", "it", "its", "their", "they", "them", "at",
+                           "before", "after", "then", "than", "while", "had", "has", "have", "be", "been", "or", "so", "up"}
+
+
+def _content_words(sentence: str) -> list[str]:
+    return [w for w in "".join(c if c.isalpha() else " " for c in sentence.lower()).split() if w not in _STOP]
+
+
+def card_text(weights: dict[str, float], topics: dict[str, float], n_words: int = 6, n_topics: int = 3) -> str:
+    """The concept card a text-only agent reads: the nearest anchor topics and words, with no sentence from the sender."""
+    top_t = [t for t, _ in sorted(topics.items(), key=lambda kv: -kv[1])[:n_topics]]
+    top_w = [w for w, _ in sorted(weights.items(), key=lambda kv: -kv[1])[:n_words]]
+    return f"[hub card] nearest topics: {', '.join(top_t)}. nearest words: {', '.join(top_w)}."
+
+
+def text_baseline(sentences: list[str], n_words: int = 6) -> str:
+    """Same word budget as the card, but written by the sender from the sentences it read: its most frequent content words."""
+    counts: dict[str, int] = {}
+    for sent in sentences:
+        for w in _content_words(sent):
+            counts[w] = counts.get(w, 0) + 1
+    order = sorted(counts, key=lambda w: (-counts[w], w))
+    return f"[text summary] key words: {', '.join(order[:n_words])}."
+
+
+def cards(models: dict[str, str], extra: int = 16, k: int = 256, rank_frac: float = 0.6, frac: float = 0.45,
+          near: int = 24, n_words: int = 6, n_topics: int = 3, n_null: int = 25, concepts: list[str] | None = None) -> dict:
+    """Closed-model arm, sender side (docs/latent-channels.md 6e). For every sender model and test concept: the hub vector
+    (what crosses the wire, int8) is decoded against the anchor corpus into a concept card, with no text from the sender.
+    Also: the same concept as a word-budget-matched text summary, the plain sentences, and cards from random vectors."""
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(TEST_CONCEPTS)
+    train, held = _anchor_split()
+    more = extra_anchors(extra, set(train) | set(held))
+    anchors = train + more
+    topic_of = {sent: t for t, sents in {**FIT_TOPICS, **EXTRA_TOPICS}.items() for sent in sents}
+    info = {n: _sender_pass(p, frac, anchors, held, concepts) for n, p in models.items()}
+    hub = H.fit_hub({n: i["train"] for n, i in info.items()}, H.anchor_digest(anchors), k=k, r=round(rank_frac * len(anchors)))
+    gn = torch.nn.functional.normalize(hub.g, dim=-1)
+
+    def card_for(h: torch.Tensor) -> dict:
+        sims = gn @ torch.nn.functional.normalize(h, dim=-1)
+        idx = sims.topk(min(near, len(anchors))).indices.tolist()
+        words: dict[str, float] = {}
+        topics: dict[str, float] = {}
+        for j in idx:
+            w = float(sims[j])
+            topics[topic_of[anchors[j]]] = topics.get(topic_of[anchors[j]], 0.0) + w
+            for word in set(_content_words(anchors[j])):
+                words[word] = words.get(word, 0.0) + w
+        return {"text": card_text(words, topics, n_words, n_topics), "top_anchor_cos": round(float(sims[idx[0]]), 4)}
+
+    items = []
+    for src, si in info.items():
+        for c in concepts:
+            raw, scale = H.quantize(hub.encode(src, si["thought"][c]))
+            sents = TEST_CONCEPTS[c]["sentences"]
+            items.append({"src": src, "concept": c, "card": card_for(H.dequantize(raw, scale))["text"],
+                          "text": text_baseline(sents, n_words), "sentences": " ".join(sents), "wire_bytes": len(raw)})
+    g = torch.Generator().manual_seed(0)
+    nulls = []
+    names = list(info)
+    for i in range(n_null):
+        src = names[i % len(names)]
+        r = torch.randn(info[src]["hidden"], generator=g)
+        raw, scale = H.quantize(hub.encode(src, r / r.norm() * info[src]["thought"][concepts[0]].norm()))
+        nulls.append({"src": src, "card": card_for(H.dequantize(raw, scale))["text"]})
+    return {"hub": {"k": hub.k, "anchors": len(anchors), "models": list(info)}, "items": items, "nulls": nulls,
+            "concepts": concepts, "chance": 1 / len(concepts)}

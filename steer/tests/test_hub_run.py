@@ -91,3 +91,16 @@ def test_pair_control_scores_the_pair_map_on_the_same_anchor_sizes(zoo):
     assert set(r["arms"]) == {"pair_x0", "pair_x2"} and r["arms"]["pair_x0"] == 426
     assert set(r["pairs"]) == {f"{a}->{b}" for a in zoo for b in zoo if a != b}
     assert all(set(c) == {"pair_x0", "pair_x2"} and 0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())
+
+
+def test_cards_carry_no_sender_text_and_the_text_baseline_is_budget_matched(zoo):
+    r = hub_run.cards(zoo, extra=2, k=8, near=6, n_null=3, concepts=["ocean", "space"])
+    assert len(r["items"]) == 3 * 2 and len(r["nulls"]) == 3
+    anchors = {w for t in (FIT_TOPICS | EXTRA_TOPICS).items() for w in re.findall(r"[a-z]+", " ".join(t[1]).lower()) + [t[0]]}
+    for it in [*r["items"], *r["nulls"]]:
+        assert it["card"].startswith("[hub card] nearest topics: ")
+        # built from anchor text alone: every word is an anchor word or a fixed card word
+        assert set(re.findall(r"[a-z]+", it["card"].lower())) <= anchors | {"hub", "card", "nearest", "topics", "words"}
+    for it in r["items"]:
+        assert it["wire_bytes"] == 8 and it["text"].startswith("[text summary] key words: ")
+    assert len(hub_run.text_baseline(TEST_CONCEPTS["ocean"]["sentences"], 6).split(",")) == 6
