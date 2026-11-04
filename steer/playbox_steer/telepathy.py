@@ -85,9 +85,14 @@ class Ridge:
 
 
 def fit_map(ma, ta, la, mb, tb, lb, lam_grid=(0.03, 0.1, 0.3)) -> tuple[Ridge, dict]:
-    if os.environ.get("TELEPATHY_FIT") == "xl":
+    if os.environ.get("TELEPATHY_FIT") in ("xl", "agent"):
         from .telepathy_data_xl import FIT_TOPICS_XL
         fit_topics, lam_grid = FIT_TOPICS_XL, (0.1, 0.3, 1.0, 3.0)
+        if os.environ["TELEPATHY_FIT"] == "agent":  # plus sentences the way an LLM agent writes them (tools/telepathy_agentfit_gen.py)
+            import json
+            from pathlib import Path
+            ag = json.loads((Path(__file__).parent / "telepathy_agentfit.json").read_text())
+            fit_topics = {**fit_topics, **{f"agent_{t}": s for t, s in ag.items()}}
     elif os.environ.get("TELEPATHY_FIT") == "big":
         from .telepathy_data_big import FIT_TOPICS_BIG
         fit_topics = FIT_TOPICS_BIG

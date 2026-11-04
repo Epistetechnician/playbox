@@ -983,3 +983,17 @@ Results: `results/telepathy/modal_big_private/`.
 - Offline scaling test (`telepathy_scale.py`, 16 held-out topics + 5 hand-written, 21-way, chance 4.8%): top-1 is already ~90% at 20 fit topics and 95-100% at 150; mean cosine keeps rising (smollm2->qwen3 0.53 to 0.62, qwen3->smollm2 0.69 to 0.74), best lambda 0.3 at 150. Retrieval is not the bottleneck; the loss is later (agent-written sentences, B reading text).
 - xl vs big, paired on the 80 concept trials: 19 fixed, 11 broken (not significant on its own, p about 0.2, but the direction matches the offline trend). smollm2->qwen3 70% to 80%, qwen3->smollm2 57.5% to 67.5%.
 - Open: controls (B always names a topic), and the fit still uses templates while agents write free sentences.
+
+### E7 round 3: agent-written fit text and a salience gate
+
+Two changes to the Modal telepathy service, same 88-trial blind protocol (20 topics x 2 reps x 2 directions, plus 4 no-topic controls per direction), Hermes agents on the Qwen3.8 brain.
+
+- **Fit data written like Agent A writes.** The brain wrote four sets of six short sentences for each of the 156 fit topics (`steer/tools/telepathy_agentfit_gen.py`, output `telepathy_agentfit.json`), added to the template fit set (`TELEPATHY_FIT=agent`).
+- **Salience gate.** The vector's pre-normalisation size, divided by a reference size for typical concepts, ramps the injection strength from 0 to 1 between 0.9 and 1.1. In a calibration of the Qwen3-to-SmolLM2 direction the neutral control measured 0.76 and the 20 topics 1.21 to 1.60; the SmolLM2-to-Qwen3 direction was not checked before the run. The thresholds were set from that calibration, so they are not independent of it.
+
+| run | topics correct (95% CI) | no-topic controls correct |
+|---|---|---|
+| xl (E7 round 2) | 59/80 = 73.8% | 0/8 |
+| agent fit + gate | 65/80 = 81.2% (71.3 to 88.3) | 3/8 |
+
+Per direction: SmolLM2 to Qwen3 34/40, Qwen3 to SmolLM2 31/40; 0 infrastructure failures. The topic gain is within the intervals of the earlier run (not significant at this size); the control improvement is from 0 to 3 of 8, and the other 5 controls still named religion or classical-music. The gate and the new fit data were changed together, so which one gave the topic gain is not separated. Chance is 4.8%.

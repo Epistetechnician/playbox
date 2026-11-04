@@ -13,6 +13,7 @@ which is plain urllib: no torch, no models, a few MB of memory.
 """
 import base64
 import hmac
+import os
 import threading
 from pathlib import Path
 
@@ -23,10 +24,13 @@ REPOS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-1.7B-Base
 PAIRS = (("smollm2", "qwen3"), ("qwen3", "smollm2"))
 COEF, FRAC, GEN = 0.75, 0.45, 24
 
+FIT = os.environ.get("TELEPATHY_FIT", "xl")  # which fit set the deployed maps use (xl, agent)
+GATE = tuple(float(x) for x in os.environ.get("TELEPATHY_GATE", "0,0").split(","))  # (lo, hi) of |d|/ref where strength ramps 0 to 1
 app = modal.App("playbox-telepathy")
 vol = modal.Volume.from_name("playbox-e8", create_if_missing=True)  # shared Hugging Face cache (/vol/hf) with the E8 app
 image = (
     modal.Image.debian_slim(python_version="3.12")
+    .env({"TELEPATHY_FIT": FIT, "TELEPATHY_GATE": os.environ.get("TELEPATHY_GATE", "0,0")})
     .pip_install("torch>=2.5,<2.8", "transformers>=4.51,<4.60", "numpy<2.2", "blake3", "safetensors",
                  "huggingface_hub", "fastapi[standard]")
     .add_local_dir(STEER / "playbox_steer", "/root/svc/playbox_steer", ignore=["__pycache__", "*.pyc"])
@@ -41,7 +45,7 @@ class Service:
     def start(self):
         import os
         import sys
-        os.environ.update(PLAYBOX_DEVICE="cuda", HF_HOME="/vol/hf", TELEPATHY_FIT="xl")
+        os.environ.update(PLAYBOX_DEVICE="cuda", HF_HOME="/vol/hf", TELEPATHY_FIT=FIT)
         sys.path.insert(0, "/root/svc")
         import torch
         from huggingface_hub import snapshot_download
@@ -59,7 +63,7 @@ class Service:
         mdir = Path("/vol/telepathy_maps")
         mdir.mkdir(exist_ok=True)
         for src, dst in PAIRS:
-            f = mdir / f"{src}_to_{dst}_xl.pt"
+            f = mdir / f"{src}_to_{dst}_{FIT}.pt"
             (ma, ta), (mb, tb) = self.models[src], self.models[dst]
             la, lb = T.layer_of(ma, FRAC), T.layer_of(mb, FRAC)
             if not f.exists():  # fitted once on this GPU, then reused from the volume
@@ -69,6 +73,16 @@ class Service:
                 vol.commit()
                 print("fitted", src, dst, info, flush=True)
             self.maps[(src, dst)] = torch.load(f)
+        # typical size of a concept's difference vector in each sender's space: a salience reference for the gate
+        import random
+        from playbox_steer.telepathy_data_xl import FIT_TOPICS_XL
+        rng, self.ref = random.Random(1), {}
+        sets = [rng.sample(v, 6) for v in rng.sample(list(FIT_TOPICS_XL.values()), 40)]
+        for src in {a for a, _ in PAIRS}:
+            ma, ta = self.models[src]
+            la, na = T.layer_of(ma, FRAC), self.maps[next(k for k in self.maps if k[0] == src)]["neutral_a"]
+            self.ref[src] = float(torch.stack([(T.sentence_states(ma, ta, x, la).mean(0) - na).norm() for x in sets]).median())
+        print("ref", self.ref, flush=True)
         print("ready", flush=True)
 
     @modal.asgi_app()
@@ -110,9 +124,12 @@ class Service:
             ma, ta = self.models[r.src]
             with self.lock:
                 d = T.sentence_states(ma, ta, r.texts, T.layer_of(ma, FRAC)).mean(0) - m["neutral_a"]
+            mag = float(d.norm()) / self.ref[r.src]
+            g = 1.0 if GATE[1] <= GATE[0] else min(1.0, max(0.0, (mag - GATE[0]) / (GATE[1] - GATE[0])))
             v = d @ m["w"]
-            v = (v / v.norm() * COEF * m["norm_b"]).float().contiguous()
-            return {"vec": base64.b64encode(v.numpy().tobytes()).decode(), "dim": v.numel()}
+            v = (v / v.norm() * COEF * g * m["norm_b"]).float().contiguous()
+            print("think mag", round(mag, 3), "gate", round(g, 3), flush=True)
+            return {"mag": mag, "gate": g, "vec": base64.b64encode(v.numpy().tobytes()).decode(), "dim": v.numel()}
 
         @api.post("/listen", dependencies=[Depends(auth)])
         def listen(r: Listen):
