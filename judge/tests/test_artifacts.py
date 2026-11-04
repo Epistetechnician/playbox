@@ -42,6 +42,8 @@ def test_a_path_on_an_unmounted_volume_is_refused(tmp_path):
 
 
 def test_a_mounted_volume_is_accepted():
+    if not Path("/Volumes").is_dir():
+        pytest.skip("/Volumes exists on macOS only")
     mounted = [p for p in Path("/Volumes").iterdir() if p.is_dir()]
     if not mounted:
         pytest.skip("no volume mounted")
