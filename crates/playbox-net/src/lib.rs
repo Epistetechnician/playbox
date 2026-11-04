@@ -5,6 +5,7 @@
 pub mod audit;
 pub mod chat;
 pub mod grants;
+pub mod latent;
 pub mod limits;
 pub mod review;
 pub mod revoke;
@@ -457,6 +458,8 @@ struct RoomHandler {
     attest_key: Arc<SigningKey>,
     measurements: Arc<Measurements>,
     platform: Option<Arc<dyn PlatformProvider>>,
+    /// Signed hub latent messages posted to the room. Not persisted.
+    latent: Arc<latent::Mailbox>,
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -757,9 +760,6 @@ impl RoomHandler {
                 if let Some(op @ Op::Handoff { .. }) = op {
                     return self.handoff_message(from, op, &req.message).await;
                 }
-                if let Some(op @ Op::Handoff { .. }) = op {
-                    return self.handoff_message(from, op, &req.message).await;
-                }
                 let reply = self.send_message(from, op, &req.message).await;
                 serde_json::to_value(reply)
                     .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
@@ -875,6 +875,13 @@ impl RoomHandler {
             }
             // Handled in `route`, which has the grant it needs to authorize the specifics.
             Some(Op::Steer { .. } | Op::Handoff { .. }) => return reply("steering is handled by the router".into()),
+            Some(Op::Latent) => {
+                let t0 = std::time::Instant::now();
+                let r = self.latent_deposit(from, msg);
+                self.audit_op(from, "latent", &r, t0, json!({}));
+                finish(r)
+            }
+            Some(Op::LatentPull { hub, since }) => self.latent_pull(&hub, since),
             Some(Op::Pull { refname }) => {
                 let t0 = std::time::Instant::now();
                 let r = self.pull(&refname).await;
@@ -1505,6 +1512,7 @@ impl Host {
             attest_key,
             measurements,
             platform: cfg.platform.clone(),
+            latent: Arc::default(),
             cfg,
         };
         let sync = revoke::SyncHandler {

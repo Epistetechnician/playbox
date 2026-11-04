@@ -109,3 +109,31 @@ def test_private_directions_do_not_cross():
     v = v - q @ (q.T @ v)  # orthogonal to every shared concept direction
     shared = (torch.randn(1, Q, generator=g) @ lens["a"])[0]
     assert hub.encode("a", v).norm() < 0.35 * hub.encode("a", shared).norm() * v.norm() / shared.norm()
+
+
+def test_signed_envelope_round_trips_and_refuses_tampering_and_strangers():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+
+    lens, st = make(["a", "b"])
+    hub = H.fit_hub(st, "anchors", k=Q)
+    key, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    pub = lambda k: k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    h = hub.encode("a", torch.randn(1, Q).squeeze(0) @ lens["a"])
+    blob = H.pack_signed(hub, "a", h, key)
+    head, got = H.unpack_signed(hub, blob, trusted_signers={pub(key)})
+    assert head["signer"] == pub(key) and len(blob) < 600
+    assert cos(got, h).item() > 0.999  # int8 with a float32 scale costs almost nothing
+    for bad, why in [
+        (blob[:-1], "body length"),
+        (blob[:-1] + bytes([blob[-1] ^ 1]), "body does not match"),
+        (blob.replace(b'"src":"a"', b'"src":"b"'), "signature"),
+        (b"PBL1" + blob[4:], "not a PBL2"),
+    ]:
+        with pytest.raises(ValueError, match=why):
+            H.unpack_signed(hub, bad)
+    with pytest.raises(ValueError, match="not trusted"):
+        H.unpack_signed(hub, H.pack_signed(hub, "a", h, other), trusted_signers={pub(key)})
+    other_hub = H.fit_hub(make(["a", "b"], seed=3)[1], "anchors2", k=Q)
+    with pytest.raises(ValueError, match="different hub"):
+        H.unpack_signed(other_hub, blob)

@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep) 6d (more anchors) and 6e (concept cards for a text-only reader). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
+sweep) 6d (more anchors) 6e (concept cards for a text-only reader) and 6f (the hub in a room). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -19,7 +19,7 @@ cannot touch (every API-only model).
 |---|---|---|---|
 | L0 text | nothing | anything, lossily | exists |
 | L1 concept card | nothing (closed models fit here) | a hub vector rendered as nearest anchor topics and words, with a hash of the source | built without caption or hash; weak, see 6e |
-| L2 hub latent | read and write of one mid-layer residual stream (open weights, any family) | a k-dimensional concept or behavioural vector, k bytes | built, synthetic and tiny-model tests |
+| L2 hub latent | read and write of one mid-layer residual stream (open weights, any family) | a k-dimensional concept or behavioural vector, k bytes | built; measured on five families (6a to 6d); signed room transport (6f) |
 | L3 KV-cache handoff | identical weights on both ends | full context state | built (E6 rounds 4 and 6) |
 | L4 trained cache mapper (SwaT-like) | open weights, a GPU-day per pair | cross-family cache | not built; license unclear |
 
@@ -77,8 +77,8 @@ A latent channel is an injection channel the admission broker cannot read. Contr
    On audit it reveals them, and the auditor encodes them through *its own* spoke and compares with the claimed hub
    vector (cosine above a calibrated threshold). This works across families, which the E6 recompute audit cannot: that
    one needs identical weights. It audits what the sender said it was sending, not whether the sentences are honest.
-4. **Signed envelope.** `PBL1` carries a body hash only. Signing reuses the `playbox.cache-handoff.v1` record format and
-   a host operation like `Op::Handoff` (E6 round 6). Not wired.
+4. **Signed envelope.** `PBL1` carries a body hash only. `PBL2` adds an Ed25519 signature and a room operation (built,
+   section 6f), in the style of `Op::Handoff` (E6 round 6).
 
 ## 6. E8: the experiment to run next
 
@@ -260,6 +260,39 @@ One run. Ceiling `local_internal_exploratory`.
   the nearest anchors, loses to a short text summary on accuracy and token cost.
 - **Not tested:** a real closed model; a card with a sender-written caption (the design's embassy); more concepts than
   five, which the hub's anchors do not span; second run; the card with the sender's word summary appended.
+
+## 6f. The hub in a room (2026-11-04)
+
+What is built (`crates/playbox-net/src/latent.rs`, `steer/playbox_steer/hub.py`): a room can carry hub vectors between
+members, signed.
+
+- **`PBL2` envelope.** `PBL2` | u32 header length | JSON header | k int8 bytes. The header holds the hub id, a sender
+  label, `k`, the quantization scale (hex of the big-endian float32, so no float text has to round-trip between Python
+  and Rust), the blake3 of the body, the signer's public key and an Ed25519 signature over a fixed text of those fields.
+  Python signs (`pack_signed`, `unpack_signed`); Rust verifies (`latent::parse`) and can also sign (`latent::pack`).
+- **Two room operations**, both membership-level (like `say`), so a stranger or a revoked member gets nothing:
+  `latent` posts one envelope; `latent_pull {hub, since}` returns up to 32 envelopes for a hub after a cursor.
+- **What the host checks on `latent`:** the magic, header size, hub id and sender label shape, `0 < k <= 4096`, body
+  length equals `k`, body hash, the signature, and that the signer is the sending member's own key (a message signed by
+  someone else is refused). It files the envelope, posts a one-line notice to the feed (hub, sender label, k, seq; no
+  vector) and returns a receipt signed with the host key, which the client verifies against the exact bytes it sent
+  (`Client::latent_send`).
+- **Reading needs no trust in the host.** Every envelope is self-verifying, so `Client::latent_pull` re-checks each one
+  and a reader can check the signer against the keys it trusts (`unpack_signed(..., trusted_signers=...)`). The host
+  can withhold or replay messages but cannot forge one.
+- **Bounds.** The mailbox keeps 256 envelopes in all and 32 per member (oldest dropped), in memory only.
+- **The host never decodes a vector.** It holds no spoke, so it cannot read what a vector means. Decoding, the strength
+  cap and the guards all stay with the receiving member (section 5, items 1 and 2).
+
+Tests: `crates/playbox-net/tests/latent.rs` (posting and reading between two members, a forged or cross-signed or
+truncated or flipped message, the per-member bound, a stranger) and a fixed-key envelope produced by the Python sender
+that the Rust packer must reproduce byte for byte; `steer/tests/test_hub.py` (round trip, tampering, an untrusted signer,
+another hub's message).
+
+Not built: persistence of the mailbox; a rate limit beyond the bounds; a Python client that talks to a room (the
+Python side signs and verifies; sending goes through the Rust client); commit-and-challenge (item 3 in section 5), so a
+signed vector shows who sent it, not that it is honest; a host-side check that a hub id is one the room uses; and
+putting a decoded vector through the existing steering guard check on the receiving member.
 
 ## 7. Not covered
 

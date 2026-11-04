@@ -41,6 +41,8 @@ use std::{
 pub const MAX_DIRECTION_BYTES: usize = 1 << 20;
 pub const MAX_PROMPT_BYTES: usize = 512 << 10;
 /// Largest handoff envelope (record, text and KV cache) the host will take.
+/// Largest hub size `k` a latent message may declare.
+pub const MAX_HUB_K: usize = 4096;
 pub const MAX_HANDOFF_BYTES: usize = 128 << 20;
 /// Default chance that the host recomputes a handed-over cache from its text.
 pub const DEFAULT_AUDIT_PROB: f64 = 0.1;
@@ -295,7 +297,7 @@ pub fn verify_decision(text: &str, host: &[u8; 32], signer: &[u8; 32], weights: 
     Ok(accepted)
 }
 
-fn hex_to_64(s: &str) -> Result<[u8; 64]> {
+pub(crate) fn hex_to_64(s: &str) -> Result<[u8; 64]> {
     if s.len() != 128 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("bad signature encoding");
     }

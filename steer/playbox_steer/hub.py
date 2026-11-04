@@ -153,3 +153,67 @@ def unpack(hub: Hub, blob: bytes, max_bytes: int = 1 << 16) -> tuple[dict, torch
     if not (scale > 0 and scale < 1e6):
         raise ValueError("bad scale")
     return head, dequantize(raw, scale)
+
+
+# --- Signed envelope for a room (`PBL2`), checked by the Rust host (crates/playbox-net/src/latent.rs) --------------------
+
+MAGIC2 = b"PBL2"
+
+
+def _signed_text(hub: str, src: str, k: int, scale_f32: str, body_blake3: str, signer: str) -> bytes:
+    return f"playbox.latent.v1\nhub {hub}\nsrc {src}\nk {k}\nscale {scale_f32}\nbody {body_blake3}\nsigner {signer}\n".encode()
+
+
+def pack_signed(hub: Hub, src: str, h: torch.Tensor, private_key) -> bytes:
+    """`PBL2` | u32 header length | JSON header | int8 body, signed by `private_key` (a cryptography Ed25519 key).
+
+    In a room the key must be the member's own endpoint key: the host refuses a message signed by anyone else. The scale is
+    carried as the hex of its big-endian float32 so no float text has to round-trip between Python and Rust, and the
+    quantization uses that float32 scale, exactly what the receiver multiplies back by.
+    """
+    import blake3
+    from cryptography.hazmat.primitives import serialization
+
+    scale_hex = struct.pack(">f", float(h.abs().max().clamp_min(1e-12)) / 127.0).hex()
+    scale = struct.unpack(">f", bytes.fromhex(scale_hex))[0]
+    raw = bytes(torch.clamp((h / scale).round(), -127, 127).to(torch.int8).numpy().tobytes())
+    signer = private_key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    body_hash = blake3.blake3(raw).hexdigest()
+    sig = private_key.sign(_signed_text(hub.hub_id, src, hub.k, scale_hex, body_hash, signer)).hex()
+    head = {"hub": hub.hub_id, "src": src, "k": hub.k, "scale_f32": scale_hex, "body_blake3": body_hash, "signer": signer, "sig": sig}
+    hb = json.dumps(head, sort_keys=True, separators=(",", ":")).encode()
+    return MAGIC2 + struct.pack(">I", len(hb)) + hb + raw
+
+
+def unpack_signed(hub: Hub, blob: bytes, trusted_signers: set[str] | None = None, max_bytes: int = 1 << 16) -> tuple[dict, torch.Tensor]:
+    """Refuses anything malformed, oversized, for another hub, unsigned, signed by a key not in `trusted_signers`
+    (when given), or whose body does not match its header. Returns the header and the dequantized hub vector."""
+    import blake3
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    if len(blob) > max_bytes or len(blob) < 8 or blob[:4] != MAGIC2:
+        raise ValueError("not a PBL2 message")
+    (n,) = struct.unpack(">I", blob[4:8])
+    if n > 4096 or n > len(blob) - 8:
+        raise ValueError("bad header length")
+    head = json.loads(blob[8 : 8 + n])
+    raw = blob[8 + n :]
+    if head.get("hub") != hub.hub_id:
+        raise ValueError("message is for a different hub")
+    if head.get("k") != hub.k or len(raw) != hub.k:
+        raise ValueError("body length does not match the hub")
+    if blake3.blake3(raw).hexdigest() != head.get("body_blake3"):
+        raise ValueError("body does not match its header")
+    if trusted_signers is not None and head.get("signer") not in trusted_signers:
+        raise ValueError("signer is not trusted")
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(head["signer"])).verify(
+            bytes.fromhex(head["sig"]),
+            _signed_text(head["hub"], head["src"], head["k"], head["scale_f32"], head["body_blake3"], head["signer"]))
+    except (InvalidSignature, ValueError, KeyError):
+        raise ValueError("the signature is not valid") from None
+    scale = struct.unpack(">f", bytes.fromhex(head["scale_f32"]))[0]
+    if not (0 < scale < 1e6):
+        raise ValueError("bad scale")
+    return head, dequantize(raw, scale)
