@@ -225,3 +225,60 @@ brain on Modal, Hermes agents, B names the topic from continuations generated fr
 plus controls so a 10-point difference from L2's 73.8% is detectable. Reading of the result: above L2 with the lower bound of the
 95% interval over 73.8% counts as better; within the interval counts as comparable (then the case for L4 rests on richer payloads,
 not on this metric); below counts as worse. If no direction passes, stop and report; do not run the blind protocol.
+
+## 10. Stage 2 results
+
+Raw files: `steer/results/telepathy/l4_stage2/` (`eval_*.json`, sighted training logs). Both sighted mappers trained 3,000 + 8,000
+steps on the H100 (about 58 and 50 minutes); the blind ones trained about 50 and 45 minutes. fp32 evaluation, same protocol as
+section 3, 150 wikitext-2 items, 48 templated held-out-topic items, 21 concepts. Retention = (none - x)/(none - own).
+
+### Sighted mapper (SwaT as published: the mapper reads the receiver's own token embeddings of the context)
+
+| direction | (A) wikitext retention (95% CI) | unrelated-cache control | (B) templated mapped / unrelated | (C) 21-way retrieval (own cache) | bar |
+|---|---|---|---|---|---|
+| SmolLM2-135M to Qwen3-1.7B | 87.6% (83.8 to 91.5) | -4.0% | 30.9% / 56.6% | 81.0% (85.7) | fails (B), (C) |
+| Qwen3-1.7B to SmolLM2-135M | 115.3% (110.8 to 120.0) | -3.0% | 76.4% / 49.7% | 95.2% (100) | passes all three |
+
+(A) beats the linear map (55.5%, CI 46.2 to 62.6) in both directions with non-overlapping intervals. Retention above 100%
+means the mapped cache gives the small receiver a lower loss than its own cache of the same text.
+
+**Why this pass does not count for the claim we care about.** The sighted mapper takes the receiver's own embeddings of the
+context as input. So the receiver side must already hold the context text: this is prefill-free (no receiver forward pass over the
+context), not text-free. Beating the unrelated-cache control by 26.7 points on templated text is therefore not evidence of a
+channel that carries a concept without text. The L2 comparison (73.8%) needs a mapper that sees only the sender's cache.
+
+### Text-blind mapper (ours: a single learned query vector, length-only alignment; still needs the receiver token count)
+
+| direction | (A) wikitext retention (95% CI) | (B) templated mapped / unrelated | (C) 21-way retrieval | bar |
+|---|---|---|---|---|
+| SmolLM2-135M to Qwen3-1.7B | 86.7% (83.5 to 90.2) | 5.1% (CI -2.4 to 12.3) / 56.6% | 71.4% | fails (B), (C) |
+| Qwen3-1.7B to SmolLM2-135M | NaN | NaN | 4.8% (chance) | invalid run |
+
+On natural text the blind mapper recovers nearly as much as the sighted one (86.7% vs 87.6%), so the sender's cache alone
+carries the content. On templated topics it is at chance level (5%), below the unrelated real cache (56.6%), which means it
+did not learn the topic structure from the sender cache; this is the metric that matters for the concept-passing use case.
+The Qwen3-to-SmolLM2 blind run produced NaN mapped losses at every checkpoint; the cause was not found (the training log was
+not retrievable after the node stopped; a numerical overflow in the mapper output is the likely cause). It was not rerun.
+
+**Deviation to disclose.** The blind runs used a 50% templated share in the training mix (the sighted runs used 15%). I chose
+that after seeing the sighted templated result, so it is a post-hoc change; it did not help.
+
+### Blind two-agent protocol
+
+Not run. Only the sighted Qwen3-to-SmolLM2 direction passed the bar, and its pass relies on text input, so it does not test
+the L2 comparison. No blind direction passed.
+
+### Cost
+
+GPU node `playbox-e6-cuda`: about 18.8 USD for this stage (node cumulative 21.78 USD, 2.96 USD before it), including about
+1.2 USD lost to the two blind jobs that ran out of GPU memory by being launched alongside the sighted run. Under the 28.9 USD
+cap. The node was stopped and reads `stopped (disk intact)` in `gman node ls`.
+
+### Recommendation
+
+Stop L4 as a concept channel with this recipe. What worked: a trained cross-family cache mapper is real on natural text (87.6%
+and 115% retention against 55.5% for the linear map), and the Qwen3-to-SmolLM2 direction is a good prefill-free cache transfer
+when the receiver holds the text. What did not: the text-blind version, which is the one L4 needs to beat L2's hub vector, learned
+nothing about topics. Build further only if (1) the blind Qwen3-to-SmolLM2 NaN is fixed and rerun (about 5 USD, 45 minutes), and
+(2) the blind templated retention clears the same bar, tested before any two-agent run. Until then L2 stays the cross-family
+channel.

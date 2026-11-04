@@ -1,0 +1,105 @@
+{
+ "ckpt_hist": [
+  {
+   "none": 4.3145,
+   "own": 3.0419,
+   "mapped": 2.8381,
+   "retention": 1.1601,
+   "step": 9000,
+   "stage": 2,
+   "seconds": 2498
+  },
+  {
+   "none": 4.3145,
+   "own": 3.0419,
+   "mapped": 2.8327,
+   "retention": 1.1644,
+   "step": 10000,
+   "stage": 2,
+   "seconds": 2765
+  },
+  {
+   "none": 4.3145,
+   "own": 3.0419,
+   "mapped": 2.8549,
+   "retention": 1.1469,
+   "step": 11000,
+   "stage": 2,
+   "seconds": 3028
+  }
+ ],
+ "sender": "Qwen/Qwen3-1.7B-Base",
+ "receiver": "HuggingFaceTB/SmolLM2-135M",
+ "wikitext": {
+  "n": 150,
+  "none": {
+   "nll": 4.1666
+  },
+  "own": {
+   "nll": 3.1763
+  },
+  "other_own": {
+   "nll": 4.1965,
+   "retention": -0.0301,
+   "ci95": [
+    -0.0836,
+    0.0228
+   ]
+  },
+  "mean": {
+   "nll": 6.6404,
+   "retention": -2.498,
+   "ci95": [
+    -2.8147,
+    -2.1903
+   ]
+  },
+  "mapped": {
+   "nll": 3.0253,
+   "retention": 1.1525,
+   "ci95": [
+    1.1075,
+    1.2002
+   ]
+  }
+ },
+ "templated_heldout": {
+  "n": 48,
+  "none": {
+   "nll": 5.1475
+  },
+  "own": {
+   "nll": 1.9847
+  },
+  "other_own": {
+   "nll": 3.5749,
+   "retention": 0.4972,
+   "ci95": [
+    0.4536,
+    0.543
+   ]
+  },
+  "mean": {
+   "nll": 5.4071,
+   "retention": -0.0821,
+   "ci95": [
+    -0.1167,
+    -0.0484
+   ]
+  },
+  "mapped": {
+   "nll": 2.7317,
+   "retention": 0.7638,
+   "ci95": [
+    0.7142,
+    0.8128
+   ]
+  }
+ },
+ "concept_retrieval_21way": {
+  "chance": 0.0476,
+  "own": 1.0,
+  "mapped": 0.9524
+ },
+ "seconds": 107
+}

@@ -12,7 +12,7 @@ image = (modal.Image.debian_slim(python_version="3.12")
 
 
 @app.function(image=image, gpu="A10G", volumes={"/vol": vol}, memory=32768, timeout=1800)
-def go(direction: str, s1: int, s2: int, items: int) -> list:
+def go(direction: str, s1: int, s2: int, items: int, blind: bool = False) -> list:
     import os
     import sys
     os.environ.update(HF_HOME="/vol/hf")
@@ -22,9 +22,11 @@ def go(direction: str, s1: int, s2: int, items: int) -> list:
     g = lambda r: snapshot_download(r, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "merges*", "vocab*"])
     small, big = g("HuggingFaceTB/SmolLM2-135M"), g("Qwen/Qwen3-1.7B-Base")
     snd, rcv = (small, big) if direction == "s2q" else (big, small)
-    return S.train(snd, rcv, "/tmp/smoke.pt", steps1=s1, steps2=s2, bs=16, n_items=items, B=3, D=512, eval_every=100)
+    hist = S.train(snd, rcv, "/tmp/smoke.pt", steps1=s1, steps2=s2, bs=16, n_items=items, B=3, D=512, eval_every=100, blind=blind)
+    from playbox_steer import l4_eval as E
+    return {"hist": hist[-1:], "eval": E.run("/tmp/smoke.pt", n_wiki=12)}
 
 
 @app.local_entrypoint()
-def main(direction: str = "s2q", s1: int = 20, s2: int = 20, items: int = 600):
-    print(go.remote(direction, s1, s2, items))
+def main(direction: str = "s2q", s1: int = 20, s2: int = 20, items: int = 600, blind: bool = False):
+    print(go.remote(direction, s1, s2, items, blind))

@@ -172,16 +172,22 @@ class Pool:
         s_ids, r_ids, c_ids = f((B, S), pad_s, torch.long), f((B, N), pad_r, torch.long), f((B, Q), pad_r, torch.long)
         s_mask, r_mask, c_mask = f((B, S), 0, torch.bool), f((B, N), 0, torch.bool), f((B, Q), 0, torch.bool)
         pos = f((B, S), 0.0, torch.float32)
+        pos_b = f((B, S), 0.0, torch.float32)
+        cross_b = f((B, N, S), 0, torch.bool)
         s_end, r_end = f((B, S), 1 << 40, torch.long), f((B, N), -1, torch.long)
         for b, x in enumerate(its):
             ns, nr, nc = len(x["s"]), len(x["r"]), len(x["c"])
             s_ids[b, :ns] = torch.from_numpy(x["s"]); r_ids[b, :nr] = torch.from_numpy(x["r"]); c_ids[b, :nc] = torch.from_numpy(x["c"])
             s_mask[b, :ns] = True; r_mask[b, :nr] = True; c_mask[b, :nc] = True
             pos[b, :ns] = torch.from_numpy(x["pos"]); s_end[b, :ns] = torch.from_numpy(x["s_end"]); r_end[b, :nr] = torch.from_numpy(x["r_end"])
+            # text-blind alignment: only the two lengths are used (no character spans, no token identities)
+            pos_b[b, :ns] = ((torch.arange(ns) + 0.5) * nr / ns - 0.5).clamp_min(0)
+            cross_b[b, :nr, :ns] = torch.arange(ns)[None, :] < (torch.arange(nr)[:, None] + 1) * ns / nr
         cross = (s_end[:, None, :] <= r_end[:, :, None]) & s_mask[:, None, :]  # [B, N, S]
         cross[:, :, 0] |= ~cross.any(-1)  # every row sees at least the first sender token (no all-masked softmax)
+        cross_b[:, :, 0] |= ~cross_b.any(-1)
         return {k: v.to(DEV) for k, v in dict(s_ids=s_ids, r_ids=r_ids, c_ids=c_ids, s_mask=s_mask, r_mask=r_mask, c_mask=c_mask,
-                                                pos=pos, cross=cross).items()}
+                                                pos=pos, cross=cross, pos_b=pos_b, cross_b=cross_b).items()}
 
 
 # ---- the mapper ------------------------------------------------------------------------------------------------------
@@ -228,9 +234,11 @@ class Block(nn.Module):
 
 
 class Mapper(nn.Module):
-    def __init__(self, sd: dict, rd: dict, B=7, D=1024, H=16, Fd=4096):
+    def __init__(self, sd: dict, rd: dict, B=7, D=1024, H=16, Fd=4096, blind=False):
         super().__init__()
-        self.sd, self.rd, self.B = sd, rd, B
+        self.sd, self.rd, self.B, self.blind = sd, rd, B, blind
+        # blind: the queries are one learned vector at every position, so no receiver token identity ever enters the mapper
+        self.blind_emb = nn.Parameter(torch.randn(rd["emb"]) * 0.02)
         grp = lambda L, b: (b * L // B, (b + 1) * L // B)
         self.sg, self.rg = [grp(sd["L"], b) for b in range(B)], [grp(rd["L"], b) for b in range(B)]
         self.w_in = nn.Linear(rd["emb"], D)
@@ -241,6 +249,8 @@ class Mapper(nn.Module):
     def forward(self, r_emb, sk, sv, pos_s, cross):
         """r_emb [B,N,emb]; sk, sv [B, L_S, S, kd]; returns predicted K, V [B, L_R, N, kd_R]."""
         B_, N, _ = r_emb.shape
+        if self.blind:
+            r_emb = self.blind_emb.to(r_emb.dtype).expand_as(r_emb)
         h = self.w_in(r_emb)
         pos_r = torch.arange(N, device=h.device)[None].expand(B_, -1).float()
         ks, vs = [], []
@@ -288,12 +298,14 @@ def cont_nll(model, cache, ctx_mask, c_ids, c_mask, per_item=False):
 class Setup:
     """Frozen sender and receiver, hooks, the mapper and its calibration."""
 
-    def __init__(self, sender_path: str, receiver_path: str, B=7, D=1024):
-        self.sm, self.st = load(sender_path)
-        self.rm, self.rt = load(receiver_path)
+    def __init__(self, sender_path: str, receiver_path: str, B=7, D=1024, dtype=torch.bfloat16, blind=False):
+        self.amp = dtype != torch.float32
+        self.blind = blind
+        self.sm, self.st = load(sender_path, dtype)
+        self.rm, self.rt = load(receiver_path, dtype)
         self.sd, self.rd = kv_dims(self.sm), kv_dims(self.rm)
         self.gs, self.gr = GrabB(self.sm), GrabB(self.rm)
-        self.mapper = Mapper(self.sd, self.rd, B=B, D=D).to(DEV)
+        self.mapper = Mapper(self.sd, self.rd, B=B, D=D, blind=blind).to(DEV)
         self.pad_s = self.st.pad_token_id if self.st.pad_token_id is not None else 0
         self.pad_r = self.rt.pad_token_id if self.rt.pad_token_id is not None else 0
 
@@ -322,8 +334,9 @@ class Setup:
 
     def predict(self, bt, sk, sv):
         r_emb = self.rm.get_input_embeddings()(bt["r_ids"]).float()
-        with torch.autocast(DEV, dtype=torch.bfloat16, enabled=DEV == "cuda"):
-            return self.mapper(r_emb, sk.float(), sv.float(), bt["pos"], bt["cross"])
+        with torch.autocast(DEV, dtype=torch.bfloat16, enabled=DEV == "cuda" and self.amp):
+            pos, cross = (bt["pos_b"], bt["cross_b"]) if self.blind else (bt["pos"], bt["cross"])
+            return self.mapper(r_emb, sk.float(), sv.float(), pos, cross)
 
 
 # ---- training ---------------------------------------------------------------------------------------------------------
@@ -341,11 +354,11 @@ def mse_loss(su: Setup, bt, pk, pv, rk, rv):
 
 
 def train(sender_path, receiver_path, out_path, steps1=3000, steps2=8000, bs=48, lr1=3e-4, lr2=5e-5, n_items=100_000,
-          B=7, D=1024, eval_every=1000, time_budget_s: float | None = None, log=print, seed=0):
+          B=7, D=1024, eval_every=1000, time_budget_s: float | None = None, log=print, seed=0, blind=False, templ_frac=0.15):
     t0 = time.time()
     torch.manual_seed(seed); random.seed(seed)
-    su = Setup(sender_path, receiver_path, B, D)
-    n_wiki = int(n_items * 0.85)
+    su = Setup(sender_path, receiver_path, B, D, blind=blind)
+    n_wiki = int(n_items * (1 - templ_frac))
     texts = wiki_texts("wikitext-103-raw-v1", "train")
     items = build_items(texts, n_wiki, seed) + templated_items(n_items - n_wiki, seed)
     random.Random(seed).shuffle(items)
@@ -401,9 +414,9 @@ def train(sender_path, receiver_path, out_path, steps1=3000, steps2=8000, bs=48,
             e.update(step=step + 1, stage=stage, seconds=round(time.time() - t0))
             hist.append(e)
             log("eval", json.dumps(e))
-            torch.save({"mapper": su.mapper.state_dict(), "sd": su.sd, "rd": su.rd, "B": B, "D": D, "hist": hist,
+            torch.save({"mapper": su.mapper.state_dict(), "sd": su.sd, "rd": su.rd, "B": B, "D": D, "blind": blind, "hist": hist,
                         "sender": sender_path, "receiver": receiver_path}, out_path)
-    torch.save({"mapper": su.mapper.state_dict(), "sd": su.sd, "rd": su.rd, "B": B, "D": D, "hist": hist,
+    torch.save({"mapper": su.mapper.state_dict(), "sd": su.sd, "rd": su.rd, "B": B, "D": D, "blind": blind, "hist": hist,
                 "sender": sender_path, "receiver": receiver_path}, out_path)
     return hist
 
@@ -433,7 +446,7 @@ def quick_eval(su: Setup, pool: Pool, n: int, bs=16):
 
 def load_mapper(ckpt_path: str, sender_path=None, receiver_path=None, dtype=torch.float32) -> "Setup":
     ck = torch.load(ckpt_path, map_location="cpu")
-    su = Setup(sender_path or ck["sender"], receiver_path or ck["receiver"], ck["B"], ck["D"])
+    su = Setup(sender_path or ck["sender"], receiver_path or ck["receiver"], ck["B"], ck["D"], dtype, blind=ck.get("blind", False))
     su.mapper.load_state_dict(ck["mapper"])
     su.mapper.eval()
     return su
