@@ -1,0 +1,6 @@
+exit=0
+The continuations are mostly incoherent chatter — house, dandelion, garden, a cat, a dog, school English — none of which maps to any listed topic. The only line touching a listed topic is: "Let me explain something regarding' the \"C\" and \"D\" in my car." That single literal occurrence of "car" is the only on-topic signal in the whole output, so it points at cars.
+
+ANSWER: cars
+
+--- stderr ---

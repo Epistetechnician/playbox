@@ -1,0 +1,14 @@
+exit=0
+Done. The command printed `wrote ...` (exit 0), and I confirmed the file landed at `results/telepathy/modal_big_shared/t72/thought.pt` — 2304 bytes = a 576-float vector for smollm2, matching the service's report.
+
+The 6 sentences I sent (S1–S6):
+- A contract is a promise a court will enforce if one side breaks it.
+- The Fifth Amendment lets a suspect refuse to answer questions in their own trial.
+- In a criminal case, the prosecution must prove guilt beyond a reasonable doubt.
+- A tenant in many states can repair a broken heater and deduct the cost from the rent.
+- The First Amendment bars the government from fining a person for what they said.
+- The statute of limitations on most felonies is six years in the United States.
+
+sent
+
+--- stderr ---

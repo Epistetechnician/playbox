@@ -197,12 +197,21 @@ after dropping duplicates). Held-out sentences, test concepts, models and streng
 | 1000 | 128 | 0.66 | 0.57 | 0.88 | 15 |
 | 1000 | 256 | 0.72 | 0.61 | 0.90 | 16 |
 
-- **More anchors help, and the 80% rule is met with room to spare.** 16 of 16 pairs are within 10 points of the pair
-  map at 713 anchors and at 1000 with k=256. Going from 426 to 1000 at k=256 adds 17 points of accuracy.
-- **The comparison is not fair to the pair map.** Its mean accuracy (0.59 into these 16 receivers) is from the main
-  run, fitted on the original 426 anchors only. The hub here beats it (0.65 to 0.72), but I did not refit the pair
-  maps on the extra anchors. Do not read this as "the hub is better than a pair map"; read it as "more anchor text
-  helps". The pair-map arm with the same anchors is the missing control.
+- **More anchors help, but the pair map gains just as much (control below).** The hub went from 0.57 to 0.72 into the
+  16 working receivers. Read it with the control, not alone: the hub did not overtake the pair map.
+- **Control: the per-pair ridge map fitted on the same anchors** (`steer/results/e8/e8_pair_control.json`, same setup;
+  its 426-anchor arm reproduces the main run's pair numbers in all 20 pairs, so the setup is the same).
+
+| anchors | pair map, 16 pairs | hub k=128 | pairs within 10 points of the pair map (of 16) | hub k=256 | pairs within 10 points (of 16) |
+|---|---|---|---|---|---|
+| 426 | 0.59 | 0.57 | 13 | 0.55 | 11 |
+| 713 | 0.69 | 0.67 | 13 | 0.65 | 15 |
+| 1000 | 0.72 | 0.66 | 13 | 0.72 | 15 |
+
+  The hub matches the pair map at 1000 anchors with k=256 (0.717 against 0.716) and trails it by 2 to 6 points
+  elsewhere, with the rule (13 of 16) met in every row but k=256 at 426. So the benefit is the one in 6a: 10 adapters
+  and 64 to 256 bytes instead of 20 maps, at no accuracy cost once k and the anchors are large enough. The earlier
+  reading that the hub beat the pair map was an artefact of fitting only the pair map on 426 anchors.
 - **Accuracy and held-out cosine disagree.** Cosine is flat or slightly down with the new anchors (0.90 to 0.88 at
   k=128) while accuracy goes up. The held-out sentences come from the original 16 topics, so cosine measures fit to
   that distribution; accuracy is on the five test concepts, which are outside both sets. More topic breadth helps the
@@ -210,7 +219,7 @@ after dropping duplicates). Held-out sentences, test concepts, models and streng
 - **The extra anchors are template text from the same generator.** A further gain may come from more varied text; this
   run shows only that more of this kind helps. 713 to 1000 is mixed at k=128 (0.67 to 0.66), so expect the gain from
   this kind of anchor to flatten around 700 to 1000; k=256 only pays off at 1000.
-- **Not tested:** pair maps on the same anchors, natural (non-template) anchor text, a second subset per size, more
+- **Not tested:** natural (non-template) anchor text, a second subset per size, more
   than 1000 anchors, other families.
 
 ## 7. Not covered

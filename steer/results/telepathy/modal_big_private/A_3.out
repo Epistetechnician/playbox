@@ -1,0 +1,14 @@
+exit=0
+sent
+
+My six sentences:
+1. The salt air stings the skin before the water is even in sight.
+2. A research vessel drags a sampling net across the surface at dawn.
+3. Beneath the hull, squid flash blue light in the pitch dark.
+4. Tide pools at low water hold starfish, anemones, and pale crabs.
+5. A pod of humpbacks breaches together off the continental shelf.
+6. The swell arrives in long gray walls that hollow the beach.
+
+The command printed `wrote .../t3/thought.pt` (one 576-float vector for smollm2); verified the file is 2304 bytes = 576 float32.
+
+--- stderr ---

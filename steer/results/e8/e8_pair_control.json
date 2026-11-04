@@ -1,0 +1,290 @@
+{
+ "arms": {
+  "pair_x0": 426,
+  "pair_x8": 713,
+  "pair_x16": 1000
+ },
+ "pairs": {
+  "qwen3->smollm2": {
+   "pair_x0": {
+    "acc": 0.65,
+    "heldout_cos": 0.9396
+   },
+   "pair_x8": {
+    "acc": 0.775,
+    "heldout_cos": 0.9391
+   },
+   "pair_x16": {
+    "acc": 0.825,
+    "heldout_cos": 0.9376
+   }
+  },
+  "pythia->smollm2": {
+   "pair_x0": {
+    "acc": 0.725,
+    "heldout_cos": 0.947
+   },
+   "pair_x8": {
+    "acc": 0.7,
+    "heldout_cos": 0.9451
+   },
+   "pair_x16": {
+    "acc": 0.775,
+    "heldout_cos": 0.9435
+   }
+  },
+  "gpt2m->smollm2": {
+   "pair_x0": {
+    "acc": 0.675,
+    "heldout_cos": 0.9492
+   },
+   "pair_x8": {
+    "acc": 0.625,
+    "heldout_cos": 0.9474
+   },
+   "pair_x16": {
+    "acc": 0.7,
+    "heldout_cos": 0.9456
+   }
+  },
+  "tinyllama->smollm2": {
+   "pair_x0": {
+    "acc": 0.625,
+    "heldout_cos": 0.9441
+   },
+   "pair_x8": {
+    "acc": 0.7,
+    "heldout_cos": 0.9449
+   },
+   "pair_x16": {
+    "acc": 0.675,
+    "heldout_cos": 0.9447
+   }
+  },
+  "smollm2->qwen3": {
+   "pair_x0": {
+    "acc": 0.525,
+    "heldout_cos": 0.893
+   },
+   "pair_x8": {
+    "acc": 0.6,
+    "heldout_cos": 0.8896
+   },
+   "pair_x16": {
+    "acc": 0.575,
+    "heldout_cos": 0.8872
+   }
+  },
+  "pythia->qwen3": {
+   "pair_x0": {
+    "acc": 0.5,
+    "heldout_cos": 0.9019
+   },
+   "pair_x8": {
+    "acc": 0.65,
+    "heldout_cos": 0.8999
+   },
+   "pair_x16": {
+    "acc": 0.625,
+    "heldout_cos": 0.8973
+   }
+  },
+  "gpt2m->qwen3": {
+   "pair_x0": {
+    "acc": 0.625,
+    "heldout_cos": 0.9041
+   },
+   "pair_x8": {
+    "acc": 0.625,
+    "heldout_cos": 0.9019
+   },
+   "pair_x16": {
+    "acc": 0.725,
+    "heldout_cos": 0.9002
+   }
+  },
+  "tinyllama->qwen3": {
+   "pair_x0": {
+    "acc": 0.45,
+    "heldout_cos": 0.9084
+   },
+   "pair_x8": {
+    "acc": 0.65,
+    "heldout_cos": 0.9093
+   },
+   "pair_x16": {
+    "acc": 0.7,
+    "heldout_cos": 0.9094
+   }
+  },
+  "smollm2->pythia": {
+   "pair_x0": {
+    "acc": 0.675,
+    "heldout_cos": 0.9122
+   },
+   "pair_x8": {
+    "acc": 0.9,
+    "heldout_cos": 0.9078
+   },
+   "pair_x16": {
+    "acc": 0.775,
+    "heldout_cos": 0.9048
+   }
+  },
+  "qwen3->pythia": {
+   "pair_x0": {
+    "acc": 0.55,
+    "heldout_cos": 0.9152
+   },
+   "pair_x8": {
+    "acc": 0.65,
+    "heldout_cos": 0.9141
+   },
+   "pair_x16": {
+    "acc": 0.575,
+    "heldout_cos": 0.9121
+   }
+  },
+  "gpt2m->pythia": {
+   "pair_x0": {
+    "acc": 0.475,
+    "heldout_cos": 0.9294
+   },
+   "pair_x8": {
+    "acc": 0.625,
+    "heldout_cos": 0.9287
+   },
+   "pair_x16": {
+    "acc": 0.625,
+    "heldout_cos": 0.9273
+   }
+  },
+  "tinyllama->pythia": {
+   "pair_x0": {
+    "acc": 0.45,
+    "heldout_cos": 0.9232
+   },
+   "pair_x8": {
+    "acc": 0.425,
+    "heldout_cos": 0.9236
+   },
+   "pair_x16": {
+    "acc": 0.7,
+    "heldout_cos": 0.9236
+   }
+  },
+  "smollm2->gpt2m": {
+   "pair_x0": {
+    "acc": 0.6,
+    "heldout_cos": 0.9234
+   },
+   "pair_x8": {
+    "acc": 0.75,
+    "heldout_cos": 0.9167
+   },
+   "pair_x16": {
+    "acc": 0.75,
+    "heldout_cos": 0.9134
+   }
+  },
+  "qwen3->gpt2m": {
+   "pair_x0": {
+    "acc": 0.525,
+    "heldout_cos": 0.9246
+   },
+   "pair_x8": {
+    "acc": 0.7,
+    "heldout_cos": 0.9225
+   },
+   "pair_x16": {
+    "acc": 0.8,
+    "heldout_cos": 0.9212
+   }
+  },
+  "pythia->gpt2m": {
+   "pair_x0": {
+    "acc": 0.75,
+    "heldout_cos": 0.9376
+   },
+   "pair_x8": {
+    "acc": 0.875,
+    "heldout_cos": 0.9357
+   },
+   "pair_x16": {
+    "acc": 0.85,
+    "heldout_cos": 0.9346
+   }
+  },
+  "tinyllama->gpt2m": {
+   "pair_x0": {
+    "acc": 0.7,
+    "heldout_cos": 0.9343
+   },
+   "pair_x8": {
+    "acc": 0.75,
+    "heldout_cos": 0.9345
+   },
+   "pair_x16": {
+    "acc": 0.775,
+    "heldout_cos": 0.9336
+   }
+  },
+  "smollm2->tinyllama": {
+   "pair_x0": {
+    "acc": 0.175,
+    "heldout_cos": 0.8826
+   },
+   "pair_x8": {
+    "acc": 0.125,
+    "heldout_cos": 0.8764
+   },
+   "pair_x16": {
+    "acc": 0.175,
+    "heldout_cos": 0.8723
+   }
+  },
+  "qwen3->tinyllama": {
+   "pair_x0": {
+    "acc": 0.175,
+    "heldout_cos": 0.8958
+   },
+   "pair_x8": {
+    "acc": 0.25,
+    "heldout_cos": 0.8944
+   },
+   "pair_x16": {
+    "acc": 0.175,
+    "heldout_cos": 0.8929
+   }
+  },
+  "pythia->tinyllama": {
+   "pair_x0": {
+    "acc": 0.1,
+    "heldout_cos": 0.8974
+   },
+   "pair_x8": {
+    "acc": 0.275,
+    "heldout_cos": 0.8941
+   },
+   "pair_x16": {
+    "acc": 0.35,
+    "heldout_cos": 0.8916
+   }
+  },
+  "gpt2m->tinyllama": {
+   "pair_x0": {
+    "acc": 0.225,
+    "heldout_cos": 0.8995
+   },
+   "pair_x8": {
+    "acc": 0.2,
+    "heldout_cos": 0.8971
+   },
+   "pair_x16": {
+    "acc": 0.15,
+    "heldout_cos": 0.8934
+   }
+  }
+ },
+ "chance": 0.2
+}

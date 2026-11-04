@@ -1,0 +1,22 @@
+[
+ {
+  "i": 0,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "politics",
+  "guess": "politics",
+  "ok": true,
+  "attempts": 1,
+  "secs": 52
+ },
+ {
+  "i": 1,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "dinosaurs",
+  "guess": "dinosaurs",
+  "ok": true,
+  "attempts": 1,
+  "secs": 42
+ }
+]

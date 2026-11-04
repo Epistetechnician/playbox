@@ -1,0 +1,6 @@
+exit=0
+The continuations are noisy, but they cluster hard around gambling: "best poker chips in the world," "roulette" (three separate continuations), "casino online slot machine game," "the roulette table... a hand of", and "If you know how to [play] your hand". Two continuations mention "best player in the NBA," which is a competing signal, but it's weaker and sparser than the recurring poker/roulette/casino imagery.
+
+ANSWER: poker
+
+--- stderr ---
