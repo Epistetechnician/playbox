@@ -270,8 +270,8 @@ the L2 comparison. No blind direction passed.
 
 ### Cost
 
-GPU node `playbox-e6-cuda`: about 18.8 USD for this stage (node cumulative 21.78 USD, 2.96 USD before it), including about
-1.2 USD lost to the two blind jobs that ran out of GPU memory by being launched alongside the sighted run. Under the 28.9 USD
+GPU node `playbox-e6-cuda`: about 18.8 USD for this stage (node cumulative 21.78 USD, 2.96 USD before it) including the
+time lost to the two blind jobs that ran out of GPU memory when launched alongside the sighted run. Under the 28.9 USD
 cap. The node was stopped and reads `stopped (disk intact)` in `gman node ls`.
 
 ### Recommendation
