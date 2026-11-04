@@ -4,6 +4,7 @@
     modal run --detach steer/tools/e8_modal.py --what main     # main comparison
     modal run --detach steer/tools/e8_modal.py --what anchors  # anchor-count sweep (subsets of the 426)
     modal run --detach steer/tools/e8_modal.py --what more     # more anchors than 426 (anchors_extra.py)
+    modal run --detach steer/tools/e8_modal.py --what chain    # models joining one at a time vs a hub fitted on all
     modal run --detach steer/tools/e8_modal.py --what cards    # concept cards for the closed-model arm (sender side)
     modal run --detach steer/tools/e8_modal.py --what pairs    # per-pair ridge maps on those same anchors (the control)
     modal volume get playbox-e8 e8_sweep.json steer/results/e8/e8_sweep.json
@@ -20,7 +21,7 @@ import modal
 
 STEER = Path(__file__).resolve().parents[1]
 
-FILES = {"sweep": "e8_sweep.json", "main": "e8_main_modal.json", "anchors": "e8_anchors.json", "more": "e8_more_anchors.json", "pairs": "e8_pair_control.json", "cards": "e8_cards.json"}
+FILES = {"sweep": "e8_sweep.json", "main": "e8_main_modal.json", "anchors": "e8_anchors.json", "more": "e8_more_anchors.json", "pairs": "e8_pair_control.json", "cards": "e8_cards.json", "chain": "e8_chain.json"}
 app = modal.App("playbox-e8")
 vol = modal.Volume.from_name("playbox-e8", create_if_missing=True)
 image = (
@@ -48,6 +49,8 @@ def run(what: str) -> dict:
 
     if what == "main":
         res = hub_run.run(paths, frac=0.45, k=64, coefs=(0.5,), n_null=6, gen=24)
+    elif what == "chain":
+        res = hub_run.join_chain(paths)
     elif what == "cards":
         res = hub_run.cards(paths)
     elif what == "pairs":

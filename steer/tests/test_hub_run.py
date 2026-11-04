@@ -104,3 +104,11 @@ def test_cards_carry_no_sender_text_and_the_text_baseline_is_budget_matched(zoo)
     for it in r["items"]:
         assert it["wire_bytes"] == 8 and it["text"].startswith("[text summary] key words: ")
     assert len(hub_run.text_baseline(TEST_CONCEPTS["ocean"]["sentences"], 6).split(",")) == 6
+
+
+def test_join_chain_grows_a_hub_one_model_at_a_time(zoo):
+    r = hub_run.join_chain(zoo, base=("gpt2_s",), extra=2, k=8, gen=2, concepts=["ocean", "space"], prompts=PROMPTS[:1])
+    assert set(r["hubs"]) == {"all", "chain_llama_s-llama_m", "chain_llama_m-llama_s"}
+    assert r["base"] == ["gpt2_s"] and r["orders"] == [["llama_s", "llama_m"], ["llama_m", "llama_s"]]
+    assert all(set(c) == set(r["hubs"]) for c in r["pairs"].values())
+    assert all(h["models"] and "gpt2_s" in h["models"] for h in r["hubs"].values())

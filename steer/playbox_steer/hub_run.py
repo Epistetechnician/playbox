@@ -365,3 +365,37 @@ def cards(models: dict[str, str], extra: int = 16, k: int = 256, rank_frac: floa
         nulls.append({"src": src, "card": card_for(H.dequantize(raw, scale))["text"]})
     return {"hub": {"k": hub.k, "anchors": len(anchors), "models": list(info)}, "items": items, "nulls": nulls,
             "concepts": concepts, "chance": 1 / len(concepts)}
+
+
+def join_chain(models: dict[str, str], base: tuple[str, ...] | None = None, orders: tuple[tuple[str, ...], ...] | None = None,
+               extra: int = 16, k: int = 256, rank_frac: float = 0.6, frac: float = 0.45, coef: float = 0.5, gen: int = 24,
+               concepts: list[str] | None = None, prompts: list[str] | None = None) -> dict:
+    """E8 follow-up: does a hub that grows one model at a time drift from one fitted on everyone?
+
+    `all`: the hub fitted on every model at once. `chain_<a>-<b>-...`: fitted on the `base` models only, then each model of
+    the order joins in turn with its own adapters; nobody is refitted, so an earlier spoke never changes when a later one
+    joins, and what can differ from `all` is the shared coordinates (built from the base models alone) and so how well the
+    joiners fit them. Same anchors (426 + `extra` topics), whitening rank `rank_frac * n`, strength and scoring as 6d."""
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(TEST_CONCEPTS)
+    prompts = prompts or PROMPTS
+    names = list(models)
+    base = base or tuple(names[:2])
+    rest = [n for n in names if n not in base]
+    orders = orders or (tuple(rest), tuple(reversed(rest)))
+    train, held = _anchor_split()
+    anchors = train + extra_anchors(extra, set(train) | set(held))
+    info = {n: _sender_pass(p, frac, anchors, held, concepts) for n, p in models.items()}
+    digest = H.anchor_digest(anchors)
+    r = round(rank_frac * len(anchors))
+    states = {n: i["train"] for n, i in info.items()}
+    hubs: dict[str, H.Hub] = {"all": H.fit_hub(states, digest, k=k, r=r)}
+    for order in orders:
+        hub = H.fit_hub({n: states[n] for n in base}, digest, k=k, r=r)
+        for n in order:
+            hub.add_spoke(n, states[n])
+        hubs["chain_" + "-".join(order)] = hub
+    res = _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
+    res["base"] = list(base)
+    res["orders"] = [list(o) for o in orders]
+    return res
