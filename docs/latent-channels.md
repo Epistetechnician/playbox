@@ -2,8 +2,8 @@
 
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
-section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) and 6c (anchor-count
-sweep). The token-cost comparison and the closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
+section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
+sweep) and 6d (more anchors). The token-cost comparison and the closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -180,6 +180,38 @@ sentences and concepts are unchanged. One run.
 - **The first attempt was confounded.** It kept every whitened direction for n up to 257 and gave a non-monotonic
   curve (200 worse than 100). Its raw output is kept as `e8_anchors_v1.json`; do not use it.
 - **Not tested:** more than 426 anchors; k=64 with the scaled rank; the choice of the 0.6 factor itself; other families.
+
+## 6d. More anchors than 426 (2026-11-03)
+
+`steer/results/e8/e8_more_anchors.json`, from `steer/tools/e8_modal.py --what more` (Modal, A10G). The 426 anchors plus
+the sentences of 8 or 16 new topics (`anchors_extra.py`, same templates, no word from a test lexicon, 574 sentences
+after dropping duplicates). Held-out sentences, test concepts, models and strength unchanged. Whitening rank
+`0.6 n`. One run, one anchor set per size.
+
+| anchors | k | accuracy, 16 not into TinyLlama | accuracy, all 20 | held-out cosine | pairs within 10 points of the pair map (of 16) |
+|---|---|---|---|---|---|
+| 426 | 128 | 0.57 | 0.50 | 0.90 | 13 |
+| 426 | 256 | 0.55 | 0.47 | 0.92 | 11 |
+| 713 | 128 | 0.67 | 0.57 | 0.89 | 16 |
+| 713 | 256 | 0.65 | 0.56 | 0.91 | 16 |
+| 1000 | 128 | 0.66 | 0.57 | 0.88 | 15 |
+| 1000 | 256 | 0.72 | 0.61 | 0.90 | 16 |
+
+- **More anchors help, and the 80% rule is met with room to spare.** 16 of 16 pairs are within 10 points of the pair
+  map at 713 anchors and at 1000 with k=256. Going from 426 to 1000 at k=256 adds 17 points of accuracy.
+- **The comparison is not fair to the pair map.** Its mean accuracy (0.59 into these 16 receivers) is from the main
+  run, fitted on the original 426 anchors only. The hub here beats it (0.65 to 0.72), but I did not refit the pair
+  maps on the extra anchors. Do not read this as "the hub is better than a pair map"; read it as "more anchor text
+  helps". The pair-map arm with the same anchors is the missing control.
+- **Accuracy and held-out cosine disagree.** Cosine is flat or slightly down with the new anchors (0.90 to 0.88 at
+  k=128) while accuracy goes up. The held-out sentences come from the original 16 topics, so cosine measures fit to
+  that distribution; accuracy is on the five test concepts, which are outside both sets. More topic breadth helps the
+  concepts the anchors never covered, which is what the channel is for. I did not test this explanation.
+- **The extra anchors are template text from the same generator.** A further gain may come from more varied text; this
+  run shows only that more of this kind helps. 713 to 1000 is mixed at k=128 (0.67 to 0.66), so expect the gain from
+  this kind of anchor to flatten around 700 to 1000; k=256 only pays off at 1000.
+- **Not tested:** pair maps on the same anchors, natural (non-template) anchor text, a second subset per size, more
+  than 1000 anchors, other families.
 
 ## 7. Not covered
 
