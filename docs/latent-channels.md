@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep) 6d (more anchors) 6e (concept cards for a text-only reader) and 6f (the hub in a room). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) and 6g (an end-to-end run through a room). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -289,10 +289,47 @@ truncated or flipped message, the per-member bound, a stranger) and a fixed-key 
 that the Rust packer must reproduce byte for byte; `steer/tests/test_hub.py` (round trip, tampering, an untrusted signer,
 another hub's message).
 
-Not built: persistence of the mailbox; a rate limit beyond the bounds; a Python client that talks to a room (the
-Python side signs and verifies; sending goes through the Rust client); commit-and-challenge (item 3 in section 5), so a
+Not built: persistence of the mailbox; a rate limit beyond the bounds; (the Python side reaches a room through
+`playbox latent session`, section 6g); commit-and-challenge (item 3 in section 5), so a
 signed vector shows who sent it, not that it is honest; a host-side check that a hub id is one the room uses; and
 putting a decoded vector through the existing steering guard check on the receiving member.
+
+## 6g. End to end through a room (2026-11-04)
+
+`steer/results/e8/e8_room.json`, from `steer/tools/e8_room_demo.py`. Everything below ran on one Mac (CPU) in one
+session, with the transport real: a `playbox up --local` host, one `playbox latent session` member per model (new
+command, `crates/playbox-cli/src/latent.rs`), each with its own identity key, and `steer/playbox_steer/latent_room.py` for
+the Python side. Models: SmolLM2-135M, Pythia-410m, GPT-2 (three architectures). Hub: 1000 anchors, k=256. Strength 0.5,
+5 concepts x 8 prompts per message. One run.
+
+Flow: each model reads a concept, encodes it into the hub and posts a signed `PBL2` envelope (628 to 631 bytes with the
+header and signature, 256 of them the vector) to the room. Each other model pulls, verifies the signature against the
+sender's key, decodes with its own spoke, runs the guard check, applies the vector and generates. The concept label never
+travels; the script keeps it to score.
+
+| | result |
+|---|---|
+| messages delivered (3 senders x 5 concepts x 2 receivers) | 30 |
+| accuracy through the room, all 30 (240 texts, chance 20%) | 70% |
+| the receiver's own direction (upper bound) | 89% |
+| medicine blocked by the receiver's guard (a direction in the receiver's own space, class `medicine`, cosine >= 0.5) | 6 of 6; no other concept blocked |
+| accuracy over the 24 delivered | 69% |
+| a post signed by pythia's key but sent by smollm2's member | refused by the host: "the message must be signed by the member who sends it" |
+| feed notices (one per message, no vector in them) | 15 |
+| text identical to the in-process path (no int8, no room) | 202 of 240; the rest differ only by int8 rounding of the 256 values |
+
+By receiver: into SmolLM2 26 and 31 of 40 from GPT-2 and Pythia (its own direction: 34); into GPT-2 25 and 27 (own: 39);
+into Pythia 33 and 26 (own: 34). By concept: space 43 of 48, medicine 35, music 35, ocean 33, sport 22 (sport is weakest,
+as in the earlier E8 runs).
+
+- **What this shows:** the whole path works as designed across three architectures, over a real host: a signed vector
+  goes in, a differently built model decodes it and says something on topic about 7 times in 10, a forged sender is
+  refused by the host, and a guarded direction is stopped by the receiver without the host ever decoding anything.
+- **What it does not show:** the models are small (the hub's numbers in 6a to 6d are for larger ones and this run's
+  accuracy is lower than the 5-family 1000-anchor run); the receiver's spoke came from the same process as the sender's
+  (a real deployment ships a spoke, not a hub fit, to each member); the guard here is a single direction I built from
+  the receiver's own medicine concept, so it shows the mechanism, not that unknown unsafe directions are caught; one run,
+  one subset of concepts; the host is local and honest.
 
 ## 7. Not covered
 

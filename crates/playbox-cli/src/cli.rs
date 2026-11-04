@@ -179,6 +179,9 @@ pub enum Cmd {
     Release(ReleaseCmd),
     /// Print your guest id, so a host can bind a join link to you
     Id,
+    /// Hub latent messages (docs/latent-channels.md): relay signed vectors for an agent that holds its own key
+    #[command(subcommand)]
+    Latent(LatentCmd),
     /// Run one MCP tool once (e.g. `call verify path=log`, `call checkpoint`)
     Call {
         /// Tool name, with or without the playbox_ prefix
@@ -373,5 +376,19 @@ pub enum ReleaseCmd {
         pubkey: String,
         #[arg(long)]
         sig: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum LatentCmd {
+    /// Join a room once and relay `send` / `pull` / `feed` requests as JSON lines on stdin and stdout
+    Session {
+        link: String,
+        #[command(flatten)]
+        transport: TransportArgs,
+        /// The 32-byte identity key to join with (created if missing); default PLAYBOX_HOME/guest.key. A signed
+        /// message must be signed by this same key.
+        #[arg(long, value_name = "FILE")]
+        key: Option<String>,
     },
 }

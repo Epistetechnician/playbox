@@ -1,5 +1,6 @@
 mod cli;
 mod doctor;
+mod latent;
 mod python;
 mod release;
 mod rooms;
@@ -10,7 +11,7 @@ mod tui;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use cli::{Cli, Cmd, ReleaseCmd, SteerCmd};
+use cli::{Cli, Cmd, LatentCmd, ReleaseCmd, SteerCmd};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -36,6 +37,7 @@ async fn main() -> Result<()> {
         Cmd::Call { tool, args, json } => session::call(&tool, &args, json.as_deref()).await,
         Cmd::Mcp => session::mcp().await,
         Cmd::Id => rooms::guest_id(),
+        Cmd::Latent(LatentCmd::Session { link, transport, key }) => latent::session(&link, &transport, key).await,
         Cmd::Release(r) => match r {
             ReleaseCmd::Keygen { out } => release::keygen(&out),
             ReleaseCmd::Sign { file, key } => release::sign(&file, &key),

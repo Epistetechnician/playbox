@@ -137,3 +137,17 @@ def test_signed_envelope_round_trips_and_refuses_tampering_and_strangers():
     other_hub = H.fit_hub(make(["a", "b"], seed=3)[1], "anchors2", k=Q)
     with pytest.raises(ValueError, match="different hub"):
         H.unpack_signed(other_hub, blob)
+
+
+def test_guard_blocks_only_denied_classes_near_a_listed_direction():
+    from playbox_steer.latent_room import guard_blocks
+
+    g = torch.zeros(8)
+    g[0] = 1.0
+    guards = {"unsafe": (g, "harm"), "benign": (g, "style")}
+    near = torch.tensor([1.0, 0.2, 0, 0, 0, 0, 0, 0])
+    far = torch.tensor([0.0, 1.0, 0, 0, 0, 0, 0, 0])
+    assert guard_blocks(near, guards, {"harm"}) == ["unsafe"]
+    assert guard_blocks(-near, guards, {"harm"}) == ["unsafe"]  # sign does not matter
+    assert guard_blocks(far, guards, {"harm"}) == []
+    assert guard_blocks(near, guards, set()) == []

@@ -1,0 +1,423 @@
+{
+ "hub": {
+  "id": "5bc1cb945fea1546",
+  "k": 256,
+  "anchors": 1000,
+  "models": [
+   "smollm2",
+   "gpt2",
+   "pythia"
+  ]
+ },
+ "messages": [
+  {
+   "src": "gpt2",
+   "dst": "smollm2",
+   "concept": "ocean",
+   "seq": 6,
+   "hits": 7,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 5,
+   "example": " the\nand the sea, and the waves. The wind is so fierce that it\ntakes my breath away like"
+  },
+  {
+   "src": "gpt2",
+   "dst": "smollm2",
+   "concept": "space",
+   "seq": 7,
+   "hits": 7,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the moon and its orbit.\nThe sun is a giant ball of gas that surrounds it, which creates an enormous magnetic"
+  },
+  {
+   "src": "gpt2",
+   "dst": "smollm2",
+   "concept": "music",
+   "seq": 8,
+   "hits": 4,
+   "n": 8,
+   "direct_hits": 4,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the\n_Tuner_, and the _Swan_.\n\n[Footnote: _Chorus of"
+  },
+  {
+   "src": "gpt2",
+   "dst": "smollm2",
+   "concept": "sport",
+   "seq": 9,
+   "hits": 2,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the\ncowboys and the cow-hands.\n\n\"I've got a big, fat pig!\"\n"
+  },
+  {
+   "src": "gpt2",
+   "dst": "smollm2",
+   "concept": "medicine",
+   "seq": 10,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [
+    "medicine-direction"
+   ],
+   "same_text_as_in_process": 6,
+   "example": " the effects of the drug on my heart.\n\nI have been told that I can get a tetanus shot if I"
+  },
+  {
+   "src": "pythia",
+   "dst": "smollm2",
+   "concept": "ocean",
+   "seq": 11,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 5,
+   "example": " the\nsky and the sea, and the white waves rolling over the shore.\n\nThe wind-blown foam is"
+  },
+  {
+   "src": "pythia",
+   "dst": "smollm2",
+   "concept": "space",
+   "seq": 12,
+   "hits": 8,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the sun and its corona.\n\nThe Sun is a giant ball of hot plasma, which has been spinning at "
+  },
+  {
+   "src": "pythia",
+   "dst": "smollm2",
+   "concept": "music",
+   "seq": 13,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 4,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 6,
+   "example": " the\n_Tuner_, and the _Chorus_.\n\n\"I have a little harp, and"
+  },
+  {
+   "src": "pythia",
+   "dst": "smollm2",
+   "concept": "sport",
+   "seq": 14,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 5,
+   "example": " the 10-man game.\n\nI'm not sure if I can do that, but I'll be"
+  },
+  {
+   "src": "pythia",
+   "dst": "smollm2",
+   "concept": "medicine",
+   "seq": 15,
+   "hits": 7,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [
+    "medicine-direction"
+   ],
+   "same_text_as_in_process": 5,
+   "example": " the effects of the virus on my body.\n\nI have been diagnosed with HIV, and I am taking medications for"
+  },
+  {
+   "src": "smollm2",
+   "dst": "gpt2",
+   "concept": "ocean",
+   "seq": 1,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the ocean and its currents.\n\nThe first of these waves, which are now a series that has been for years"
+  },
+  {
+   "src": "smollm2",
+   "dst": "gpt2",
+   "concept": "space",
+   "seq": 2,
+   "hits": 7,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the stars and their beauty.\nI have seen many of these, but they are not as bright or powerful yet!"
+  },
+  {
+   "src": "smollm2",
+   "dst": "gpt2",
+   "concept": "music",
+   "seq": 3,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the way that my voice is going through a series of notes and chords, which are all in harmony.\nI've"
+  },
+  {
+   "src": "smollm2",
+   "dst": "gpt2",
+   "concept": "sport",
+   "seq": 4,
+   "hits": 3,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 6,
+   "example": " the way he's been playing and trying to get back into his stride, but it was a big blow for him in"
+  },
+  {
+   "src": "smollm2",
+   "dst": "gpt2",
+   "concept": "medicine",
+   "seq": 5,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [
+    "medicine-direction"
+   ],
+   "same_text_as_in_process": 4,
+   "example": " the way my body is being used to treat me.\n\"I have a very high fever and it's not working"
+  },
+  {
+   "src": "pythia",
+   "dst": "gpt2",
+   "concept": "ocean",
+   "seq": 11,
+   "hits": 4,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 5,
+   "example": " the sea and its blue.\nAnd then, as it rose from a cliff in front of my eyes, there was"
+  },
+  {
+   "src": "pythia",
+   "dst": "gpt2",
+   "concept": "space",
+   "seq": 12,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 5,
+   "example": " the sky.\nThe sun is a bright, white and blue-like star that's been burning for thousands of years"
+  },
+  {
+   "src": "pythia",
+   "dst": "gpt2",
+   "concept": "music",
+   "seq": 13,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the way he sings and plays.\nI've been playing for him since 'The Big Bang' in his studio,"
+  },
+  {
+   "src": "pythia",
+   "dst": "gpt2",
+   "concept": "sport",
+   "seq": 14,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the numbers.\n\"I'm not sure how many people are going to be able, but they're really good and"
+  },
+  {
+   "src": "pythia",
+   "dst": "gpt2",
+   "concept": "medicine",
+   "seq": 15,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [
+    "medicine-direction"
+   ],
+   "same_text_as_in_process": 8,
+   "example": " the possibility of a new Ebola virus.\n\"I think it's going to be very difficult for us,\" he said"
+  },
+  {
+   "src": "smollm2",
+   "dst": "pythia",
+   "concept": "ocean",
+   "seq": 1,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the future.\n\nI\u2019ve been here for a few days and it is beautiful, but there are some nasty"
+  },
+  {
+   "src": "smollm2",
+   "dst": "pythia",
+   "concept": "space",
+   "seq": 2,
+   "hits": 8,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the stars, and the moon.\n\nThe moon is a beautiful star that orbits the Earth every night. The moon"
+  },
+  {
+   "src": "smollm2",
+   "dst": "pythia",
+   "concept": "music",
+   "seq": 3,
+   "hits": 8,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the future of the band, and how it will be played in a way that is both accessible and expressive.\n\n"
+  },
+  {
+   "src": "smollm2",
+   "dst": "pythia",
+   "concept": "sport",
+   "seq": 4,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the possibility of a comeback.\n\nThe Jets have been playing with fire since the first round, but they are still"
+  },
+  {
+   "src": "smollm2",
+   "dst": "pythia",
+   "concept": "medicine",
+   "seq": 5,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 4,
+   "blocked_by_guard": [
+    "medicine-direction"
+   ],
+   "same_text_as_in_process": 8,
+   "example": " the possibility of a virus that could be used to treat patients.\n\nThe first case of Ebola in West Africa was"
+  },
+  {
+   "src": "gpt2",
+   "dst": "pythia",
+   "concept": "ocean",
+   "seq": 6,
+   "hits": 6,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 7,
+   "example": " the future.\n\nThe city is a vast expanse of sand, and the sea is a mile wide. The"
+  },
+  {
+   "src": "gpt2",
+   "dst": "pythia",
+   "concept": "space",
+   "seq": 7,
+   "hits": 7,
+   "n": 8,
+   "direct_hits": 7,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the possibility of a black hole, and it's not far from our solar system.\n\nThe moon is an enormous"
+  },
+  {
+   "src": "gpt2",
+   "dst": "pythia",
+   "concept": "music",
+   "seq": 8,
+   "hits": 7,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the way I play my guitar, and it's been a big part of my life for years.\n\nI've"
+  },
+  {
+   "src": "gpt2",
+   "dst": "pythia",
+   "concept": "sport",
+   "seq": 9,
+   "hits": 1,
+   "n": 8,
+   "direct_hits": 8,
+   "blocked_by_guard": [],
+   "same_text_as_in_process": 8,
+   "example": " the possibility of a comeback.\n\n\"I'm not sure if it's going to work, but I think he"
+  },
+  {
+   "src": "gpt2",
+   "dst": "pythia",
+   "concept": "medicine",
+   "seq": 10,
+   "hits": 5,
+   "n": 8,
+   "direct_hits": 4,
+   "blocked_by_guard": [
+    "medicine-direction"
+   ],
+   "same_text_as_in_process": 8,
+   "example": " the possibility of a brain tumor.\n\nI have been told that I am not allowed to smoke, but I can"
+  }
+ ],
+ "chance": 0.2,
+ "envelope_bytes": [
+  628,
+  630,
+  631
+ ],
+ "forged_post_refused": true,
+ "forged_post_error": "latent refused: the message must be signed by the member who sends it",
+ "feed_notices": [
+  "[latent] hub 5bc1cb945fea1546 from smollm2 k=256 seq=1",
+  "[latent] hub 5bc1cb945fea1546 from smollm2 k=256 seq=2",
+  "[latent] hub 5bc1cb945fea1546 from smollm2 k=256 seq=3",
+  "[latent] hub 5bc1cb945fea1546 from smollm2 k=256 seq=4",
+  "[latent] hub 5bc1cb945fea1546 from smollm2 k=256 seq=5",
+  "[latent] hub 5bc1cb945fea1546 from gpt2 k=256 seq=6",
+  "[latent] hub 5bc1cb945fea1546 from gpt2 k=256 seq=7",
+  "[latent] hub 5bc1cb945fea1546 from gpt2 k=256 seq=8",
+  "[latent] hub 5bc1cb945fea1546 from gpt2 k=256 seq=9",
+  "[latent] hub 5bc1cb945fea1546 from gpt2 k=256 seq=10",
+  "[latent] hub 5bc1cb945fea1546 from pythia k=256 seq=11",
+  "[latent] hub 5bc1cb945fea1546 from pythia k=256 seq=12",
+  "[latent] hub 5bc1cb945fea1546 from pythia k=256 seq=13",
+  "[latent] hub 5bc1cb945fea1546 from pythia k=256 seq=14",
+  "[latent] hub 5bc1cb945fea1546 from pythia k=256 seq=15"
+ ],
+ "summary": {
+  "messages": 30,
+  "accuracy_all_ungated": 0.7,
+  "accuracy_direct_upper_bound": 0.8917,
+  "delivered_after_guard": 24,
+  "blocked_by_guard": [
+   "medicine"
+  ],
+  "blocked_count": 6,
+  "accuracy_delivered": 0.6927,
+  "same_text_as_in_process": "202/240"
+ }
+}

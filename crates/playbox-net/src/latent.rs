@@ -337,6 +337,8 @@ pub struct Delivered {
     pub seq: u64,
     pub from: String,
     pub envelope: Envelope,
+    /// The envelope exactly as the host delivered it (already verified), for passing on.
+    pub raw: Vec<u8>,
 }
 
 impl Client {
@@ -390,6 +392,7 @@ impl Client {
                 seq: it["seq"].as_u64().unwrap_or(0),
                 from: it["from"].as_str().unwrap_or_default().to_string(),
                 envelope,
+                raw: bytes,
             });
         }
         Ok((out, v["next"].as_u64().unwrap_or(since)))
