@@ -69,7 +69,17 @@ class Service:
                 vol.commit()
                 print("fitted", src, dst, info, flush=True)
             self.maps[(src, dst)] = torch.load(f)
-        print("ready", flush=True)
+        # Typical size of a real topic's mapped thought, so a weak (neutral) thought stays weak instead of being rescaled to full strength.
+        from playbox_steer.telepathy_data import TEST_CONCEPTS
+        self.ref = {}
+        for src, dst in PAIRS:
+            m = self.maps[(src, dst)]
+            ma, ta = self.models[src]
+            la = T.layer_of(ma, FRAC)
+            norms = [((T.sentence_states(ma, ta, c["sentences"], la).mean(0) - m["neutral_a"]) @ m["w"]).norm()
+                     for c in TEST_CONCEPTS.values()]
+            self.ref[(src, dst)] = torch.stack(norms).mean()
+        print("ready", {f"{a}->{b}": float(v) for (a, b), v in self.ref.items()}, flush=True)
 
     @modal.asgi_app()
     def web(self):
@@ -111,7 +121,10 @@ class Service:
             with self.lock:
                 d = T.sentence_states(ma, ta, r.texts, T.layer_of(ma, FRAC)).mean(0) - m["neutral_a"]
             v = d @ m["w"]
-            v = (v / v.norm() * COEF * m["norm_b"]).float().contiguous()
+            # strength follows the thought's size relative to a real topic's (capped), so a neutral thought is quiet
+            v = (v / self.ref[(r.src, r.dst)] * COEF * m["norm_b"]).float()
+            cap = 1.25 * COEF * m["norm_b"]
+            v = (v * min(1.0, float(cap / v.norm()))).contiguous()
             return {"vec": base64.b64encode(v.numpy().tobytes()).decode(), "dim": v.numel()}
 
         @api.post("/listen", dependencies=[Depends(auth)])
@@ -125,7 +138,8 @@ class Service:
             v = torch.frombuffer(bytearray(raw), dtype=torch.float32).clone()
             lb = T.layer_of(mb, FRAC)
             with self.lock:
-                lines = [f"- {p}{T.generate(mb, tb, lb, v, p, GEN)!r}" for p in self.PROMPTS]
+                lines = [f"- {p}\n    plain:   {T.generate(mb, tb, lb, None, p, GEN)!r}\n    steered: {T.generate(mb, tb, lb, v, p, GEN)!r}"
+                         for p in self.PROMPTS]
             return {"text": "\n".join(lines)}
 
         return api

@@ -1,0 +1,325 @@
+{
+ "hub": {
+  "k": 256,
+  "anchors": 1000,
+  "models": [
+   "smollm2",
+   "qwen3",
+   "pythia",
+   "gpt2m",
+   "tinyllama"
+  ]
+ },
+ "items": [
+  {
+   "src": "smollm2",
+   "concept": "ocean",
+   "card": "[hub card] nearest topics: castle, workshop, farm. nearest words: drawbridge, tower, rose, cold, split, lathe.",
+   "text": "[text summary] key words: lighthouse, shipwreck, crashing, dolphins, drifting, circled.",
+   "sentences": "Waves rolled across the open sea under a pale sky. The sailor watched the tide pull the boat toward deep water. Salt spray stung his face as the ship crested another swell. Whales and dolphins moved through the cold blue depths. The reef was full of coral, fish and drifting seaweed. A lighthouse stood on the rocks above the crashing surf. They dived below the surface to see the shipwreck. Gulls circled over the harbor as the fleet came in.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "smollm2",
+   "concept": "space",
+   "card": "[hub card] nearest topics: workshop, castle, mountain. nearest words: gate, split, lathe, tower, cold, loomed.",
+   "text": "[text summary] key words: black, astronauts, telescope, asteroid, galaxies, revealed.",
+   "sentences": "The rocket lifted off toward orbit above the planet. Astronauts floated inside the station as Earth turned below. A telescope revealed distant galaxies glowing in the dark. The probe crossed the asteroid belt on its way to Jupiter. Stars and nebulae filled the endless black of the cosmos. Mission control counted down to the moon landing. Gravity bent the light around the black hole. The comet's tail stretched across the night sky.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "smollm2",
+   "concept": "music",
+   "card": "[hub card] nearest topics: theater, circus, factory. nearest words: hummed, bench, docket, listened, steep, pine.",
+   "text": "[text summary] key words: guitarist, listeners, orchestra, practiced, released, symphony.",
+   "sentences": "The guitarist tuned his strings before the concert began. A choir sang a slow melody in perfect harmony. The drummer kept a steady rhythm under the piano chords. She wrote a song with a catchy chorus and a quiet bridge. The orchestra played a symphony in the grand hall. He practiced scales on the violin every evening. The band released a new album of rock and jazz. Listeners hummed along to the tune on the radio.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "smollm2",
+   "concept": "sport",
+   "card": "[hub card] nearest topics: circus, castle, office. nearest words: drawbridge, tower, stalled, formal, ringmaster, cheered.",
+   "text": "[text summary] key words: championship, tournament, fastball, sprinted, defense, drilled.",
+   "sentences": "The striker scored a goal in the final minute of the match. Fans roared as the team won the championship. The coach drilled the players on defense before the game. She sprinted the last lap and broke the record. The pitcher threw a fastball past the batter. Both teams trained hard for the tournament season. The referee blew the whistle to end the first half. He dunked the ball and the arena erupted.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "smollm2",
+   "concept": "medicine",
+   "card": "[hub card] nearest topics: hospital, castle, village. nearest words: nurse, sterile, waited, cold, clipboard, drawbridge.",
+   "text": "[text summary] key words: antibiotics, medication, protection, diagnosed, infection, operating.",
+   "sentences": "The doctor examined the patient and ordered a blood test. Antibiotics cleared the infection within a week. Surgeons prepared the operating room for the heart procedure. The vaccine trial showed strong protection against the virus. She was diagnosed with diabetes and started treatment. Nurses checked the dosage before giving the medication. Symptoms included fever, cough and chest pain. The clinic offered screening for cancer and other diseases.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "qwen3",
+   "concept": "ocean",
+   "card": "[hub card] nearest topics: river, city, forest. nearest words: oven, crosswalk, cold, fern, crackled, paced.",
+   "text": "[text summary] key words: lighthouse, shipwreck, crashing, dolphins, drifting, circled.",
+   "sentences": "Waves rolled across the open sea under a pale sky. The sailor watched the tide pull the boat toward deep water. Salt spray stung his face as the ship crested another swell. Whales and dolphins moved through the cold blue depths. The reef was full of coral, fish and drifting seaweed. A lighthouse stood on the rocks above the crashing surf. They dived below the surface to see the shipwreck. Gulls circled over the harbor as the fleet came in.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "qwen3",
+   "concept": "space",
+   "card": "[hub card] nearest topics: mountain, bakery, airport. nearest words: oven, summit, crackled, ancient, wound, cabin.",
+   "text": "[text summary] key words: black, astronauts, telescope, asteroid, galaxies, revealed.",
+   "sentences": "The rocket lifted off toward orbit above the planet. Astronauts floated inside the station as Earth turned below. A telescope revealed distant galaxies glowing in the dark. The probe crossed the asteroid belt on its way to Jupiter. Stars and nebulae filled the endless black of the cosmos. Mission control counted down to the moon landing. Gravity bent the light around the black hole. The comet's tail stretched across the night sky.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "qwen3",
+   "concept": "music",
+   "card": "[hub card] nearest topics: festival, city, circus. nearest words: crosswalk, stage, drum, dazzling, danced, ringmaster.",
+   "text": "[text summary] key words: guitarist, listeners, orchestra, practiced, released, symphony.",
+   "sentences": "The guitarist tuned his strings before the concert began. A choir sang a slow melody in perfect harmony. The drummer kept a steady rhythm under the piano chords. She wrote a song with a catchy chorus and a quiet bridge. The orchestra played a symphony in the grand hall. He practiced scales on the violin every evening. The band released a new album of rock and jazz. Listeners hummed along to the tune on the radio.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "qwen3",
+   "concept": "sport",
+   "card": "[hub card] nearest topics: circus, courtroom, school. nearest words: bench, ringmaster, ruled, cheered, paused, verdict.",
+   "text": "[text summary] key words: championship, tournament, fastball, sprinted, defense, drilled.",
+   "sentences": "The striker scored a goal in the final minute of the match. Fans roared as the team won the championship. The coach drilled the players on defense before the game. She sprinted the last lap and broke the record. The pitcher threw a fastball past the batter. Both teams trained hard for the tournament season. The referee blew the whistle to end the first half. He dunked the ball and the arena erupted.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "qwen3",
+   "concept": "medicine",
+   "card": "[hub card] nearest topics: hospital, airport, city. nearest words: nurse, waited, ward, sterile, clipboard, busy.",
+   "text": "[text summary] key words: antibiotics, medication, protection, diagnosed, infection, operating.",
+   "sentences": "The doctor examined the patient and ordered a blood test. Antibiotics cleared the infection within a week. Surgeons prepared the operating room for the heart procedure. The vaccine trial showed strong protection against the virus. She was diagnosed with diabetes and started treatment. Nurses checked the dosage before giving the medication. Symptoms included fever, cough and chest pain. The clinic offered screening for cancer and other diseases.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "pythia",
+   "concept": "ocean",
+   "card": "[hub card] nearest topics: mountain, airport, bakery. nearest words: rose, steep, boarded, crusty, apron, cold.",
+   "text": "[text summary] key words: lighthouse, shipwreck, crashing, dolphins, drifting, circled.",
+   "sentences": "Waves rolled across the open sea under a pale sky. The sailor watched the tide pull the boat toward deep water. Salt spray stung his face as the ship crested another swell. Whales and dolphins moved through the cold blue depths. The reef was full of coral, fish and drifting seaweed. A lighthouse stood on the rocks above the crashing surf. They dived below the surface to see the shipwreck. Gulls circled over the harbor as the fleet came in.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "pythia",
+   "concept": "space",
+   "card": "[hub card] nearest topics: weather, bakery, mountain. nearest words: storm, cloud, rolled, gray, drifted, fog.",
+   "text": "[text summary] key words: black, astronauts, telescope, asteroid, galaxies, revealed.",
+   "sentences": "The rocket lifted off toward orbit above the planet. Astronauts floated inside the station as Earth turned below. A telescope revealed distant galaxies glowing in the dark. The probe crossed the asteroid belt on its way to Jupiter. Stars and nebulae filled the endless black of the cosmos. Mission control counted down to the moon landing. Gravity bent the light around the black hole. The comet's tail stretched across the night sky.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "pythia",
+   "concept": "music",
+   "card": "[hub card] nearest topics: festival, hospital, circus. nearest words: drum, bench, monitor, ringmaster, boarded, hummed.",
+   "text": "[text summary] key words: guitarist, listeners, orchestra, practiced, released, symphony.",
+   "sentences": "The guitarist tuned his strings before the concert began. A choir sang a slow melody in perfect harmony. The drummer kept a steady rhythm under the piano chords. She wrote a song with a catchy chorus and a quiet bridge. The orchestra played a symphony in the grand hall. He practiced scales on the violin every evening. The band released a new album of rock and jazz. Listeners hummed along to the tune on the radio.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "pythia",
+   "concept": "sport",
+   "card": "[hub card] nearest topics: circus, factory, zoo. nearest words: ancient, cheered, pounded, conveyor, tireless, echoed.",
+   "text": "[text summary] key words: championship, tournament, fastball, sprinted, defense, drilled.",
+   "sentences": "The striker scored a goal in the final minute of the match. Fans roared as the team won the championship. The coach drilled the players on defense before the game. She sprinted the last lap and broke the record. The pitcher threw a fastball past the batter. Both teams trained hard for the tournament season. The referee blew the whistle to end the first half. He dunked the ball and the arena erupted.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "pythia",
+   "concept": "medicine",
+   "card": "[hub card] nearest topics: hospital, desert, city. nearest words: nurse, waited, sterile, ward, scorching, shifted.",
+   "text": "[text summary] key words: antibiotics, medication, protection, diagnosed, infection, operating.",
+   "sentences": "The doctor examined the patient and ordered a blood test. Antibiotics cleared the infection within a week. Surgeons prepared the operating room for the heart procedure. The vaccine trial showed strong protection against the virus. She was diagnosed with diabetes and started treatment. Nurses checked the dosage before giving the medication. Symptoms included fever, cough and chest pain. The clinic offered screening for cancer and other diseases.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "gpt2m",
+   "concept": "ocean",
+   "card": "[hub card] nearest topics: zoo, airport, museum. nearest words: paced, luggage, gleamed, gallery, hungry, keeper.",
+   "text": "[text summary] key words: lighthouse, shipwreck, crashing, dolphins, drifting, circled.",
+   "sentences": "Waves rolled across the open sea under a pale sky. The sailor watched the tide pull the boat toward deep water. Salt spray stung his face as the ship crested another swell. Whales and dolphins moved through the cold blue depths. The reef was full of coral, fish and drifting seaweed. A lighthouse stood on the rocks above the crashing surf. They dived below the surface to see the shipwreck. Gulls circled over the harbor as the fleet came in.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "gpt2m",
+   "concept": "space",
+   "card": "[hub card] nearest topics: bakery, travel, weather. nearest words: apron, cold, cloud, storm, swayed, pastry.",
+   "text": "[text summary] key words: black, astronauts, telescope, asteroid, galaxies, revealed.",
+   "sentences": "The rocket lifted off toward orbit above the planet. Astronauts floated inside the station as Earth turned below. A telescope revealed distant galaxies glowing in the dark. The probe crossed the asteroid belt on its way to Jupiter. Stars and nebulae filled the endless black of the cosmos. Mission control counted down to the moon landing. Gravity bent the light around the black hole. The comet's tail stretched across the night sky.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "gpt2m",
+   "concept": "music",
+   "card": "[hub card] nearest topics: festival, factory, museum. nearest words: hummed, stage, danced, loud, gleamed, tapestry.",
+   "text": "[text summary] key words: guitarist, listeners, orchestra, practiced, released, symphony.",
+   "sentences": "The guitarist tuned his strings before the concert began. A choir sang a slow melody in perfect harmony. The drummer kept a steady rhythm under the piano chords. She wrote a song with a catchy chorus and a quiet bridge. The orchestra played a symphony in the grand hall. He practiced scales on the violin every evening. The band released a new album of rock and jazz. Listeners hummed along to the tune on the radio.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "gpt2m",
+   "concept": "sport",
+   "card": "[hub card] nearest topics: laundromat, museum, mountain. nearest words: bench, basket, gleamed, steep, wound, trail.",
+   "text": "[text summary] key words: championship, tournament, fastball, sprinted, defense, drilled.",
+   "sentences": "The striker scored a goal in the final minute of the match. Fans roared as the team won the championship. The coach drilled the players on defense before the game. She sprinted the last lap and broke the record. The pitcher threw a fastball past the batter. Both teams trained hard for the tournament season. The referee blew the whistle to end the first half. He dunked the ball and the arena erupted.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "gpt2m",
+   "concept": "medicine",
+   "card": "[hub card] nearest topics: hospital, garage, airport. nearest words: waited, nurse, sterile, ward, glowed, tire.",
+   "text": "[text summary] key words: antibiotics, medication, protection, diagnosed, infection, operating.",
+   "sentences": "The doctor examined the patient and ordered a blood test. Antibiotics cleared the infection within a week. Surgeons prepared the operating room for the heart procedure. The vaccine trial showed strong protection against the virus. She was diagnosed with diabetes and started treatment. Nurses checked the dosage before giving the medication. Symptoms included fever, cough and chest pain. The clinic offered screening for cancer and other diseases.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "tinyllama",
+   "concept": "ocean",
+   "card": "[hub card] nearest topics: castle, zoo, desert. nearest words: loomed, drawbridge, moat, paced, hungry, scorpion.",
+   "text": "[text summary] key words: lighthouse, shipwreck, crashing, dolphins, drifting, circled.",
+   "sentences": "Waves rolled across the open sea under a pale sky. The sailor watched the tide pull the boat toward deep water. Salt spray stung his face as the ship crested another swell. Whales and dolphins moved through the cold blue depths. The reef was full of coral, fish and drifting seaweed. A lighthouse stood on the rocks above the crashing surf. They dived below the surface to see the shipwreck. Gulls circled over the harbor as the fleet came in.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "tinyllama",
+   "concept": "space",
+   "card": "[hub card] nearest topics: desert, forest, river. nearest words: scorpion, ancient, current, cold, curved, spread.",
+   "text": "[text summary] key words: black, astronauts, telescope, asteroid, galaxies, revealed.",
+   "sentences": "The rocket lifted off toward orbit above the planet. Astronauts floated inside the station as Earth turned below. A telescope revealed distant galaxies glowing in the dark. The probe crossed the asteroid belt on its way to Jupiter. Stars and nebulae filled the endless black of the cosmos. Mission control counted down to the moon landing. Gravity bent the light around the black hole. The comet's tail stretched across the night sky.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "tinyllama",
+   "concept": "music",
+   "card": "[hub card] nearest topics: festival, laundromat, museum. nearest words: drum, stage, danced, bench, loud, dazzling.",
+   "text": "[text summary] key words: guitarist, listeners, orchestra, practiced, released, symphony.",
+   "sentences": "The guitarist tuned his strings before the concert began. A choir sang a slow melody in perfect harmony. The drummer kept a steady rhythm under the piano chords. She wrote a song with a catchy chorus and a quiet bridge. The orchestra played a symphony in the grand hall. He practiced scales on the violin every evening. The band released a new album of rock and jazz. Listeners hummed along to the tune on the radio.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "tinyllama",
+   "concept": "sport",
+   "card": "[hub card] nearest topics: airport, circus, office. nearest words: runway, cheered, waited, crumbled, towering, drifted.",
+   "text": "[text summary] key words: championship, tournament, fastball, sprinted, defense, drilled.",
+   "sentences": "The striker scored a goal in the final minute of the match. Fans roared as the team won the championship. The coach drilled the players on defense before the game. She sprinted the last lap and broke the record. The pitcher threw a fastball past the batter. Both teams trained hard for the tournament season. The referee blew the whistle to end the first half. He dunked the ball and the arena erupted.",
+   "wire_bytes": 256
+  },
+  {
+   "src": "tinyllama",
+   "concept": "medicine",
+   "card": "[hub card] nearest topics: hospital, playground, kitchen. nearest words: nurse, waited, sterile, clipboard, ward, bright.",
+   "text": "[text summary] key words: antibiotics, medication, protection, diagnosed, infection, operating.",
+   "sentences": "The doctor examined the patient and ordered a blood test. Antibiotics cleared the infection within a week. Surgeons prepared the operating room for the heart procedure. The vaccine trial showed strong protection against the virus. She was diagnosed with diabetes and started treatment. Nurses checked the dosage before giving the medication. Symptoms included fever, cough and chest pain. The clinic offered screening for cancer and other diseases.",
+   "wire_bytes": 256
+  }
+ ],
+ "nulls": [
+  {
+   "src": "smollm2",
+   "card": "[hub card] nearest topics: kitchen, festival, courtroom. nearest words: danced, paused, gavel, recipe, quiet, float."
+  },
+  {
+   "src": "qwen3",
+   "card": "[hub card] nearest topics: castle, weather, river. nearest words: settled, clanked, press, tireless, rain, storm."
+  },
+  {
+   "src": "pythia",
+   "card": "[hub card] nearest topics: library, circus, theater. nearest words: glowed, worn, creaked, page, cheered, ladder."
+  },
+  {
+   "src": "gpt2m",
+   "card": "[hub card] nearest topics: office, travel, workshop. nearest words: tired, bench, printer, folder, formal, ticket."
+  },
+  {
+   "src": "tinyllama",
+   "card": "[hub card] nearest topics: weather, bank, airport. nearest words: rolled, opened, roared, fog, cloud, loan."
+  },
+  {
+   "src": "smollm2",
+   "card": "[hub card] nearest topics: forest, factory, village. nearest words: trunk, foreman, cottage, smoked, rustled, loaf."
+  },
+  {
+   "src": "qwen3",
+   "card": "[hub card] nearest topics: workshop, office, kitchen. nearest words: vise, bench, loud, folder, rang, nail."
+  },
+  {
+   "src": "pythia",
+   "card": "[hub card] nearest topics: museum, village, festival. nearest words: gleamed, tapestry, lane, crowd, danced, clerk."
+  },
+  {
+   "src": "gpt2m",
+   "card": "[hub card] nearest topics: bakery, castle, office. nearest words: tedious, arrived, loaf, tray, loomed, report."
+  },
+  {
+   "src": "tinyllama",
+   "card": "[hub card] nearest topics: desert, mountain, hospital. nearest words: shimmered, oasis, ridge, stood, calm, ward."
+  },
+  {
+   "src": "smollm2",
+   "card": "[hub card] nearest topics: village, museum, factory. nearest words: exhibit, hedge, noisy, tent, clown, lathe."
+  },
+  {
+   "src": "qwen3",
+   "card": "[hub card] nearest topics: weather, zoo, theater. nearest words: wind, drifted, turnstile, glowed, hedge, gentle."
+  },
+  {
+   "src": "pythia",
+   "card": "[hub card] nearest topics: forest, travel, circus. nearest words: fern, path, creaked, sleepy, landed, baked."
+  },
+  {
+   "src": "gpt2m",
+   "card": "[hub card] nearest topics: workshop, school, farm. nearest words: nail, held, roared, bench, waited, quiet."
+  },
+  {
+   "src": "tinyllama",
+   "card": "[hub card] nearest topics: circus, mountain, festival. nearest words: stood, cold, quiet, paused, festive, costume."
+  },
+  {
+   "src": "smollm2",
+   "card": "[hub card] nearest topics: school, village, river. nearest words: desk, bell, cottage, smoked, current, reed."
+  },
+  {
+   "src": "qwen3",
+   "card": "[hub card] nearest topics: laundromat, bank, circus. nearest words: damp, basket, detergent, waited, safe, acrobat."
+  },
+  {
+   "src": "pythia",
+   "card": "[hub card] nearest topics: forest, playground, theater. nearest words: empty, swayed, fence, wind, wing, sock."
+  },
+  {
+   "src": "gpt2m",
+   "card": "[hub card] nearest topics: library, laundromat, market. nearest words: glowed, worn, page, loud, basket, ladder."
+  },
+  {
+   "src": "tinyllama",
+   "card": "[hub card] nearest topics: courtroom, mountain, forest. nearest words: rose, bench, valley, fern, damp, buzzed."
+  },
+  {
+   "src": "smollm2",
+   "card": "[hub card] nearest topics: forest, bank, office. nearest words: waited, vault, clerk, trunk, stalled, report."
+  },
+  {
+   "src": "qwen3",
+   "card": "[hub card] nearest topics: theater, garage, school. nearest words: usher, dim, coin, hood, glowed, shone."
+  },
+  {
+   "src": "pythia",
+   "card": "[hub card] nearest topics: hospital, weather, mountain. nearest words: ward, beeped, coin, settled, cold, busy."
+  },
+  {
+   "src": "gpt2m",
+   "card": "[hub card] nearest topics: village, kitchen, weather. nearest words: quaint, stood, cold, echoed, chimney, well."
+  },
+  {
+   "src": "tinyllama",
+   "card": "[hub card] nearest topics: circus, castle, library. nearest words: gasped, waited, noisy, popcorn, page, drawbridge."
+  }
+ ],
+ "concepts": [
+  "ocean",
+  "space",
+  "music",
+  "sport",
+  "medicine"
+ ],
+ "chance": 0.2
+}

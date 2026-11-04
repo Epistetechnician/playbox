@@ -284,7 +284,9 @@ _TEMPLATE_WORDS = {"the", "a", "near", "this", "morning", "people", "often", "sa
                    "how", "beside", "story", "about", "and", "that", "all", "day"}
 _STOP = _TEMPLATE_WORDS | {"an", "of", "in", "on", "to", "was", "were", "his", "her", "he", "she", "as", "by", "for", "with",
                            "from", "under", "across", "toward", "over", "into", "it", "its", "their", "they", "them", "at",
-                           "before", "after", "then", "than", "while", "had", "has", "have", "be", "been", "or", "so", "up"}
+                           "before", "after", "then", "than", "while", "had", "has", "have", "be", "been", "or", "so", "up", "another",
+                           "around", "both", "along", "against", "began", "came", "until", "during", "every", "each",
+                           "some", "many", "other", "more", "above", "below", "past", "like"}
 
 
 def _content_words(sentence: str) -> list[str]:
@@ -298,13 +300,23 @@ def card_text(weights: dict[str, float], topics: dict[str, float], n_words: int 
     return f"[hub card] nearest topics: {', '.join(top_t)}. nearest words: {', '.join(top_w)}."
 
 
-def text_baseline(sentences: list[str], n_words: int = 6) -> str:
-    """Same word budget as the card, but written by the sender from the sentences it read: its most frequent content words."""
+def text_baseline(sentences: list[str], n_words: int = 6, corpus: list[str] | None = None) -> str:
+    """Same word budget as the card, but written by the sender from the sentences it read: the words that are most frequent
+    in them and rare elsewhere (tf-idf against `corpus`, the anchors and every test sentence), the way a person would
+    pick key words."""
+    import math
+
+    corpus = corpus or []
+    df: dict[str, int] = {}
+    for sent in corpus:
+        for w in set(_content_words(sent)):
+            df[w] = df.get(w, 0) + 1
     counts: dict[str, int] = {}
     for sent in sentences:
         for w in _content_words(sent):
             counts[w] = counts.get(w, 0) + 1
-    order = sorted(counts, key=lambda w: (-counts[w], w))
+    score = {w: c * math.log((len(corpus) + 1) / (df.get(w, 0) + 1)) for w, c in counts.items()}
+    order = sorted(score, key=lambda w: (-score[w], -len(w), w))  # longer words are usually the nouns
     return f"[text summary] key words: {', '.join(order[:n_words])}."
 
 
@@ -335,13 +347,14 @@ def cards(models: dict[str, str], extra: int = 16, k: int = 256, rank_frac: floa
                 words[word] = words.get(word, 0.0) + w
         return {"text": card_text(words, topics, n_words, n_topics), "top_anchor_cos": round(float(sims[idx[0]]), 4)}
 
+    corpus = anchors + [t for c in TEST_CONCEPTS.values() for t in c["sentences"]]
     items = []
     for src, si in info.items():
         for c in concepts:
             raw, scale = H.quantize(hub.encode(src, si["thought"][c]))
             sents = TEST_CONCEPTS[c]["sentences"]
             items.append({"src": src, "concept": c, "card": card_for(H.dequantize(raw, scale))["text"],
-                          "text": text_baseline(sents, n_words), "sentences": " ".join(sents), "wire_bytes": len(raw)})
+                          "text": text_baseline(sents, n_words, corpus), "sentences": " ".join(sents), "wire_bytes": len(raw)})
     g = torch.Generator().manual_seed(0)
     nulls = []
     names = list(info)
