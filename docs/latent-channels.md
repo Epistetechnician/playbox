@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) and 6j (token cost against text). Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text) and 6k (natural-text anchors, twenty concepts). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -424,6 +424,42 @@ text in front of the prompt; the latent and direct arms are the room run of 6g (
 - **Latent accuracy differs by receiver** (SmolLM2 71%, GPT-2 65%, Pythia 74%), as the text arms do (50 to 70%).
 - **Not tested:** latency or compute (the vector adds one forward hook and no context tokens, but I did not time it), a
   larger base model as receiver, instruction-tuned receivers, and text in other formats.
+
+## 6k. Natural-text anchors and twenty concepts (2026-11-04)
+
+`steer/results/e8/e8_natural.json`, from `steer/tools/e8_modal.py --what natural` (Modal, A10G). Everything before this used
+template anchors and five concepts. Here: fifteen more concepts in natural untemplated sentences (`concepts_natural.py`:
+volcano, cooking, finance, law, war, religion, computing, aviation, painting, farming, weather, railways, chemistry,
+elections, architecture; eight sentences and about 30 lexicon words each), so twenty in all, chance 5%. Natural anchors come
+from Wikipedia (the WikiText-2 training text), sentences of 6 to 30 words with every sentence containing any concept's
+lexicon word removed, so no test concept is in any anchor set. Held-out cosine is on 150 natural sentences that no hub saw.
+The same five models, k=256, whitening rank 0.6 n, strength 0.5; 4 prompts per concept, so 80 texts per pair. One run.
+
+| hub fitted on | anchors | accuracy, 16 pairs not into TinyLlama | held-out cosine (natural sentences) |
+|---|---|---|---|
+| template sentences | 1000 | 0.52 | 0.36 |
+| natural sentences | 1000 | 0.49 | 0.72 |
+| natural sentences | 2000 | 0.55 | 0.75 |
+| template and natural | 2000 | **0.59** | 0.72 |
+| *the receiver's own direction (upper bound)* | | *0.75* | |
+
+- **The hub carries about 80% of what a receiver gets from reading the concept itself on twenty concepts** (0.59 against
+  0.75), with 5% chance. On the original five concepts the earlier runs were at about 0.72 against 0.89, a similar
+  fraction. So the result is not specific to five easy concepts or to template anchors.
+- **A hub fitted on template text works on natural concepts, and measures badly on natural text.** Its accuracy (0.52) is
+  close to the natural-anchor hub with the same number of anchors (0.49), while its held-out cosine on natural sentences is
+  0.36 against 0.72. Cosine and accuracy have disagreed before (6d); this is a clearer case, and it means held-out cosine
+  is not a safe stand-in for how well a concept transfers.
+- **More text and a mixture help.** 2000 natural sentences beat 1000 (0.55 against 0.49); template plus natural, 2000 in all,
+  is best (0.59). The 1000-sentence differences are inside what one run of this size can tell apart; the 0.59 against 0.49
+  gap is about 3 standard errors.
+- **Concepts differ a lot.** With the mixed hub: sport 0.84, space 0.80, music 0.77, ocean 0.72, medicine 0.75, chemistry
+  0.72, law 0.69, cooking 0.62, weather 0.55, aviation 0.36, volcano 0.20. Some low values are the receiver's own limit:
+  the direct arm reaches only 0.31 for volcano and 0.44 for cooking, so the lexicon decoder or the base models are the
+  weak part there, not the channel. Others are the channel: aviation is 0.75 for the receiver itself and 0.08 to 0.53
+  through the hubs, and chemistry swings from 0.20 (template hub) to 0.86 (2000 natural).
+- **Not tested:** natural anchors from other domains, a larger natural set, instruction-tuned receivers, concepts chosen by
+  someone else, and a decoder other than a word list.
 
 ## 7. Not covered
 
