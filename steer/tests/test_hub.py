@@ -151,3 +151,41 @@ def test_guard_blocks_only_denied_classes_near_a_listed_direction():
     assert guard_blocks(-near, guards, {"harm"}) == ["unsafe"]  # sign does not matter
     assert guard_blocks(far, guards, {"harm"}) == []
     assert guard_blocks(near, guards, set()) == []
+
+
+def test_commit_and_challenge_audit_passes_honest_senders_and_catches_swaps_and_silence():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from playbox_steer import latent_audit as LA
+
+    lens, st = make(["a", "b"])
+    hub = H.fit_hub(st, "anchors", k=Q)
+    key = Ed25519PrivateKey.generate()
+    g = torch.Generator().manual_seed(11)
+    concepts = torch.randn(6, Q, generator=g)
+    sentences = {i: [f"sentence {i}.{j}" for j in range(3)] for i in range(6)}
+    by_text = {tuple(sentences[i]): concepts[i] for i in range(6)}
+    thought_b = lambda sents: by_text[tuple(sents)] @ lens["b"]  # what auditor b would compute from the revealed sentences
+    salt = "00" * 16
+
+    def send(true_i, sent_i, reveal=True, salt_used=salt):
+        h = hub.encode("a", concepts[true_i] @ lens["a"])  # the vector actually sent
+        commit = H.make_commit(salt, sentences[sent_i])    # what the sender committed to having read
+        head, vec = H.unpack_signed(hub, H.pack_signed(hub, "a", h, key, commit=commit))
+        rev = H.reveal_bytes(salt_used, sentences[sent_i]) if reveal else None
+        return LA.audit(hub, "b", head, vec, rev, thought_b, threshold=0.5)
+
+    honest = [send(i, i) for i in range(6)]
+    assert all(v.ok for v in honest), [v.cosine for v in honest]
+    swapped = [send(i, (i + 1) % 6) for i in range(6)]  # commits to sentence set i+1, sends the vector of concept i
+    assert not any(v.ok for v in swapped) and max(v.cosine for v in swapped) < min(v.cosine for v in honest)
+    assert "did not reveal" in send(0, 0, reveal=False).reasons[0]
+    assert "does not match the commitment" in send(0, 0, salt_used="11" * 16).reasons[0]
+    # No commitment at all cannot be audited.
+    h = hub.encode("a", concepts[0] @ lens["a"])
+    head, vec = H.unpack_signed(hub, H.pack_signed(hub, "a", h, key))
+    assert LA.audit(hub, "b", head, vec, b"{}", thought_b, 0.5).reasons == ["the message carries no commitment"]
+    # The commitment is signed: stripping or replacing it breaks the signature.
+    blob = H.pack_signed(hub, "a", h, key, commit=H.make_commit(salt, sentences[0]))
+    with pytest.raises(ValueError, match="signature"):
+        H.unpack_signed(hub, blob.replace(H.make_commit(salt, sentences[0]).encode(), H.make_commit(salt, sentences[1]).encode()))

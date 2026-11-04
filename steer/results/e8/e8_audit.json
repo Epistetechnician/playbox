@@ -1,0 +1,885 @@
+{
+ "hub": {
+  "id": "5bc1cb945fea1546",
+  "k": 256,
+  "anchors": 1000,
+  "models": [
+   "smollm2",
+   "gpt2",
+   "pythia"
+  ]
+ },
+ "audits": 72,
+ "bad_reveals_refused_by_host": 18,
+ "cosine": {
+  "honest": {
+   "n": 30,
+   "min": 0.4,
+   "median": 0.512,
+   "max": 0.581
+  },
+  "lying": {
+   "n": 36,
+   "min": -0.103,
+   "median": 0.282,
+   "max": 0.424
+  },
+  "swap_only": {
+   "median": 0.287,
+   "max": 0.424
+  },
+  "random_only": {
+   "median": 0.025,
+   "max": 0.107
+  }
+ },
+ "auc_honest_above_lying": 0.9944,
+ "at_preset": {
+  "threshold": 0.5,
+  "honest_passed": "16/30",
+  "lying_caught": "36/36"
+ },
+ "at_calibrated_in_sample": {
+  "threshold": 0.437,
+  "honest_passed": "28/30",
+  "lying_caught": "36/36"
+ },
+ "silent_senders": {
+  "audits": 6,
+  "flagged_no_reveal": 6
+ },
+ "rows": [
+  {
+   "seq": 13,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.5208491683006287,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 14,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.2820145785808563,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.28 < 0.50)"
+   ]
+  },
+  {
+   "seq": 15,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.4004122018814087,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.40 < 0.50)"
+   ]
+  },
+  {
+   "seq": 16,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.21300755441188812,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.21 < 0.50)"
+   ]
+  },
+  {
+   "seq": 17,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.48633962869644165,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.49 < 0.50)"
+   ]
+  },
+  {
+   "seq": 18,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.2551286518573761,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.26 < 0.50)"
+   ]
+  },
+  {
+   "seq": 19,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.47891709208488464,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.48 < 0.50)"
+   ]
+  },
+  {
+   "seq": 20,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.30163222551345825,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.30 < 0.50)"
+   ]
+  },
+  {
+   "seq": 21,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.4927813708782196,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.49 < 0.50)"
+   ]
+  },
+  {
+   "seq": 22,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.28572022914886475,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.29 < 0.50)"
+   ]
+  },
+  {
+   "seq": 23,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "cosine": 0.055389147251844406,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.06 < 0.50)"
+   ]
+  },
+  {
+   "seq": 24,
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "silent",
+   "cosine": null,
+   "revealed": false,
+   "ok_at_preset": false,
+   "reasons": [
+    "the sender did not reveal"
+   ]
+  },
+  {
+   "seq": 25,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.4892228841781616,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.49 < 0.50)"
+   ]
+  },
+  {
+   "seq": 26,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.3722555637359619,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.37 < 0.50)"
+   ]
+  },
+  {
+   "seq": 27,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.4995184540748596,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.50 < 0.50)"
+   ]
+  },
+  {
+   "seq": 28,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.25415176153182983,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.25 < 0.50)"
+   ]
+  },
+  {
+   "seq": 29,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.5314695239067078,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 30,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.36475300788879395,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.36 < 0.50)"
+   ]
+  },
+  {
+   "seq": 31,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.5812230706214905,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 32,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.33889007568359375,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.34 < 0.50)"
+   ]
+  },
+  {
+   "seq": 33,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "cosine": 0.5607110261917114,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 34,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "cosine": 0.2997739613056183,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.30 < 0.50)"
+   ]
+  },
+  {
+   "seq": 35,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "cosine": -0.10314304381608963,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine -0.10 < 0.50)"
+   ]
+  },
+  {
+   "seq": 36,
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "silent",
+   "cosine": null,
+   "revealed": false,
+   "ok_at_preset": false,
+   "reasons": [
+    "the sender did not reveal"
+   ]
+  },
+  {
+   "seq": 1,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.5212257504463196,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 2,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.40432390570640564,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.40 < 0.50)"
+   ]
+  },
+  {
+   "seq": 3,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.3995738625526428,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.40 < 0.50)"
+   ]
+  },
+  {
+   "seq": 4,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.22580796480178833,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.23 < 0.50)"
+   ]
+  },
+  {
+   "seq": 5,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.48587650060653687,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.49 < 0.50)"
+   ]
+  },
+  {
+   "seq": 6,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.3742121458053589,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.37 < 0.50)"
+   ]
+  },
+  {
+   "seq": 7,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.478088915348053,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.48 < 0.50)"
+   ]
+  },
+  {
+   "seq": 8,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.249119371175766,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.25 < 0.50)"
+   ]
+  },
+  {
+   "seq": 9,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.49327149987220764,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.49 < 0.50)"
+   ]
+  },
+  {
+   "seq": 10,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.24322359263896942,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.24 < 0.50)"
+   ]
+  },
+  {
+   "seq": 11,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "cosine": 0.1068117693066597,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.11 < 0.50)"
+   ]
+  },
+  {
+   "seq": 12,
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "silent",
+   "cosine": null,
+   "revealed": false,
+   "ok_at_preset": false,
+   "reasons": [
+    "the sender did not reveal"
+   ]
+  },
+  {
+   "seq": 25,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.4374940097332001,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.44 < 0.50)"
+   ]
+  },
+  {
+   "seq": 26,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.3645503520965576,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.36 < 0.50)"
+   ]
+  },
+  {
+   "seq": 27,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.5123536586761475,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 28,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.265921950340271,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.27 < 0.50)"
+   ]
+  },
+  {
+   "seq": 29,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.529083788394928,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 30,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.37576866149902344,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.38 < 0.50)"
+   ]
+  },
+  {
+   "seq": 31,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.5202041268348694,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 32,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.2586798667907715,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.26 < 0.50)"
+   ]
+  },
+  {
+   "seq": 33,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "cosine": 0.5354984402656555,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 34,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "cosine": 0.18581339716911316,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.19 < 0.50)"
+   ]
+  },
+  {
+   "seq": 35,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "cosine": 0.027262337505817413,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.03 < 0.50)"
+   ]
+  },
+  {
+   "seq": 36,
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "silent",
+   "cosine": null,
+   "revealed": false,
+   "ok_at_preset": false,
+   "reasons": [
+    "the sender did not reveal"
+   ]
+  },
+  {
+   "seq": 1,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.48922476172447205,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.49 < 0.50)"
+   ]
+  },
+  {
+   "seq": 2,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.41915473341941833,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.42 < 0.50)"
+   ]
+  },
+  {
+   "seq": 3,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.49807998538017273,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.50 < 0.50)"
+   ]
+  },
+  {
+   "seq": 4,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.36744409799575806,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.37 < 0.50)"
+   ]
+  },
+  {
+   "seq": 5,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5314512252807617,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 6,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.42428693175315857,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.42 < 0.50)"
+   ]
+  },
+  {
+   "seq": 7,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5801820755004883,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 8,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.28550198674201965,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.29 < 0.50)"
+   ]
+  },
+  {
+   "seq": 9,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5607231855392456,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 10,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.2984901964664459,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.30 < 0.50)"
+   ]
+  },
+  {
+   "seq": 11,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "cosine": 0.02474816143512726,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.02 < 0.50)"
+   ]
+  },
+  {
+   "seq": 12,
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "silent",
+   "cosine": null,
+   "revealed": false,
+   "ok_at_preset": false,
+   "reasons": [
+    "the sender did not reveal"
+   ]
+  },
+  {
+   "seq": 13,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.4371350407600403,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.44 < 0.50)"
+   ]
+  },
+  {
+   "seq": 14,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.34492266178131104,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.34 < 0.50)"
+   ]
+  },
+  {
+   "seq": 15,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5121489763259888,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 16,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.2866746187210083,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.29 < 0.50)"
+   ]
+  },
+  {
+   "seq": 17,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5290077924728394,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 18,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.3098061680793762,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.31 < 0.50)"
+   ]
+  },
+  {
+   "seq": 19,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5201770663261414,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 20,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.263851523399353,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.26 < 0.50)"
+   ]
+  },
+  {
+   "seq": 21,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "cosine": 0.5356757640838623,
+   "revealed": true,
+   "ok_at_preset": true,
+   "reasons": []
+  },
+  {
+   "seq": 22,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "cosine": 0.21339917182922363,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine 0.21 < 0.50)"
+   ]
+  },
+  {
+   "seq": 23,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "cosine": -0.10043862462043762,
+   "revealed": true,
+   "ok_at_preset": false,
+   "reasons": [
+    "the vector does not follow from the revealed sentences (cosine -0.10 < 0.50)"
+   ]
+  },
+  {
+   "seq": 24,
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "silent",
+   "cosine": null,
+   "revealed": false,
+   "ok_at_preset": false,
+   "reasons": [
+    "the sender did not reveal"
+   ]
+  }
+ ]
+}

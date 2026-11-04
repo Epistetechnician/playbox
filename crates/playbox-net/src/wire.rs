@@ -98,6 +98,9 @@ pub enum Op {
     /// Post a signed hub latent message (`PBL2`, the message's one raw part) to the room's mailbox. The signer must be
     /// the sending member. The host files it, notes it in the feed and answers with a signed receipt.
     Latent,
+    /// Reveal the sentences behind message `seq`'s commitment (the message's one raw part, `{"salt","sentences"}`).
+    /// Only the message's sender can; the host checks that the sentences match the signed commitment.
+    LatentReveal { seq: u64 },
     /// Read the mailbox's messages for `hub` (hex id) after sequence number `since`.
     LatentPull {
         hub: String,
@@ -130,7 +133,7 @@ impl Op {
             Op::Steer { probe: true, .. } => "steer_probe",
             Op::Handoff { .. } => "handoff",
             // Talking in the room needs only membership, like echo.
-            Op::Say { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } => "echo",
+            Op::Say { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } => "echo",
         }
     }
 

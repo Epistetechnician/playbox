@@ -160,11 +160,25 @@ def unpack(hub: Hub, blob: bytes, max_bytes: int = 1 << 16) -> tuple[dict, torch
 MAGIC2 = b"PBL2"
 
 
-def _signed_text(hub: str, src: str, k: int, scale_f32: str, body_blake3: str, signer: str) -> bytes:
-    return f"playbox.latent.v1\nhub {hub}\nsrc {src}\nk {k}\nscale {scale_f32}\nbody {body_blake3}\nsigner {signer}\n".encode()
+def _signed_text(hub: str, src: str, k: int, scale_f32: str, body_blake3: str, signer: str, commit: str | None = None) -> bytes:
+    text = f"playbox.latent.v1\nhub {hub}\nsrc {src}\nk {k}\nscale {scale_f32}\nbody {body_blake3}\nsigner {signer}\n"
+    return (text + (f"commit {commit}\n" if commit else "")).encode()
 
 
-def pack_signed(hub: Hub, src: str, h: torch.Tensor, private_key) -> bytes:
+def make_commit(salt_hex: str, sentences: list[str]) -> str:
+    """Commitment to the sentences a sender read: blake3 over a fixed prefix, a random salt and the sentences, one per
+    line (same as `latent::commit_of` in the host). The salt stops a guesser from confirming a guess before the reveal."""
+    import blake3
+
+    return blake3.blake3(f"playbox.latent-commit.v1\n{salt_hex}\n" .encode() + "\n".join(sentences).encode()).hexdigest()
+
+
+def reveal_bytes(salt_hex: str, sentences: list[str]) -> bytes:
+    """What `Member.reveal` sends: `{"salt", "sentences"}` as JSON."""
+    return json.dumps({"salt": salt_hex, "sentences": sentences}, separators=(",", ":")).encode()
+
+
+def pack_signed(hub: Hub, src: str, h: torch.Tensor, private_key, commit: str | None = None) -> bytes:
     """`PBL2` | u32 header length | JSON header | int8 body, signed by `private_key` (a cryptography Ed25519 key).
 
     In a room the key must be the member's own endpoint key: the host refuses a message signed by anyone else. The scale is
@@ -179,8 +193,10 @@ def pack_signed(hub: Hub, src: str, h: torch.Tensor, private_key) -> bytes:
     raw = bytes(torch.clamp((h / scale).round(), -127, 127).to(torch.int8).numpy().tobytes())
     signer = private_key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
     body_hash = blake3.blake3(raw).hexdigest()
-    sig = private_key.sign(_signed_text(hub.hub_id, src, hub.k, scale_hex, body_hash, signer)).hex()
+    sig = private_key.sign(_signed_text(hub.hub_id, src, hub.k, scale_hex, body_hash, signer, commit)).hex()
     head = {"hub": hub.hub_id, "src": src, "k": hub.k, "scale_f32": scale_hex, "body_blake3": body_hash, "signer": signer, "sig": sig}
+    if commit:
+        head["commit"] = commit
     hb = json.dumps(head, sort_keys=True, separators=(",", ":")).encode()
     return MAGIC2 + struct.pack(">I", len(hb)) + hb + raw
 
@@ -210,7 +226,7 @@ def unpack_signed(hub: Hub, blob: bytes, trusted_signers: set[str] | None = None
     try:
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(head["signer"])).verify(
             bytes.fromhex(head["sig"]),
-            _signed_text(head["hub"], head["src"], head["k"], head["scale_f32"], head["body_blake3"], head["signer"]))
+            _signed_text(head["hub"], head["src"], head["k"], head["scale_f32"], head["body_blake3"], head["signer"], head.get("commit")))
     except (InvalidSignature, ValueError, KeyError):
         raise ValueError("the signature is not valid") from None
     scale = struct.unpack(">f", bytes.fromhex(head["scale_f32"]))[0]

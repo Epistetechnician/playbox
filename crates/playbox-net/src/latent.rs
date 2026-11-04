@@ -42,6 +42,8 @@ pub struct Envelope {
     pub scale_f32: String,
     pub signer: [u8; 32],
     pub body: Vec<u8>,
+    /// Optional commitment to the sentences the sender read (see [`commit_of`]), covered by the signature.
+    pub commit: Option<String>,
 }
 
 impl Envelope {
@@ -61,8 +63,13 @@ fn signed_text(
     scale: &str,
     body_hash: &str,
     signer: &str,
+    commit: Option<&str>,
 ) -> String {
-    format!("playbox.latent.v1\nhub {hub}\nsrc {src}\nk {k}\nscale {scale}\nbody {body_hash}\nsigner {signer}\n")
+    let base = format!("playbox.latent.v1\nhub {hub}\nsrc {src}\nk {k}\nscale {scale}\nbody {body_hash}\nsigner {signer}\n");
+    match commit {
+        Some(c) => format!("{base}commit {c}\n"),
+        None => base,
+    }
 }
 
 fn label_ok(s: &str, max: usize) -> bool {
@@ -102,6 +109,16 @@ pub fn parse(data: &[u8]) -> Result<Envelope> {
         s("signer")?,
         s("sig")?,
     );
+    let commit = match head.get("commit") {
+        None => None,
+        Some(c) => {
+            let c = c.as_str().ok_or_else(|| anyhow!("bad commit"))?;
+            if c.len() != 64 || !c.bytes().all(|b| b.is_ascii_hexdigit()) {
+                bail!("bad commit");
+            }
+            Some(c.to_string())
+        }
+    };
     let k = head["k"]
         .as_u64()
         .ok_or_else(|| anyhow!("header has no k"))? as usize;
@@ -130,7 +147,7 @@ pub fn parse(data: &[u8]) -> Result<Envelope> {
     VerifyingKey::from_bytes(&signer)
         .map_err(|e| anyhow!("{e}"))?
         .verify(
-            signed_text(&hub, &src, k, &scale, &body_hash, &signer_hex).as_bytes(),
+            signed_text(&hub, &src, k, &scale, &body_hash, &signer_hex, commit.as_deref()).as_bytes(),
             &Signature::from_bytes(&sig),
         )
         .map_err(|_| anyhow!("the signature is not valid"))?;
@@ -141,6 +158,7 @@ pub fn parse(data: &[u8]) -> Result<Envelope> {
         scale_f32: scale,
         signer,
         body: body.to_vec(),
+        commit,
     })
 }
 
@@ -153,16 +171,33 @@ pub fn pack(
     scale: f32,
     body: &[u8],
 ) -> Vec<u8> {
+    pack_with(key, hub, src, scale, body, None)
+}
+
+/// [`pack`] with a commitment to the sentences the sender read, covered by the signature.
+#[must_use]
+pub fn pack_with(
+    key: &ed25519_dalek::SigningKey,
+    hub: &str,
+    src: &str,
+    scale: f32,
+    body: &[u8],
+    commit: Option<&str>,
+) -> Vec<u8> {
     let scale_hex = hex(&scale.to_be_bytes());
     let body_hash = hex(blake3::hash(body).as_bytes());
     let signer = hex(key.verifying_key().as_bytes());
-    let sig =
-        key.sign(signed_text(hub, src, body.len(), &scale_hex, &body_hash, &signer).as_bytes());
-    let head = serde_json::to_vec(&json!({
+    let sig = key.sign(
+        signed_text(hub, src, body.len(), &scale_hex, &body_hash, &signer, commit).as_bytes(),
+    );
+    let mut h = json!({
         "hub": hub, "src": src, "k": body.len(), "scale_f32": scale_hex, "body_blake3": body_hash,
         "signer": signer, "sig": hex(&sig.to_bytes()),
-    }))
-    .expect("header serializes");
+    });
+    if let Some(c) = commit {
+        h["commit"] = json!(c);
+    }
+    let head = serde_json::to_vec(&h).expect("header serializes");
     let mut out = MAGIC.to_vec();
     out.extend_from_slice(
         &u32::try_from(head.len())
@@ -172,6 +207,62 @@ pub fn pack(
     out.extend_from_slice(&head);
     out.extend_from_slice(body);
     out
+}
+
+/// The commitment a sender signs: blake3 over a fixed prefix, a random salt (hex) and the sentences it read, one per
+/// line. The salt stops a guesser from confirming a guess about the sentences before they are revealed.
+#[must_use]
+pub fn commit_of(salt_hex: &str, sentences: &[String]) -> String {
+    hex(blake3::hash(
+        format!("playbox.latent-commit.v1\n{salt_hex}\n{}", sentences.join("\n")).as_bytes(),
+    )
+    .as_bytes())
+}
+
+const MAX_REVEAL_BYTES: usize = 16 << 10;
+const MAX_REVEAL_SENTENCES: usize = 64;
+const MAX_SENTENCE_BYTES: usize = 512;
+
+/// A revealed set of sentences: `{"salt": hex, "sentences": [..]}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reveal {
+    pub salt: String,
+    pub sentences: Vec<String>,
+}
+
+impl Reveal {
+    /// # Errors
+    ///
+    /// Returns an error for anything oversized or malformed: too many or too long sentences, a sentence with a
+    /// newline (it would break the commitment's line format), or a salt that is not 16 to 64 hex characters.
+    pub fn parse(data: &[u8]) -> Result<Self> {
+        if data.is_empty() || data.len() > MAX_REVEAL_BYTES {
+            bail!("the reveal is empty or too large");
+        }
+        let v: Value = serde_json::from_slice(data).map_err(|_| anyhow!("the reveal is not JSON"))?;
+        let salt = v["salt"].as_str().ok_or_else(|| anyhow!("the reveal has no salt"))?.to_string();
+        if !(16..=64).contains(&salt.len()) || !salt.bytes().all(|b| b.is_ascii_hexdigit()) {
+            bail!("bad salt");
+        }
+        let arr = v["sentences"].as_array().ok_or_else(|| anyhow!("the reveal has no sentences"))?;
+        if arr.is_empty() || arr.len() > MAX_REVEAL_SENTENCES {
+            bail!("wrong number of sentences");
+        }
+        let mut sentences = Vec::new();
+        for x in arr {
+            let t = x.as_str().ok_or_else(|| anyhow!("a sentence is not text"))?;
+            if t.len() > MAX_SENTENCE_BYTES || t.contains('\n') {
+                bail!("a sentence is too long or has a newline");
+            }
+            sentences.push(t.to_string());
+        }
+        Ok(Self { salt, sentences })
+    }
+
+    #[must_use]
+    pub fn commit(&self) -> String {
+        commit_of(&self.salt, &self.sentences)
+    }
 }
 
 /// What the host signs to say it filed exactly these bytes from this member.
@@ -220,7 +311,11 @@ struct Entry {
     from: EndpointId,
     hub: String,
     bytes: Vec<u8>,
+    commit: Option<String>,
+    reveal: Option<Vec<u8>>,
 }
+
+type Pulled = (u64, EndpointId, Vec<u8>, Option<Vec<u8>>);
 
 /// Recent envelopes, bounded in all and per signer. Not persisted.
 #[derive(Default)]
@@ -235,7 +330,7 @@ impl std::fmt::Debug for Mailbox {
 }
 
 impl Mailbox {
-    fn put(&self, from: EndpointId, hub: &str, bytes: Vec<u8>) -> u64 {
+    fn put(&self, from: EndpointId, hub: &str, bytes: Vec<u8>, commit: Option<String>) -> u64 {
         let mut g = self.inner.lock().expect("mailbox lock");
         g.0 += 1;
         let seq = g.0;
@@ -244,6 +339,8 @@ impl Mailbox {
             from,
             hub: hub.to_string(),
             bytes,
+            commit,
+            reveal: None,
         });
         while g.1.iter().filter(|e| e.from == from).count() > KEEP_EACH {
             if let Some(i) = g.1.iter().position(|e| e.from == from) {
@@ -256,13 +353,30 @@ impl Mailbox {
         seq
     }
 
-    fn since(&self, hub: &str, since: u64) -> (Vec<(u64, EndpointId, Vec<u8>)>, u64) {
+    /// Attach a reveal to message `seq`, if `from` posted it, it carries this commitment and nothing is revealed yet.
+    fn reveal(&self, seq: u64, from: EndpointId, commit: &str, bytes: Vec<u8>) -> Result<String> {
+        let mut g = self.inner.lock().expect("mailbox lock");
+        let e = g.1.iter_mut().find(|e| e.seq == seq).ok_or_else(|| anyhow!("no such message"))?;
+        if e.from != from {
+            bail!("only the sender can reveal a message");
+        }
+        if e.commit.as_deref() != Some(commit) {
+            bail!("the reveal does not match the message's commitment");
+        }
+        if e.reveal.is_some() {
+            bail!("already revealed");
+        }
+        e.reveal = Some(bytes);
+        Ok(e.hub.clone())
+    }
+
+    fn since(&self, hub: &str, since: u64) -> (Vec<Pulled>, u64) {
         let g = self.inner.lock().expect("mailbox lock");
         let items: Vec<_> =
             g.1.iter()
                 .filter(|e| e.seq > since && e.hub == hub)
                 .take(PULL_MAX)
-                .map(|e| (e.seq, e.from, e.bytes.clone()))
+                .map(|e| (e.seq, e.from, e.bytes.clone(), e.reveal.clone()))
                 .collect();
         let next = items.last().map_or(since, |i| i.0);
         (items, next)
@@ -282,7 +396,7 @@ impl RoomHandler {
                 "the message must be signed by the member who sends it",
             ));
         }
-        let seq = self.latent.put(from, &env.hub, data.to_vec());
+        let seq = self.latent.put(from, &env.hub, data.to_vec(), env.commit.clone());
         let _ = self.audit.chat.say(
             &from.to_string(),
             None,
@@ -312,12 +426,40 @@ impl RoomHandler {
         ))
     }
 
+    /// Attach the sentences behind a commitment to message `seq`. The host checks the sender, the commitment and the
+    /// bounds; it does not read the sentences and cannot judge whether the vector matches them (an auditor does).
+    pub(crate) fn latent_reveal(&self, from: EndpointId, seq: u64, msg: &Message) -> Result<Task> {
+        let parts = wire::raw_parts(msg);
+        let [data] = parts.as_slice() else {
+            return Err(crate::refuse("a reveal needs exactly one raw part"));
+        };
+        let rev = Reveal::parse(data).map_err(|e| crate::refuse(format!("{e:#}")))?;
+        let hub = self
+            .latent
+            .reveal(seq, from, &rev.commit(), data.to_vec())
+            .map_err(|e| crate::refuse(format!("{e:#}")))?;
+        let _ = self.audit.chat.say(
+            &from.to_string(),
+            None,
+            &format!("[latent-reveal] hub {} seq={seq} sentences={}", &hub[..hub.len().min(16)], rev.sentences.len()),
+        );
+        Ok(wire::task(
+            TaskState::Completed,
+            None,
+            vec![wire::text_artifact("revealed", seq.to_string())],
+            vec![("kind", json!("latent_reveal"))],
+        ))
+    }
+
     /// The envelopes for `hub` after `since`, as JSON with each envelope in base64.
     pub(crate) fn latent_pull(&self, hub: &str, since: u64) -> Task {
         let (items, next) = self.latent.since(hub, since);
         let items: Vec<Value> = items
             .into_iter()
-            .map(|(seq, from, bytes)| json!({ "seq": seq, "from": from.to_string(), "envelope": B64S.encode(bytes) }))
+            .map(|(seq, from, bytes, reveal)| {
+                json!({ "seq": seq, "from": from.to_string(), "envelope": B64S.encode(bytes),
+                        "reveal": reveal.map(|r| B64S.encode(r)) })
+            })
             .collect();
         wire::task(
             TaskState::Completed,
@@ -339,6 +481,8 @@ pub struct Delivered {
     pub envelope: Envelope,
     /// The envelope exactly as the host delivered it (already verified), for passing on.
     pub raw: Vec<u8>,
+    /// The sentences behind the message's commitment, once the sender has revealed them.
+    pub reveal: Option<Vec<u8>>,
 }
 
 impl Client {
@@ -361,6 +505,18 @@ impl Client {
             &env.hub,
             envelope,
         )
+    }
+
+    /// Reveal the sentences behind message `seq`'s commitment. `reveal` is `{"salt": hex, "sentences": [..]}`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refused: not your message, no commitment, a reveal that does not match it, or one
+    /// already made.
+    pub async fn latent_reveal(&self, seq: u64, reveal: &[u8]) -> Result<()> {
+        self.send_task("latent reveal", &Op::LatentReveal { seq }, vec![Part::raw(reveal.to_vec())])
+            .await?;
+        Ok(())
     }
 
     /// Read the envelopes for `hub` after `since`, each verified. Returns them and the `since` for the next call.
@@ -393,6 +549,10 @@ impl Client {
                 from: it["from"].as_str().unwrap_or_default().to_string(),
                 envelope,
                 raw: bytes,
+                reveal: match it["reveal"].as_str() {
+                    Some(r) => Some(B64S.decode(r)?),
+                    None => None,
+                },
             });
         }
         Ok((out, v["next"].as_u64().unwrap_or(since)))

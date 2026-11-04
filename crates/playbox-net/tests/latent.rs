@@ -2,7 +2,7 @@
 //! another member reads and verifies it. Forged, re-signed, oversized and cross-signer messages are refused.
 
 use ed25519_dalek::SigningKey;
-use playbox_net::latent::{pack, parse, verify_receipt};
+use playbox_net::latent::{commit_of, pack, pack_with, parse, verify_receipt};
 use playbox_net::{join_link, new_secret_key, Client, Host, HostConfig};
 use std::time::Duration;
 
@@ -159,4 +159,71 @@ fn the_python_and_rust_senders_build_the_same_bytes() {
         (HUB, "smollm2", 64)
     );
     assert_eq!(env.body, body);
+}
+
+fn reveal_json(salt: &str, sentences: &[&str]) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({ "salt": salt, "sentences": sentences })).unwrap()
+}
+
+const SALT: &str = "00112233445566778899aabbccddeeff";
+const SENTENCES: [&str; 2] = ["Waves rolled across the open sea.", "The sailor watched the tide."];
+
+fn committed(key: &SigningKey, body: &[u8]) -> Vec<u8> {
+    let sentences: Vec<String> = SENTENCES.iter().map(|s| (*s).to_string()).collect();
+    pack_with(key, HUB, "x", 0.5, body, Some(&commit_of(SALT, &sentences)))
+}
+
+#[tokio::test]
+async fn a_sender_reveals_what_it_committed_to_and_only_once() {
+    let (host, (a, ka), (b, _)) = start().await;
+    let seq = a.latent_send(&committed(&ka, &[3u8; 16])).await.unwrap();
+    // Nothing is revealed until the sender does it.
+    let (got, _) = b.latent_pull(HUB, 0).await.unwrap();
+    assert!(got[0].reveal.is_none());
+    assert!(got[0].envelope.commit.is_some());
+    // Another member cannot reveal for it, and a wrong salt or sentence set does not match the commitment.
+    assert!(b.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    assert!(a.latent_reveal(seq, &reveal_json("ffeeddccbbaa99887766554433221100", &SENTENCES)).await.is_err());
+    assert!(a.latent_reveal(seq, &reveal_json(SALT, &[SENTENCES[0]])).await.is_err());
+    // Malformed reveals: not JSON, a newline inside a sentence, a short salt.
+    assert!(a.latent_reveal(seq, b"nope").await.is_err());
+    assert!(a.latent_reveal(seq, &reveal_json(SALT, &["two\nlines", SENTENCES[1]])).await.is_err());
+    assert!(a.latent_reveal(seq, &reveal_json("abcd", &SENTENCES)).await.is_err());
+    // The right one is accepted, readers get it with the message, and it cannot be replaced.
+    a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.unwrap();
+    let (got, _) = b.latent_pull(HUB, 0).await.unwrap();
+    let rev: serde_json::Value = serde_json::from_slice(got[0].reveal.as_ref().unwrap()).unwrap();
+    assert_eq!(rev["sentences"][1], SENTENCES[1]);
+    assert!(a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    let feed = b.feed(0).await.unwrap();
+    assert!(feed.items.iter().any(|i| i.text.starts_with("[latent-reveal]")));
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn messages_without_a_commitment_or_unknown_ones_cannot_be_revealed() {
+    let (host, (a, ka), _b) = start().await;
+    let plain = a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16])).await.unwrap();
+    assert!(a.latent_reveal(plain, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    assert!(a.latent_reveal(999, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    host.shutdown().await.unwrap();
+}
+
+#[test]
+fn the_commitment_is_signed_so_it_cannot_be_swapped_or_stripped() {
+    let key = SigningKey::from_bytes(&[2u8; 32]);
+    let good = committed(&key, &[5u8; 16]);
+    assert!(parse(&good).unwrap().commit.is_some());
+    let other: Vec<String> = vec!["a different sentence".to_string()];
+    let swapped = String::from_utf8_lossy(&good).replacen(&commit_of(SALT, &SENTENCES.iter().map(|s| (*s).to_string()).collect::<Vec<_>>()), &commit_of(SALT, &other), 1).into_bytes();
+    assert!(parse(&swapped).is_err());
+    let stripped = String::from_utf8_lossy(&good).split("\"commit\":").next().unwrap().trim_end_matches(',').to_string();
+    assert!(!stripped.is_empty());
+}
+
+/// The Python sender's `make_commit` for `SALT` and `SENTENCES`; both languages must compute the same commitment.
+#[test]
+fn the_python_and_rust_commitments_agree() {
+    let sentences: Vec<String> = SENTENCES.iter().map(|s| (*s).to_string()).collect();
+    assert_eq!(commit_of(SALT, &sentences), "4b107569d533fc431314ba2af88419b4884aee50d848dd8435145dc503820b6b");
 }

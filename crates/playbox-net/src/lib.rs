@@ -882,6 +882,12 @@ impl RoomHandler {
                 finish(r)
             }
             Some(Op::LatentPull { hub, since }) => self.latent_pull(&hub, since),
+            Some(Op::LatentReveal { seq }) => {
+                let t0 = std::time::Instant::now();
+                let r = self.latent_reveal(from, seq, msg);
+                self.audit_op(from, "latent_reveal", &r, t0, json!({ "seq": seq }));
+                finish(r)
+            }
             Some(Op::Pull { refname }) => {
                 let t0 = std::time::Instant::now();
                 let r = self.pull(&refname).await;

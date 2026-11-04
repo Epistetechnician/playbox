@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) and 6g (an end-to-end run through a room). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) and 6h (commit-and-challenge audit). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -73,7 +73,7 @@ A latent channel is an injection channel the admission broker cannot read. Contr
    a strength the host caps (E7: stronger is also worse, 0.5 best).
 2. **Guards on the decoded vector.** The existing guard check (|cosine| ≥ 0.5 with a listed safety direction at that
    site and layer) applies unchanged to the receiver-space vector. Same limit as today: only known directions.
-3. **Commit and challenge (proposed, not built).** The sender commits to the hash of the anchor-style sentences it read.
+3. **Commit and challenge (built, section 6h).** The sender commits to the hash of the anchor-style sentences it read.
    On audit it reveals them, and the auditor encodes them through *its own* spoke and compares with the claimed hub
    vector (cosine above a calibrated threshold). This works across families, which the E6 recompute audit cannot: that
    one needs identical weights. It audits what the sender said it was sending, not whether the sentences are honest.
@@ -290,8 +290,7 @@ that the Rust packer must reproduce byte for byte; `steer/tests/test_hub.py` (ro
 another hub's message).
 
 Not built: persistence of the mailbox; a rate limit beyond the bounds; (the Python side reaches a room through
-`playbox latent session`, section 6g); commit-and-challenge (item 3 in section 5), so a
-signed vector shows who sent it, not that it is honest; a host-side check that a hub id is one the room uses; and
+`playbox latent session`, section 6g); a host-side check that a hub id is one the room uses; and
 putting a decoded vector through the existing steering guard check on the receiving member.
 
 ## 6g. End to end through a room (2026-11-04)
@@ -330,6 +329,47 @@ as in the earlier E8 runs).
   (a real deployment ships a spoke, not a hub fit, to each member); the guard here is a single direction I built from
   the receiver's own medicine concept, so it shows the mechanism, not that unknown unsafe directions are caught; one run,
   one subset of concepts; the host is local and honest.
+
+## 6h. Commit-and-challenge audit (2026-11-04)
+
+Built (`crates/playbox-net/src/latent.rs`, `steer/playbox_steer/latent_audit.py`, `hub.py`) and run through a real room
+(`steer/tools/e8_audit_demo.py`, results in `steer/results/e8/e8_audit.json`).
+
+**Protocol.** The sender's signed `PBL2` envelope may carry a `commit`: blake3 over a fixed prefix, a random salt and the
+sentences it read. The commitment is inside the signed text, so it cannot be swapped or stripped afterwards. Any member
+can challenge a message (a feed line `[challenge] seq=N`; the room has no special operation for it). The sender answers
+with `latent_reveal {seq}`: the salt and the sentences as JSON. The host accepts a reveal only from the message's sender,
+only if its hash equals the signed commitment, only once, and within bounds (64 sentences, 512 bytes each, 16 KiB, no
+newlines); it never reads the sentences. Readers get the reveal with the message. An auditor then encodes the revealed
+sentences through its own model and spoke and compares the result with the vector that was sent
+(`latent_audit.audit`). This works across families, which the E6 recompute audit cannot.
+
+**Run.** The same three models and hub as 6g (1000 anchors, k=256), each posting 12 messages with commitments: 5 honest,
+5 "swap" (commits to concept A's sentences, sends concept B's vector), 1 random vector, 1 silent (honest vector, never
+answers). Each message audited by the two other models: 72 audits. One run, one hub.
+
+| cosine of the auditor's vector for the revealed sentences with the vector sent | n | min | median | max |
+|---|---|---|---|---|
+| honest | 30 | 0.40 | 0.51 | 0.58 |
+| swap (right sentences, wrong concept's vector) | 30 | | 0.29 | 0.42 |
+| random vector | 6 | | 0.03 | 0.11 |
+
+- **Separation is good, not perfect:** the chance that an honest cosine is above a lying one is 0.994. The ranges touch
+  (lowest honest 0.40, highest swap 0.42).
+- **A threshold I guessed beforehand did badly: at 0.5, 36 of 36 liars were caught but only 16 of 30 honest messages
+  passed.** Honest cross-family cosines are about 0.5, not near 1, because two different models encode the same
+  sentences differently. At 0.437, chosen to separate these same 66 numbers (so in-sample and optimistic), 36 of 36
+  liars are caught and 28 of 30 honest pass. A real room needs a threshold set from honest runs of its own models and a
+  second look (a person or a stronger check) for messages near the line, not an automatic quarantine.
+- **A silent sender is detectable:** the 6 audits of silent messages all came back "the sender did not reveal".
+- **A sender cannot change its story:** 18 attempts by swapping or random senders to reveal different sentences were
+  all refused by the host, because they do not match the signed commitment.
+- **What a pass means:** the vector is consistent with sentences the sender committed to before the challenge. It does
+  not mean the sentences are harmless (they are text, so the auditor or a person can read them), and a sender that
+  commits to sentences that really produce its payload passes. It also does not tell which of sender or auditor is wrong
+  when they disagree beyond the threshold; the room decides what to do (nothing here quarantines automatically).
+- **Not tested:** more than three small models, a larger or natural-text concept set, a sender that picks sentences to
+  game the audit, a threshold set on one set of runs and used on another, and the host acting on verdicts.
 
 ## 7. Not covered
 

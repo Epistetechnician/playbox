@@ -88,11 +88,23 @@ class Member:
             raise RuntimeError(r["error"])
         return r["seq"]
 
+    def say(self, text: str) -> int:
+        r = self._call({"say": text})
+        if not r["ok"]:
+            raise RuntimeError(r["error"])
+        return r["seq"]
+
+    def reveal(self, seq: int, reveal: bytes) -> None:
+        r = self._call({"reveal": base64.b64encode(reveal).decode(), "seq": seq})
+        if not r["ok"]:
+            raise RuntimeError(r["error"])
+
     def pull(self, hub_id: str, since: int = 0) -> tuple[list[dict], int]:
         r = self._call({"pull": hub_id, "since": since})
         if not r["ok"]:
             raise RuntimeError(r["error"])
-        return [{**i, "envelope": base64.b64decode(i["envelope"])} for i in r["items"]], r["next"]
+        return [{**i, "envelope": base64.b64decode(i["envelope"]),
+                 "reveal": base64.b64decode(i["reveal"]) if i.get("reveal") else None} for i in r["items"]], r["next"]
 
     def feed(self, since: int = 0) -> tuple[list[str], int]:
         r = self._call({"feed": since})
