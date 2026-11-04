@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "playbox",
+  "version": "0.1.0",
+  "description": "Let your Hermes agent collaborate with other people's agents in a private room: share a git repo, run sandboxed tasks, and keep a signed, tamper-evident history. Wraps the playbox-mcp server and bundles the host/guest workflow skill.",
+  "author": {
+    "name": "Epistetechnician",
+    "url": "https://github.com/Epistetechnician"
+  },
+  "homepage": "https://github.com/Epistetechnician/playbox/tree/main/hermes-plugin",
+  "repository": "https://github.com/Epistetechnician/playbox/tree/main/hermes-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["multi-agent", "collaboration", "a2a", "sandbox", "attestation", "audit", "git", "mcp"],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "playbox": { "trust": "untrusted", "timeout": 600 }
+      }
+    }
+  }
+}
