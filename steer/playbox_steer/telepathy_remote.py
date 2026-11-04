@@ -10,6 +10,7 @@ URL and token come from TELEPATHY_URL / TELEPATHY_TOKEN, else from ~/.config/pla
 from __future__ import annotations
 
 import argparse
+import ssl
 import base64
 import json
 import os
@@ -20,6 +21,15 @@ import urllib.request
 from pathlib import Path
 
 CONF = Path.home() / ".config/playbox"
+
+
+def _ctx() -> ssl.SSLContext:
+    """Some Python builds (python.org on macOS) ship no CA bundle; use certifi's when it is installed."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 
 def _conf(env: str, name: str) -> str:
@@ -38,7 +48,7 @@ def call(route: str, body: dict) -> dict:
     last = None
     for attempt in range(4):  # cold start of the GPU container can take a few minutes; 5xx and timeouts are retried
         try:
-            with urllib.request.urlopen(req, timeout=900) as r:
+            with urllib.request.urlopen(req, timeout=900, context=_ctx()) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
             if e.code < 500:

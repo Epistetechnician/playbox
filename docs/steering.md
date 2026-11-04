@@ -957,3 +957,16 @@ Out of scope for v1: fine-tuning, weight export, latent channels between agents 
 - E6 needs a GPU and a trained mapper per pair. Is the CPU LatentMAS sidecar enough to show the effect, or does it need SwaT-style cross-family transfer? And will the SwaT authors license the code?
 - Whether to publish findings to a public dictionary such as neuronary or keep rooms private; publishing is an
   outward action that should go through a person's approval.
+
+
+### E7 on Modal (56-topic fit, strength 0.75, open-weight brain)
+
+Whole stack off the Mac: `tools/telepathy_modal.py` (A10G, both models and maps, bearer auth), `tools/brain_modal.py` (H100, vLLM, Qwen3.8-27B-FP8, 128K context, `--max-num-seqs 64`), `playbox_steer/telepathy_remote.py` (urllib client), run with `TELEPATHY_REMOTE=1` and `HERMES_HOME=tools/hermes_modal`.
+88 blind trials, 20 topics + 4 controls per direction, 3 workers, 0 infrastructure failures:
+
+- Concept trials: 51/80 = 63.8% (95% CI 52.8-73.4%), chance 4.8%. smollm2->qwen3 70.0%, qwen3->smollm2 57.5%.
+- Controls (no concept): 3/8 correct; false-positive rate 62.5% (n=8, wide interval). B names a topic even when none was sent.
+- Earlier run (old fit, Haiku brain): 53%. Fit and strength changed together with the brain, so the gain is not attributed to either alone.
+
+Gotchas found: Hermes needs >=64K context; pyenv Python resolves a different `hermes` than the shell; pyenv Python lacks a CA bundle.
+Results: `results/telepathy/modal_big_private/`.

@@ -14,10 +14,10 @@ MODEL = "Qwen/Qwen3.8-27B-FP8"
 app = modal.App("playbox-brain")
 vol = modal.Volume.from_name("playbox-e8", create_if_missing=True)  # shared Hugging Face cache (/vol/hf)
 image = (
-    # the devel image has nvcc: vLLM's FP8 kernels (DeepGEMM) are compiled at startup and need CUDA_HOME
-    modal.Image.from_registry("nvidia/cuda:12.8.1-devel-ubuntu22.04", add_python="3.12")
+    # the devel image has nvcc (>= 12.9) for vLLM's JIT-compiled kernels; DeepGEMM is off (not needed at this load)
+    modal.Image.from_registry("nvidia/cuda:12.9.1-devel-ubuntu22.04", add_python="3.12")
     .pip_install("vllm==0.33.0", "huggingface_hub")
-    .env({"HF_HOME": "/vol/hf", "CUDA_HOME": "/usr/local/cuda"})
+    .env({"HF_HOME": "/vol/hf", "CUDA_HOME": "/usr/local/cuda", "VLLM_USE_DEEP_GEMM": "0"})
 )
 
 
@@ -33,7 +33,7 @@ def serve():
     vol.commit()
     subprocess.Popen([
         "vllm", "serve", MODEL, "--served-model-name", "qwen3.8-27b", "--host", "0.0.0.0", "--port", "8000",
-        "--api-key", os.environ["BRAIN_TOKEN"], "--max-model-len", "32768", "--gpu-memory-utilization", "0.90",
+        "--api-key", os.environ["BRAIN_TOKEN"], "--max-model-len", "131072", "--gpu-memory-utilization", "0.90",
         "--enable-auto-tool-choice", "--tool-call-parser", "qwen3_coder", "--reasoning-parser", "qwen3",
-        "--enable-prefix-caching",
+        "--enable-prefix-caching", "--max-num-seqs", "64",
     ])

@@ -3,3 +3,4 @@ model:
   provider: custom
   base_url: https://epistetechnician--playbox-brain-serve.us-east.modal.run/v1
   key_env: BRAIN_API_KEY
+  context_length: 131072

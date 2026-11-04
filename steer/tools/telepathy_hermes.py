@@ -28,11 +28,20 @@ ATTEMPTS = int(os.environ.get("TELEPATHY_ATTEMPTS", "3"))
 PORT = int(os.environ.get("TELEPATHY_PORT", "8765"))
 URL = os.environ.get("TELEPATHY_URL", f"http://127.0.0.1:{PORT}")
 AUTOSTART = os.environ.get("TELEPATHY_AUTOSTART", "1") == "1"
+HERMES_BIN = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))  # the pyenv python puts a different `hermes` first on PATH
 REMOTE = os.environ.get("TELEPATHY_REMOTE") == "1"  # use the Modal service (tools/telepathy_modal.py) instead of a local daemon
 if REMOTE:
     URL = (os.environ.get("TELEPATHY_URL") or (Path.home() / ".config/playbox/telepathy_url").read_text()).strip()
-    ENV = f"cd {ROOT} && PYTHONPATH=. python3 -m playbox_steer.telepathy_remote"  # urllib only: no torch on the agents' machine
+    ENV = f"cd {ROOT} && PYTHONPATH=. {PY} -m playbox_steer.telepathy_remote"  # urllib only: no torch on the agents' machine
     AUTOSTART = False
+
+
+def _health(url: str) -> bytes:
+    import urllib.request
+    try:
+        return urllib.request.urlopen(url.rstrip("/") + "/health", timeout=20).read()
+    except OSError:
+        return b""
 
 
 def hermes(prompt: str, name: str, cwd: Path | None = None) -> str:
@@ -42,7 +51,7 @@ def hermes(prompt: str, name: str, cwd: Path | None = None) -> str:
     flags = []
     if os.environ.get("HERMES_PROVIDER"):  # unset: use the Hermes home's own model (e.g. tools/hermes_local, Ollama)
         flags = ["--provider", os.environ["HERMES_PROVIDER"], "-m", os.environ["HERMES_MODEL"]]
-    code, out, err = H.run_agent(["hermes", *flags, "-z", prompt, "-t", "terminal"], cwd, TIMEOUT)
+    code, out, err = H.run_agent([HERMES_BIN, *flags, "-z", prompt, "-t", "terminal"], cwd, TIMEOUT)
     (PRIVATE / f"{name}.out").write_text(f"exit={code}\n{out}\n--- stderr ---\n{err}")
     if code != 0 and not out.strip():
         raise H.InfraError(f"hermes exited {code}: {err.strip()[-200:]}")
@@ -55,7 +64,7 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
         H.ensure_daemon(URL, PY, ROOT, PORT)
     elif REMOTE:  # a cold GPU container takes a few minutes to answer /health
         deadline = time.time() + 900
-        while not H.daemon_up(URL, timeout=10):
+        while b"true" not in _health(URL):
             if time.time() > deadline:
                 raise H.InfraError(f"telepathy service at {URL} did not answer within 15 minutes")
             time.sleep(10)
