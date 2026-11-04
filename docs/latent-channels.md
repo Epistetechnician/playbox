@@ -188,14 +188,14 @@ the sentences of 8 or 16 new topics (`anchors_extra.py`, same templates, no word
 after dropping duplicates). Held-out sentences, test concepts, models and strength unchanged. Whitening rank
 `0.6 n`. One run, one anchor set per size.
 
-| anchors | k | accuracy, 16 not into TinyLlama | accuracy, all 20 | held-out cosine | pairs within 10 points of the pair map (of 16) |
-|---|---|---|---|---|---|
-| 426 | 128 | 0.57 | 0.50 | 0.90 | 13 |
-| 426 | 256 | 0.55 | 0.47 | 0.92 | 11 |
-| 713 | 128 | 0.67 | 0.57 | 0.89 | 16 |
-| 713 | 256 | 0.65 | 0.56 | 0.91 | 16 |
-| 1000 | 128 | 0.66 | 0.57 | 0.88 | 15 |
-| 1000 | 256 | 0.72 | 0.61 | 0.90 | 16 |
+| anchors | k | accuracy, 16 not into TinyLlama | accuracy, all 20 | held-out cosine |
+|---|---|---|---|---|
+| 426 | 128 | 0.57 | 0.50 | 0.90 |
+| 426 | 256 | 0.55 | 0.47 | 0.92 |
+| 713 | 128 | 0.67 | 0.57 | 0.89 |
+| 713 | 256 | 0.65 | 0.56 | 0.91 |
+| 1000 | 128 | 0.66 | 0.57 | 0.88 |
+| 1000 | 256 | 0.72 | 0.61 | 0.90 |
 
 - **More anchors help, but the pair map gains just as much (control below).** The hub went from 0.57 to 0.72 into the
   16 working receivers. Read it with the control, not alone: the hub did not overtake the pair map.
