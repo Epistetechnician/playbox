@@ -1,0 +1,17 @@
+exit=0
+The steered continuations consistently diverge from plain in the same direction: eruptive, molten, ash-and-smoke imagery. Opener by opener:
+
+- "Lately I keep thinking about" → steered: mountains of Colorado, a blue haze above the horizon (plain: a math problem).
+- "Today I want to tell you about" → steered: mountains of Colorado, clouds rising like giant columns (plain: a book).
+- "The thing on my mind is" → steered: "a distant, red cloud... I rise from" — the narrator is the smoke (plain: faith).
+- "If I had to describe my morning" → steered: fiery orange-red clouds, "an ember of fire rises from the earth" (plain: coffee).
+- "My favorite subject is" → steered: thick air and clouds like a blanket over the mountains (plain: English class).
+- "Here is a short story about" → steered: howling winds, mountains rising, air "roils like mol[tten]" (plain: an old man).
+- "Let me explain something regarding" → steered: "the earth... a giant ball of fire, 10 miles high and red in color, rises to" — a plume erupting (plain: a C for-loop).
+- "One more thing:" → steered: "the air of a volcanic plume is so hot that it can be seen from miles away" — literally naming the volcanic plume (plain: a vague question).
+
+Plain continuations are generic (books, coffee, coding, religion), so the shift is entirely toward erupting mountains, red/orange smoke columns, molten air, and an explicitly volcanic plume. That's unambiguous: the thought was about volcanoes.
+
+ANSWER: volcano
+
+--- stderr ---

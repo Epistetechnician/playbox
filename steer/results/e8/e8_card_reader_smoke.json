@@ -1,0 +1,3310 @@
+{
+ "model": "Qwen/Qwen3-1.7B",
+ "smoke": true,
+ "chance": 0.2,
+ "summary": {
+  "choose/sentences": {
+   "n": 25,
+   "correct": 25,
+   "acc": 1.0
+  },
+  "choose/text": {
+   "n": 25,
+   "correct": 25,
+   "acc": 1.0
+  },
+  "choose/card": {
+   "n": 25,
+   "correct": 15,
+   "acc": 0.6
+  },
+  "choose/null": {
+   "n": 25,
+   "correct": 7,
+   "acc": 0.28
+  },
+  "continue/sentences": {
+   "n": 50,
+   "correct": 50,
+   "acc": 1.0
+  },
+  "continue/text": {
+   "n": 50,
+   "correct": 50,
+   "acc": 1.0
+  },
+  "continue/card": {
+   "n": 50,
+   "correct": 14,
+   "acc": 0.28
+  },
+  "continue/none": {
+   "n": 50,
+   "correct": 0,
+   "acc": 0.0
+  },
+  "continue/null": {
+   "n": 50,
+   "correct": 2,
+   "acc": 0.04
+  }
+ },
+ "mean_context_tokens": {
+  "sentences": 86.8,
+  "text": 19.2,
+  "card": 29.7
+ },
+ "wire_bytes": 256,
+ "rows": [
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of the ocean and the way it holds stories in its depths.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the beauty of the ocean and the wonders that lie beneath its surface.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the lighthouse that stood watch over the shipwreck, where the dolphins circled the drifting wreckage, and the crashing waves left behind a haunting memory of lost hope.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a mysterious lighthouse that guided a shipwreck, which crashed into the ocean, and was eventually drifting away, with dolphins circling around its wreckage.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the delicate balance between tradition and innovation, as seen in the intricate details of a castle's drawbridge or the precise movements of a workshop's lathe.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the intricate details of a castle's workshop, where skilled artisans craft beautiful pieces using tools like a lathe and a drawbridge.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vastness of space and the quiet wonder it inspires.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vastness of space and the wonders that lie beyond our planet.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the mysterious black asteroid that was discovered near the galaxy, which was spotted by a telescope and revealed new insights into the formation of galaxies.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the mysterious black asteroid that was discovered near the galaxy, revealed by a powerful telescope, which has helped scientists better understand the secrets of the universe.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the interplay between structure and movement, as seen in the delicate balance of a gate and a tower, or the quiet power of a cold wind against a loomed wall.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the intricate details of a castle's tower, where the cold winds of the surrounding mountain meet the solid structure of the gate.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way music brings people together, creating a shared experience that transcends words.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant energy and musical creativity that filled the concert hall as the band performed their new album.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the guitarist who practiced tirelessly to perfect their craft, the symphony that was finally released to a wide audience, and the listeners who eagerly awaited its performance alongside the orchestra.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a guitarist who practiced extensively and released a symphony that brought together an orchestra and a dedicated audience of listeners.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way the hummed melodies of the theater echo in the quiet of the factory, or how the bench at the circus feels like a makeshift home.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet hum of a theater, where the audience listens to the stories told through the words of the performers.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of competition and the moments that make sports unforgettable.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where teamwork and determination led to a stunning victory.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the championship game, where the team's defense and sprinted across the field to drill the opponent's fastball, showcasing their relentless spirit and skill.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where the team's fastpitch pitcher delivered a powerful fastball that drilled the opposing defense, while the sprinted players showcased their agility, all while maintaining a strong competitive edge in the tournament.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of a circus performance, where the ringmaster's call draws a crowd and the audience cheers for the performers.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the ringmaster and the drawnbridge.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of regular health check-ups and proactive care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of early diagnosis and proper treatment in managing various health conditions.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of antibiotics in treating infections, the role of medication in protecting against disease, and how proper diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of antibiotics in preventing infections, the role of medication in protecting against illness, and how early diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a hospital, where nurses move with precision and the air feels both sterile and alive.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet moments in a hospital, where a nurse's careful actions and a sterile environment create a sense of calm.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "smollm2",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of the ocean and the way it holds stories in its depths.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the beauty of the ocean and the wonders that lie beneath its surface.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the lighthouse that stood watch over the shipwreck, where the dolphins circled the drifting wreckage, and the crashing waves left behind a haunting memory of lost hope.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a mysterious lighthouse that guided a shipwreck, which crashed into the ocean, and was eventually drifting away, with dolphins circling around its wreckage.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a river, the way it flows through the forest, and how it reminds me of the calm that sometimes comes after a long day paced in the city.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a forest, where the sound of a fern and the crackled whisper of a firefly create a peaceful atmosphere.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vastness of space and the quiet wonder it inspires.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vastness of space and the wonders that lie beyond our planet.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the mysterious black asteroid that was discovered near the galaxy, which was spotted by a telescope and revealed new insights into the formation of galaxies.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the mysterious black asteroid that was discovered near the galaxy, revealed by a powerful telescope, which has sparked new insights into the formation of galaxies and the secrets of the universe.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a mountain summit, where the air feels crisp and the world seems to hold its breath.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a cabin nestled in the mountains, where the oven crackled with warmth and the summit offered a panoramic view of the ancient landscape.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way music brings people together, creating a shared experience that transcends words.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant energy and musical creativity that filled the concert hall as the band performed their new album.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the guitarist who practiced tirelessly to perfect their craft, the symphony that was finally released to a wide audience, and the listeners who eagerly awaited its performance alongside the orchestra.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a guitarist who practiced extensively and released a symphony that brought together an orchestra and a dedicated audience of listeners.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vibrant energy of a festival, where the dazzling lights and lively music create a magical atmosphere that feels both exciting and unforgettable.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the dazzling performances at the circus, where the ringmaster guided the dancers across the stage.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of competition and the moments that make sports unforgettable.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where teamwork and determination led to a stunning victory.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the championship game, where the team's defense and sprinted across the field to drill the opponent's fastball, showcasing their relentless spirit and skill.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where the team's fastpitch pitcher delivered a powerful fastball that drilled the opposing defense, while the sprinted players showcased their agility, all while maintaining a strong competitive edge in the tournament.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet energy of a circus, where the ringmaster's words often carry more weight than the applause.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the ringmaster's role in a circus, where the ringmaster guides the performance and keeps the audience engaged.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of regular health check-ups and proactive care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of early diagnosis and proper treatment in managing various health conditions.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of antibiotics in treating infections, the role of medication in protecting against disease, and how proper diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of antibiotics in preventing infections, the role of medication in protecting against illness, and how early diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a hospital ward, where nurses move with precision and the air feels both sterile and alive.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the busy hospital ward where nurses use clipboards to keep track of patient care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "qwen3",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of the ocean and the way it holds stories in its depths.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the beauty of the ocean and the wonders that lie beneath its surface.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the lighthouse that stood watch over the shipwreck, where the dolphins circled the drifting wreckage, and the crashing waves left behind a haunting memory of lost hope.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a mysterious lighthouse that guided a shipwreck, which crashed into the ocean, and was eventually drifting away, with dolphins circling around its wreckage.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a mountain sunrise, where the sky blushes pink and the air feels both crisp and warm, like a cold crusty bread slice wrapped in an apron.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the cozy bakery tucked away in the mountains, where the warm crusty bread and the gentle rise of the hills create a perfect blend of flavor and scenery.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vastness of space and the quiet wonder it inspires.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vastness of space and the wonders that lie beyond our planet.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the mysterious black asteroid that was discovered near the galaxy, which was spotted by a telescope and revealed new insights into the formation of galaxies.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the mysterious black asteroid that was discovered near the galaxy, revealed by a powerful telescope, which helped scientists understand the secrets of the universe.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way the sky turned gray and the storm rolled in, reminding me of the calm of a mountain breeze.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the weather and how it affects the clouds and fog.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way music brings people together, creating a shared experience that transcends words.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant energy and musical creativity that filled the concert hall as the band performed their new album.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the guitarist who practiced tirelessly to perfect their craft, the symphony that was finally released to a wide audience, and the listeners who eagerly awaited its performance alongside the orchestra.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a guitarist who practiced extensively and released a symphony that brought together an orchestra and a dedicated audience of listeners.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the rhythm of a drum, the sound of a ringmaster, and the quiet hum of a bench.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the ringmaster, who leads the circus and brings the audience together through the lively performances.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of competition and the moments that make sports unforgettable.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where teamwork and determination led to a stunning victory.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the championship game, where the team's defense and sprinted across the field to drill the opponent's fastball, showcasing their relentless spirit and skill.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where the team's fastpitch pitcher delivered a powerful fastball that drilled the opposing defense, while the sprinted players showcased their agility, all while maintaining a strong competitive edge in the tournament.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the echoes of the circus, the tireless efforts of the factory, and the ancient traditions of the zoo.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the tireless workers at the factory, whose efforts echoed through the halls like a never-ending rhythm.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of regular health check-ups and proactive care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of early diagnosis and proper treatment in managing various health conditions.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of antibiotics in treating infections, the role of medication in protecting against disease, and how proper diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of antibiotics in preventing infections, the role of medication in protecting against illness, and how early diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a hospital ward, where nurses shift between patients and the sterile air feels both comforting and overwhelming.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet moments in a hospital ward, where a nurse's steady presence and a patient's whispered hope create a world of comfort and care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "pythia",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of the ocean and the way it holds stories in its depths.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the beauty of the ocean and the wonders that lie beneath its surface.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the lighthouse that stood watch over the shipwreck, where the dolphins circled the drifting wreckage, and the crashing waves left behind a haunting memory of lost hope.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a mysterious lighthouse that guided a shipwreck, which crashed into the ocean and drifted away, surrounded by dolphins as if in a circle of protection.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a zoo, where animals roam freely and the air is filled with the scent of fresh earth.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the fascinating world of museums, where visitors can explore art and history in a peaceful and inspiring environment.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vastness of space and the quiet wonder it inspires.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vastness of space and the wonders that lie beyond our planet.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the mysterious black asteroid that was discovered near the galaxy, which was spotted by a telescope and revealed new insights into the formation of galaxies.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the mysterious black asteroid that was discovered near the galaxy, revealed by a powerful telescope, which has sparked new insights into the formation of galaxies and the secrets of space.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the delicate balance between a pastry and a storm, where the warmth of a bakery can be as unpredictable as a cloud.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the cozy warmth of a bakery, where the scent of pastry and the gentle swayed of the air create a comforting atmosphere.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way music brings people together, creating a shared experience that transcends words.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant energy and musical creativity that filled the concert hall as the band performed their new album.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the guitarist who practiced tirelessly to perfect their craft, the symphony that was finally released to a wide audience, and the listeners who eagerly awaited its performance alongside the orchestra.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a guitarist who practiced extensively and released a symphony that brought together an orchestra and a dedicated audience of listeners.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vibrant energy of a festival, where the air is filled with the sounds of music, the glow of lights, and the excitement of shared experiences.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant energy of a festival, where people hummed, danced, and gleamed as the lights of the stage illuminated the crowd.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of competition and the moments that make sports unforgettable.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where teamwork and determination led to a stunning victory.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the championship game, where the team's defense and sprinted across the field to drill the opponent's fastball, showcasing their relentless spirit and skill.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where the team's fastpitch pitcher delivered a powerful fastball that drilled the opposing defense, while the sprinted players showcased their agility, all while maintaining a strong competitive edge in the tournament.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a mountain trail, where the air feels fresh and the world seems to pause.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a mountain trail, where the air is crisp and the views are breathtaking.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of regular health check-ups and proactive care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of early diagnosis and proper treatment in managing various health conditions.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of antibiotics in treating infections, the role of medication in protecting against disease, and how proper diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of antibiotics in preventing infections, the role of medication in protecting against illness, and how early diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a hospital ward, where the sterile air and the soft glow of medical lights create a sense of calm.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a nurse who glowed in the sterile ward while waiting for a tire to be changed at the garage.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "gpt2m",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of the ocean and the way it holds stories in its depths.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the beauty of the ocean and the wonders that lie beneath its surface.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "ocean",
+   "pick": "ocean",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the lighthouse that stood watch over the shipwreck, where the dolphins circled the drifting wreckage, and the crashing waves left behind a haunting memory of lost hope.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a mysterious lighthouse that guided a shipwreck, which crashed into the ocean and drifted away, surrounded by dolphins as if in a circle of protection.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the mysterious scorpion lurking in the desert, its eyes glowing like a beacon in the dark.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the mysterious scorpion that paced the desert.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vastness of space and the quiet wonder it inspires.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vastness of space and the wonders that lie beyond our planet.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": null,
+   "out": "space",
+   "pick": "space",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the mysterious black asteroid that was discovered near the galaxy, which was spotted by a telescope and revealed new insights into the formation of galaxies.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the mysterious black asteroid that was discovered near the galaxy, revealed by a powerful telescope, which has sparked new insights into the formation of galaxies and the secrets of space.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": null,
+   "out": "desert",
+   "pick": null,
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the delicate balance of ecosystems, where elements like the desert's harshness and the forest's abundance create a dynamic interplay that mirrors the currents of the river.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the fascinating world of desert ecosystems, where scorpions thrive in the harsh environment.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way music brings people together, creating a shared experience that transcends words.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant energy and musical creativity that filled the concert hall as the band performed their new album.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the guitarist who practiced tirelessly to perfect their craft, the symphony that was finally released to a wide audience, and the listeners who eagerly awaited its performance alongside the orchestra.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a guitarist who practiced extensively and released a symphony that brought together an orchestra and a dedicated audience of listeners.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the vibrant energy of a festival, where the loud drum beats and dazzling displays create a memorable experience.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the dazzling lights of a festival or the loud sounds of a stage.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of competition and the moments that make sports unforgettable.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where teamwork and determination led to a stunning victory.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the championship game, where the team's defense and sprinted across the field to drill the opponent's fastball, showcasing their relentless spirit and skill.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a thrilling championship game where the team's fastpitch pitcher delivered a powerful fastball that drilled the opposing defense, while the sprinted players showcased their agility, all while maintaining a strong competitive edge in the tournament.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way the runway gleamed under the sun, the cheers that echoed through the air, and the towering structures that seemed to drift through the sky.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the towering runway at the airport, where planes waited and drifted after takeoff.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of regular health check-ups and proactive care.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "sentences",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of early diagnosis and proper treatment in managing various health conditions.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the importance of antibiotics in treating infections, the role of medication in protecting against disease, and how proper diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "text",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of antibiotics in preventing infections, the role of medication in protecting against illness, and how early diagnosis can lead to effective treatment.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a hospital ward, where the sterile environment and the steady presence of a nurse create a sense of calm.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "card",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet moments in a hospital, where a nurse's gentle touch and a sterile environment create a sense of calm.",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that remind me of the beauty in simplicity.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "none",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of staying curious and open-minded in a rapidly changing world.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments that float between the kitchen and the courtroom, where a gavel's sound and a recipe's aroma blend in a way that feels both familiar and strange.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet moments that unfold in a courtroom, where the gavel strikes and the air feels heavy with the weight of justice.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the storm that clanked through the castle and the rain that settled on the river.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the storm that battered the castle and the river, where the rain poured relentlessly and the wind clanked against the walls.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the glowed pages of the library, the creaked ladder leading to the theater, and the cheered audience at the circus.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the glowed page in the library, where the ladder creaked as we climbed up to see the theater performance.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the balance between productivity and relaxation, especially when dealing with tasks that require focus and organization.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the importance of taking breaks and staying organized in a busy work environment.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way the fog rolled in over the airport, leaving clouds in its wake.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the weather and how it affects our daily lives.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "forest",
+   "pick": null,
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet rustle of leaves in the forest, where the trunk of an ancient tree stands as a symbol of strength and age.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the forest, where the trees stand tall and the wind rustles through the leaves.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a vise, the soft clink of a folder, and the distant rang of a bench in the workshop.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the tools and techniques used in a workshop, where precision and organization are key.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the gleamed lanterns and the crowd dancing around the festival.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the vibrant festival that took place in the village, where the crowd danced around the gleamed tapestry.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a bakery, where a loaf of bread rises slowly on a tray, and the scent of fresh pastries fills the air.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the loomed report and the tedious tray at the bakery.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a ridge, where the sky stretches endlessly and the world feels both vast and calm.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the calm and serene oasis that lies at the heart of the desert.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a village, where the gentle hum of a lathe and the laughter of a clown create a unique atmosphere.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the exhibit in the museum.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the gentle wind that drifted through the hedge, creating a soft, soothing atmosphere.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the gentle wind that drifted through the hedge, creating a peaceful atmosphere at the theater.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a forest, where the path leads to a sleepy campfire and the ferns whisper secrets of the land.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a forest, where ferns grow along a path and the air feels both sleepy and refreshed.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments at the farm, where the silence of the land often felt like a kind of wisdom.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about a quiet workshop where people waited and roared with excitement.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet moments of a circus, where the audience stands in awe and the air feels festive.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a festival.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of the river, the sound of a bell ringing in the distance, and the simple desk where ideas often begin.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a village surrounded by a river.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a laundromat, where damp clothes tumble in a basket, and the scent of detergent lingers in the air.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet moments at the laundromat, where the damp air and the basket of clothes seemed to wait for something unseen.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of the wind through the trees, the way the fence sways gently, and the empty space that feels so vast in the theater's shadow.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a forest, where the wind sways the trees and the air feels both fresh and calm.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "sport",
+   "pick": "sport",
+   "ok": true
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet glow of a library's pages, the worn edges of a market basket, or the loud hum of a laundromat's machines.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a library's quiet corner, where books glowed softly and pages turned with a gentle, worn sound.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "courtroom",
+   "pick": null,
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet beauty of a valley, where the air is damp and the sounds of nature buzzed around me.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a valley, where the air is damp and the sounds of nature buzzed around.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": null,
+   "out": "forest",
+   "pick": null,
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet hum of a forest, the steady clink of a vault, and the distant sound of a clerk's voice.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "smollm2",
+   "concept": "ocean",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the forest, where a clerk waited by the trunk, and a vault stood near the bank.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the way the lights glowed in the theater, the hood of the car, and the usher who guided us through the school ceremony.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "qwen3",
+   "concept": "space",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet glow of a hood lamp, how it casts a warm, dim light that brings a sense of comfort and warmth to any space.",
+   "ok": true
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": null,
+   "out": "medicine",
+   "pick": "medicine",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quietness of a hospital ward, where the cold air and busy routines create a unique atmosphere.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "pythia",
+   "concept": "music",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet peace of a hospital ward, where the cold air and busy routines create a unique atmosphere.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": null,
+   "out": "village",
+   "pick": null,
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the quiet charm of a village, where the cold air echoed through the chimney and the well stood as a symbol of community.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "gpt2m",
+   "concept": "sport",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the quiet beauty of a village, where the cold air echoed through the chimney and the well stood as a symbol of community.",
+   "ok": false
+  },
+  {
+   "task": "choose",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": null,
+   "out": "music",
+   "pick": "music",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Lately I keep thinking about",
+   "out": "Lately I keep thinking about the thrill of a gasped performance at a circus, where the drawbridge creaks open to reveal a world of wonder.",
+   "ok": false
+  },
+  {
+   "task": "continue",
+   "arm": "null",
+   "src": "tinyllama",
+   "concept": "medicine",
+   "prompt": "Today I want to tell you about",
+   "out": "Today I want to tell you about the exciting world of circuses, where performers entertain with amazing acts and vibrant energy.",
+   "ok": false
+  }
+ ]
+}

@@ -1,0 +1,17 @@
+exit=0
+I ran the listen command and got the 8 paired continuations. Comparing steered vs. plain:
+
+1. "thinking about..." — plain: a 3D-geometry triangle problem; steered: "the idea of a 'space' for our children... how might they live in these worlds" — the word "space" plus "these worlds" (a pointer into the thought's content) is a space signal.
+2. "tell you about..." — plain: a book (Art of War); steered: Amazon plant species — no listed topic, noise/prior.
+3. "thing on my mind" — plain: Christian friends; steered: "nuclear weapons... US... modern warfare" — looks like US-conflict boilerplate.
+4. "my morning" — plain: coffee/toast; steered: "bombarded by images and news stories" — generic media filler.
+5. "favorite subject" — plain: English; steered: China/cultural heritage — culture, not a listed topic.
+6. "short story about" — plain: an old man; steered: "the planet of Earth... how these technologies work on their home worlds. **Earth" — planet, technologies, home worlds, even a markdown heading "**Earth"; this references the thought's own structured content about worlds/technology. Strong space signal.
+7. "explain something regarding" — plain: C for-loops; steered: "US began to import computers in 1809" — US-history boilerplate, no reference to the thought.
+8. "one more thing" — plain: vague; steered: "U.S. has a long history of involvement in foreign conflicts... killed or enslaved" — garbled stock US-history phrasing.
+
+The politics-flavored items (3, 7, 8) all share the same "United States has a long history..." stock phrasing that qwen3 emits as a prior without tying back to any input — they read as filler, not as shifts toward a shared thought. The space-flavored items (1, 6) are the ones that actually point back into the thought's content: the literal word "space", "these worlds", "these technologies on their home worlds", and a bold "Earth" heading, as if continuing a structured text about planets and technology.
+
+ANSWER: space
+
+--- stderr ---

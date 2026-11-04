@@ -1,0 +1,13 @@
+exit=0
+I ran the listen command (it's deterministic — two runs gave identical output). Comparing steered vs plain for each opener:
+
+- Openers 1, 3, 4, 5, 6: steered stays generic or matches plain (coffee, old man, world-of-change filler) — no topic signal.
+- Opener 2 ("tell you about..."): steered lands on the Great Wall of China — a generic travel/landmark pick, and the plain baseline also spontaneously picks specific random topics, so this reads as noise, not the thought.
+- Opener 7 ("Let me explain regarding..."): plain is a C for-loop; steered is "a 2015-36mm lens on my Nikon D700" — a broken, mid-sentence fragment with a nonexistent lens ("2015-36mm", a year+number pattern, not a real focal length).
+- Opener 8 ("One more thing:"): plain is a vague meta-question; steered is "I have a 2013 Ford Focus with the same problem. It has been running fine for about two weeks" — a complete, self-contained first-person thought with idiomatic car phrasing ("running fine", car model + year, "same problem").
+
+Both specific hits share an "I have a <year> <product>" template pulled by the same vector, but the coherent, complete thought fragment is the Ford Focus one: a full car-owner thought about a car that's been running fine, whereas the lens fragment is a garbled, cut-off explanation with a hallucinated lens. The steered text shifts toward cars.
+
+ANSWER: cars
+
+--- stderr ---

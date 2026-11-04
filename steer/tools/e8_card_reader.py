@@ -60,7 +60,7 @@ def read(payload: dict, model: str, smoke: bool) -> dict:
 
     snapshot_download(model)
     vol.commit()
-    llm = LLM(model, max_model_len=8192, gpu_memory_utilization=0.90)
+    llm = LLM(model, max_model_len=8192, gpu_memory_utilization=0.90, max_num_seqs=64)
     tok = llm.get_tokenizer()
     concepts = payload["concepts"]
     lex = {c: set(TEST_CONCEPTS[c]["lexicon"]) for c in concepts}

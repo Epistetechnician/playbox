@@ -1,0 +1,16 @@
+exit=0
+I ran the command and analyzed the steered-vs-plain deltas.
+
+Steered continuations, compared with their plain counterparts, consistently shift toward sports, with explicit mentions:
+- "the 10,000 rpm of a **baseball** in an air cannon" (plain was 3D-geometry triangles)
+- "the 2018-2019 season of the **Chicago Bulls**" (basketball team)
+- "the 2019 **NFL** season" (x3) — American football, not in the topic list
+- "**baseball**. I love the sport and its ability to entertain fans around the world" (plain was "English")
+- "the 2018... high-oxed athlete" — generic sports
+- "the 10,000-pound American hot dog in an Olympic ring" — generic sports
+
+Within the provided topic list, "baseball" is named directly and explicitly twice (including the unambiguous "My favorite subject is baseball"), while basketball appears once (via the Bulls) and the most frequent shift (NFL) is not a listed topic. Baseball is the strongest supported match.
+
+ANSWER: baseball
+
+--- stderr ---

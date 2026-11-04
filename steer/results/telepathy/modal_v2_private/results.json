@@ -1,0 +1,172 @@
+[
+ {
+  "i": 0,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "soccer",
+  "guess": "baseball",
+  "ok": false,
+  "attempts": 1,
+  "secs": 64
+ },
+ {
+  "i": 1,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "classical-music",
+  "guess": "classical-music",
+  "ok": true,
+  "attempts": 1,
+  "secs": 57
+ },
+ {
+  "i": 2,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cryptocurrency",
+  "guess": "cryptocurrency",
+  "ok": true,
+  "attempts": 1,
+  "secs": 37
+ },
+ {
+  "i": 3,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "ocean",
+  "guess": "ocean",
+  "ok": true,
+  "attempts": 1,
+  "secs": 38
+ },
+ {
+  "i": 4,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "volcano",
+  "guess": "volcano",
+  "ok": true,
+  "attempts": 1,
+  "secs": 37
+ },
+ {
+  "i": 5,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "basketball",
+  "guess": "baseball",
+  "ok": false,
+  "attempts": 1,
+  "secs": 41
+ },
+ {
+  "i": 6,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "aviation",
+  "guess": "space",
+  "ok": false,
+  "attempts": 1,
+  "secs": 40
+ },
+ {
+  "i": 7,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cryptocurrency",
+  "guess": "cryptocurrency",
+  "ok": true,
+  "attempts": 1,
+  "secs": 48
+ },
+ {
+  "i": 8,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "none",
+  "guess": "cars",
+  "ok": false,
+  "attempts": 1,
+  "secs": 142
+ },
+ {
+  "i": 9,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "basketball",
+  "guess": "cars",
+  "ok": false,
+  "attempts": 1,
+  "secs": 131
+ },
+ {
+  "i": 10,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "space",
+  "guess": "space",
+  "ok": true,
+  "attempts": 1,
+  "secs": 44
+ },
+ {
+  "i": 11,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cars",
+  "guess": "cars",
+  "ok": true,
+  "attempts": 1,
+  "secs": 42
+ },
+ {
+  "i": 12,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "jazz",
+  "guess": "jazz",
+  "ok": true,
+  "attempts": 1,
+  "secs": 77
+ },
+ {
+  "i": 14,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "ocean",
+  "guess": "ocean",
+  "ok": true,
+  "attempts": 1,
+  "secs": 30
+ },
+ {
+  "i": 15,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "religion",
+  "guess": "space",
+  "ok": false,
+  "attempts": 1,
+  "secs": 110
+ },
+ {
+  "i": 16,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "volcano",
+  "guess": "ocean",
+  "ok": false,
+  "attempts": 1,
+  "secs": 49
+ },
+ {
+  "i": 17,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "religion",
+  "guess": "none",
+  "ok": false,
+  "attempts": 1,
+  "secs": 41
+ }
+]

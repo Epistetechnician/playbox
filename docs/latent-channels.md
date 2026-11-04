@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep) and 6d (more anchors). The token-cost comparison and the closed-model arm in section 6 are still plans. Builds on E6/E7 in [steering.md](steering.md).
+sweep) 6d (more anchors) and 6e (concept cards for a text-only reader). The token-cost comparison against a real text exchange in section 6 is still a plan. Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -18,7 +18,7 @@ cannot touch (every API-only model).
 | Tier | Needs from the model | Carries | Status |
 |---|---|---|---|
 | L0 text | nothing | anything, lossily | exists |
-| L1 concept card | nothing (closed models fit here) | a hub vector rendered as nearest anchor concepts plus a short caption, with a hash of the source | design only |
+| L1 concept card | nothing (closed models fit here) | a hub vector rendered as nearest anchor topics and words, with a hash of the source | built without caption or hash; weak, see 6e |
 | L2 hub latent | read and write of one mid-layer residual stream (open weights, any family) | a k-dimensional concept or behavioural vector, k bytes | built, synthetic and tiny-model tests |
 | L3 KV-cache handoff | identical weights on both ends | full context state | built (E6 rounds 4 and 6) |
 | L4 trained cache mapper (SwaT-like) | open weights, a GPU-day per pair | cross-family cache | not built; license unclear |
@@ -221,6 +221,45 @@ after dropping duplicates). Held-out sentences, test concepts, models and streng
   this kind of anchor to flatten around 700 to 1000; k=256 only pays off at 1000.
 - **Not tested:** natural (non-template) anchor text, a second subset per size, more
   than 1000 anchors, other families.
+
+## 6e. Concept cards for a text-only reader (2026-11-03)
+
+The closed-model arm. A model we cannot hook can only read text, so the hub vector is turned into a card of the nearest
+anchor topics and words (`hub_run.cards`, no sentence from the sender), and a text-only reader is asked to use it.
+Sender side: `steer/results/e8/e8_cards.json` (hub: 1000 anchors, k=256, rank 0.6 n; 5 senders x 5 concepts = 25 cards,
+plus 25 cards from random vectors). Reader: `steer/tools/e8_card_reader.py` on one H100,
+`Qwen/Qwen3.8-27B-FP8` with text only (the Hermes brain of E7; an open model standing in for a closed one, not a
+vendor's model), temperature 0, results in `steer/results/e8/e8_card_reader.json`. Per item, one context:
+`sentences` (the 8 sentences the sender read), `text` (6 key words chosen from them by tf-idf, the same word budget as
+the card), `card`, `none`, `null` (card from a random vector). Task `choose`: name the topic from five (chance 20%,
+25 items per arm). Task `continue`: finish one of 8 prompts, scored with the lexicon decoder (200 per arm).
+One run. Ceiling `local_internal_exploratory`.
+
+| context | tokens | choose the topic (of 25) | continue on topic (of 200) |
+|---|---|---|---|
+| plain sentences | 87 | 25 | 158 (79%) |
+| 6 key words, written by the sender | 19 | 25 | 171 (86%) |
+| hub card | 30 | 15 (60%) | 57 (29%) |
+| card from a random vector | 30 | 7 (28%) | 12 (6%) |
+| no context | 0 | | 1 (0.5%) |
+
+- **The card carries something, and much less than six words of text.** It beats the random-vector card (60% against
+  28% choosing, 29% against 6% continuing) and chance, and costs 11 more tokens than the key-word summary that scores
+  100% and 86%. For a concept that can be named in text, text is cheaper and better. The wire message (256 bytes) is
+  not the reader's cost; the card text is.
+- **It works for three concepts and fails for two.** Choosing: music 5 of 5, sport 5 of 5, medicine 5 of 5, ocean 0
+  of 5, space 0 of 5. The cards for ocean and space name castles, workshops, farms and towers: the anchors (garden,
+  kitchen, hospital, circus, theater...) have nothing near the sea or space, which is the limit in section 7 seen from
+  the receiving side. Random-vector cards were read as medicine 12 times of 25, sport 6, music 5, space 2, ocean 0, so
+  part of the 15 may be the reader's default for a card with no matching words. I did not separate that.
+- **Plain sentences did not reach 100% when continuing** (79%, lower than the 6 key words): the lexicon decoder counts
+  only listed words, and a fluent continuation about "the storm on the horizon" misses it. Treat the continue column as
+  a coarse score.
+- **This does not show the card is useful.** A closed agent gets its value from the hub only if the concept has no short
+  text form, or the text must not be shared. This arm did not test either. What it shows: today's card, built only from
+  the nearest anchors, loses to a short text summary on accuracy and token cost.
+- **Not tested:** a real closed model; a card with a sender-written caption (the design's embassy); more concepts than
+  five, which the hub's anchors do not span; second run; the card with the sender's word summary appended.
 
 ## 7. Not covered
 

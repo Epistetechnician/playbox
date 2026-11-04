@@ -1,6 +1,6 @@
 model:
   default: qwen3.8-27b
   provider: custom
-  base_url: https://epistetechnician--playbox-brain-serve.us-east.modal.run/v1
+  base_url: https://episte2001--playbox-brain-serve.us-east.modal.run/v1
   key_env: BRAIN_API_KEY
   context_length: 131072
