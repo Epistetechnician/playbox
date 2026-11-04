@@ -33,7 +33,7 @@ def _anchor_split(seed: int = 0, held: int = 150) -> tuple[list[str], list[str]]
     return texts[held:], texts[:held]
 
 
-def _sender_pass(path: str, frac: float, train: list[str], heldout: list[str], concepts: list[str]) -> dict:
+def _sender_pass(path: str, frac: float, train: list[str], heldout: list[str], concepts: list[str], bank: dict | None = None) -> dict:
     m, tok = T.load(path)
     layer = T.layer_of(m, frac)
     neutral = T.sentence_states(m, tok, NEUTRAL, layer)
@@ -42,7 +42,7 @@ def _sender_pass(path: str, frac: float, train: list[str], heldout: list[str], c
         "train": T.sentence_states(m, tok, train, layer),
         "held": T.sentence_states(m, tok, heldout, layer),
         "norm": T.mean_norm(m, tok, NEUTRAL + PROMPTS, layer),
-        "thought": {c: T.thought(m, tok, layer, TEST_CONCEPTS[c]["sentences"], neutral) for c in concepts},
+        "thought": {c: T.thought(m, tok, layer, (bank or TEST_CONCEPTS)[c]["sentences"], neutral) for c in concepts},
         "neutral_mean": neutral.mean(0),
         "hidden": m.config.hidden_size,
     }
@@ -164,28 +164,42 @@ def sweep(models: dict[str, str], ks: tuple[int, ...] = (16, 32, 128), join: boo
 
 
 def _score_hubs(models: dict[str, str], info: dict, hubs: dict[str, H.Hub], concepts: list[str], prompts: list[str],
-                coef: float, gen: int) -> dict:
-    lex = {c: set(TEST_CONCEPTS[c]["lexicon"]) for c in concepts}
+                coef: float, gen: int, bank: dict | None = None, direct: bool = False) -> dict:
+    bank = bank or TEST_CONCEPTS
+    lex = {c: set(bank[c]["lexicon"]) for c in concepts}
     res: dict = {"hubs": {n: {"k": h.k, "models": list(h.spokes)} for n, h in hubs.items()}, "pairs": {}, "chance": 1 / len(concepts)}
+    if direct:
+        res["direct"] = {}
     for dst, di in info.items():
         mb, tb = T.load(models[dst])
         lb = di["layer"]
+        if direct:  # the receiver's own direction for each concept: what it could do having read the sentences itself
+            neutral = T.sentence_states(mb, tb, NEUTRAL, lb)
+            per = {}
+            for c in concepts:
+                d = T.thought(mb, tb, lb, bank[c]["sentences"], neutral)
+                d = d / d.norm() * coef * di["norm"]
+                per[c] = sum(T.lexicon_id(T.generate(mb, tb, lb, d, p, gen), lex)[0] == c for p in prompts) / len(prompts)
+            res["direct"][dst] = {"acc": round(sum(per.values()) / len(per), 4), "by_concept": per}
         for name, hub in hubs.items():
             joiner = name[5:] if name.startswith("join_") else None
             for src, si in info.items():
                 if src == dst or (joiner and joiner not in (src, dst)):
                     continue
                 hits = n = 0
+                per = {}
                 for c in concepts:
                     raw, scale = H.quantize(hub.encode(src, si["thought"][c]))
                     v = hub.decode(dst, H.dequantize(raw, scale))
                     v = v / v.norm() * coef * di["norm"]
-                    for p in prompts:
-                        hits += T.lexicon_id(T.generate(mb, tb, lb, v, p, gen), lex)[0] == c
-                        n += 1
+                    h_c = sum(T.lexicon_id(T.generate(mb, tb, lb, v, p, gen), lex)[0] == c for p in prompts)
+                    hits += h_c
+                    n += len(prompts)
+                    per[c] = h_c / len(prompts)
                 cos = torch.nn.functional.cosine_similarity(
                     hub.send(src, dst, si["held"] - si["held"].mean(0)), di["held"] - di["held"].mean(0), dim=-1).mean().item()
-                res["pairs"].setdefault(f"{src}->{dst}", {})[name] = {"acc": round(hits / n, 4), "heldout_cos": round(cos, 4)}
+                res["pairs"].setdefault(f"{src}->{dst}", {})[name] = {"acc": round(hits / n, 4), "heldout_cos": round(cos, 4),
+                                                                      "by_concept": per}
         del mb
     return res
 
@@ -398,4 +412,38 @@ def join_chain(models: dict[str, str], base: tuple[str, ...] | None = None, orde
     res = _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
     res["base"] = list(base)
     res["orders"] = [list(o) for o in orders]
+    return res
+
+
+def natural_eval(models: dict[str, str], texts: list[str], n_nat: int = 1000, k: int = 256, rank_frac: float = 0.6,
+                 frac: float = 0.45, coef: float = 0.5, gen: int = 24, n_prompts: int = 4,
+                 concepts: list[str] | None = None, template_topics: int = 16) -> dict:
+    """E8 follow-up (docs/latent-channels.md 6k): natural-text anchors and twenty concepts.
+
+    Anchors: the 1000 template sentences (`tem`), `n_nat` and `2*n_nat` natural sentences from `texts` with every sentence
+    containing a concept lexicon word removed (`nat<n>`), and both together (`mix`). Concepts: the original five plus fifteen
+    natural-text ones (`concepts_natural`), chance 5%. Held-out cosine is measured on natural sentences that no hub saw.
+    Hubs are named `tem`, `nat<n>`, `nat<2n>`, `mix`; k and the whitening rank rule are the same for all."""
+    from .concepts_natural import ALL_CONCEPTS, natural_anchors
+
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(ALL_CONCEPTS)
+    prompts = PROMPTS[:n_prompts]
+    train, held_t = _anchor_split()
+    tem = train + extra_anchors(template_topics, set(train) | set(held_t))
+    nat = natural_anchors(texts, 2 * n_nat + 150)
+    held, nat = nat[2 * n_nat:], nat[: 2 * n_nat]
+    anchors = tem + nat
+    info = {n: _sender_pass(p, frac, anchors, held, concepts, ALL_CONCEPTS) for n, p in models.items()}
+    nt = len(tem)
+    sets = {"tem": list(range(nt)), f"nat{n_nat}": list(range(nt, nt + n_nat)), f"nat{2 * n_nat}": list(range(nt, nt + 2 * n_nat)),
+            "mix": list(range(nt + n_nat))}
+    hubs: dict[str, H.Hub] = {}
+    for name, idx in sets.items():
+        hubs[name] = H.fit_hub({m: i["train"][idx] for m, i in info.items()}, H.anchor_digest([anchors[j] for j in idx]), k=k,
+                               r=round(rank_frac * len(idx)))
+    res = _score_hubs(models, info, hubs, concepts, prompts, coef, gen, ALL_CONCEPTS, direct=True)
+    res["anchor_sizes"] = {name: len(idx) for name, idx in sets.items()}
+    res["heldout_natural"] = len(held)
+    res["concepts"] = concepts
     return res

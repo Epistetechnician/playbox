@@ -112,3 +112,24 @@ def test_join_chain_grows_a_hub_one_model_at_a_time(zoo):
     assert r["base"] == ["gpt2_s"] and r["orders"] == [["llama_s", "llama_m"], ["llama_m", "llama_s"]]
     assert all(set(c) == set(r["hubs"]) for c in r["pairs"].values())
     assert all(h["models"] and "gpt2_s" in h["models"] for h in r["hubs"].values())
+
+
+def test_natural_concepts_are_disjoint_from_the_anchors_and_the_natural_eval_runs(zoo):
+    from playbox_steer.concepts_natural import ALL_CONCEPTS, NATURAL_CONCEPTS, lexicon_words, natural_anchors
+
+    assert len(NATURAL_CONCEPTS) == 15 and len(ALL_CONCEPTS) == 20
+    for name, c in NATURAL_CONCEPTS.items():
+        assert len(c["sentences"]) == 8 and len(c["lexicon"]) >= 25, name
+    texts = ["The old town kept its quiet streets and its small cafe by the square. The clerk spoke at length about the weekend. "
+             "Nothing about it was unusual, said the neighbour who kept the keys for the whole house."] * 3 + \
+            ["The volcano erupted and lava covered the village in the valley below the mountain."]
+    assert "volcano" in lexicon_words()
+    got = natural_anchors(texts, 10)
+    assert got and not any(w.lower() in lexicon_words() for s in got for w in re.findall(r"[A-Za-z']+", s))
+    pool = [f"The quiet {a} stood near the old {b} and the {c} for a long time." for a in "abcdefgh" for b in "ijklmnop" for c in "qrstuvwx"]
+    r = hub_run.natural_eval(zoo, pool, n_nat=40, k=8, gen=2, n_prompts=1, concepts=["ocean", "volcano"], template_topics=0)
+    assert set(r["hubs"]) == {"tem", "nat40", "nat80", "mix"}
+    assert r["anchor_sizes"]["nat80"] == 80 and r["heldout_natural"] == 150
+    assert set(r["direct"]) == set(zoo)
+    cell = next(iter(r["pairs"].values()))["tem"]
+    assert set(cell["by_concept"]) == {"ocean", "volcano"}
