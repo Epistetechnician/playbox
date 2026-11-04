@@ -240,3 +240,41 @@ def anchor_extend(models: dict[str, str], extra: tuple[int, ...] = (0, 8, 16), k
     for name in res["hubs"]:
         res["hubs"][name]["anchors"] = len(train) + len(extra_anchors(int(name[1:].split("_")[0]), set(train) | set(held)))
     return res
+
+
+def pair_control(models: dict[str, str], extra: tuple[int, ...] = (0, 8, 16), frac: float = 0.45, coef: float = 0.5,
+                 gen: int = 24, concepts: list[str] | None = None, prompts: list[str] | None = None) -> dict:
+    """Control for `anchor_extend`: the per-pair ridge map (the main run's baseline) fitted on the same extra anchors.
+
+    Same anchors, held-out sentences, concepts, prompts and scoring as the hub arms, so `pair_x<extra>` compares with
+    the hub `x<extra>_k<k>`. `pair_x0` is the main run's pair arm again (a check that the setup reproduces it)."""
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(TEST_CONCEPTS)
+    prompts = prompts or PROMPTS
+    train, held = _anchor_split()
+    more = extra_anchors(max(extra), set(train) | set(held))
+    info = {n: _sender_pass(p, frac, train + more, held, concepts) for n, p in models.items()}
+    lex = {c: set(TEST_CONCEPTS[c]["lexicon"]) for c in concepts}
+    res: dict = {"arms": {f"pair_x{x}": len(train) + len(extra_anchors(x, set(train) | set(held))) for x in extra},
+                 "pairs": {}, "chance": 1 / len(concepts)}
+    for dst, di in info.items():
+        mb, tb = T.load(models[dst])
+        lb = di["layer"]
+        for src, si in info.items():
+            if src == dst:
+                continue
+            for x in extra:
+                n = res["arms"][f"pair_x{x}"]
+                pair = T.Ridge(si["train"][:n], di["train"][:n], 0.1)
+                hits = tot = 0
+                for c in concepts:
+                    v = pair.direction(si["thought"][c])
+                    v = v / v.norm() * coef * di["norm"]
+                    for p in prompts:
+                        hits += T.lexicon_id(T.generate(mb, tb, lb, v, p, gen), lex)[0] == c
+                        tot += 1
+                cos = torch.nn.functional.cosine_similarity(
+                    pair.direction(si["held"] - si["held"].mean(0)), di["held"] - di["held"].mean(0), dim=-1).mean().item()
+                res["pairs"].setdefault(f"{src}->{dst}", {})[f"pair_x{x}"] = {"acc": round(hits / tot, 4), "heldout_cos": round(cos, 4)}
+        del mb
+    return res

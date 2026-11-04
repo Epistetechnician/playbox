@@ -84,3 +84,10 @@ def test_anchor_extend_fits_on_more_anchors(zoo):
     assert r["hubs"]["x2_k8"]["anchors"] == r["hubs"]["x0_k8"]["anchors"] + len(extra_anchors(2, base))
     assert r["hubs"]["x0_k8"]["anchors"] == 426
     assert all(0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())
+
+
+def test_pair_control_scores_the_pair_map_on_the_same_anchor_sizes(zoo):
+    r = hub_run.pair_control(zoo, extra=(0, 2), gen=2, concepts=["ocean", "space"], prompts=PROMPTS[:1])
+    assert set(r["arms"]) == {"pair_x0", "pair_x2"} and r["arms"]["pair_x0"] == 426
+    assert set(r["pairs"]) == {f"{a}->{b}" for a in zoo for b in zoo if a != b}
+    assert all(set(c) == {"pair_x0", "pair_x2"} and 0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())
