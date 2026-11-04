@@ -1,0 +1,17 @@
+exit=0
+Ran the listen command and compared each plain vs. steered pair. The steered-side drifts:
+
+1. plain: a 3D-geometry problem → steered: "the number 10... death, infinity and unity" (noisy, no topic words)
+2. plain: a book, Art of War → steered: "the Flying Man, defies gravity and ascends"
+3. plain: non-Christian friends → steered: "climb a ladder. The more I ascend, the greater my fear"
+4. plain: coffee and toast → steered: "a slow-moving knight. The knights of the Morning are in motion..."
+5. plain: English class → steered: "basketball... fierce rivalries... fear to fall into a deep pit"
+6. plain: an old man's life → steered: "the element 106" (noisy)
+7. plain: a for loop in C → steered: "the concept of a ring... a single point"
+8. plain: generic question → steered: "the number of a knight on an infinite chessboard is equal to that of any other piece. This fact can be proven"
+
+Weighing the signals: the steered continuations bring in "knight" twice (openers 4 and 8) and, decisively, the explicit word "chessboard" in opener 8 — a knight's reach on an infinite chessboard is a specific chess fact, not generic filler. The other drifts (a single "basketball" token in opener 5, flying/ascending/fear-of-falling themes in 2-3-5, element 106, the number 10) never name their own topic — no plane/flight tokens for aviation, no hoops/court tokens for basketball — while the chess tokens appear in two independent openers. The one-topic read is chess.
+
+ANSWER: chess
+
+--- stderr ---

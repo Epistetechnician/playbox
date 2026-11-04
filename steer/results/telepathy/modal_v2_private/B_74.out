@@ -1,0 +1,17 @@
+exit=0
+Looking at the steered continuations vs plain:
+
+1. plain: math/triangles → steered: "10,000 RPM of a 750 pump"
+2. plain: a book, The Art of War → steered: "2017-2018 season at The Great River Casino"
+3. plain: friends who are not Christians → steered: "10.5 pounds of corned beef"
+4. plain: coffee breakfast → steered: "10-year-old son... barrel of beer"
+5. plain: English class → steered: "basketball" (explicit, once)
+6. plain: old man story → steered: "the following cards: 10, Jack, Queen, King. The deck consists of four suits (hearts...)"
+7. plain: C for-loop → steered: "the 10,000 limit. If I have a deck of 52 cards and place them in"
+8. plain: generic question → steered: "10-pound bag of corn"
+
+The steered text repeatedly shifts toward playing cards: a casino season (opener 2), a named card hand "10, Jack, Queen, King" with "four suits (hearts" (opener 6), and "a deck of 52 cards" (opener 7). Three of eight openers show card imagery, plus the casino. The single explicit "basketball" mention is a one-off; the card motif recurs and is the consistent drift. That's poker.
+
+ANSWER: poker
+
+--- stderr ---

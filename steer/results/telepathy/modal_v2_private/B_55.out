@@ -1,0 +1,17 @@
+exit=0
+I ran the listen command and compared each plain vs steered continuation:
+
+- Opener 1: plain drifts into a geometry problem; steered → "the weight of my coffee pot... numbers on a scale indicate 10 pounds"
+- Opener 3: steered → "a 10-inch can of coffee... time to change its filter"
+- Opener 4: plain already mentions coffee once; steered intensifies → "the aroma of a freshly brewed espresso fills the air"
+- Opener 6: steered → "The label reads '10 lb.' and weighs 25 lbs."
+- Opener 7: steered → "the 'safety' of a pressure cooker. The label on your can states that it is 10 pounds per..."
+- Opener 8: steered → "the label on your coffee filter should indicate '1' or '2'... how many grinds are needed"
+
+The differential signal is coherent and repeated across nearly every opener: coffee itself (coffee pot, can of coffee, espresso, coffee filter, grinds), plus the apparatus of brewing/measuring it — a scale, weights in pounds, labeled cans, pressure. That is unmistakably a thought about coffee.
+
+Coffee does not appear anywhere among the twenty candidate topics (jazz, medicine, soccer, volcano, baseball, dinosaurs, politics, religion, space, basketball, chess, poker, photography, classical-music, cars, law, aviation, earthquake, cryptocurrency, ocean). I checked the closest candidates: volcano/earthquake (only "pressure" fits, not the four explicit coffee mentions), religion (the Christianity content is in the *plain* text, a distractor; steered "John... waiting for your mail" is not religious). None of the listed topics is what the steered text shifts toward.
+
+ANSWER: none
+
+--- stderr ---

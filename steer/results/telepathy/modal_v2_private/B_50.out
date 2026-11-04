@@ -1,0 +1,14 @@
+exit=0
+Analyzing the shifts from plain to steered:
+
+- Opener 6: plain = old man story → steered = "the number of cars in each state" — explicit cars.
+- Opener 7: plain = for loop in C → steered = "The first step is to determine how many wheels are on..." — wheels.
+- Opener 8: plain = generic question → steered = "If you're using a 10-inch wheel, the diameter will be larger than that of an 8-inch wheel" — wheel sizing.
+- Opener 4: steered mentions "grinders" (marginal).
+- Opener 5: one basketball mention, but it's a single isolated token with no support elsewhere.
+
+The recurring steered motif is cars and their wheels (cars, "how many wheels", wheel diameters) across three separate openers, while basketball appears only once. The dominant topic is cars.
+
+ANSWER: cars
+
+--- stderr ---

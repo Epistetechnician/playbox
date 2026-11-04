@@ -1,0 +1,14 @@
+exit=0
+The steered texts clearly converge on basketball:
+
+- "a 10-foot-tall basketball hoop"
+- "basketball. I play for the University of Kentucky, and my teammates are Michael Jordan and Scottie Blouder"
+- "the player has 10 seconds to throw the basketball into one of two baskets"
+- "the ball in a basketball. The ball is spinning and rotating... when shooting at"
+- "the ball... spinning around an axis at 40 mph" (spinning a basketball)
+
+The plain texts are generic (a book, English class, coffee, a C for-loop), so the shift is unambiguous. There's a bit of sports noise (Indianapolis Motor Speedway, 105 mph fastball, NFL season), but basketball is the consistent, repeated target across five of eight openers.
+
+ANSWER: basketball
+
+--- stderr ---

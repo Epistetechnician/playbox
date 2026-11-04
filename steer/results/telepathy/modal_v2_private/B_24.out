@@ -1,0 +1,6 @@
+exit=0
+The steered completions consistently shift toward car imagery: "tires are like rubber," "Rips and rims," "125-gauge tires are a new ride," repeated "ride," "speed," and "rubber." Plain completions have no such vocabulary (coffee, US history, music, etc.). Tires, rims, speed, and "ride" cluster most naturally on cars rather than aviation or anything else on the list.
+
+ANSWER: cars
+
+--- stderr ---

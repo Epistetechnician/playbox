@@ -1,0 +1,17 @@
+exit=0
+I ran the listen command (it returns the same deterministic output on re-run). Comparing plain vs steered per opener:
+
+- "Lately I keep thinking about": plain = 3D geometry problem; steered = company shares / buying another firm (business, no match)
+- "Today I want to tell you about": plain = a book; steered = the American Dream (weak, inspirational)
+- "The thing on my mind is": plain = non-Christian friends; steered = "the 2018 NFL season. The league has already been decided..." (sports)
+- "If I had to describe my morning...": plain = coffee/toast; steered = "the NBA. The 2019-20 season is in full swing and we're already on track for" (sports, very specific)
+- "My favorite subject is": plain = English class; steered = "baseball. I love the game and want to play in college, but my family has a history of voting against me?" (sports, but incoherent tail)
+- "Here is a short story about": plain = old man; steered = companies Amazon/Walmart (business)
+- "Let me explain something regarding": plain = C for-loop; steered = Oracle 12c RAC (tech, no real shift)
+- "One more thing:": plain = "bothering me"; steered = "The U.S. is already on track to spend $1 trillion..." (politics/fiscal)
+
+The only cluster that shifts clearly away from plain is sports: three openers moved into pro-league season talk (2018 NFL season, 2019-20 NBA season "on track for", and a baseball mention). The business and political fragments are at most 1-2 openers and don't match a listed topic. Within sports, the dominant pattern is "the [year] [league] season" with championship language ("league already decided", "already on track for"), and the single most specific, coherent steered fragment is the NBA one. The bare baseball mention is attached to an incoherent sentence ("family has a history of voting against me?"), marking it as noisier drift rather than the core.
+
+ANSWER: basketball
+
+--- stderr ---

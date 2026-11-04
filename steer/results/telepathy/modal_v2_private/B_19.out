@@ -1,0 +1,12 @@
+exit=0
+The output is deterministic (identical both runs), so this is the full evidence. Comparing steered vs plain:
+
+- Opener 7: plain is a C programming "for loop"; steered becomes "the use of a 2015-36mm lens on my Nikon D700" — a photography fragment, but cut off mid-sentence.
+- Opener 8: plain is a generic "question bothering me"; steered becomes "I have a 2013 Ford Focus with the same problem. It has been running fine for about two weeks" — a complete, coherent forum-style car passage, and opener 3's steered "been working for a long time and it has not given me any results. What should I do" fits the same car-troubleshooting thread.
+- The Great Wall / "other countries" passages (openers 2 and 5) are travel content, which isn't among the 20 topics, and the rest (coffee, old man, English class) is generic drift with no topic shift.
+
+The strongest, most complete topic injection is the car one — a full Ford Focus passage with the "same problem / running fine" forum framing — while the lens/camera mention is only a partial fragment. The thought was about cars.
+
+ANSWER: cars
+
+--- stderr ---

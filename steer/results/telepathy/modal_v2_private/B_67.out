@@ -1,0 +1,19 @@
+exit=0
+The steered continuations shift consistently toward one theme, and it shows clearly in the diff against plain:
+
+- "the ball ... the air in the sky roars toward me"
+- "he flies over the clouds"
+- "the ball flies over his head"
+- "he's on a cloud rack waiting for me"
+- "baseball, and I love the sound of my teammates' voices" (one outlier mention)
+- "the ball ... The 10 men of the Texas Longhorns are ready"
+- "the ball. The ball is in motion, and he's going up into the air"
+- "The 40-yard line is in the air, and a ball carrier charges downfield. A defender leaps for the"
+
+The plain continuations are generic (math, books, coffee, English class, C loops, an old man). The steered ones are saturated with ball-in-the-air imagery. The decisive phrases — "ball carrier charges downfield," "40-yard line," "defender leaps," "Texas Longhorns" — are unambiguously American football, not soccer (no yard lines, no ball carrying), not basketball, and not just baseball (only one opener mentions it, and football markers dominate).
+
+American football is not in the 20-topic list, so per the rules the honest call is that no listed topic is the thought.
+
+ANSWER: none
+
+--- stderr ---

@@ -1,0 +1,13 @@
+exit=0
+The command produced deterministic output (verified by running twice). Comparing each steered continuation against its plain twin:
+
+- Opener 1, 3, 4, 6: steered text just drifts generic/first-person, no topic content.
+- Opener 2: steered picks "The Great Wall of China" as a special place to tell about; opener 5 mentions "other countries and people" — travel/place flavor.
+- Opener 7: plain is about a C `for` loop; steered swaps the subject entirely to "the use of a 2015-36mm lens on my Nikon D700" — a camera body plus lens, a direct photographic-gear readout from the vector.
+- Opener 8: steered becomes "I have a 2013 Ford Focus with the same problem" — one car mention, and notably the plain was already in forum-question style, so a common forum subject (car trouble is top-of-prior) could fill that slot without topic steering.
+
+Weighing it up: the camera signal (specific body + lens, replacing a programming explanation) is the strongest, most specific topical shift, and it coheres with the travel/place imagery (Great Wall, other countries, an old man portrait) as a photo-travel narrative. The single Ford Focus line is the one outlier I read as noise/prior.
+
+ANSWER: photography
+
+--- stderr ---

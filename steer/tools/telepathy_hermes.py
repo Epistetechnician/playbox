@@ -91,7 +91,7 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
     topics = random.Random(i).sample(CONCEPTS, len(CONCEPTS))
     b = (f"You are Agent B. Another agent left you a thought as a vector file, not as text. Run this shell command:\n"
          f"{ENV} listen --src {src} --dst {dst} --vec {vec}\n"
-         f"For each opener it prints a 'plain' continuation (no thought) and a 'steered' one (under the thought). Only what the steered text shifts toward, compared with the plain one, carries the thought; if steered looks no different from plain, there is no thought. Decide which ONE of these "
+         f"It prints continuations written by your own model under the influence of that thought. Read them and decide which ONE of these "
          f"topics the thought was about: {', '.join(topics)}. Use only that command's output; do not look at any other files. "
          f"The final line of your reply must be exactly 'ANSWER: <topic>' (or 'ANSWER: none' if you see no topic).")
     out = hermes(b, f"B_{tag}", cwd=shared)

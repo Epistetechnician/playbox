@@ -85,7 +85,10 @@ class Ridge:
 
 
 def fit_map(ma, ta, la, mb, tb, lb, lam_grid=(0.03, 0.1, 0.3)) -> tuple[Ridge, dict]:
-    if os.environ.get("TELEPATHY_FIT") == "big":
+    if os.environ.get("TELEPATHY_FIT") == "xl":
+        from .telepathy_data_xl import FIT_TOPICS_XL
+        fit_topics, lam_grid = FIT_TOPICS_XL, (0.1, 0.3, 1.0, 3.0)
+    elif os.environ.get("TELEPATHY_FIT") == "big":
         from .telepathy_data_big import FIT_TOPICS_BIG
         fit_topics = FIT_TOPICS_BIG
     else:

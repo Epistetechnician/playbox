@@ -1,0 +1,11 @@
+exit=0
+I ran the listen command. Comparing plain vs steered continuations:
+
+- Plain text is generic chatter (war, songs, coffee, US history, a wheelchair story) — no topic.
+- Steered text consistently drifts into one cluster of imagery across all eight openers: "steel-wire in a tubed pool," "herings and corsets," "herons' wings," "in a corset of iron, stone," "steel-bass," "My feet and her ankles plunge into the ice-floes beneath me," "Rip and swash in a...", "spokes," "rails," "girling chain."
+
+The dominant recurring signals in the steered-only shift are herring, bass, ice-floes, swash, plunge, pool, herons — water/sea imagery. Steel and spokes are likely just the model's crude associated texture (submarine hull, wire), but the semantic core is ocean: ice-floes, swash, fish, plunging into water. No other topic fits (volcano/earthquake would show fire/ground-shaking, not herring/bass/ice-floes; cars would show wheels/engine parts, not swash and herring).
+
+ANSWER: ocean
+
+--- stderr ---

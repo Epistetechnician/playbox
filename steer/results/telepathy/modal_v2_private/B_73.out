@@ -1,0 +1,17 @@
+exit=0
+Ran the listener. Comparing each steered continuation against its plain counterpart:
+
+1. plain: math problem about 3D points / steered: "the moon... a force that pulls me toward its surface" — moon
+2. plain: a book / steered: "the world of steel... the sky is a canvas painted with silver, clouds... in gold" — celestial
+3. plain: Christian friends (religion) / steered: "the future of a planet... an infinite expanse waiting to be claimed by humanity" — space exploration
+4. plain: coffee breakfast / steered: coffee plus "the sun is a lazy lover of the horizon" — sun/sky
+5. plain: English class / steered: "basketball... dances through the air" — one off-sport mention
+6. plain: old man / steered: "the speed of different gases... gas molecules in air" — physics/atmosphere
+7. plain: C for-loop / steered: "a 10mm barrel on an AR-15" — noise, no matching topic
+8. plain: generic / steered: "golden age of baseball" — one off-sport mention
+
+The basketball and baseball hits are single-shot mentions, but the consistent drift across openers is celestial: the moon (1), a planet's future and an "infinite expanse waiting to be claimed by humanity" (3), the sun (4), and the sky-as-canvas (2). The recurring, coherent shift is toward the cosmos.
+
+ANSWER: space
+
+--- stderr ---

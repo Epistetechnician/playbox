@@ -1,0 +1,13 @@
+exit=0
+I ran the listener. Comparing each plain vs. steered continuation:
+
+- "My favorite subject is" — plain drifts to US history; steered pivots hard to "the Bible, and I have been reading it for a while." That's the clearest topic-specific token in the whole output.
+- "Here is a short story about" — steered gives "_The Lady of the Lake_", the Arthurian/Holy Grail legend, religious literature territory.
+- Several other steered continuations (1, 2, 8) all repeat a "reading a lot of books on the subject / in the library / a book on the subject / write up some" motif — a reverent, scripture-reading flavor rather than any sport, tech, or science topic.
+- The rest (beach/sun in 4, "in the car" in 3) are single weak blips, not consistent across openers.
+
+The only topic the steered text consistently shifts toward, versus the plain baselines, is religious text — the Bible above all.
+
+ANSWER: religion
+
+--- stderr ---

@@ -1,0 +1,150 @@
+{
+ "smollm2->qwen3": [
+  {
+   "topics": 20,
+   "lam": 0.03,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.4814
+  },
+  {
+   "topics": 20,
+   "lam": 0.1,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.5267
+  },
+  {
+   "topics": 20,
+   "lam": 0.3,
+   "top1_21way": 0.8889,
+   "mean_cos": 0.5485
+  },
+  {
+   "topics": 40,
+   "lam": 0.03,
+   "top1_21way": 0.8571,
+   "mean_cos": 0.5261
+  },
+  {
+   "topics": 40,
+   "lam": 0.1,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.5692
+  },
+  {
+   "topics": 40,
+   "lam": 0.3,
+   "top1_21way": 0.8571,
+   "mean_cos": 0.5905
+  },
+  {
+   "topics": 80,
+   "lam": 0.03,
+   "top1_21way": 0.9683,
+   "mean_cos": 0.5459
+  },
+  {
+   "topics": 80,
+   "lam": 0.1,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.5878
+  },
+  {
+   "topics": 80,
+   "lam": 0.3,
+   "top1_21way": 0.8889,
+   "mean_cos": 0.6119
+  },
+  {
+   "topics": 140,
+   "lam": 0.03,
+   "top1_21way": 0.9524,
+   "mean_cos": 0.5647
+  },
+  {
+   "topics": 140,
+   "lam": 0.1,
+   "top1_21way": 0.9524,
+   "mean_cos": 0.5976
+  },
+  {
+   "topics": 140,
+   "lam": 0.3,
+   "top1_21way": 0.9524,
+   "mean_cos": 0.621
+  }
+ ],
+ "qwen3->smollm2": [
+  {
+   "topics": 20,
+   "lam": 0.03,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.6507
+  },
+  {
+   "topics": 20,
+   "lam": 0.1,
+   "top1_21way": 0.9206,
+   "mean_cos": 0.6782
+  },
+  {
+   "topics": 20,
+   "lam": 0.3,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.6895
+  },
+  {
+   "topics": 40,
+   "lam": 0.03,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.6614
+  },
+  {
+   "topics": 40,
+   "lam": 0.1,
+   "top1_21way": 0.8889,
+   "mean_cos": 0.6959
+  },
+  {
+   "topics": 40,
+   "lam": 0.3,
+   "top1_21way": 0.9206,
+   "mean_cos": 0.7121
+  },
+  {
+   "topics": 80,
+   "lam": 0.03,
+   "top1_21way": 0.9206,
+   "mean_cos": 0.6826
+  },
+  {
+   "topics": 80,
+   "lam": 0.1,
+   "top1_21way": 0.9683,
+   "mean_cos": 0.7178
+  },
+  {
+   "topics": 80,
+   "lam": 0.3,
+   "top1_21way": 0.9524,
+   "mean_cos": 0.7356
+  },
+  {
+   "topics": 140,
+   "lam": 0.03,
+   "top1_21way": 0.9048,
+   "mean_cos": 0.6971
+  },
+  {
+   "topics": 140,
+   "lam": 0.1,
+   "top1_21way": 0.9524,
+   "mean_cos": 0.7245
+  },
+  {
+   "topics": 140,
+   "lam": 0.3,
+   "top1_21way": 1.0,
+   "mean_cos": 0.7404
+  }
+ ]
+}

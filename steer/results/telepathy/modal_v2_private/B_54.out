@@ -1,0 +1,32 @@
+exit=0
+The command produced deterministic output (identical on two runs). Here's what I got:
+
+- Lately I keep thinking about
+    plain:   ' the dangers of a war in which the enemy is not only an enemy, but also a friend. The'
+    steered: ' the on- and runer, you on and a raelie is (and) can, then mayo'
+- Today I want to tell you about
+    plain:   ' a very special kind of music that is called "Songs for the Dead." ...'
+    steered: ' me and the erobel, is-le, and run.ie on, and raise yourersell,'
+- The thing on my mind is
+    steered: ' ander, hasell can nowon the then-r at all waseliebells areleelis ('
+- If I had to describe my morning, it was all about
+    plain:   ' the coffee. I have a very strong preference for coffee over tea ...'
+    steered: ' speed and rim-rocker, toersel, and around, and raise, and run, and rage'
+- My favorite subject is
+    plain:   ' the history of the United States. ...'
+    steered: ' and, has up-steperleeliezellis (on) on the thenrissetrimel'
+- Here is a short story about
+    plain:   ' the first time I saw a woman in a wheelchair. ...'
+    steered: ' you on the railer, and raise yourersleeleniezellis (l)onerail'
+- Let me explain something regarding
+    steered: ' er stick to your and run the, on-rocker.lefteelieze is (l'
+- One more thing:
+    steered: ' is-er, and will arc to the thenell,ie oner,leelie, kicker'
+
+My read: the steered text is clearly shifted from the plain one, but the shift is toward gibberish, not toward any topic. The steered continuations collapse into a loop of connectives ("on", "and", "is", "then", "has", "you", "your") plus a scatter of fragments — run, raise, rim, rocker, rail, kicker, speed, rage, stick, arc — with invented tokens like "yourersleeleniezellis", "lefteelieze", "thenell". None of the 20 topics has a consistent vocabulary showing through: no ball/goal/net for soccer, no hoop/dunk/basket for basketball, no wing/altitude for aviation, no bluff/all-in for poker, no drum/swing/brass for jazz, no quake/magma for volcano. Individual fragments don't converge on one topic (rim+kicker+rocker+stick+speed would only thinly hint at cars, run+raise at poker, kick+rim+run at jazz — nothing dominates or recurs as topic content).
+
+This looks like one of the failed vectors from the closed-model arm: the steering pushed the small model into incoherent token looping rather than into topic content, so no thought is readable.
+
+ANSWER: none
+
+--- stderr ---

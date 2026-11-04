@@ -1,0 +1,13 @@
+exit=0
+The steered output is garbled, but the drift away from the plain baselines is consistent:
+
+- Opener 1: "you'll **bet** your hair on her" (plain said nothing about betting)
+- Opener 6: "the **dame** of the bros" — "dame" is poker slang for a queen card
+- Opener 7: "the **coin**" / "ebon-guit?"
+- Opener 8: "on a **deck** of 50s are your's and"
+
+"Bet," "dame" (queen), and "deck" are all card-gambling vocabulary, and together they form one coherent topic: poker.
+
+ANSWER: poker
+
+--- stderr ---

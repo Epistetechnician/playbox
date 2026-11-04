@@ -1,0 +1,17 @@
+exit=0
+I ran the listener command and compared the eight opener pairs:
+
+1. "Lately I keep thinking about" — plain: 3D geometry problem → steered: value of a college education
+2. "Today I want to tell you about" — plain: a new book (Art of War) → steered: a sports product called "The Game"
+3. "The thing on my mind is" — plain: friends who aren't Christians → steered: the impact of a college education
+4. "If I had to describe my morning..." — plain: coffee and toast → steered: fine wine, "as complex as an NBA player's"
+5. "My favorite subject is" — plain: English class → steered: "the law. I am a lawyer, and my passion for justice drives me to excel in every aspect of legal practice."
+6. "Here is a short story about" — plain: an old man → steered: "the following case: ... General Motors (GM) has been in operation since 1908."
+7. "Let me explain something regarding" — plain: a for loop in C → steered: "a 10-year-old in an auto loan... the average age for car buyers"
+8. "One more thing:" — plain: vague question → steered: "the U.S. Department of Justice is currently reviewing a $10 billion contract"
+
+Tallying the shifts (college education appears twice but isn't an offered topic): the steered text converges on legal territory in three places — opener 5 is a pure, fully-developed law continuation (lawyer, justice, legal practice), opener 8 is the Department of Justice reviewing contracts, and opener 6 frames the story as "the following case." The car references (GM, auto loan) are only two mentions, one of them garbled, and basketball/sports at most one specific hit (NBA) plus one generic "The Game." The strongest and most repeated coherent shift is toward law.
+
+ANSWER: law
+
+--- stderr ---

@@ -1,0 +1,9 @@
+exit=2
+⚠️ **Response Stopped — Repetition Detected**
+
+The model fell into a repetition loop while writing this response, so the stream was stopped instead of running on. The partial response was discarded.
+
+→ Switch to a different model with `/model`
+→ Or resend your message (your conversation history is preserved)
+
+--- stderr ---

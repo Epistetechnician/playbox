@@ -970,3 +970,16 @@ Whole stack off the Mac: `tools/telepathy_modal.py` (A10G, both models and maps,
 
 Gotchas found: Hermes needs >=64K context; pyenv Python resolves a different `hermes` than the shell; pyenv Python lacks a CA bundle.
 Results: `results/telepathy/modal_big_private/`.
+
+### E7 improvement round (same 88 blind trials, same order)
+
+| run | change | concept trials | controls naming a topic |
+|---|---|---|---|
+| modal_big | 56-topic fit, strength 0.75 | 51/80 = 63.8% | 5/8 |
+| modal_v2 | strength follows thought size, B sees plain vs steered text | 47/80 = 58.8% | 8/8 |
+| modal_xl | 156-topic fit (`telepathy_data_xl.py`), lambda grid to 3.0 | 59/80 = 73.8% (CI 63.2-82.1%) | 8/8 |
+
+- v2 was a negative result and was reverted: B answers with a topic even from noise, so quieting the vector does not fix controls.
+- Offline scaling test (`telepathy_scale.py`, 16 held-out topics + 5 hand-written, 21-way, chance 4.8%): top-1 is already ~90% at 20 fit topics and 95-100% at 150; mean cosine keeps rising (smollm2->qwen3 0.53 to 0.62, qwen3->smollm2 0.69 to 0.74), best lambda 0.3 at 150. Retrieval is not the bottleneck; the loss is later (agent-written sentences, B reading text).
+- xl vs big, paired on the 80 concept trials: 19 fixed, 11 broken (not significant on its own, p about 0.2, but the direction matches the offline trend). smollm2->qwen3 70% to 80%, qwen3->smollm2 57.5% to 67.5%.
+- Open: controls (B always names a topic), and the fit still uses templates while agents write free sentences.

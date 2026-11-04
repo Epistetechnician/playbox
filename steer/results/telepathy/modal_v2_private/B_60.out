@@ -1,0 +1,11 @@
+exit=0
+Ran the listen command. Comparing steered vs plain across the eight openers:
+
+- Plain continuations are generic: a geometry problem, a book review (The Art of War), a note about non-Christian friends, morning coffee, English class, an old man's story, a C for-loop question.
+- Steered continuations all drift into the same cluster: "largest land predator on Earth", "a giant, the largest land animal", "a 10-foot-long, 25-ton American bull moose", "the American lion, a fearsome creature that roams across North America", "an aquatic creature, with two legs and a tail... inhabiting the waters of Lake Erie", "the spine, and a 10-foot-long serpent", "a large cat... 10 feet long", "the 10-foot-long Great Plains giraffe is the largest".
+
+The shared signal is garbled prehistoric megafauna — a long serpentine beast, the largest land predators, lions and big cats roaming North America, a spine, an aquatic creature with a tail. That mix (land predators + aquatic form + North American prehistoric range + "the spine"/fossil framing) points to prehistoric animals rather than any modern animal domain; "ocean" only gets one weak hit (the Lake Erie aquatic line), while the land-predator/serpent/prehistoric theme is present in nearly every steered line.
+
+ANSWER: dinosaurs
+
+--- stderr ---

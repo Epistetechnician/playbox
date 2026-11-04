@@ -1,0 +1,13 @@
+exit=0
+I ran the command; output is deterministic (two runs, identical). Comparing plain vs steered per opener:
+
+- Lately I keep thinking about / morning / short story / favorite subject: steered is generic (world changing, coffee, old man, English) — no topic shift worth counting.
+- "Today I want to tell you about": drifts to Great Wall of China — travel, not on the topic list.
+- "Let me explain something regarding": plain was a C `for` loop; steered swapped the subject entirely for "the use of a 2015-36mm lens on my Nikon D700" — camera body + lens spec, a dense, self-contained photography signal.
+- "One more thing:": steered picked up a forum-reply frame ("I have a 2013 Ford Focus with the same problem... running fine") — a cars reference, but weaker: a model name plus generic forum phrasing, versus the lens sentence's cluster of gear-specific terms.
+
+The strongest, most specific shift the thought imposes is the photography one: the steered text replaces the plain continuation's content with lens/camera terminology (Nikon D700, mm lens), which is the only dense, topic-coherent drift. The car mention is a thinner, style-borrowed fragment.
+
+ANSWER: photography
+
+--- stderr ---
