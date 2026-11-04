@@ -23,6 +23,7 @@ import torch
 
 from . import hub as H
 from . import telepathy as T
+from .anchors_extra import extra_anchors
 from .telepathy_data import FIT_TOPICS, NEUTRAL, PROMPTS, TEST_CONCEPTS
 
 
@@ -214,3 +215,28 @@ def anchor_sweep(models: dict[str, str], ns: tuple[int, ...] = (100, 200, 300), 
                 hubs[f"n{n}_s{seed}_k{k}"] = H.fit_hub({m: i["train"][idx] for m, i in info.items()}, H.anchor_digest(sub),
                                                       k=k, r=min(256, round(rank_frac * n)))
     return _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
+
+
+def anchor_extend(models: dict[str, str], extra: tuple[int, ...] = (0, 8, 16), ks: tuple[int, ...] = (128, 256),
+                  rank_frac: float = 0.6, frac: float = 0.45, coef: float = 0.5, gen: int = 24,
+                  concepts: list[str] | None = None, prompts: list[str] | None = None) -> dict:
+    """E8 follow-up: more anchors than the 426. The hub is fitted on the 426 plus the sentences of the first `extra`
+    topics of `anchors_extra` (36 each), for each hub size k. Whitening rank is `round(rank_frac * n)` with no cap
+    (256 at 426, the main run's setting). Held-out sentences and concepts are unchanged. Hubs are named `x<extra>_k<k>`."""
+    torch.set_grad_enabled(False)
+    concepts = concepts or list(TEST_CONCEPTS)
+    prompts = prompts or PROMPTS
+    train, held = _anchor_split()
+    more = extra_anchors(max(extra), set(train) | set(held))
+    info = {n: _sender_pass(p, frac, train + more, held, concepts) for n, p in models.items()}
+    hubs: dict[str, H.Hub] = {}
+    for x in extra:
+        n = len(train) + len(extra_anchors(x, set(train) | set(held)))
+        sub = (train + more)[:n]
+        for k in ks:
+            hubs[f"x{x}_k{k}"] = H.fit_hub({m: i["train"][:n] for m, i in info.items()}, H.anchor_digest(sub), k=k,
+                                           r=round(rank_frac * n))
+    res = _score_hubs(models, info, hubs, concepts, prompts, coef, gen)
+    for name in res["hubs"]:
+        res["hubs"][name]["anchors"] = len(train) + len(extra_anchors(int(name[1:].split("_")[0]), set(train) | set(held)))
+    return res

@@ -8,11 +8,12 @@ from tokenizers import Tokenizer, models, normalizers, pre_tokenizers
 from transformers import GPT2Config, GPT2LMHeadModel, LlamaConfig, LlamaForCausalLM, PreTrainedTokenizerFast
 
 from playbox_steer import hub_run
+from playbox_steer.anchors_extra import EXTRA_TOPICS, extra_anchors
 from playbox_steer.telepathy_data import FIT_TOPICS, NEUTRAL, PROMPTS, TEST_CONCEPTS
 
 
 def _tokenizer() -> PreTrainedTokenizerFast:
-    texts = [s for t in FIT_TOPICS.values() for s in t] + NEUTRAL + PROMPTS + [s for c in TEST_CONCEPTS.values() for s in c["sentences"]]
+    texts = [s for t in FIT_TOPICS.values() for s in t] + [s for t in EXTRA_TOPICS.values() for s in t] + NEUTRAL + PROMPTS + [s for c in TEST_CONCEPTS.values() for s in c["sentences"]]
     words = sorted({w for t in texts for w in re.findall(r"\w+|[^\w\s]", t.lower())})
     vocab = {w: i for i, w in enumerate(["[UNK]", "[EOS]"] + words)}
     tk = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
@@ -65,3 +66,21 @@ def test_anchor_sweep_fits_on_subsets_and_scores_the_full_set(zoo):
     assert set(r["hubs"]) == {"n40_s0_k8", "n40_s1_k8", "full_k8"}
     assert all(0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())
     assert set(r["pairs"]["llama_s->llama_m"]) == {"n40_s0_k8", "n40_s1_k8", "full_k8"}
+
+
+def test_extra_anchors_are_clean_and_do_not_touch_the_held_out_set():
+    base = {s for t in FIT_TOPICS.values() for s in t}
+    more = extra_anchors(16, base)
+    assert len(more) > 500 and not set(more) & base and len(set(more)) == len(more)
+    lexicon = {w for c in TEST_CONCEPTS.values() for w in c["lexicon"]}
+    assert not {w for s in more for w in re.findall(r"[a-z]+", s.lower())} & lexicon
+    assert not set(more) & {s for c in TEST_CONCEPTS.values() for s in c["sentences"]}
+
+
+def test_anchor_extend_fits_on_more_anchors(zoo):
+    r = hub_run.anchor_extend(zoo, extra=(0, 2), ks=(8,), gen=2, concepts=["ocean", "space"], prompts=PROMPTS[:1])
+    assert set(r["hubs"]) == {"x0_k8", "x2_k8"}
+    base = {s for t in FIT_TOPICS.values() for s in t}
+    assert r["hubs"]["x2_k8"]["anchors"] == r["hubs"]["x0_k8"]["anchors"] + len(extra_anchors(2, base))
+    assert r["hubs"]["x0_k8"]["anchors"] == 426
+    assert all(0 <= v["acc"] <= 1 for c in r["pairs"].values() for v in c.values())
