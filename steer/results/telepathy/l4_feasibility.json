@@ -1,0 +1,149 @@
+{
+ "chosen": {
+  "lam": 0.01,
+  "rank": null
+ },
+ "sweep": [
+  {
+   "rank": null,
+   "lam": 0.01,
+   "val_r2": 0.5768
+  },
+  {
+   "rank": null,
+   "lam": 0.1,
+   "val_r2": 0.5703
+  },
+  {
+   "rank": null,
+   "lam": 1.0,
+   "val_r2": 0.5261
+  },
+  {
+   "rank": 512,
+   "lam": 0.01,
+   "val_r2": 0.4556
+  },
+  {
+   "rank": 512,
+   "lam": 0.1,
+   "val_r2": 0.4558
+  },
+  {
+   "rank": 512,
+   "lam": 1.0,
+   "val_r2": 0.4532
+  },
+  {
+   "rank": 128,
+   "lam": 0.01,
+   "val_r2": 0.324
+  },
+  {
+   "rank": 128,
+   "lam": 0.1,
+   "val_r2": 0.324
+  },
+  {
+   "rank": 128,
+   "lam": 1.0,
+   "val_r2": 0.3238
+  }
+ ],
+ "val_r2_keys": 0.7965,
+ "val_r2_values": 0.5659,
+ "sanity": {
+  "true_cache_nll": 1.4907,
+  "rebuilt_cache_nll": 1.4907
+ },
+ "wikitext": {
+  "n": 150,
+  "none": {
+   "nll": 3.4577
+  },
+  "own": {
+   "nll": 2.5264
+  },
+  "other_own": {
+   "nll": 3.5587,
+   "retention": -0.1085,
+   "ci95": [
+    -0.1725,
+    -0.037
+   ]
+  },
+  "mean": {
+   "nll": 7.0819,
+   "retention": -3.8919,
+   "ci95": [
+    -4.153,
+    -3.6567
+   ]
+  },
+  "mapped": {
+   "nll": 2.9409,
+   "retention": 0.5549,
+   "ci95": [
+    0.462,
+    0.6262
+   ]
+  },
+  "mapped_rms": {
+   "nll": 2.9687,
+   "retention": 0.5251,
+   "ci95": [
+    0.4323,
+    0.5998
+   ]
+  }
+ },
+ "templated_heldout": {
+  "n": 48,
+  "none": {
+   "nll": 4.9407
+  },
+  "own": {
+   "nll": 1.1688
+  },
+  "other_own": {
+   "nll": 2.9601,
+   "retention": 0.5251,
+   "ci95": [
+    0.4873,
+    0.5669
+   ]
+  },
+  "mean": {
+   "nll": 7.7989,
+   "retention": -0.7577,
+   "ci95": [
+    -0.8417,
+    -0.7001
+   ]
+  },
+  "mapped": {
+   "nll": 2.51,
+   "retention": 0.6444,
+   "ci95": [
+    0.6244,
+    0.6619
+   ]
+  },
+  "mapped_rms": {
+   "nll": 2.2037,
+   "retention": 0.7256,
+   "ci95": [
+    0.7073,
+    0.7418
+   ]
+  }
+ },
+ "concept_retrieval_21way": {
+  "chance": 0.0476,
+  "own": 0.9524,
+  "mapped": 0.8571,
+  "mapped_rms": 0.9524
+ },
+ "seconds": 261,
+ "fit_rows": 78291
+}

@@ -1,0 +1,109 @@
+{
+ "chosen": {
+  "lam": 0.1,
+  "rank": null
+ },
+ "sweep": [
+  {
+   "rank": null,
+   "lam": 0.1,
+   "val_r2": 0.2554
+  }
+ ],
+ "val_r2_keys": 0.6416,
+ "val_r2_values": 0.2367,
+ "sanity": {
+  "true_cache_nll": 1.4907,
+  "rebuilt_cache_nll": 1.4907
+ },
+ "wikitext": {
+  "n": 12,
+  "none": {
+   "nll": 3.4706
+  },
+  "own": {
+   "nll": 2.4605
+  },
+  "other_own": {
+   "nll": 3.6131,
+   "retention": -0.1411,
+   "ci95": [
+    -0.3264,
+    0.0698
+   ]
+  },
+  "mean": {
+   "nll": 6.9893,
+   "retention": -3.4834,
+   "ci95": [
+    -4.3044,
+    -2.911
+   ]
+  },
+  "mapped": {
+   "nll": 3.0723,
+   "retention": 0.3944,
+   "ci95": [
+    0.2832,
+    0.5303
+   ]
+  },
+  "mapped_rms": {
+   "nll": 3.1246,
+   "retention": 0.3426,
+   "ci95": [
+    0.2171,
+    0.4815
+   ]
+  }
+ },
+ "templated_heldout": {
+  "n": 48,
+  "none": {
+   "nll": 4.9407
+  },
+  "own": {
+   "nll": 1.1688
+  },
+  "other_own": {
+   "nll": 2.9601,
+   "retention": 0.5251,
+   "ci95": [
+    0.4873,
+    0.5669
+   ]
+  },
+  "mean": {
+   "nll": 7.8252,
+   "retention": -0.7647,
+   "ci95": [
+    -0.8455,
+    -0.7056
+   ]
+  },
+  "mapped": {
+   "nll": 3.1671,
+   "retention": 0.4702,
+   "ci95": [
+    0.4461,
+    0.4916
+   ]
+  },
+  "mapped_rms": {
+   "nll": 2.9959,
+   "retention": 0.5156,
+   "ci95": [
+    0.4898,
+    0.5383
+   ]
+  }
+ },
+ "concept_retrieval_21way": {
+  "chance": 0.0476,
+  "own": 0.9524,
+  "mapped": 0.9048,
+  "mapped_rms": 0.9048
+ },
+ "seconds": 107,
+ "fit_rows": 4266
+}
