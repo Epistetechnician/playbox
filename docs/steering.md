@@ -997,3 +997,16 @@ Two changes to the Modal telepathy service, same 88-trial blind protocol (20 top
 | agent fit + gate | 65/80 = 81.2% (71.3 to 88.3) | 3/8 |
 
 Per direction: SmolLM2 to Qwen3 34/40, Qwen3 to SmolLM2 31/40; 0 infrastructure failures. The topic gain is within the intervals of the earlier run (not significant at this size); the control improvement is from 0 to 3 of 8, and the other 5 controls still named religion or classical-music. The gate and the new fit data were changed together, so which one gave the topic gain is not separated. Chance is 4.8%.
+
+### E7 round 4: signal strength travels with the vector
+
+The vector file now carries its own strength (the gate value, 0 to 1) as four extra bytes. `listen` prints it as a first line, "signal strength s (0 = no thought was sent, 1 = a clear thought)", and Agent B's prompt says to answer none below 0.3. Only the vector and one number cross; no text. Same blind protocol, 16 no-topic controls instead of 8.
+
+| run | topics correct (95% CI) | no-topic controls correct | real topics answered "none" |
+|---|---|---|---|
+| round 3 (gate only) | 65/80 = 81.2% (71.3 to 88.3) | 3/8 | not counted |
+| round 4 (gate + signal line) | 67/80 = 83.8% (74.2 to 90.3) | 16/16 | 0/80 |
+
+Per direction: SmolLM2 to Qwen3 35/40, controls 8/8; Qwen3 to SmolLM2 32/40, controls 8/8. 0 infrastructure failures.
+
+Caveats: the control sentences are the one fixed neutral triple, and the gate thresholds were calibrated on a neutral triple of the same kind, so 16/16 shows the gate separates that triple from topics, not that it separates every possible no-content input. The topic change (81.2% to 83.8%) is within noise. One seed, one set of 20 topics.

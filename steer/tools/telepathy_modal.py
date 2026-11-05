@@ -14,6 +14,7 @@ which is plain urllib: no torch, no models, a few MB of memory.
 import base64
 import hmac
 import os
+import struct
 import threading
 from pathlib import Path
 
@@ -137,12 +138,16 @@ class Service:
             T, torch = self.T, self.torch
             mb, tb = self.models[r.dst]
             raw = base64.b64decode(r.vec)
-            if len(raw) != 4 * mb.config.hidden_size:
+            n = 4 * mb.config.hidden_size
+            if len(raw) not in (n, n + 4):
                 raise HTTPException(400, "vector has the wrong size for this receiver")
+            strength = struct.unpack("<f", raw[n:])[0] if len(raw) == n + 4 else None
+            raw = raw[:n]
             v = torch.frombuffer(bytearray(raw), dtype=torch.float32).clone()
             lb = T.layer_of(mb, FRAC)
             with self.lock:
                 lines = [f"- {p}{T.generate(mb, tb, lb, v, p, GEN)!r}" for p in self.PROMPTS]
-            return {"text": "\n".join(lines)}
+            head = [] if strength is None else [f"signal strength {strength:.2f} (0 = no thought was sent, 1 = a clear thought)"]
+            return {"text": "\n".join(head + lines)}
 
         return api

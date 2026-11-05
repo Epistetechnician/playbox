@@ -91,7 +91,7 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
     topics = random.Random(i).sample(CONCEPTS, len(CONCEPTS))
     b = (f"You are Agent B. Another agent left you a thought as a vector file, not as text. Run this shell command:\n"
          f"{ENV} listen --src {src} --dst {dst} --vec {vec}\n"
-         f"It prints continuations written by your own model under the influence of that thought. Read them and decide which ONE of these "
+         f"It prints a signal-strength line (0 = no thought was sent, 1 = a clear thought), then continuations written by your own model under the influence of that thought. If the strength is below 0.3, answer none. Otherwise read them and decide which ONE of these "
          f"topics the thought was about: {', '.join(topics)}. Use only that command's output; do not look at any other files. "
          f"The final line of your reply must be exactly 'ANSWER: <topic>' (or 'ANSWER: none' if you see no topic).")
     out = hermes(b, f"B_{tag}", cwd=shared)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import ssl
 import base64
+import struct
 import json
 import os
 import sys
@@ -74,7 +75,7 @@ def main() -> None:
     if a.cmd == "think":
         r = call("/think", {"src": a.src, "dst": a.dst, "texts": a.text})
         tmp = f"{a.out}.tmp"
-        Path(tmp).write_bytes(base64.b64decode(r["vec"]))
+        Path(tmp).write_bytes(base64.b64decode(r["vec"]) + struct.pack("<f", r["gate"]))  # the vector, then its strength
         os.replace(tmp, a.out)  # atomic: a reader never sees a half-written vector
         print(f"wrote {a.out}: one {r['dim']}-float vector for {a.dst}; no text left this process")
     else:
