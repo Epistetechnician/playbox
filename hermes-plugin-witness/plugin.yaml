@@ -1,0 +1,16 @@
+name: playbox-witness
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+requires_hermes: ">=0.21.5"
+description: >-
+  Companion to the Playbox plugin. Records every tool call of a Hermes session that uses a Playbox room
+  into a signed, hash-chained log, and pauses write-capable tool calls in any turn that read text from
+  another room member until the person sends their next message.
+license: Apache-2.0
+homepage: https://github.com/Epistetechnician/playbox/tree/main/hermes-plugin-witness
+tags: [security, audit, multi-agent]
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
