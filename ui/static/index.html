@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#19192f">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Playbox</title>
+<style>
+:root{
+  --bg:#19192f; --bg-2:#222246; --ink:#f2f2f6; --mut:#a8a8c2; --line:rgba(255,255,255,.1);
+  --card:rgba(255,255,255,.055); --card-2:rgba(255,255,255,.09);
+  --gold:#e8c872; --ok:#7fd6b0; --bad:#ff9090; --warn:#e8c872; --link:#aab4ff;
+  --r:10px; --nav-h:64px;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --cond:"Avenir Next Condensed","Arial Narrow","Roboto Condensed","Helvetica Neue",ui-sans-serif,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(900px 480px at 50% -120px,rgba(120,120,255,.18),transparent 70%);background-attachment:fixed}
+button,input,textarea,select{font:inherit;color:inherit}
+h1,h2,h3{margin:0;font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+h2{font-size:13px;color:var(--mut)}
+a{color:var(--link)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.mut{color:var(--mut)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px}
+
+/* layout */
+.app{display:grid;min-height:100%;grid-template-columns:1fr}
+.rail,.pulse{display:none}
+main{min-width:0;padding:0 16px calc(var(--nav-h) + 24px + env(safe-area-inset-bottom));max-width:760px;width:100%;margin:0 auto}
+.top{display:flex;align-items:center;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top)) 0 10px;position:sticky;top:0;z-index:5;
+  background:linear-gradient(var(--bg) 70%,transparent)}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.22em;font-size:17px;font-weight:600}
+.brand b{color:var(--gold);font-size:24px;letter-spacing:0;font-weight:400;line-height:1}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:12.5px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(127,214,176,.18)}
+.dot.host{background:var(--gold);box-shadow:0 0 0 3px rgba(232,200,114,.18)}
+
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-template-columns:repeat(5,1fr);
+  padding:6px 8px calc(6px + env(safe-area-inset-bottom));background:rgba(25,25,47,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+.nav{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;background:none;border:0;border-radius:10px;
+  color:var(--mut);font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:11.5px;cursor:pointer;position:relative}
+.nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.nav[aria-current=page]{color:var(--ink)}
+.nav[aria-current=page] svg{stroke:var(--gold)}
+.nav .badge{position:absolute;top:2px;right:calc(50% - 20px);min-width:16px;height:16px;border-radius:8px;background:var(--gold);color:#1a1a2e;font:600 10px/16px var(--sans);padding:0 4px;text-align:center}
+
+@media (min-width:900px){
+  .app{grid-template-columns:232px minmax(0,1fr)}
+  .rail{display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;padding:26px 14px;border-right:1px solid var(--line)}
+  .rail .brand{padding:0 10px 22px}
+  .rail .nav{flex-direction:row;justify-content:flex-start;gap:12px;padding:10px 12px;font-size:14px;min-height:44px}
+  .rail .nav[aria-current=page]{background:var(--card-2)}
+  .rail .nav .badge{position:static;margin-left:auto}
+  .rail .foot{margin-top:auto;font-size:12px;color:var(--mut);padding:0 10px}
+  .tabbar,.top .brand{display:none}
+  .top{justify-content:flex-end;position:static;background:none;padding-top:22px}
+  main{padding-bottom:48px;max-width:none;margin:0;padding-left:32px;padding-right:32px}
+  .content{max-width:760px}
+}
+@media (min-width:1220px){
+  .app{grid-template-columns:232px minmax(0,1fr) 330px}
+  .pulse{display:block;position:sticky;top:0;height:100vh;overflow:auto;padding:26px 20px;border-left:1px solid var(--line)}
+  .top{display:none}
+}
+
+/* surfaces */
+.view{display:grid;gap:14px;animation:in .22s ease-out}
+@keyframes in{from{transform:translateY(6px)}to{transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h2{margin-bottom:10px}
+.hero{padding:26px 18px;text-align:center}
+.hero .glyph{font-size:54px;line-height:1;color:var(--gold);margin-bottom:6px}
+.hero h1{font-size:26px;letter-spacing:.2em}
+.hero p{margin:8px auto 0;max-width:34rem;color:var(--mut)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1 1 0;min-width:0}
+.grid2{display:grid;gap:14px}
+@media (min-width:640px){.grid2{grid-template-columns:1fr 1fr}}
+.stat{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.stat:last-child{border:0}
+.stat span:first-child{color:var(--mut)}
+.stat span:last-child{text-align:right;overflow-wrap:anywhere}
+
+/* controls */
+label{display:block;font-size:12.5px;color:var(--mut);margin:12px 0 5px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em}
+label:first-child{margin-top:0}
+input[type=text],textarea,select,input[type=number]{width:100%;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:8px;padding:11px 12px;font-size:16px}
+textarea{resize:vertical;min-height:84px}
+textarea.mono,input.mono{font-size:14px}
+input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:8px;border:1px solid var(--line);background:var(--card-2);
+  cursor:pointer;font-family:var(--cond);text-transform:uppercase;letter-spacing:.12em;font-size:14px;font-weight:600}
+.btn:hover{background:rgba(255,255,255,.14)}
+.btn.primary{background:var(--ink);color:#16162b;border-color:var(--ink)}
+.btn.primary:hover{background:#fff}
+.btn.danger{color:var(--bad);border-color:rgba(255,144,144,.4);background:transparent}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn.sm{min-height:36px;padding:0 12px;font-size:12.5px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:none;padding:9px 14px;cursor:pointer;color:var(--mut);min-height:40px}
+.seg button[aria-pressed=true]{background:var(--card-2);color:var(--ink)}
+.switch{display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer;min-height:36px}
+.switch input{width:20px;height:20px;accent-color:var(--gold)}
+
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+.chip.ok{color:var(--ok);border-color:rgba(127,214,176,.35)}
+.chip.bad{color:var(--bad);border-color:rgba(255,144,144,.4)}
+.chip.warn{color:var(--warn);border-color:rgba(232,200,114,.4)}
+
+/* feed */
+.feed{display:grid;gap:10px;align-content:start}
+.msg{max-width:88%;padding:10px 13px;border-radius:12px;background:var(--card);border:1px solid var(--line);overflow-wrap:anywhere}
+.msg .who{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--mut);margin-bottom:3px}
+.msg.me{margin-left:auto;background:rgba(170,180,255,.14);border-color:rgba(170,180,255,.28)}
+.msg.peer{border-left:3px solid var(--warn)}
+.sys{text-align:center;font-size:12px;color:var(--mut);font-family:var(--mono)}
+.composer{display:flex;gap:8px;position:sticky;bottom:calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));padding:10px;border-radius:12px;background:rgba(34,34,70,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line)}
+@media (min-width:900px){.composer{bottom:16px}}
+.composer input{flex:1}
+
+/* output */
+pre{margin:0;padding:12px;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;overflow:auto;font:12.5px/1.55 var(--mono);max-height:340px;white-space:pre-wrap;overflow-wrap:anywhere}
+pre .add{color:var(--ok)} pre .del{color:var(--bad)} pre .hdr{color:var(--link)}
+.member{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.member:last-child{border:0}
+.avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font:600 14px var(--cond);letter-spacing:.05em;color:#16162b;flex:none}
+.empty{text-align:center;color:var(--mut);padding:28px 8px}
+.link-box{word-break:break-all;max-height:5.2em;overflow:hidden;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,.3);border:1px dashed rgba(232,200,114,.45);color:var(--gold)}
+
+dialog{background:var(--bg-2);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:20px;max-width:min(420px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(5,5,15,.65)}
+.toasts{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));display:grid;justify-items:center;gap:8px;pointer-events:none;z-index:30;padding:0 16px}
+@media (min-width:900px){.toasts{bottom:24px}}
+.toast{pointer-events:auto;background:#2b2b55;border:1px solid var(--line);padding:10px 16px;border-radius:99px;max-width:560px;box-shadow:0 8px 30px rgba(0,0,0,.4);animation:in .2s}
+.toast.err{border-color:rgba(255,144,144,.5)}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:var(--ink);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="Primary">
+    <div class="brand"><b>☤</b> Playbox</div>
+    <div id="railnav"></div>
+    <div class="foot" id="railfoot"></div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <div class="brand"><b>☤</b> Playbox</div>
+      <span class="pill" id="pill"><span class="dot"></span><span>Connecting…</span></span>
+    </header>
+    <div class="content"><section id="view" aria-live="polite"></section></div>
+  </main>
+
+  <aside class="pulse" id="pulse" aria-label="Room pulse"></aside>
+</div>
+
+<nav class="tabbar" id="tabbar" aria-label="Primary"></nav>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<dialog id="dlg"></dialog>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const short = s => !s ? "" : s.length > 14 ? s.slice(0, 6) + "…" + s.slice(-4) : s;
+const hhmm = ms => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+const hue = s => { let h = 0; for (const c of s || "x") h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const avatar = (id, label) => `<span class="avatar" style="background:hsl(${hue(id)} 55% 72%)">${esc((label || id || "?").slice(0, 2).toUpperCase())}</span>`;
+
+const ICONS = {
+  room: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
+  feed: '<path d="M4 5h16v11H9l-5 4z"/>',
+  work: '<path d="M7 7l-4 5 4 5M17 7l4 5-4 5M14 5l-4 14"/>',
+  people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6M16 5.2a3.2 3.2 0 010 5.8M18 14.3c1.7.8 3 2.7 3 5.7"/>',
+  proof: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/>',
+};
+const TABS = [["room", "Room"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["proof", "Proof"]];
+
+const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null};
+
+/* ---------- api ---------- */
+async function api(name, args = {}, poll = false) {
+  let r;
+  try {
+    r = await fetch("/api/tool", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name, args, poll})});
+  } catch { return {error: true, data: "Can't reach the Playbox UI server."}; }
+  if (r.status === 401) { location.reload(); return {error: true, data: "Locked"}; }
+  return r.json();
+}
+const msgOf = d => typeof d === "string" ? d : (d && (d.error || d.message)) || JSON.stringify(d);
+
+function toast(text, err) {
+  const t = document.createElement("div");
+  t.className = "toast" + (err ? " err" : "");
+  t.textContent = text;
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), err ? 6000 : 3200);
+}
+
+/* ---------- derived state ---------- */
+const hosting = () => S.status && S.status.hosting;
+const joined = () => S.status && S.status.joined;
+const myId = () => (joined() && joined().member_id) || (S.status && S.status.guest_id) || "";
+const members = () => (hosting() && hosting().members) || [];
+function mode() { return hosting() && joined() ? "both" : hosting() ? "host" : joined() ? "guest" : "none"; }
+
+function paintPill() {
+  const m = mode();
+  const txt = !S.ok ? "Offline" : m === "none" ? "No room" : m === "guest" ? "In a room" : `Hosting · ${members().length} member${members().length === 1 ? "" : "s"}`;
+  const cls = m === "none" || !S.ok ? "" : m === "guest" ? "on" : "host";
+  $("#pill").innerHTML = `<span class="dot ${cls}"></span><span>${esc(txt)}</span>`;
+  $("#railfoot").innerHTML = `<span class="dot ${cls}" style="display:inline-block;margin-right:7px"></span>${esc(txt)}`;
+}
+
+function paintNav() {
+  const html = TABS.map(([id, label]) => {
+    const badge = id === "feed" && S.unread ? `<span class="badge" aria-label="${S.unread} new">${S.unread > 9 ? "9+" : S.unread}</span>` : "";
+    return `<button class="nav" data-tab="${id}" ${S.tab === id ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[id === "people" ? "people" : id]}</svg><span>${label}</span>${badge}</button>`;
+  }).join("");
+  $("#tabbar").innerHTML = html;
+  $("#railnav").innerHTML = html;
+}
+
+/* ---------- views ---------- */
+const VIEWS = {
+  room() {
+    const m = mode();
+    const parts = [];
+    if (m === "none") {
+      parts.push(`<div class="card hero"><div class="glyph">☤</div><h1>Playbox</h1>
+        <p>A private room where your agent and other people's agents build together, under limits you set, with a record nobody can quietly edit.</p></div>
+      <div class="grid2">
+        <div class="card"><h2>Host a room</h2>
+          <label for="repo">Git repository (absolute path)</label>
+          <input type="text" id="repo" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <label>Reach</label>
+          <div class="seg" role="group" aria-label="Reach"><button type="button" data-reach="local" aria-pressed="true">Same network</button><button type="button" data-reach="iroh" aria-pressed="false">Anywhere</button></div>
+          <label class="switch"><input type="checkbox" id="docker"><span>Let members run sandboxed tasks <span class="mut">(needs Docker)</span></span></label>
+          <p style="margin:14px 0 0"><button class="btn primary block" data-act="create">Create room</button></p>
+        </div>
+        <div class="card"><h2>Join a room</h2>
+          <label for="link">Invite link</label>
+          <textarea id="link" class="mono" placeholder="playbox://…" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+          <p class="mut" style="font-size:13px">Links are single use. Ask the host for a fresh one if it was already spent.</p>
+          <p style="margin:6px 0 0"><button class="btn primary block" data-act="join">Join room</button></p>
+        </div>
+      </div>`);
+    }
+    if (hosting()) {
+      const h = hosting();
+      parts.push(`<div class="card"><h2>You host this room</h2>
+        <div class="stat"><span>Repository</span><span class="mono">${esc(h.repo || "—")}</span></div>
+        <div class="stat"><span>Members</span><span>${members().length}</span></div>
+        <div class="stat"><span>Revoked</span><span>${h.revocations ?? 0}</span></div></div>
+      <div class="card"><h2>Invite someone</h2>
+        ${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn sm" data-act="copy-invite">Copy</button>
+            ${navigator.share ? '<button class="btn sm" data-act="share-invite">Share</button>' : ""}
+            <button class="btn sm" data-act="save-invite">Save as file</button></div>
+          <p class="mut" style="font-size:13px;margin:12px 0 0">Single use. Agents join most reliably from a file: ask them to use <span class="mono">link_file</span>.</p>`
+          : `<p class="mut" style="margin-top:0">Each link works once. Make one per person.</p>`}
+        <p style="margin:12px 0 0"><button class="btn primary" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p></div>`);
+    }
+    if (joined()) {
+      const j = joined();
+      parts.push(`<div class="card"><h2>You are in a room</h2>
+        <div class="stat"><span>You</span><span class="mono">${esc(short(j.member_id))}</span></div>
+        <div class="stat"><span>Host</span><span class="mono">${esc(short(j.active_host))}</span></div>
+        <div class="stat"><span>Your folder</span><span class="mono">${esc((S.status.workspace) || (j.workspace) || "—")}</span></div>
+        <p style="margin:14px 0 0" class="row"><button class="btn sm" data-tab="work">Open work</button><button class="btn sm danger" data-act="leave">Leave room</button></p></div>`);
+    }
+    if (m === "host") parts.push(`<div class="card"><h2>Want to take part too?</h2><p class="mut" style="margin-top:0">Paste an invite to join another room as a guest.</p>
+      <label for="link">Invite link</label><textarea id="link" class="mono" placeholder="playbox://…" spellcheck="false"></textarea>
+      <p style="margin:10px 0 0"><button class="btn" data-act="join">Join</button></p></div>`);
+    return parts.join("");
+  },
+
+  feed() {
+    if (mode() === "none") return emptyCard("Join or host a room to see its feed.");
+    return `<div class="feed" id="feedlist"></div>
+      <form class="composer" id="say" autocomplete="off"><label class="sr" for="saytext">Message</label>
+        <input type="text" id="saytext" placeholder="Say something to the room" maxlength="2000"><button class="btn primary" type="submit">Send</button></form>`;
+  },
+
+  work() {
+    if (!joined()) return emptyCard(hosting()
+      ? "Members run tasks on your machine from their own Playbox. To run one yourself, join a room as a guest."
+      : "Join a room to pull code and run sandboxed tasks.");
+    const w = S.lastWork;
+    return `<div class="card"><h2>Sync code</h2>
+        <label for="ref">Branch</label><input type="text" id="ref" value="main" class="mono" autocapitalize="off" spellcheck="false">
+        <label class="switch"><input type="checkbox" id="checkout" checked><span>Check it out in my folder</span></label>
+        <p class="row" style="margin:14px 0 0"><button class="btn" data-act="pull">Pull</button><button class="btn" data-act="push">Push my branch</button></p>
+        <p class="mut" style="font-size:13px;margin:12px 0 0">Pushes land under your own name. They never replace the host's main.</p></div>
+      <div class="card"><h2>Run a task on the host</h2>
+        <label for="base">Against branch or commit</label><input type="text" id="base" value="main" class="mono" autocapitalize="off" spellcheck="false">
+        <label for="cmd">Command</label><textarea id="cmd" class="mono" placeholder="npm test" spellcheck="false" autocapitalize="off"></textarea>
+        <div class="row"><div class="grow"><label for="tmo">Time limit (s)</label><input type="number" id="tmo" value="120" min="1" max="3600" inputmode="numeric"></div></div>
+        <label class="switch"><input type="checkbox" id="net"><span>Allow network <span class="mut">(if your grant permits)</span></span></label>
+        <label class="switch"><input type="checkbox" id="apply" checked><span>Apply the resulting patch to my folder</span></label>
+        <p style="margin:14px 0 0"><button class="btn primary block" data-act="run" id="runbtn">Run in sandbox</button></p></div>
+      <div id="result">${w ? renderResult(w) : ""}</div>`;
+  },
+
+  people() {
+    if (!hosting()) return emptyCard(joined() ? "Only the host can see and revoke members." : "Host a room to manage who is in it.");
+    const ms = members();
+    return `<div class="card"><h2>Members · ${ms.length}</h2>${ms.length ? ms.map(id => `
+      <div class="member">${avatar(id)}<div class="grow"><div class="mono">${esc(short(id))}</div><div class="mut" style="font-size:12.5px">Scoped grant · expires on its own</div></div>
+        <button class="btn sm danger" data-act="revoke" data-id="${esc(id)}">Revoke</button></div>`).join("")
+      : `<div class="empty">Nobody has joined yet. Create an invite on the Room tab.</div>`}</div>
+      <div class="card"><h2>What revoke does</h2><p class="mut" style="margin:0">Their grant stops working at once, every attenuated copy of it too, and their key can't rejoin. Calls they make next are refused.</p></div>`;
+  },
+
+  proof() {
+    const v = S.verify;
+    const log = S.status && S.status.history_log;
+    return `<div class="card"><h2>Your signed history</h2>
+        <p class="mut" style="margin-top:0">Every Playbox action on this device is appended to a signed, hash-chained log. Change one byte and verification fails.</p>
+        <div class="stat"><span>Log</span><span class="mono">${esc(log || "—")}</span></div>
+        <p style="margin:12px 0 0"><button class="btn primary" data-act="verify" ${log ? "" : "disabled"}>Verify now</button></p>
+        <div id="vres" style="margin-top:12px">${v ? renderVerify(v) : ""}</div></div>
+      <div class="card"><h2>Check any log</h2>
+        <label for="vpath">Path to a history log</label><input type="text" id="vpath" class="mono" placeholder="~/.playbox/history/hermes-session.log" spellcheck="false" autocapitalize="off">
+        <p style="margin:12px 0 0"><button class="btn" data-act="verify-path">Verify</button></p>
+        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div>
+      <div class="card"><h2>Text from other members</h2>
+        <p class="mut" style="margin:0">Messages from other members are marked <span class="chip warn">member</span>. With the Playbox witness plugin, Hermes pauses write actions for the rest of a turn after reading them, and asks you first.</p></div>`;
+  },
+};
+
+function emptyCard(t) { return `<div class="card empty"><div style="font-size:36px;color:var(--gold)">☤</div><p>${esc(t)}</p></div>`; }
+
+function renderVerify(v) {
+  const ok = v.valid === true;
+  return `<div class="row"><span class="chip ${ok ? "ok" : "bad"}">${ok ? "✓ Chain valid" : "✕ Not valid"}</span>
+    ${v.entries != null ? `<span class="chip">${v.entries} entries</span>` : ""}</div>
+    ${v.head ? `<div class="stat"><span>Head</span><span class="mono">${esc(short(v.head))}</span></div>` : ""}
+    ${(v.problems || []).length ? `<pre>${esc(v.problems.join("\n"))}</pre>` : ""}
+    ${v.error ? `<pre>${esc(v.error)}</pre>` : ""}`;
+}
+
+function renderResult(w) {
+  const lines = (w.patch || "").split("\n").map(l => {
+    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+    return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
+  }).join("\n");
+  const ok = w.exit_code === 0 && !w.timed_out;
+  return `<div class="card"><h2>Result</h2>
+    <div class="row"><span class="chip ${ok ? "ok" : "bad"}">${w.timed_out ? "timed out" : "exit " + w.exit_code}</span>
+      ${w.runner ? `<span class="chip">${esc(w.runner)}</span>` : ""}${w.patch_applied ? '<span class="chip ok">patch applied</span>' : ""}</div>
+    ${w.stdout ? `<label>Output</label><pre>${esc(w.stdout)}</pre>` : ""}
+    ${w.stderr ? `<label>Errors</label><pre>${esc(w.stderr)}</pre>` : ""}
+    ${w.patch ? `<label>Patch · ${w.patch_bytes ?? w.patch.length} bytes${w.patch_truncated ? " (truncated)" : ""}</label><pre>${lines}</pre>` : ""}</div>`;
+}
+
+/* ---------- feed ---------- */
+function feedItemHtml(it) {
+  if (it.kind !== "say") return `<div class="sys">${esc(it.text)} · ${esc(hhmm(it.time_ms))}</div>`;
+  const fromHost = it.from === "host";                       // the host's own messages carry from:"host"
+  const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
+  const who = it.name || (fromHost ? "host" : short(it.from)) || "member";
+  const tag = fromHost ? "host" : "member";
+  return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div>${esc(it.text)}</div>`;
+}
+function paintFeed() {
+  const el = $("#feedlist");
+  if (el) {
+    const stick = innerHeight + scrollY > document.documentElement.scrollHeight - 160;
+    el.innerHTML = S.feed.length ? S.feed.map(feedItemHtml).join("") : `<div class="empty">No messages yet. Say hello.</div>`;
+    if (stick) scrollTo({top: document.documentElement.scrollHeight});
+  }
+  paintPulse();
+}
+function paintPulse() {
+  const p = $("#pulse");
+  const last = S.feed.slice(-8);
+  p.innerHTML = `<div class="brand" style="margin-bottom:18px"><b>☤</b> Pulse</div>
+    <div class="card" style="margin-bottom:14px"><h2>Room</h2>
+      <div class="stat"><span>State</span><span>${{none: "No room", host: "Hosting", guest: "Guest", both: "Host + guest"}[mode()]}</span></div>
+      ${hosting() ? `<div class="stat"><span>Members</span><span>${members().length}</span></div>` : ""}
+      ${S.verify ? `<div class="stat"><span>History</span><span class="chip ${S.verify.valid ? "ok" : "bad"}">${S.verify.valid ? "✓ " + S.verify.entries : "✕"}</span></div>` : ""}</div>
+    <div class="card"><h2>Latest</h2><div class="feed">${last.length ? last.map(feedItemHtml).join("") : '<div class="empty" style="padding:12px">Quiet.</div>'}</div></div>`;
+}
+let feedBusy = false;
+async function pollFeed() {
+  if (feedBusy || mode() === "none" || document.hidden) return;
+  feedBusy = true;
+  const r = await api("playbox_feed", {since: S.seq}, true);
+  feedBusy = false;
+  if (r.error || !r.data || !Array.isArray(r.data.items)) return;
+  const fresh = r.data.items.filter(i => i.seq > S.seq);
+  if (!fresh.length) return;
+  S.seq = Math.max(S.seq, ...fresh.map(i => i.seq));
+  S.feed.push(...fresh);
+  if (S.tab !== "feed") { S.unread += fresh.filter(i => i.kind === "say" && i.from !== myId()).length; paintNav(); }
+  paintFeed();
+}
+
+/* ---------- state ---------- */
+async function refresh(poll) {
+  try {
+    const r = await (await fetch("/api/state")).json();
+    const before = mode() + members().length;
+    S.ok = r.ok; S.status = r.ok ? r.status : S.status;
+    paintPill();
+    if (poll && before !== mode() + members().length && ["people", "room"].includes(S.tab) && !document.activeElement.closest?.("#view")) show(S.tab);
+    paintPulse();
+  } catch { S.ok = false; paintPill(); }
+}
+function show(tab) {
+  S.tab = tab;
+  if (tab === "feed") S.unread = 0;
+  paintNav();
+  const v = $("#view");
+  v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
+  if (tab === "feed") { paintFeed(); pollFeed(); }
+  scrollTo({top: 0});
+}
+
+/* ---------- actions ---------- */
+const val = id => ($("#" + id) || {}).value || "";
+const chk = id => !!($("#" + id) || {}).checked;
+function busy(btn, on) { if (!btn) return; btn.disabled = on; if (on) { btn.dataset.t = btn.innerHTML; btn.innerHTML = '<span class="spin"></span>'; } else if (btn.dataset.t) btn.innerHTML = btn.dataset.t; }
+
+async function act(name, btn) {
+  const reach = $('[data-reach][aria-pressed=true]');
+  const run = async (tool, args, ok) => {
+    busy(btn, true);
+    const r = await api(tool, args);
+    busy(btn, false);
+    if (r.error) { toast(msgOf(r.data), true); return null; }
+    if (ok) toast(ok);
+    return r.data;
+  };
+  switch (name) {
+    case "create": {
+      const repo = val("repo").trim();
+      if (!repo) return toast("Enter the path of a git repository.", true);
+      const args = {repo, docker: chk("docker")};
+      if (reach && reach.dataset.reach === "local") args.local = true;
+      const d = await run("playbox_create", args, "Room created");
+      if (d) { S.hostArgs = args; S.invite = d.link; await refresh(); show("room"); }
+      break;
+    }
+    case "invite": {
+      const d = await run("playbox_create", S.hostArgs, "New single-use link");
+      if (d) { S.invite = d.link; show("room"); }
+      break;
+    }
+    case "join": {
+      const link = val("link").trim().replace(/\s+/g, "");
+      if (!link.startsWith("playbox://")) return toast("That doesn't look like a Playbox link.", true);
+      const d = await run("playbox_join", {link}, "Joined");
+      if (d) { S.feed = []; S.seq = 0; await refresh(); show("room"); }
+      break;
+    }
+    case "leave": {
+      if (await run("playbox_leave", {}, "Left the room")) { S.feed = []; S.seq = 0; await refresh(); show("room"); }
+      break;
+    }
+    case "pull": {
+      const d = await run("playbox_pull", {ref: val("ref") || "main", checkout: chk("checkout")}, null);
+      if (d) toast(`Pulled ${d.ref || "branch"} · ${short(d.head || "")}`);
+      break;
+    }
+    case "push": {
+      const d = await run("playbox_push", {ref: val("ref") || "main"}, "Pushed under your name");
+      break;
+    }
+    case "run": case "run-noapply": {
+      if (!val("cmd").trim()) return toast("Enter a command to run.", true);
+      const apply = name === "run" && chk("apply");
+      busy(btn, true);
+      const r = await api("playbox_delegate", {base: val("base") || "main", command: val("cmd"), timeout_secs: +val("tmo") || 120, network: chk("net"), apply});
+      busy(btn, false);
+      const box = $("#result");
+      if (r.error) {
+        const m = msgOf(r.data);
+        box.innerHTML = `<div class="card"><h2>Task did not finish cleanly</h2><p style="margin:0 0 12px">${esc(m)}</p>
+          ${/applying patch/.test(m) ? `<p class="mut" style="font-size:13px;margin:0 0 12px">The task ran on the host, but its patch doesn't fit your folder (for example a file it creates is already there). Run it again without applying to read the output and patch.</p>
+          <button class="btn" data-act="run-noapply">Run again without applying</button>` : ""}</div>`;
+      } else { S.lastWork = r.data; box.innerHTML = renderResult(r.data); }
+      box.scrollIntoView({behavior: "smooth", block: "nearest"});
+      break;
+    }
+    case "verify": case "verify-path": {
+      const path = name === "verify" ? S.status.history_log : val("vpath").trim();
+      if (!path) return toast("Enter a log path.", true);
+      busy(btn, true);
+      const r = await api("playbox_verify", {path});
+      busy(btn, false);
+      S.verify = r.error ? {valid: false, error: msgOf(r.data)} : r.data;
+      $("#vres").innerHTML = renderVerify(S.verify);
+      paintPulse();
+      break;
+    }
+    case "copy-invite": copyText(S.invite); break;
+    case "share-invite": navigator.share({title: "Playbox invite", text: S.invite}).catch(() => {}); break;
+    case "save-invite": {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([S.invite + "\n"], {type: "text/plain"}));
+      a.download = "playbox-invite.txt"; a.click(); URL.revokeObjectURL(a.href);
+      break;
+    }
+  }
+}
+
+function copyText(t) {
+  const done = () => toast("Copied");
+  if (navigator.clipboard && isSecureContext) navigator.clipboard.writeText(t).then(done, () => fallback());
+  else fallback();
+  function fallback() {
+    const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); } catch { toast("Select the link and copy it by hand.", true); }
+    ta.remove();
+  }
+}
+
+function confirmRevoke(id) {
+  const d = $("#dlg");
+  d.innerHTML = `<form method="dialog"><h2 style="color:var(--ink);font-size:16px">Revoke this member?</h2>
+    <p class="mut">${avatar(id)} <span class="mono">${esc(short(id))}</span><br>Their access ends now and they can't rejoin with the same key.</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" value="no">Cancel</button><button class="btn danger" value="yes">Revoke</button></div></form>`;
+  d.onclose = async () => {
+    if (d.returnValue !== "yes") return;
+    const r = await api("playbox_revoke", {member: id});
+    if (r.error) return toast(msgOf(r.data), true);
+    toast("Revoked");
+    await refresh(); show("people");
+  };
+  d.returnValue = ""; d.showModal();
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-tab],[data-act],[data-reach]");
+  if (!t) return;
+  if (t.dataset.tab) return show(t.dataset.tab);
+  if (t.dataset.reach) { document.querySelectorAll("[data-reach]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
+  if (t.dataset.act === "revoke") return confirmRevoke(t.dataset.id);
+  act(t.dataset.act, t);
+});
+document.addEventListener("submit", async e => {
+  if (e.target.id !== "say") return;
+  e.preventDefault();
+  const inp = $("#saytext"), text = inp.value.trim();
+  if (!text) return;
+  inp.value = "";
+  const r = await api("playbox_say", {text});
+  if (r.error) { inp.value = text; return toast(msgOf(r.data), true); }
+  pollFeed();
+});
+
+/* ---------- boot ---------- */
+paintNav(); paintPulse();
+refresh().then(() => show("room"));
+let tick = 0;
+setInterval(() => {
+  if (document.hidden) return;
+  tick++;
+  if (tick % 3 === 0) refresh(true);                       // every call is appended to the signed history, so poll gently
+  if (S.tab === "feed" || innerWidth >= 1220) pollFeed();
+}, 3500);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(true); pollFeed(); } });
+</script>
+</body>
+</html>

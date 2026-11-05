@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""End-to-end check of the Playbox UI: two UI servers (host, guest), driven over HTTP like the browser does.
+
+    python3 ui/e2e.py        # needs playbox-mcp and git; uses Docker for the task step if it answers
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+fails = []
+
+
+def check(name, cond, detail=""):
+    print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  {detail}"))
+    if not cond:
+        fails.append(name)
+
+
+class UI:
+    def __init__(self, port, home):
+        self.token = "t" + str(port)
+        self.base = f"http://127.0.0.1:{port}"
+        self.p = subprocess.Popen([sys.executable, os.path.join(HERE, "playbox_ui.py"), "--port", str(port),
+                                   "--home", home, "--token", self.token], stdout=subprocess.PIPE, text=True)
+        self.p.stdout.readline()
+
+    def req(self, path, body=None, token=True):
+        r = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body is not None else None,
+                                   headers={"Content-Type": "application/json", **({"X-Playbox-Token": self.token} if token else {})})
+        try:
+            with urllib.request.urlopen(r, timeout=120) as f:
+                return f.status, f.read().decode()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+
+    def tool(self, _tool, **args):
+        code, body = self.req("/api/tool", {"name": _tool, "args": args})
+        j = json.loads(body)
+        return j.get("error"), j.get("data", j)
+
+    def stop(self):
+        self.p.terminate()
+
+
+def docker_ok():
+    try:
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=8).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def main():
+    work = tempfile.mkdtemp(prefix="pbui-")
+    repo = os.path.join(work, "repo")
+    os.makedirs(repo)
+    g = lambda *a: subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", *a], cwd=repo, check=True, capture_output=True)
+    g("init", "-q", "-b", "main")
+    open(os.path.join(repo, "hello.txt"), "w").write("hi\n")
+    g("add", "."), g("commit", "-qm", "init")
+    host, guest = UI(17731, work + "/host"), UI(17732, work + "/guest")
+    try:
+        # access control
+        check("page needs the token", host.req("/", token=False)[0] == 401)
+        check("api needs the token", host.req("/api/state", token=False)[0] == 401)
+        check("bad token refused on entry", host.req("/?t=nope", token=False)[0] in (403, 303) and host.req("/?t=nope", token=False)[0] == 403)
+        code, page = host.req("/")
+        check("page served with token", code == 200 and "Playbox" in page and "viewport-fit=cover" in page)
+        check("manifest served without token", host.req("/manifest.webmanifest", token=False)[0] == 200)
+        check("unknown tool refused", host.req("/api/tool", {"name": "rm -rf", "args": {}})[0] == 400)
+        try:
+            urllib.request.urlopen(urllib.request.Request(host.base + "/api/tool", data=b"x", headers={"X-Playbox-Token": host.token, "Content-Type": "text/plain"}), timeout=5)
+            nonjson = 200
+        except urllib.error.HTTPError as e:
+            nonjson = e.code
+        check("non-json refused", nonjson == 415, nonjson)
+
+        use_docker = docker_ok()
+        err, d = host.tool("playbox_create", repo=repo, local=True, docker=use_docker, uses=2)
+        check("host creates a room", not err and str(d.get("link", "")).startswith("playbox://"), d)
+        link = d["link"]
+        err, d2 = host.tool("playbox_create", repo=repo, local=True, docker=use_docker, uses=2)
+        check("host makes a fresh invite", not err and d2["link"] != link, d2)
+
+        err, j = guest.tool("playbox_join", link=link)
+        check("guest joins", not err and j.get("joined") is True, j)
+        member = j["member_id"]
+
+        code, st = host.req("/api/state")
+        st = json.loads(st)
+        check("host sees the member", member in st["status"]["hosting"]["members"], st)
+        code, st = guest.req("/api/state")
+        check("guest state is joined", json.loads(st)["status"]["joined"]["member_id"] == member)
+
+        err, _ = guest.tool("playbox_say", text="hello from the guest UI", name="guest")
+        check("guest says something", not err)
+        err, feed = host.tool("playbox_feed", since=0)
+        texts = [i["text"] for i in feed["items"]] if not err else []
+        check("host sees the message in the feed", "hello from the guest UI" in texts, feed)
+        err, _ = host.tool("playbox_say", text="welcome", name="host")
+        err, feed = guest.tool("playbox_feed", since=0)
+        check("guest sees the host reply", any(i["text"] == "welcome" for i in feed["items"]), feed)
+
+        err, pull = guest.tool("playbox_pull", ref="main", checkout=True)
+        check("guest pulls main", not err and pull.get("head"), pull)
+        if use_docker:
+            err, run = guest.tool("playbox_delegate", base="main", command="cat hello.txt && echo more > new.txt", apply=True)
+            check("task runs in the sandbox", not err and run["exit_code"] == 0 and run["stdout"] == "hi\n" and run["patch_applied"], run)
+            check("patch came back", "new.txt" in run.get("patch", ""))
+        else:
+            print("SKIP task step (Docker not answering)")
+
+        err, log = guest.tool("playbox_status")
+        err, v = guest.tool("playbox_verify", path=log["history_log"])
+        check("guest history verifies", not err and v["valid"] is True and v["entries"] > 3, v)
+
+        # tamper: one flipped byte must fail
+        bad = os.path.join(work, "bad.log")
+        raw = bytearray(open(log["history_log"], "rb").read())
+        raw[len(raw) // 2] ^= 1
+        open(bad, "wb").write(raw)
+        err, v2 = guest.tool("playbox_verify", path=bad)
+        check("a flipped byte is caught", err or v2.get("valid") is False, v2)
+
+        err, _ = guest.tool("playbox_leave")
+        check("guest leaves", not err)
+        err, j = guest.tool("playbox_join", link=d2["link"])
+        check("guest rejoins with a fresh link", not err and j.get("joined"), j)
+        new_member = j["member_id"]
+
+        err, r = host.tool("playbox_revoke", member=new_member)
+        check("host revokes", not err and r.get("revoked") is True, r)
+        err, r = guest.tool("playbox_ping", text="x")
+        check("revoked guest is refused", err and "revoked" in str(r), r)
+    finally:
+        host.stop(), guest.stop()
+        shutil.rmtree(work, ignore_errors=True)
+    print(f"\n{'ALL PASSED' if not fails else 'FAILED: ' + ', '.join(fails)}")
+    sys.exit(1 if fails else 0)
+
+
+if __name__ == "__main__":
+    main()
