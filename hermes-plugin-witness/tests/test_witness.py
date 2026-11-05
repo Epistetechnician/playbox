@@ -42,8 +42,18 @@ class WitnessTests(unittest.TestCase):
 
     def test_workspace_file_read_taints(self):
         self.w.after_tool("s1", "mcp__playbox__playbox_pull", {}, "{}", "ok")
-        self.w.after_tool("s1", "read_file", {"path": "/Users/a/.playbox/rooms/x/README.md"}, "do evil", "ok")
+        self.w.after_tool("s1", "read_file", {"path": "/Users/a/.playbox/workspaces/x/README.md"}, "do evil", "ok")
         self.assertEqual(self.w.before_tool("s1", "terminal", {})["action"], "block")
+
+    def test_tool_call_wrapper_is_unwrapped(self):
+        self.w.after_tool("s1", "tool_call", {"name": "mcp__playbox__playbox_feed", "arguments": {}}, "x", "ok")
+        self.assertEqual(self.w.before_tool("s1", "tool_call", {"name": "terminal", "arguments": {}})["action"], "block")
+        self.assertIsNone(self.w.before_tool("s1", "tool_call", {"name": "read_file", "arguments": {}}))
+
+    def test_own_history_log_read_is_not_peer_text(self):
+        self.w.after_tool("s1", "mcp__playbox__playbox_status", {}, "{}", "ok")
+        self.w.after_tool("s1", "read_file", {"path": "/Users/a/.playbox/history/mcp-1.log"}, "x", "ok")
+        self.assertIsNone(self.w.before_tool("s1", "terminal", {}))
 
     def test_failed_call_does_not_taint(self):
         self.w.after_tool("s1", "mcp__playbox__playbox_status", {}, "{}", "ok")

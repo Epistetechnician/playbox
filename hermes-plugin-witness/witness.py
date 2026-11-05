@@ -10,7 +10,20 @@ ROOM_SAFE_TOOLS = {"status", "ping", "feed", "verify", "audit", "recall", "pull"
                    "checkpoint_verify", "evidence_check", "lineage_check", "receipts_check"}
 READ_ONLY = re.compile(
     r"^(read|search|list|get|view|find|grep|glob|ls|cat|web_search|web_extract|skill_view|skills_list|session_search)", re.I)
-WORKSPACE_MARK = "/.playbox/"
+WORKSPACE_MARK = "/.playbox/workspaces/"
+
+
+WRAPPERS = {"tool_call", "mcp__tool_call"}
+
+
+def unwrap(tool_name, args):
+    """Hermes can route MCP tools through a generic `tool_call` wrapper; recover the real tool and args."""
+    if tool_name in WRAPPERS and isinstance(args, dict):
+        for k in ("name", "tool_name", "tool"):
+            if isinstance(args.get(k), str):
+                inner = args.get("arguments") or args.get("args") or args.get("input") or {}
+                return args[k], inner if isinstance(inner, dict) else {}
+    return tool_name, args
 
 
 def base_name(tool_name):
@@ -65,6 +78,7 @@ class Witness:
         self.tainted.pop(session_id, None)
 
     def before_tool(self, session_id, tool_name, args):
+        tool_name, args = unwrap(tool_name, args)
         origin = self.tainted.get(session_id)
         if origin and not is_read_only(tool_name):
             return {"action": "block", "message": (
@@ -74,6 +88,7 @@ class Witness:
         return None
 
     def after_tool(self, session_id, tool_name, args, result, status, duration_ms=None):
+        tool_name, args = unwrap(tool_name, args)
         if is_room_tool(tool_name):
             self.in_room.add(session_id)
         origin = foreign_origin(tool_name, args, status)

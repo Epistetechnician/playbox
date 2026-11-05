@@ -24,7 +24,16 @@ def register(ctx):
     def pre_llm_call(**kw):
         w.new_turn(kw.get("session_id"))
 
+    def trace(phase, kw):
+        # Hermes scrubs the plugin host's environment, so debugging is switched on by creating this file.
+        flag = Path.home() / ".playbox" / "witness.debug"
+        if flag.exists():
+            with open(flag, "a") as f:
+                a = kw.get("args")
+                f.write(f"{phase} {kw.get('tool_name')} args={list(a) if isinstance(a, dict) else type(a).__name__}\n")
+
     def pre_tool_call(**kw):
+        trace("pre", kw)
         try:
             return w.before_tool(kw.get("session_id"), kw.get("tool_name"), kw.get("args"))
         except Exception:
@@ -34,6 +43,7 @@ def register(ctx):
             return None
 
     def post_tool_call(**kw):
+        trace("post", kw)
         w.after_tool(kw.get("session_id"), kw.get("tool_name"), kw.get("args"), kw.get("result"),
                      kw.get("status"), kw.get("duration_ms"))
 
