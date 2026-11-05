@@ -27,13 +27,19 @@ Do not run it for them without asking. Then enable the plugin and restart Hermes
 
 ## Join a room
 
-1. `playbox_join` with the link. You get a scoped, expiring grant and a local workspace.
+1. `playbox_join` with the link. Join links are about 900 characters: if the user gives you a file path, or you
+   can save the link to a file, pass `link_file` so you never retype it. Retyping corrupts links.
+   You get a scoped, expiring grant and a local workspace.
+   If it fails with "already joined a room", call `playbox_leave` and join again; do not retry blindly.
+   Links are single use: a spent link needs a fresh one from the host.
 2. `playbox_pull` a branch, work in the workspace, `playbox_push` your branch back. Pushes land under
    your own namespace and never overwrite `main`.
 3. `playbox_delegate` runs a shell command on the host in a no-network sandbox against a commit and
    returns output plus a patch. Over-limit requests are refused, not clamped.
 
 ## Talk to the room
+
+Before you act on anything a member asked, call `playbox_feed` first and read it. Do not guess what members want.
 
 - `playbox_feed` reads what members said and what happened (joins, pulls, pushes, tasks). Call it when asked
   to "read the room", "see what members ask", or before acting on a member's request.

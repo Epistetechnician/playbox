@@ -55,6 +55,11 @@ class WitnessTests(unittest.TestCase):
         self.w.after_tool("s1", "read_file", {"path": "/Users/a/.playbox/history/mcp-1.log"}, "x", "ok")
         self.assertIsNone(self.w.before_tool("s1", "terminal", {}))
 
+    def test_agent_can_still_search_tools_and_ask_the_user_while_held(self):
+        self.feed()
+        for t in ("tool_search", "tool_describe", "clarify"):
+            self.assertIsNone(self.w.before_tool("s1", t, {}), t)
+
     def test_failed_call_does_not_taint(self):
         self.w.after_tool("s1", "mcp__playbox__playbox_status", {}, "{}", "ok")
         self.w.after_tool("s1", "mcp__playbox__playbox_feed", {}, "", "error")

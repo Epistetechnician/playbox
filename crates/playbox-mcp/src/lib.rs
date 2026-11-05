@@ -129,15 +129,19 @@ pub fn tool_list() -> Value {
                 "steer_caps": {"type": "object", "description": "What members are granted: layer_min, layer_max, max_coef_milli (default 4000), modes (default add, clamp; ablate is off by default), max_tokens_per_run, probe, max_runs, max_tokens_total, classes (guard classes a member may steer along; default none), directions (allowed direction hashes; default any), models (default all in the store)."}
             }), &[]),
         tool("playbox_join",
-            "Join a Playbox room using a link someone shared (starts with playbox://). Gives this agent a scoped, expiring grant.",
+            "Join a Playbox room using a link someone shared (starts with playbox://). Gives this agent a scoped, expiring grant. Links are long: when the link is in a file, pass `link_file` instead of retyping it. If you already joined a room, call playbox_leave first.",
             json!({
                 "link": {"type": "string"},
+                "link_file": {"type": "string", "description": "Path of a file holding the link (whitespace is trimmed). Use this instead of `link` so the link is never retyped."},
                 "workspace": {"type": "string", "description": "Directory for this room's git clone. Default: under the Playbox home."},
                 "min_host_tier": {"type": "string", "description": "Refuse to join unless the host's attestation achieves at least this tier (t0..t3). Default t0: the host must sign measurements of its software with its connection key. t1 needs hardware evidence (Secure Enclave or TPM) from a device key you have pinned (`playbox pin add`, or trust_host_device). t2 also needs PLAYBOX_TPM_BOOT_PCRS reference values."},
                 "trust_host_device": {"type": "boolean", "description": "Pin the host's device key if it is new to you (trust on first use), then judge the host with it pinned. Only do this when you have good reason to think you are talking to the host you meant: the first contact is the one an impostor could win."},
                 "transport": {"type": "string", "description": "Override the transport (`iroh`, `local`, `relay:<url>`). By default the link says which to use."},
                 "local": {"type": "boolean", "description": "Shorthand for transport=local."}
-            }), &["link"]),
+            }), &[]),
+        tool("playbox_leave",
+            "Guest only: drop the room you joined so this sidecar can join another. Your grant stays valid until it expires; the host's member list is unchanged. Does nothing to a room you host.",
+            json!({}), &[]),
         tool("playbox_status",
             "Show whether this sidecar hosts a room and/or has joined one, who the members are, and where the history log is.",
             json!({}), &[]),
@@ -480,6 +484,7 @@ impl Server {
         let out = match name {
             "playbox_create" => self.create(args).await,
             "playbox_join" => self.join(args).await,
+            "playbox_leave" => self.leave(),
             "playbox_status" => self.status(),
             "playbox_ping" => self.ping(args).await,
             "playbox_say" => self.say(args).await,
@@ -770,9 +775,17 @@ impl Server {
 
     async fn join(&mut self, a: &Value) -> Result<Value> {
         if self.client.is_some() {
-            bail!("already joined a room; restart this sidecar to join another");
+            bail!("already joined a room; call playbox_leave first to join another");
         }
-        let link = req(a, "link")?;
+        let from_file = match s(a, "link_file") {
+            Some(path) => Some(std::fs::read_to_string(path).with_context(|| format!("reading link_file {path}"))?.trim().to_string()),
+            None => None,
+        };
+        let link = match (&from_file, s(a, "link")) {
+            (Some(l), _) => l.as_str(),
+            (None, Some(l)) => l,
+            (None, None) => bail!("give `link` or `link_file`"),
+        };
         let choice = transport_arg(a)?.map(TransportChoice::Use).unwrap_or_default();
         // Check the host before showing it our invite: attestation needs no membership, so a host
         // that fails the check never sees the invite and it stays unspent.
@@ -810,6 +823,20 @@ impl Server {
                 "device_newly_pinned": newly_pinned,
             }
         }))
+    }
+
+    /// Forget the joined room so this sidecar can join another. The grant is not revoked.
+    fn leave(&mut self) -> Result<Value> {
+        if self.client.is_none() {
+            bail!("not in a room");
+        }
+        self.client = None;
+        self.extra.clear();
+        self.active = None;
+        self.member_id = None;
+        self.join_args = None;
+        self.workspace = None;
+        Ok(json!({"left": true}))
     }
 
     /// Route this guest's calls to another host of the room (a replica), or back to the primary.

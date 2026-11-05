@@ -9,7 +9,7 @@ FOREIGN_TEXT_TOOLS = {"feed", "delegate", "recall", "memory_ingest", "memory_exp
 ROOM_SAFE_TOOLS = {"status", "ping", "feed", "verify", "audit", "recall", "pull", "say",
                    "checkpoint_verify", "evidence_check", "lineage_check", "receipts_check"}
 READ_ONLY = re.compile(
-    r"^(read|search|list|get|view|find|grep|glob|ls|cat|web_search|web_extract|skill_view|skills_list|session_search)", re.I)
+    r"^(read|search|list|get|view|find|grep|glob|ls|cat|web_search|web_extract|skill_view|skills_list|session_search|tool_search|tool_describe|clarify)", re.I)
 WORKSPACE_MARK = "/.playbox/workspaces/"
 
 
@@ -17,7 +17,8 @@ WRAPPERS = {"tool_call", "mcp__tool_call"}
 
 
 def unwrap(tool_name, args):
-    """Hermes can route MCP tools through a generic `tool_call` wrapper; recover the real tool and args."""
+    """Defensive only: Hermes (model_tools.py, v0.22.5) unwraps `tool_call` before any hook runs, so hooks
+    already see the real tool name. Kept in case a future release stops doing that."""
     if tool_name in WRAPPERS and isinstance(args, dict):
         for k in ("name", "tool_name", "tool"):
             if isinstance(args.get(k), str):

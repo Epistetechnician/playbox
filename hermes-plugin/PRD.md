@@ -1,6 +1,6 @@
 # PRD: Playbox for Hermes
 
-Status: v3, 2026-11-04 evening. Sections 1-14 describe the product and were updated to match what is built; sections 15-22 are vision, architecture and test plan (capabilities tagged [built], [proposed] or [research]); section 23 is the live status and ship checklist; section 24 is the submission package; section 25 records what the live Hermes runs taught us. Owner: Epistetechnician. Target: Hermes Agent Plugin Hackathon (due 2026-11-11, 5PM EST), then the Hermes Marketplace.
+Status: v3.1, 2026-11-04 night (fixes from the live runs applied; see section 26). Sections 1-14 describe the product and were updated to match what is built; sections 15-22 are vision, architecture and test plan (capabilities tagged [built], [proposed] or [research]); section 23 is the live status and ship checklist; section 24 is the submission package; section 25 records what the live Hermes runs taught us. Owner: Epistetechnician. Target: Hermes Agent Plugin Hackathon (due 2026-11-11, 5PM EST), then the Hermes Marketplace.
 
 Basis: this repo (`README.md`, `PRD.md`, `docs/`, `steer/`), the 2026-11-04 end-to-end run of `playbox-mcp`, the Hermes plugin docs and catalog rules read the same day, and the results recorded in recent commits (E8, L4). Anything not measured or read is marked as an assumption or open question.
 
@@ -52,10 +52,9 @@ From the repo and the 2026-11-04 run:
 Also built and live-checked on 2026-11-04 (details in section 25): `playbox-witness` records Hermes tool calls into the signed log (31 valid entries from real Hermes calls), and its hold paused a real Hermes agent, which asked the user instead of acting.
 
 Known gaps (stated, not hidden)
-- The hold has not yet been shown stopping an action after the agent read a planted *feed message*; in every live run Hermes (Haiku 4.5) searched for `playbox_feed` but never called it. The hook-level tests cover that path; no live run does.
-- Hermes reaches MCP tools through a `tool_search`/`tool_call` wrapper (progressive disclosure), which is why one search listed 11 of 29 tools. The witness unwraps it, but the exact argument keys Hermes uses were not confirmed from a trace.
-- The Playbox sidecar outlives a chat, so a second `join` fails ("already joined a room") until it is restarted.
-- Join links (about 900 characters) are copied wrongly by small models; one live run failed with a "link address" error.
+- A model-driven Hermes run has not yet shown the hold stopping an action after the agent read a planted *feed message*: in every live run Hermes (Haiku 4.5) searched for `playbox_feed` but never called it. What is shown: the real `playbox-mcp` feed text through the witness's real `register()` hooks blocks `terminal` (section 26).
+- Hermes reaches MCP tools through a `tool_search`/`tool_call` bridge (progressive disclosure), which is why one search listed 11 of 29 tools. Confirmed from Hermes source: hooks see the real tool, not the bridge.
+- Fixed in `playbox-mcp` (not yet in a release): `playbox_join` takes `link_file`, and `playbox_leave` frees a sidecar for another room.
 - `install.sh` has an empty `RELEASE_PUBKEY`, so downloads are not signature-pinned.
 - Token-level fidelity (model responses) needs a recording proxy. Not built.
 - The latent hub is built and tested on synthetic and tiny random models; the measured results above are on the research track, not a hosted capability.
@@ -144,11 +143,11 @@ Cut order if behind: R9, then R8, then R7's CI test. Never cut R1-R5, R10, R11.
 
 1. ~~Can one package be both portable and native?~~ Answered: no; docs say the portable adapter does not replace native plugins. Two packages, two catalog entries. Open: does the witness need the playbox plugin enabled (a `requires_plugins` entry), and will reviewers accept a companion entry?
 2. ~~Do observer hooks expose enough?~~ Answered: `pre_tool_call`/`post_tool_call` carry args, result, status and duration; `pre_tool_call` can return `{"action":"block"}`; hooks fail open on exceptions. Witness logs digests, so redaction does not matter. Still untested inside a live Hermes turn.
-3. ~~Why did Hermes list only 11 tools?~~ Answered in part: tools are reached through `tool_search`/`tool_call` progressive disclosure, so a search shows only matches. Open: whether the hooks see the wrapper or the real tool name, and the wrapper's argument keys.
+3. ~~Why did Hermes list only 11 tools?~~ Answered: progressive disclosure through `tool_search`/`tool_call`; hooks see the real tool name (Hermes `model_tools.py`, v0.22.5).
 4. Is a signed release key needed before reviewers will accept the install step?
 5. Does `trust: untrusted` interact badly with the `delegate` timeout (set to 600s)? Live prompts waited about 290 seconds for approval; a slow human may time out a call.
 6. Can the plugin host (isolated process, scrubbed environment) write the trace file `~/.playbox/witness.debug`? In live runs it stayed empty although the log recorded entries.
-7. Does the running gateway reload plugin code on `hermes plugins enable`? The live runs suggest not for already-loaded code.
+7. Does the running gateway reload plugin code on `hermes plugins enable`? The live runs suggest not for already-loaded code; restart it before a retest.
 
 ## 14. Success metrics
 
@@ -338,3 +337,22 @@ Consequences for the product
 3. Document sidecar lifetime, or have `playbox_join` offer a leave/reset.
 4. Capture a real tool-name trace (via an allowed log location) before relying on wrapper unwrapping.
 5. Treat the live result as "the hold fires in real Hermes", not "prompt injection is solved". Haiku's reluctance to call tools means this model cannot show the planted-message path unprompted; use a more reliable model or an explicit instruction for the recorded demo, and say so.
+
+## 26. Fixes applied after the live runs (2026-11-04 night)
+
+| Problem found | Fix | Evidence |
+|---|---|---|
+| Long join link retyped wrongly by the model | `playbox_join` accepts `link_file` (whitespace trimmed); skill says to use it | New MCP test passes; real run joined from a file |
+| Sidecar stuck on the previous room | New `playbox_leave` tool; "already joined" error now names it; skill says to leave, not retry | Same test: join, refuse second join, leave, ping refused, rejoin; whole `playbox-mcp` suite 17 passed |
+| Agent never read the feed | Skill: call `playbox_feed` first and read it before acting | Prose only; not a guarantee for small models |
+| Hold would have blocked `clarify`, `tool_search`, `tool_describe` (the agent could not even ask the user) | Added to the read-only list; test added | 11 witness tests pass |
+| False hold from reading its own history log | Trigger narrowed to `~/.playbox/workspaces/` | Test added |
+| Unsure whether hooks see the bridge | Read Hermes source: bridge is unwrapped before hooks; unwrapping kept as defence | `model_tools.py` |
+| Planted-message path untested | Real feed output from a real room, through the real witness `register()`: `terminal` blocked, `clarify` allowed, next user turn lifts it; no `PWNED` | Script run 2026-11-04; model-driven repeat still outstanding |
+
+Not fixed
+- `RELEASE_PUBKEY` is still empty: pinning needs a signing key whose private half only the maintainer should hold. Disclose the unsigned install or generate the key (`playbox release keygen`) and sign a release.
+- The trace file written from the plugin host stayed empty; unknown whether the host may write to `~/.playbox`. The signed log itself works.
+- Join links are still long (a `link_file` avoids retyping, but a human pasting one into chat can still corrupt it); short invite codes are not built.
+- A model-driven live run that calls the feed and is held, with a more tool-reliable model than Haiku 4.5 or an explicit instruction, for the recorded demo.
+- Gateway restart before retesting the narrowed trigger.

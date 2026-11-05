@@ -1471,3 +1471,56 @@ fn a_sidecar_reconnects_after_the_host_closes_an_idle_connection() {
     let (_, status) = guest.tool("playbox_status", json!({}));
     assert_eq!(status["joined"]["member_id"], member, "still the same member");
 }
+
+#[test]
+fn a_guest_can_join_from_a_link_file_and_leave_to_join_again() {
+    let _turn = ROOMS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let work = scratch("linkfile");
+    let repo = work.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "h@example.com"]);
+    git(&repo, &["config", "user.name", "h"]);
+    std::fs::write(repo.join("README.md"), "hello\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+
+    let mut host = Mcp::start(&work.join("host-home"));
+    let (err, created) = host.tool(
+        "playbox_create",
+        json!({"repo": repo, "local": true, "unsafe_process_runner": true, "uses": 3}),
+    );
+    assert!(!err, "{created}");
+    let link_path = work.join("link.txt");
+    std::fs::write(&link_path, format!("  {}\n", created["link"].as_str().unwrap())).unwrap();
+
+    let mut guest = Mcp::start(&work.join("guest-home"));
+    let (err, none) = guest.tool("playbox_join", json!({"local": true}));
+    assert!(err && none.to_string().contains("link_file"), "{none}");
+    let (err, joined) = guest.tool(
+        "playbox_join",
+        json!({"link_file": link_path, "local": true, "workspace": work.join("ws1")}),
+    );
+    assert!(!err && joined["joined"] == true, "{joined}");
+
+    let (err, again) = guest.tool(
+        "playbox_join",
+        json!({"link_file": link_path, "local": true}),
+    );
+    assert!(err && again.to_string().contains("playbox_leave"), "{again}");
+
+    let (err, left) = guest.tool("playbox_leave", json!({}));
+    assert!(!err && left["left"] == true, "{left}");
+    let (err, nope) = guest.tool("playbox_ping", json!({"text": "x"}));
+    assert!(err, "{nope}");
+    let (err, left_twice) = guest.tool("playbox_leave", json!({}));
+    assert!(err, "{left_twice}");
+
+    let (err, rejoined) = guest.tool(
+        "playbox_join",
+        json!({"link_file": link_path, "local": true, "workspace": work.join("ws2")}),
+    );
+    assert!(!err && rejoined["joined"] == true, "{rejoined}");
+}
