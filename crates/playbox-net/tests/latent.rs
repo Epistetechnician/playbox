@@ -2,14 +2,18 @@
 //! another member reads and verifies it. Forged, re-signed, oversized and cross-signer messages are refused.
 
 use ed25519_dalek::SigningKey;
-use playbox_net::latent::{commit_of, pack, pack_with, parse, verify_receipt};
-use playbox_net::{join_link, new_secret_key, Client, Host, HostConfig};
+use playbox_net::latent::{commit_of, pack, pack_with, parse, verify_receipt, LatentPolicy};
+use playbox_net::{join_link, new_secret_key, Client, Host, HostConfig, Transport};
 use std::time::Duration;
 
 const HUB: &str = "0123456789abcdef";
 
 async fn start() -> (Host, (Client, SigningKey), (Client, SigningKey)) {
-    let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+    start_with(HostConfig::default()).await
+}
+
+async fn start_with(cfg: HostConfig) -> (Host, (Client, SigningKey), (Client, SigningKey)) {
+    let host = Host::start_with(new_secret_key().unwrap(), true, cfg)
         .await
         .unwrap();
     let link = host
@@ -226,4 +230,158 @@ fn the_commitment_is_signed_so_it_cannot_be_swapped_or_stripped() {
 fn the_python_and_rust_commitments_agree() {
     let sentences: Vec<String> = SENTENCES.iter().map(|s| (*s).to_string()).collect();
     assert_eq!(commit_of(SALT, &sentences), "4b107569d533fc431314ba2af88419b4884aee50d848dd8435145dc503820b6b");
+}
+
+fn with_policy(p: LatentPolicy) -> HostConfig {
+    HostConfig {
+        latent: p,
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn only_listed_hubs_are_accepted_and_posting_is_rate_limited() {
+    let (host, (a, ka), (b, kb)) = start_with(with_policy(LatentPolicy {
+        hubs: Some(vec![HUB.to_string()]),
+        posts_per_window: 3,
+        window: Duration::from_secs(60),
+        ..Default::default()
+    }))
+    .await;
+    // A hub id the room does not list is refused, and never reaches the mailbox.
+    let err = a
+        .latent_send(&pack(&ka, "ffffffffffffffff", "x", 0.5, &[1u8; 16]))
+        .await
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("does not accept"), "{err:#}");
+    // Three posts fit in the window; the fourth is told to slow down, and another member is not affected.
+    for i in 0..3u8 {
+        a.latent_send(&pack(&ka, HUB, "x", 0.5, &[i; 16])).await.unwrap();
+    }
+    let err = a
+        .latent_send(&pack(&ka, HUB, "x", 0.5, &[9u8; 16]))
+        .await
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("slow down"), "{err:#}");
+    b.latent_send(&pack(&kb, HUB, "y", 0.5, &[1u8; 16])).await.unwrap();
+    let (got, _) = b.latent_pull(HUB, 0).await.unwrap();
+    assert_eq!(got.len(), 4);
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn the_same_envelope_cannot_be_posted_twice_and_old_ones_expire() {
+    let (host, (a, ka), (b, _)) = start_with(with_policy(LatentPolicy {
+        max_age: Duration::from_millis(800),
+        ..Default::default()
+    }))
+    .await;
+    let env = pack(&ka, HUB, "x", 0.5, &[4u8; 16]);
+    a.latent_send(&env).await.unwrap();
+    let err = a.latent_send(&env).await.unwrap_err();
+    assert!(format!("{err:#}").contains("already posted"), "{err:#}");
+    assert_eq!(b.latent_pull(HUB, 0).await.unwrap().0.len(), 1);
+    // Past its age the message is no longer served, and the posting is forgotten.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert!(b.latent_pull(HUB, 0).await.unwrap().0.is_empty());
+    assert!(a.latent_send(&env).await.is_ok());
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_reader_whose_cursor_is_ahead_of_a_restarted_host_starts_over() {
+    let (host, (a, ka), (b, _)) = start().await;
+    a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16])).await.unwrap();
+    // The reader remembers cursor 50 from a previous host run; this host has only seen one message.
+    let (got, next) = b.latent_pull(HUB, 50).await.unwrap();
+    assert_eq!((got.len(), next), (1, 1));
+    host.shutdown().await.unwrap();
+}
+
+fn store_dir(name: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("playbox-latent-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    d
+}
+
+#[tokio::test]
+async fn the_mailbox_survives_a_host_restart_with_its_sequence_numbers_and_replay_memory() {
+    let d = store_dir("restart");
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let link = host.create_link(Duration::from_secs(60), 2).unwrap().encode();
+    let (sa, sb) = (new_secret_key().unwrap(), new_secret_key().unwrap());
+    let (ka, _kb) = (SigningKey::from_bytes(&sa.to_bytes()), SigningKey::from_bytes(&sb.to_bytes()));
+    let a = join_link(&link, sa.clone(), true).await.unwrap();
+    let b = join_link(&link, sb.clone(), true).await.unwrap();
+    let (ga, gb) = (a.grant().unwrap(), b.grant().unwrap());
+
+    let first = committed(&ka, &[3u8; 16]);
+    let seq = a.latent_send(&first).await.unwrap();
+    a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.unwrap();
+    let second = pack(&ka, HUB, "x", 0.5, &[8u8; 16]);
+    assert_eq!(a.latent_send(&second).await.unwrap(), 2);
+    a.close().await;
+    b.close().await;
+    host.shutdown().await.unwrap();
+
+    // Same state directory: both messages and the reveal are still there, readable by the other member.
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let a = Client::connect(host.addr(), sa, true).await.unwrap();
+    a.set_grant(ga);
+    let b = Client::connect(host.addr(), sb, true).await.unwrap();
+    b.set_grant(gb);
+    let (got, next) = b.latent_pull(HUB, 0).await.unwrap();
+    assert_eq!(got.iter().map(|g| g.seq).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(got[0].raw, first);
+    assert!(got[0].reveal.is_some() && got[1].reveal.is_none());
+    assert_eq!(next, 2);
+    // Sequence numbers continue, a replay of an old envelope is still refused, and the reveal cannot be redone.
+    assert!(a.latent_send(&first).await.is_err());
+    assert_eq!(a.latent_send(&pack(&ka, HUB, "x", 0.5, &[7u8; 16])).await.unwrap(), 3);
+    assert!(a.latent_reveal(1, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_damaged_or_edited_store_is_ignored_not_trusted() {
+    let d = store_dir("damaged");
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+    let sa = new_secret_key().unwrap();
+    let ka = SigningKey::from_bytes(&sa.to_bytes());
+    let a = join_link(&link, sa, true).await.unwrap();
+    a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16])).await.unwrap();
+    a.close().await;
+    host.shutdown().await.unwrap();
+
+    let path = d.join("latent.json");
+    let good = std::fs::read_to_string(&path).unwrap();
+    // A body edited on disk breaks the envelope's hash and signature, so the entry is dropped.
+    let v: serde_json::Value = serde_json::from_str(&good).unwrap();
+    let env = v["entries"][0]["envelope"].as_str().unwrap().to_string();
+    let mut raw = base64_decode(&env);
+    *raw.last_mut().unwrap() ^= 1;
+    std::fs::write(&path, good.replace(&env, &base64_encode(&raw))).unwrap();
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let c = join_link(&host.create_link(Duration::from_secs(60), 1).unwrap().encode(), new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+    assert!(c.latent_pull(HUB, 0).await.unwrap().0.is_empty());
+    c.close().await;
+    host.shutdown().await.unwrap();
+
+    // Garbage in the file: the host still starts, with an empty mailbox.
+    std::fs::write(&path, b"not json").unwrap();
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    host.shutdown().await.unwrap();
+}
+
+fn base64_decode(s: &str) -> Vec<u8> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    STANDARD.decode(s).unwrap()
+}
+
+fn base64_encode(b: &[u8]) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    STANDARD.encode(b)
 }

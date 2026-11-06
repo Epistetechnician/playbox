@@ -35,13 +35,32 @@ def new_key(path: Path) -> tuple[object, str]:
 
 
 class Room:
-    """A local room host. `new_link()` mints one single-use join link."""
+    """A local room host. `new_link()` mints one single-use join link.
 
-    def __init__(self, binary: Path, home: Path):
-        env = {**os.environ, "PLAYBOX_HOME": str(home)}
-        self.p = subprocess.Popen([str(binary), "up", "--local", "--console"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, text=True, env=env, bufsize=1)
+    With `state` the host keeps its identity, members and latent mailbox in that directory, so `restart()` brings back
+    the same room (new address, so members join again with a fresh link and their old key). `extra` is passed to
+    `playbox up` (for example `--latent-hub HUB`).
+    """
+
+    def __init__(self, binary: Path, home: Path, state: Path | None = None, extra: list[str] | None = None):
+        self.binary, self.home, self.state, self.extra = binary, home, state, list(extra or [])
+        self._start()
+
+    def _start(self) -> None:
+        env = {**os.environ, "PLAYBOX_HOME": str(self.home)}
+        args = [str(self.binary), "up", "--local", "--console", *self.extra]
+        if self.state is not None:
+            args += ["--state", str(self.state)]
+        self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                  env=env, bufsize=1)
         self.first = self._link()
+
+    def restart(self) -> None:
+        """Stop the host and start it again on the same state directory."""
+        if self.state is None:
+            raise RuntimeError("a room without a state directory has nothing to restore")
+        self.close()
+        self._start()
 
     def _link(self) -> str:
         for line in self.p.stdout:

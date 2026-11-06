@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text) and 6k (natural-text anchors, twenty concepts). Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) and 6l (room hardening). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -280,7 +280,8 @@ members, signed.
 - **Reading needs no trust in the host.** Every envelope is self-verifying, so `Client::latent_pull` re-checks each one
   and a reader can check the signer against the keys it trusts (`unpack_signed(..., trusted_signers=...)`). The host
   can withhold or replay messages but cannot forge one.
-- **Bounds.** The mailbox keeps 256 envelopes in all and 32 per member (oldest dropped), in memory only.
+- **Bounds.** The mailbox keeps 256 envelopes in all and 32 per member (oldest dropped). Section 6l adds persistence,
+  a post rate limit, a hub allowlist, replay refusal and expiry.
 - **The host never decodes a vector.** It holds no spoke, so it cannot read what a vector means. Decoding, the strength
   cap and the guards all stay with the receiving member (section 5, items 1 and 2).
 
@@ -289,9 +290,8 @@ truncated or flipped message, the per-member bound, a stranger) and a fixed-key 
 that the Rust packer must reproduce byte for byte; `steer/tests/test_hub.py` (round trip, tampering, an untrusted signer,
 another hub's message).
 
-Not built: persistence of the mailbox; a rate limit beyond the bounds; (the Python side reaches a room through
-`playbox latent session`, section 6g); a host-side check that a hub id is one the room uses; and
-putting a decoded vector through the existing steering guard check on the receiving member.
+Built later: persistence, a rate limit and a hub allowlist (6l); the Python side reaches a room through
+`playbox latent session` (6g); the guard check on the receiving member is `latent_room.guard_blocks` (6g).
 
 ## 6g. End to end through a room (2026-11-04)
 
@@ -460,6 +460,49 @@ The same five models, k=256, whitening rank 0.6 n, strength 0.5; 4 prompts per c
   through the hubs, and chemistry swings from 0.20 (template hub) to 0.86 (2000 natural).
 - **Not tested:** natural anchors from other domains, a larger natural set, instruction-tuned receivers, concepts chosen by
   someone else, and a decoder other than a word list.
+
+## 6l. Room hardening (2026-11-06)
+
+The mailbox from 6f was a demo: in memory, no rate limit, any hub id, and a restarted host lost every message and reused
+sequence numbers. Built (`crates/playbox-net/src/latent.rs`, `LatentPolicy` in `HostConfig`, flags on `playbox up`):
+
+- **Persistence.** A host opened with `--state DIR` keeps the mailbox in `DIR/latent.json`, written to a temp file and
+  renamed after every post and reveal. On start each stored message is checked again: the envelope must parse (hash and
+  signature), the signer must be the member recorded as sender, it must be within the age limit, and a stored reveal must
+  still open the signed commitment. Anything else is dropped; a file that is not JSON gives an empty mailbox and a note on
+  stderr. Sequence numbers continue where they stopped. A host without `--state` is unchanged (memory only).
+- **Rate limit.** `--latent-posts-per-minute N` (default 30), per member, same sliding window as `say`. A member over it is
+  told to slow down; other members are not affected. The window is in memory, so it resets when the host restarts.
+- **Hub allowlist.** `--latent-hub HUB`, repeatable. Without it any hub id is accepted; with it a post for any other id is
+  refused before it is filed. (The host cannot tell a real hub from a made-up id, since it never decodes; this only keeps
+  the room to the hubs its members actually use.)
+- **Replay and expiry.** The host remembers the blake3 of every envelope it filed within the age limit (up to 2048) and
+  refuses the same bytes again. A message older than `--latent-max-age-secs` (default 3600) is no longer served, and its
+  digest is forgotten. Age is the host's own arrival time.
+- **Cursor.** A reader whose cursor is ahead of the host (a host that restarted without a store) starts over from zero, so
+  it does not skip new messages.
+
+Checks. `crates/playbox-net/tests/latent.rs` grew from 9 to 14 tests: allowlist and rate limit, replay and expiry, a cursor
+ahead of the host, a restart that keeps messages, reveals, numbering and replay memory, and a damaged or edited store.
+`steer/tools/e8_room_hardening.py` runs the real `playbox up --state` host and `playbox latent session` members with
+Python-signed envelopes on a synthetic hub (`results/e8/e8_room_hardening.json`): 15 messages posted; a forged post, a
+replay and an unlisted hub id refused; the host stopped and started again on the same directory; then all 15 come back with
+the same sequence numbers, the same bytes, verified signers and vectors that decode to what was sent; the replay is still
+refused and the next post is number 16; a member is refused after exactly 30 posts while another still posts; and a message
+past a 3 s age limit is not served. Existing host suites (`chat`, `persist`, `security`, `abuse`, `fuzz_host`, `room`,
+`collab`) still pass.
+
+Limits.
+- **Not rerun with language models.** The three-family generation demo (6g) was not repeated against a restarted host: this
+  machine's Hugging Face cache sits on an external drive that is not mounted. The restart only touches the mailbox, and the
+  bytes that come back are identical to the ones sent, so the receiver's path is the one 6g measured; but that is an
+  argument, not a rerun.
+- **Replay is refused by the host only.** An envelope carries no timestamp, so a member can post its own old envelope again
+  once the age limit has passed (it is that member's own message), and a malicious host could serve an old one to a reader.
+  A reader that wants to refuse repeats should keep the hashes it has seen; the CLI session does not do that yet.
+- **Snapshot file.** The whole mailbox (at most 256 envelopes) is rewritten on each post: fine at 30 posts a minute per
+  member in a small room, wasteful beyond that; an append-only log is the next step if rooms grow.
+- **Built with Rust 1.99.1**, not the pinned 1.93.1 (its home is on the same unmounted drive); CI builds with the pin.
 
 ## 7. Not covered
 

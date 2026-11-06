@@ -10,8 +10,8 @@
 //! is that this member posted exactly these bytes for this hub.
 //!
 //! # What this does not do
-//! It does not check that the vector is honest (that is the commit-and-challenge audit, not built), and the
-//! receiver applies a decoded vector to its own model under its own strength cap and guards.
+//! It does not check that the vector is honest (that is the commit-and-challenge audit, which an auditor member runs),
+//! and the receiver applies a decoded vector to its own model under its own strength cap and guards.
 
 use crate::{
     steer::{hex, MAX_HUB_K},
@@ -23,7 +23,12 @@ use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose::STANDARD as B64S, Engine};
 use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey};
 use serde_json::{json, Value};
-use std::{collections::VecDeque, sync::Mutex};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::PathBuf,
+    sync::Mutex,
+    time::Duration,
+};
 
 pub const MAGIC: &[u8; 4] = b"PBL2";
 const MAX_HEADER: usize = 4096;
@@ -306,6 +311,33 @@ pub fn verify_receipt(
     Ok(seq)
 }
 
+/// What a host does with latent messages: who may post, how fast, and how long a message stays readable.
+#[derive(Debug, Clone)]
+pub struct LatentPolicy {
+    /// Hub ids the host accepts. `None` accepts any (the host never decodes a vector, so it cannot tell a real hub
+    /// from a made-up id; an allowlist keeps the mailbox to the hubs the room actually uses).
+    pub hubs: Option<Vec<String>>,
+    /// Posts one member may make in one `window`. Default 30 per minute.
+    pub posts_per_window: usize,
+    pub window: Duration,
+    /// How long a message stays readable, and how long an identical envelope is refused as a replay. Default 1 hour.
+    pub max_age: Duration,
+    /// Where to keep the mailbox across restarts. `Host::open` sets it to `<state dir>/latent.json`.
+    pub store: Option<PathBuf>,
+}
+
+impl Default for LatentPolicy {
+    fn default() -> Self {
+        Self {
+            hubs: None,
+            posts_per_window: 30,
+            window: Duration::from_secs(60),
+            max_age: Duration::from_secs(3600),
+            store: None,
+        }
+    }
+}
+
 struct Entry {
     seq: u64,
     from: EndpointId,
@@ -313,14 +345,28 @@ struct Entry {
     bytes: Vec<u8>,
     commit: Option<String>,
     reveal: Option<Vec<u8>>,
+    at_ms: u64,
 }
 
 type Pulled = (u64, EndpointId, Vec<u8>, Option<Vec<u8>>);
 
-/// Recent envelopes, bounded in all and per signer. Not persisted.
+/// Digests of envelopes seen within `max_age`, kept after an entry is evicted so a replay is still refused.
+const KEEP_DIGESTS: usize = 2048;
+
+#[derive(Default)]
+struct Inner {
+    seq: u64,
+    entries: VecDeque<Entry>,
+    digests: VecDeque<([u8; 32], u64)>,
+    posts: HashMap<EndpointId, VecDeque<u64>>,
+}
+
+/// Recent envelopes, bounded in all and per signer, with a post rate limit, replay refusal and expiry. Kept in a file
+/// when the policy names one, so a restart does not lose messages or reuse sequence numbers.
 #[derive(Default)]
 pub struct Mailbox {
-    inner: Mutex<(u64, VecDeque<Entry>)>,
+    inner: Mutex<Inner>,
+    policy: LatentPolicy,
 }
 
 impl std::fmt::Debug for Mailbox {
@@ -329,34 +375,157 @@ impl std::fmt::Debug for Mailbox {
     }
 }
 
+fn now_ms() -> u64 {
+    crate::chat::now_ms()
+}
+
 impl Mailbox {
-    fn put(&self, from: EndpointId, hub: &str, bytes: Vec<u8>, commit: Option<String>) -> u64 {
+    /// Open the mailbox under `policy`, loading the stored one if there is a file. Stored messages that do not verify
+    /// (edited on disk, wrong signer) or have expired are dropped; a missing or unreadable file starts empty.
+    #[must_use]
+    pub fn new(policy: LatentPolicy) -> Self {
+        let mut inner = Inner::default();
+        if let Some(path) = &policy.store {
+            match std::fs::read(path) {
+                Ok(data) => {
+                    if let Err(e) = Self::load(&mut inner, &data, policy.max_age) {
+                        eprintln!("playbox: ignoring the stored latent mailbox {}: {e:#}", path.display());
+                        inner = Inner::default();
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => eprintln!("playbox: cannot read the latent mailbox {}: {e}", path.display()),
+            }
+        }
+        Self {
+            inner: Mutex::new(inner),
+            policy,
+        }
+    }
+
+    fn load(inner: &mut Inner, data: &[u8], max_age: Duration) -> Result<()> {
+        let v: Value = serde_json::from_slice(data)?;
+        inner.seq = v["seq"].as_u64().ok_or_else(|| anyhow!("no sequence number"))?;
+        let now = now_ms();
+        for it in v["entries"].as_array().ok_or_else(|| anyhow!("no entries"))? {
+            let (Some(seq), Some(from), Some(bytes), Some(at_ms)) = (
+                it["seq"].as_u64(),
+                it["from"].as_str(),
+                it["envelope"].as_str().and_then(|b| B64S.decode(b).ok()),
+                it["at_ms"].as_u64(),
+            ) else {
+                continue;
+            };
+            let Ok(env) = parse(&bytes) else { continue };
+            let Ok(signer) = hex_to_32(from) else { continue };
+            if env.signer != signer || seq > inner.seq || now.saturating_sub(at_ms) > max_age.as_millis() as u64 {
+                continue;
+            }
+            let reveal = it["reveal"].as_str().and_then(|r| B64S.decode(r).ok());
+            // A stored reveal is only believed if it still opens the signed commitment.
+            let reveal = reveal.filter(|r| {
+                Reveal::parse(r).is_ok_and(|rv| env.commit.as_deref() == Some(rv.commit().as_str()))
+            });
+            let Ok(from) = EndpointId::from_bytes(&signer) else { continue };
+            inner.digests.push_back((*blake3::hash(&bytes).as_bytes(), at_ms));
+            inner.entries.push_back(Entry {
+                seq,
+                from,
+                hub: env.hub,
+                bytes,
+                commit: env.commit,
+                reveal,
+                at_ms,
+            });
+        }
+        Ok(())
+    }
+
+    /// Write the mailbox to its file (temp file, then rename). A failure is reported and the mailbox stays in memory.
+    fn save(&self, g: &Inner) {
+        let Some(path) = &self.policy.store else { return };
+        let entries: Vec<Value> = g
+            .entries
+            .iter()
+            .map(|e| {
+                json!({ "seq": e.seq, "from": hex(e.from.as_bytes()), "envelope": B64S.encode(&e.bytes),
+                        "reveal": e.reveal.as_ref().map(|r| B64S.encode(r)), "at_ms": e.at_ms })
+            })
+            .collect();
+        let body = json!({ "seq": g.seq, "entries": entries }).to_string();
+        let tmp = path.with_extension("tmp");
+        let res = std::fs::write(&tmp, body).and_then(|()| std::fs::rename(&tmp, path));
+        if let Err(e) = res {
+            eprintln!("playbox: cannot save the latent mailbox {}: {e}", path.display());
+        }
+    }
+
+    fn expire(&self, g: &mut Inner, now: u64) {
+        let max = self.policy.max_age.as_millis() as u64;
+        g.entries.retain(|e| now.saturating_sub(e.at_ms) <= max);
+        g.digests.retain(|d| now.saturating_sub(d.1) <= max);
+    }
+
+    /// File an envelope. Refused when the hub is not on the allowlist, the member is posting too fast, or the same
+    /// envelope was already filed within `max_age`.
+    fn put(&self, from: EndpointId, hub: &str, bytes: Vec<u8>, commit: Option<String>) -> Result<u64> {
+        if let Some(hubs) = &self.policy.hubs {
+            if !hubs.iter().any(|h| h == hub) {
+                bail!("this room does not accept latent messages for hub {}", &hub[..hub.len().min(16)]);
+            }
+        }
+        let now = now_ms();
         let mut g = self.inner.lock().expect("mailbox lock");
-        g.0 += 1;
-        let seq = g.0;
-        g.1.push_back(Entry {
+        self.expire(&mut g, now);
+        let window = self.policy.window.as_millis() as u64;
+        let q = g.posts.entry(from).or_default();
+        while q.front().is_some_and(|t| now.saturating_sub(*t) > window) {
+            q.pop_front();
+        }
+        if q.len() >= self.policy.posts_per_window {
+            bail!(
+                "slow down: at most {} latent messages per {} s",
+                self.policy.posts_per_window,
+                window / 1000
+            );
+        }
+        q.push_back(now);
+        let digest = *blake3::hash(&bytes).as_bytes();
+        if g.digests.iter().any(|d| d.0 == digest) {
+            bail!("this exact message was already posted");
+        }
+        g.digests.push_back((digest, now));
+        while g.digests.len() > KEEP_DIGESTS {
+            g.digests.pop_front();
+        }
+        g.seq += 1;
+        let seq = g.seq;
+        g.entries.push_back(Entry {
             seq,
             from,
             hub: hub.to_string(),
             bytes,
             commit,
             reveal: None,
+            at_ms: now,
         });
-        while g.1.iter().filter(|e| e.from == from).count() > KEEP_EACH {
-            if let Some(i) = g.1.iter().position(|e| e.from == from) {
-                g.1.remove(i);
+        while g.entries.iter().filter(|e| e.from == from).count() > KEEP_EACH {
+            if let Some(i) = g.entries.iter().position(|e| e.from == from) {
+                g.entries.remove(i);
             }
         }
-        while g.1.len() > KEEP_ALL {
-            g.1.pop_front();
+        while g.entries.len() > KEEP_ALL {
+            g.entries.pop_front();
         }
-        seq
+        self.save(&g);
+        Ok(seq)
     }
 
     /// Attach a reveal to message `seq`, if `from` posted it, it carries this commitment and nothing is revealed yet.
     fn reveal(&self, seq: u64, from: EndpointId, commit: &str, bytes: Vec<u8>) -> Result<String> {
         let mut g = self.inner.lock().expect("mailbox lock");
-        let e = g.1.iter_mut().find(|e| e.seq == seq).ok_or_else(|| anyhow!("no such message"))?;
+        self.expire(&mut g, now_ms());
+        let e = g.entries.iter_mut().find(|e| e.seq == seq).ok_or_else(|| anyhow!("no such message"))?;
         if e.from != from {
             bail!("only the sender can reveal a message");
         }
@@ -367,13 +536,19 @@ impl Mailbox {
             bail!("already revealed");
         }
         e.reveal = Some(bytes);
-        Ok(e.hub.clone())
+        let hub = e.hub.clone();
+        self.save(&g);
+        Ok(hub)
     }
 
+    /// Messages for `hub` after `since`, and the cursor for the next call. A cursor ahead of the mailbox (the host
+    /// restarted without a store) starts over, so new messages are not skipped.
     fn since(&self, hub: &str, since: u64) -> (Vec<Pulled>, u64) {
-        let g = self.inner.lock().expect("mailbox lock");
+        let mut g = self.inner.lock().expect("mailbox lock");
+        self.expire(&mut g, now_ms());
+        let since = if since > g.seq { 0 } else { since };
         let items: Vec<_> =
-            g.1.iter()
+            g.entries.iter()
                 .filter(|e| e.seq > since && e.hub == hub)
                 .take(PULL_MAX)
                 .map(|e| (e.seq, e.from, e.bytes.clone(), e.reveal.clone()))
@@ -381,6 +556,17 @@ impl Mailbox {
         let next = items.last().map_or(since, |i| i.0);
         (items, next)
     }
+}
+
+fn hex_to_32(s: &str) -> Result<[u8; 32]> {
+    if s.len() != 64 || !s.is_ascii() {
+        bail!("not a 32-byte hex string");
+    }
+    let mut out = [0u8; 32];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = u8::from_str_radix(&s[2 * i..2 * i + 2], 16)?;
+    }
+    Ok(out)
 }
 
 impl RoomHandler {
@@ -396,7 +582,10 @@ impl RoomHandler {
                 "the message must be signed by the member who sends it",
             ));
         }
-        let seq = self.latent.put(from, &env.hub, data.to_vec(), env.commit.clone());
+        let seq = self
+            .latent
+            .put(from, &env.hub, data.to_vec(), env.commit.clone())
+            .map_err(|e| crate::refuse(format!("{e:#}")))?;
         let _ = self.audit.chat.say(
             &from.to_string(),
             None,

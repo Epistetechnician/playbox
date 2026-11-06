@@ -412,6 +412,8 @@ pub struct HostConfig {
     pub steer: Option<Arc<steer::SteerHost>>,
     /// Member cap, per-member concurrency and rate limits, and a total task budget.
     pub abuse: limits::AbuseLimits,
+    /// Hub latent messages: hub allowlist, post rate, expiry and where the mailbox is kept.
+    pub latent: latent::LatentPolicy,
 }
 
 impl Default for HostConfig {
@@ -433,6 +435,7 @@ impl Default for HostConfig {
             platform: None,
             steer: None,
             abuse: limits::AbuseLimits::default(),
+            latent: latent::LatentPolicy::default(),
         }
     }
 }
@@ -458,7 +461,7 @@ struct RoomHandler {
     attest_key: Arc<SigningKey>,
     measurements: Arc<Measurements>,
     platform: Option<Arc<dyn PlatformProvider>>,
-    /// Signed hub latent messages posted to the room. Not persisted.
+    /// Signed hub latent messages posted to the room, kept in `<state dir>/latent.json` when the host has one.
     latent: Arc<latent::Mailbox>,
 }
 
@@ -1363,6 +1366,7 @@ impl Host {
         let state = State::load(&dir.join("state.json"))?;
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
+        cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
         Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
     }
 
@@ -1385,6 +1389,7 @@ impl Host {
         let state = State::load(&dir.join("state.json"))?;
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
+        cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
         Self::build(
             secret,
             transport.into(),
@@ -1518,7 +1523,7 @@ impl Host {
             attest_key,
             measurements,
             platform: cfg.platform.clone(),
-            latent: Arc::default(),
+            latent: Arc::new(latent::Mailbox::new(cfg.latent.clone())),
             cfg,
         };
         let sync = revoke::SyncHandler {

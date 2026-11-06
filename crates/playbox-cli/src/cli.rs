@@ -74,6 +74,15 @@ pub struct UpArgs {
     pub max_tasks_per_minute: Option<u64>,
     #[arg(long, value_name = "N")]
     pub task_budget: Option<u64>,
+    /// Accept hub latent messages only for this hub id; repeatable. Without it any hub id is accepted
+    #[arg(long = "latent-hub", value_name = "HUB")]
+    pub latent_hub: Vec<String>,
+    /// Latent messages one member may post per minute (default 30)
+    #[arg(long, value_name = "N")]
+    pub latent_posts_per_minute: Option<u64>,
+    /// How long a latent message stays readable, and an identical one is refused as a replay (default 3600)
+    #[arg(long, value_name = "SECS")]
+    pub latent_max_age_secs: Option<u64>,
     /// Be another host of an existing room (its root public key, 64 hex); needs --state
     #[arg(long, value_name = "ROOTKEY")]
     pub replica_of: Option<String>,

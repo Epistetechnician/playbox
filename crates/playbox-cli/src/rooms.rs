@@ -114,6 +114,19 @@ pub async fn up(a: UpArgs) -> Result<()> {
             }
             l
         },
+        latent: {
+            let mut l = playbox_net::latent::LatentPolicy::default();
+            if !a.latent_hub.is_empty() {
+                l.hubs = Some(a.latent_hub.clone());
+            }
+            if let Some(v) = a.latent_posts_per_minute {
+                l.posts_per_window = v as usize;
+            }
+            if let Some(v) = a.latent_max_age_secs {
+                l.max_age = std::time::Duration::from_secs(v);
+            }
+            l
+        },
         ..Default::default()
     };
     let host = match (&state, &a.replica_of) {

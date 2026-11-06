@@ -1,0 +1,32 @@
+{
+ "hub": "61e2f214b8fbdfea",
+ "checks": {
+  "forged_post_refused": true,
+  "replay_refused": true,
+  "unlisted_hub_refused": true,
+  "replay_refused_after_restart": true,
+  "numbering_continues": true,
+  "rate_limited": true,
+  "expired_message_not_served": true
+ },
+ "posted": 15,
+ "after_restart": {
+  "messages": 15,
+  "same_sequence_numbers": true,
+  "same_bytes": 15,
+  "signer_verified": 15,
+  "decodes_to_what_was_sent": 15,
+  "next": 15
+ },
+ "rate_limit": {
+  "accepted_before_refusal": 30,
+  "limit_per_minute": 30,
+  "message": "latent refused: slow down: at most 30 latent messages per 60 s",
+  "other_member_still_posts": true
+ },
+ "expiry": {
+  "served_while_fresh": 1,
+  "served_after_age_limit": 0
+ },
+ "all_passed": true
+}
