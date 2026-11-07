@@ -1010,3 +1010,20 @@ The vector file now carries its own strength (the gate value, 0 to 1) as four ex
 Per direction: SmolLM2 to Qwen3 35/40, controls 8/8; Qwen3 to SmolLM2 32/40, controls 8/8. 0 infrastructure failures.
 
 Caveats: the control sentences are the one fixed neutral triple, and the gate thresholds were calibrated on a neutral triple of the same kind, so 16/16 shows the gate separates that triple from topics, not that it separates every possible no-content input. The topic change (81.2% to 83.8%) is within noise. One seed, one set of 20 topics.
+
+### E7 on gman: the whole stack on one H100, and harder controls
+
+Modal workspace `episte2001` was disabled, and gman nodes take no inbound connections, so everything runs on the node over loopback: vLLM serving Qwen3.8-27B-FP8 (0.85 of GPU memory), the telepathy service (`steer/tools/telepathy_node.py`, same routes and maps as the Modal one), and Hermes v0.22.5 at the same commit as on the Mac (`steer/tools/node_setup.sh`: Hermes needs Python 3.14 and an editable install from a clone). The driver is the same `tools/telepathy_hermes.py`. Same protocol as round 4 (20 topics x 2 reps x 2 directions).
+
+| run (gman H100) | result |
+|---|---|
+| 80 topic trials, magnitude gate + signal line | 66/80 = 82.5% (95% CI 72.7 to 89.3); SmolLM2 to Qwen3 34/40, Qwen3 to SmolLM2 32/40; 1 false "none"; 0 infra errors |
+| 32 harder controls, magnitude gate | brain-written content-free filler: "none" 9/20; subjects not on B's list (knitting, weather, bus commutes, ...): "none" 6/12 |
+
+The Modal result (67/80) reproduces on gman. The 16/16 control result of round 4 does not carry over: it used one fixed neutral triple, which is also what the gate was calibrated on. Other content-free text sits at the same vector magnitude as real topics (1.0 to 1.6 against 1.2 to 1.6), so magnitude cannot separate them. Off-list subjects land on the nearest listed topic (weather to ocean, bus commutes to cars), which is a limit of a closed-list answer, not a gate failure.
+
+**A topic-ness gate, tried and failed.** Strength ramps with the best cosine between the sender's vector and any fit-topic direction (`TELEPATHY_TOPIC_GATE`, off by default; `tools/telepathy_topicness.py`). Offline it looked good: 98% of evaluation-topic samples kept and 75 to 80% of filler muted at one threshold (`results/telepathy/topicness.json`). Live it failed: filler "none" rose to 18/20, but topics fell to 37/80 (46%) with 37 false "none". Topic-ness of the live Agent A sentences had median 0.78 and a minimum of 0.56, against 0.92 and 0.81 in my calibration samples, so the thresholds sat above many real topics. The calibration text was not drawn from the live agent, and the thresholds were also taken from the evaluation topics themselves. Not adopted.
+
+Standing result: topics about 82% with the magnitude gate; controls solved only for the fixed neutral triple. Next step if wanted: calibrate any gate on text produced by the live Agent A, with filler written by that same agent, and score it on topics it has not seen.
+
+**Cost.** The node was left running and idle across two long gaps between my turns. Its month-to-date bill went from about 22 USD to 193.9 USD (2,878 minutes). That overrun is mine. The node is now stopped (`gman node ls`: stopped, disk intact).

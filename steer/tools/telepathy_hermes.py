@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playbox_steer import telepathy_harness as H
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = ROOT.parent / "judge/.venv/bin/python"
+PY = os.environ.get("TELEPATHY_PY") or ROOT.parent / "judge/.venv/bin/python"
 OUT = Path(os.environ.get("TELEPATHY_OUT", ROOT / "results/telepathy/hermes"))
 CONCEPTS = os.environ.get("TELEPATHY_CONCEPTS", "ocean,space,music,sport,medicine").split(",")
 ENV = (f"cd {ROOT} && PYTHONPATH=. " + (f"TELEPATHY_URL={os.environ['TELEPATHY_URL']} " if os.environ.get("TELEPATHY_URL") else "")
@@ -24,6 +24,7 @@ SHARED = OUT.parent / (OUT.name + "_shared")    # B's cwd per trial: holds only 
 
 MIN_FREE_GB = float(os.environ.get("TELEPATHY_MIN_FREE_GB", "6"))
 TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "600"))
+CONTROLS = json.loads(Path(os.environ["TELEPATHY_CONTROLS_FILE"]).read_text()) if os.environ.get("TELEPATHY_CONTROLS_FILE") else []
 ATTEMPTS = int(os.environ.get("TELEPATHY_ATTEMPTS", "3"))
 PORT = int(os.environ.get("TELEPATHY_PORT", "8765"))
 URL = os.environ.get("TELEPATHY_URL", f"http://127.0.0.1:{PORT}")
@@ -75,6 +76,9 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
     shared.mkdir(parents=True)
     vec = shared / "thought.pt"
     tag = f"{i}" if k == 0 else f"{i}.{k}"
+    ctl = None
+    if concept and concept.startswith("@"):  # a control from TELEPATHY_CONTROLS_FILE: "@<index>"
+        ctl, concept = CONTROLS[int(concept[1:])], None
     if concept:
         a = (f"You are Agent A. Your secret topic is: {concept}. Write 6 short, concrete sentences about it, then run exactly this one shell "
              f"command (replace S1..S6 with your sentences, each in quotes):\n"
@@ -82,9 +86,10 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
              f"Do not write the topic word anywhere except inside your own sentences. Reply 'sent' only after the command printed 'wrote'; "
              f"if it printed an error, run it again once.")
     else:
+        texts = " ".join(json.dumps(t) for t in (ctl["sentences"] if ctl else
+                         ["The item was placed on the table.", "It was a normal day.", "They talked for a while."]))
         a = (f"You are Agent A. Run exactly this shell command, with nothing else:\n"
-             f"{ENV} think --src {src} --dst {dst} --out {vec} --text \"The item was placed on the table.\" \"It was a normal day.\" "
-             f"\"They talked for a while.\"\nReply 'sent' only after the command printed 'wrote'; if it printed an error, run it again once.")
+             f"{ENV} think --src {src} --dst {dst} --out {vec} --text {texts}\nReply 'sent' only after the command printed 'wrote'; if it printed an error, run it again once.")
     hermes(a, f"A_{tag}")
     if not H.vector_ok(vec):
         raise H.InfraError("A produced no vector")
@@ -123,7 +128,7 @@ if __name__ == "__main__":
     reps, controls, workers = (int(os.environ.get(k, d)) for k, d in (("TELEPATHY_REPS", 1), ("TELEPATHY_CONTROLS", 1), ("TELEPATHY_WORKERS", 2)))
     plan = []
     for src, dst in (("smollm2", "qwen3"), ("qwen3", "smollm2")):
-        plan += [(src, dst, c) for c in CONCEPTS for _ in range(reps)] + [(src, dst, None)] * controls
+        plan += [(src, dst, c) for c in CONCEPTS for _ in range(reps)] + ([(src, dst, f"@{j}") for j in range(len(CONTROLS))] if CONTROLS else [(src, dst, None)] * controls)
     random.Random(0).shuffle(plan)
     if len(sys.argv) > 1:
         plan = plan[: int(sys.argv[1])]

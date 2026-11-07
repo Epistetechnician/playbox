@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from playbox_steer.telepathy_data_xl import FIT_TOPICS_XL
 
 CONF = Path.home() / ".config/playbox"
-URL = (CONF / "brain_url").read_text().strip() + "/v1/chat/completions"
-KEY = (CONF / "brain_token").read_text().strip()
+URL = (os.environ.get("BRAIN_URL") or (CONF / "brain_url").read_text().strip()) + "/v1/chat/completions"
+KEY = os.environ.get("BRAIN_API_KEY") or (CONF / "brain_token").read_text().strip()
 OUT = Path(__file__).parent.parent / "playbox_steer/telepathy_agentfit.json"
 SAMPLES = int(os.environ.get("SAMPLES", 4))
 

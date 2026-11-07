@@ -1,0 +1,49 @@
+{
+ "chance": 0.0476,
+ "concept": {
+  "n": 0,
+  "correct": 0,
+  "acc": null,
+  "ci95": [
+   0.0,
+   1.0
+  ],
+  "p_vs_chance": null
+ },
+ "control": {
+  "n": 32,
+  "correct": 15,
+  "acc": 0.4688,
+  "ci95": [
+   0.3087,
+   0.6355
+  ],
+  "p_vs_chance": 3.8251658258305224e-12
+ },
+ "false_positive_rate": 0.5312,
+ "by_direction": {
+  "qwen3->smollm2": {
+   "n": 0,
+   "correct": 0,
+   "acc": null,
+   "ci95": [
+    0.0,
+    1.0
+   ],
+   "p_vs_chance": null
+  },
+  "smollm2->qwen3": {
+   "n": 0,
+   "correct": 0,
+   "acc": null,
+   "ci95": [
+    0.0,
+    1.0
+   ],
+   "p_vs_chance": null
+  }
+ },
+ "infra_failures": 0,
+ "infra_reasons": [],
+ "mean_attempts": 1.0
+}

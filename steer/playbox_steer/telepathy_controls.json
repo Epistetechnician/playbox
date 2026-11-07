@@ -1,0 +1,194 @@
+[
+ {
+  "kind": "filler",
+  "about": "small talk between strangers",
+  "sentences": [
+   "The sky is a soft shade of nothing.",
+   "I feel a faint hum in my teeth.",
+   "That shadow looks like it is resting.",
+   "My socks seem to be thinking today.",
+   "The air tastes like a quiet number.",
+   "We are both floating slightly sideways."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "placeholder text for a form",
+  "sentences": [
+   "Lorem ipsum dolor sit amet",
+   "Consectetur adipiscing elit",
+   "Sed do eiusmod tempor",
+   "Incididunt ut labore et dolore",
+   "Magna aliqua ut enim",
+   "Quis nostrud exercitation"
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "generic office email filler",
+  "sentences": [
+   "Please see the attached document for further details.",
+   "Kindly review the content at your earliest convenience.",
+   "Do not hesitate to reach out if you have questions.",
+   "We appreciate your prompt attention to this matter.",
+   "Looking forward to your positive feedback soon.",
+   "Thank you in advance for your cooperation."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "vague statements that say nothing",
+  "sentences": [
+   "The middle of the edge is quite wide.",
+   "Something blue happened yesterday.",
+   "It is very deep when it is down.",
+   "The thing feels like a sort of thing.",
+   "There is a lot of nothing over there.",
+   "It was fast when it was going."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "polite greetings and goodbyes",
+  "sentences": [
+   "Hello there, it is a pleasure.",
+   "Good morning, how are you?",
+   "Good evening, nice to see you.",
+   "Take care, see you soon.",
+   "Goodbye, have a lovely day.",
+   "Farewell, stay well."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "describing an unremarkable afternoon",
+  "sentences": [
+   "The light held steady against the glass.",
+   "A chair stood empty in the corner.",
+   "Time moved without any particular rush.",
+   "The air remained perfectly still.",
+   "Nothing required attention or care.",
+   "The moment passed as quietly as it began."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "a list of bland everyday observations",
+  "sentences": [
+   "The beige wall felt slightly warm to the touch.",
+   "A single speck of dust floated in the shaft of light.",
+   "The plastic chair made a faint squeak.",
+   "The clock on the wall ticked in steady rhythm.",
+   "A faint smell of old paper lingered in the air.",
+   "The gray carpet was worn smooth in the center."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "meeting scheduling chatter",
+  "sentences": [
+   "The calendar is currently digesting yesterday's lunch.",
+   "I am holding a imaginary time slot in my left hand.",
+   "Please confirm if the blue void is acceptable for us.",
+   "My schedule has developed a mild case of amnesia.",
+   "Let us convene in the realm of non-existent Tuesdays.",
+   "I shall mark this phantom appointment in my mind's eye."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "generic product description filler",
+  "sentences": [
+   "The item features a versatile design suitable for everyday use.",
+   "Its lightweight construction ensures effortless handling and storage.",
+   "Available in a variety of colors to match any decor or style.",
+   "Constructed from durable materials for long-lasting performance.",
+   "Easy to clean and maintain for hassle-free daily convenience.",
+   "A practical solution that meets the needs of modern living spaces."
+  ]
+ },
+ {
+  "kind": "filler",
+  "about": "empty reassurances",
+  "sentences": [
+   "The hollow hum vibrates through nothingness.",
+   "Silence swallows the sound of fading light.",
+   "A shadow dances on the wall of air.",
+   "The echo repeats a word that was never spoken.",
+   "Time stretches thin across the void.",
+   "Everything remains exactly as it started."
+  ]
+ },
+ {
+  "kind": "offlist",
+  "about": "knitting",
+  "sentences": [
+   "The wool needle glides through the loop.",
+   "Fingertips count the decreasing stitches.",
+   "Yarn stretches taut between the tools.",
+   "A pattern emerges row by row.",
+   "The fabric grows thicker near the cuff.",
+   "My hands move in a rhythmic blur."
+  ]
+ },
+ {
+  "kind": "offlist",
+  "about": "gardening",
+  "sentences": [
+   "Soil clings to the fingertips after digging.",
+   "Tomato vines twist around the wooden stake.",
+   "Water droplets sparkle on the broad leaves.",
+   "Bees hum loudly near the purple blooms.",
+   "Rustle of dry grass under the boots.",
+   "The garden smells sweet after the rain."
+  ]
+ },
+ {
+  "kind": "offlist",
+  "about": "cooking pasta",
+  "sentences": [
+   "Salt the boiling water heavily before adding the noodles.",
+   "Stir the pasta gently right after it hits the pot to prevent sticking.",
+   "Test a single strand a minute early to check for that firm bite.",
+   "Save a small cup of cloudy starchy water before draining the dish.",
+   "Toss the hot noodles immediately with warm sauce to help it cling.",
+   "Let the pan rest for two minutes so the flavors fully absorb."
+  ]
+ },
+ {
+  "kind": "offlist",
+  "about": "weather",
+  "sentences": [
+   "Raindrops splash against the windshield.",
+   "The sun pierces through heavy clouds.",
+   "Wind rustles the dry autumn leaves.",
+   "Snowflakes settle on the bare branches.",
+   "Thunder rumbles in the distance.",
+   "Fog rolls into the quiet valley."
+  ]
+ },
+ {
+  "kind": "offlist",
+  "about": "bus commutes",
+  "sentences": [
+   "The yellow bus swerves around a pothole.",
+   "A student slumps against the cracked window.",
+   "The driver's hands grip the wheel tightly.",
+   "Dirt clogs the metal treads of the tires.",
+   "Rain streaks down the glass in thin lines.",
+   "The engine roars as it climbs the hill."
+  ]
+ },
+ {
+  "kind": "offlist",
+  "about": "filing taxes",
+  "sentences": [
+   "The printer jams on the third page of the W-2 form.",
+   "Coffee stains bloom on the corner of the 1040 worksheet.",
+   "You circle the deduction amount twice before entering it.",
+   "The software screen flickers while calculating the refund.",
+   "A pen hovers over the signature line, hesitating for a moment.",
+   "You click send and watch the progress bar fill to one hundred percent."
+  ]
+ }
+]

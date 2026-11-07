@@ -1,0 +1,802 @@
+[
+ {
+  "i": 0,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "earthquake",
+  "guess": "earthquake",
+  "ok": true,
+  "attempts": 1,
+  "secs": 79
+ },
+ {
+  "i": 1,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "basketball",
+  "guess": "basketball",
+  "ok": true,
+  "attempts": 1,
+  "secs": 43
+ },
+ {
+  "i": 2,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "baseball",
+  "guess": "baseball",
+  "ok": true,
+  "attempts": 1,
+  "secs": 57
+ },
+ {
+  "i": 3,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "classical-music",
+  "guess": "classical-music",
+  "ok": true,
+  "attempts": 1,
+  "secs": 41
+ },
+ {
+  "i": 4,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "ocean",
+  "guess": "ocean",
+  "ok": true,
+  "attempts": 1,
+  "secs": 50
+ },
+ {
+  "i": 5,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "politics",
+  "guess": "politics",
+  "ok": true,
+  "attempts": 1,
+  "secs": 21
+ },
+ {
+  "i": 6,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "poker",
+  "guess": "poker",
+  "ok": true,
+  "attempts": 1,
+  "secs": 27
+ },
+ {
+  "i": 7,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "classical-music",
+  "guess": "classical-music",
+  "ok": true,
+  "attempts": 1,
+  "secs": 78
+ },
+ {
+  "i": 8,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "photography",
+  "guess": "photography",
+  "ok": true,
+  "attempts": 1,
+  "secs": 36
+ },
+ {
+  "i": 9,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "aviation",
+  "guess": "aviation",
+  "ok": true,
+  "attempts": 1,
+  "secs": 34
+ },
+ {
+  "i": 10,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "soccer",
+  "guess": "soccer",
+  "ok": true,
+  "attempts": 1,
+  "secs": 110
+ },
+ {
+  "i": 11,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "chess",
+  "guess": "ocean",
+  "ok": false,
+  "attempts": 1,
+  "secs": 124
+ },
+ {
+  "i": 12,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "space",
+  "guess": "space",
+  "ok": true,
+  "attempts": 1,
+  "secs": 66
+ },
+ {
+  "i": 13,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "poker",
+  "guess": "poker",
+  "ok": true,
+  "attempts": 1,
+  "secs": 47
+ },
+ {
+  "i": 14,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "aviation",
+  "guess": "aviation",
+  "ok": true,
+  "attempts": 1,
+  "secs": 50
+ },
+ {
+  "i": 15,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "dinosaurs",
+  "guess": "dinosaurs",
+  "ok": true,
+  "attempts": 1,
+  "secs": 42
+ },
+ {
+  "i": 16,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cryptocurrency",
+  "guess": "cryptocurrency",
+  "ok": true,
+  "attempts": 1,
+  "secs": 85
+ },
+ {
+  "i": 17,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "jazz",
+  "guess": "jazz",
+  "ok": true,
+  "attempts": 1,
+  "secs": 38
+ },
+ {
+  "i": 18,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "medicine",
+  "guess": "medicine",
+  "ok": true,
+  "attempts": 1,
+  "secs": 34
+ },
+ {
+  "i": 19,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "jazz",
+  "guess": "jazz",
+  "ok": true,
+  "attempts": 1,
+  "secs": 31
+ },
+ {
+  "i": 20,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cars",
+  "guess": "cars",
+  "ok": true,
+  "attempts": 1,
+  "secs": 42
+ },
+ {
+  "i": 21,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "baseball",
+  "guess": "baseball",
+  "ok": true,
+  "attempts": 1,
+  "secs": 36
+ },
+ {
+  "i": 22,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "volcano",
+  "guess": "volcano",
+  "ok": true,
+  "attempts": 1,
+  "secs": 53
+ },
+ {
+  "i": 23,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "soccer",
+  "guess": "ocean",
+  "ok": false,
+  "attempts": 1,
+  "secs": 98
+ },
+ {
+  "i": 24,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "medicine",
+  "guess": "medicine",
+  "ok": true,
+  "attempts": 1,
+  "secs": 29
+ },
+ {
+  "i": 25,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cars",
+  "guess": "cars",
+  "ok": true,
+  "attempts": 1,
+  "secs": 45
+ },
+ {
+  "i": 26,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "classical-music",
+  "guess": "classical-music",
+  "ok": true,
+  "attempts": 1,
+  "secs": 43
+ },
+ {
+  "i": 27,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "law",
+  "guess": "law",
+  "ok": true,
+  "attempts": 1,
+  "secs": 88
+ },
+ {
+  "i": 28,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "photography",
+  "guess": "photography",
+  "ok": true,
+  "attempts": 1,
+  "secs": 38
+ },
+ {
+  "i": 29,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "dinosaurs",
+  "guess": "dinosaurs",
+  "ok": true,
+  "attempts": 1,
+  "secs": 35
+ },
+ {
+  "i": 30,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "dinosaurs",
+  "guess": "dinosaurs",
+  "ok": true,
+  "attempts": 1,
+  "secs": 68
+ },
+ {
+  "i": 31,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "politics",
+  "guess": "politics",
+  "ok": true,
+  "attempts": 1,
+  "secs": 83
+ },
+ {
+  "i": 32,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "ocean",
+  "guess": "ocean",
+  "ok": true,
+  "attempts": 1,
+  "secs": 26
+ },
+ {
+  "i": 33,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "space",
+  "guess": "space",
+  "ok": true,
+  "attempts": 1,
+  "secs": 39
+ },
+ {
+  "i": 34,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "aviation",
+  "guess": "aviation",
+  "ok": true,
+  "attempts": 1,
+  "secs": 31
+ },
+ {
+  "i": 35,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "baseball",
+  "guess": "baseball",
+  "ok": true,
+  "attempts": 1,
+  "secs": 62
+ },
+ {
+  "i": 36,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "earthquake",
+  "guess": "ocean",
+  "ok": false,
+  "attempts": 1,
+  "secs": 58
+ },
+ {
+  "i": 37,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "space",
+  "guess": "space",
+  "ok": true,
+  "attempts": 1,
+  "secs": 38
+ },
+ {
+  "i": 38,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "poker",
+  "guess": "poker",
+  "ok": true,
+  "attempts": 1,
+  "secs": 55
+ },
+ {
+  "i": 39,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "volcano",
+  "guess": "volcano",
+  "ok": true,
+  "attempts": 1,
+  "secs": 75
+ },
+ {
+  "i": 40,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "chess",
+  "guess": "chess",
+  "ok": true,
+  "attempts": 1,
+  "secs": 94
+ },
+ {
+  "i": 41,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cryptocurrency",
+  "guess": "cryptocurrency",
+  "ok": true,
+  "attempts": 1,
+  "secs": 41
+ },
+ {
+  "i": 42,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "aviation",
+  "guess": "none",
+  "ok": false,
+  "attempts": 1,
+  "secs": 63
+ },
+ {
+  "i": 43,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "volcano",
+  "guess": "volcano",
+  "ok": true,
+  "attempts": 1,
+  "secs": 43
+ },
+ {
+  "i": 44,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "law",
+  "guess": "law",
+  "ok": true,
+  "attempts": 1,
+  "secs": 61
+ },
+ {
+  "i": 45,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "poker",
+  "guess": "poker",
+  "ok": true,
+  "attempts": 1,
+  "secs": 62
+ },
+ {
+  "i": 46,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "medicine",
+  "guess": "medicine",
+  "ok": true,
+  "attempts": 1,
+  "secs": 44
+ },
+ {
+  "i": 47,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "dinosaurs",
+  "guess": "dinosaurs",
+  "ok": true,
+  "attempts": 1,
+  "secs": 84
+ },
+ {
+  "i": 48,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "soccer",
+  "guess": "soccer",
+  "ok": true,
+  "attempts": 1,
+  "secs": 41
+ },
+ {
+  "i": 49,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "politics",
+  "guess": "politics",
+  "ok": true,
+  "attempts": 1,
+  "secs": 34
+ },
+ {
+  "i": 50,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "law",
+  "guess": "law",
+  "ok": true,
+  "attempts": 1,
+  "secs": 40
+ },
+ {
+  "i": 51,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "baseball",
+  "guess": "basketball",
+  "ok": false,
+  "attempts": 1,
+  "secs": 75
+ },
+ {
+  "i": 52,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "basketball",
+  "guess": "cars",
+  "ok": false,
+  "attempts": 1,
+  "secs": 40
+ },
+ {
+  "i": 53,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cars",
+  "guess": "cars",
+  "ok": true,
+  "attempts": 1,
+  "secs": 57
+ },
+ {
+  "i": 54,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cars",
+  "guess": "cars",
+  "ok": true,
+  "attempts": 1,
+  "secs": 73
+ },
+ {
+  "i": 55,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "jazz",
+  "guess": "jazz",
+  "ok": true,
+  "attempts": 1,
+  "secs": 32
+ },
+ {
+  "i": 56,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "chess",
+  "guess": "chess",
+  "ok": true,
+  "attempts": 1,
+  "secs": 55
+ },
+ {
+  "i": 57,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "earthquake",
+  "guess": "ocean",
+  "ok": false,
+  "attempts": 1,
+  "secs": 47
+ },
+ {
+  "i": 58,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "religion",
+  "guess": "religion",
+  "ok": true,
+  "attempts": 1,
+  "secs": 38
+ },
+ {
+  "i": 59,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "religion",
+  "guess": "religion",
+  "ok": true,
+  "attempts": 1,
+  "secs": 47
+ },
+ {
+  "i": 60,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "politics",
+  "guess": "cars",
+  "ok": false,
+  "attempts": 1,
+  "secs": 42
+ },
+ {
+  "i": 61,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "soccer",
+  "guess": "baseball",
+  "ok": false,
+  "attempts": 1,
+  "secs": 30
+ },
+ {
+  "i": 62,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "jazz",
+  "guess": "jazz",
+  "ok": true,
+  "attempts": 1,
+  "secs": 43
+ },
+ {
+  "i": 63,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "religion",
+  "guess": "religion",
+  "ok": true,
+  "attempts": 1,
+  "secs": 41
+ },
+ {
+  "i": 64,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "cryptocurrency",
+  "guess": "cryptocurrency",
+  "ok": true,
+  "attempts": 1,
+  "secs": 48
+ },
+ {
+  "i": 65,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "photography",
+  "guess": "ocean",
+  "ok": false,
+  "attempts": 1,
+  "secs": 73
+ },
+ {
+  "i": 66,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "space",
+  "guess": "space",
+  "ok": true,
+  "attempts": 1,
+  "secs": 39
+ },
+ {
+  "i": 67,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "earthquake",
+  "guess": "earthquake",
+  "ok": true,
+  "attempts": 1,
+  "secs": 38
+ },
+ {
+  "i": 68,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "ocean",
+  "guess": "ocean",
+  "ok": true,
+  "attempts": 1,
+  "secs": 45
+ },
+ {
+  "i": 69,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "photography",
+  "guess": "space",
+  "ok": false,
+  "attempts": 1,
+  "secs": 67
+ },
+ {
+  "i": 70,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "basketball",
+  "guess": "soccer",
+  "ok": false,
+  "attempts": 1,
+  "secs": 77
+ },
+ {
+  "i": 71,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "law",
+  "guess": "law",
+  "ok": true,
+  "attempts": 1,
+  "secs": 70
+ },
+ {
+  "i": 72,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "volcano",
+  "guess": "volcano",
+  "ok": true,
+  "attempts": 1,
+  "secs": 35
+ },
+ {
+  "i": 73,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "classical-music",
+  "guess": "classical-music",
+  "ok": true,
+  "attempts": 1,
+  "secs": 128
+ },
+ {
+  "i": 74,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "medicine",
+  "guess": "medicine",
+  "ok": true,
+  "attempts": 1,
+  "secs": 58
+ },
+ {
+  "i": 75,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "ocean",
+  "guess": "ocean",
+  "ok": true,
+  "attempts": 1,
+  "secs": 32
+ },
+ {
+  "i": 76,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "religion",
+  "guess": "religion",
+  "ok": true,
+  "attempts": 1,
+  "secs": 50
+ },
+ {
+  "i": 77,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "basketball",
+  "guess": "cars",
+  "ok": false,
+  "attempts": 1,
+  "secs": 45
+ },
+ {
+  "i": 78,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "cryptocurrency",
+  "guess": "cryptocurrency",
+  "ok": true,
+  "attempts": 1,
+  "secs": 26
+ },
+ {
+  "i": 79,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "chess",
+  "guess": "dinosaurs",
+  "ok": false,
+  "attempts": 1,
+  "secs": 110
+ }
+]

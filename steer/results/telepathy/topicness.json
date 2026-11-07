@@ -1,0 +1,842 @@
+{
+ "smollm2": {
+  "eval_topics": [
+   {
+    "topicness": 0.9303,
+    "mag": 50.417
+   },
+   {
+    "topicness": 0.9415,
+    "mag": 48.909
+   },
+   {
+    "topicness": 0.9068,
+    "mag": 45.942
+   },
+   {
+    "topicness": 0.9276,
+    "mag": 45.974
+   },
+   {
+    "topicness": 0.9533,
+    "mag": 46.59
+   },
+   {
+    "topicness": 0.9247,
+    "mag": 45.092
+   },
+   {
+    "topicness": 0.9511,
+    "mag": 47.674
+   },
+   {
+    "topicness": 0.9497,
+    "mag": 49.204
+   },
+   {
+    "topicness": 0.9461,
+    "mag": 46.741
+   },
+   {
+    "topicness": 0.9536,
+    "mag": 51.102
+   },
+   {
+    "topicness": 0.9428,
+    "mag": 46.205
+   },
+   {
+    "topicness": 0.9429,
+    "mag": 49.484
+   },
+   {
+    "topicness": 0.8517,
+    "mag": 43.813
+   },
+   {
+    "topicness": 0.8639,
+    "mag": 42.025
+   },
+   {
+    "topicness": 0.8463,
+    "mag": 43.576
+   },
+   {
+    "topicness": 0.8879,
+    "mag": 49.741
+   },
+   {
+    "topicness": 0.9467,
+    "mag": 50.238
+   },
+   {
+    "topicness": 0.9269,
+    "mag": 47.188
+   },
+   {
+    "topicness": 0.8545,
+    "mag": 52.493
+   },
+   {
+    "topicness": 0.8518,
+    "mag": 50.314
+   },
+   {
+    "topicness": 0.8462,
+    "mag": 45.165
+   },
+   {
+    "topicness": 0.8962,
+    "mag": 59.911
+   },
+   {
+    "topicness": 0.853,
+    "mag": 54.694
+   },
+   {
+    "topicness": 0.8701,
+    "mag": 51.646
+   },
+   {
+    "topicness": 0.9352,
+    "mag": 49.629
+   },
+   {
+    "topicness": 0.9173,
+    "mag": 48.646
+   },
+   {
+    "topicness": 0.9294,
+    "mag": 45.481
+   },
+   {
+    "topicness": 0.9361,
+    "mag": 43.746
+   },
+   {
+    "topicness": 0.9284,
+    "mag": 43.573
+   },
+   {
+    "topicness": 0.9466,
+    "mag": 52.337
+   },
+   {
+    "topicness": 0.9002,
+    "mag": 45.919
+   },
+   {
+    "topicness": 0.8563,
+    "mag": 41.716
+   },
+   {
+    "topicness": 0.8413,
+    "mag": 46.247
+   },
+   {
+    "topicness": 0.9308,
+    "mag": 46.469
+   },
+   {
+    "topicness": 0.9021,
+    "mag": 47.836
+   },
+   {
+    "topicness": 0.8706,
+    "mag": 45.896
+   },
+   {
+    "topicness": 0.9494,
+    "mag": 55.564
+   },
+   {
+    "topicness": 0.9372,
+    "mag": 49.959
+   },
+   {
+    "topicness": 0.9204,
+    "mag": 58.146
+   },
+   {
+    "topicness": 0.8752,
+    "mag": 46.967
+   },
+   {
+    "topicness": 0.9221,
+    "mag": 48.931
+   },
+   {
+    "topicness": 0.8829,
+    "mag": 48.374
+   },
+   {
+    "topicness": 0.8927,
+    "mag": 44.808
+   },
+   {
+    "topicness": 0.9297,
+    "mag": 40.334
+   },
+   {
+    "topicness": 0.9395,
+    "mag": 45.54
+   },
+   {
+    "topicness": 0.8762,
+    "mag": 45.333
+   },
+   {
+    "topicness": 0.8425,
+    "mag": 41.251
+   },
+   {
+    "topicness": 0.8079,
+    "mag": 39.603
+   },
+   {
+    "topicness": 0.9311,
+    "mag": 46.646
+   },
+   {
+    "topicness": 0.9376,
+    "mag": 49.3
+   },
+   {
+    "topicness": 0.9174,
+    "mag": 44.328
+   },
+   {
+    "topicness": 0.9513,
+    "mag": 46.89
+   },
+   {
+    "topicness": 0.933,
+    "mag": 46.95
+   },
+   {
+    "topicness": 0.9489,
+    "mag": 45.779
+   },
+   {
+    "topicness": 0.864,
+    "mag": 46.679
+   },
+   {
+    "topicness": 0.8808,
+    "mag": 49.991
+   },
+   {
+    "topicness": 0.907,
+    "mag": 47.634
+   },
+   {
+    "topicness": 0.9467,
+    "mag": 52.579
+   },
+   {
+    "topicness": 0.9446,
+    "mag": 48.045
+   },
+   {
+    "topicness": 0.9194,
+    "mag": 49.186
+   }
+  ],
+  "neutral_triple": {
+   "topicness": 0.1656,
+   "mag": 21.758
+  },
+  "fresh_filler": [
+   {
+    "topicness": 0.4942,
+    "mag": 30.623
+   },
+   {
+    "topicness": 0.6147,
+    "mag": 75.577
+   },
+   {
+    "topicness": 0.6431,
+    "mag": 41.208
+   },
+   {
+    "topicness": 0.8137,
+    "mag": 41.367
+   },
+   {
+    "topicness": 0.813,
+    "mag": 34.346
+   },
+   {
+    "topicness": 0.4315,
+    "mag": 38.19
+   },
+   {
+    "topicness": 0.8081,
+    "mag": 42.005
+   },
+   {
+    "topicness": 0.2357,
+    "mag": 45.544
+   },
+   {
+    "topicness": 0.3948,
+    "mag": 36.155
+   },
+   {
+    "topicness": 0.827,
+    "mag": 32.498
+   },
+   {
+    "topicness": 0.8824,
+    "mag": 47.319
+   },
+   {
+    "topicness": 0.7973,
+    "mag": 45.071
+   },
+   {
+    "topicness": 0.8103,
+    "mag": 35.64
+   },
+   {
+    "topicness": 0.8973,
+    "mag": 42.157
+   },
+   {
+    "topicness": 0.8922,
+    "mag": 48.633
+   },
+   {
+    "topicness": 0.6709,
+    "mag": 44.121
+   },
+   {
+    "topicness": 0.9046,
+    "mag": 43.234
+   },
+   {
+    "topicness": 0.8554,
+    "mag": 45.324
+   },
+   {
+    "topicness": 0.8383,
+    "mag": 37.042
+   },
+   {
+    "topicness": 0.8541,
+    "mag": 42.92
+   },
+   {
+    "topicness": 0.7544,
+    "mag": 40.567
+   },
+   {
+    "topicness": 0.5162,
+    "mag": 38.184
+   },
+   {
+    "topicness": 0.2758,
+    "mag": 40.095
+   },
+   {
+    "topicness": 0.6003,
+    "mag": 53.518
+   }
+  ],
+  "held_filler": [
+   {
+    "topicness": 0.7227,
+    "mag": 39.217
+   },
+   {
+    "topicness": 0.6082,
+    "mag": 75.462
+   },
+   {
+    "topicness": 0.3667,
+    "mag": 41.03
+   },
+   {
+    "topicness": 0.4752,
+    "mag": 30.269
+   },
+   {
+    "topicness": 0.3426,
+    "mag": 40.971
+   },
+   {
+    "topicness": 0.6704,
+    "mag": 33.878
+   },
+   {
+    "topicness": 0.8755,
+    "mag": 44.036
+   },
+   {
+    "topicness": 0.7449,
+    "mag": 34.023
+   },
+   {
+    "topicness": 0.6962,
+    "mag": 46.28
+   },
+   {
+    "topicness": 0.8468,
+    "mag": 40.629
+   }
+  ],
+  "held_offlist": [
+   {
+    "topicness": 0.9238,
+    "mag": 46.308,
+    "about": "knitting"
+   },
+   {
+    "topicness": 0.9504,
+    "mag": 50.748,
+    "about": "gardening"
+   },
+   {
+    "topicness": 0.8629,
+    "mag": 44.987,
+    "about": "cooking pasta"
+   },
+   {
+    "topicness": 0.9398,
+    "mag": 52.892,
+    "about": "weather"
+   },
+   {
+    "topicness": 0.9285,
+    "mag": 50.062,
+    "about": "bus commutes"
+   },
+   {
+    "topicness": 0.8547,
+    "mag": 38.47,
+    "about": "filing taxes"
+   }
+  ]
+ },
+ "qwen3": {
+  "eval_topics": [
+   {
+    "topicness": 0.8887,
+    "mag": 62.424
+   },
+   {
+    "topicness": 0.89,
+    "mag": 65.396
+   },
+   {
+    "topicness": 0.8409,
+    "mag": 61.577
+   },
+   {
+    "topicness": 0.8731,
+    "mag": 61.688
+   },
+   {
+    "topicness": 0.9208,
+    "mag": 60.348
+   },
+   {
+    "topicness": 0.8853,
+    "mag": 59.511
+   },
+   {
+    "topicness": 0.9196,
+    "mag": 58.183
+   },
+   {
+    "topicness": 0.9178,
+    "mag": 60.292
+   },
+   {
+    "topicness": 0.9239,
+    "mag": 57.801
+   },
+   {
+    "topicness": 0.9137,
+    "mag": 66.092
+   },
+   {
+    "topicness": 0.8964,
+    "mag": 62.33
+   },
+   {
+    "topicness": 0.8948,
+    "mag": 66.339
+   },
+   {
+    "topicness": 0.7739,
+    "mag": 56.939
+   },
+   {
+    "topicness": 0.7642,
+    "mag": 57.709
+   },
+   {
+    "topicness": 0.7512,
+    "mag": 61.363
+   },
+   {
+    "topicness": 0.8268,
+    "mag": 63.732
+   },
+   {
+    "topicness": 0.898,
+    "mag": 61.756
+   },
+   {
+    "topicness": 0.8699,
+    "mag": 60.836
+   },
+   {
+    "topicness": 0.793,
+    "mag": 75.687
+   },
+   {
+    "topicness": 0.7947,
+    "mag": 72.757
+   },
+   {
+    "topicness": 0.8049,
+    "mag": 66.545
+   },
+   {
+    "topicness": 0.8484,
+    "mag": 73.224
+   },
+   {
+    "topicness": 0.8135,
+    "mag": 67.167
+   },
+   {
+    "topicness": 0.8168,
+    "mag": 66.949
+   },
+   {
+    "topicness": 0.8991,
+    "mag": 59.727
+   },
+   {
+    "topicness": 0.8829,
+    "mag": 59.934
+   },
+   {
+    "topicness": 0.8861,
+    "mag": 58.289
+   },
+   {
+    "topicness": 0.9012,
+    "mag": 59.013
+   },
+   {
+    "topicness": 0.8696,
+    "mag": 60.3
+   },
+   {
+    "topicness": 0.9137,
+    "mag": 61.656
+   },
+   {
+    "topicness": 0.8303,
+    "mag": 57.684
+   },
+   {
+    "topicness": 0.7584,
+    "mag": 50.487
+   },
+   {
+    "topicness": 0.7436,
+    "mag": 59.66
+   },
+   {
+    "topicness": 0.8847,
+    "mag": 60.053
+   },
+   {
+    "topicness": 0.8416,
+    "mag": 62.256
+   },
+   {
+    "topicness": 0.7946,
+    "mag": 58.923
+   },
+   {
+    "topicness": 0.9326,
+    "mag": 69.591
+   },
+   {
+    "topicness": 0.8761,
+    "mag": 64.57
+   },
+   {
+    "topicness": 0.8882,
+    "mag": 73.141
+   },
+   {
+    "topicness": 0.8006,
+    "mag": 64.19
+   },
+   {
+    "topicness": 0.8809,
+    "mag": 64.518
+   },
+   {
+    "topicness": 0.8203,
+    "mag": 70.485
+   },
+   {
+    "topicness": 0.8185,
+    "mag": 58.984
+   },
+   {
+    "topicness": 0.8872,
+    "mag": 53.642
+   },
+   {
+    "topicness": 0.896,
+    "mag": 56.408
+   },
+   {
+    "topicness": 0.7889,
+    "mag": 61.132
+   },
+   {
+    "topicness": 0.7937,
+    "mag": 55.995
+   },
+   {
+    "topicness": 0.7434,
+    "mag": 52.128
+   },
+   {
+    "topicness": 0.914,
+    "mag": 60.07
+   },
+   {
+    "topicness": 0.9199,
+    "mag": 61.755
+   },
+   {
+    "topicness": 0.8901,
+    "mag": 58.292
+   },
+   {
+    "topicness": 0.9193,
+    "mag": 61.193
+   },
+   {
+    "topicness": 0.9101,
+    "mag": 58.669
+   },
+   {
+    "topicness": 0.8975,
+    "mag": 59.724
+   },
+   {
+    "topicness": 0.8093,
+    "mag": 65.83
+   },
+   {
+    "topicness": 0.8401,
+    "mag": 70.042
+   },
+   {
+    "topicness": 0.8911,
+    "mag": 64.379
+   },
+   {
+    "topicness": 0.894,
+    "mag": 66.364
+   },
+   {
+    "topicness": 0.9179,
+    "mag": 62.029
+   },
+   {
+    "topicness": 0.8917,
+    "mag": 68.442
+   }
+  ],
+  "neutral_triple": {
+   "topicness": 0.0378,
+   "mag": 33.597
+  },
+  "fresh_filler": [
+   {
+    "topicness": 0.5354,
+    "mag": 48.851
+   },
+   {
+    "topicness": 0.3595,
+    "mag": 100.86
+   },
+   {
+    "topicness": 0.5637,
+    "mag": 57.249
+   },
+   {
+    "topicness": 0.7519,
+    "mag": 54.698
+   },
+   {
+    "topicness": 0.7463,
+    "mag": 49.937
+   },
+   {
+    "topicness": 0.3829,
+    "mag": 61.02
+   },
+   {
+    "topicness": 0.7498,
+    "mag": 54.251
+   },
+   {
+    "topicness": 0.2539,
+    "mag": 62.101
+   },
+   {
+    "topicness": 0.3914,
+    "mag": 59.833
+   },
+   {
+    "topicness": 0.7677,
+    "mag": 46.95
+   },
+   {
+    "topicness": 0.8549,
+    "mag": 60.954
+   },
+   {
+    "topicness": 0.6553,
+    "mag": 64.908
+   },
+   {
+    "topicness": 0.6913,
+    "mag": 48.195
+   },
+   {
+    "topicness": 0.8513,
+    "mag": 55.196
+   },
+   {
+    "topicness": 0.8405,
+    "mag": 65.255
+   },
+   {
+    "topicness": 0.6052,
+    "mag": 57.889
+   },
+   {
+    "topicness": 0.859,
+    "mag": 57.237
+   },
+   {
+    "topicness": 0.805,
+    "mag": 60.831
+   },
+   {
+    "topicness": 0.775,
+    "mag": 47.808
+   },
+   {
+    "topicness": 0.8182,
+    "mag": 58.01
+   },
+   {
+    "topicness": 0.6173,
+    "mag": 63.996
+   },
+   {
+    "topicness": 0.5153,
+    "mag": 59.699
+   },
+   {
+    "topicness": 0.2269,
+    "mag": 61.974
+   },
+   {
+    "topicness": 0.4245,
+    "mag": 76.253
+   }
+  ],
+  "held_filler": [
+   {
+    "topicness": 0.7091,
+    "mag": 52.103
+   },
+   {
+    "topicness": 0.3269,
+    "mag": 100.219
+   },
+   {
+    "topicness": 0.3198,
+    "mag": 67.735
+   },
+   {
+    "topicness": 0.4453,
+    "mag": 42.21
+   },
+   {
+    "topicness": 0.2813,
+    "mag": 72.207
+   },
+   {
+    "topicness": 0.6533,
+    "mag": 44.465
+   },
+   {
+    "topicness": 0.8452,
+    "mag": 55.161
+   },
+   {
+    "topicness": 0.6087,
+    "mag": 48.33
+   },
+   {
+    "topicness": 0.597,
+    "mag": 74.751
+   },
+   {
+    "topicness": 0.8152,
+    "mag": 54.799
+   }
+  ],
+  "held_offlist": [
+   {
+    "topicness": 0.887,
+    "mag": 60.908,
+    "about": "knitting"
+   },
+   {
+    "topicness": 0.929,
+    "mag": 65.967,
+    "about": "gardening"
+   },
+   {
+    "topicness": 0.7922,
+    "mag": 65.418,
+    "about": "cooking pasta"
+   },
+   {
+    "topicness": 0.9059,
+    "mag": 68.909,
+    "about": "weather"
+   },
+   {
+    "topicness": 0.8989,
+    "mag": 61.166,
+    "about": "bus commutes"
+   },
+   {
+    "topicness": 0.8115,
+    "mag": 52.132,
+    "about": "filing taxes"
+   }
+  ]
+ }
+}
