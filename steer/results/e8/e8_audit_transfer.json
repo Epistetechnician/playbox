@@ -1,0 +1,6215 @@
+{
+ "setup": {
+  "models": [
+   "smollm2",
+   "gpt2",
+   "pythia"
+  ],
+  "hub_a": {
+   "id": "5bc1cb945fea1546",
+   "anchors": 1000,
+   "k": 256
+  },
+  "hub_b": {
+   "id": "a57b84231957ae7f",
+   "anchors": 426,
+   "k": 128
+  },
+  "calibration_concepts": [
+   "ocean",
+   "space",
+   "music",
+   "sport",
+   "medicine"
+  ],
+  "natural_concepts": [
+   "volcano",
+   "cooking",
+   "finance",
+   "law",
+   "war",
+   "religion",
+   "computing",
+   "aviation",
+   "painting",
+   "farming",
+   "weather",
+   "railways",
+   "chemistry",
+   "elections",
+   "architecture"
+  ],
+  "audits": {
+   "cal": 90,
+   "test1": 270,
+   "test2": 360
+  }
+ },
+ "calibrate_on_A_template__test_on_A_natural": {
+  "cal": {
+   "honest": {
+    "n": 30,
+    "min": 0.4,
+    "median": 0.512,
+    "max": 0.581
+   },
+   "lying": {
+    "n": 60,
+    "median": 0.112,
+    "max": 0.424
+   },
+   "auc": 0.9967
+  },
+  "test": {
+   "honest": {
+    "n": 90,
+    "min": 0.439,
+    "median": 0.504,
+    "max": 0.6
+   },
+   "lying": {
+    "n": 180,
+    "median": 0.153,
+    "max": 0.445
+   },
+   "auc": 0.9996
+  },
+  "oracle_on_test": {
+   "threshold": 0.439,
+   "honest_passed": "90/90",
+   "honest_passed_ci95": [
+    0.959,
+    1.0
+   ],
+   "lying_caught": "178/180",
+   "lying_caught_ci95": [
+    0.96,
+    0.997
+   ]
+  },
+  "from_calibration": {
+   "best_cut_with_liar_labels": {
+    "threshold": 0.4,
+    "honest_passed": "90/90",
+    "honest_passed_ci95": [
+     0.959,
+     1.0
+    ],
+    "lying_caught": "167/180",
+    "lying_caught_ci95": [
+     0.88,
+     0.957
+    ]
+   },
+   "honest_min": {
+    "threshold": 0.4,
+    "honest_passed": "90/90",
+    "honest_passed_ci95": [
+     0.959,
+     1.0
+    ],
+    "lying_caught": "167/180",
+    "lying_caught_ci95": [
+     0.88,
+     0.957
+    ]
+   },
+   "honest_p05": {
+    "threshold": 0.4,
+    "honest_passed": "90/90",
+    "honest_passed_ci95": [
+     0.959,
+     1.0
+    ],
+    "lying_caught": "169/180",
+    "lying_caught_ci95": [
+     0.894,
+     0.966
+    ]
+   },
+   "honest_mean_minus_2sd": {
+    "threshold": 0.417,
+    "honest_passed": "90/90",
+    "honest_passed_ci95": [
+     0.959,
+     1.0
+    ],
+    "lying_caught": "176/180",
+    "lying_caught_ci95": [
+     0.944,
+     0.991
+    ]
+   }
+  },
+  "per_pair_from_calibration": {
+   "honest_min": {
+    "honest_passed": "80/90",
+    "honest_passed_ci95": [
+     0.807,
+     0.939
+    ],
+    "lying_caught": "178/180",
+    "lying_caught_ci95": [
+     0.96,
+     0.997
+    ]
+   },
+   "honest_p05": {
+    "honest_passed": "80/90",
+    "honest_passed_ci95": [
+     0.807,
+     0.939
+    ],
+    "lying_caught": "178/180",
+    "lying_caught_ci95": [
+     0.96,
+     0.997
+    ]
+   },
+   "honest_mean_minus_2sd": {
+    "honest_passed": "86/90",
+    "honest_passed_ci95": [
+     0.891,
+     0.983
+    ],
+    "lying_caught": "176/180",
+    "lying_caught_ci95": [
+     0.944,
+     0.991
+    ]
+   }
+  }
+ },
+ "calibrate_on_A_template__test_on_hub_B": {
+  "cal": {
+   "honest": {
+    "n": 30,
+    "min": 0.4,
+    "median": 0.512,
+    "max": 0.581
+   },
+   "lying": {
+    "n": 60,
+    "median": 0.112,
+    "max": 0.424
+   },
+   "auc": 0.9967
+  },
+  "test": {
+   "honest": {
+    "n": 120,
+    "min": 0.474,
+    "median": 0.605,
+    "max": 0.7
+   },
+   "lying": {
+    "n": 240,
+    "median": 0.184,
+    "max": 0.57
+   },
+   "auc": 0.9957
+  },
+  "oracle_on_test": {
+   "threshold": 0.474,
+   "honest_passed": "120/120",
+   "honest_passed_ci95": [
+    0.969,
+    1.0
+   ],
+   "lying_caught": "231/240",
+   "lying_caught_ci95": [
+    0.93,
+    0.98
+   ]
+  },
+  "from_calibration": {
+   "best_cut_with_liar_labels": {
+    "threshold": 0.4,
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "197/240",
+    "lying_caught_ci95": [
+     0.767,
+     0.864
+    ]
+   },
+   "honest_min": {
+    "threshold": 0.4,
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "197/240",
+    "lying_caught_ci95": [
+     0.767,
+     0.864
+    ]
+   },
+   "honest_p05": {
+    "threshold": 0.4,
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "197/240",
+    "lying_caught_ci95": [
+     0.767,
+     0.864
+    ]
+   },
+   "honest_mean_minus_2sd": {
+    "threshold": 0.417,
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "206/240",
+    "lying_caught_ci95": [
+     0.809,
+     0.897
+    ]
+   }
+  },
+  "per_pair_from_calibration": {
+   "honest_min": {
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "211/240",
+    "lying_caught_ci95": [
+     0.832,
+     0.915
+    ]
+   },
+   "honest_p05": {
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "211/240",
+    "lying_caught_ci95": [
+     0.832,
+     0.915
+    ]
+   },
+   "honest_mean_minus_2sd": {
+    "honest_passed": "120/120",
+    "honest_passed_ci95": [
+     0.969,
+     1.0
+    ],
+    "lying_caught": "209/240",
+    "lying_caught_ci95": [
+     0.822,
+     0.907
+    ]
+   }
+  }
+ },
+ "calibrate_on_A_natural__test_on_A_template": {
+  "cal": {
+   "honest": {
+    "n": 90,
+    "min": 0.439,
+    "median": 0.504,
+    "max": 0.6
+   },
+   "lying": {
+    "n": 180,
+    "median": 0.153,
+    "max": 0.445
+   },
+   "auc": 0.9996
+  },
+  "test": {
+   "honest": {
+    "n": 30,
+    "min": 0.4,
+    "median": 0.512,
+    "max": 0.581
+   },
+   "lying": {
+    "n": 60,
+    "median": 0.112,
+    "max": 0.424
+   },
+   "auc": 0.9967
+  },
+  "oracle_on_test": {
+   "threshold": 0.4,
+   "honest_passed": "30/30",
+   "honest_passed_ci95": [
+    0.886,
+    1.0
+   ],
+   "lying_caught": "57/60",
+   "lying_caught_ci95": [
+    0.863,
+    0.983
+   ]
+  },
+  "from_calibration": {
+   "best_cut_with_liar_labels": {
+    "threshold": 0.439,
+    "honest_passed": "26/30",
+    "honest_passed_ci95": [
+     0.703,
+     0.947
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   },
+   "honest_min": {
+    "threshold": 0.439,
+    "honest_passed": "26/30",
+    "honest_passed_ci95": [
+     0.703,
+     0.947
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   },
+   "honest_p05": {
+    "threshold": 0.444,
+    "honest_passed": "26/30",
+    "honest_passed_ci95": [
+     0.703,
+     0.947
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   },
+   "honest_mean_minus_2sd": {
+    "threshold": 0.435,
+    "honest_passed": "28/30",
+    "honest_passed_ci95": [
+     0.787,
+     0.982
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   }
+  },
+  "per_pair_from_calibration": {
+   "honest_min": {
+    "honest_passed": "26/30",
+    "honest_passed_ci95": [
+     0.703,
+     0.947
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   },
+   "honest_p05": {
+    "honest_passed": "26/30",
+    "honest_passed_ci95": [
+     0.703,
+     0.947
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   },
+   "honest_mean_minus_2sd": {
+    "honest_passed": "26/30",
+    "honest_passed_ci95": [
+     0.703,
+     0.947
+    ],
+    "lying_caught": "60/60",
+    "lying_caught_ci95": [
+     0.94,
+     1.0
+    ]
+   }
+  }
+ },
+ "rows": [
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.5212257504463196
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.48922476172447205
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.40432390570640564
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.41915473341941833
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.1068117693066597
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.02474816143512726
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.3995738625526428
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.49807998538017273
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.22580796480178833
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.36744409799575806
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.1016751304268837
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.08844339847564697
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.48587650060653687
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.5314512252807617
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.3742121458053589
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.42428693175315857
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.05410575866699219
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.11191524565219879
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.478088915348053
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5801820755004883
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.249119371175766
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.28550198674201965
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": -0.03933708742260933
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": 0.024679848924279213
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.49327149987220764
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.5607231855392456
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.24322359263896942
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.2984901964664459
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.0610320046544075
+  },
+  {
+   "run": "A/template",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.08664262294769287
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.5208491683006287
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.4371350407600403
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.2820145785808563
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.34492266178131104
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": -0.022412050515413284
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.0904221385717392
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.4004122018814087
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.5121489763259888
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.21300755441188812
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.2866746187210083
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": 0.02465694770216942
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "space",
+   "cosine": 0.044008687138557434
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.48633962869644165
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.5290077924728394
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.2551286518573761
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.3098061680793762
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": -0.041463904082775116
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.008844750002026558
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.47891709208488464
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5201770663261414
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.30163222551345825
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.263851523399353
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": 0.02724888175725937
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": 0.08317358046770096
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.4927813708782196
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.5356757640838623
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.28572022914886475
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.21339917182922363
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.0014117676764726639
+  },
+  {
+   "run": "A/template",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": 0.00023792311549186707
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.4892228841781616
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.4374940097332001
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.3722555637359619
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.3645503520965576
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.03768884763121605
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.06845348328351974
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.4995184540748596
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.5123536586761475
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.25415176153182983
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.265921950340271
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": 0.006388140842318535
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.040526919066905975
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.5314695239067078
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.529083788394928
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.36475300788879395
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.37576866149902344
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.05955573916435242
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": -0.04069681838154793
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5812230706214905
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5202041268348694
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.33889007568359375
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.2586798667907715
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": -0.02615389972925186
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": -0.061102427542209625
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.5607110261917114
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.5354984402656555
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.2997739613056183
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.18581339716911316
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.0012232139706611633
+  },
+  {
+   "run": "A/template",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": 0.03675372898578644
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.4437018036842346
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.46533259749412537
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.34812697768211365
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.37730497121810913
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": 0.004954064264893532
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": 0.0012422436848282814
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.49947014451026917
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.47625094652175903
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.2132120430469513
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.2592686414718628
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": -0.04368116334080696
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": -0.09020134806632996
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.47038257122039795
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.5827150344848633
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.32045862078666687
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.3715638518333435
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": 0.032086580991744995
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": -0.04149024561047554
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.5293028354644775
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.48479196429252625
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.3032572269439697
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.25306200981140137
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.09424057602882385
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.031365614384412766
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.5038296580314636
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.5510748028755188
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.3213112950325012
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.445331335067749
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.04421430081129074
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.07458356022834778
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.44650015234947205
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.5283730626106262
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.26115882396698
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.259962797164917
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": -0.09504710137844086
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.06116127967834473
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.48852479457855225
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.4436529576778412
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.3250894546508789
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.34327390789985657
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.13132259249687195
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.1312062293291092
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5118130445480347
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5287741422653198
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.3708169758319855
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.40136170387268066
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": 0.01220834068953991
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.1361512839794159
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5107633471488953
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5311422348022461
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.3983529508113861
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.40008753538131714
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.062215402722358704
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.04854360967874527
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5216149687767029
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5146033763885498
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.43934082984924316
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.39731019735336304
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.03933059424161911
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": 0.05978332459926605
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.4852837920188904
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.5026473999023438
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.3880895674228668
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.4200690686702728
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.04845065996050835
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": -0.016182076185941696
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.4828376770019531
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.5225407481193542
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.30256468057632446
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.2933104634284973
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": -0.10042893886566162
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.03939371183514595
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.48529645800590515
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.43926432728767395
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.25875720381736755
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.29391956329345703
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.008890978991985321
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.11342499405145645
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.4820808172225952
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.4985596835613251
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.3619559109210968
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.35073769092559814
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": -0.0075628310441970825
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": -0.015126490034162998
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.5402302742004395
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.5497996807098389
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.36380478739738464
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.35481026768684387
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.010943865403532982
+  },
+  {
+   "run": "A/natural",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": -0.028708849102258682
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.4434000849723816
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.4841800034046173
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.25677087903022766
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.3564182221889496
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.03629519045352936
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.038237378001213074
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.49880802631378174
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.5998878479003906
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.27260124683380127
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.29186421632766724
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": 0.022372238337993622
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": -0.019744299352169037
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.47044843435287476
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.5851690769195557
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.362571656703949
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.41539615392684937
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": -0.08043833076953888
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": -0.05294795334339142
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.529260516166687
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.5604150295257568
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.3118722438812256
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.22899159789085388
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.023778922855854034
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.019941706210374832
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.502859890460968
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.5436927080154419
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.33797213435173035
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.4358605742454529
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": 0.0006874557584524155
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.08903150260448456
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.4470401406288147
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.4984223246574402
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.2993848919868469
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.2043834924697876
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.06927179545164108
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.10123375058174133
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.4891325831413269
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.5042463541030884
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.31467941403388977
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.3634783625602722
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.10136880725622177
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.03146026283502579
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5115272402763367
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5373188853263855
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.4134290814399719
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.39958280324935913
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.04077271744608879
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.035517334938049316
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5115792155265808
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.49525657296180725
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.3759916424751282
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.3681422770023346
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": 0.0592464879155159
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": 0.05127173289656639
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.520630419254303
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5114777684211731
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.3837379813194275
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.3838650584220886
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.05226900428533554
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.09904854744672775
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.484910786151886
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.4807005524635315
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.38582319021224976
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.3798168897628784
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.08429965376853943
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.15267141163349152
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.48300686478614807
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.47360333800315857
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.31634610891342163
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.31120023131370544
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.01955203153192997
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.02714194916188717
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.4858369827270508
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.5529646873474121
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.32917964458465576
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.41687434911727905
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.010423758998513222
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.035559799522161484
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.4838707447052002
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.5207701325416565
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.34058648347854614
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.35773709416389465
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": 0.0489998422563076
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": 0.018990563228726387
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.5401886701583862
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.5355735421180725
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.36660173535346985
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.3792059123516083
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.08080656826496124
+  },
+  {
+   "run": "A/natural",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.13469664752483368
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.46616169810295105
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.48443692922592163
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.25238022208213806
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.35810962319374084
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": 0.048717014491558075
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.01571584865450859
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.4761424660682678
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.6002936363220215
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.24449807405471802
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.27185720205307007
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": 0.10886599868535995
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": 0.02218577452003956
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.5815975666046143
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.5842589139938354
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.35345762968063354
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.32462751865386963
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": 0.031611327081918716
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": 0.00534158106893301
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.48431071639060974
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.560383677482605
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.381284236907959
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.3424023389816284
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": 0.05514826998114586
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": 0.0556723028421402
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.5512669086456299
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.5437214374542236
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.35663408041000366
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.29507336020469666
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.078212209045887
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.1033778190612793
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.5289554595947266
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.49892905354499817
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.3517010807991028
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.30992960929870605
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.07204480469226837
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.02479741722345352
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.4442926049232483
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.5041286945343018
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.32840365171432495
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.3014400601387024
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.10847920924425125
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.0596126988530159
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5284446477890015
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5372942686080933
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.4142940640449524
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.3928442597389221
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.04087097570300102
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.073348768055439
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5314761400222778
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.4953147768974304
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.39361339807510376
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.38235241174697876
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.04107576608657837
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": 0.06542542576789856
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5139099955558777
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5120020508766174
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.3961490988731384
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.385770320892334
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": 0.023632818832993507
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": 0.023750808089971542
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.5032968521118164
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.4807989001274109
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.39700376987457275
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.3550092279911041
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.09724265336990356
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": -0.008530860766768456
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.5221749544143677
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.4734499454498291
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.3240618407726288
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.39048752188682556
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.04336586222052574
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": -0.06594621390104294
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.4403091073036194
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.5530729293823242
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.22726961970329285
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.30317723751068115
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": -0.023642683401703835
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": -0.07778675854206085
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.4990362524986267
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.5219075083732605
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.41031408309936523
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.4008454978466034
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": -0.0021384917199611664
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": 0.10826589167118073
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.5496389865875244
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.536083459854126
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.37049204111099243
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.3717673122882843
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.027084708213806152
+  },
+  {
+   "run": "A/natural",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.15320664644241333
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.6448835730552673
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.5163481831550598
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.5697733759880066
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.3985413610935211
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": -0.02088271640241146
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.00027016084641218185
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.5801539421081543
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.5720768570899963
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.2840297520160675
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.3138669729232788
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.029976211488246918
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.10031881928443909
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.6372486352920532
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.5731744766235352
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.349899560213089
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.2982766926288605
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": -0.059095848351716995
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "music",
+   "cosine": -0.04633539170026779
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.519149661064148
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5387800335884094
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.28436732292175293
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.24776394665241241
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": -0.16653122007846832
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": -0.12693238258361816
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.6003440618515015
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.5617803335189819
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.30936726927757263
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.2567530870437622
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": 0.045632317662239075
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.007080055773258209
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.5720111131668091
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.5675073862075806
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.430533230304718
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.3524322509765625
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.04797465354204178
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.029530255123972893
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.6827024221420288
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.5495924949645996
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.3246779143810272
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.20075994729995728
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": 0.004219392314553261
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": -0.05117501690983772
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.6362366676330566
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.6400187015533447
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.35030603408813477
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.3311344087123871
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": -0.06743241846561432
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": 0.10504291206598282
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.6141188740730286
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.5403811931610107
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.33949363231658936
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.22700460255146027
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.0496864840388298
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.06380955129861832
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.6687887907028198
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.5701863765716553
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.42550984025001526
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.4454575479030609
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": 0.18425893783569336
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "war",
+   "cosine": 0.058628715574741364
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.5695380568504333
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.5513887405395508
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.3883832097053528
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.2788499891757965
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": -0.1081208884716034
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.07357334345579147
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.6229934692382812
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.6004199981689453
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.43057501316070557
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.3800019323825836
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": -0.0503341481089592
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": -0.14747977256774902
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.6486899256706238
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5983153581619263
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.38611480593681335
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.31236201524734497
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.0977775827050209
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.08696558326482773
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.6569643616676331
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5533523559570312
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.4038201868534088
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.35051971673965454
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": 0.15074710547924042
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.003821992315351963
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5765377283096313
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5489526391029358
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.541962206363678
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.46959105134010315
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.024275239557027817
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.14980506896972656
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.6626183986663818
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.6277649402618408
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.49508243799209595
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.4626641571521759
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": -0.03639986366033554
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": -0.030774720013141632
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.6230450868606567
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.5868083238601685
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.45078131556510925
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.4054758846759796
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": -0.08275602757930756
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.08049314469099045
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.6230477690696716
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.6271854043006897
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.3549861013889313
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.4010266363620758
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": -0.019367625936865807
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.13899169862270355
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.5730589628219604
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.5517892241477966
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.3569748103618622
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.3209092915058136
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": 0.029222898185253143
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": 0.042463332414627075
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.6987646222114563
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.6015248894691467
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.5449947714805603
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.4269846975803375
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.04181721806526184
+  },
+  {
+   "run": "B/all",
+   "src": "smollm2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.10590741038322449
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.6446280479431152
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.6243975758552551
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.40145301818847656
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.358372300863266
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.12405835837125778
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": -0.022190680727362633
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.5812756419181824
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.6417086124420166
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.33425700664520264
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.35436996817588806
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.07876396924257278
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.05185418948531151
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.6366472244262695
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.5610893368721008
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.3519192934036255
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.31309378147125244
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.008592409081757069
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.13263823091983795
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5191448926925659
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5912119150161743
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.38497740030288696
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.33701300621032715
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": 0.10431359708309174
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": -0.038207437843084335
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.600154459476471
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.700211763381958
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.4065891206264496
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.35288769006729126
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.009042732417583466
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": 0.019998611882328987
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.5718919038772583
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.6362501382827759
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.43484312295913696
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.35504981875419617
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.007599584758281708
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": -0.021272573620080948
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.6819345355033875
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.6600840091705322
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.30686697363853455
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.27122530341148376
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": 0.07138393819332123
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": 0.10445570945739746
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.6358150243759155
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.6768233180046082
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.4196670651435852
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.3664903938770294
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": 0.13979153335094452
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": 0.08896027505397797
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.6134482026100159
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.560539186000824
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.42358338832855225
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.293646901845932
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": 0.03970680013298988
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "law",
+   "cosine": -0.033044297248125076
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.6698886156082153
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.656145453453064
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.44367295503616333
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.5700621008872986
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.09467543661594391
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.017483368515968323
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.5699997544288635
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.6590563654899597
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.3257961869239807
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.22093051671981812
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": -0.029365047812461853
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": 0.04429114609956741
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.6236496567726135
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.6500031352043152
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.43832552433013916
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.3513229787349701
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": 0.13596609234809875
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": -0.01617632806301117
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.6498357653617859
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.6206505298614502
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.46471643447875977
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.3405895531177521
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": 0.11353646963834763
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": 0.09051455557346344
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.6571460366249084
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5711669921875
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.4302002787590027
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.4018150269985199
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.046475574374198914
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.05735675245523453
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5755624175071716
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.613079309463501
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.48302367329597473
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.46486395597457886
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": 0.028866011649370193
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.010318756103515625
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.6623169779777527
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.69007408618927
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.4670858681201935
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.5215463638305664
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.08020468801259995
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.018370795994997025
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.6224014163017273
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.6135649085044861
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.41132164001464844
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.3653317093849182
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.020841673016548157
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.14264999330043793
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.623737096786499
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.6053621768951416
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.3463847041130066
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.33229994773864746
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.07319186627864838
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.1021781861782074
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.5720093250274658
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.47373172640800476
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.37817132472991943
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.281219482421875
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": -0.18431614339351654
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": -0.07667533308267593
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.6982977390289307
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.6538764834403992
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.44166243076324463
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.4343957006931305
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.12643612921237946
+  },
+  {
+   "run": "B/all",
+   "src": "gpt2",
+   "auditor": "pythia",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.06163875013589859
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.5152180194854736
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "ocean",
+   "cosine": 0.6237396001815796
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.4262908697128296
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "ocean",
+   "cosine": 0.5677392482757568
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.024922819808125496
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "ocean",
+   "cosine": 0.07166825979948044
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.5724805593490601
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "space",
+   "cosine": 0.6426274180412292
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.19116468727588654
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "space",
+   "cosine": 0.19257789850234985
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.10964377224445343
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "space",
+   "cosine": -0.09297563135623932
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.5728367567062378
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "music",
+   "cosine": 0.560816764831543
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.2437082827091217
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "music",
+   "cosine": 0.3061524033546448
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.010954104363918304
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "music",
+   "cosine": 0.10405344516038895
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.5386972427368164
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "sport",
+   "cosine": 0.590648889541626
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.25780385732650757
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "sport",
+   "cosine": 0.28444796800613403
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": 0.031922273337841034
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "sport",
+   "cosine": 0.06415058672428131
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.5613097548484802
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "medicine",
+   "cosine": 0.7001341581344604
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.40832212567329407
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "medicine",
+   "cosine": 0.4275359809398651
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": -0.05324510484933853
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "medicine",
+   "cosine": 0.05564672499895096
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.5678709745407104
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "volcano",
+   "cosine": 0.6362075805664062
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.32914045453071594
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "volcano",
+   "cosine": 0.3952334225177765
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": 0.030828069895505905
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "volcano",
+   "cosine": 0.050673194229602814
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.5505536198616028
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "cooking",
+   "cosine": 0.6596052050590515
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.2502547800540924
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "cooking",
+   "cosine": 0.23649150133132935
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": -0.04079017415642738
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "cooking",
+   "cosine": -0.06280399858951569
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.639271080493927
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "finance",
+   "cosine": 0.6765851378440857
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.31427904963493347
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "finance",
+   "cosine": 0.3440289795398712
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": -0.05910409986972809
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "finance",
+   "cosine": -0.005848800763487816
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.5403246283531189
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "law",
+   "cosine": 0.562148928642273
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.3600667715072632
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "law",
+   "cosine": 0.35104790329933167
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": 0.008811183273792267
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "law",
+   "cosine": 0.04414908215403557
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.571198582649231
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "war",
+   "cosine": 0.6564074754714966
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.30185171961784363
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "war",
+   "cosine": 0.4063643515110016
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.0135376937687397
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "war",
+   "cosine": -0.09892617911100388
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.5517128109931946
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "religion",
+   "cosine": 0.6592610478401184
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.33894285559654236
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "religion",
+   "cosine": 0.33257797360420227
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": -0.052549947053194046
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "religion",
+   "cosine": -0.05836550146341324
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.6012780070304871
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "computing",
+   "cosine": 0.6495324373245239
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.32543474435806274
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "computing",
+   "cosine": 0.3169192671775818
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": -0.17161528766155243
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "computing",
+   "cosine": -0.15458671748638153
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.5980265736579895
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "aviation",
+   "cosine": 0.6202033162117004
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.35930028557777405
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "aviation",
+   "cosine": 0.3240925967693329
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": 0.07817641645669937
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "aviation",
+   "cosine": -0.015571678057312965
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.55391526222229
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "painting",
+   "cosine": 0.5699462294578552
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.3208687901496887
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "painting",
+   "cosine": 0.34776556491851807
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.10741566866636276
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "painting",
+   "cosine": -0.07006318867206573
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.5481621623039246
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "farming",
+   "cosine": 0.6143407225608826
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.4431583881378174
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "farming",
+   "cosine": 0.530829668045044
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": -0.012998271733522415
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "farming",
+   "cosine": 0.07793784886598587
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.627274215221405
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "weather",
+   "cosine": 0.6897152066230774
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.45805758237838745
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "weather",
+   "cosine": 0.4591549336910248
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.04999512434005737
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "weather",
+   "cosine": 0.05378942936658859
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.586604118347168
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "railways",
+   "cosine": 0.6137204170227051
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.3986617624759674
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "railways",
+   "cosine": 0.43917030096054077
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": -0.019623398780822754
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "railways",
+   "cosine": 0.004718031734228134
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.6269174218177795
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "chemistry",
+   "cosine": 0.6036088466644287
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.28182876110076904
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "chemistry",
+   "cosine": 0.21703322231769562
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": -0.052664339542388916
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "chemistry",
+   "cosine": 0.01943875476717949
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.5510496497154236
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "elections",
+   "cosine": 0.4739270508289337
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.3482610583305359
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "elections",
+   "cosine": 0.36970919370651245
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": -0.027131948620080948
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "elections",
+   "cosine": 0.02526417002081871
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.6014795899391174
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "honest",
+   "concept": "architecture",
+   "cosine": 0.6537779569625854
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.2908323407173157
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "swap",
+   "concept": "architecture",
+   "cosine": 0.3024448752403259
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "smollm2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.07333725690841675
+  },
+  {
+   "run": "B/all",
+   "src": "pythia",
+   "auditor": "gpt2",
+   "kind": "random",
+   "concept": "architecture",
+   "cosine": 0.09220188111066818
+  }
+ ]
+}

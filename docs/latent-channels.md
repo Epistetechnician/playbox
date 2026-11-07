@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) and 6l (room hardening). Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening) and 6m (audit threshold transfer). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -369,7 +369,7 @@ answers). Each message audited by the two other models: 72 audits. One run, one 
   commits to sentences that really produce its payload passes. It also does not tell which of sender or auditor is wrong
   when they disagree beyond the threshold; the room decides what to do (nothing here quarantines automatically).
 - **Not tested:** more than three small models, a larger or natural-text concept set, a sender that picks sentences to
-  game the audit, a threshold set on one set of runs and used on another, and the host acting on verdicts.
+  game the audit, and the host acting on verdicts. (A threshold set on one run and used on another: 6m.)
 
 ## 6i. Models joining one at a time (2026-11-04)
 
@@ -503,6 +503,58 @@ Limits.
 - **Snapshot file.** The whole mailbox (at most 256 envelopes) is rewritten on each post: fine at 30 posts a minute per
   member in a small room, wasteful beyond that; an append-only log is the next step if rooms grow.
 - **Built with Rust 1.99.1**, not the pinned 1.93.1 (its home is on the same unmounted drive); CI builds with the pin.
+
+## 6m. Does an audit threshold transfer? (2026-11-07)
+
+6h picked its cut on the same 66 numbers it then scored, so it said nothing about a cut chosen on one run and used on
+another. `steer/tools/e8_audit_transfer.py` (results in `steer/results/e8/e8_audit_transfer.json`) sets a threshold on a
+calibration run and applies it to fresh runs. Same three models. Calibration: hub A (1000 anchors, k=256), the five template
+concepts, 90 audits (30 honest). Test 1: hub A again with fifteen natural concepts the calibration never saw (270 audits: 90
+honest, 180 lying). Test 2: hub B, fitted on a different anchor set (the 426 base anchors, k=128), all twenty concepts (360
+audits: 120 honest, 240 lying). Lying means 6h's swap (commits to concept A's sentences, sends the next concept's vector) and
+a random vector, one of each per concept and sender. Messages go through the real `PBL2` packer (signed, int8) and
+`latent_audit.audit`; the room and reveal operation are not repeated (6h did that), so this changes only the threshold.
+
+The calibration run reproduces 6h: honest cosines 0.40 / 0.51 / 0.58 (min, median, max). A threshold from labelled liars is
+not available to a real room, so three rules that use only honest messages are compared with it and with the best cut on the
+test data itself (the oracle, an upper bound).
+
+| calibrate on, test on | cut | honest passed | liars caught |
+|---|---|---|---|
+| hub A template (30 honest) to hub A natural (90 / 180) | oracle 0.439 | 90/90 | 178/180 |
+| | lowest honest, 0.400 | 90/90 | 167/180 |
+| | mean minus 2 sd, 0.417 | 90/90 | 176/180 |
+| same calibration to hub B, all twenty concepts (120 / 240) | oracle 0.474 | 120/120 | 231/240 |
+| | lowest honest, 0.400 | 120/120 | 197/240 |
+| | mean minus 2 sd, 0.417 | 120/120 | 206/240 |
+| reverse: hub A natural (90 honest) to hub A template (30 / 60) | oracle 0.400 | 30/30 | 57/60 |
+| | lowest honest, 0.439 | 26/30 | 60/60 |
+| | mean minus 2 sd, 0.435 | 28/30 | 60/60 |
+
+- **Same hub, new concepts: yes, with small losses.** A cut from honest messages only kept every honest message in test 1
+  (90/90, 95% interval 0.96 to 1.00) and caught 93% (lowest honest) to 98% (mean minus 2 sd) of liars, against 99% for the
+  oracle. Honest cosines barely moved (median 0.512 to 0.504); lying ones reached higher on natural concepts (up to 0.445,
+  against 0.424 before), which is where the missed liars are.
+- **A different hub: no.** On hub B honest cosines are higher (median 0.605) and so are lying ones (up to 0.57). The
+  calibration cut still passed every honest message but caught only 82% to 86% of liars; the oracle for hub B is 0.474 and
+  catches 96%. A threshold belongs to a hub (its anchors and k); refit it when either changes, and when members' models change.
+- **The lowest honest cosine is fragile.** From 30 honest messages it was 0.400; from 90 it was 0.439, and carried back to
+  the 30 it flagged 4 of them (13% false alarms). Mean minus 2 sd was the steadiest of the three (0 / 0 / 2 false alarms in
+  240 honest messages across the three tests) but it is a rule of thumb, not a guarantee: honest cosines have no reason to be
+  normal.
+- **Per-pair thresholds overfit.** A cut per (sender, auditor) pair from 5 honest messages each gave 10 false alarms in 90
+  honest messages on test 1; the global cut gave none. Pairs would need many more calibration messages.
+- **Separation is stable.** The chance that an honest cosine is above a lying one was 0.997 (calibration), 0.9996 (test 1)
+  and 0.996 (test 2). The gap that moves between hubs is the position of the cut, not whether one exists.
+
+What this supports: calibrate on a batch of honest committed messages from the room's own members under the room's own
+hub (at least about 90, from several concepts), use mean minus 2 sd or something more conservative, expect about 2 in 100
+liars like these to slip through on the same hub (test 1; hub B showed more, above), and route messages near the cut to a second check. It does not support carrying one cut
+between hubs.
+
+Not tested: liars close to the honest vector (a small payload added to an honest vector, or a swap to a near-synonym
+concept; every liar here is a different topic or noise), a sender that picks sentences to fit its payload, more than three
+small models, instruction-tuned auditors, and a calibration batch that itself contains a liar.
 
 ## 7. Not covered
 
