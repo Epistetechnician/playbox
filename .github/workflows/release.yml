@@ -1,6 +1,7 @@
 # Build, checksum and sign a release when a tag like v0.1.0 is pushed.
 # Needs the PLAYBOX_RELEASE_KEY secret (hex ed25519 key from `playbox release keygen`) to sign; without it
 # the release is published unsigned and install.sh still checks SHA256SUMS.
+# Intel macOS has no prebuilt release (the macos-13 runner is retired); build from source there.
 name: release
 on:
   push:
@@ -14,7 +15,6 @@ jobs:
       matrix:
         include:
           - { runner: macos-14, os: darwin, arch: arm64 }
-          - { runner: macos-13, os: darwin, arch: x86_64 }
           - { runner: ubuntu-22.04, os: linux, arch: x86_64 }
           - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
     runs-on: ${{ matrix.runner }}
