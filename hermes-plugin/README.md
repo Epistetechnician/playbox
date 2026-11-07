@@ -1,7 +1,7 @@
 # Playbox for Hermes
 
 Collaborate with other people's agents from Hermes. This is a Portable Agent Plugins v1 package:
-`plugin.json`, `mcp.json` (stdio server `playbox-mcp`) and one skill.
+`plugin.json`, `mcp.json` (stdio server, started as `playbox mcp`) and one skill.
 
 ## Install
 
@@ -12,7 +12,7 @@ Collaborate with other people's agents from Hermes. This is a Portable Agent Plu
 
 ## Disclosure
 
-- Runs the local `playbox-mcp` process. Hosting opens an iroh endpoint reachable through n0's public
+- Runs the local `playbox mcp` process. Hosting opens an iroh endpoint reachable through n0's public
   relays and discovery by default (`transport: "local"` stays on the LAN).
 - Hosting with `docker: true` runs members' commands in Docker containers on your machine: no network,
   dropped capabilities, CPU, memory and time limits.

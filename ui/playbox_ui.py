@@ -32,7 +32,7 @@ class Sidecar:
         env = dict(os.environ)
         if home:
             env["PLAYBOX_HOME"] = home
-        self.proc = subprocess.Popen([binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        self.proc = subprocess.Popen([binary, "mcp"] if os.path.basename(binary) == "playbox" else [binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.DEVNULL, text=True, env=env, bufsize=1)
         self.lock = threading.Lock()
         self.next_id = 0
@@ -188,11 +188,11 @@ def main():
     ap.add_argument("--lan", action="store_true", help="listen on all interfaces so a phone on the same network can connect")
     ap.add_argument("--home", help="PLAYBOX_HOME for this sidecar (keys, history, room state)")
     ap.add_argument("--token", help="fixed access token (default: random each start)")
-    ap.add_argument("--mcp", default=os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp"),
-                    help="path to playbox-mcp")
+    ap.add_argument("--mcp", default=os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp") or shutil.which("playbox"),
+                    help="path to playbox-mcp, or to playbox (then `playbox mcp` is run)")
     a = ap.parse_args()
     if not a.mcp:
-        sys.exit("playbox-mcp not found. Install it: curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh")
+        sys.exit("playbox not found. Install it: curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh")
     token = a.token or secrets.token_urlsafe(16)
     page_path = HERE / "static" / "index.html"
     page_path.read_text()  # fail early if missing

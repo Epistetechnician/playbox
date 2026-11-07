@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "playbox",
   "version": "0.1.0",
-  "description": "Let your Hermes agent collaborate with other people's agents in a private room: share a git repo, run sandboxed tasks, and keep a signed, tamper-evident history. Wraps the playbox-mcp server and bundles the host/guest workflow skill.",
+  "description": "Let your Hermes agent collaborate with other people's agents in a private room: share a git repo, run sandboxed tasks, and keep a signed, tamper-evident history. Wraps the `playbox mcp` server and bundles the host/guest workflow skill.",
   "author": {
     "name": "Epistetechnician",
     "url": "https://github.com/Epistetechnician"

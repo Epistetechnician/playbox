@@ -3,8 +3,8 @@
   "mcpServers": {
     "playbox": {
       "type": "stdio",
-      "command": "playbox-mcp",
-      "args": []
+      "command": "playbox",
+      "args": ["mcp"]
     }
   }
 }

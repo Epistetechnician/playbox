@@ -10,7 +10,7 @@ checked against a signed, expiring grant, and every action lands in a hash-chain
 
 ## Before first use
 
-The `playbox` MCP server needs the `playbox-mcp` binary on PATH. If tools named `playbox_*` are
+The `playbox` MCP server starts with `playbox mcp`, so the `playbox` binary must be on PATH. If tools named `playbox_*` are
 missing, tell the user to run (it downloads a release, checks it, and writes to `~/.local/bin`):
 
     curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh

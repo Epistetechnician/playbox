@@ -8,7 +8,7 @@ python3 ui/playbox_ui.py            # prints http://127.0.0.1:7717/?t=<token>
 python3 ui/playbox_ui.py --lan      # also prints a URL for a phone on the same Wi-Fi
 ```
 
-Needs `playbox-mcp` on PATH (or `PLAYBOX_MCP=/path`). Stdlib Python only, nothing to install.
+Needs `playbox` (or `playbox-mcp`) on PATH, or `PLAYBOX_MCP=/path`. Stdlib Python only, nothing to install.
 
 ## What it does
 | Tab | |
