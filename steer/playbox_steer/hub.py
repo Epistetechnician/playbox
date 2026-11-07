@@ -125,6 +125,29 @@ def dequantize(raw: bytes, scale: float) -> torch.Tensor:
     return torch.frombuffer(bytearray(raw), dtype=torch.int8).float() * scale
 
 
+def _header(data: bytes) -> dict:
+    """Parse a message header. Anything that is not a JSON object is a ValueError, however deeply nested or oddly encoded,
+    so a caller that handles `ValueError` handles every malformed message."""
+    try:
+        head = json.loads(data)
+    except (ValueError, RecursionError):
+        raise ValueError("the header is not JSON") from None
+    if not isinstance(head, dict):
+        raise ValueError("the header is not a JSON object")
+    return head
+
+
+def _is_int(v: object) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _hex_field(head: dict, name: str, chars: int) -> str:
+    v = head.get(name)
+    if not isinstance(v, str) or len(v) != chars or any(c not in "0123456789abcdef" for c in v):
+        raise ValueError(f"header field {name} is not {chars} lowercase hex characters")
+    return v
+
+
 def pack(hub: Hub, src: str, h: torch.Tensor, extra: dict | None = None) -> bytes:
     """`PBL1` | u32 header length | JSON header | int8 body. The header names the hub and the sender, never the text."""
     raw, scale = quantize(h)
@@ -141,15 +164,18 @@ def unpack(hub: Hub, blob: bytes, max_bytes: int = 1 << 16) -> tuple[dict, torch
     (n,) = struct.unpack(">I", blob[4:8])
     if n > len(blob) - 8:
         raise ValueError("truncated header")
-    head = json.loads(blob[8 : 8 + n])
+    head = _header(blob[8 : 8 + n])
     raw = blob[8 + n :]
     if head.get("hub") != hub.hub_id:
         raise ValueError("message is for a different hub")
-    if head.get("k") != hub.k or len(raw) != hub.k:
+    if not _is_int(head.get("k")) or head["k"] != hub.k or len(raw) != hub.k:
         raise ValueError("body length does not match the hub")
     if hashlib.sha256(raw).hexdigest() != head.get("body_sha256"):
         raise ValueError("body does not match its header")
-    scale = float(head["scale"])
+    raw_scale = head.get("scale")
+    if isinstance(raw_scale, bool) or not isinstance(raw_scale, (int, float)):
+        raise ValueError("bad scale")
+    scale = float(raw_scale)
     if not (scale > 0 and scale < 1e6):
         raise ValueError("bad scale")
     return head, dequantize(raw, scale)
@@ -213,23 +239,32 @@ def unpack_signed(hub: Hub, blob: bytes, trusted_signers: set[str] | None = None
     (n,) = struct.unpack(">I", blob[4:8])
     if n > 4096 or n > len(blob) - 8:
         raise ValueError("bad header length")
-    head = json.loads(blob[8 : 8 + n])
+    head = _header(blob[8 : 8 + n])
     raw = blob[8 + n :]
     if head.get("hub") != hub.hub_id:
         raise ValueError("message is for a different hub")
-    if head.get("k") != hub.k or len(raw) != hub.k:
+    if not _is_int(head.get("k")) or head["k"] != hub.k or len(raw) != hub.k:
         raise ValueError("body length does not match the hub")
-    if blake3.blake3(raw).hexdigest() != head.get("body_blake3"):
+    body_hash = _hex_field(head, "body_blake3", 64)
+    signer = _hex_field(head, "signer", 64)
+    sig = _hex_field(head, "sig", 128)
+    scale_hex = _hex_field(head, "scale_f32", 8)
+    src = head.get("src")
+    if not isinstance(src, str):
+        raise ValueError("header field src is not text")
+    commit = head.get("commit")
+    if commit is not None:
+        commit = _hex_field(head, "commit", 64)
+    if blake3.blake3(raw).hexdigest() != body_hash:
         raise ValueError("body does not match its header")
-    if trusted_signers is not None and head.get("signer") not in trusted_signers:
+    if trusted_signers is not None and signer not in trusted_signers:
         raise ValueError("signer is not trusted")
     try:
-        Ed25519PublicKey.from_public_bytes(bytes.fromhex(head["signer"])).verify(
-            bytes.fromhex(head["sig"]),
-            _signed_text(head["hub"], head["src"], head["k"], head["scale_f32"], head["body_blake3"], head["signer"], head.get("commit")))
-    except (InvalidSignature, ValueError, KeyError):
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(signer)).verify(
+            bytes.fromhex(sig), _signed_text(head["hub"], src, head["k"], scale_hex, body_hash, signer, commit))
+    except (InvalidSignature, ValueError):
         raise ValueError("the signature is not valid") from None
-    scale = struct.unpack(">f", bytes.fromhex(head["scale_f32"]))[0]
+    scale = struct.unpack(">f", bytes.fromhex(scale_hex))[0]
     if not (0 < scale < 1e6):
         raise ValueError("bad scale")
     return head, dequantize(raw, scale)

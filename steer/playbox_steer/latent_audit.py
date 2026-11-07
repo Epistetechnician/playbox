@@ -20,6 +20,13 @@ import torch
 from . import hub as H
 
 
+# The bounds the host enforces on a reveal (`latent::Reveal::parse`); an auditor holds a reveal to them too, because it spends
+# model compute on every sentence and a host that is not honest could serve more.
+MAX_REVEAL_BYTES = 16 * 1024
+MAX_REVEAL_SENTENCES = 64
+MAX_SENTENCE_BYTES = 512
+
+
 @dataclass
 class Verdict:
     ok: bool
@@ -35,11 +42,18 @@ def audit(hub: H.Hub, auditor: str, head: dict, vector: torch.Tensor, reveal: by
     if reveal is None:
         return Verdict(False, reasons=["the sender did not reveal"])
     try:
+        if len(reveal) > MAX_REVEAL_BYTES:
+            raise ValueError("too large")
         rev = json.loads(reveal)
         salt, sentences = rev["salt"], rev["sentences"]
-    except (ValueError, KeyError, TypeError):
+        if (not isinstance(salt, str) or not 16 <= len(salt) <= 64 or any(c not in "0123456789abcdefABCDEF" for c in salt)
+                or not isinstance(sentences, list) or not 0 < len(sentences) <= MAX_REVEAL_SENTENCES
+                or any(not isinstance(x, str) or "\n" in x or len(x.encode()) > MAX_SENTENCE_BYTES for x in sentences)):
+            raise ValueError("out of bounds")
+        matches = H.make_commit(salt, sentences) == head["commit"]
+    except (ValueError, KeyError, TypeError, RecursionError):
         return Verdict(False, reasons=["malformed reveal"])
-    if H.make_commit(salt, sentences) != head["commit"]:
+    if not matches:
         return Verdict(False, reasons=["the reveal does not match the commitment"])
     mine = hub.encode(auditor, thought_of(sentences))
     cos = float(torch.nn.functional.cosine_similarity(mine, vector, dim=0))

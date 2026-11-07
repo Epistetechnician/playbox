@@ -14,6 +14,7 @@ B's output cannot replace it: judging needs a clean reference, and producing one
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import secrets
 import struct
@@ -60,6 +61,10 @@ def unpack(data: bytes) -> tuple[ca.Record, str, DynamicCache]:
         raise HandoffError(f"malformed handoff: {type(e).__name__}") from None
     if not isinstance(text, str):
         raise HandoffError("text must be a string")
+    # The record is a plain dataclass, so JSON of any type got through `Record(**...)`; a signer that is a list would crash
+    # the receiver at its first set lookup. Every field is text, or the message is refused here.
+    if not all(isinstance(getattr(rec, f.name), str) for f in dataclasses.fields(rec)):
+        raise HandoffError("every field of the record must be text")
     layers = []
     i = 0
     while f"k{i}" in tensors:
@@ -69,7 +74,10 @@ def unpack(data: bytes) -> tuple[ca.Record, str, DynamicCache]:
         i += 1
     if not layers or len(tensors) != 2 * len(layers):
         raise HandoffError("cache layers are missing or unexpected tensors are present")
-    return rec, text, DynamicCache.from_legacy_cache(tuple(layers))
+    try:
+        return rec, text, DynamicCache.from_legacy_cache(tuple(layers))
+    except Exception as e:  # tensors of a shape or type a cache cannot hold
+        raise HandoffError(f"malformed cache: {type(e).__name__}") from None
 
 
 @dataclass

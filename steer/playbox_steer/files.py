@@ -81,7 +81,10 @@ class PromptSet:
 
 def read_prompts(path: Path) -> PromptSet:
     raw = path.read_bytes()
-    j = json.loads(raw)
+    try:
+        j = json.loads(raw)
+    except RecursionError:  # a file nested thousands deep: refused like any other malformed prompt set
+        raise ValueError("prompt set is nested too deeply") from None
     if not isinstance(j, dict) or set(j) - {"prompts", "max_new_tokens", "temperature"}:
         raise ValueError("prompt set must be an object with prompts, max_new_tokens, temperature")
     prompts = j.get("prompts")
