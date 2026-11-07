@@ -4,5 +4,9 @@ version = "0.0.1"
 requires-python = ">=3.11"
 dependencies = ["torch", "numpy", "matplotlib", "blake3"]
 
+[dependency-groups]
+dev = ["pytest"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

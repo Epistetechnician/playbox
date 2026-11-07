@@ -62,6 +62,24 @@ fn main() {
     put("links_and_pem", "pem", b"-----BEGIN CERTIFICATE-----\nAAEC\n-----END CERTIFICATE-----\n");
     put("links_and_pem", "transport", b"relay:https://relay.example.com");
 
+    // latent_envelope: a signed envelope without and with a commitment, a reveal that opens it, and a host receipt shape.
+    let sentences = vec!["Waves rolled across the open sea.".to_string()];
+    let salt = "00112233445566778899aabbccddeeff";
+    put("latent_envelope", "plain", &playbox_net::latent::pack(&key, "0123456789abcdef", "x", 0.5, &[3u8; 16]));
+    let commit = playbox_net::latent::commit_of(salt, &sentences);
+    let committed = playbox_net::latent::pack_with(&key, "0123456789abcdef", "x", 0.5, &[3u8; 16], Some(&commit));
+    put("latent_envelope", "committed", &committed);
+    let reveal = serde_json::to_vec(&serde_json::json!({ "salt": salt, "sentences": sentences })).unwrap();
+    put("latent_envelope", "reveal", &reveal);
+    put("latent_envelope", "receipt", b"playbox.latent-receipt.v1\nhost 01\nsigner 02\nhub 0123456789abcdef\nenvelope 00\nseq 1\nsig 00");
+
+    // latent_store: a saved mailbox with one committed message and its reveal.
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    let store = serde_json::json!({ "seq": 1, "entries": [{
+        "seq": 1, "from": iroh_like_id(&key.verifying_key().to_bytes()), "envelope": base64::engine::general_purpose::STANDARD.encode(&committed),
+        "reveal": base64::engine::general_purpose::STANDARD.encode(&reveal), "at_ms": now }] });
+    put("latent_store", "mailbox", store.to_string().as_bytes());
+
     println!("seeds written under fuzz/corpus/");
 }
 

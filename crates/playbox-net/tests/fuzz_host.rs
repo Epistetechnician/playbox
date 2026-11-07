@@ -8,9 +8,11 @@
 use a2a::{JsonRpcRequest, JsonRpcResponse, SendMessageRequest};
 use iroh::{endpoint::presets, Endpoint};
 use playbox_net::{
-    audit, join_link, new_secret_key,
+    audit,
+    latent::{commit_of, pack_with},
+    join_link, new_secret_key,
     wire::{Frame, Op},
-    Host, HostConfig, Transport,
+    Client, Host, HostConfig, Transport,
 };
 use serde_json::{json, Value};
 use std::{path::Path, process::Command, time::Duration};
@@ -268,6 +270,21 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
     // Seeds: one genuine request of every kind, with and without the member's grant.
     let push_part = a2a::Part::raw(bundle).with_filename("p.bundle");
     let spec = playbox_runner::TaskSpec::new(&["true"]);
+    // The room's talk and mailbox: a signed envelope that carries a commitment, and a reveal that opens it. The signer
+    // is the member's own key, so an unmutated post is accepted and mutations of it reach the mailbox handlers.
+    let latent_hub = "0123456789abcdef";
+    let salt = "00112233445566778899aabbccddeeff";
+    let sentences = vec!["Waves rolled across the open sea.".to_string()];
+    let signer = ed25519_dalek::SigningKey::from_bytes(&member_key.to_bytes());
+    let envelope = pack_with(
+        &signer,
+        latent_hub,
+        "x",
+        0.5,
+        &[3u8; 16],
+        Some(&commit_of(salt, &sentences)),
+    );
+    let reveal = serde_json::to_vec(&json!({ "salt": salt, "sentences": sentences })).unwrap();
     let mut seeds: Vec<Vec<u8>> = Vec::new();
     for g in [None, Some(grant.as_str())] {
         seeds.push(frame("playbox.GetAgentCard", None, g));
@@ -310,6 +327,46 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
                     spec: spec.clone(),
                 },
                 vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::Say {
+                    text: "hello".into(),
+                    name: Some("x".into()),
+                },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::Feed { since: 0 }, vec![])),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::Latent, vec![a2a::Part::raw(envelope.clone())])),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::LatentPull {
+                    hub: latent_hub.into(),
+                    since: 0,
+                },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::LatentReveal { seq: 1 },
+                vec![a2a::Part::raw(reveal.clone())],
             )),
             g,
         ));
@@ -395,12 +452,32 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
             .or_default() += 1;
     }
     eprintln!("fuzz_host: audit events by kind: {counts:?}");
-    for kind in ["refused", "pull", "push", "task"] {
+    for kind in ["refused", "pull", "push", "task", "latent"] {
         assert!(
             counts.get(kind).copied().unwrap_or(0) > 0,
             "no `{kind}` event: the mutations never reached that handler ({counts:?})"
         );
     }
     ep.close().await;
-    drop(host);
+
+    // The mailbox the barrage left on disk is still a valid store: a restarted host loads it, every message it serves
+    // verifies, and an honest member can still post and read.
+    member.close().await;
+    host.shutdown().await.unwrap();
+    let store = std::fs::read(base.join("state").join("latent.json"));
+    if let Ok(bytes) = &store {
+        serde_json::from_slice::<Value>(bytes).expect("the stored mailbox is valid JSON");
+    }
+    let host = Host::open(&base.join("state"), Transport::Local, HostConfig::default())
+        .await
+        .unwrap();
+    let again = Client::connect(host.addr(), member_key.clone(), true)
+        .await
+        .unwrap();
+    again.set_grant(grant);
+    let (kept, _) = again.latent_pull(latent_hub, 0).await.unwrap();
+    eprintln!("fuzz_host: {} latent messages survived the barrage and a restart", kept.len());
+    let fresh = pack_with(&signer, latent_hub, "after", 0.5, &[9u8; 16], None);
+    again.latent_send(&fresh).await.unwrap();
+    host.shutdown().await.unwrap();
 }

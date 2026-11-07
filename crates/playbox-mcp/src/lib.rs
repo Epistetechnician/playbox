@@ -3,6 +3,9 @@
 //!
 //! Every tool call and its result are appended to a signed, hash-chained history log.
 
+// The tool schemas are one large `json!` literal each; `playbox_create` has enough options to pass the default limit of 128.
+#![recursion_limit = "256"]
+
 use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{
@@ -122,6 +125,13 @@ pub fn tool_list() -> Value {
                 "share_ips": {"type": "boolean", "description": "Put this machine's IP addresses in the link. Off by default on iroh and relay transports, so a shared link does not reveal where you are; guests reach you through the relay. Local links always carry them."},
                 "idle_patience_secs": {"type": "integer", "description": "How long a member's connection may sit silent before this host closes it. Default 900 (15 minutes). Members' sidecars reopen closed connections on their next call."},
                 "grant_ttl_secs": {"type": "integer", "description": "How long members' grants last. Default 3600. Long experiments need longer; a grant that expires mid-run is refused, correctly."},
+                "max_members": {"type": "integer", "description": "Most members the room admits; invites stop working at this count. Default 64."},
+                "max_concurrent": {"type": "integer", "description": "Tasks one member may have running at once. Default 2."},
+                "max_tasks_per_minute": {"type": "integer", "description": "Tasks one member may start per minute. Default 30."},
+                "task_budget": {"type": "integer", "description": "Tasks the whole room may start since the host started. Default 100000."},
+                "latent_hubs": {"type": "array", "items": {"type": "string"}, "description": "Accept hub latent messages (docs/latent-channels.md) only for these hub ids. Without it any hub id is accepted."},
+                "latent_posts_per_minute": {"type": "integer", "description": "Latent messages one member may post per minute. Default 30."},
+                "latent_max_age_secs": {"type": "integer", "description": "How long a latent message stays readable, and an identical one is refused as a replay. Default 3600."},
                 "steer_store": {"type": "string", "description": "Host language-model steering (docs/steering.md): a directory holding `weights/<manifest hash>/` model directories (and optional `guards/<hash>/`). Needs runtime=docker and the engine image built from steer/Dockerfile. Members then use playbox_steer."},
                 "steer_image": {"type": "string", "description": "The engine image. Default playbox-steer:0.1."},
                 "steer_mem_mib": {"type": "integer", "description": "Memory for one steering run. Default 4096."},
@@ -342,6 +352,47 @@ fn req<'a>(a: &'a Value, k: &str) -> Result<&'a str> {
 
 fn b(a: &Value, k: &str) -> bool {
     a.get(k).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// Room limits from `playbox_create` arguments, the same ones `playbox up` takes. Anything absent or not a positive integer
+/// keeps its default.
+fn abuse_from_args(a: &Value) -> playbox_net::limits::AbuseLimits {
+    let num = |k: &str| a.get(k).and_then(Value::as_u64).filter(|v| *v > 0);
+    let mut l = playbox_net::limits::AbuseLimits::default();
+    if let Some(v) = num("max_members") {
+        l.max_members = usize::try_from(v).unwrap_or(usize::MAX);
+    }
+    if let Some(v) = num("max_concurrent") {
+        l.max_concurrent_per_member = usize::try_from(v).unwrap_or(usize::MAX);
+    }
+    if let Some(v) = num("max_tasks_per_minute") {
+        l.max_tasks_per_window = usize::try_from(v).unwrap_or(usize::MAX);
+    }
+    if let Some(v) = num("task_budget") {
+        l.task_budget = v;
+    }
+    l
+}
+
+/// Latent-message policy from `playbox_create` arguments, the same ones `playbox up` takes.
+fn latent_from_args(a: &Value) -> playbox_net::latent::LatentPolicy {
+    let num = |k: &str| a.get(k).and_then(Value::as_u64).filter(|v| *v > 0);
+    let mut l = playbox_net::latent::LatentPolicy::default();
+    let hubs: Vec<String> = a
+        .get("latent_hubs")
+        .and_then(Value::as_array)
+        .map(|v| v.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    if !hubs.is_empty() {
+        l.hubs = Some(hubs);
+    }
+    if let Some(v) = num("latent_posts_per_minute") {
+        l.posts_per_window = usize::try_from(v).unwrap_or(usize::MAX);
+    }
+    if let Some(v) = num("latent_max_age_secs") {
+        l.max_age = Duration::from_secs(v);
+    }
+    l
 }
 
 fn transport_arg(a: &Value) -> Result<Option<Transport>> {
@@ -694,6 +745,8 @@ impl Server {
                 authenticated_patience: a.get("idle_patience_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs).unwrap_or(HostConfig::default().authenticated_patience),
                 grant_ttl: a.get("grant_ttl_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs),
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
+                abuse: abuse_from_args(a),
+                latent: latent_from_args(a),
                 ..Default::default()
             };
             let transport = match transport_arg(a)? {
@@ -1408,5 +1461,41 @@ impl Server {
             .collect();
         let conflicts: Vec<Value> = self.memory.conflicts().into_iter().map(|(x, y)| json!([x, y])).collect();
         Ok(json!({"entries": entries, "conflicts": conflicts}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn room_limits_from_tool_arguments_match_playbox_up() {
+        let d = playbox_net::limits::AbuseLimits::default();
+        let none = abuse_from_args(&json!({}));
+        assert_eq!(
+            (none.max_members, none.max_concurrent_per_member, none.max_tasks_per_window, none.task_budget),
+            (d.max_members, d.max_concurrent_per_member, d.max_tasks_per_window, d.task_budget)
+        );
+        let l = abuse_from_args(&json!({"max_members": 3, "max_concurrent": 1, "max_tasks_per_minute": 5, "task_budget": 40}));
+        assert_eq!((l.max_members, l.max_concurrent_per_member, l.max_tasks_per_window, l.task_budget), (3, 1, 5, 40));
+        // Zero, negative and non-numbers keep the default rather than turning a limit off.
+        for bad in [json!(0), json!(-1), json!("many"), json!(null), json!(1.5)] {
+            assert_eq!(abuse_from_args(&json!({ "max_members": bad })).max_members, d.max_members);
+        }
+    }
+
+    #[test]
+    fn latent_policy_from_tool_arguments_match_playbox_up() {
+        let d = playbox_net::latent::LatentPolicy::default();
+        let none = latent_from_args(&json!({}));
+        assert!(none.hubs.is_none());
+        assert_eq!((none.posts_per_window, none.max_age), (d.posts_per_window, d.max_age));
+        let l = latent_from_args(&json!({"latent_hubs": ["aa", "bb"], "latent_posts_per_minute": 4, "latent_max_age_secs": 90}));
+        assert_eq!(l.hubs, Some(vec!["aa".to_string(), "bb".to_string()]));
+        assert_eq!((l.posts_per_window, l.max_age), (4, Duration::from_secs(90)));
+        // An empty or non-text list means "any hub", not "no hub": an empty allowlist must not lock the room out silently.
+        assert!(latent_from_args(&json!({"latent_hubs": []})).hubs.is_none());
+        assert!(latent_from_args(&json!({"latent_hubs": [1, null]})).hubs.is_none());
+        assert_eq!(latent_from_args(&json!({"latent_max_age_secs": 0})).max_age, d.max_age);
     }
 }

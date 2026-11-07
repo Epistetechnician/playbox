@@ -2725,6 +2725,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "iroh",
  "iroh-gossip",
+ "libc",
  "n0-future",
  "playbox-core",
  "playbox-git",

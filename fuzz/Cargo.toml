@@ -82,3 +82,17 @@ path = "fuzz_targets/tdx_token.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "latent_envelope"
+path = "fuzz_targets/latent_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "latent_store"
+path = "fuzz_targets/latent_store.rs"
+test = false
+doc = false
+bench = false

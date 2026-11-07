@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening) and 6m (audit threshold transfer). Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening), 6m (audit threshold transfer) and 6n (fuzzing the parsers). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -555,6 +555,47 @@ between hubs.
 Not tested: liars close to the honest vector (a small payload added to an honest vector, or a swap to a near-synonym
 concept; every liar here is a different topic or noise), a sender that picks sentences to fit its payload, more than three
 small models, instruction-tuned auditors, and a calibration batch that itself contains a liar.
+
+## 6n. Fuzzing the parsers (2026-11-07)
+
+Everything in 6f to 6m reads bytes that another member (or a host relaying them) controls, and none of it had been
+mutation-tested. What ran: the eight existing libFuzzer targets and two new ones (`latent_envelope`: the `PBL2` envelope, the
+reveal and the receipt; `latent_store`: the saved mailbox read back at start), 60 s each on nightly with the seeded corpora,
+70 000 to 450 000 executions per target; the 15 000-request host mutation test, now also sending `say`, `feed`, signed `latent`
+posts, reveals and pulls, then restarting the host on the mailbox the barrage left; and seeded mutation tests of the Python
+parsers (`steer/tests/test_hub_fuzz.py`, `test_handoff_fuzz.py`, 20 000 handoffs and 33 000 hub messages in the exploratory
+runs). The Rust side found nothing: no crash in any target, and the host stayed up and kept a valid store.
+
+The Python side found real bugs, each reachable by one hostile member and each now a refusal:
+
+- **`unpack` and `unpack_signed` raised `AttributeError`, `TypeError`, `KeyError` and `struct.error`** for a header that is not a
+  JSON object, a `scale` of `null`, a signer that is a list, and so on. The worst case needs no forgery: a trusted member signs
+  a header whose `scale_f32` is not 8 hex characters, the signature verifies, and the receiver dies on `struct.unpack`. A
+  receiver that handled only `ValueError` (the documented failure) crashed on any of these. Headers are now checked field by
+  field and every failure is a `ValueError`; deeply nested JSON is one too.
+- **A handoff record with a list for its signer crashed `Receiver.accept`** at the first set lookup, and tensors of an odd
+  shape raised from inside `DynamicCache`. Every record field must now be text and a cache that cannot be built is a refusal.
+  20 000 mutated handoffs: none accepted, no exception.
+- **The audit trusted the shape of a reveal.** A reveal with a non-text sentence raised `TypeError`, and nothing bounded the
+  sentences an auditor would run through its model if a relaying host served more than the sender's host allowed. It now
+  applies the host's bounds (64 sentences, 512 bytes each, 16 KiB, no newline, a hex salt) and treats the rest as a failed audit.
+- **A prompt file nested thousands deep** raised `RecursionError` out of `read_prompts`, past the entry point's `ValueError`
+  handler; it is now a `ValueError`.
+
+Each new test fails on the old code (checked) and passes on the new.
+
+Wiring found on the way: `playbox_create` (the MCP tool agents, the Hermes plugin and the cockpit use) had no way to set the room
+limits that `playbox up` takes (`max_members`, `max_concurrent`, `max_tasks_per_minute`, `task_budget`) or the latent policy
+(`latent_hubs`, `latent_posts_per_minute`, `latent_max_age_secs`); rooms made through it always ran on defaults. It takes them
+now. Four things had tests that CI never ran and now do: `world/` (a `dev` group and `pythonpath` so it follows the same
+`uv run --group dev pytest` as the other projects), the Hermes witness plugin (plain `unittest`; pytest cannot collect it),
+and the cockpit's end-to-end script (its own job).
+
+Limits. Sixty-second runs find shallow bugs, not deep ones; the signature-checking path in `latent_envelope` is only reached by
+mutating valid seeds, which almost always break the signature. The Python mutations are structure-aware but hand-written, so
+they cover the shapes I thought of. The CLI session's JSON handler and the host's reply to a hostile reveal were exercised only
+through the host test. Not fuzzed: the sender-side code (it takes tensors from the user's own models), and `hub_run`'s data
+handling.
 
 ## 7. Not covered
 

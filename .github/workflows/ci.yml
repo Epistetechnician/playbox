@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [steer, judge, orchestrator]
+        project: [steer, judge, orchestrator, world]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -45,6 +45,24 @@ jobs:
         # judge/tests/test_measures.py and test_fear.py load real Hugging Face classifiers and a language model; on a 2-core runner it
         # was killed after ~20 minutes. It runs locally (`cd judge && uv run --group dev pytest -q`), not here.
         run: uv run --group dev pytest -q ${{ matrix.project == 'judge' && '--ignore=tests/test_measures.py --ignore=tests/test_fear.py' || '' }}
+  ui:
+    # The cockpit's end-to-end check: two UI servers (host and guest) driven over HTTP like the browser does, each with a real
+    # playbox-mcp sidecar. A separate job so a failure here does not hide the results of the others.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p playbox-mcp
+      - run: PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/e2e.py
+  witness:
+    # The Hermes witness plugin has plain unittest tests (pytest cannot collect them: the plugin directory is a package).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s hermes-plugin-witness/tests -v
   lean:
     runs-on: ubuntu-22.04
     steps:
