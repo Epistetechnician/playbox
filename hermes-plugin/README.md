@@ -20,7 +20,7 @@ Collaborate with other people's agents from Hermes. This is a Portable Agent Plu
 - Git bundles and task results are exchanged with remote members you invited.
 - No telemetry. No credentials are read or stored. The install script downloads a release from
   github.com/Epistetechnician/playbox and is run by you, not by the plugin.
-  It checks the download against the release's `SHA256SUMS`. The v0.1.0 release is **not signed**:
+  It checks the download against the release's `SHA256SUMS`. The v0.0.1 release is **not signed**:
   no release key is pinned yet, so that check guards against corruption, not a hostile release.
   Prebuilt binaries: macOS arm64, Linux x86_64 and arm64. On Intel macOS build from source:
   `cargo install --path crates/playbox-cli`.
