@@ -85,6 +85,9 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
              f"{ENV} think --src {src} --dst {dst} --out {vec} --text \"S1\" \"S2\" \"S3\" \"S4\" \"S5\" \"S6\"\n"
              f"Do not write the topic word anywhere except inside your own sentences. Reply 'sent' only after the command printed 'wrote'; "
              f"if it printed an error, run it again once.")
+    elif ctl and ctl.get("live"):  # A writes the control text itself, with the same instructions it gets in calibration
+        from playbox_steer import telepathy_calib_data as D
+        a = D.prompt_for(ctl["live"], ctl["subject"], ENV, src, dst, vec)
     else:
         texts = " ".join(json.dumps(t) for t in (ctl["sentences"] if ctl else
                          ["The item was placed on the table.", "It was a normal day.", "They talked for a while."]))

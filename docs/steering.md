@@ -1027,3 +1027,9 @@ The Modal result (67/80) reproduces on gman. The 16/16 control result of round 4
 Standing result: topics about 82% with the magnitude gate; controls solved only for the fixed neutral triple. Next step if wanted: calibrate any gate on text produced by the live Agent A, with filler written by that same agent, and score it on topics it has not seen.
 
 **Cost.** The node was left running and idle across two long gaps between my turns. Its month-to-date bill went from about 22 USD to 193.9 USD (2,878 minutes). That overrun is mine. The node is now stopped (`gman node ls`: stopped, disk intact).
+
+### E7 gate calibrated on live Agent A text (gman H100)
+
+The topic-ness gate failed because it was calibrated on template text. Fix: log every live `/think` (text, difference vector), run the live Agent A on 80 topic samples, 24 filler scenes, 16 off-list subjects and 4 neutral triples per sender, and fit a ridge-logistic probe on the unit difference vector. Penalty and ramp thresholds come from grouped cross-validation (scenes and subjects held out whole). Held-out: topics pass 155/160, filler 0/48, off-list 6/32, triples 0/8.
+
+Live eval, fresh text only (80 topic trials, 10 fresh filler scenes and 8 fresh off-list subjects per direction, A writes all text): topics 65/80 = 81.3% (CI 71.3 to 88.3; 3 false "none"), controls answered "none" 35/36 = 97.2% (CI 85.8 to 99.5), 0 infra errors. Before: filler 9/20 and off-list 6/12. Qwen3 to SmolLM2 is the weaker direction (29/40). Files: `tools/telepathy_calib.py`, `tools/telepathy_probe.py`, `playbox_steer/telepathy_probe.json`, `results/telepathy/probe_report.json`, `results/telepathy/probe_eval_private/`. The node was stopped as soon as the eval finished.

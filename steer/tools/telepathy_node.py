@@ -7,6 +7,7 @@ over loopback. The routes, maps (cached under ~/tp/maps) and strength gate are i
 """
 import base64
 import hmac
+import json
 import os
 import random
 import struct
@@ -35,6 +36,10 @@ GATE = tuple(float(x) for x in os.environ.get("TELEPATHY_GATE", "0.9,1.1").split
 # topic-ness gate per sender: strength ramps 0 to 1 as the vector's best cosine to any known topic direction goes lo to hi
 # ("smollm2:0.78,0.86;qwen3:0.72,0.80"); thresholds from results/telepathy/topicness.json. Empty: off.
 TOPIC_GATE = {k: tuple(map(float, v.split(","))) for k, v in (e.split(":") for e in os.environ.get("TELEPATHY_TOPIC_GATE", "").split(";") if e)}
+# TELEPATHY_LOG: append every /think (tag, texts, mag, the difference vector) as JSON lines, for calibrating gates offline.
+# TELEPATHY_PROBE: json {src: {mu, w, b, lo, hi}} from tools/telepathy_probe.py; when set for a sender it replaces the magnitude gate.
+LOG = os.environ.get("TELEPATHY_LOG")
+PROBE = json.loads(Path(os.environ["TELEPATHY_PROBE"]).read_text()) if os.environ.get("TELEPATHY_PROBE") else {}
 TOKEN = os.environ["TELEPATHY_TOKEN"]
 MAPS = Path(os.environ.get("TELEPATHY_MAPS", Path.home() / "tp/maps"))
 
@@ -82,6 +87,7 @@ class Think(BaseModel):
     src: str
     dst: str
     texts: list[str]
+    tag: str = ""
 
 
 class Listen(BaseModel):
@@ -112,10 +118,18 @@ def think(r: Think):
     mag = float(d.norm()) / ref[r.src]
     g = 1.0 if GATE[1] <= GATE[0] else min(1.0, max(0.0, (mag - GATE[0]) / (GATE[1] - GATE[0])))
     topicness = None
-    if r.src in cent:
+    if r.src in PROBE:
+        P = PROBE[r.src]
+        z = (torch.nn.functional.normalize(d, dim=-1).double() - torch.tensor(P["mu"], dtype=torch.float64)) @ torch.tensor(P["w"], dtype=torch.float64) + P["b"]
+        topicness = float(torch.sigmoid(z))
+        g = min(1.0, max(0.0, (topicness - P["lo"]) / (P["hi"] - P["lo"])))
+    elif r.src in cent:
         topicness = float((cent[r.src] @ torch.nn.functional.normalize(d, dim=-1)).max())
         lo, hi = TOPIC_GATE[r.src]
         g = min(g, min(1.0, max(0.0, (topicness - lo) / (hi - lo))))
+    if LOG:
+        with lock, open(LOG, "a") as f:
+            f.write(json.dumps({"src": r.src, "tag": r.tag, "texts": r.texts, "mag": mag, "topicness": topicness, "d": [round(float(x), 5) for x in d]}) + "\n")
     v = d @ m["w"]
     v = (v / v.norm() * COEF * g * m["norm_b"]).float().cpu().contiguous()
     print("think mag", round(mag, 3), "topicness", topicness and round(topicness, 3), "gate", round(g, 3), flush=True)

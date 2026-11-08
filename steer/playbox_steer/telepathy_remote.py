@@ -73,7 +73,7 @@ def main() -> None:
     sub.choices["listen"].add_argument("--vec", required=True)
     a = ap.parse_args()
     if a.cmd == "think":
-        r = call("/think", {"src": a.src, "dst": a.dst, "texts": a.text})
+        r = call("/think", {"src": a.src, "dst": a.dst, "texts": a.text, "tag": Path(a.out).parent.name})
         tmp = f"{a.out}.tmp"
         Path(tmp).write_bytes(base64.b64decode(r["vec"]) + struct.pack("<f", r["gate"]))  # the vector, then its strength
         os.replace(tmp, a.out)  # atomic: a reader never sees a half-written vector
