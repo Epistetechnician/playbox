@@ -112,6 +112,10 @@ pub enum Op {
         text: String,
         #[serde(default)]
         name: Option<String>,
+        /// A sender-chosen id (1 to 64 letters, digits, - _ .). The host posts a `say` once per id: sending the same one
+        /// again, because the reply was lost, returns the first post's number and says nothing twice.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
     },
     /// Read the room's live feed after sequence number `since`.
     Feed {

@@ -414,6 +414,9 @@ pub struct HostConfig {
     pub abuse: limits::AbuseLimits,
     /// Hub latent messages: hub allowlist, post rate, expiry and where the mailbox is kept.
     pub latent: latent::LatentPolicy,
+    /// Where the room's feed is kept across restarts. `None`: `<state dir>/chat.jsonl` for a host opened with a state
+    /// directory, and memory only for an ephemeral host.
+    pub chat_log: Option<PathBuf>,
 }
 
 impl Default for HostConfig {
@@ -436,6 +439,7 @@ impl Default for HostConfig {
             steer: None,
             abuse: limits::AbuseLimits::default(),
             latent: latent::LatentPolicy::default(),
+            chat_log: None,
         }
     }
 }
@@ -863,8 +867,8 @@ impl RoomHandler {
                 )
             }
             Some(Op::Echo { text }) => return reply(text),
-            Some(Op::Say { text, name }) => {
-                return match self.audit.chat.say(&from.to_string(), name.as_deref(), &text) {
+            Some(Op::Say { text, name, request_id }) => {
+                return match self.audit.chat.say_once(&from.to_string(), name.as_deref(), &text, request_id.as_deref()) {
                     Ok(seq) => reply(json!({ "seq": seq }).to_string()),
                     Err(e) => reply(json!({ "error": e }).to_string()),
                 }
@@ -1367,6 +1371,7 @@ impl Host {
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
+        cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
     }
 
@@ -1390,6 +1395,7 @@ impl Host {
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
+        cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(
             secret,
             transport.into(),
@@ -1427,11 +1433,14 @@ impl Host {
             st.check_against(&cfg.limits)?;
         }
         let attest_key = Arc::new(SigningKey::from_bytes(&secret.to_bytes()));
-        let audit = Arc::new(match &cfg.audit_log {
-            None => audit::Audit::off((*attest_key).clone()),
-            Some(p) if p.as_os_str() == "-" => audit::Audit::stderr((*attest_key).clone()),
-            Some(p) => audit::Audit::open(p, (*attest_key).clone())?,
-        });
+        let audit = Arc::new(
+            match &cfg.audit_log {
+                None => audit::Audit::off((*attest_key).clone()),
+                Some(p) if p.as_os_str() == "-" => audit::Audit::stderr((*attest_key).clone()),
+                Some(p) => audit::Audit::open(p, (*attest_key).clone())?,
+            }
+            .with_chat(cfg.chat_log.as_deref().map_or_else(chat::Chat::new, chat::Chat::open)),
+        );
         audit.record(
             "host_start",
             None,
@@ -1768,6 +1777,17 @@ pub struct TaskRun {
     pub changed: Vec<String>,
 }
 
+/// Why a `say` did not complete: the host said no (final), or no answer came (the message may have been posted).
+enum SayError {
+    Refused(anyhow::Error),
+    Transport(anyhow::Error),
+}
+
+/// Lower-case hex of `b`.
+fn hex_id(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
 pub struct Client {
     endpoint: Endpoint,
     /// Where the host was reached, so a closed connection can be reopened.
@@ -2047,17 +2067,75 @@ impl Client {
 
     /// Say something to the room. `name` is a label for display; the member id is the identity.
     ///
+    /// The message carries a fresh request id, and if the connection fails before an answer arrives the same message is sent
+    /// again, up to three times, on a new connection to the same host. The host posts a request id once, so a lost reply
+    /// never says it twice. A refusal from the host (rate limit, empty text) is final and is not retried.
+    ///
     /// # Errors
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn say(&self, text: &str, name: Option<&str>) -> Result<u64> {
+        let id = hex_id(&random_bytes()?[..12]);
+        let mut last = None;
+        for attempt in 0..3u32 {
+            if attempt > 0 {
+                tokio::time::sleep(Duration::from_millis(200 << attempt)).await;
+            }
+            let outcome = if attempt == 0 {
+                self.say_with_id(&id, text, name).await
+            } else {
+                match self.sibling(self.addr.clone()).await {
+                    Ok(c) => c.say_with_id(&id, text, name).await,
+                    Err(e) => Err(SayError::Transport(e)),
+                }
+            };
+            match outcome {
+                Ok(seq) => return Ok(seq),
+                Err(SayError::Refused(e)) => return Err(e),
+                Err(SayError::Transport(e)) => last = Some(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| anyhow!("say failed"))).context("the room did not answer; the message may or may not have been posted")
+    }
+
+    /// [`Client::say`] with an id the caller chooses (1 to 64 letters, digits, - _ .), sent once on this connection. A caller
+    /// that reconnects itself resends the same id and the host posts the message once.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn say_with_id_once(&self, request_id: &str, text: &str, name: Option<&str>) -> Result<u64> {
+        self.say_with_id(request_id, text, name).await.map_err(|e| match e {
+            SayError::Refused(e) | SayError::Transport(e) => e,
+        })
+    }
+
+    async fn say_with_id(&self, request_id: &str, text: &str, name: Option<&str>) -> std::result::Result<u64, SayError> {
         let op = Op::Say {
             text: text.to_string(),
             name: name.map(str::to_string),
+            request_id: Some(request_id.to_string()),
         };
-        let v = self.reply_json(&op, "say").await?;
+        let req = SendMessageRequest {
+            message: op.message(vec![]),
+            configuration: None,
+            metadata: None,
+            tenant: None,
+        };
+        let params = serde_json::to_value(req).map_err(|e| SayError::Refused(e.into()))?;
+        // Failing to get any answer is a transport problem and may be retried; an answer that says no is final.
+        let resp = self.call_raw(a2a::methods::SEND_MESSAGE, params).await.map_err(SayError::Transport)?;
+        if let Some(e) = resp.error {
+            return Err(SayError::Refused(anyhow!("say refused: {}", e.message)));
+        }
+        let result = resp.result.ok_or_else(|| SayError::Transport(anyhow!("empty response")))?;
+        let reply: SendMessageResponse = serde_json::from_value(result).map_err(|e| SayError::Refused(e.into()))?;
+        let v: Value = match reply {
+            SendMessageResponse::Message(m) => serde_json::from_str(m.text().unwrap_or("{}")).map_err(|e| SayError::Refused(e.into()))?,
+            SendMessageResponse::Task(t) => return Err(SayError::Refused(anyhow!("say refused: {}", wire::status_text(&t)))),
+        };
         if let Some(e) = v.get("error").and_then(Value::as_str) {
-            bail!("{e}");
+            return Err(SayError::Refused(anyhow!("{e}")));
         }
         Ok(v.get("seq").and_then(Value::as_u64).unwrap_or(0))
     }
@@ -2336,4 +2414,30 @@ pub async fn join_link(
     let client = Client::connect(link.addr, secret, transport).await?;
     client.join(&link.invite).await?;
     Ok(client)
+}
+
+
+#[cfg(test)]
+mod say_retry_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn say_survives_a_dropped_connection_by_retrying_once_on_a_new_one() {
+        let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+            .await
+            .unwrap();
+        let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+        let a = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+        let before = a.say("one", None).await.unwrap();
+        // Kill the connection under the client; the next say must still go through, exactly once.
+        a.conn.close(0u32.into(), b"test");
+        let after = a.say("two", None).await.unwrap();
+        assert!(after > before);
+        let b = a.sibling(a.addr.clone()).await.unwrap();
+        let texts: Vec<String> = b.feed(0).await.unwrap().items.into_iter().filter(|i| i.kind == "say").map(|i| i.text).collect();
+        assert_eq!(texts, ["one", "two"]);
+        // A refusal from the host is final and not retried: an empty message says nothing and costs no extra posts.
+        assert!(b.say("   ", None).await.is_err());
+        host.shutdown().await.unwrap();
+    }
 }

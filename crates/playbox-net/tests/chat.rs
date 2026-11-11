@@ -1,6 +1,6 @@
 //! The room's live feed: members and the host talk, events show up, outsiders and revoked members cannot read.
 
-use playbox_net::{join_link, new_secret_key, Client, Host, HostConfig};
+use playbox_net::{join_link, new_secret_key, Client, Host, HostConfig, Transport};
 use std::time::Duration;
 
 async fn start() -> (Host, Client, Client) {
@@ -92,5 +92,47 @@ async fn flooding_is_refused_and_control_characters_never_reach_other_members() 
         }
     }
     assert!(refused, "a flood must be slowed down");
+    host.shutdown().await.unwrap();
+}
+
+
+#[tokio::test]
+async fn a_say_sent_twice_with_one_request_id_is_posted_once() {
+    let (host, a, b) = start().await;
+    let first = a.say_with_id_once("retry-1", "hello", Some("a")).await.unwrap();
+    let again = a.say_with_id_once("retry-1", "hello", Some("a")).await.unwrap();
+    assert_eq!(first, again);
+    let other_text = a.say_with_id_once("retry-1", "different", None).await.unwrap_err();
+    assert!(format!("{other_text:#}").contains("different message"), "{other_text:#}");
+    let says = b.feed(0).await.unwrap().items.into_iter().filter(|i| i.kind == "say").count();
+    assert_eq!(says, 1);
+    assert!(a.say_with_id_once("bad id", "x", None).await.is_err());
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn the_feed_and_request_ids_survive_a_host_restart() {
+    let d = std::env::temp_dir().join(format!("playbox-chat-restart-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+    let key = new_secret_key().unwrap();
+    let a = join_link(&link, key.clone(), true).await.unwrap();
+    let grant = a.grant().unwrap();
+    let seq = a.say_with_id_once("r-1", "before the restart", Some("agent-a")).await.unwrap();
+    a.close().await;
+    host.shutdown().await.unwrap();
+
+    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let a = Client::connect(host.addr(), key, true).await.unwrap();
+    a.set_grant(grant);
+    // The reply to the first send was "lost": sending it again after the restart posts nothing new.
+    assert_eq!(a.say_with_id_once("r-1", "before the restart", Some("agent-a")).await.unwrap(), seq);
+    let f = a.feed(0).await.unwrap();
+    let says: Vec<_> = f.items.iter().filter(|i| i.kind == "say").collect();
+    assert_eq!(says.len(), 1);
+    assert_eq!(says[0].text, "before the restart");
+    assert!(a.say("after", None).await.unwrap() > seq);
+    assert!(d.join("chat.jsonl").exists());
     host.shutdown().await.unwrap();
 }

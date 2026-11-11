@@ -336,6 +336,7 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
                 Op::Say {
                     text: "hello".into(),
                     name: Some("x".into()),
+                    request_id: Some("fuzz-1".into()),
                 },
                 vec![],
             )),

@@ -153,6 +153,13 @@ impl Audit {
         })
     }
 
+    /// Use `chat` (for example one opened on a file) as the room's feed.
+    #[must_use]
+    pub fn with_chat(mut self, chat: crate::chat::Chat) -> Self {
+        self.chat = chat;
+        self
+    }
+
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }

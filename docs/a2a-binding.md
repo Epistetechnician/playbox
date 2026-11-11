@@ -71,3 +71,19 @@ All HTTP callers act as the bridge's one member and share its tasks and limits. 
 default; a non-loopback `--listen` requires `--token` (or `PLAYBOX_BRIDGE_TOKEN`), checked as a Bearer
 token. The bridge's grant expires like any other (default 1h), so restart it with a fresh link then.
 Plain HTTP only: put a TLS proxy in front for anything beyond localhost or a trusted network.
+
+## Room talk: durable and sent once
+
+The room feed (`say`, `feed`, and the room's own events) is kept by a host opened with a state directory in
+`<state>/chat.jsonl`, an append-only file (mode 0600) that is compacted when it grows. A restart keeps what was said, the
+sequence numbers and the readers' cursors; lines that do not parse are skipped, and a file that cannot be opened leaves the
+feed in memory with a note on stderr.
+
+`say` takes an optional `request_id` (1 to 64 letters, digits, `-`, `_` or `.`). The host posts a message once per member and
+id: sending the same id and text again, because the reply was lost or the connection dropped, returns the first post's
+sequence number and says nothing twice, does not count against the 20-posts-per-10-s limit, and still works after a host
+restart. The same id with different text (or a different display name) is refused. Ids are remembered for an hour, up to 4096
+in all; past that a very old retry is posted again. `Client::say` generates an id, and if no answer arrives retries up to twice
+more on a new connection to the same host; a refusal from the host is final and not retried. Only `say` has this today.
+Latent messages are already refused as replays by content hash (`latent-channels.md`, 6l); tasks, pushes and steering runs are
+not deduplicated, because running a command twice is not the same as posting a line twice.

@@ -2,13 +2,18 @@
 //!
 //! One ordered log with a sequence number per item. Clients poll with the last number they saw, so a
 //! person in a terminal and an agent behind any model or harness read the same thing the same way.
-//! Items are not signed and not kept across restarts; the audit log is the record. Text in `say` items
-//! comes from other members and must be treated as untrusted by agents.
+//! Items are not signed; the audit log is the record. A host with a state directory keeps the feed in an append-only file
+//! (`chat.jsonl`) so a restart does not lose what was said, and a `say` that carries a request id is posted once however
+//! many times it is sent. Text in `say` items comes from other members and must be treated as untrusted by agents.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
+    fs::File,
+    io::Write,
+    os::unix::fs::OpenOptionsExt,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -21,6 +26,13 @@ const POSTS_PER_WINDOW: usize = 20;
 const WINDOW_MS: u64 = 10_000;
 /// A member that polled within this long counts as present.
 pub const PRESENT_MS: u64 = 8_000;
+/// How long a request id is remembered, and how many are, so a retried `say` is recognised.
+pub const REQUEST_TTL_MS: u64 = 3_600_000;
+const KEEP_REQUESTS: usize = 4096;
+/// Longest request id a member may send.
+pub const MAX_REQUEST_ID: usize = 64;
+/// The file is rewritten (items and live request ids only) once it holds this many lines.
+const COMPACT_AT: usize = KEPT * 4 + KEEP_REQUESTS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Item {
@@ -52,6 +64,20 @@ pub struct Feed {
     pub members: Vec<Presence>,
 }
 
+/// What a request id was used for: the item it produced and a hash of what was said, so the same id with other text is
+/// refused instead of silently answered with the first message's number.
+struct Request {
+    seq: u64,
+    hash: String,
+    at_ms: u64,
+}
+
+struct Store {
+    path: PathBuf,
+    file: File,
+    lines: usize,
+}
+
 #[derive(Default)]
 struct Inner {
     next: u64,
@@ -59,6 +85,10 @@ struct Inner {
     names: HashMap<String, String>,
     seen: HashMap<String, u64>,
     posts: HashMap<String, VecDeque<u64>>,
+    /// (member, request id) to the post it made.
+    requests: HashMap<(String, String), Request>,
+    request_order: VecDeque<(String, String)>,
+    store: Option<Store>,
 }
 
 #[derive(Default)]
@@ -104,7 +134,124 @@ impl Chat {
         while inner.items.len() > KEPT {
             inner.items.pop_front();
         }
+        if let Some(item) = inner.items.back().cloned() {
+            Self::persist(inner, &json!({ "t": "item", "item": item }));
+        }
         seq
+    }
+
+    /// Append one line to the store, and compact it when it has grown. A failure is reported on stderr and the feed carries
+    /// on in memory, the way a failed audit write does.
+    fn persist(inner: &mut Inner, line: &Value) {
+        let Some(store) = inner.store.as_mut() else { return };
+        let mut text = line.to_string();
+        text.push('\n');
+        if let Err(e) = store.file.write_all(text.as_bytes()) {
+            eprintln!("playbox: cannot write the chat log {}: {e}", store.path.display());
+            return;
+        }
+        store.lines += 1;
+        if store.lines > COMPACT_AT {
+            Self::compact(inner);
+        }
+    }
+
+    fn compact(inner: &mut Inner) {
+        let Some(store) = inner.store.as_ref() else { return };
+        let path = store.path.clone();
+        let mut body = String::new();
+        let mut lines = 0;
+        for item in &inner.items {
+            body.push_str(&json!({ "t": "item", "item": item }).to_string());
+            body.push('\n');
+            lines += 1;
+        }
+        for key in &inner.request_order {
+            if let Some(r) = inner.requests.get(key) {
+                body.push_str(&Self::request_line(key, r).to_string());
+                body.push('\n');
+                lines += 1;
+            }
+        }
+        let tmp = path.with_extension("tmp");
+        let written = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)
+            .and_then(|mut f| f.write_all(body.as_bytes()).and_then(|()| f.sync_all()))
+            .and_then(|()| std::fs::rename(&tmp, &path))
+            .and_then(|()| std::fs::OpenOptions::new().append(true).open(&path));
+        match written {
+            Ok(file) => inner.store = Some(Store { path, file, lines }),
+            Err(e) => eprintln!("playbox: cannot compact the chat log {}: {e}", path.display()),
+        }
+    }
+
+    fn request_line(key: &(String, String), r: &Request) -> Value {
+        json!({ "t": "req", "from": key.0, "id": key.1, "seq": r.seq, "hash": r.hash, "at_ms": r.at_ms })
+    }
+
+    /// Open the feed kept in `path`: what was said and done survives a host restart, and so do request ids, so a `say`
+    /// retried across the restart is still recognised. Lines that do not parse are skipped. If the file cannot be opened
+    /// for appending the feed runs in memory only, with a note on stderr.
+    #[must_use]
+    pub fn open(path: &Path) -> Self {
+        let chat = Self::new();
+        {
+            let mut g = chat.inner.lock().expect("chat lock");
+            let mut lines = 0usize;
+            if let Ok(data) = std::fs::read_to_string(path) {
+                let now = now_ms();
+                for l in data.lines() {
+                    lines += 1;
+                    let Ok(v) = serde_json::from_str::<Value>(l) else { continue };
+                    match v["t"].as_str() {
+                        Some("item") => {
+                            if let Ok(item) = serde_json::from_value::<Item>(v["item"].clone()) {
+                                g.next = g.next.max(item.seq);
+                                if let (true, Some(n)) = (item.kind == "say", &item.name) {
+                                    g.names.insert(item.from.clone(), n.clone());
+                                }
+                                g.items.push_back(item);
+                                while g.items.len() > KEPT {
+                                    g.items.pop_front();
+                                }
+                            }
+                        }
+                        Some("req") => {
+                            let (Some(from), Some(id), Some(seq), Some(hash), Some(at_ms)) = (
+                                v["from"].as_str(),
+                                v["id"].as_str(),
+                                v["seq"].as_u64(),
+                                v["hash"].as_str(),
+                                v["at_ms"].as_u64(),
+                            ) else {
+                                continue;
+                            };
+                            if now.saturating_sub(at_ms) <= REQUEST_TTL_MS {
+                                let key = (from.to_string(), id.to_string());
+                                if g.requests.insert(key.clone(), Request { seq, hash: hash.to_string(), at_ms }).is_none() {
+                                    g.request_order.push_back(key);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            match File::options().create(true).append(true).mode(0o600).open(path) {
+                Ok(file) => {
+                    g.store = Some(Store { path: path.to_path_buf(), file, lines });
+                    if lines > COMPACT_AT {
+                        Self::compact(&mut g);
+                    }
+                }
+                Err(e) => eprintln!("playbox: cannot keep the chat log {}: {e}", path.display()),
+            }
+        }
+        chat
     }
 
     /// A member (or `host`) says something. Refused when empty or when the sender is posting too fast.
@@ -113,6 +260,22 @@ impl Chat {
     ///
     /// Returns a message describing why the operation failed.
     pub fn say(&self, from: &str, name: Option<&str>, text: &str) -> Result<u64, String> {
+        self.say_once(from, name, text, None)
+    }
+
+    /// [`Chat::say`] that posts at most once per `request_id`. A second `say` from the same member with the same id and the
+    /// same text returns the first one's number and posts nothing (it does not count against the rate limit either); the
+    /// same id with other text is refused. This is what lets a sender retry after a lost reply without saying it twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message describing why the operation failed.
+    pub fn say_once(&self, from: &str, name: Option<&str>, text: &str, request_id: Option<&str>) -> Result<u64, String> {
+        if let Some(id) = request_id {
+            if id.is_empty() || id.len() > MAX_REQUEST_ID || !id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')) {
+                return Err(format!("a request id is 1 to {MAX_REQUEST_ID} letters, digits, - _ or ."));
+            }
+        }
         let text = clean(text, MAX_TEXT);
         if text.is_empty() {
             return Err("nothing to say".into());
@@ -120,6 +283,22 @@ impl Chat {
         let name = name.map(|n| clean(n, MAX_NAME)).filter(|n| !n.is_empty());
         let mut g = self.inner.lock().expect("chat lock");
         let now = now_ms();
+        let key = request_id.map(|id| (from.to_string(), id.to_string()));
+        let hash = blake3::hash(format!("{}\n{text}", name.as_deref().unwrap_or("")).as_bytes()).to_hex()[..32].to_string();
+        if let Some(key) = &key {
+            while g.request_order.front().is_some_and(|k| g.requests.get(k).is_none_or(|r| now.saturating_sub(r.at_ms) > REQUEST_TTL_MS)) {
+                if let Some(old) = g.request_order.pop_front() {
+                    g.requests.remove(&old);
+                }
+            }
+            if let Some(r) = g.requests.get(key) {
+                return if r.hash == hash {
+                    Ok(r.seq)
+                } else {
+                    Err("that request id was already used for a different message".into())
+                };
+            }
+        }
         let q = g.posts.entry(from.to_string()).or_default();
         while q
             .front()
@@ -139,7 +318,20 @@ impl Chat {
         }
         g.seen.insert(from.to_string(), now);
         let name = name.or_else(|| g.names.get(from).cloned());
-        Ok(Self::push(&mut g, "say", from, name, text))
+        let seq = Self::push(&mut g, "say", from, name, text);
+        if let Some(key) = key {
+            let r = Request { seq, hash, at_ms: now };
+            let line = Self::request_line(&key, &r);
+            g.request_order.push_back(key.clone());
+            g.requests.insert(key, r);
+            while g.request_order.len() > KEEP_REQUESTS {
+                if let Some(old) = g.request_order.pop_front() {
+                    g.requests.remove(&old);
+                }
+            }
+            Self::persist(&mut g, &line);
+        }
+        Ok(seq)
     }
 
     /// Something happened in the room. Only a short summary is kept, never arguments or reasons in full.
@@ -307,5 +499,111 @@ mod tests {
         let f = c.since(0, 10, &["alice".into(), "bob".into()]);
         assert!(f.members[0].present);
         assert!(!f.members[1].present);
+    }
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("playbox-chat-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.join("chat.jsonl")
+    }
+
+    #[test]
+    fn a_request_id_posts_once_and_the_same_id_with_other_text_is_refused() {
+        let c = Chat::new();
+        let first = c.say_once("alice", None, "hello", Some("r1")).unwrap();
+        assert_eq!(c.say_once("alice", None, "hello", Some("r1")).unwrap(), first);
+        assert_eq!(c.since(0, 100, &[]).items.iter().filter(|i| i.kind == "say").count(), 1);
+        assert!(c.say_once("alice", None, "something else", Some("r1")).unwrap_err().contains("different message"));
+        // Another member may use the same id, and a message without an id is never deduplicated.
+        let other = c.say_once("bob", None, "hello", Some("r1")).unwrap();
+        assert_ne!(other, first);
+        let a = c.say_once("alice", None, "hello", None).unwrap();
+        let b = c.say_once("alice", None, "hello", None).unwrap();
+        assert_ne!(a, b);
+        for bad in ["", "has space", "new\nline", &"x".repeat(MAX_REQUEST_ID + 1), "é"] {
+            assert!(c.say_once("alice", None, "hi", Some(bad)).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_retry_does_not_use_up_the_rate_limit() {
+        let c = Chat::new();
+        for i in 0..POSTS_PER_WINDOW {
+            c.say_once("alice", None, &format!("m{i}"), Some(&format!("r{i}"))).unwrap();
+        }
+        assert!(c.say_once("alice", None, "over", Some("new")).is_err(), "the window is full");
+        for i in 0..POSTS_PER_WINDOW {
+            assert!(c.say_once("alice", None, &format!("m{i}"), Some(&format!("r{i}"))).is_ok(), "a retry of r{i} is answered");
+        }
+    }
+
+    #[test]
+    fn the_feed_and_request_ids_survive_a_restart() {
+        let path = temp("restart");
+        let c = Chat::open(&path);
+        let seq = c.say_once("alice", Some("Alice"), "hello", Some("r1")).unwrap();
+        c.event("join", Some("bob"), &json!({}));
+        drop(c);
+        let c = Chat::open(&path);
+        let f = c.since(0, 100, &[]);
+        assert_eq!(f.items.len(), 2);
+        assert_eq!(f.items[0].text, "hello");
+        assert_eq!(f.items[0].name.as_deref(), Some("Alice"));
+        // The retry after the restart is recognised, and new posts continue the numbering.
+        assert_eq!(c.say_once("alice", Some("Alice"), "hello", Some("r1")).unwrap(), seq);
+        let next = c.say_once("alice", None, "again", Some("r2")).unwrap();
+        assert!(next > f.items[1].seq);
+        assert_eq!(c.since(0, 100, &[]).items.iter().filter(|i| i.kind == "say").count(), 2);
+        // A display name set earlier is remembered for later posts without one.
+        c.say("alice", None, "no name given").unwrap();
+        assert_eq!(c.since(0, 100, &[]).items.last().unwrap().name.as_deref(), Some("Alice"));
+    }
+
+    #[test]
+    fn a_damaged_log_is_read_as_far_as_it_goes_and_the_chat_keeps_working() {
+        let path = temp("damaged");
+        let c = Chat::open(&path);
+        c.say("alice", None, "kept").unwrap();
+        drop(c);
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str("not json\n{\"t\":\"item\",\"item\":5}\n{\"t\":\"req\"}\n\u{0}\n");
+        std::fs::write(&path, text).unwrap();
+        let c = Chat::open(&path);
+        assert_eq!(c.since(0, 100, &[]).items.len(), 1);
+        assert!(c.say("alice", None, "still works").is_ok());
+        // A path that cannot be opened gives an in-memory chat, not a panic.
+        let c = Chat::open(std::path::Path::new("/nonexistent-dir/chat.jsonl"));
+        assert!(c.say("alice", None, "memory only").is_ok());
+    }
+
+    #[test]
+    fn the_log_is_compacted_and_keeps_only_what_the_feed_keeps() {
+        let path = temp("compact");
+        let c = Chat::open(&path);
+        let n = COMPACT_AT + 50;
+        for i in 0..n {
+            // The rate limit is per window, so post as many different members as needed.
+            c.say_once(&format!("m{}", i % 1000), None, &format!("message {i}"), Some(&format!("r{i}"))).unwrap();
+        }
+        let lines = std::fs::read_to_string(&path).unwrap().lines().count();
+        assert!(lines < COMPACT_AT + 60, "{lines} lines");
+        drop(c);
+        let c = Chat::open(&path);
+        let (mut all, mut cursor) = (Vec::new(), 0);
+        loop {
+            let f = c.since(cursor, 500, &[]);
+            if f.items.is_empty() {
+                break;
+            }
+            cursor = f.next;
+            all.extend(f.items);
+        }
+        assert_eq!(all.len(), KEPT);
+        let last = all.last().unwrap();
+        assert!(last.text.ends_with(&format!("message {}", n - 1)), "{}", last.text);
+        // A recent id still deduplicates after compaction and reload.
+        let who = format!("m{}", (n - 1) % 1000);
+        assert_eq!(c.say_once(&who, None, &format!("message {}", n - 1), Some(&format!("r{}", n - 1))).unwrap(), last.seq);
     }
 }
