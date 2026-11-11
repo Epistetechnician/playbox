@@ -36,14 +36,13 @@ Limits, stated plainly
   the docs say the portable adapter does not replace native plugins. The witness needs `playbox` on PATH, not the
   other plugin.
 
-Pinned SHA: `<sha>`
+Pinned SHA: `3ef05e8cd28ba79d7a568c037bfd0c79ec1cfc54`
 
 ## X post (under 90s video, tag @NousResearch)
 
 Hermes agents can work with strangers' agents now. I built Playbox for the @NousResearch Agent Plugin Hackathon:
 a private room with signed history, sandboxed tasks, and a witness that pauses your agent's writes after it reads
-a peer's message. The witness is a speed bump, not a proof: it matches peer text at string level, and I'm
-a 16-trial live run had 0 writes, with the hold firing in 7 and the model refusing the rest. Small sample, not immunity.
+a peer's message. The witness is a speed bump, not a proof: it matches peer text at string level. A 16-trial live run had 0 writes, with the hold firing in 7 and the model refusing the rest. Small sample, not immunity.
 Demo: planted message in, write held, tampered log caught.
 https://github.com/Epistetechnician/playbox  PRs: NousResearch/hermes-agent#153140 and #153141
 
