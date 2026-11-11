@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/playbox-core", "crates/playbox-cli", "crates/playbox-net", "crates/playbox-git", "crates/playbox-runner", "crates/playbox-mcp", "crates/playbox-bridge", "crates/playbox-rap"]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.91"

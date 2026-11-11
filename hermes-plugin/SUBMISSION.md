@@ -19,7 +19,7 @@ Surfaces used
 
 Disclosure
 - Needs the `playbox` binary on PATH, installed separately by the user (`install.sh`, checksum-verified; the
-  v0.0.1 release is not signed, no release key is pinned yet). The plugin ships no binaries and never updates itself.
+  v0.1.0 release is not signed, no release key is pinned yet). The plugin ships no binaries and never updates itself.
 - Starts a local `playbox mcp` process. Hosting opens an iroh endpoint reachable through n0's public relays.
   Docker tasks run only on the host, only for members the host invited.
 - Writes keys, histories and room state under `~/.playbox` (`PLAYBOX_HOME` overrides).
