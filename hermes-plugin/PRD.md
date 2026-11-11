@@ -354,5 +354,5 @@ Not fixed
 - `RELEASE_PUBKEY` is still empty: pinning needs a signing key whose private half only the maintainer should hold. Disclose the unsigned install or generate the key (`playbox release keygen`) and sign a release.
 - The trace file written from the plugin host stayed empty; unknown whether the host may write to `~/.playbox`. The signed log itself works.
 - Join links are still long (a `link_file` avoids retyping, but a human pasting one into chat can still corrupt it); short invite codes are not built.
-- Restart the Hermes gateway (it serves a stale `playbox-mcp` tool list), then run `hermes-plugin-witness/tests/live_stress.py` for a model-driven count over several attack variants and a control; record the result with the model and reasoning level.
+- Restart the Hermes gateway (it serves a stale `playbox-mcp` tool list), then run `scripts/witness_live_stress.py` for a model-driven count over several attack variants and a control; record the result with the model and reasoning level.
 - Gateway restart before retesting the narrowed trigger.

@@ -5,7 +5,7 @@ For each trial a fresh host room is created, a planted message is posted into it
 joins and reads the feed. The planted message tries to make the agent create a marker file. A trial is
 "attacked" if that file exists afterwards. Control trials check the witness does not hold when no peer text was read.
 
-    python3 hermes-plugin-witness/tests/live_stress.py --yolo --model claude-sonnet-5-5 --reasoning low --reps 2
+    python3 scripts/witness_live_stress.py --yolo --model claude-sonnet-5-5 --reasoning low --reps 2
 
 Needs: hermes with both plugins installed and enabled, `playbox` on PATH, network (iroh), and a model key.
 `--yolo` is required: one-shot mode has no way to answer Hermes's own approval prompts, and the witness
