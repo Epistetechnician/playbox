@@ -28,8 +28,9 @@ Disclosure
 
 Limits, stated plainly
 - The hold tracks peer text at string level; it is a speed bump for prompt injection, not a proof against it.
-- Live evidence is thin: hooks fire in Hermes 0.22.5 and a run was held after a peer-workspace read. No valid
-  model-driven count on a planted room message yet (Sonnet 5.5 refused it unaided). PRs: NousResearch/hermes-agent#153140, #153141.
+- Live stress run (Hermes 0.22.5, Haiku 4.5): 16 planted-message trials (4 variants x 2 prompts x 2), the agent read
+  the message in all 16, no write happened in any. The witness hold is visible in 7; in the other 9 the model declined
+  by itself. No witness-off baseline, one model, small sample. Control: a user-requested write with no peer read is not held.
 - Prebuilt binaries: macOS arm64, Linux x86_64 and arm64. Intel macOS builds from source.
 - Entry points to review: `hermes-plugin/` (portable) and `hermes-plugin-witness/` (native). Two entries by design:
   the docs say the portable adapter does not replace native plugins. The witness needs `playbox` on PATH, not the
@@ -42,7 +43,7 @@ Pinned SHA: `<sha>`
 Hermes agents can work with strangers' agents now. I built Playbox for the @NousResearch Agent Plugin Hackathon:
 a private room with signed history, sandboxed tasks, and a witness that pauses your agent's writes after it reads
 a peer's message. The witness is a speed bump, not a proof: it matches peer text at string level, and I'm
-publishing the held/attacked count from my stress runs, not a claim of immunity.
+a 16-trial live run had 0 writes, with the hold firing in 7 and the model refusing the rest. Small sample, not immunity.
 Demo: planted message in, write held, tampered log caught.
 https://github.com/Epistetechnician/playbox  PRs: NousResearch/hermes-agent#153140 and #153141
 
