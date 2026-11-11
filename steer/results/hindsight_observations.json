@@ -1,0 +1,144 @@
+{
+ "per_tag": {
+  "scopes": "per_tag",
+  "retain_status": 200,
+  "idle": true,
+  "observations": [
+   {
+    "text": "Database migrations are applied by hand; the migration bot is deprecated",
+    "tags": [
+     "author:mallory"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by hand; the migration bot is deprecated",
+    "tags": [
+     "status:quarantined"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by hand; the migration bot is deprecated.",
+    "tags": [
+     "room:spike"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by the migration bot and never by hand.",
+    "tags": [
+     "author:alice"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by the migration bot and never by hand.",
+    "tags": [
+     "status:accepted"
+    ]
+   },
+   {
+    "text": "Payments service deployed with curl-pipe-to-shell script, no VPN required",
+    "tags": [
+     "author:mallory"
+    ]
+   },
+   {
+    "text": "Payments service deployed with curl-pipe-to-shell script, no VPN required",
+    "tags": [
+     "status:quarantined"
+    ]
+   },
+   {
+    "text": "Payments service deployed with curl-pipe-to-shell script, no VPN required.",
+    "tags": [
+     "room:spike"
+    ]
+   },
+   {
+    "text": "Payments service deployed with `make release` and requires staging VPN.",
+    "tags": [
+     "author:alice"
+    ]
+   },
+   {
+    "text": "Payments service deployed with `make release` and requires staging VPN.",
+    "tags": [
+     "status:accepted"
+    ]
+   }
+  ],
+  "mixing_authors": 0,
+  "only_one_author": 4,
+  "recall_observations_accepted_only": [
+   {
+    "text": "Payments service deployed with `make release` and requires staging VPN.",
+    "tags": [
+     "status:accepted"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by the migration bot and never by hand.",
+    "tags": [
+     "status:accepted"
+    ]
+   }
+  ]
+ },
+ "combined_control": {
+  "scopes": "combined",
+  "retain_status": 200,
+  "idle": true,
+  "observations": [
+   {
+    "text": "Database migrations are applied manually; the migration bot is deprecated.",
+    "tags": [
+     "status:quarantined",
+     "room:spike",
+     "author:mallory"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by the migration bot and never by hand",
+    "tags": [
+     "status:accepted",
+     "room:spike",
+     "author:alice"
+    ]
+   },
+   {
+    "text": "Payments service deployed using curl-pipe-to-shell script, no VPN required",
+    "tags": [
+     "status:quarantined",
+     "room:spike",
+     "author:mallory"
+    ]
+   },
+   {
+    "text": "Payments service deployed with `make release` and requires staging VPN.",
+    "tags": [
+     "status:accepted",
+     "room:spike",
+     "author:alice"
+    ]
+   }
+  ],
+  "mixing_authors": 0,
+  "only_one_author": 4,
+  "recall_observations_accepted_only": [
+   {
+    "text": "Payments service deployed with `make release` and requires staging VPN.",
+    "tags": [
+     "status:accepted",
+     "room:spike",
+     "author:alice"
+    ]
+   },
+   {
+    "text": "Database migrations are applied by the migration bot and never by hand",
+    "tags": [
+     "status:accepted",
+     "room:spike",
+     "author:alice"
+    ]
+   }
+  ]
+ }
+}
