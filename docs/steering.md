@@ -1044,7 +1044,7 @@ Same protocol and agents (Hermes with a Qwen3.8-27B-FP8 brain on the node, harne
 
 - Topics, 20 topics x 2 reps x 2 directions: 76/80 = 95% (95% CI 87.8 to 98.0), chance 4.8%. olmo2 to qwen8b 39/40, qwen8b to olmo2 37/40. Misses: space to earthquake, earthquake to ocean, earthquake to volcano, soccer to none. For comparison the small pair ungated got 22/40 = 55%.
 - Held-out controls (18 per direction, same file as the small pair), ungated: 24/36 answered none; false-positive rate 12/36 = 33% (small pair ungated: 13/36 = 36%). Leaks include "dentist visits" (medicine) in both directions.
-- Reading: a larger pair roughly doubles topic accuracy at the same channel, but the false-positive problem does not shrink with scale; it needs the gate, which needs a probe calibrated per sender (not done for this pair). The 5-topic first pass gave 19/20 and used a different topic set, so it is not comparable.
+- Reading: the false-positive problem does not shrink with a larger pair; it needs the gate, which needs a probe calibrated per sender (done below). The 55% for the small pair is the local Haiku-agent run and is not a fair baseline for the H100 stack (see the comparison under "Larger pair, gated"). The 5-topic first pass gave 19/20 and used a different topic set, so it is not comparable.
 
 Cost: node `playbox-e6-cuda` ran 55 minutes (about 4.6 USD) and was stopped right after the results were copied back. Files: `results/telepathy/big_pair_private/` (5 topics + controls), `results/telepathy/big_pair20_private/` (20 topics).
 
@@ -1057,3 +1057,14 @@ Live eval (20 topics x 2 reps x 2 directions, plus the 36 held-out controls the 
 Ungated to gated on the larger pair: topics 95% to 86%, false positives 33% to 0%. The control set is the same held-out file as before, but the probe's own filler and off-list calibration subjects (FIT lists) are disjoint from it. One seed; the loss is concentrated in the qwen8b to olmo2 direction, which was already the weaker one ungated (37/40).
 
 Cost: the node ran about 1 hour 10 minutes for calibration plus eval (about 6 USD) and was stopped at the end.
+
+#### Larger pair, second seed and the fair baseline
+
+Second independent runs on the same node and stack (`big_pair_gated_s2`: 20 topics x 2 reps x 2 directions plus the 36 held-out controls; `big_pair_ungated_s2`: topics only). 0 infra failures in both.
+
+- Gated, seed 2: topics 71/80 = 88.8% (CI 80 to 94), controls 35/36 (1 false positive: "cats" read as medicine). Pooled gated: topics 140/160 = 87.5% (CI 81 to 92), 1 false positive in 72 controls.
+- Ungated, seed 2: topics 72/80 = 90.0% (CI 81 to 95). Pooled ungated: 148/160 = 92.5%. The gate costs 5 points on topics pooled, and the cost is in one direction: Qwen3-8B to OLMo-2-7B 72/80 = 90% ungated, 62/80 = 78% gated (one-sided exact p = 0.026); OLMo-2-7B to Qwen3-8B 76/80 to 78/80 (no cost).
+- Fair baseline: the small pair on the same H100 stack (Qwen3.8-27B brain, probe gate recipe, fresh controls) scored 65/80 = 81.3% topics, 35/36 controls (`probe_eval`). The larger pair gated is +6.2 points (87.5% against 81.3%, one-sided exact p = 0.14): suggestive, not established. The earlier "55% to 95%" contrast mixed the local Haiku-agent run with the H100 Qwen-brain run and is not a scaling effect.
+- Seed-to-seed spread for the same arm is up to 5 points (ungated 95% then 90%), so single-run differences of that size should not be read.
+
+Cost: node `playbox-e6-cuda` about 46 minutes (about 4 USD), stopped at the end. Report regenerated with `steer/tools/telepathy_report.py` (`results/telepathy/swarm_telepathy_report.pdf`), numbers computed from the result files.
