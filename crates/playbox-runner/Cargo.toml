@@ -12,6 +12,11 @@ serde = { version = "1", features = ["derive"] }
 playbox-core = { path = "../playbox-core" }
 blake3 = "1"
 
+# Confinement of the helper process (namespaces, cgroups). Linux only: macOS has no equivalent, and says so in docs/libkrun.md.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1", features = ["fs", "mount", "pipe", "process", "thread", "std"] }
+libc = "0.2"
+
 [dev-dependencies]
 blake3 = "1"
 tokio = { version = "1", features = ["macros", "rt"] }
@@ -24,3 +29,8 @@ krun = []
 name = "playbox-krun-helper"
 path = "src/bin/playbox-krun-helper.rs"
 required-features = ["krun"]
+
+# Confinement tests fork and unshare, so they need the main thread to themselves: they bring their own `main`.
+[[test]]
+name = "confine"
+harness = false

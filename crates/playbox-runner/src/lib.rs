@@ -10,6 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::{os::unix::fs::MetadataExt, path::Path, process::Stdio, time::Duration};
 use tokio::{io::AsyncReadExt, process::Command};
 
+#[cfg(target_os = "linux")]
+pub mod cgroup;
+#[cfg(target_os = "linux")]
+pub mod jail;
+pub mod netpolicy;
 pub mod workspace;
 
 /// How strongly a backend separates a task from the host. Ordered: a host can demand a minimum

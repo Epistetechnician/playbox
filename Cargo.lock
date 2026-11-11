@@ -3637,7 +3637,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "blake3",
+ "libc",
  "playbox-core",
+ "rustix",
  "serde",
  "tokio",
 ]

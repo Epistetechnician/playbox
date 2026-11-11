@@ -45,6 +45,27 @@ jobs:
         # judge/tests/test_measures.py and test_fear.py load real Hugging Face classifiers and a language model; on a 2-core runner it
         # was killed after ~20 minutes. It runs locally (`cd judge && uv run --group dev pytest -q`), not here.
         run: uv run --group dev pytest -q ${{ matrix.project == 'judge' && '--ignore=tests/test_measures.py --ignore=tests/test_fear.py' || '' }}
+  confine:
+    # Linux confinement of the libkrun helper (crates/playbox-runner: jail, cgroup, network filter). It needs what a macOS runner and
+    # Docker Desktop's kernel lack: cgroup v2 as root, user namespaces, and nftables with cgroup matching. Skips fail here.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y nftables
+      - run: cargo test -p playbox-runner --lib netpolicy
+      - run: cargo test -p playbox-runner --test confine --no-run
+      - name: as root (jail, cgroup limits, network filter)
+        run: |
+          BIN=$(ls -t target/debug/deps/confine-* | grep -v '\.d$' | head -1)
+          sudo env PLAYBOX_CONFINE_REQUIRE_ALL=1 PLAYBOX_TEST_CGROUP_BASE=/ "$BIN"
+      - name: rootless (jail only)
+        run: |
+          BIN=$(ls -t target/debug/deps/confine-* | grep -v '\.d$' | head -1)
+          PLAYBOX_CONFINE_REQUIRE_ALL=1 PLAYBOX_CONFINE_ONLY=jail "$BIN"
   ui:
     # The cockpit's end-to-end check: two UI servers (host and guest) driven over HTTP like the browser does, each with a real
     # playbox-mcp sidecar. A separate job so a failure here does not hide the results of the others.

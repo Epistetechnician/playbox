@@ -47,6 +47,29 @@ copy (`PLAYBOX_KRUN_HELPER`, `~/.cargo/bin`, PATH) over a freshly built one besi
 | Guest user | root inside the VM. Files it writes to `/workspace` appear on the host owned by the host user. |
 | Output | Capped at 64 KiB per stream, like the other runners. |
 
+## Linux confinement (built, not yet used by the helper)
+
+`crates/playbox-runner` now has the pieces that close the gaps in the table above on Linux, taken from the approach of Peerspan's
+runtime (`peerspan/runtime`, Apache-2.0; see `docs/peerspan-integration.md`). They are tested and **not yet called by
+`playbox-krun-helper`**, so a libkrun task still runs unconfined; wiring them in needs a Linux/KVM host with libkrun, which this
+project has not had.
+
+- `jail` (Linux): moves a process into new mount, PID, IPC and UTS namespaces (and net, unless the guest keeps a network) and pivots
+  into a tmpfs root holding only the paths listed, with `no_new_privs` and a non-dumpable process. Works without root through a user
+  namespace. Tested as root and as an ordinary user: the jailed process cannot read a host file outside its binds, cannot write a
+  read-only bind, cannot reach the host's loopback, is PID 1 of its namespace and sees no other process.
+- `cgroup` (Linux): a cgroup v2 per run capping memory (guest RAM + 256 MiB), 512 processes, CPU and swap off; `kill_all` on drop;
+  a flock-based way to find cgroups a dead supervisor left behind. Tested as root: limits written, a process moved in dies with the
+  cgroup, stale detection.
+- `netpolicy` (portable): network levels `none`, `internet`, `internet+lan`; the always-rejected ranges (loopback, link-local
+  including the metadata service 169.254.169.254, multicast, reserved, IPv4-mapped and NAT64 aliases of those); and the nftables
+  rules per run, with destinations pinned to resolved addresses and a fail-closed base table. The classification and rule text are
+  unit-tested; **the rules have not been loaded into a kernel** (Docker Desktop's kernel has no `nft_socket`). The CI job `confine`
+  runs that end to end on an Ubuntu runner and fails rather than skips there.
+
+Not built: the seccomp allow-list for the VMM (it has to be measured against the libkrun in use), disk I/O limits, `/run/secrets`
+injection, passt as the network path (it replaces TSI), and recording these settings in the attestation measurements.
+
 ## What it does not do yet
 
 - Tested on macOS (Apple Silicon, macOS 26, libkrun 1.19.7) only. The code builds for Linux/KVM but has not run there.
