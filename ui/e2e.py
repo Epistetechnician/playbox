@@ -56,6 +56,16 @@ def docker_ok():
         return False
 
 
+def load_recipes():
+    """The one-tap recipes defined in the page, evaluated with node. None if node is missing."""
+    if not shutil.which("node"):
+        return None
+    page = open(os.path.join(HERE, "static", "index.html")).read()
+    block = page[page.index("const NO_GIT"):page.index("const QUICK")]
+    r = subprocess.run(["node", "-e", block + "\nconsole.log(JSON.stringify(RECIPES))"], capture_output=True, text=True, timeout=20)
+    return json.loads(r.stdout) if r.returncode == 0 else None
+
+
 def main():
     work = tempfile.mkdtemp(prefix="pbui-")
     repo = os.path.join(work, "repo")
@@ -63,6 +73,11 @@ def main():
     g = lambda *a: subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", *a], cwd=repo, check=True, capture_output=True)
     g("init", "-q", "-b", "main")
     open(os.path.join(repo, "hello.txt"), "w").write("hi\n")
+    open(os.path.join(repo, "notes.py"), "w").write("# TODO: tidy this up\nprint('x')\n")
+    open(os.path.join(repo, "leak.txt"), "w").write("key = AKIA" + "ABCDEFGHIJKLMNOP\n")   # split so this file is not itself a hit
+    open(os.path.join(repo, "good.sh"), "w").write("echo fine\n")
+    open(os.path.join(repo, "bad.sh"), "w").write("if then fi done\n")
+    open(os.path.join(repo, "package.json"), "w").write("{}\n")
     g("add", "."), g("commit", "-qm", "init")
     host, guest = UI(17731, work + "/host"), UI(17732, work + "/guest")
     try:
@@ -113,6 +128,17 @@ def main():
             err, run = guest.tool("playbox_delegate", base="main", command="cat hello.txt && echo more > new.txt", apply=True)
             check("task runs in the sandbox", not err and run["exit_code"] == 0 and run["stdout"] == "hi\n" and run["patch_applied"], run)
             check("patch came back", "new.txt" in run.get("patch", ""))
+            recipes = load_recipes()
+            check("recipes load from the page", bool(recipes) and len(recipes) >= 6, recipes)
+            for rc in recipes or []:
+                err, out = guest.tool("playbox_delegate", base="main", command=rc["cmd"], apply=False, timeout_secs=120)
+                check(f"recipe runs: {rc['t']}", not err and out.get("exit_code") == 0 and bool(out.get("stdout", "").strip()), out)
+                want = {"Find TODOs": "notes.py", "Look for leaked secrets": "leak.txt", "Largest files": "notes.py",
+                        "File types": "sh", "Check shell scripts": "FAIL ./bad.sh",
+                        "Run the tests": "npm is not in the host's task image"}.get(rc["t"])
+                if want:
+                    check(f"recipe finds the planted content: {rc['t']}", want in out.get("stdout", ""), out.get("stdout"))
+                check(f"recipe applies nothing: {rc['t']}", not out.get("patch_applied") and not out.get("patch"), out)
         else:
             print("SKIP task step (Docker not answering)")
 

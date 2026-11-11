@@ -15,7 +15,7 @@ Needs `playbox` (or `playbox-mcp`) on PATH, or `PLAYBOX_MCP=/path`. Stdlib Pytho
 |---|---|
 | Room | Host a room (repo, same network or anywhere, optional Docker tasks), make single-use invite links (copy, share, save as file), or join one. Leave. |
 | Feed | Live room feed and composer. Text from other parties is marked `member`/`host` with an amber stripe: it is untrusted. |
-| Work | Pull and push a branch; run a command in the host's sandbox; read output and the diff; apply the patch to your folder. |
+| Work | Pull and push a branch; six one-tap read-only checks (tests, TODOs, leaked secrets, largest files, file types, shell syntax); run any command in the host's sandbox; read output and the diff; apply the patch to your folder. |
 | People | Host only: members, revoke with confirmation. |
 | Proof | Verify your signed history log, or any log (e.g. the Hermes witness log). |
 

@@ -87,6 +87,18 @@ main{min-width:0;padding:0 16px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 .hero p{margin:8px auto 0;max-width:34rem;color:var(--mut)}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .grow{flex:1 1 0;min-width:0}
+.recipes{display:grid;gap:10px}
+@media (min-width:640px){.recipes{grid-template-columns:1fr 1fr}}
+.recipe{display:block;width:100%;text-align:left;background:var(--card-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--ink);cursor:pointer;min-height:44px;font:inherit}
+.recipe:hover{border-color:var(--gold)}
+.recipe b{display:block;font-weight:600;margin-bottom:2px}
+.recipe span{color:var(--mut);font-size:13px}
+.quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.quick button{background:var(--card-2);border:1px solid var(--line);border-radius:999px;color:var(--ink);padding:8px 14px;cursor:pointer;min-height:40px;font:inherit;font-size:14px}
+.quick button:hover{border-color:var(--gold)}
+.preset{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+.preset button{background:var(--card-2);border:1px solid var(--line);border-radius:999px;color:var(--ink);padding:8px 14px;cursor:pointer;min-height:40px;font:inherit;font-size:14px}
+.preset button:hover{border-color:var(--gold)}
 .grid2{display:grid;gap:14px}
 @media (min-width:640px){.grid2{grid-template-columns:1fr 1fr}}
 .stat{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
@@ -238,6 +250,25 @@ function paintNav() {
   $("#railnav").innerHTML = html;
 }
 
+
+/* ---------- built-in use cases ---------- */
+const NO_GIT = '-path ./.git -prune -o';
+const NEED = (tool, why) => `command -v ${tool} >/dev/null 2>&1 || { echo "${tool} is not in the host's task image (${why}). Ask the host to allow an image that has it."; exit 0; }`;
+const RECIPES = [
+  {t: "Run the tests", d: "npm, cargo, pytest or go, if the host's image has it.", cmd: `if [ -f package.json ]; then ${NEED("npm", "node project")}; npm test --silent; elif [ -f Cargo.toml ]; then ${NEED("cargo", "rust project")}; cargo test --quiet; elif [ -f pyproject.toml ] || [ -f setup.py ] || [ -f requirements.txt ]; then ${NEED("python3", "python project")}; python3 -m pytest -q; elif [ -f go.mod ]; then ${NEED("go", "go project")}; go test ./...; else echo "No package.json, Cargo.toml, Python or go.mod project file found."; fi`},
+  {t: "Find TODOs", d: "Leftover TODO and FIXME notes, first 60 lines.", cmd: `grep -rIn -E "TODO|FIXME" . 2>/dev/null | grep -v '^\\./\\.git/' | head -n 60; echo "TODO scan finished"`},
+  {t: "Look for leaked secrets", d: "Cloud keys, private keys and tokens in any file.", cmd: `grep -rIEn "AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{24,}" . 2>/dev/null | grep -v '^\\./\\.git/' | cut -c1-140 | head -n 20; echo "secret scan finished"`},
+  {t: "Largest files", d: "The 12 biggest files, in bytes.", cmd: `find . ${NO_GIT} -type f -exec wc -c {} + | sort -rn | head -n 13`},
+  {t: "File types", d: "How many files of each extension.", cmd: `find . ${NO_GIT} -type f -print | sed -n 's/.*\\.//p' | sort | uniq -c | sort -rn | head -n 12; echo; echo "files: $(find . ${NO_GIT} -type f -print | wc -l)"`},
+  {t: "Check shell scripts", d: "Syntax-check every .sh file with sh -n.", cmd: `n=0; for f in $(find . ${NO_GIT} -name '*.sh' -type f -print); do n=$((n+1)); if sh -n "$f"; then echo "ok   $f"; else echo "FAIL $f"; fi; done; echo "$n script(s) checked"`},
+];
+const QUICK = ["On it", "Pushed my branch, ready for review", "Tests pass on the host", "Blocked, need input", "Looks good to me"];
+const PRESETS = [
+  {t: "Pair on my network", reach: "local", docker: false},
+  {t: "Open lab (anywhere + tasks)", reach: "iroh", docker: true},
+  {t: "Review room (anywhere, read only)", reach: "iroh", docker: false},
+];
+
 /* ---------- views ---------- */
 const VIEWS = {
   room() {
@@ -248,6 +279,7 @@ const VIEWS = {
         <p>A private room where your agent and other people's agents build together, under limits you set, with a record nobody can quietly edit.</p></div>
       <div class="grid2">
         <div class="card"><h2>Host a room</h2>
+          <div class="preset" role="group" aria-label="Presets">${PRESETS.map((x, i) => `<button type="button" data-act="preset" data-i="${i}">${esc(x.t)}</button>`).join("")}</div>
           <label for="repo">Git repository (absolute path)</label>
           <input type="text" id="repo" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
           <label>Reach</label>
@@ -296,6 +328,7 @@ const VIEWS = {
   feed() {
     if (mode() === "none") return emptyCard("Join or host a room to see its feed.");
     return `<div class="feed" id="feedlist"></div>
+      <div class="quick" role="group" aria-label="Quick replies">${QUICK.map(q => `<button type="button" data-act="quick" data-text="${esc(q)}">${esc(q)}</button>`).join("")}</div>
       <form class="composer" id="say" autocomplete="off"><label class="sr" for="saytext">Message</label>
         <input type="text" id="saytext" placeholder="Say something to the room" maxlength="2000"><button class="btn primary" type="submit">Send</button></form>`;
   },
@@ -310,6 +343,9 @@ const VIEWS = {
         <label class="switch"><input type="checkbox" id="checkout" checked><span>Check it out in my folder</span></label>
         <p class="row" style="margin:14px 0 0"><button class="btn" data-act="pull">Pull</button><button class="btn" data-act="push">Push my branch</button></p>
         <p class="mut" style="font-size:13px;margin:12px 0 0">Pushes land under your own name. They never replace the host's main.</p></div>
+      <div class="card"><h2>One-tap checks</h2>
+        <p class="mut" style="margin:0 0 12px">Read-only recipes that run in the host's sandbox. Nothing is applied to your folder.</p>
+        <div class="recipes">${RECIPES.map((x, i) => `<button type="button" class="recipe" data-act="recipe" data-i="${i}"><b>${esc(x.t)}</b><span>${esc(x.d)}</span></button>`).join("")}</div></div>
       <div class="card"><h2>Run a task on the host</h2>
         <label for="base">Against branch or commit</label><input type="text" id="base" value="main" class="mono" autocapitalize="off" spellcheck="false">
         <label for="cmd">Command</label><textarea id="cmd" class="mono" placeholder="npm test" spellcheck="false" autocapitalize="off"></textarea>
@@ -511,6 +547,25 @@ async function act(name, btn) {
       S.verify = r.error ? {valid: false, error: msgOf(r.data)} : r.data;
       $("#vres").innerHTML = renderVerify(S.verify);
       paintPulse();
+      break;
+    }
+    case "preset": {
+      const x = PRESETS[+btn.dataset.i];
+      document.querySelectorAll("[data-reach]").forEach(b => b.setAttribute("aria-pressed", b.dataset.reach === x.reach));
+      $("#docker").checked = x.docker;
+      toast(x.t + ": set. Add a repository path and create.");
+      break;
+    }
+    case "recipe": {
+      const x = RECIPES[+btn.dataset.i];
+      $("#cmd").value = x.cmd; $("#apply").checked = false; $("#net").checked = false; $("#tmo").value = 180;
+      act("run", $("#runbtn"));
+      break;
+    }
+    case "quick": {
+      const r = await api("playbox_say", {text: btn.dataset.text});
+      if (r.error) return toast(msgOf(r.data), true);
+      pollFeed();
       break;
     }
     case "copy-invite": copyText(S.invite); break;
