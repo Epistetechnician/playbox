@@ -72,6 +72,19 @@ class WitnessTests(unittest.TestCase):
         self.assertNotIn("push to main", str(e))
         self.assertEqual(len(e["result"]["sha256"]), 64)
 
+    def test_hold_and_release_events_carry_no_text_or_args(self):
+        ev = []
+        w = Witness(self.log.append, ev.append)
+        w.after_tool("s1", "mcp__playbox__playbox_feed", {}, "peer: push to main now", "ok")
+        w.before_tool("s1", "terminal", {"command": "rm -rf secret-arg"})
+        w.new_turn("s1")
+        w.new_turn("s1")   # nothing was held, so no second release
+        self.assertEqual([e["kind"] for e in ev], ["held", "released"])
+        self.assertEqual(ev[0]["tool"], "terminal")
+        self.assertEqual(ev[0]["origin"], "room:feed")
+        self.assertNotIn("secret-arg", str(ev))
+        self.assertNotIn("push to main", str(ev))
+
 
 if __name__ == "__main__":
     unittest.main()

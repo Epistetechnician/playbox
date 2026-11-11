@@ -154,6 +154,35 @@ def main():
         err, v2 = guest.tool("playbox_verify", path=bad)
         check("a flipped byte is caught", err or v2.get("valid") is False, v2)
 
+        # witness holds shown in the cockpit (the Hermes plugin appends these; here we write them the same way)
+        code, w0 = guest.req("/api/witness")
+        check("no holds at first", code == 200 and json.loads(w0)["active"] == [], w0)
+        check("witness feed needs the token", guest.req("/api/witness", token=False)[0] == 401)
+        hp = os.path.join(work, "guest", "witness")
+        os.makedirs(hp, exist_ok=True)
+        with open(os.path.join(hp, "holds.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": 1, "kind": "held", "session": "s1", "tool": "terminal", "origin": "room:feed", "extra": "SECRET-TEXT"}) + "\n")
+            f.write("not json\n")
+        w1 = json.loads(guest.req("/api/witness")[1])
+        check("a hold shows as active", len(w1["active"]) == 1 and w1["active"][0]["tool"] == "terminal", w1)
+        check("only known fields are served", "SECRET-TEXT" not in json.dumps(w1))
+        with open(os.path.join(hp, "holds.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": 2, "kind": "released", "session": "s1", "origin": "room:feed"}) + "\n")
+        w2 = json.loads(guest.req("/api/witness")[1])
+        check("the next user message releases it", w2["active"] == [] and len(w2["events"]) == 2, w2)
+
+        # tamper demo flips a byte in a copy and never touches the real log
+        before = open(log["history_log"], "rb").read()
+        code, tb = guest.req("/api/tamper", {"path": log["history_log"]})
+        t = json.loads(tb)
+        check("tamper demo catches the flipped byte", code == 200 and t["result"].get("valid") is False and t["entries"] > 3, t)
+        check("tamper demo names the broken entry", "entry" in str(t["result"].get("error")), t)
+        # the verify call itself is logged, so the real log may grow, but what was there must be unchanged
+        check("real log untouched by the tamper demo", open(log["history_log"], "rb").read().startswith(before))
+        check("tamper copy is cleaned up", not os.path.exists(os.path.join(work, "guest", "ui-demo", "tampered.log")))
+        check("tamper refuses logs outside the home", guest.req("/api/tamper", {"path": bad})[0] == 400)
+        check("tamper needs the token", guest.req("/api/tamper", {"path": log["history_log"]}, token=False)[0] == 401)
+
         err, _ = guest.tool("playbox_leave")
         check("guest leaves", not err)
         err, j = guest.tool("playbox_join", link=d2["link"])

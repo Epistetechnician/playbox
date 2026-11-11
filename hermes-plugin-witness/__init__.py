@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from .witness import Witness
@@ -18,8 +19,21 @@ def _record(entry):
         pass  # recording must never break the agent; `playbox verify` shows any gap
 
 
+def _event(e):
+    """Append a hold or release to <home>/witness/holds.jsonl so the Playbox cockpit can show it. Tool name,
+    origin label and session id only: no arguments, no peer text. Best effort, never raises."""
+    try:
+        home = Path(os.environ.get("PLAYBOX_HOME") or Path.home() / ".playbox")
+        d = home / "witness"
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with open(d / "holds.jsonl", "a") as f:
+            f.write(json.dumps({"ts": int(time.time() * 1000), **e}) + "\n")
+    except OSError:
+        pass
+
+
 def register(ctx):
-    w = Witness(_record)
+    w = Witness(_record, _event)
 
     def pre_llm_call(**kw):
         w.new_turn(kw.get("session_id"))

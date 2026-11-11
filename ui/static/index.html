@@ -162,6 +162,56 @@ dialog::backdrop{background:rgba(5,5,15,.65)}
 .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:var(--ink);animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* polish */
+:root{--shadow:0 1px 0 rgba(255,255,255,.07) inset,0 10px 30px rgba(4,4,18,.35);--gold-2:#f6dc95;--warn-bg:linear-gradient(135deg,rgba(232,200,114,.2),rgba(232,200,114,.06))}
+body{background-image:radial-gradient(900px 520px at 50% -140px,rgba(120,120,255,.22),transparent 70%),radial-gradient(700px 400px at 100% 100%,rgba(232,200,114,.07),transparent 70%)}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035));box-shadow:var(--shadow);border-radius:14px}
+.card h2{display:flex;align-items:center;gap:8px}
+.hero{padding:38px 20px 34px;background:radial-gradient(420px 220px at 50% 0,rgba(232,200,114,.14),transparent 70%),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035))}
+.hero .glyph{font-size:64px;text-shadow:0 0 34px rgba(232,200,114,.55);animation:float 5s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-4px)}}
+.btn{transition:transform .12s,background .15s,border-color .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:none}
+.btn.primary{background:linear-gradient(180deg,#fff,#dcdcee);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.btn.gold{background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#1a1a2e;border-color:var(--gold);box-shadow:0 6px 20px rgba(232,200,114,.25)}
+.btn.gold:hover{background:linear-gradient(180deg,#fff0c0,var(--gold-2))}
+.nav{transition:color .15s}
+.nav[aria-current=page]::after{content:"";position:absolute;top:0;left:30%;right:30%;height:2px;border-radius:2px;background:var(--gold);box-shadow:0 0 10px var(--gold)}
+.rail .nav[aria-current=page]::after{top:20%;bottom:20%;left:0;right:auto;width:2px;height:auto}
+.msg{box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.msg.me{background:linear-gradient(135deg,rgba(170,180,255,.2),rgba(170,180,255,.08))}
+.msg.peer{border-left:3px solid var(--warn);background:var(--warn-bg);border-color:rgba(232,200,114,.28)}
+.msg.peer .who::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin:0 0 4px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.toast{background:linear-gradient(180deg,#34346a,#2b2b55)}
+
+/* witness hold banner */
+.hold{display:none;position:relative;gap:14px;align-items:flex-start;margin:4px 0 14px;padding:14px 16px;border-radius:14px;
+  background:var(--warn-bg),var(--bg-2);border:1px solid rgba(232,200,114,.5);box-shadow:0 0 0 0 rgba(232,200,114,.4),var(--shadow)}
+.hold.on{display:flex;animation:in .25s ease-out,ring 2.4s ease-out 2}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(232,200,114,.5),var(--shadow)}100%{box-shadow:0 0 0 16px rgba(232,200,114,0),var(--shadow)}}
+.hold svg{width:30px;height:30px;flex:none;stroke:var(--gold);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.hold b{font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:14px;color:var(--gold-2)}
+.hold p{margin:3px 0 0;font-size:14px}
+.hold code{font:600 12.5px var(--mono);background:rgba(0,0,0,.35);padding:1px 7px;border-radius:6px}
+
+/* chain */
+.chain{display:flex;flex-wrap:wrap;gap:4px;margin:14px 0 6px}
+.chain i{width:14px;height:22px;border-radius:4px;background:rgba(127,214,176,.8);box-shadow:0 0 8px rgba(127,214,176,.35);opacity:0;animation:blk .35s ease-out forwards}
+.chain i.bad{background:var(--bad);box-shadow:0 0 14px rgba(255,144,144,.7);transform:scaleY(1.25)}
+.chain i.dim{background:rgba(255,255,255,.14);box-shadow:none}
+@keyframes blk{from{opacity:0;transform:translateY(5px)}to{opacity:1}}
+.chain-note{font-size:12.5px;color:var(--mut);margin:0}
+.verdict{display:flex;align-items:center;gap:10px;margin-top:12px;padding:12px 14px;border-radius:10px;font-weight:600}
+.verdict.ok{background:rgba(127,214,176,.1);border:1px solid rgba(127,214,176,.35);color:var(--ok)}
+.verdict.bad{background:rgba(255,144,144,.1);border:1px solid rgba(255,144,144,.4);color:var(--bad)}
+.verdict span.mut{font-weight:400}
+.evt{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.evt:last-child{border:0}
+.evt time{color:var(--mut);font:12px var(--mono);min-width:48px}
 </style>
 </head>
 <body>
@@ -177,7 +227,7 @@ dialog::backdrop{background:rgba(5,5,15,.65)}
       <div class="brand"><b>☤</b> Playbox</div>
       <span class="pill" id="pill"><span class="dot"></span><span>Connecting…</span></span>
     </header>
-    <div class="content"><section id="view" aria-live="polite"></section></div>
+    <div class="content"><div class="hold" id="holdbar" role="alert"></div><section id="view" aria-live="polite"></section></div>
   </main>
 
   <aside class="pulse" id="pulse" aria-label="Room pulse"></aside>
@@ -205,7 +255,7 @@ const ICONS = {
 };
 const TABS = [["room", "Room"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["proof", "Proof"]];
 
-const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null};
+const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 
 /* ---------- api ---------- */
 async function api(name, args = {}, poll = false) {
@@ -327,7 +377,8 @@ const VIEWS = {
 
   feed() {
     if (mode() === "none") return emptyCard("Join or host a room to see its feed.");
-    return `<div class="feed" id="feedlist"></div>
+    return `<div class="legend"><span><i style="background:rgba(170,180,255,.5)"></i>You</span><span><i style="background:var(--warn)"></i>Other members: untrusted text, the witness watches it</span></div>
+      <div class="feed" id="feedlist"></div>
       <div class="quick" role="group" aria-label="Quick replies">${QUICK.map(q => `<button type="button" data-act="quick" data-text="${esc(q)}">${esc(q)}</button>`).join("")}</div>
       <form class="composer" id="say" autocomplete="off"><label class="sr" for="saytext">Message</label>
         <input type="text" id="saytext" placeholder="Say something to the room" maxlength="2000"><button class="btn primary" type="submit">Send</button></form>`;
@@ -367,31 +418,64 @@ const VIEWS = {
   },
 
   proof() {
-    const v = S.verify;
-    const log = S.status && S.status.history_log;
+    const v = S.verify, log = S.status && S.status.history_log, t = S.tamper;
     return `<div class="card"><h2>Your signed history</h2>
         <p class="mut" style="margin-top:0">Every Playbox action on this device is appended to a signed, hash-chained log. Change one byte and verification fails.</p>
         <div class="stat"><span>Log</span><span class="mono">${esc(log || "—")}</span></div>
-        <p style="margin:12px 0 0"><button class="btn primary" data-act="verify" ${log ? "" : "disabled"}>Verify now</button></p>
-        <div id="vres" style="margin-top:12px">${v ? renderVerify(v) : ""}</div></div>
+        <p class="row" style="margin:12px 0 0"><button class="btn gold" data-act="verify" ${log ? "" : "disabled"}>Verify now</button></p>
+        <div id="vres">${v ? renderVerify(v) : ""}</div></div>
+      <div class="card"><h2>Try to tamper</h2>
+        <p class="mut" style="margin-top:0">Flips one byte in a <b>copy</b> of the log and verifies the copy. Your real log is never touched.</p>
+        <p class="row" style="margin:0"><button class="btn danger" data-act="tamper" ${log ? "" : "disabled"}>Flip a byte</button></p>
+        <div id="tres">${t ? renderTamper(t) : ""}</div></div>
+      <div class="card"><h2>Witness holds</h2>${renderHolds()}</div>
       <div class="card"><h2>Check any log</h2>
         <label for="vpath">Path to a history log</label><input type="text" id="vpath" class="mono" placeholder="~/.playbox/history/hermes-session.log" spellcheck="false" autocapitalize="off">
         <p style="margin:12px 0 0"><button class="btn" data-act="verify-path">Verify</button></p>
-        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div>
-      <div class="card"><h2>Text from other members</h2>
-        <p class="mut" style="margin:0">Messages from other members are marked <span class="chip warn">member</span>. With the Playbox witness plugin, Hermes pauses write actions for the rest of a turn after reading them, and asks you first.</p></div>`;
+        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div>`;
   },
 };
 
 function emptyCard(t) { return `<div class="card empty"><div style="font-size:36px;color:var(--gold)">☤</div><p>${esc(t)}</p></div>`; }
 
+const ORIGIN = {"room:feed": "the room feed", "room:delegate": "a delegated task result", "room:recall": "shared room memory",
+  "room:steer": "a steering message", "room:memory_ingest": "ingested memory", "room:memory_export": "exported memory", "room workspace file": "a file from a peer's workspace"};
+const originText = o => ORIGIN[o] || o || "a peer";
+
+function chain(total, brokenAt) {
+  const N = Math.min(total, 48), per = total / N;
+  const bad = brokenAt == null ? -1 : Math.min(N - 1, Math.floor(brokenAt / per));
+  let h = "";
+  for (let k = 0; k < N; k++) h += `<i class="${bad < 0 ? "" : k === bad ? "bad" : k > bad ? "dim" : ""}" style="animation-delay:${k * 14}ms"></i>`;
+  return `<div class="chain" role="img" aria-label="${bad < 0 ? "Every entry links to the one before" : "The chain breaks at entry " + brokenAt}">${h}</div>
+    <p class="chain-note">${total} entries${per > 1.5 ? `, each block is about ${Math.round(per)}` : ""}. Each one holds the hash of the entry before it.</p>`;
+}
+
+function renderTamper(t) {
+  if (t.error && !t.entries) return `<div class="verdict bad">${esc(t.error)}</div>`;
+  const m = /entry (\d+)/.exec(t.message || "");
+  const at = m ? +m[1] : null;
+  return `${chain(t.entries, at == null ? Math.floor(t.entries / 2) : at)}
+    <div class="verdict ${t.valid ? "ok" : "bad"}">${t.valid ? "✓ Still valid (the flipped byte was not covered)" : `✕ Caught${at != null ? ` at entry ${at}` : ""}`}
+      <span class="mut">byte ${t.offset} of ${t.bytes} flipped in a copy</span></div>
+    ${t.message && !t.valid ? `<pre style="margin-top:10px">${esc(t.message)}</pre>` : ""}`;
+}
+
+function renderHolds() {
+  const ev = S.holds.slice(-8).reverse();
+  if (!ev.length) return `<p class="mut" style="margin:0">No holds yet. When the witness plugin pauses your Hermes agent after it reads another member's text, it shows here. Only the tool name and where the text came from are kept, never the text.</p>`;
+  return ev.map(e => `<div class="evt"><time>${esc(hhmm(e.ts))}</time>
+      <span class="chip ${e.kind === "held" ? "warn" : "ok"}">${e.kind === "held" ? "held" : "released"}</span>
+      <span class="grow">${e.kind === "held" ? `<span class="mono">${esc(e.tool || "")}</span> <span class="mut">after ${esc(originText(e.origin))}</span>` : `<span class="mut">your next message lifted it</span>`}</span></div>`).join("");
+}
+
 function renderVerify(v) {
   const ok = v.valid === true;
-  return `<div class="row"><span class="chip ${ok ? "ok" : "bad"}">${ok ? "✓ Chain valid" : "✕ Not valid"}</span>
-    ${v.entries != null ? `<span class="chip">${v.entries} entries</span>` : ""}</div>
-    ${v.head ? `<div class="stat"><span>Head</span><span class="mono">${esc(short(v.head))}</span></div>` : ""}
-    ${(v.problems || []).length ? `<pre>${esc(v.problems.join("\n"))}</pre>` : ""}
-    ${v.error ? `<pre>${esc(v.error)}</pre>` : ""}`;
+  return `${v.entries != null && ok ? chain(v.entries) : ""}
+    <div class="verdict ${ok ? "ok" : "bad"}">${ok ? "✓ Chain valid" : "✕ Not valid"}
+      ${v.entries != null ? `<span class="mut">${v.entries} entries${v.head ? " · head " + esc(short(v.head)) : ""}</span>` : ""}</div>
+    ${(v.problems || []).length ? `<pre style="margin-top:10px">${esc(v.problems.join("\n"))}</pre>` : ""}
+    ${v.error ? `<pre style="margin-top:10px">${esc(v.error)}</pre>` : ""}`;
 }
 
 function renderResult(w) {
@@ -449,6 +533,29 @@ async function pollFeed() {
   S.feed.push(...fresh);
   if (S.tab !== "feed") { S.unread += fresh.filter(i => i.kind === "say" && i.from !== myId()).length; paintNav(); }
   paintFeed();
+}
+
+/* ---------- witness ---------- */
+const HOLD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.500-3.200 7.900-8 9-4.800-1.100-8-4.500-8-9V6z"/><path d="M12 8v5M12 16.200v.1"/></svg>';
+function paintHold() {
+  const el = $("#holdbar"), a = S.hold;
+  if (!a.length) { el.className = "hold"; el.innerHTML = ""; return; }
+  const e = a[a.length - 1];
+  const fresh = !el.classList.contains("on");
+  el.innerHTML = `${HOLD_ICON}<div><b>Witness paused your agent</b>
+    <p>Hermes tried <code>${esc(e.tool || "a write")}</code> after reading ${esc(originText(e.origin))}. Text from another member can't trigger changes on its own, so it waits for you.</p>
+    <p class="mut" style="font-size:13px">Reply in Hermes to go ahead or to say no. Your next message lifts the hold.${a.length > 1 ? ` ${a.length} sessions are held.` : ""}</p></div>`;
+  el.className = "hold on";
+  if (fresh) toast("Witness paused a write");
+}
+async function pollWitness() {
+  let r;
+  try { r = await (await fetch("/api/witness")).json(); } catch { return; }
+  const was = S.hold.length;
+  S.holds = r.events || []; S.hold = r.active || [];
+  if (was && !S.hold.length) toast("Hold lifted");
+  paintHold();
+  if (S.tab === "proof" && !document.activeElement.closest?.("#view")) { const c = $("#view .card:nth-of-type(3)"); if (c) c.innerHTML = "<h2>Witness holds</h2>" + renderHolds(); }
 }
 
 /* ---------- state ---------- */
@@ -549,6 +656,16 @@ async function act(name, btn) {
       paintPulse();
       break;
     }
+    case "tamper": {
+      busy(btn, true);
+      const r = await (await fetch("/api/tamper", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({path: S.status.history_log})})).json();
+      busy(btn, false);
+      if (r.error && !r.result && !r.bytes) { toast(r.error, true); break; }
+      const res = r.result, valid = !r.error && res && res.valid === true;
+      S.tamper = {valid, entries: r.entries, offset: r.offset, bytes: r.bytes, message: typeof res === "string" ? res : (res && (res.error || (res.problems || []).join("\n"))) || ""};
+      $("#tres").innerHTML = renderTamper(S.tamper);
+      break;
+    }
     case "preset": {
       const x = PRESETS[+btn.dataset.i];
       document.querySelectorAll("[data-reach]").forEach(b => b.setAttribute("aria-pressed", b.dataset.reach === x.reach));
@@ -628,11 +745,12 @@ document.addEventListener("submit", async e => {
 
 /* ---------- boot ---------- */
 paintNav(); paintPulse();
-refresh().then(() => show("room"));
+refresh().then(() => show("room")); pollWitness();
 let tick = 0;
 setInterval(() => {
   if (document.hidden) return;
   tick++;
+  pollWitness();
   if (tick % 3 === 0) refresh(true);                       // every call is appended to the signed history, so poll gently
   if (S.tab === "feed" || innerWidth >= 1220) pollFeed();
 }, 3500);

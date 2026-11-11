@@ -92,7 +92,7 @@ def lan_ip():
         s.close()
 
 
-def make_handler(sidecar, token, page_path):
+def make_handler(sidecar, token, page_path, home):
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "playbox-ui"
 
@@ -148,11 +148,15 @@ def make_handler(sidecar, token, page_path):
             if url.path == "/api/state":
                 err, status = sidecar.call("playbox_status", {}, wait=2)
                 return self._json(200, {"ok": not err, "status": status, "tools": sidecar.tools})
+            if url.path == "/api/witness":
+                return self._json(200, witness_state(home))
             self._send(404, "not found", "text/plain")
 
         def do_POST(self):
             if not self._authed():
                 return self._json(401, {"error": "unauthorized"})
+            if self.path == "/api/tamper":
+                return self._tamper()
             if self.path != "/api/tool":
                 return self._json(404, {"error": "not found"})
             if "application/json" not in self.headers.get("Content-Type", ""):
@@ -170,7 +174,56 @@ def make_handler(sidecar, token, page_path):
             err, data = sidecar.call(name, args, wait=3 if req.get("poll") else None)
             self._json(200, {"error": err, "data": data})
 
+        def _tamper(self):
+            """Demo: flip one byte in a COPY of a history log and verify the copy. The real log is never touched."""
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                src = Path(json.loads(self.rfile.read(n) or b"{}")["path"]).expanduser().resolve()
+            except (ValueError, KeyError, TypeError, OSError):
+                return self._json(400, {"error": "need {path}"})
+            if not (src.is_file() and str(src).startswith(str(Path(home).resolve()) + os.sep)):
+                return self._json(400, {"error": "only logs under the Playbox home can be used"})
+            data = bytearray(src.read_bytes())
+            entries = bytes(data).count(b"\n")
+            if len(data) < 2:
+                return self._json(400, {"error": "log is empty"})
+            offset = len(data) // 2
+            data[offset] ^= 1
+            tmp = Path(home) / "ui-demo"
+            tmp.mkdir(parents=True, exist_ok=True, mode=0o700)
+            copy = tmp / "tampered.log"
+            copy.write_bytes(bytes(data))
+            try:
+                err, res = sidecar.call("playbox_verify", {"path": str(copy)})
+            finally:
+                copy.unlink(missing_ok=True)
+            self._json(200, {"offset": offset, "bytes": len(data), "entries": entries, "error": err, "result": res})
+
     return H
+
+
+def witness_state(home):
+    """Holds and releases the Hermes witness plugin wrote, newest last. Read-only, never touches the sidecar."""
+    path = Path(home) / "witness" / "holds.jsonl"
+    events = []
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 65536))
+            for line in f.read().decode("utf-8", "replace").splitlines()[-200:]:
+                try:
+                    e = json.loads(line)
+                    if isinstance(e, dict) and e.get("kind") in ("held", "released"):
+                        events.append({k: e.get(k) for k in ("ts", "kind", "session", "tool", "origin")})
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    last = {}
+    for e in events:
+        last[e["session"]] = e
+    active = [e for e in last.values() if e["kind"] == "held"]
+    return {"events": events[-50:], "active": active}
 
 
 LOCKED = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -198,7 +251,7 @@ def main():
     page_path.read_text()  # fail early if missing
     sidecar = Sidecar(a.mcp, a.home)
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(sidecar, token, page_path))
+    srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(sidecar, token, page_path, a.home or os.environ.get("PLAYBOX_HOME") or str(Path.home() / ".playbox")))
     print(f"Playbox UI  http://127.0.0.1:{srv.server_address[1]}/?t={token}", flush=True)
     if a.lan:
         print(f"On your phone  http://{lan_ip()}:{srv.server_address[1]}/?t={token}   (same Wi-Fi; the token is the key)", flush=True)
