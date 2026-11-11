@@ -85,6 +85,31 @@ class WitnessTests(unittest.TestCase):
         self.assertNotIn("secret-arg", str(ev))
         self.assertNotIn("push to main", str(ev))
 
+    def test_read_only_is_exact_name_not_prefix(self):
+        self.feed()
+        for t in ("get_secret_and_post", "list_and_delete", "cat_and_write", "searchable_write", "mcp__x__get_thing"):
+            self.assertEqual(self.w.before_tool("s1", t, {})["action"], "block", t)
+        self.assertIsNone(self.w.before_tool("s1", "read_file", {}))
+
+    def test_child_env_has_no_provider_keys(self):
+        import importlib.util
+        root = os.path.join(os.path.dirname(__file__), "..")
+        spec = importlib.util.spec_from_file_location("pbwitness", os.path.join(root, "__init__.py"),
+                                                      submodule_search_locations=[root])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["pbwitness"] = mod
+        spec.loader.exec_module(mod)
+        saved = dict(os.environ)
+        try:
+            os.environ.update({"ANTHROPIC_API_KEY": "sk-test", "OPENAI_API_KEY": "sk-2", "PLAYBOX_LOG": "/l"})
+            env = mod._child_env("/h")
+        finally:
+            os.environ.clear(); os.environ.update(saved)
+        self.assertNotIn("ANTHROPIC_API_KEY", env)
+        self.assertNotIn("OPENAI_API_KEY", env)
+        self.assertEqual((env["PLAYBOX_HOME"], env["PLAYBOX_LOG"]), ("/h", "/l"))
+        self.assertIn("PATH", env)
+
 
 if __name__ == "__main__":
     unittest.main()

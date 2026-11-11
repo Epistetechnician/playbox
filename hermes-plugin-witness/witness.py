@@ -1,15 +1,15 @@
 """Playbox witness core: origin taint and tool classification. Pure stdlib, no Hermes imports."""
 import hashlib
 import json
-import re
 
 # Room tools whose results carry text written by another member (or run by them).
 FOREIGN_TEXT_TOOLS = {"feed", "delegate", "recall", "memory_ingest", "memory_export", "steer"}
 # Room tools that cannot change anything outside the room's own bookkeeping.
 ROOM_SAFE_TOOLS = {"status", "ping", "feed", "verify", "audit", "recall", "pull", "say",
                    "checkpoint_verify", "evidence_check", "lineage_check", "receipts_check"}
-READ_ONLY = re.compile(
-    r"^(read|search|list|get|view|find|grep|glob|ls|cat|web_search|web_extract|skill_view|skills_list|session_search|tool_search|tool_describe|clarify)", re.I)
+# Exact names only: a prefix match would treat an MCP tool called `get_secret_and_post` as a read.
+READ_ONLY_TOOLS = {"read_file", "search_files", "web_search", "web_extract", "skill_view", "skills_list",
+                   "session_search", "tool_search", "tool_describe", "clarify", "read", "glob", "grep", "ls"}
 WORKSPACE_MARK = "/.playbox/workspaces/"
 
 
@@ -47,7 +47,7 @@ def is_read_only(tool_name):
     server, tool = base_name(tool_name)
     if server == "playbox":
         return tool in ROOM_SAFE_TOOLS
-    return bool(READ_ONLY.match(tool))
+    return tool in READ_ONLY_TOOLS
 
 
 def foreign_origin(tool_name, args, status):
@@ -57,7 +57,7 @@ def foreign_origin(tool_name, args, status):
     server, tool = base_name(tool_name)
     if server == "playbox" and tool in FOREIGN_TEXT_TOOLS:
         return "room:" + tool
-    if server != "playbox" and READ_ONLY.match(tool) and WORKSPACE_MARK in json.dumps(args or {}, default=str):
+    if server != "playbox" and tool in READ_ONLY_TOOLS and WORKSPACE_MARK in json.dumps(args or {}, default=str):
         return "room workspace file"
     return None
 
