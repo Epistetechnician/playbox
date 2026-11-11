@@ -23,6 +23,23 @@ BODIES = {"smollm2": "models--HuggingFaceTB--SmolLM2-135M", "qwen3": "models--Qw
 STATE = Path(os.environ.get("TELEPATHY_STATE", Path(__file__).resolve().parents[1] / "results/telepathy/maps"))
 COEF = float(os.environ.get("TELEPATHY_COEF", "0.5"))
 FRAC = 0.45
+# Sender-side topic-ness probe (tools/telepathy_probe.py), the same gate the remote service uses: it reads the unit difference
+# vector, so it depends on the sender model and layer, not on the receiver. TELEPATHY_PROBE=off disables it.
+PROBE_FILE = Path(os.environ.get("TELEPATHY_PROBE") or Path(__file__).with_name("telepathy_probe.json"))
+
+
+def load_probe(src: str) -> dict | None:
+    if os.environ.get("TELEPATHY_PROBE") == "off" or not PROBE_FILE.is_file():
+        return None
+    return json.loads(PROBE_FILE.read_text()).get(src)
+
+
+def probe_strength(d: torch.Tensor, probe: dict) -> tuple[float, float]:
+    """(topic-ness, strength): the probe's probability that d is a topic, and the 0..1 ramp between its lo and hi thresholds."""
+    z = (torch.nn.functional.normalize(d, dim=-1).double() - torch.tensor(probe["mu"], dtype=torch.float64)) @ \
+        torch.tensor(probe["w"], dtype=torch.float64) + probe["b"]
+    t = float(torch.sigmoid(z))
+    return t, min(1.0, max(0.0, (t - probe["lo"]) / (probe["hi"] - probe["lo"])))
 
 
 def path(body: str) -> str:
@@ -48,16 +65,23 @@ def think(src: str, dst: str, texts: list[str], out: str, resident: bool = False
     ma, ta = _resident(src) if resident else T.load(path(src))
     la = T.layer_of(ma, FRAC)
     d = T.sentence_states(ma, ta, texts, la).mean(0) - m["neutral_a"]
+    probe = load_probe(src)
+    topicness, g = probe_strength(d, probe) if probe else (None, None)
     v = (d @ m["w"])
-    v = v / v.norm() * COEF * m["norm_b"]
+    v = v / v.norm() * COEF * (1.0 if g is None else g) * m["norm_b"]
     tmp = f"{out}.tmp"  # atomic: a reader never sees a half-written vector
-    torch.save(v, tmp)
+    # the strength travels with the vector (a number, no text); a bare tensor means "no gate" and is still readable
+    torch.save(v if g is None else {"v": v, "strength": g}, tmp)
     os.replace(tmp, out)
-    print(f"wrote {out}: one {v.numel()}-float vector for {dst}; no text left this process")
+    print(f"wrote {out}: one {v.numel()}-float vector for {dst}; no text left this process"
+          + ("" if g is None else f"; topic-ness {topicness:.3f}, strength {g:.2f}"))
 
 
 def listen(dst: str, src: str, vec: str, gen: int = 24, resident: bool = False) -> None:
     v = torch.load(vec)
+    if isinstance(v, dict):
+        print(f"signal strength {v['strength']:.2f} (0 = no thought was sent, 1 = a clear thought)")
+        v = v["v"]
     mb, tb = _resident(dst) if resident else T.load(path(dst))
     lb = T.layer_of(mb, FRAC)
     for p in PROMPTS:

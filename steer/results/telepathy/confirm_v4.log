@@ -1,0 +1,93 @@
+{"i": 0, "src": "smollm2", "dst": "qwen3", "truth": "soccer", "guess": "soccer", "ok": true, "attempts": 1, "secs": 27}
+{"i": 1, "src": "smollm2", "dst": "qwen3", "truth": "classical-music", "guess": "jazz", "ok": false, "attempts": 1, "secs": 25}
+{"i": 2, "src": "smollm2", "dst": "qwen3", "truth": "cryptocurrency", "guess": "cryptocurrency", "ok": true, "attempts": 1, "secs": 25}
+{"i": 3, "src": "qwen3", "dst": "smollm2", "truth": "ocean", "guess": "ocean", "ok": true, "attempts": 1, "secs": 16}
+{"i": 4, "src": "smollm2", "dst": "qwen3", "truth": "volcano", "guess": "ocean", "ok": false, "attempts": 1, "secs": 25}
+{"i": 5, "src": "smollm2", "dst": "qwen3", "truth": "basketball", "guess": "basketball", "ok": true, "attempts": 1, "secs": 24}
+{"i": 6, "src": "smollm2", "dst": "qwen3", "truth": "aviation", "guess": "aviation", "ok": true, "attempts": 1, "secs": 30}
+{"i": 7, "src": "qwen3", "dst": "smollm2", "truth": "cryptocurrency", "guess": "cryptocurrency", "ok": true, "attempts": 1, "secs": 16}
+{"i": 8, "src": "smollm2", "dst": "qwen3", "truth": "none", "guess": "none", "ok": true, "attempts": 1, "secs": 22}
+{"i": 9, "src": "qwen3", "dst": "smollm2", "truth": "basketball", "guess": "none", "ok": false, "attempts": 1, "secs": 19}
+{"i": 10, "src": "qwen3", "dst": "smollm2", "truth": "space", "guess": "space", "ok": true, "attempts": 1, "secs": 17}
+{"i": 11, "src": "qwen3", "dst": "smollm2", "truth": "cars", "guess": "cars", "ok": true, "attempts": 1, "secs": 16}
+{"i": 12, "src": "qwen3", "dst": "smollm2", "truth": "jazz", "guess": "politics", "ok": false, "attempts": 1, "secs": 18}
+{"i": 13, "src": "qwen3", "dst": "smollm2", "truth": "chess", "guess": "none", "ok": false, "attempts": 1, "secs": 16}
+{"i": 14, "src": "smollm2", "dst": "qwen3", "truth": "ocean", "guess": "ocean", "ok": true, "attempts": 1, "secs": 22}
+{"i": 15, "src": "smollm2", "dst": "qwen3", "truth": "religion", "guess": "politics", "ok": false, "attempts": 1, "secs": 25}
+{"i": 16, "src": "qwen3", "dst": "smollm2", "truth": "volcano", "guess": "volcano", "ok": true, "attempts": 1, "secs": 17}
+{"i": 17, "src": "qwen3", "dst": "smollm2", "truth": "religion", "guess": "religion", "ok": true, "attempts": 1, "secs": 20}
+{"i": 18, "src": "smollm2", "dst": "qwen3", "truth": "photography", "guess": "aviation", "ok": false, "attempts": 1, "secs": 23}
+{"i": 19, "src": "smollm2", "dst": "qwen3", "truth": "none", "guess": "none", "ok": true, "attempts": 1, "secs": 22}
+{"i": 20, "src": "smollm2", "dst": "qwen3", "truth": "dinosaurs", "guess": "volcano", "ok": false, "attempts": 1, "secs": 24}
+{"i": 21, "src": "qwen3", "dst": "smollm2", "truth": "religion", "guess": "religion", "ok": true, "attempts": 1, "secs": 16}
+{"i": 22, "src": "smollm2", "dst": "qwen3", "truth": "cars", "guess": "cars", "ok": true, "attempts": 1, "secs": 22}
+{"i": 23, "src": "qwen3", "dst": "smollm2", "truth": "cryptocurrency", "guess": "cryptocurrency", "ok": true, "attempts": 1, "secs": 16}
+{"i": 24, "src": "qwen3", "dst": "smollm2", "truth": "aviation", "guess": "aviation", "ok": true, "attempts": 1, "secs": 16}
+{"i": 25, "src": "qwen3", "dst": "smollm2", "truth": "none", "guess": "none", "ok": true, "attempts": 1, "secs": 13}
+{"i": 26, "src": "qwen3", "dst": "smollm2", "truth": "photography", "guess": "space", "ok": false, "attempts": 1, "secs": 16}
+{"i": 27, "src": "qwen3", "dst": "smollm2", "truth": "classical-music", "guess": "space", "ok": false, "attempts": 1, "secs": 17}
+{"i": 28, "src": "smollm2", "dst": "qwen3", "truth": "basketball", "guess": "basketball", "ok": true, "attempts": 1, "secs": 24}
+{"i": 29, "src": "qwen3", "dst": "smollm2", "truth": "none", "guess": "none", "ok": true, "attempts": 1, "secs": 14}
+{"i": 30, "src": "smollm2", "dst": "qwen3", "truth": "space", "guess": "space", "ok": true, "attempts": 1, "secs": 25}
+{"i": 31, "src": "qwen3", "dst": "smollm2", "truth": "soccer", "guess": "politics", "ok": false, "attempts": 1, "secs": 19}
+{"i": 32, "src": "qwen3", "dst": "smollm2", "truth": "baseball", "guess": "basketball", "ok": false, "attempts": 1, "secs": 20}
+{"i": 33, "src": "qwen3", "dst": "smollm2", "truth": "photography", "guess": "space", "ok": false, "attempts": 1, "secs": 17}
+{"i": 34, "src": "smollm2", "dst": "qwen3", "truth": "chess", "guess": "none", "ok": false, "attempts": 1, "secs": 24}
+{"i": 35, "src": "qwen3", "dst": "smollm2", "truth": "dinosaurs", "guess": "none", "ok": false, "attempts": 1, "secs": 18}
+{"i": 36, "src": "smollm2", "dst": "qwen3", "truth": "jazz", "guess": "jazz", "ok": true, "attempts": 1, "secs": 27}
+{"i": 37, "src": "qwen3", "dst": "smollm2", "truth": "chess", "guess": "politics", "ok": false, "attempts": 1, "secs": 17}
+{"i": 38, "src": "smollm2", "dst": "qwen3", "truth": "chess", "guess": "none", "ok": false, "attempts": 1, "secs": 25}
+{"i": 39, "src": "smollm2", "dst": "qwen3", "truth": "earthquake", "guess": "aviation", "ok": false, "attempts": 1, "secs": 25}
+{"i": 40, "src": "smollm2", "dst": "qwen3", "truth": "politics", "guess": "politics", "ok": true, "attempts": 1, "secs": 24}
+{"i": 41, "src": "qwen3", "dst": "smollm2", "truth": "medicine", "guess": "medicine", "ok": true, "attempts": 1, "secs": 16}
+{"i": 42, "src": "qwen3", "dst": "smollm2", "truth": "space", "guess": "space", "ok": true, "attempts": 1, "secs": 16}
+{"i": 43, "src": "qwen3", "dst": "smollm2", "truth": "medicine", "guess": "medicine", "ok": true, "attempts": 1, "secs": 16}
+{
+ "chance": 0.0476,
+ "concept": {
+  "n": 40,
+  "correct": 22,
+  "acc": 0.55,
+  "ci95": [
+   0.3983,
+   0.6929
+  ],
+  "p_vs_chance": 3.995522085313154e-19
+ },
+ "control": {
+  "n": 4,
+  "correct": 4,
+  "acc": 1.0,
+  "ci95": [
+   0.5101,
+   1.0
+  ],
+  "p_vs_chance": 5.141890467449261e-06
+ },
+ "false_positive_rate": 0.0,
+ "by_direction": {
+  "qwen3->smollm2": {
+   "n": 22,
+   "correct": 12,
+   "acc": 0.5455,
+   "ci95": [
+    0.3466,
+    0.7308
+   ],
+   "p_vs_chance": 5.611297193339729e-11
+  },
+  "smollm2->qwen3": {
+   "n": 18,
+   "correct": 10,
+   "acc": 0.5556,
+   "ci95": [
+    0.3372,
+    0.7544
+   ],
+   "p_vs_chance": 1.8421158859101289e-09
+  }
+ },
+ "infra_failures": 0,
+ "infra_reasons": [],
+ "mean_attempts": 1.0
+}

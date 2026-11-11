@@ -28,8 +28,11 @@ from playbox_steer import telepathy as T
 from playbox_steer.telepathy_data import NEUTRAL, PROMPTS
 from playbox_steer.telepathy_data_xl import FIT_TOPICS_XL
 
-REPOS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-1.7B-Base"}
-PAIRS = (("smollm2", "qwen3"), ("qwen3", "smollm2"))
+# TELEPATHY_REPOS="name=repo,name=repo" swaps in another model pair (two entries); the names are what the driver uses as src/dst.
+REPOS = dict(e.split("=") for e in os.environ["TELEPATHY_REPOS"].split(",")) if os.environ.get("TELEPATHY_REPOS") else \
+    {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-1.7B-Base"}
+_a, _b = REPOS
+PAIRS = ((_a, _b), (_b, _a))
 COEF, FRAC, GEN = 0.75, 0.45, 24
 FIT = os.environ.get("TELEPATHY_FIT", "agent")
 GATE = tuple(float(x) for x in os.environ.get("TELEPATHY_GATE", "0.9,1.1").split(","))

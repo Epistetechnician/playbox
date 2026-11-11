@@ -1037,3 +1037,23 @@ Live eval, fresh text only (80 topic trials, 10 fresh filler scenes and 8 fresh 
 ### E7 local replication attempt (Mac, 36 GB): not completed
 
 Started the probe-gated stack on the Mac: telepathy service on CPU (maps refit locally; salience reference 43.95 and 32.41 match the H100 node's, held-out cosine 0.94) and Qwen3.8-27B-4bit on MLX as the Hermes brain, one worker. The first trials failed with "A produced no vector" (Hermes exit 2; its fresh runtime was still installing dependencies and the brain was slow), and free memory fell to about 120 MB with about 30 GB held by the compressor, so I stopped the run and killed the brain before it could repeat the earlier swap panic. No trial result is reported. Takeaway: 27B 4-bit plus the two sender/receiver models plus other local work does not leave safe headroom on 36 GB; a smaller local brain (or the H100) is needed. Two stale `telepathy_agent serve` daemons from earlier local runs (ports 8765, 8766, 5 days old) were left running.
+
+### E7 larger model pair (gman H100): Qwen3-8B-Base and OLMo-2-7B
+
+Same protocol and agents (Hermes with a Qwen3.8-27B-FP8 brain on the node, harness with infra/model failure split), swapping the telepathy pair for Qwen3-8B-Base (4096-dim) and OLMo-2-1124-7B (4096-dim) in bf16 (`TELEPATHY_REPOS`, `TELEPATHY_DTYPE`, `TELEPATHY_PAIR`). Ridge maps fitted on the agent fit set (held-out cosine 0.87 and 0.88, against 0.94 for the small pair). No topic-ness probe exists for these senders, so the run is **ungated**. 0 infra failures.
+
+- Topics, 20 topics x 2 reps x 2 directions: 76/80 = 95% (95% CI 87.8 to 98.0), chance 4.8%. olmo2 to qwen8b 39/40, qwen8b to olmo2 37/40. Misses: space to earthquake, earthquake to ocean, earthquake to volcano, soccer to none. For comparison the small pair ungated got 22/40 = 55%.
+- Held-out controls (18 per direction, same file as the small pair), ungated: 24/36 answered none; false-positive rate 12/36 = 33% (small pair ungated: 13/36 = 36%). Leaks include "dentist visits" (medicine) in both directions.
+- Reading: a larger pair roughly doubles topic accuracy at the same channel, but the false-positive problem does not shrink with scale; it needs the gate, which needs a probe calibrated per sender (not done for this pair). The 5-topic first pass gave 19/20 and used a different topic set, so it is not comparable.
+
+Cost: node `playbox-e6-cuda` ran 55 minutes (about 4.6 USD) and was stopped right after the results were copied back. Files: `results/telepathy/big_pair_private/` (5 topics + controls), `results/telepathy/big_pair20_private/` (20 topics).
+
+#### Larger pair, gated (probe calibrated on live Agent A text)
+
+Same recipe as the small pair: 248 live Agent A thoughts (20 topics x 4 samples, 24 filler scenes, 16 off-list subjects, 4 neutral triples per sender) logged from the node, one ridge-logistic probe per sender on the 4096-dim unit difference vector, grouped cross-validation for penalty and thresholds (`tools/telepathy_probe.py`, now `TELEPATHY_PAIR`-aware; shipped as `playbox_steer/telepathy_probe_big.json`, report in `results/telepathy/big_calib_private/probe_report.json`). Held-out pass rates, qwen8b: topics 77/80, filler 0/24, off-list 3/16, triples 0/4; olmo2: topics 79/80, filler 0/24, off-list 3/16, triples 0/4.
+
+Live eval (20 topics x 2 reps x 2 directions, plus the 36 held-out controls the small pair used; 0 infra failures): topics 69/80 = 86% (CI 77 to 92); controls 36/36 answered none, false-positive rate 0% (CI of correct 90 to 100). Per direction: olmo2 to qwen8b 39/40, qwen8b to olmo2 30/40. The 11 misses: 4 muted to none (earthquake, cars twice, religion), 7 wrong-topic answers (baseball/basketball, soccer/baseball, soccer/basketball, cars/medicine, photography/space, space/ocean, earthquake/ocean); 10 of the 11 are in the qwen8b to olmo2 direction.
+
+Ungated to gated on the larger pair: topics 95% to 86%, false positives 33% to 0%. The control set is the same held-out file as before, but the probe's own filler and off-list calibration subjects (FIT lists) are disjoint from it. One seed; the loss is concentrated in the qwen8b to olmo2 direction, which was already the weaker one ungated (37/40).
+
+Cost: the node ran about 1 hour 10 minutes for calibration plus eval (about 6 USD) and was stopped at the end.

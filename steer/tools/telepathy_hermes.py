@@ -26,11 +26,13 @@ MIN_FREE_GB = float(os.environ.get("TELEPATHY_MIN_FREE_GB", "6"))
 TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "600"))
 CONTROLS = json.loads(Path(os.environ["TELEPATHY_CONTROLS_FILE"]).read_text()) if os.environ.get("TELEPATHY_CONTROLS_FILE") else []
 ATTEMPTS = int(os.environ.get("TELEPATHY_ATTEMPTS", "3"))
+PAIR = tuple(os.environ.get("TELEPATHY_PAIR", "smollm2,qwen3").split(","))  # the two model names (src/dst) the service knows
 PORT = int(os.environ.get("TELEPATHY_PORT", "8765"))
 URL = os.environ.get("TELEPATHY_URL", f"http://127.0.0.1:{PORT}")
 AUTOSTART = os.environ.get("TELEPATHY_AUTOSTART", "1") == "1"
 HERMES_BIN = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))  # the pyenv python puts a different `hermes` first on PATH
 REMOTE = os.environ.get("TELEPATHY_REMOTE") == "1"  # use the Modal service (tools/telepathy_modal.py) instead of a local daemon
+GATED = os.environ.get("TELEPATHY_GATED", "1" if REMOTE else "0") == "1"  # B is told to read the signal-strength line only when one is printed
 if REMOTE:
     URL = (os.environ.get("TELEPATHY_URL") or (Path.home() / ".config/playbox/telepathy_url").read_text()).strip()
     ENV = f"cd {ROOT} && PYTHONPATH=. {PY} -m playbox_steer.telepathy_remote"  # urllib only: no torch on the agents' machine
@@ -99,14 +101,19 @@ def attempt(i: int, src: str, dst: str, concept: str | None, k: int) -> dict:
     topics = random.Random(i).sample(CONCEPTS, len(CONCEPTS))
     b = (f"You are Agent B. Another agent left you a thought as a vector file, not as text. Run this shell command:\n"
          f"{ENV} listen --src {src} --dst {dst} --vec {vec}\n"
-         f"It prints a signal-strength line (0 = no thought was sent, 1 = a clear thought), then continuations written by your own model under the influence of that thought. If the strength is below 0.3, answer none. Otherwise read them and decide which ONE of these "
+         + ("It prints a signal-strength line (0 = no thought was sent, 1 = a clear thought), then continuations written by your own model under the influence of that thought. If the strength is below 0.3, answer none. Otherwise read them and decide which ONE of these "
+            if GATED else  # a listen without the probe gate prints no strength line, and asking for it forces 'none'
+            "It prints continuations written by your own model under the influence of that thought. Read them and decide which ONE of these ") +
          f"topics the thought was about: {', '.join(topics)}. Use only that command's output; do not look at any other files. "
          f"The final line of your reply must be exactly 'ANSWER: <topic>' (or 'ANSWER: none' if you see no topic).")
     out = hermes(b, f"B_{tag}", cwd=shared)
     guess = H.parse_answer(out, CONCEPTS)
     if guess is None:  # no parsable answer is a harness failure, not a wrong answer; a valid wrong answer is never retried
         raise H.InfraError("B gave no valid ANSWER line")
-    return {"i": i, "src": src, "dst": dst, "truth": concept or "none", "guess": guess, "ok": guess == (concept or "none")}
+    r = {"i": i, "src": src, "dst": dst, "truth": concept or "none", "guess": guess, "ok": guess == (concept or "none")}
+    if ctl:
+        r["control"] = f'{ctl.get("live", "fixed")}:{ctl.get("subject", "")}'
+    return r
 
 
 def trial(i: int, src: str, dst: str, concept: str | None) -> dict:
@@ -130,7 +137,7 @@ if __name__ == "__main__":
     PRIVATE.mkdir(parents=True, exist_ok=True)
     reps, controls, workers = (int(os.environ.get(k, d)) for k, d in (("TELEPATHY_REPS", 1), ("TELEPATHY_CONTROLS", 1), ("TELEPATHY_WORKERS", 2)))
     plan = []
-    for src, dst in (("smollm2", "qwen3"), ("qwen3", "smollm2")):
+    for src, dst in ((PAIR[0], PAIR[1]), (PAIR[1], PAIR[0])):
         plan += [(src, dst, c) for c in CONCEPTS for _ in range(reps)] + ([(src, dst, f"@{j}") for j in range(len(CONTROLS))] if CONTROLS else [(src, dst, None)] * controls)
     random.Random(0).shuffle(plan)
     if len(sys.argv) > 1:

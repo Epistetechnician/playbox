@@ -38,7 +38,8 @@ def auc(p, y):
 
 report = {}
 probe = {}
-for src in ("smollm2", "qwen3"):
+import os
+for src in os.environ.get("TELEPATHY_PAIR", "smollm2,qwen3").split(","):
     tags = [t for t, r in by.items() if r["src"] == src]
     X = np.array([by[t]["d"] for t in tags])
     X /= np.linalg.norm(X, axis=1, keepdims=True)

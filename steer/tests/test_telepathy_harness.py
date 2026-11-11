@@ -120,3 +120,39 @@ def test_stale_vector_does_not_pass(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "hermes", lambda *a, **k: "sent")
     with pytest.raises(m.H.InfraError, match="no vector"):
         m.trial(2, "a", "b", "space")
+
+
+def test_controls_have_no_chance_pvalue():
+    s = H.summarize([_r(0, "none", "none"), _r(1, "none", "ocean")], 3)
+    assert "p_vs_chance" not in s["control"] and s["false_positive_rate"] == 0.5
+
+
+def test_probe_strength_ramps_between_lo_and_hi():
+    import torch
+    from playbox_steer import telepathy_agent as A
+    d = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    probe = {"mu": [0.0] * 4, "w": [4.0, 0.0, 0.0, 0.0], "b": 0.0, "lo": 0.6, "hi": 0.9}
+    t, g = A.probe_strength(d, probe)  # unit vector, z = 4, sigmoid ~ 0.982
+    assert t == pytest.approx(0.982, abs=1e-3) and g == 1.0
+    t, g = A.probe_strength(d, {**probe, "w": [0.0] * 4, "b": 0.0})  # sigmoid(0) = 0.5 < lo
+    assert t == pytest.approx(0.5) and g == 0.0
+    t, g = A.probe_strength(d, {**probe, "w": [1.0, 0, 0, 0], "b": 0.0})  # sigmoid(1) = 0.731: halfway up the ramp
+    assert g == pytest.approx((0.7311 - 0.6) / 0.3, abs=1e-3)
+
+
+def test_load_probe_follows_the_environment(monkeypatch, tmp_path):
+    from playbox_steer import telepathy_agent as A
+    f = tmp_path / "p.json"
+    f.write_text(json.dumps({"smollm2": {"mu": [0], "w": [0], "b": 0, "lo": 0.1, "hi": 0.2}}))
+    monkeypatch.setattr(A, "PROBE_FILE", f)
+    monkeypatch.delenv("TELEPATHY_PROBE", raising=False)
+    assert A.load_probe("smollm2")["hi"] == 0.2 and A.load_probe("qwen3") is None
+    monkeypatch.setenv("TELEPATHY_PROBE", "off")
+    assert A.load_probe("smollm2") is None
+
+
+def test_shipped_probe_matches_the_sender_dimensions():
+    from playbox_steer import telepathy_agent as A
+    probe = json.loads(A.PROBE_FILE.read_text()) if A.PROBE_FILE.is_file() else {}
+    assert {k: len(v["w"]) for k, v in probe.items()} == {"smollm2": 576, "qwen3": 2048}
+    assert all(0 <= v["lo"] < v["hi"] <= 1 for v in probe.values())

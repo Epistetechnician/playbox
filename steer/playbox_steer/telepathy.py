@@ -33,7 +33,7 @@ DEVICE = os.environ.get("PLAYBOX_DEVICE", "cpu")  # "cuda" for big models; state
 def load(path: str):
     torch.set_grad_enabled(False)
     tok = AutoTokenizer.from_pretrained(path, local_files_only=True)
-    model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, torch_dtype=torch.float32).eval().to(DEVICE)
+    model = AutoModelForCausalLM.from_pretrained(path, local_files_only=True, torch_dtype=getattr(torch, os.environ.get("TELEPATHY_DTYPE", "float32"))).eval().to(DEVICE)
     return model, tok
 
 
@@ -50,7 +50,7 @@ def sentence_states(model, tok, texts: list[str], layer: int) -> torch.Tensor:
         for t in texts:
             ids = tok(t, return_tensors="pt").input_ids[:, :64].to(model.device)
             model(input_ids=ids, use_cache=False)
-            x = cur["x"][0].cpu()
+            x = cur["x"][0].cpu().float()
             rows.append(x[1:].mean(0) if x.shape[0] > 1 else x[0])
     finally:
         h.remove()
@@ -64,7 +64,7 @@ def mean_norm(model, tok, texts: list[str], layer: int) -> float:
     try:
         for t in texts:
             model(input_ids=tok(t, return_tensors="pt").input_ids[:, :64].to(model.device), use_cache=False)
-            norms.append(cur["x"][0, 1:].norm(dim=-1).mean().cpu())
+            norms.append(cur["x"][0, 1:].float().norm(dim=-1).mean().cpu())
     finally:
         h.remove()
     return float(torch.stack(norms).mean())

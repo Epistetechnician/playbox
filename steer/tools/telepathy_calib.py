@@ -12,7 +12,7 @@ import telepathy_hermes as TH
 from playbox_steer import telepathy_calib_data as D
 
 jobs = []
-for src, dst in (("smollm2", "qwen3"), ("qwen3", "smollm2")):
+for src, dst in ((TH.PAIR[0], TH.PAIR[1]), (TH.PAIR[1], TH.PAIR[0])):
     jobs += [("topic", t, src, dst) for t in D.TOPICS for _ in range(4)]
     jobs += [("filler", s, src, dst) for s in D.FILLER_FIT] + [("offlist", s, src, dst) for s in D.OFFLIST_FIT]
     jobs += [("triple", "", src, dst)] * 4

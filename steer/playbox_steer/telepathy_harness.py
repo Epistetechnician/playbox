@@ -137,16 +137,18 @@ def summarize(results: list[dict], n_topics: int) -> dict:
     infra = [r for r in results if "error" in r]
     chance = 1 / (n_topics + 1)
 
-    def block(rs: list[dict]) -> dict:
+    def block(rs: list[dict], vs_chance: bool = True) -> dict:
         n, k = len(rs), sum(bool(r["ok"]) for r in rs)
         lo, hi = wilson(k, n)
-        return {"n": n, "correct": k, "acc": round(k / n, 4) if n else None, "ci95": [round(lo, 4), round(hi, 4)],
-                "p_vs_chance": binom_sf(k, n, chance) if n else None}
+        out = {"n": n, "correct": k, "acc": round(k / n, 4) if n else None, "ci95": [round(lo, 4), round(hi, 4)]}
+        if vs_chance:  # not for controls: "none" is the right answer there, so 1/(n_topics+1) is not their chance level
+            out["p_vs_chance"] = binom_sf(k, n, chance) if n else None
+        return out
 
     concept = [r for r in ran if r["truth"] != "none"]
     ctrl = [r for r in ran if r["truth"] == "none"]
     dirs = sorted({f"{r['src']}->{r['dst']}" for r in ran})
-    return {"chance": round(chance, 4), "concept": block(concept), "control": block(ctrl),
+    return {"chance": round(chance, 4), "concept": block(concept), "control": block(ctrl, vs_chance=False),
             "false_positive_rate": round(sum(r["guess"] != "none" for r in ctrl) / len(ctrl), 4) if ctrl else None,
             "by_direction": {d: block([r for r in concept if f"{r['src']}->{r['dst']}" == d]) for d in dirs},
             "infra_failures": len(infra), "infra_reasons": sorted({r["error"][:80] for r in infra}),
