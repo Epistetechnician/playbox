@@ -18,7 +18,7 @@ import torch
 from . import telepathy as T
 from .telepathy_data import NEUTRAL, PROMPTS
 
-HUB = Path.home() / ".cache/huggingface/hub"
+HUB = Path(os.environ.get("HF_HUB_CACHE") or Path.home() / ".cache/huggingface/hub")
 BODIES = {"smollm2": "models--HuggingFaceTB--SmolLM2-135M", "qwen3": "models--Qwen--Qwen3-1.7B-Base"}
 STATE = Path(os.environ.get("TELEPATHY_STATE", Path(__file__).resolve().parents[1] / "results/telepathy/maps"))
 COEF = float(os.environ.get("TELEPATHY_COEF", "0.5"))
