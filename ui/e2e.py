@@ -175,8 +175,9 @@ def main():
         before = open(log["history_log"], "rb").read()
         code, tb = guest.req("/api/tamper", {"path": log["history_log"]})
         t = json.loads(tb)
-        check("tamper demo catches the flipped byte", code == 200 and t["result"].get("valid") is False and t["entries"] > 3, t)
-        check("tamper demo names the broken entry", "entry" in str(t["result"].get("error")), t)
+        res = t["result"] if isinstance(t["result"], dict) else {}
+        check("tamper demo catches the changed digit", code == 200 and res.get("valid") is False and t["entries"] > 3, t)
+        check("tamper demo names the broken entry", "entry" in str(res.get("error")), t)
         # the verify call itself is logged, so the real log may grow, but what was there must be unchanged
         check("real log untouched by the tamper demo", open(log["history_log"], "rb").read().startswith(before))
         check("tamper copy is cleaned up", not os.path.exists(os.path.join(work, "guest", "ui-demo", "tampered.log")))

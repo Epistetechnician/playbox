@@ -666,6 +666,10 @@ async fn quota_member(quota: Quota) -> (Host, playbox_net::Client) {
     (host, client)
 }
 
+/// Both quota tests that write `quota_probe.bin` take this lock: `leftover_probe_files` scans every `playbox-*` directory in the
+/// temp dir, so a probe file the other test is still writing would look like a file the first one failed to remove.
+static PROBE_FILE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn leftover_probe_files() -> Vec<std::path::PathBuf> {
     let mut found = Vec::new();
     if let Ok(top) = std::fs::read_dir(std::env::temp_dir()) {
@@ -688,6 +692,7 @@ fn leftover_probe_files() -> Vec<std::path::PathBuf> {
 
 #[tokio::test]
 async fn a_task_that_keeps_writing_is_stopped_at_the_quota_and_its_files_are_removed() {
+    let _one_at_a_time = PROBE_FILE.lock().await;
     let (host, client) = quota_member(Quota {
         max_bytes: 30 << 20,
         max_entries: 1000,
@@ -774,6 +779,7 @@ async fn a_flood_of_tiny_files_is_stopped_by_the_entry_limit() {
 /// A Docker container must die with the stopped run, not keep writing to the host's disk.
 #[tokio::test]
 async fn a_stopped_docker_task_leaves_no_container_running() {
+    let _one_at_a_time = PROBE_FILE.lock().await;
     if !docker_answers() {
         eprintln!("skipping: docker is not running");
         return;

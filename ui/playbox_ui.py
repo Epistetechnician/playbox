@@ -187,8 +187,14 @@ def make_handler(sidecar, token, page_path, home):
             entries = bytes(data).count(b"\n")
             if len(data) < 2:
                 return self._json(400, {"error": "log is empty"})
-            offset = len(data) // 2
-            data[offset] ^= 1
+            # Change one hex digit to another, so the log still parses and verification reports the broken entry. (Flipping a bit
+            # of whatever byte sits in the middle can land on a space or newline and make the log unparseable instead, which
+            # `playbox_verify` reports as an error string, not a verdict; that depended on the length of the paths in the log.)
+            hexd = b"0123456789abcdef"
+            offset = next((i for i in range(len(data) // 2, len(data)) if data[i] in hexd), None)
+            if offset is None:
+                return self._json(400, {"error": "no hex digit to change in this log"})
+            data[offset] = hexd[(hexd.index(data[offset]) + 1) % 16]
             tmp = Path(home) / "ui-demo"
             tmp.mkdir(parents=True, exist_ok=True, mode=0o700)
             copy = tmp / "tampered.log"
