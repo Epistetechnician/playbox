@@ -49,7 +49,7 @@ MAPS = Path(os.environ.get("TELEPATHY_MAPS", Path.home() / "tp/maps"))
 lock = threading.Lock()
 models, maps, ref = {}, {}, {}
 for name, repo in REPOS.items():
-    models[name] = T.load(snapshot_download(repo, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "merges*", "vocab*"]))
+    models[name] = T.load(snapshot_download(repo, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "merges*", "vocab*"] + (["*.bin"] if os.environ.get("TELEPATHY_ALLOW_BIN") else [])))
 MAPS.mkdir(parents=True, exist_ok=True)
 for src, dst in PAIRS:
     f = MAPS / f"{src}_to_{dst}_{FIT}.pt"

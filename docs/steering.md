@@ -1068,3 +1068,7 @@ Second independent runs on the same node and stack (`big_pair_gated_s2`: 20 topi
 - Seed-to-seed spread for the same arm is up to 5 points (ungated 95% then 90%), so single-run differences of that size should not be read.
 
 Cost: node `playbox-e6-cuda` about 46 minutes (about 4 USD), stopped at the end. Report regenerated with `steer/tools/telepathy_report.py` (`results/telepathy/swarm_telepathy_report.pdf`), numbers computed from the result files.
+
+#### Third family (Qwen3-8B with DeepSeek-LLM-7B): started, not evaluated
+
+The service loads and fits both maps (`TELEPATHY_REPOS="qwen8b=Qwen/Qwen3-8B-Base,dsk=deepseek-ai/deepseek-llm-7b-base"`, bf16, agent fit set): held-out cosine 0.93 for qwen8b to dsk and 0.88 for dsk to qwen8b. DeepSeek ships only `.bin` weights, so the node needs `TELEPATHY_ALLOW_BIN=1` to download them. No probe was calibrated and no eval was run: the compute account ran out of prepaid credit during calibration and the GPU run was skipped. The accuracy of this pair is unmeasured.
