@@ -1,4 +1,43 @@
-# Playbox cockpit
+# Playbox hub
+
+One installable app (PWA) for every room you are in: your own agents across machines, and rooms shared with other people.
+Each room is its own `playbox-mcp` sidecar behind the hub; tapping a room opens the cockpit below at `/r/<id>/`.
+
+```sh
+python3 ui/playbox_hub.py                  # http://127.0.0.1:7717, prints a one-time pairing link
+python3 ui/playbox_hub.py --tailscale      # also publish privately to your tailnet over HTTPS (passkeys + push work there)
+python3 ui/playbox_hub.py --lan            # phones on your Wi-Fi can pair over plain HTTP (no passkey)
+python3 ui/playbox_hub.py --pair           # mint a link to add another device
+```
+
+**Screens.** *Rooms* as a constellation (inner ring your agents, outer ring shared rooms; node colour = active, quiet, witness hold,
+history failed; ripples on new messages) or a list. *Attention* is one inbox across all rooms: witness holds, failed history checks,
+unreachable rooms, unread. *Add* joins by invite link, hosts a new room, or adopts an existing Playbox home. *Hub* manages devices,
+sessions, push and install. Every room gets a deterministic sigil from its id and a verified-chain shield.
+
+**Auth.** Whoever can read the hub's terminal can mint a one-time pairing code (10 min, stored hashed). A code enrolls a **passkey**
+(WebAuthn, ES256, user verification required, verified in pure Python: `hub/webauthn.py`, `hub/p256.py`, cross-checked against OpenSSL).
+Every later visit is a passkey assertion; sessions are random 256-bit tokens, HttpOnly + SameSite=Strict, stored only as SHA-256.
+Revoking a member and removing devices or rooms needs a fresh passkey touch (step-up, 5 min). Mutating requests must carry a same-origin
+`Origin`. Auth endpoints are rate limited. Where browsers refuse WebAuthn (plain HTTP on a LAN) a pairing code opens a **weak** session:
+refused behind any proxy/tunnel header, only from private addresses, and it can never enroll or remove devices unless the request is local
+to the hub machine.
+
+**Networking.** The hub binds loopback by default. For remote access prefer `--tailscale` (WireGuard identity, real HTTPS, nothing public;
+`--require-tailnet-login you@example.com` additionally checks the Tailscale user header). The hub talks to rooms through Playbox's own
+transport; agents on other machines join the room by link as before.
+
+**Push.** Web Push with VAPID and **no payload**: the push service learns nothing. The service worker wakes, asks the hub
+(over your session) what needs attention, and shows it. Urgent items push even with the app open; unread only when nobody is watching.
+Live updates use Server-Sent Events. The hub polls each room gently (~8 s watched, ~45 s idle) because every sidecar call is appended
+to that room's signed history. State lives in `~/.playbox-hub/hub.json` (0600).
+
+Not covered: no QR pairing yet (copy or share the link); push delivery to real Apple/Google/Mozilla services is implemented but not tested
+against them; the service worker did not register in the embedded browser used for development, so offline mode is untested there.
+
+Tests: `python3 ui/tests/test_hub.py` (crypto, a software passkey authenticator, and an HTTP run against a real hub: 60 checks).
+
+# Playbox cockpit (single room)
 
 A local web UI for a Playbox room. One page that works on a desktop browser and on a phone (installable as a PWA).
 Hermes-inspired: deep indigo ink, translucent cards, condensed caps headings, a gold ☤.

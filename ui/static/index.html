@@ -217,14 +217,14 @@ body{background-image:radial-gradient(900px 520px at 50% -140px,rgba(120,120,255
 <body>
 <div class="app">
   <aside class="rail" aria-label="Primary">
-    <div class="brand"><b>☤</b> Playbox</div>
+    <div class="brand"><b>☤</b> <span class="bk">Playbox</span></div>
     <div id="railnav"></div>
     <div class="foot" id="railfoot"></div>
   </aside>
 
   <main>
     <header class="top">
-      <div class="brand"><b>☤</b> Playbox</div>
+      <div class="brand"><b>☤</b> <span class="bk">Playbox</span></div>
       <span class="pill" id="pill"><span class="dot"></span><span>Connecting…</span></span>
     </header>
     <div class="content"><div class="hold" id="holdbar" role="alert"></div><section id="view" aria-live="polite"></section></div>
@@ -237,6 +237,7 @@ body{background-image:radial-gradient(900px 520px at 50% -140px,rgba(120,120,255
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 
+<script src="/auth.js" onerror="void 0"></script>
 <script>
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
@@ -258,12 +259,15 @@ const TABS = [["room", "Room"], ["feed", "Feed"], ["work", "Work"], ["people", "
 const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 
 /* ---------- api ---------- */
+const BASE = (location.pathname.match(/^\/r\/[^/]+\//) || ["/"])[0];     // under the hub a room lives at /r/<id>/
+const HUB = BASE !== "/";
+const gfetch = (u, i) => typeof PB !== "undefined" ? PB.guarded(u, i) : fetch(u, i);
 async function api(name, args = {}, poll = false) {
   let r;
   try {
-    r = await fetch("/api/tool", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name, args, poll})});
-  } catch { return {error: true, data: "Can't reach the Playbox UI server."}; }
-  if (r.status === 401) { location.reload(); return {error: true, data: "Locked"}; }
+    r = await gfetch(BASE + "api/tool", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name, args, poll})});
+  } catch (e) { return {error: true, data: e && e.message && e.message.includes("passkey") ? e.message : "Can't reach the Playbox UI server."}; }
+  if (r.status === 401) { if (HUB) location.href = "/"; else location.reload(); return {error: true, data: "Locked"}; }
   return r.json();
 }
 const msgOf = d => typeof d === "string" ? d : (d && (d.error || d.message)) || JSON.stringify(d);
@@ -550,7 +554,7 @@ function paintHold() {
 }
 async function pollWitness() {
   let r;
-  try { r = await (await fetch("/api/witness")).json(); } catch { return; }
+  try { r = await (await fetch(BASE + "api/witness")).json(); } catch { return; }
   const was = S.hold.length;
   S.holds = r.events || []; S.hold = r.active || [];
   if (was && !S.hold.length) toast("Hold lifted");
@@ -558,10 +562,19 @@ async function pollWitness() {
   if (S.tab === "proof" && !document.activeElement.closest?.("#view")) { const c = $("#view .card:nth-of-type(3)"); if (c) c.innerHTML = "<h2>Witness holds</h2>" + renderHolds(); }
 }
 
+/* ---------- hub: back to all rooms ---------- */
+if (HUB) {
+  document.querySelectorAll(".brand .bk").forEach(el => { el.outerHTML = '<a class="bk" href="/" style="color:inherit;text-decoration:none" aria-label="All rooms">‹ Rooms</a>'; });
+  document.querySelectorAll(".brand").forEach(el => { el.style.display = "flex"; });
+  const st = document.createElement("style");
+  st.textContent = "@media(max-width:899px){.top .brand{display:flex!important}}";
+  document.head.appendChild(st);
+}
+
 /* ---------- state ---------- */
 async function refresh(poll) {
   try {
-    const r = await (await fetch("/api/state")).json();
+    const r = await (await fetch(BASE + "api/state")).json();
     const before = mode() + members().length;
     S.ok = r.ok; S.status = r.ok ? r.status : S.status;
     paintPill();
@@ -658,7 +671,7 @@ async function act(name, btn) {
     }
     case "tamper": {
       busy(btn, true);
-      const r = await (await fetch("/api/tamper", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({path: S.status.history_log})})).json();
+      const r = await (await fetch(BASE + "api/tamper", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({path: S.status.history_log})})).json();
       busy(btn, false);
       if (r.error && !r.result && !r.bytes) { toast(r.error, true); break; }
       const res = r.result, valid = !r.error && res && res.valid === true;
