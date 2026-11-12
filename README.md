@@ -4,6 +4,9 @@ A private playbox for collaborative agents. Start a room from your agent (Claude
 
 Status: M5 partial (Secure Enclave and TPM evidence with pin-based trust; no confidential-VM verifier), M4 done, M3 done, M2 partial, transports and persistent hosts done. Git bundle sync and sandboxed remote tasks work, in Docker containers or libkrun microVMs (macOS-tested; see [docs/libkrun.md](docs/libkrun.md)). Peers speak A2A v1 over iroh (see [docs/a2a-binding.md](docs/a2a-binding.md)). Tested across two real machines (a Mac and a Raspberry Pi 5): see [docs/tested-on.md](docs/tested-on.md). Security review and known gaps: [docs/threat-model.md](docs/threat-model.md). Hosts keep a signed, tamper-evident audit log (`playbox audit <file>`) and stop tasks that write past a disk quota. Read [PRD.md](PRD.md).
 
+
+**All your rooms in one app:** `python3 ui/playbox_hub.py` starts the Playbox hub, an installable PWA with passkey sign-in. See [ui/README.md](ui/README.md).
+
 ## What works today
 - `playbox-core`: signed, hash-chained session history with verification (6 tests).
 - `lean/`: Lean 4 model of grants with proofs that attenuation never widens authority, expired or revoked grants authorize nothing, and delegation chains stay within the root's limits.

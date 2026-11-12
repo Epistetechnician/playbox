@@ -498,3 +498,5 @@ def main(argv=None):
         pass
     finally:
         hub.close()
+        if ts_name:    # take the tailnet publication down with the hub
+            subprocess.run([ts, "serve", "--https=443", "off"], capture_output=True, timeout=15)
