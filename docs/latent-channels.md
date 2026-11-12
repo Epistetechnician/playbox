@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening), 6m (audit threshold transfer) and 6n (fuzzing the parsers). Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening), 6m (audit threshold transfer) and 6n (fuzzing the parsers) and 6o (a shared-memory spike on Hindsight). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -596,6 +596,38 @@ mutating valid seeds, which almost always break the signature. The Python mutati
 they cover the shapes I thought of. The CLI session's JSON handler and the host's reply to a hostile reveal were exercised only
 through the host test. Not fuzzed: the sender-side code (it takes tensors from the user's own models), and `hub_run`'s data
 handling.
+
+## 6o. Shared room memory on Hindsight: a spike (2026-11-11)
+
+Question: could each room keep a shared memory in an unmodified [Hindsight](https://github.com/vectorize-io/hindsight) server (a bank per
+room), with Playbox's trust metadata riding along, or would it need a fork? `steer/tools/hindsight_spike.py` (results in
+`steer/results/hindsight_spike.json` and `hindsight_observations.json`) ran the published image against a local model (Ollama `phi4`;
+no key, nothing left the machine). Two authors retained four entries, two honest and two a planted contradiction, each with the
+fields Playbox keeps for a memory entry (author key, signature, evidence reference, review status) as `metadata` and `tags`.
+
+| Check | Result |
+|---|---|
+| Metadata and tags come back on recall, unchanged | 4 of 4 |
+| Recall filtered by `author:` tag returns only that author's entries | yes, both authors |
+| Recall filtered to `status:accepted` hides the planted claim (`tags_match: all`) | yes; unfiltered recall does surface it |
+| Retaining the same `document_id` again does not duplicate | 4 units before and after |
+| Deleting a revoked author's documents removes them from recall | yes |
+| Consolidation (observations) mixes authors | not shown: 0 mixed in 20 observations over two scope modes |
+
+What it supports: **run it unmodified as a sidecar, no fork.** The bridge Playbox would write is thin, because the host can stamp
+author, room and status as tags and metadata, filter recall on them so unreviewed entries stay out of what an agent is shown, retry
+safely by `document_id` (the same idea as the request id in `a2a-binding.md`), and revoke by deleting an author's documents.
+
+What it does not show. The consolidation check is inconclusive: the local model kept the contradictory claims apart even in
+`combined` mode, which is meant to merge, so this run cannot tell whether a stronger model would blend a hostile author's claim
+into an "observation" the room then trusts. In `per_tag` mode Hindsight also makes one observation per tag value, including a
+room-wide one (`room:spike`), so a shared tag is a path by which authors could be merged. The safe design is to keep unreviewed
+entries out of consolidation or give each author their own scope, and to test that with a strong model and many overlapping
+entries before relying on it. Also unmeasured: recall quality, cost, and what derived observations do after a deletion (the
+deleted documents left recall, but observations built from them were not checked). Retaining four entries took 48 s on a local
+20 B-class model, so a real room would pay for an LLM call per retain; that cost and the disclosure that memory text reaches the
+configured model are the host's to decide. Hindsight is a Python server with Postgres, so it stays an opt-in extra, not part of
+the single binary.
 
 ## 7. Not covered
 
