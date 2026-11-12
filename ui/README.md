@@ -33,7 +33,7 @@ Live updates use Server-Sent Events. The hub polls each room gently (~8 s watche
 to that room's signed history. State lives in `~/.playbox-hub/hub.json` (0600).
 
 Not covered: no QR pairing yet (copy or share the link); push delivery to real Apple/Google/Mozilla services is implemented but not tested
-against them; the service worker did not register in the embedded browser used for development, so offline mode is untested there.
+against them; the embedded dev browser refuses service-worker scripts, so the worker is exercised in Node (ui/tests/sw_sim.js) rather than a real browser.
 
 Tests: `python3 ui/tests/test_hub.py` (crypto, a software passkey authenticator, and an HTTP run against a real hub: 60 checks).
 

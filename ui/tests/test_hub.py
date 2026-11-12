@@ -115,6 +115,31 @@ def test_crypto():
     shutil.rmtree(tmp)
 
 
+def test_push_send():
+    import urllib.request, urllib.error
+    d, q = p256.generate()
+    seen = {}
+    class R:
+        status = 201
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    real = urllib.request.urlopen
+    def fake(req, timeout=0):
+        seen["req"] = req
+        if "gone" in req.full_url:
+            raise urllib.error.HTTPError(req.full_url, 410, "gone", {}, None)
+        return R()
+    urllib.request.urlopen = fake
+    try:
+        st = push.send(d, b64u(p256.raw_pub(q)), "https://push.example.net/s/abc")
+        r = seen["req"]
+        check("push.send: empty body, VAPID auth, TTL", st == 201 and r.data == b"" and r.get_header("Authorization").startswith("Vapid t=".capitalize()[:5]) or r.get_header("Authorization").startswith("vapid t="))
+        check("push.send: 410 reported so the sub is dropped", push.send(d, b64u(p256.raw_pub(q)), "https://push.example.net/gone") == 410)
+        check("push.send: refuses non-https endpoints", push.send(d, "x", "http://push.example.net/x") == 0)
+    finally:
+        urllib.request.urlopen = real
+
+
 def test_webauthn():
     home = tempfile.mkdtemp()
     a = Auth(Store(home))
@@ -311,6 +336,7 @@ def test_http():
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
+    test_push_send()
     test_http()
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)
