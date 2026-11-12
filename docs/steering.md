@@ -1072,3 +1072,19 @@ Cost: node `playbox-e6-cuda` about 46 minutes (about 4 USD), stopped at the end.
 #### Third family (Qwen3-8B with DeepSeek-LLM-7B): started, not evaluated
 
 The service loads and fits both maps (`TELEPATHY_REPOS="qwen8b=Qwen/Qwen3-8B-Base,dsk=deepseek-ai/deepseek-llm-7b-base"`, bf16, agent fit set): held-out cosine 0.93 for qwen8b to dsk and 0.88 for dsk to qwen8b. DeepSeek ships only `.bin` weights, so the node needs `TELEPATHY_ALLOW_BIN=1` to download them. No probe was calibrated and no eval was run: the compute account ran out of prepaid credit during calibration and the GPU run was skipped. The accuracy of this pair is unmeasured.
+
+#### End-to-end efficiency benchmark on Modal
+
+`steer/tools/telepathy_bench_modal.py` (`modal run`, one container per pair and direction; small pair on an A10G, larger pair on an H100): 20 concepts x 8 prompts per direction, greedy, 24 new tokens, lexicon-scored, no probe gate. Results: `steer/results/telepathy/bench_modal.json`.
+
+| Direction | latent | latent int8 | text "Topic: X" | 8 sentences as text | own-direction bound | random vector |
+|---|---|---|---|---|---|---|
+| smollm2 to qwen3 | 60.6% | 62.5% | 74.4% | 55.6% | 85.6% | 1.9% |
+| qwen3 to smollm2 | 64.4% | 62.5% | 71.2% | 62.5% | 70.6% | 1.2% |
+| olmo2 to qwen8b | 68.1% | 69.4% | 70.6% | 57.5% | 80.6% | 0.6% |
+| qwen8b to olmo2 | 65.6% | 64.4% | 76.9% | 58.1% | 80.6% | 0.0% |
+
+- Context tokens added for B: latent 0, topic word 5, sentences about 106. Wire bytes: topic word 16, sentences 541, latent 2.3 KB (576-dim) to 16 KB (4096-dim) in float32, half in float16, a quarter in int8 with no visible accuracy change.
+- Generation latency is the same for every arm (about 530 to 660 ms for 24 tokens, p50), prefix or not; sender think is about 230 to 290 ms for 8 sentences. One-time cost: fitting a map took about 11 minutes per direction on the GPU.
+- Reading: the vector is neither smaller nor more accurate than sending the topic word as text. Its value is that no readable text crosses between the agents and B's context stays untouched. It matches or beats the full-sentence text arm, which depends on one prompt format. Single run per arm (decoding is greedy and reproduced exactly across two runs), so differences of a few points between arms are within noise for n = 160.
+- Run notes: the first attempt hit Modal's 60-minute function limit, then the client lost its connection once; the tool now runs one container per direction, saves each result to the volume `playbox-telepathy-bench` and should be run with `--detach` for the larger pair.

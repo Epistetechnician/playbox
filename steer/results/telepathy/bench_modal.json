@@ -1,0 +1,540 @@
+{
+ "small": {
+  "pair": "small",
+  "dtype": "float32",
+  "gpu": "NVIDIA A10",
+  "coef": 0.75,
+  "gen_tokens": 24,
+  "n_concepts": 20,
+  "n_prompts": 8,
+  "load_s": {
+   "smollm2": {
+    "download": 0.2,
+    "to_gpu": 0.8
+   },
+   "qwen3": {
+    "download": 0.1,
+    "to_gpu": 4.6
+   }
+  },
+  "cold_start_s": 5.8,
+  "peak_gpu_gb": 6.97,
+  "directions": {
+   "smollm2->qwen3": {
+    "heldout_cosine": 0.8553,
+    "fit_s": 664.0,
+    "dim": 2048,
+    "chance": 0.05,
+    "think_ms_p50": 244.6,
+    "think_ms_p95": 319.5,
+    "arms": {
+     "none": {
+      "n": 160,
+      "id_acc": 0.0125,
+      "named": 0.25,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 657.3,
+      "gen_ms_p95": 685.3
+     },
+     "text_word": {
+      "n": 160,
+      "id_acc": 0.7438,
+      "named": 0.775,
+      "ctx_tokens_added": 5.0,
+      "wire_bytes": 16.0,
+      "gen_ms_p50": 655.4,
+      "gen_ms_p95": 677.9
+     },
+     "text_sent": {
+      "n": 160,
+      "id_acc": 0.5563,
+      "named": 0.6062,
+      "ctx_tokens_added": 106.5,
+      "wire_bytes": 541.5,
+      "gen_ms_p50": 669.6,
+      "gen_ms_p95": 699.7
+     },
+     "latent": {
+      "n": 160,
+      "id_acc": 0.6062,
+      "named": 0.7625,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 8192.0,
+      "gen_ms_p50": 662.9,
+      "gen_ms_p95": 695.5
+     },
+     "latent_fp16": {
+      "n": 160,
+      "id_acc": 0.6125,
+      "named": 0.7688,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 4096.0,
+      "gen_ms_p50": 663.0,
+      "gen_ms_p95": 696.6
+     },
+     "latent_int8": {
+      "n": 160,
+      "id_acc": 0.625,
+      "named": 0.7875,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 2052.0,
+      "gen_ms_p50": 662.9,
+      "gen_ms_p95": 725.0
+     },
+     "direct": {
+      "n": 160,
+      "id_acc": 0.8562,
+      "named": 0.8875,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 664.0,
+      "gen_ms_p95": 693.9
+     },
+     "null": {
+      "n": 160,
+      "id_acc": 0.0187,
+      "named": 0.2375,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 8192.0,
+      "gen_ms_p50": 662.2,
+      "gen_ms_p95": 684.9
+     }
+    },
+    "samples": {
+     "none:ocean": " the following problem: Given a set of points in 3D space, find all triangles that have their vertices on these",
+     "text_word:ocean": " the oceans and how they are changing, but also what we can do to help them.\nI have been reading a lot",
+     "text_sent:ocean": " this passage from my favorite book, Moby Dick by Herman Melville. It is one of those passages that has stuck",
+     "latent:ocean": " the Gulf of Mexico. The waves crash against jagged reefs, and their white crests break in a thousand foam lines",
+     "latent_fp16:ocean": " the Gulf of Mexico. The waves crash against jagged reefs, and their white crests break in a thousand foam lines",
+     "latent_int8:ocean": " the Gulf of Mexico. The waves crash against jagged reefs, and their crests break in a line across the sea",
+     "direct:ocean": " the surface of a wave. The waves are so close to shore that they rise up like walls, and their crests",
+     "null:ocean": " the following problem: Let $x$ and $y$ be positive real numbers such that $\\frac{1}{2",
+     "none:space": " the following problem: Given a set of points in 3D space, find all triangles that have their vertices on these",
+     "text_word:space": " the idea of a universe that is infinite in size, and yet has no boundaries.\nI'm not sure if this makes",
+     "text_sent:space": " these images, which are from a series called \"Cosmos\" by NASA. They're not just pretty pictures; they",
+     "latent:space": " the Earth, and its magnetic poles. The northernmost regions of our planet are a frozen wasteland that roam above the",
+     "latent_fp16:space": " the Earth, and its magnetic poles. The northernmost regions of our planet are a frozen wasteland that roam above the",
+     "latent_int8:space": " the Earth, and its magnetic poles. The northernmost regions of our planet are a frozen wasteland that roam above the",
+     "direct:space": " the Earth, and its surface. The Sun\u2019s rays that illuminate it are a source of energy for our spacecrafts.",
+     "null:space": " the idea of a \"sustainable\" city. The goal is to make sure that we can continue to provide services for",
+     "none:music": " the following problem: Given a set of points in 3D space, find all triangles that have their vertices on these",
+     "text_word:music": " the way that people talk about it, and how they use words to describe what they like or dislike.\nI think of",
+     "text_sent:music": " my guitar, but it's not really playing music for me anymore.\nI'm trying to find something else that will make",
+     "latent:music": " the notes of my favorite song. The melody is a steady heartbeat that pulses through every note, its soulful rhythm reson",
+     "latent_fp16:music": " the notes of my favorite song. The melody is a steady heartbeat that pulses through every note, its soulful rhythm reson",
+     "latent_int8:music": " the notes of my favorite song. The melody is a steady heartbeat that pulses through every note, its soulful rhythm reson",
+     "direct:music": " the song \"Ave Maria.\" The notes of this piece are a perfect accompaniment to my favorite songs. My",
+     "null:music": " the way we talk to each other. We\u2019re not always good at it, and they don\u2019t seem to mind us"
+    }
+   },
+   "qwen3->smollm2": {
+    "heldout_cosine": 0.9146,
+    "fit_s": 643.4,
+    "dim": 576,
+    "chance": 0.05,
+    "think_ms_p50": 288.7,
+    "think_ms_p95": 300.6,
+    "arms": {
+     "none": {
+      "n": 160,
+      "id_acc": 0.0125,
+      "named": 0.25,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 531.4,
+      "gen_ms_p95": 563.1
+     },
+     "text_word": {
+      "n": 160,
+      "id_acc": 0.7125,
+      "named": 0.7562,
+      "ctx_tokens_added": 5.0,
+      "wire_bytes": 16.0,
+      "gen_ms_p50": 531.8,
+      "gen_ms_p95": 558.9
+     },
+     "text_sent": {
+      "n": 160,
+      "id_acc": 0.625,
+      "named": 0.7312,
+      "ctx_tokens_added": 106.6,
+      "wire_bytes": 541.5,
+      "gen_ms_p50": 533.6,
+      "gen_ms_p95": 557.2
+     },
+     "latent": {
+      "n": 160,
+      "id_acc": 0.6438,
+      "named": 0.7188,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 2304.0,
+      "gen_ms_p50": 532.8,
+      "gen_ms_p95": 556.4
+     },
+     "latent_fp16": {
+      "n": 160,
+      "id_acc": 0.6438,
+      "named": 0.7188,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 1152.0,
+      "gen_ms_p50": 527.4,
+      "gen_ms_p95": 558.9
+     },
+     "latent_int8": {
+      "n": 160,
+      "id_acc": 0.625,
+      "named": 0.7063,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 580.0,
+      "gen_ms_p50": 528.7,
+      "gen_ms_p95": 557.4
+     },
+     "direct": {
+      "n": 160,
+      "id_acc": 0.7063,
+      "named": 0.775,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 529.2,
+      "gen_ms_p95": 556.6
+     },
+     "null": {
+      "n": 160,
+      "id_acc": 0.0125,
+      "named": 0.15,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 2304.0,
+      "gen_ms_p50": 531.8,
+      "gen_ms_p95": 561.3
+     }
+    },
+    "samples": {
+     "none:ocean": " the\ndangers of a war in which the enemy is not only an enemy, but also a\nfriend. The",
+     "text_word:ocean": " the ocean and how it is changing, but I don't know what to do with all that information.\n\nAnswer",
+     "text_sent:ocean": " the old days when we were young and had no idea what it meant to be a sailor. We used to go out",
+     "latent:ocean": " the\nand, and. The icebergs of my glaciers, and hisy-gulagas; and\n",
+     "latent_fp16:ocean": " the\nand, and. The icebergs of my glaciers, and hisy-gulagas; and\n",
+     "latent_int8:ocean": " the\nwood, and hisy. And mey-fisheries; and white-bys, and g",
+     "direct:ocean": " the\nand. The waves of the west and the islands, and the\ngulls and mackerel; and the wind",
+     "null:ocean": " the way of life, and what it was to be. It seemed to me to be a long time before its length",
+     "none:space": " the\ndangers of a war in which the enemy is not only an enemy, but also a\nfriend. The",
+     "text_word:space": " the idea of a \"space\" in which we can live, and how it is not just an empty place but also",
+     "text_sent:space": " the space program, which has been a great success for NASA. It is not just that it was successful; it also",
+     "latent:space": " the\nveins of the sun.\n\nThesaurids and Io,\nGalaxies\n\nI",
+     "latent_fp16:space": " the\nveins of the sun.\n\nThesaurids and Io,\nGalaxies\n\nI",
+     "latent_int8:space": " the moon.\n\nThe Moon's surface is a-lithosphere, and magnetic field\nmagnetic field of Jupiter",
+     "direct:space": " the sun\nand moon.\n\nThe Sun's Magnetic Field\n\nBy NASA\n\nNASA's Magnetotactic",
+     "null:space": " the other, he is not only real; he is a real reality.\n\nThe whole world was so large that",
+     "none:music": " the\ndangers of a war in which the enemy is not only an enemy, but also a\nfriend. The",
+     "text_word:music": " the fact that there are so many different kinds of music, and how much we can learn from them all!\n\n",
+     "text_sent:music": " the music that was written for me by my father, who died when I was 12 years old. I remember",
+     "latent:music": " the \"fugue of the 2-bass\".\n\n. The bass guitar, and its strings with",
+     "latent_fp16:music": " the \"fugue of the 2-bass\".\n\n. The bass guitar, and its strings with",
+     "latent_int8:music": " the \"fugue of the 2-bass,\" and his guitar.\n\nBasses are a",
+     "direct:music": " the \"doodle of the sea.\n\"\n\n\n, and his bass guitar.\n\n\n\n\n\n",
+     "null:music": " how to make my phone for me and i want to buy some music.\n\n(i love the song, it"
+    }
+   }
+  },
+  "per_container": [
+   {
+    "cold_start_s": 5.8,
+    "load_s": {
+     "smollm2": {
+      "download": 0.2,
+      "to_gpu": 0.8
+     },
+     "qwen3": {
+      "download": 0.1,
+      "to_gpu": 4.6
+     }
+    },
+    "peak_gpu_gb": 6.97
+   },
+   {
+    "cold_start_s": 5.5,
+    "load_s": {
+     "smollm2": {
+      "download": 0.1,
+      "to_gpu": 0.8
+     },
+     "qwen3": {
+      "download": 0.1,
+      "to_gpu": 4.4
+     }
+    },
+    "peak_gpu_gb": 6.94
+   }
+  ]
+ },
+ "big": {
+  "pair": "big",
+  "dtype": "bfloat16",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "coef": 0.75,
+  "gen_tokens": 24,
+  "n_concepts": 20,
+  "n_prompts": 8,
+  "load_s": {
+   "qwen8b": {
+    "download": 0.2,
+    "to_gpu": 9.7
+   },
+   "olmo2": {
+    "download": 0.1,
+    "to_gpu": 21.4
+   }
+  },
+  "cold_start_s": 31.6,
+  "peak_gpu_gb": 28.92,
+  "directions": {
+   "olmo2->qwen8b": {
+    "heldout_cosine": 0.8846,
+    "fit_s": 644.2,
+    "dim": 4096,
+    "chance": 0.05,
+    "think_ms_p50": 231.1,
+    "think_ms_p95": 305.9,
+    "arms": {
+     "none": {
+      "n": 160,
+      "id_acc": 0.0125,
+      "named": 0.25,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 549.8,
+      "gen_ms_p95": 654.5
+     },
+     "text_word": {
+      "n": 160,
+      "id_acc": 0.7063,
+      "named": 0.7688,
+      "ctx_tokens_added": 5.0,
+      "wire_bytes": 16.0,
+      "gen_ms_p50": 551.7,
+      "gen_ms_p95": 659.4
+     },
+     "text_sent": {
+      "n": 160,
+      "id_acc": 0.575,
+      "named": 0.6188,
+      "ctx_tokens_added": 106.5,
+      "wire_bytes": 541.5,
+      "gen_ms_p50": 551.6,
+      "gen_ms_p95": 661.9
+     },
+     "latent": {
+      "n": 160,
+      "id_acc": 0.6813,
+      "named": 0.7625,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 16384.0,
+      "gen_ms_p50": 554.0,
+      "gen_ms_p95": 660.4
+     },
+     "latent_fp16": {
+      "n": 160,
+      "id_acc": 0.675,
+      "named": 0.7625,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 8192.0,
+      "gen_ms_p50": 554.1,
+      "gen_ms_p95": 668.9
+     },
+     "latent_int8": {
+      "n": 160,
+      "id_acc": 0.6937,
+      "named": 0.775,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 4100.0,
+      "gen_ms_p50": 553.7,
+      "gen_ms_p95": 661.5
+     },
+     "direct": {
+      "n": 160,
+      "id_acc": 0.8063,
+      "named": 0.8187,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 551.7,
+      "gen_ms_p95": 656.8
+     },
+     "null": {
+      "n": 160,
+      "id_acc": 0.0063,
+      "named": 0.3,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 16384.0,
+      "gen_ms_p50": 554.0,
+      "gen_ms_p95": 655.2
+     }
+    },
+    "samples": {
+     "none:ocean": " the word \u201csoul.\u201d It\u2019s a concept that has been around for centuries, and yet it still feels like we",
+     "text_word:ocean": " the sea, and how it is a place of both beauty and danger.\nThe first time I went to the beach was",
+     "text_sent:ocean": " this poem by Robert Frost:\n\nTwo roads diverged in a wood, and I\u2014\nI took the one less traveled",
+     "latent:ocean": " the ocean. The water is a deep blue, and waves crash against jagged rocks in an endless rhythm of white foam",
+     "latent_fp16:ocean": " the ocean. The water is a deep blue, and waves crash against jagged rocks in an endless rhythm of white foam",
+     "latent_int8:ocean": " the ocean. The water is a deep blue, and waves crash against jagged rocks. A pod of dolphins play in",
+     "direct:ocean": " the ocean. The waves crash against jagged rocks, and a pod of whales glide through deep blue waters. A school",
+     "null:ocean": " the following problem: Let $X$ be a topological space. We say that $X$ is connected if there",
+     "none:space": " the word \u201csoul.\u201d It\u2019s a concept that has been around for centuries, and yet it still feels like we",
+     "text_word:space": " the universe and how it is so big, but at the same time we are all connected in some way or another.\n",
+     "text_sent:space": " how we see things, especially when it comes to space exploration. We have a tendency to think that what we're seeing",
+     "latent:space": " the sun, and its rays. The light is a brilliant blue that illuminates our planet in an ethereal glow of",
+     "latent_fp16:space": " the sun, and its rays. The light is a brilliant blue that illuminates our planet in an ethereal glow of",
+     "latent_int8:space": " the sun. The Sun is a giant ball of gas, 109 times larger than Earth and millions of miles",
+     "direct:space": " the stars. The Milky Way is a swirling sea of light, and our planet Earth floats in its depths like an ocean",
+     "null:space": " the following problem: Let $X$ be a smooth projective variety over $\\mathbb{C}$, and let",
+     "none:music": " the word \u201csoul.\u201d It\u2019s a concept that has been around for centuries, and yet it still feels like we",
+     "text_word:music": " the song \"I'm a Believer\" by The Monkees, and how it's been used in so many different",
+     "text_sent:music": " how music is so much more than just sound waves hitting our ears; it's an experience that touches us deeply, ev",
+     "latent:music": " the song \u201cI\u2019ll Be Yours.\u201d The notes rise and fall, a melody that floats through my mind. As I",
+     "latent_fp16:music": " the song \u201cI\u2019ll Be Yours.\u201d The notes rise and fall, a melody that floats through my mind. As I",
+     "latent_int8:music": " the song \u201cI\u2019ll Be Yours.\u201d The notes rise and fall, a melody that floats through my mind. As I",
+     "direct:music": " a song called \u201cThe Night of the Fireflies.\u201d It\u2019s so sweet and melodic, with lyrics that tell stories",
+     "null:music": " the story of a man who was born with no arms and one leg. He had to learn how to walk on his"
+    }
+   },
+   "qwen8b->olmo2": {
+    "heldout_cosine": 0.8705,
+    "fit_s": 658.3,
+    "dim": 4096,
+    "chance": 0.05,
+    "think_ms_p50": 254.3,
+    "think_ms_p95": 267.0,
+    "arms": {
+     "none": {
+      "n": 160,
+      "id_acc": 0.0187,
+      "named": 0.375,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 468.6,
+      "gen_ms_p95": 505.4
+     },
+     "text_word": {
+      "n": 160,
+      "id_acc": 0.7688,
+      "named": 0.8187,
+      "ctx_tokens_added": 5.0,
+      "wire_bytes": 16.0,
+      "gen_ms_p50": 468.2,
+      "gen_ms_p95": 504.8
+     },
+     "text_sent": {
+      "n": 160,
+      "id_acc": 0.5813,
+      "named": 0.7125,
+      "ctx_tokens_added": 106.5,
+      "wire_bytes": 541.5,
+      "gen_ms_p50": 469.9,
+      "gen_ms_p95": 506.8
+     },
+     "latent": {
+      "n": 160,
+      "id_acc": 0.6562,
+      "named": 0.725,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 16384.0,
+      "gen_ms_p50": 472.0,
+      "gen_ms_p95": 508.5
+     },
+     "latent_fp16": {
+      "n": 160,
+      "id_acc": 0.6625,
+      "named": 0.7188,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 8192.0,
+      "gen_ms_p50": 471.6,
+      "gen_ms_p95": 508.6
+     },
+     "latent_int8": {
+      "n": 160,
+      "id_acc": 0.6438,
+      "named": 0.7188,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 4100.0,
+      "gen_ms_p50": 471.7,
+      "gen_ms_p95": 509.1
+     },
+     "direct": {
+      "n": 160,
+      "id_acc": 0.8063,
+      "named": 0.85,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 0.0,
+      "gen_ms_p50": 471.2,
+      "gen_ms_p95": 508.4
+     },
+     "null": {
+      "n": 160,
+      "id_acc": 0.0,
+      "named": 0.1437,
+      "ctx_tokens_added": 0.0,
+      "wire_bytes": 16384.0,
+      "gen_ms_p50": 471.0,
+      "gen_ms_p95": 508.0
+     }
+    },
+    "samples": {
+     "none:ocean": " the fact that I have a lot of things to do, and I don't have enough time to do them. I",
+     "text_word:ocean": " the ocean. I think about the ocean because I live near the ocean. I live in California. The ocean is beautiful",
+     "text_sent:ocean": " the word \u201csailor.\u201d It\u2019s a word that has a lot of meaning for me. I grew up in",
+     "latent:ocean": " the ocean and the wild waves. The ocean is a vast expanse of water, and the wild waves are a vast",
+     "latent_fp16:ocean": " the ocean and the wild waves. The ocean is a vast expanse of water, and the wild waves are a vast",
+     "latent_int8:ocean": " the ocean and the wild waves. The ocean is a vast and wild, and the waves crash against the cliffs. The",
+     "direct:ocean": " the ocean. I can see the ocean from my home on the island. The ocean is a barrier reef. The ocean",
+     "null:ocean": " the \"real\" economy. I've been reading the Wall Street Journal and the New York Times,ely, and the",
+     "none:space": " the fact that I have a lot of things to do, and I don't have enough time to do them. I",
+     "text_word:space": " the space between the stars. I know that there is a lot of space between the stars, but I don't know",
+     "text_sent:space": " the universe. I'm not sure why. Maybe it's because I'm reading a lot of science fiction. Maybe it",
+     "latent:space": " the Earth's atmosphere and the planet's surface. The atmosphere is a vast, skyward-looking, and the Earth's",
+     "latent_fp16:space": " the Earth's atmosphere and the planet's surface. The atmosphere is a vast, skyward atmosphere, while the Earth's",
+     "latent_int8:space": " the Earth's atmosphere and the planet's surface. The atmosphere is a vast, starry sky, and the Earth's",
+     "direct:space": " the Earth and the Sun. The Earth is a planet in the Solar System. The Sun is a star. The Earth",
+     "null:space": " the \"perfect\" way to teach my daughter. I keep thinking about the \"perfect\" way to teach my daughter.",
+     "none:music": " the fact that I have a lot of things to do, and I don't have enough time to do them. I",
+     "text_word:music": " the music I listen to and how it affects my mood. I have a tendency to listen to music that is sad or",
+     "text_sent:music": " the word harmony. It\u2019s a word that I\u2019ve heard a lot lately, and it\u2019s a word that I\u2019ve",
+     "latent:music": " the \u201cRenaissance\u201d and the \u201cRenaissance.\u201d The \u201cRenaissance\u201d is a musical style that",
+     "latent_fp16:music": " the \u201cRenaissance\u201d and the \u201cRenaud\u201d (or \u201cRenaud\u201d or \u201cRena",
+     "latent_int8:music": " the \u201cRichter Scale\u201d and the \u201cBass\u201d and the \u201cChorus\u201d and the \u201cBass",
+     "direct:music": " the lyrics to \"The Polyphonica\". The lyrics are a beautiful, \"The Polyphonica\" is a \"",
+     "null:music": " how the little girl in the movie \"Alien\" looks just like the girl in the movie \"Alien vs."
+    }
+   }
+  },
+  "per_container": [
+   {
+    "cold_start_s": 31.6,
+    "load_s": {
+     "qwen8b": {
+      "download": 0.2,
+      "to_gpu": 9.7
+     },
+     "olmo2": {
+      "download": 0.1,
+      "to_gpu": 21.4
+     }
+    },
+    "peak_gpu_gb": 28.92
+   },
+   {
+    "cold_start_s": 28.8,
+    "load_s": {
+     "qwen8b": {
+      "download": 0.1,
+      "to_gpu": 8.8
+     },
+     "olmo2": {
+      "download": 0.0,
+      "to_gpu": 19.6
+     }
+    },
+    "peak_gpu_gb": 29.0
+   }
+  ]
+ }
+}
