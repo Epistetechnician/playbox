@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#19192f">
-<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#10102a">
+<meta name="color-scheme" content="dark light">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,9 +12,10 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Playbox</title>
+<script>try{const t=localStorage.getItem("pb.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch{}</script>
 <style>
 :root{
-  --bg:#19192f; --bg-2:#222246; --ink:#f2f2f6; --mut:#a8a8c2; --line:rgba(255,255,255,.1);
+  --bg:#10102a; --bg-2:#1b1b3a; --ink:#f3f3f8; --mut:#a4a4c0; --line:rgba(255,255,255,.1);
   --card:rgba(255,255,255,.055); --card-2:rgba(255,255,255,.09);
   --gold:#e8c872; --ok:#7fd6b0; --bad:#ff9090; --warn:#e8c872; --link:#aab4ff;
   --r:10px; --nav-h:64px;
@@ -212,6 +213,27 @@ body{background-image:radial-gradient(900px 520px at 50% -140px,rgba(120,120,255
 .evt{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
 .evt:last-child{border:0}
 .evt time{color:var(--mut);font:12px var(--mono);min-width:48px}
+/* theme parity with the hub: same stored choice (pb.theme), same tokens */
+@media (prefers-color-scheme:light){
+:root:not([data-theme=dark]){--bg:#f4f3fb;--bg-2:#fff;--ink:#15152c;--mut:#5f5f7e;--line:rgba(24,24,70,.1);--card:#fff;--card-2:rgba(24,24,90,.06);--gold:#a5760d;--ok:#12805a;--bad:#bf3030;--warn:#a5760d;--link:#4650c8;--gold-2:#c8961f;--shadow:0 1px 2px rgba(24,24,70,.06),0 12px 30px -18px rgba(40,40,110,.35);color-scheme:light}
+:root:not([data-theme=dark]) body{background-image:radial-gradient(900px 480px at 30% -120px,rgba(110,110,255,.14),transparent 70%)}
+:root:not([data-theme=dark]) .card,:root:not([data-theme=dark]) .hero{background:#fff}
+:root:not([data-theme=dark]) .tabbar{background:rgba(244,243,251,.9)}
+:root:not([data-theme=dark]) input[type=text],:root:not([data-theme=dark]) textarea,:root:not([data-theme=dark]) select,:root:not([data-theme=dark]) input[type=number]{background:rgba(24,24,90,.04)}
+:root:not([data-theme=dark]) pre,:root:not([data-theme=dark]) .hold code,:root:not([data-theme=dark]) .link-box{background:rgba(24,24,90,.06)}
+:root:not([data-theme=dark]) .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:none}
+:root:not([data-theme=dark]) .btn.gold,:root:not([data-theme=dark]) .nav .badge{color:#fff}
+:root:not([data-theme=dark]) .toast{background:#fff;color:var(--ink)}
+}
+:root[data-theme=light]{--bg:#f4f3fb;--bg-2:#fff;--ink:#15152c;--mut:#5f5f7e;--line:rgba(24,24,70,.1);--card:#fff;--card-2:rgba(24,24,90,.06);--gold:#a5760d;--ok:#12805a;--bad:#bf3030;--warn:#a5760d;--link:#4650c8;--gold-2:#c8961f;--shadow:0 1px 2px rgba(24,24,70,.06),0 12px 30px -18px rgba(40,40,110,.35);color-scheme:light}
+:root[data-theme=light] body{background-image:radial-gradient(900px 480px at 30% -120px,rgba(110,110,255,.14),transparent 70%)}
+:root[data-theme=light] .card,:root[data-theme=light] .hero{background:#fff}
+:root[data-theme=light] .tabbar{background:rgba(244,243,251,.9)}
+:root[data-theme=light] input[type=text],:root[data-theme=light] textarea,:root[data-theme=light] select,:root[data-theme=light] input[type=number]{background:rgba(24,24,90,.04)}
+:root[data-theme=light] pre,:root[data-theme=light] .hold code,:root[data-theme=light] .link-box{background:rgba(24,24,90,.06)}
+:root[data-theme=light] .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:none}
+:root[data-theme=light] .btn.gold,:root[data-theme=light] .nav .badge{color:#fff}
+:root[data-theme=light] .toast{background:#fff;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -565,7 +587,6 @@ async function pollWitness() {
 /* ---------- hub: back to all rooms ---------- */
 if (HUB) {
   document.querySelectorAll(".brand .bk").forEach(el => { el.outerHTML = '<a class="bk" href="/" style="color:inherit;text-decoration:none" aria-label="All rooms">‹ Rooms</a>'; });
-  document.querySelectorAll(".brand").forEach(el => { el.style.display = "flex"; });
   const st = document.createElement("style");
   st.textContent = "@media(max-width:899px){.top .brand{display:flex!important}}";
   document.head.appendChild(st);

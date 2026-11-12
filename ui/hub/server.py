@@ -231,7 +231,7 @@ def make_handler(hub, auth, store, opts):
                                     "devices": auth.devices(rec["cred"]), "sessions": auth.sessions(key), "push_key": store.d["vapid"]["pub"],
                                     "push_subs": len(store.d["push"]), "rp": self.rp_id(), "version": 1})
             if m == "GET" and p == "/api/rooms":
-                return self.j(200, {"rooms": hub.digests(), "attention": hub.attention()})
+                return self.j(200, {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()})
             if m == "GET" and p == "/api/attention":
                 return self.j(200, {"items": hub.attention()})
             if m == "GET" and p == "/api/events":
@@ -307,7 +307,7 @@ def make_handler(hub, auth, store, opts):
             try:
                 hub.wake.set()
                 self.wfile.write(b"retry: 3000\n\n")
-                self.wfile.write(sse("hello", {"rooms": hub.digests(), "attention": hub.attention()}))
+                self.wfile.write(sse("hello", {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()}))
                 self.wfile.flush()
                 last = time.time()
                 while True:

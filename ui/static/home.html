@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#12122a">
-<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#12122a" id="themecolor">
+<meta name="color-scheme" content="dark light">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Playbox">
@@ -13,160 +13,266 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <title>Playbox</title>
+<script>/* theme before paint, so there is no flash */
+try { const t = localStorage.getItem("pb.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
 :root{
-  --bg:#12122a; --bg-2:#1d1d3c; --ink:#f2f2f6; --mut:#a3a3bf; --line:rgba(255,255,255,.1);
-  --card:rgba(255,255,255,.055); --card-2:rgba(255,255,255,.1);
-  --gold:#e8c872; --ok:#7fd6b0; --bad:#ff9090; --link:#aab4ff;
-  --aura:rgba(120,120,255,.2); --r:14px; --nav-h:62px;
+  color-scheme:dark;
+  --bg:#10102a; --bg-2:#1b1b3a; --ink:#f3f3f8; --ink-2:#d6d6e6; --mut:#a4a4c0; --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.16);
+  --card:rgba(255,255,255,.05); --card-2:rgba(255,255,255,.09); --raise:0 1px 0 rgba(255,255,255,.05) inset,0 10px 30px -18px rgba(0,0,0,.7);
+  --gold:#e8c872; --gold-ink:#1a1a2e; --ok:#7fd6b0; --bad:#ff9a9a; --link:#aab4ff; --node:rgba(28,28,62,.94); --scrim:rgba(5,5,18,.7);
+  --aura-a:rgba(120,120,255,.22); --aura-b:rgba(232,200,114,.07); --star:rgba(255,255,255,.55);
+  --r:16px; --nav-h:64px;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --cond:"Avenir Next Condensed","Arial Narrow","Roboto Condensed","Helvetica Neue",ui-sans-serif,sans-serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
 }
-html[data-mood=live]{--aura:rgba(127,214,176,.17)}
-html[data-mood=alert]{--aura:rgba(232,200,114,.24)}
+@media (prefers-color-scheme:light){:root:not([data-theme=dark]){color-scheme:light;
+  --bg:#f4f3fb; --bg-2:#fff; --ink:#15152c; --ink-2:#34344f; --mut:#5f5f7e; --line:rgba(24,24,70,.1); --line-2:rgba(24,24,70,.2);
+  --card:#fff; --card-2:rgba(24,24,90,.06); --raise:0 1px 2px rgba(24,24,70,.06),0 12px 30px -18px rgba(40,40,110,.35);
+  --gold:#a5760d; --gold-ink:#fff; --ok:#12805a; --bad:#bf3030; --link:#4650c8; --node:#fff; --scrim:rgba(20,20,50,.45);
+  --aura-a:rgba(110,110,255,.16); --aura-b:rgba(232,200,114,.18); --star:rgba(70,70,160,.28)}}
+:root[data-theme=light]{color-scheme:light;
+  --bg:#f4f3fb; --bg-2:#fff; --ink:#15152c; --ink-2:#34344f; --mut:#5f5f7e; --line:rgba(24,24,70,.1); --line-2:rgba(24,24,70,.2);
+  --card:#fff; --card-2:rgba(24,24,90,.06); --raise:0 1px 2px rgba(24,24,70,.06),0 12px 30px -18px rgba(40,40,110,.35);
+  --gold:#a5760d; --gold-ink:#fff; --ok:#12805a; --bad:#bf3030; --link:#4650c8; --node:#fff; --scrim:rgba(20,20,50,.45);
+  --aura-a:rgba(110,110,255,.16); --aura-b:rgba(232,200,114,.18); --star:rgba(70,70,160,.28)}
+html[data-mood=live]{--aura-a:rgba(80,200,160,.2)}
+html[data-mood=alert]{--aura-a:rgba(232,190,80,.28)}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
-body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overscroll-behavior-y:contain;
-  background-image:radial-gradient(1000px 560px at 50% -140px,var(--aura),transparent 70%);background-attachment:fixed;transition:background-image .8s}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overscroll-behavior-y:contain;font-variant-numeric:tabular-nums}
+body::before{content:"";position:fixed;inset:-20% -10% auto -10%;height:90vh;z-index:-1;pointer-events:none;
+  background:radial-gradient(60% 55% at 28% 18%,var(--aura-a),transparent 70%),radial-gradient(45% 45% at 82% 8%,var(--aura-b),transparent 70%);
+  transition:opacity .8s;animation:drift 40s ease-in-out infinite alternate}
+@keyframes drift{to{transform:translate3d(3%,4%,0) scale(1.06)}}
 button,input,textarea,select{font:inherit;color:inherit}
 h1,h2,h3{margin:0;font-family:var(--cond);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
-h2{font-size:13px;color:var(--mut)}
+h2{font-size:12.5px;color:var(--mut);letter-spacing:.14em}
 a{color:var(--link)}
 .mut{color:var(--mut)} .mono{font-family:var(--mono);font-size:12.5px}
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:8px}
 [hidden]{display:none!important}
+kbd{font:11px var(--mono);padding:1px 6px;border-radius:6px;border:1px solid var(--line-2);color:var(--mut);background:var(--card)}
 
-/* shell */
-.shell{min-height:100vh;display:flex;flex-direction:column}
-header{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top)) 16px 10px;position:sticky;top:0;z-index:20;
-  background:linear-gradient(var(--bg) 62%,transparent)}
-.brand{display:flex;align-items:center;gap:10px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.22em;font-size:17px;font-weight:600}
+/* ---------- layout ---------- */
+.shell{min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr)}
+.rail,.pane{display:none}
+.col{min-width:0;display:flex;flex-direction:column}
+header.top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 10px;position:sticky;top:0;z-index:20;
+  background:linear-gradient(var(--bg) 60%,transparent)}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.24em;font-size:16px;font-weight:600}
 .brand img{width:28px;height:28px;border-radius:8px}
-header .sp{flex:1}
+.sp{flex:1}
+main{flex:1;width:100%;max-width:1120px;margin:0 auto;padding:8px 16px calc(var(--nav-h) + 34px + env(safe-area-inset-bottom))}
+.iconbtn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--card);display:grid;place-items:center;cursor:pointer;color:var(--ink-2)}
+.iconbtn:hover{background:var(--card-2)} .iconbtn svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:12.5px;white-space:nowrap}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
-.dot.live{background:var(--ok);box-shadow:0 0 0 3px rgba(127,214,176,.2)}
-.dot.warn{background:var(--gold)}
-main{flex:1;width:100%;max-width:1180px;margin:0 auto;padding:6px 16px calc(var(--nav-h) + 30px + env(safe-area-inset-bottom))}
-.seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:3px}
-.seg button{border:0;background:none;padding:5px 14px;border-radius:99px;cursor:pointer;color:var(--mut);font-size:13px}
-.seg button[aria-pressed=true]{background:var(--card-2);color:var(--ink)}
-.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 14px;flex-wrap:wrap}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px calc(6px + env(safe-area-inset-bottom));
-  background:rgba(18,18,42,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
-.tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;background:none;border:0;border-radius:10px;cursor:pointer;
+.dot.live{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)} .dot.warn{background:var(--gold)}
+
+.tabs{display:none}
+.bottom{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+  background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border-top:1px solid var(--line)}
+.tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;background:none;border:0;border-radius:12px;cursor:pointer;
   color:var(--mut);font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:11.5px}
-.tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform .25s var(--ease)}
+.tab:active svg{transform:scale(.88)}
 .tab[aria-current=page]{color:var(--ink)} .tab[aria-current=page] svg{stroke:var(--gold)}
-.badge{position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;border-radius:8px;background:var(--gold);color:#1a1a2e;font:600 10px/16px var(--sans);padding:0 4px;text-align:center}
+.badge{position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;border-radius:8px;background:var(--gold);color:var(--gold-ink);font:600 10px/16px var(--sans);padding:0 4px;text-align:center}
 @media(min-width:820px){
-  .tabs{position:static;border:0;background:none;backdrop-filter:none;display:flex;gap:4px;padding:0;margin-left:18px}
-  .tab{flex-direction:row;gap:8px;padding:8px 14px;min-height:40px;font-size:13px}
-  .tab[aria-current=page]{background:var(--card-2)}
+  .bottom{display:none}
+  .tabs{display:flex;gap:4px;margin-left:18px}
+  .tabs .tab{flex-direction:row;gap:8px;padding:8px 14px;min-height:40px;font-size:13px}
+  .tabs .tab[aria-current=page]{background:var(--card-2)}
   .badge{position:static;margin-left:2px}
-  main{padding-bottom:48px}
+  main{padding-bottom:56px;padding-left:28px;padding-right:28px}
+  header.top{padding-left:28px;padding-right:28px}
+}
+@media(min-width:1100px){
+  .shell{grid-template-columns:236px minmax(0,1fr)}
+  .rail{display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;padding:26px 14px 20px;border-right:1px solid var(--line)}
+  .rail .brand{padding:0 10px 24px}
+  .rail .tab{flex-direction:row;justify-content:flex-start;gap:12px;padding:10px 12px;font-size:14px;min-height:44px}
+  .rail .tab[aria-current=page]{background:var(--card-2)}
+  .rail .badge{position:static;margin-left:auto}
+  .rail .foot{margin-top:auto;display:grid;gap:10px;padding:0 6px}
+  .rail .foot .pill{justify-content:flex-start}
+  header.top .brand,header.top .tabs{display:none}
+  header.top{position:static;background:none;padding-top:22px}
+}
+@media(min-width:1440px){
+  .shell{grid-template-columns:236px minmax(0,1fr) 340px}
+  .pane{display:block;position:sticky;top:0;height:100vh;overflow:auto;padding:26px 20px;border-left:1px solid var(--line)}
+  .inline-act{display:none}
 }
 
-/* cards & buttons */
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
-.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:var(--card-2);cursor:pointer}
-.btn:hover{background:rgba(255,255,255,.14)}
-.btn.primary{background:var(--gold);color:#1a1a2e;border-color:transparent;font-weight:600}
+/* ---------- surfaces ---------- */
+.view.enter{animation:in .3s var(--ease)}
+@keyframes in{from{opacity:0;transform:translateY(8px)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--raise)}
+.sect{display:flex;align-items:baseline;justify-content:space-between;margin:26px 2px 12px}
+.sect:first-child{margin-top:4px}
+.sect.tools{flex-wrap:wrap;gap:10px}
+.sect .more{font-size:13px;color:var(--link);background:none;border:0;cursor:pointer;padding:4px 0}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--line-2);background:var(--card-2);cursor:pointer;transition:background .15s,transform .1s}
+.btn:hover{background:color-mix(in srgb,var(--card-2) 70%,var(--ink) 8%)} .btn:active{transform:scale(.98)}
+.btn.primary{background:var(--gold);color:var(--gold-ink);border-color:transparent;font-weight:600}
 .btn.danger{color:var(--bad)} .btn.sm{min-height:36px;padding:0 13px;font-size:13.5px} .btn.block{width:100%}
 .btn[disabled]{opacity:.5;cursor:default}
 label{display:block;font-size:13px;color:var(--mut);margin:12px 0 5px}
-input,textarea,select{width:100%;min-height:44px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.25)}
+input,textarea,select{width:100%;min-height:44px;padding:9px 12px;border-radius:10px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--bg) 50%,transparent)}
 textarea{min-height:84px;resize:vertical}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:2px 9px;border-radius:99px;background:var(--card-2);color:var(--mut);letter-spacing:.02em}
-.chip.mine{color:var(--ok)} .chip.shared{color:var(--link)} .chip.warn{color:var(--gold)} .chip.bad{color:var(--bad)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:2px 9px;border-radius:99px;background:var(--card-2);color:var(--mut);letter-spacing:.02em;white-space:nowrap}
+.chip.mine{color:var(--ok)} .chip.shared{color:var(--link)} .chip.warn{color:var(--gold)} .chip.bad{color:var(--bad)} .chip.ok{color:var(--ok)}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .stat{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)} .stat:last-child{border:0}
-.empty{text-align:center;color:var(--mut);padding:40px 16px}
+.empty{text-align:center;color:var(--mut);padding:44px 16px}
 
-/* room cards */
-.room{display:grid;align-content:start;grid-template-columns:auto 1fr auto;gap:6px 14px;align-items:center;position:relative;text-decoration:none;color:inherit;transition:transform .15s,border-color .2s}
-.room:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.22)}
-.room h3{font-size:16px;letter-spacing:.06em;margin:0;text-transform:none;font-family:var(--sans);font-weight:600}
-.room .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+/* ---------- overview tiles ---------- */
+.tiles{display:grid;gap:12px;grid-template-columns:repeat(2,1fr)}
+@media(min-width:760px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tile{position:relative;overflow:hidden;padding:14px 16px 14px;border-radius:var(--r);background:var(--card);border:1px solid var(--line);box-shadow:var(--raise);cursor:default}
+.tile .k{display:flex;align-items:center;gap:8px;font:600 11.5px var(--cond);letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.tile .k svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tile .v{font:600 34px/1.1 var(--sans);letter-spacing:-.02em;margin:8px 0 2px}
+.tile .s{font-size:12.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;border-radius:50%;background:radial-gradient(closest-side,var(--tint,transparent),transparent);opacity:.5;pointer-events:none}
+.tile.ok{--tint:var(--ok)} .tile.gold{--tint:var(--gold)} .tile.link{--tint:var(--link)}
+.tile.gold .v{color:var(--gold)} .tile.hot{border-color:color-mix(in srgb,var(--gold) 60%,transparent)}
+button.tile{text-align:left;cursor:pointer;color:inherit;font:inherit;width:100%} button.tile:hover{border-color:var(--line-2)}
+
+/* ---------- toolbar ---------- */
+.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:3px}
+.seg button{border:0;background:none;padding:5px 14px;border-radius:99px;cursor:pointer;color:var(--mut);font-size:13px}
+.seg button[aria-pressed=true]{background:var(--card-2);color:var(--ink)}
+.filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;max-width:100%}
+.filters button{border:1px solid var(--line);background:var(--card);color:var(--mut);border-radius:99px;padding:5px 13px;font-size:13px;cursor:pointer;white-space:nowrap}
+.filters button[aria-pressed=true]{color:var(--ink);border-color:var(--line-2);background:var(--card-2)}
+
+/* ---------- room cards ---------- */
+.room{display:grid;grid-template-columns:auto 1fr auto;gap:8px 14px;align-content:start;position:relative;transition:transform .2s var(--ease),border-color .2s,box-shadow .2s}
+.room:hover{transform:translateY(-3px);border-color:var(--line-2)}
+.room h3{font-size:16px;margin:0;text-transform:none;font-family:var(--sans);font-weight:600;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
 .g-sig{grid-column:1;grid-row:1}.g-info{grid-column:2;grid-row:1;min-width:0}.g-kebab{grid-column:3;grid-row:1;align-self:start}
-.g-status{grid-column:1/-1;grid-row:2;display:flex;justify-content:space-between;align-items:center}
-.room .last{grid-column:1/-1;grid-row:3;font-size:13.5px;color:var(--mut);border-left:2px solid rgba(232,200,114,.55);padding-left:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-foot{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.room .last{grid-column:1/-1;font-size:13.5px;color:var(--mut);border-left:2px solid color-mix(in srgb,var(--gold) 70%,transparent);padding-left:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .room .last b{color:var(--ink);font-weight:500}
-.room.hold{border-color:rgba(232,200,114,.7);box-shadow:0 0 0 1px rgba(232,200,114,.25),0 8px 30px -10px rgba(232,200,114,.4)}
-.room.bad{border-color:rgba(255,144,144,.6)}
+.room.hold{border-color:color-mix(in srgb,var(--gold) 75%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 25%,transparent),0 14px 34px -16px color-mix(in srgb,var(--gold) 60%,transparent)}
+.room.bad{border-color:color-mix(in srgb,var(--bad) 65%,transparent)}
+.spark{display:block;width:104px;height:28px;flex:none}
+.spark path.a{fill:url(#sg)} .spark path.l{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.spark .flat{stroke:var(--line-2);stroke-dasharray:2 4;fill:none}
 .state{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)}
 .state i{width:8px;height:8px;border-radius:50%;background:var(--mut);display:inline-block}
-.state.live i{background:var(--ok);animation:beat 1.8s infinite} .state.hold i{background:var(--gold);animation:beat .9s infinite}
-.state.bad i{background:var(--bad)} .state.idle i{background:var(--link);opacity:.7}
+.state.live{color:var(--ok)} .state.live i{background:var(--ok);animation:beat 1.8s infinite}
+.state.hold{color:var(--gold)} .state.hold i{background:var(--gold);animation:beat .9s infinite}
+.state.bad{color:var(--bad)} .state.bad i{background:var(--bad)} .state.idle i{background:var(--link);opacity:.75}
 @keyframes beat{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
-.state.live{color:var(--ok)} .state.hold{color:var(--gold)} .state.bad{color:var(--bad)}
-.unread{background:var(--gold);color:#1a1a2e;font:600 11px/18px var(--sans);min-width:20px;height:20px;border-radius:10px;text-align:center;padding:0 6px}
+.unread{background:var(--gold);color:var(--gold-ink);font:600 11px/18px var(--sans);min-width:20px;height:20px;border-radius:10px;text-align:center;padding:0 7px}
 .kebab{background:none;border:0;color:var(--mut);cursor:pointer;width:34px;height:34px;border-radius:9px;font-size:20px;line-height:1}
 .kebab:hover{background:var(--card-2);color:var(--ink)}
 .sigil{border-radius:12px;display:block}
 .shield{display:inline-flex;align-items:center;gap:4px}
 .shield svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
-/* constellation */
-.const-wrap{position:relative;border-radius:22px;border:1px solid var(--line);overflow:hidden;
-  background:radial-gradient(60% 60% at 50% 50%,rgba(130,130,255,.1),transparent 75%),rgba(255,255,255,.02)}
-.const{display:block;width:100%;height:auto;max-height:78vh;touch-action:manipulation}
-.const .orbit{fill:none;stroke:rgba(255,255,255,.17);stroke-dasharray:2 7}
+/* ---------- constellation ---------- */
+.const-wrap{position:relative;border-radius:24px;border:1px solid var(--line);overflow:hidden;box-shadow:var(--raise);
+  background:radial-gradient(60% 60% at 50% 50%,color-mix(in srgb,var(--link) 12%,transparent),transparent 75%),var(--card)}
+.const-wrap::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.7;
+  background-image:radial-gradient(1.2px 1.2px at 12% 22%,var(--star),transparent),radial-gradient(1px 1px at 78% 14%,var(--star),transparent),radial-gradient(1.4px 1.4px at 88% 66%,var(--star),transparent),
+  radial-gradient(1px 1px at 24% 78%,var(--star),transparent),radial-gradient(1.2px 1.2px at 52% 90%,var(--star),transparent),radial-gradient(1px 1px at 64% 34%,var(--star),transparent),radial-gradient(1.3px 1.3px at 6% 52%,var(--star),transparent)}
+.const{position:relative;display:block;width:100%;height:auto;max-height:74vh;touch-action:manipulation}
+.const .orbit{fill:none;stroke:var(--line-2);stroke-dasharray:2 7}
 .const .olabel{fill:var(--mut);font:10px var(--cond);letter-spacing:.25em;text-transform:uppercase}
-.const .edge{stroke:rgba(255,255,255,.13);stroke-width:1}
+.const .edge{stroke:var(--line-2);stroke-width:1}
 .const a{cursor:pointer;outline:none}
-.node .body{fill:rgba(30,30,64,.92);stroke-width:2.2;transition:stroke .4s}
-.node .halo{fill:none;stroke-width:1.5;opacity:.0}
+.node .body{fill:var(--node);stroke-width:2.2;transition:stroke .4s}
+.node .halo{fill:none;stroke-width:1.5;opacity:0;transform-box:fill-box;transform-origin:center}
 .node.live .body{stroke:var(--ok)} .node.live .halo{stroke:var(--ok);opacity:.9;animation:halo 2.4s infinite}
 .node.hold .body{stroke:var(--gold);stroke-width:3} .node.hold .halo{stroke:var(--gold);opacity:1;animation:halo 1s infinite}
-.node.bad .body{stroke:var(--bad)} .node.idle .body{stroke:rgba(170,180,255,.6)}
-.node.empty .body,.node.down .body{stroke:rgba(255,255,255,.3);stroke-dasharray:3 4}
+.node.bad .body{stroke:var(--bad)} .node.idle .body{stroke:color-mix(in srgb,var(--link) 65%,transparent)}
+.node.empty .body,.node.down .body{stroke:var(--line-2);stroke-dasharray:3 4}
 .node:hover .body,.node:focus-visible .body{stroke-width:4}
-.node text{fill:var(--ink);font:12px var(--sans);text-anchor:middle;paint-order:stroke;stroke:#12122a;stroke-width:3px}
+.node text{fill:var(--ink);font:12px var(--sans);text-anchor:middle;paint-order:stroke;stroke:var(--bg);stroke-width:3px}
 .node .sub{fill:var(--mut);font-size:10px}
-.node .nb{fill:var(--gold)} .node .nbt{fill:#1a1a2e;stroke:none;font:600 10px var(--sans)}
+.node .nb{fill:var(--gold)} .node .nbt{fill:var(--gold-ink);stroke:none;font:600 10px var(--sans)}
 .mdots{animation:spin 16s linear infinite} .mdots circle{fill:var(--link)}
-.me .body{fill:rgba(232,200,114,.18);stroke:var(--gold);stroke-width:2}
+.me .body{fill:color-mix(in srgb,var(--gold) 18%,var(--node));stroke:var(--gold);stroke-width:2}
 .ripple{fill:none;stroke:var(--gold);stroke-width:2;animation:ripple 1.6s ease-out forwards;transform-box:fill-box;transform-origin:center}
 @keyframes halo{0%{transform:scale(1);opacity:.9}100%{transform:scale(1.7);opacity:0}}
-.node .halo{transform-box:fill-box;transform-origin:center}
 @keyframes ripple{from{transform:scale(1);opacity:1}to{transform:scale(4);opacity:0}}
 @keyframes spin{to{transform:rotate(360deg)}}
 .legend{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px;font-size:12px;color:var(--mut);border-top:1px solid var(--line)}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.legend span{display:inline-flex;align-items:center;gap:6px} .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
 
-/* attention */
-.att{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;text-decoration:none;color:inherit}
-.att .ico{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--card-2)}
-.att.urgent{border-color:rgba(232,200,114,.6)} .att.urgent .ico{background:rgba(232,200,114,.2);color:var(--gold)}
+/* ---------- activity ---------- */
+.act{display:grid;grid-template-columns:auto 1fr auto;gap:2px 11px;align-items:start;padding:11px 0;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.act:last-child{border:0}
+.act .sigil{grid-row:1/3;width:30px;height:30px;border-radius:9px}
+.act .who{font-size:13px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act .who b{color:var(--ink);font-weight:600}
+.act .t{font-size:12px;color:var(--mut);white-space:nowrap}
+.act .tx{grid-column:2/4;font-size:14px;color:var(--ink-2);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.act.peer .tx{border-left:2px solid color-mix(in srgb,var(--gold) 70%,transparent);padding-left:9px}
+.act.new{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:color-mix(in srgb,var(--gold) 16%,transparent)}}
+.pane h2{margin-bottom:6px}
+
+/* ---------- attention ---------- */
+.att{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;text-decoration:none;color:inherit;transition:transform .2s var(--ease)}
+.att:hover{transform:translateY(-2px)}
+.att .ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--card-2)}
+.att .ico svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.att.urgent{border-color:color-mix(in srgb,var(--gold) 65%,transparent)} .att.urgent .ico{background:color-mix(in srgb,var(--gold) 22%,transparent);color:var(--gold)}
 .att p{margin:0;color:var(--mut);font-size:13.5px}
 
-/* sheet */
-dialog{width:min(520px,calc(100vw - 24px));max-height:calc(100vh - 40px);border:1px solid var(--line);border-radius:20px;padding:0;background:var(--bg-2);color:var(--ink);box-shadow:0 30px 80px rgba(0,0,0,.6)}
-dialog::backdrop{background:rgba(5,5,18,.7);backdrop-filter:blur(4px)}
+/* ---------- skeleton ---------- */
+.sk{position:relative;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:var(--r);height:132px}
+.sk::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--ink) 7%,transparent) 50%,transparent 70%);transform:translateX(-100%);animation:sheen 1.4s infinite}
+@keyframes sheen{to{transform:translateX(100%)}}
+
+/* ---------- sheet & palette ---------- */
+dialog{width:min(540px,calc(100vw - 24px));max-height:calc(100vh - 40px);border:1px solid var(--line-2);border-radius:22px;padding:0;background:var(--bg-2);color:var(--ink);box-shadow:0 30px 90px rgba(0,0,0,.55)}
+dialog::backdrop{background:var(--scrim);backdrop-filter:blur(5px)}
+dialog[open]{animation:pop .22s var(--ease)}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}}
 dialog form{padding:20px}
 dialog h2{color:var(--ink);font-size:15px;margin-bottom:8px}
 .radio{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.radio label{margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer;color:var(--ink);font-size:14px}
-.radio input{display:none} .radio label:has(input:checked){border-color:var(--gold);background:rgba(232,200,114,.1)}
+.radio label{margin:0;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;cursor:pointer;color:var(--ink);font-size:14px}
+.radio input{display:none} .radio label:has(input:checked){border-color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,transparent)}
 .radio small{display:block;color:var(--mut);font-size:12px}
+.pal{padding:0}
+.pal input{border:0;border-bottom:1px solid var(--line);border-radius:22px 22px 0 0;min-height:54px;padding:0 20px;font-size:16px;background:none}
+.pal input:focus{outline:none}
+.pal ul{list-style:none;margin:0;padding:8px;max-height:min(52vh,420px);overflow:auto}
+.pal li{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:12px;cursor:pointer}
+.pal li[aria-selected=true]{background:var(--card-2)}
+.pal li small{color:var(--mut);margin-left:auto;font-size:12px}
+.pal .ph{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--card-2);color:var(--mut)}
+.pal .ph svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 
-/* auth screens */
+/* ---------- auth screens ---------- */
 .center{min-height:100vh;display:grid;place-items:center;padding:24px}
 .auth{max-width:420px;width:100%;text-align:center}
-.auth img{width:84px;height:84px;border-radius:22px;margin-bottom:10px}
-.auth h1{font-size:22px;letter-spacing:.24em;margin-bottom:6px}
+.auth img{width:88px;height:88px;border-radius:24px;margin-bottom:12px;box-shadow:0 18px 50px -14px color-mix(in srgb,var(--gold) 55%,transparent)}
+.auth h1{font-size:22px;letter-spacing:.26em;margin-bottom:6px}
 .auth .card{text-align:left;margin-top:22px}
 .err{color:var(--bad);font-size:13.5px;min-height:1.2em;margin:8px 0 0}
 .toasts{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom));display:grid;gap:8px;justify-items:center;z-index:60;pointer-events:none}
-.toast{background:#2b2b55;border:1px solid var(--line);padding:10px 16px;border-radius:12px;max-width:92vw;box-shadow:0 10px 30px rgba(0,0,0,.4);animation:up .2s}
+@media(min-width:820px){.toasts{bottom:24px}}
+.toast{background:var(--bg-2);border:1px solid var(--line-2);padding:10px 16px;border-radius:12px;max-width:92vw;box-shadow:0 14px 40px rgba(0,0,0,.4);animation:up .22s var(--ease)}
 .toast.err{border-color:var(--bad)}
 @keyframes up{from{transform:translateY(8px);opacity:0}}
-.offline{background:rgba(232,200,114,.15);border:1px solid rgba(232,200,114,.4);color:var(--gold);border-radius:12px;padding:8px 14px;margin-bottom:12px;font-size:13.5px}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.offline{background:color-mix(in srgb,var(--gold) 14%,transparent);border:1px solid color-mix(in srgb,var(--gold) 40%,transparent);color:var(--gold);border-radius:12px;padding:8px 14px;margin-bottom:14px;font-size:13.5px}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}}
+@media(max-width:599px){.sect.tools .filters{flex:1 1 100%;order:2}.tiles{gap:10px}.tile{padding:11px 13px}.tile .v{font-size:27px;margin:5px 0 1px}.tile .s{font-size:12px}}
 </style>
 </head>
 <body>
@@ -185,6 +291,10 @@ const ICON = {
   hub: '<rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   shield: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.200 6 5.500"/><circle cx="17" cy="9" r="2.4"/><path d="M16 13.800c2.800-.4 5 1.400 5 4.200"/>',
   shieldx: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M10 10l4 4M14 10l-4 4"/>',
 };
 const svgi = (n, cls = "") => `<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${ICON[n]}</svg>`;
@@ -224,7 +334,7 @@ function sigil(id, size = 46) {
 }
 
 /* ---------- state ---------- */
-const S = {rooms: [], attention: [], view: store.get("pb.view", "rooms"), mode: store.get("pb.mode", innerWidth >= 820 ? "orbit" : "list"), live: false, me: null, loaded: false};
+const S = {rooms: [], attention: [], activity: [], filter: "all", view: store.get("pb.view", "rooms"), mode: store.get("pb.mode", innerWidth >= 820 ? "orbit" : "list"), live: false, me: null, loaded: false};
 const room = id => S.rooms.find(r => r.id === id);
 const STATE_TXT = {live: "Active now", idle: "Quiet", hold: "Witness hold", bad: "History check failed", empty: "Not in a room yet", down: "Unreachable"};
 
@@ -284,9 +394,10 @@ async function startApp(view) {
   addEventListener("online", () => { refreshRooms(); connect(); });
   addEventListener("offline", () => { S.live = false; paintStatus(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRooms(); });
+  setInterval(() => { if (!document.hidden) tickAgo(); }, 30000);
 }
 async function refreshRooms() {
-  try { const d = await api("GET", "/api/rooms"); S.rooms = d.rooms; S.attention = d.attention; S.loaded = true; S.stale = false; }
+  try { const d = await api("GET", "/api/rooms"); S.rooms = d.rooms; S.attention = d.attention; S.activity = d.activity || []; S.loaded = true; S.stale = false; }
   catch (e) { if (e.message === "signed out") return; S.stale = true; }
   mood(); if ($("#view")) paintView();
 }
@@ -297,19 +408,25 @@ function connect() {
   es = new EventSource("/api/events");
   es.onopen = () => { S.live = true; paintStatus(); };
   es.onerror = () => { S.live = false; paintStatus(); };
-  es.addEventListener("hello", e => { const d = JSON.parse(e.data); S.rooms = d.rooms; S.attention = d.attention; S.stale = false; mood(); paintView(); });
+  es.addEventListener("hello", e => { const d = JSON.parse(e.data); S.rooms = d.rooms; S.attention = d.attention; S.activity = d.activity || []; S.loaded = true; S.stale = false; mood(); paintView(); });
   es.addEventListener("room", e => {
     const d = JSON.parse(e.data), i = S.rooms.findIndex(r => r.id === d.id), old = S.rooms[i];
     if (i < 0) S.rooms.push(d); else S.rooms[i] = d;
     if (old && d.last && (!old.last || old.last.ms !== d.last.ms)) ripple(d.id);
-    paintView(true);
+    mood(); paintView(true);
+  });
+  es.addEventListener("activity", e => {
+    const a = JSON.parse(e.data);
+    if (S.activity.some(x => x.room === a.room && x.ms === a.ms && x.text === a.text)) return;
+    a.fresh = true; S.activity.unshift(a); S.activity = S.activity.slice(0, 40);
+    paintActivity();
   });
   es.addEventListener("gone", e => { S.rooms = S.rooms.filter(r => r.id !== JSON.parse(e.data).id); paintView(); });
   es.addEventListener("attention", e => {
     const prev = new Set(S.attention.map(a => a.id));
     S.attention = JSON.parse(e.data).items;
     for (const a of S.attention) if (!prev.has(a.id) && a.urgent) { toast(a.title); localNotify(a); }
-    mood(); paintChrome();
+    mood(); paintChrome(); if (S.view === "rooms" || S.view === "attention") paintView(true);
   });
   es.addEventListener("bye", () => { location.href = "/"; });
 }
@@ -325,77 +442,158 @@ function mood() {
   if (navigator.setAppBadge) (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
 
+/* ---------- theme ---------- */
+const themeNow = () => document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:light)").matches ? "light" : "dark");
+function syncThemeColor() {
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  $("#themecolor")?.setAttribute("content", bg || "#10102a");
+}
+function toggleTheme() {
+  const t = themeNow() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = t; store.set("pb.theme", t); requestAnimationFrame(syncThemeColor); paintChrome();
+}
+addEventListener("load", syncThemeColor);
+matchMedia("(prefers-color-scheme:light)").addEventListener?.("change", () => requestAnimationFrame(syncThemeColor));
+
 /* ---------- chrome ---------- */
 const TABS = [["rooms", "Rooms", "rooms"], ["attention", "Attention", "attention"], ["add", "Add", "add"], ["hub", "Hub", "hub"]];
 function paint() {
-  $("#root").innerHTML = `<div class="shell"><header><div class="brand"><img src="/icon-192.png" alt="">Playbox</div><nav class="tabs" id="tabs" aria-label="Sections"></nav><span class="sp"></span><span class="pill" id="status"></span></header>
-    <main><div id="view"></div></main></div>`;
+  $("#root").innerHTML = `<div class="shell">
+    <aside class="rail" aria-label="Primary"><div class="brand"><img src="/icon-192.png" alt="">Playbox</div><nav id="railnav" style="display:grid;gap:4px"></nav>
+      <div class="foot"><span class="pill" id="status2"></span><button class="btn sm" data-act="palette" style="justify-content:space-between">Search <kbd>⌘K</kbd></button></div></aside>
+    <div class="col"><header class="top"><div class="brand"><img src="/icon-192.png" alt="">Playbox</div><nav class="tabs" id="tabs" aria-label="Sections"></nav><span class="sp"></span>
+      <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><span class="pill" id="status"></span></header>
+      <main><div id="view"></div></main></div>
+    <aside class="pane" id="pane" aria-label="Activity"></aside></div>
+    <nav class="bottom" id="bottom" aria-label="Sections"></nav>`;
   paintChrome(); paintStatus(); paintView();
 }
 function paintChrome() {
   const n = S.attention.length;
-  $("#tabs").innerHTML = TABS.map(([id, label, ic]) => `<button class="tab" data-tab="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${svgi(ic)}<span>${label}</span>${id === "attention" && n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>`).join("");
+  const html = TABS.map(([id, label, ic]) => `<button class="tab" data-tab="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${svgi(ic)}<span>${label}</span>${id === "attention" && n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>`).join("");
+  for (const id of ["#tabs", "#bottom", "#railnav"]) { const el = $(id); if (el) el.innerHTML = html; }
+  const tb = $("#themebtn"); if (tb) tb.innerHTML = svgi(themeNow() === "dark" ? "sun" : "moon");
 }
 function paintStatus() {
-  const el = $("#status"); if (!el) return;
-  el.innerHTML = `<span class="dot ${S.live ? "live" : "warn"}"></span>${S.live ? "Live" : navigator.onLine ? "Reconnecting" : "Offline"}`;
+  const h = `<span class="dot ${S.live ? "live" : "warn"}"></span>${S.live ? "Live" : navigator.onLine ? "Reconnecting" : "Offline"}`;
+  for (const id of ["#status", "#status2"]) { const el = $(id); if (el) el.innerHTML = h; }
   const o = $("#offline"); if (o) o.hidden = S.live || !S.loaded;
 }
+let enter = true;           // fade in on navigation only, not on every live update
 function paintView(soft) {
   const v = $("#view"); if (!v) return;
   if (soft && document.activeElement && v.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
   paintChrome();
-  v.innerHTML = `<div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub… showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)();
-  if (S.view === "rooms" && S.mode === "orbit") startOrbit();
+  v.innerHTML = `<div class="view ${enter ? "enter" : ""}"><div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub… showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)() + "</div>";
+  if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length) startOrbit();
+  enter = false; paintActivity(); countUp();
   if (S.view === "hub") { pushState(); if (installEvt) { $("#installbtn").hidden = false; $("#installhint").hidden = true; } }
 }
-function go(view) { if (view === "add") return openAdd(); S.view = view; store.set("pb.view", view); history.replaceState(null, "", view === "rooms" ? "/" : `/?view=${view}`); paintView(); scrollTo(0, 0); }
+function go(view) { if (view === "add") return openAdd(); S.view = view; enter = true; store.set("pb.view", view); history.replaceState(null, "", view === "rooms" ? "/" : `/?view=${view}`); paintView(); scrollTo(0, 0); }
 
-/* ---------- rooms ---------- */
+/* numbers glide to their new value instead of snapping */
+const prevNums = {};
+function countUp() {
+  document.querySelectorAll("[data-count]").forEach(el => {
+    const to = +el.dataset.count, k = el.dataset.key, from = prevNums[k] ?? 0;
+    prevNums[k] = to;
+    if (from === to || matchMedia("(prefers-reduced-motion:reduce)").matches) { el.textContent = to; return; }
+    const t0 = performance.now(), dur = 600;
+    const step = t => { const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3); el.textContent = Math.round(from + (to - from) * e); if (p < 1 && el.isConnected) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+const rel = ms => { const s = Math.max(0, (Date.now() - ms) / 1000 | 0); return s < 45 ? "now" : s < 3600 ? `${Math.max(1, s / 60 | 0)}m` : s < 86400 ? `${s / 3600 | 0}h` : `${s / 86400 | 0}d`; };
+function tickAgo() { document.querySelectorAll("[data-ms]").forEach(el => { el.textContent = rel(+el.dataset.ms); }); }
+
+/* ---------- pieces ---------- */
 function lastLine(r) {
   if (!r.last) return "";
   return `<div class="last" title="Text from another party is untrusted"><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</div>`;
 }
 function chainChip(r) {
   if (!r.chain) return "";
-  return r.chain.ok ? `<span class="chip shield" style="color:var(--ok)" title="Signed history verifies">${svgi("shield")}${r.chain.entries ?? ""}</span>`
+  return r.chain.ok ? `<span class="chip ok shield" title="Signed history verifies">${svgi("shield")}${r.chain.entries ?? ""}</span>`
     : `<span class="chip bad shield" title="Signed history does not verify">${svgi("shieldx")}broken</span>`;
+}
+const SPARK_COL = {live: "var(--ok)", hold: "var(--gold)", bad: "var(--bad)", idle: "var(--link)"};
+let sparkId = 0;
+function spark(pulse, state) {
+  const col = SPARK_COL[state] || "var(--mut)", p = pulse || [], max = Math.max(3, ...p);
+  if (!p.some(x => x)) return `<svg class="spark" viewBox="0 0 104 28" aria-hidden="true"><path class="flat" d="M2 22H102"/></svg>`;
+  const pts = p.map((v, i) => [2 + i * (100 / (p.length - 1)), 25 - (v / max) * 21]);
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], mx = (x0 + x1) / 2; d += ` C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}`; }
+  const id = "sg" + (++sparkId);
+  return `<svg class="spark" viewBox="0 0 104 28" role="img" aria-label="Messages over the last two hours"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".35"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${d} L102 27 L2 27Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 function roomCard(r) {
   return `<div class="card room ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}">
     <a href="/r/${r.id}/" aria-label="Open ${esc(r.label)}" style="display:contents;color:inherit;text-decoration:none"><span class="g-sig">${sigil(r.id)}</span>
     <div class="g-info"><h3>${esc(r.label)}</h3><div class="meta"><span class="chip ${r.kind}">${r.kind === "mine" ? "my agents" : "shared"}</span>${r.machine ? `<span class="chip">${esc(r.machine)}</span>` : ""}${r.members ? `<span class="chip">${r.members} in room</span>` : ""}${chainChip(r)}</div></div>
-    <div class="g-status"><span class="state ${r.state}"><i></i>${STATE_TXT[r.state] || ""}</span>${r.unread ? `<span class="unread">${r.unread > 99 ? "99+" : r.unread} new</span>` : ""}</div>
+    <div class="g-foot"><span class="state ${r.state}"><i></i>${STATE_TXT[r.state] || ""}${r.unread ? ` <span class="unread" style="margin-left:6px">${r.unread > 99 ? "99+" : r.unread} new</span>` : ""}</span>${spark(r.pulse, r.state)}</div>
     ${r.holds.length ? `<div class="last" style="border-color:var(--gold);color:var(--gold)">Witness paused ${esc(r.holds[0].tool || "a write")}. Open to review.</div>` : lastLine(r)}
     ${r.err ? `<div class="last" style="border-color:var(--bad);color:var(--bad)">${esc(r.err)}</div>` : ""}</a>
     <button class="kebab g-kebab" data-act="edit" data-id="${r.id}" aria-label="Room options for ${esc(r.label)}">⋯</button></div>`;
 }
+function actRow(a) {
+  return `<a class="act ${a.me ? "me" : "peer"} ${a.fresh ? "new" : ""}" href="/r/${a.room}/">${sigil(a.room, 30)}<div class="who"><b>${esc(a.from || "member")}</b> in ${esc(a.label)}</div><span class="t" data-ms="${a.ms}">${rel(a.ms)}</span><div class="tx">${esc(a.text)}</div></a>`;
+}
+function paintActivity() {
+  const rows = (S.activity || []).map(a => ({...a, fresh: a.fresh && Date.now() - a.ms < 8000 }));
+  const body = rows.length ? rows.map(actRow).join("") : `<div class="empty" style="padding:26px 8px">Nothing yet. Messages from every room land here.</div>`;
+  const pane = $("#pane"); if (pane) pane.innerHTML = `<h2>Activity</h2><div>${rows.slice(0, 30).length ? rows.slice(0, 30).map(actRow).join("") : body}</div>`;
+  const inl = $("#inlineact"); if (inl) inl.innerHTML = rows.slice(0, 6).length ? rows.slice(0, 6).map(actRow).join("") : body;
+}
+function tiles() {
+  const live = S.rooms.filter(r => r.state === "live").length, members = S.rooms.reduce((n, r) => n + (r.members || 0), 0);
+  const machines = new Set(S.rooms.map(r => r.machine).filter(Boolean)).size, mine = S.rooms.filter(r => r.kind === "mine").length;
+  const withChain = S.rooms.filter(r => r.chain), okc = withChain.filter(r => r.chain.ok).length;
+  const urgent = S.attention.filter(a => a.urgent).length, n = S.attention.length;
+  const t = (cls, icon, k, v, s, extra = "") => `<${extra ? "button" : "div"} class="tile ${cls}" ${extra}><div class="k">${svgi(icon)}${k}</div><div class="v" data-count="${v}" data-key="${k}">${v}</div><div class="s">${s}</div></${extra ? "button" : "div"}>`;
+  return `<div class="tiles">
+    ${t("ok", "rooms", "Rooms", S.rooms.length, `${live} active now · ${mine} yours`)}
+    ${t("link", "people", "In rooms", members, machines ? `across ${machines} machine${machines === 1 ? "" : "s"}` : "agents and people")}
+    ${t(n ? "gold hot" : "", "attention", "Needs you", n, n ? `${urgent ? urgent + " urgent" : "tap to review"}` : "all quiet", 'data-tab="attention"')}
+    ${t(withChain.length && okc < withChain.length ? "" : "ok", withChain.length && okc < withChain.length ? "shieldx" : "shield", "Verified", okc, withChain.length ? `of ${withChain.length} signed histories` : "no histories yet")}</div>`;
+}
+
 const VIEWS = {
   rooms() {
-    if (!S.loaded) return `<div class="empty">Loading…</div>`;
-    const bar = `<div class="bar"><div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Constellation</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div>
-      <span class="mut" style="font-size:13px">${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"} · ${S.rooms.filter(r => r.kind === "mine").length} yours</span></div>`;
-    if (!S.rooms.length) return bar.replace(/<div class="seg"[\s\S]*?<\/div>/, "") + `<div class="card empty"><div style="margin-bottom:10px">${sigil("start", 64)}</div><h2 style="color:var(--ink)">No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">Add a room</button></div>`;
-    if (S.mode === "orbit") return bar + `<div class="const-wrap" id="constwrap">${constellation()}<div class="legend"><span><i style="background:var(--ok)"></i>active</span><span><i style="background:var(--link)"></i>quiet</span><span><i style="background:var(--gold)"></i>witness hold</span><span><i style="background:var(--bad)"></i>history failed</span><span style="margin-left:auto">inner ring: your own agents · outer ring: shared with others</span></div></div>`;
-    return bar + `<div class="grid">${S.rooms.map(roomCard).join("")}</div>`;
+    if (!S.loaded) return `<div class="tiles">${'<div class="sk" style="height:104px"></div>'.repeat(4)}</div><div class="grid" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
+    const f = S.filter || "all";
+    const list = S.rooms.filter(r => f === "all" || (f === "mine" && r.kind === "mine") || (f === "shared" && r.kind === "shared") || (f === "attn" && (r.state === "hold" || r.state === "bad" || r.unread)));
+    const flt = [["all", "All"], ["mine", "My agents"], ["shared", "Shared"], ["attn", "Needs attention"]];
+    const bar = `<div class="sect tools"><div class="filters" role="group" aria-label="Filter rooms">${flt.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
+      <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Constellation</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
+    if (!S.rooms.length) return `${tiles()}<div class="card empty" style="margin-top:22px"><div style="margin-bottom:12px">${sigil("start", 68)}</div><h2 style="color:var(--ink);font-size:15px">No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">Add a room</button></div>`;
+    const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
+      : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap">${constellation(list)}<div class="legend"><span><i style="background:var(--ok)"></i>active</span><span><i style="background:var(--link)"></i>quiet</span><span><i style="background:var(--gold)"></i>witness hold</span><span><i style="background:var(--bad)"></i>history failed</span><span style="margin-left:auto">inner ring: your agents · outer ring: shared</span></div></div>`
+      : `<div class="grid">${list.map(roomCard).join("")}</div>`;
+    return `${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2>Recent activity</h2></div><div class="card" id="inlineact" style="padding:4px 16px"></div></div>`;
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
-    if (!a.length) return `<div class="card empty"><div style="margin-bottom:10px">${sigil("calm", 64)}</div><h2 style="color:var(--ink)">All quiet</h2><p>Nothing in any room needs you.</p></div>`;
+    if (!a.length) return `<div class="card empty"><div style="margin-bottom:12px">${sigil("calm", 68)}</div><h2 style="color:var(--ink);font-size:15px">All quiet</h2><p>Nothing in any room needs you.</p></div>`;
     return `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">${a.map(i => `<a class="card att ${i.urgent ? "urgent" : ""}" href="/r/${i.room}/"><span class="ico">${svgi(i.kind === "hold" ? "shield" : i.kind === "chain" ? "shieldx" : "attention")}</span><div><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></div><span class="mut">›</span></a>`).join("")}</div>`;
   },
   hub() {
     const m = S.me || {};
-    const dev = (m.devices || []).map(d => `<div class="stat"><span>${esc(d.name)} ${d.current ? '<span class="chip ok" style="color:var(--ok)">this device</span>' : ""}<br><span class="mut" style="font-size:12px">paired ${ago(d.created * 1000)} · used ${ago(d.last * 1000)}</span></span>
+    const dev = (m.devices || []).map(d => `<div class="stat"><span>${esc(d.name)} ${d.current ? '<span class="chip ok">this device</span>' : ""}<br><span class="mut" style="font-size:12px">paired ${ago(d.created * 1000)} · used ${ago(d.last * 1000)}</span></span>
       <button class="btn sm danger" data-act="rmdev" data-id="${esc(d.id)}">Remove</button></div>`).join("");
     const ses = (m.sessions || []).map(s => `<div class="stat"><span>${esc(s.name)} ${s.current ? '<span class="chip">this session</span>' : ""} ${s.weak ? '<span class="chip warn" title="Plain HTTP session">no passkey</span>' : ""}<br><span class="mut" style="font-size:12px">${esc(s.ip)} · ${ago(s.last * 1000)}</span></span>
       ${s.current ? "" : `<button class="btn sm" data-act="rmses" data-id="${esc(s.key)}">End</button>`}</div>`).join("");
     const secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+    const th = store.get("pb.theme", "auto");
     return `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
       <div class="card"><h2>Notifications</h2><p class="mut" style="margin:6px 0 12px">Get a nudge when the witness pauses a write, a history check fails or a room needs you. The push carries no content: your phone wakes, then asks your hub directly.</p>
         <div class="row"><button class="btn" data-act="push" id="pushbtn">Checking…</button></div></div>
       <div class="card"><h2>Install</h2><p class="mut" style="margin:6px 0 12px">Playbox runs as an app: its own window, a badge for what needs you, and the last known state while you're offline.</p>
         <div class="row"><button class="btn" data-act="install" id="installbtn" hidden>Install app</button><span class="mut" style="font-size:13px" id="installhint">On iPhone or iPad: Share, then Add to Home Screen.</span></div></div>
+      <div class="card"><h2>Appearance</h2><p class="mut" style="margin:6px 0 12px">Follows your system by default.</p>
+        <div class="seg" role="group" aria-label="Theme">${[["auto", "System"], ["dark", "Dark"], ["light", "Light"]].map(([k, l]) => `<button data-theme="${k}" aria-pressed="${th === k || (k === "auto" && th !== "dark" && th !== "light")}">${l}</button>`).join("")}</div>
+        <p class="mut" style="font-size:13px;margin:12px 0 0">Press <kbd>⌘K</kbd> or <kbd>/</kbd> anywhere to jump to a room.</p></div>
       <div class="card"><h2>Devices</h2><div>${dev || '<p class="mut">No passkeys yet.</p>'}</div>
         <p style="margin:14px 0 0"><button class="btn primary sm" data-act="pairdev">Add a device</button></p></div>
       <div class="card"><h2>Sessions</h2><div>${ses}</div></div>
@@ -411,13 +609,12 @@ const VIEWS = {
 /* ---------- constellation ---------- */
 const orbit = {angles: {}, raf: 0, last: 0};
 const W = 760, H = 600, CX = W / 2, CY = H / 2, RING = {mine: 138, shared: 248};
-function constellation() {
-  const byKind = k => S.rooms.filter(r => r.kind === k);
+function constellation(list) {
   for (const k of ["mine", "shared"]) {
-    const rs = byKind(k);
+    const rs = list.filter(r => r.kind === k);
     rs.forEach((r, i) => { if (orbit.angles[r.id] === undefined) orbit.angles[r.id] = (i / rs.length) * 6.2832 + (k === "shared" ? .6 : 0); });
   }
-  const nodes = S.rooms.map(r => {
+  const nodes = list.map(r => {
     const rad = 21 + Math.min(r.members, 8) * 1.6, dots = Math.min(r.members, 8);
     const md = Array.from({length: dots}, (_, i) => { const a = i / dots * 6.2832; return `<circle cx="${((rad + 8) * Math.cos(a)).toFixed(1)}" cy="${((rad + 8) * Math.sin(a)).toFixed(1)}" r="2.3"/>`; }).join("");
     const label = r.label.length > 18 ? r.label.slice(0, 17) + "…" : r.label;
@@ -429,7 +626,7 @@ function constellation() {
       <text y="${rad + 22}">${esc(label)}</text>${r.machine ? `<text class="sub" y="${rad + 35}">${esc(r.machine)}</text>` : ""}
       ${r.unread ? `<circle class="nb" cx="${rad * .72}" cy="${-rad * .72}" r="9"/><text class="nbt" x="${rad * .72}" y="${-rad * .72 + 3.5}">${r.unread > 9 ? "9+" : r.unread}</text>` : ""}</g></a>`;
   }).join("");
-  const edges = S.rooms.map(r => `<line class="edge" data-edge="${r.id}" x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY}"/>`).join("");
+  const edges = list.map(r => `<line class="edge" data-edge="${r.id}" x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY}"/>`).join("");
   return `<svg class="const" viewBox="${CX - 300} ${CY - 285} 600 575" role="group" aria-label="Your rooms as a constellation">
     <circle class="orbit" cx="${CX}" cy="${CY}" r="${RING.mine}"/><circle class="orbit" cx="${CX}" cy="${CY}" r="${RING.shared}"/>
     <text class="olabel" x="${CX}" y="${CY - RING.mine - 8}" text-anchor="middle">mine</text><text class="olabel" x="${CX}" y="${CY - RING.shared - 8}" text-anchor="middle">shared</text>
@@ -439,10 +636,10 @@ function placeNodes() {
   const svg = $(".const"); if (!svg) return;
   for (const r of S.rooms) {
     const a = orbit.angles[r.id] ?? 0, R = RING[r.kind] ?? RING.shared;
-    const x = CX + R * Math.cos(a), y = CY + R * Math.sin(a * (r.kind === "mine" ? 1 : 1) ) * .92;
+    const x = CX + R * Math.cos(a), y = CY + R * Math.sin(a) * .92;
     const n = svg.querySelector(`[data-node="${r.id}"]`); if (n) n.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
     const e = svg.querySelector(`line[data-edge="${r.id}"]`);
-    if (e) { e.setAttribute("x2", x.toFixed(1)); e.setAttribute("y2", y.toFixed(1)); e.style.strokeOpacity = r.state === "live" ? .55 : r.state === "hold" ? .7 : .18; e.style.stroke = r.state === "hold" ? "var(--gold)" : r.state === "live" ? "var(--ok)" : ""; }
+    if (e) { e.setAttribute("x2", x.toFixed(1)); e.setAttribute("y2", y.toFixed(1)); e.style.strokeOpacity = r.state === "live" ? .65 : r.state === "hold" ? .8 : .3; e.style.stroke = r.state === "hold" ? "var(--gold)" : r.state === "live" ? "var(--ok)" : ""; }
   }
 }
 function startOrbit() {
@@ -463,6 +660,34 @@ function ripple(id) {
   c.setAttribute("class", "ripple"); c.setAttribute("r", "22"); g.appendChild(c);
   c.addEventListener("animationend", () => c.remove());
 }
+
+/* ---------- command palette ---------- */
+function openPalette() {
+  const items = [
+    ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "my agents" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/`, sig: r.id})),
+    {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
+    {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
+    {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"}];
+  const sh = $("#sheet"); let q = "", sel = 0, list = items;
+  const draw = () => {
+    $("#pal-list").innerHTML = list.length ? list.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ph">${it.sig ? sigil(it.sig, 30) : svgi(it.ic)}</span><span>${esc(it.t)}</span><small>${esc(it.s)}</small></li>`).join("") : `<li class="mut">No match</li>`;
+  };
+  const run = it => { sh.close(); if (!it) return; if (it.href) location.href = it.href; else it.act(); };
+  sh.innerHTML = `<div class="pal"><input id="pal-q" placeholder="Jump to a room or action…" autocomplete="off" spellcheck="false" aria-label="Search"><ul id="pal-list" role="listbox"></ul></div>`;
+  draw(); sh.showModal(); $("#pal-q").focus();
+  $("#pal-q").addEventListener("input", e => { q = e.target.value.toLowerCase().trim(); list = items.filter(it => (it.t + " " + it.s).toLowerCase().includes(q)); sel = 0; draw(); });
+  $("#pal-q").addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { sel = Math.min(list.length - 1, sel + 1); draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); draw(); e.preventDefault(); }
+    else if (e.key === "Enter") { e.preventDefault(); run(list[sel]); }
+  });
+  $("#pal-list").addEventListener("click", e => { const li = e.target.closest("li[data-i]"); if (li) run(list[+li.dataset.i]); });
+}
+addEventListener("keydown", e => {
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "");
+  if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing && !$("#sheet").open)) { if (!$("#view")) return; e.preventDefault(); openPalette(); }
+});
+
 
 /* ---------- sheets ---------- */
 const sheet = () => $("#sheet");
@@ -562,13 +787,17 @@ addEventListener("appinstalled", () => toast("Installed"));
 
 /* ---------- events ---------- */
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-tab],[data-mode],[data-act]"); if (!t) return;
+  const t = e.target.closest("[data-tab],[data-mode],[data-act],[data-filter],[data-theme]"); if (!t) return;
   if (t.dataset.tab) return go(t.dataset.tab);
+  if (t.dataset.filter) { S.filter = t.dataset.filter; return paintView(); }
+  if (t.dataset.theme) { const v = t.dataset.theme; if (v === "auto") { delete document.documentElement.dataset.theme; store.set("pb.theme", "auto"); } else { document.documentElement.dataset.theme = v; store.set("pb.theme", v); } requestAnimationFrame(syncThemeColor); return paintView(); }
   if (t.dataset.mode) { S.mode = t.dataset.mode; store.set("pb.mode", S.mode); return paintView(); }
   const act = t.dataset.act;
   if (act !== "edit" && t.closest("a")) return;
   e.preventDefault();
   if (act === "add") openAdd();
+  else if (act === "palette") openPalette();
+  else if (act === "theme") toggleTheme();
   else if (act === "edit") openEdit(t.dataset.id);
   else if (act === "pairdev") pairDevice();
   else if (act === "push") togglePush();

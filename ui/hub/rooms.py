@@ -11,6 +11,7 @@ import queue
 import secrets
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
@@ -58,6 +59,8 @@ class Room:
         self.err = None
         self.digest = self.blank()
         self.seq = 0               # poller cursor in the room feed
+        self.buckets = {}          # 5-minute bucket -> message count, feeds the sparkline
+        self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
         self.last_chain = 0
         self.stop = threading.Event()
@@ -116,6 +119,12 @@ class Room:
                 if items:
                     self.seq = max(i["seq"] for i in items)
                     says = [i for i in items if i.get("kind") == "say"]
+                    for m in says:
+                        ms = m.get("time_ms") or time.time() * 1000
+                        b = int(ms / 300000)
+                        self.buckets[b] = self.buckets.get(b, 0) + 1
+                        self.newsays.append({"room": self.id, "label": self.rec["label"], "from": (m.get("from") or "")[:12], "me": m.get("from") == d["me"],
+                                             "text": str(m.get("text", ""))[:200], "ms": int(ms)})
                     if self.primed:
                         d["unread"] += len([i for i in says if i.get("from") != d["me"]])
                     if says:
@@ -130,6 +139,9 @@ class Room:
                     if not verr and isinstance(v, dict):
                         d["chain"] = {"ok": v.get("valid") is True, "entries": v.get("entries")}
                         self.last_chain = time.time()
+        nb = int(time.time() / 300)
+        self.buckets = {k: v for k, v in self.buckets.items() if k > nb - 30}
+        d["pulse"] = [self.buckets.get(nb - 23 + i, 0) for i in range(24)]
         w = witness_state(self.home)
         d["holds"] = [{"tool": e.get("tool"), "origin": e.get("origin"), "session": e.get("session")} for e in w["active"]]
         recent = d["last"] and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
@@ -147,6 +159,7 @@ class Hub:
         self.bus = Bus()
         self.rooms = {}
         self.known_attention = set()
+        self.activity = deque(maxlen=80)
         self.mu = threading.RLock()
         self.wake = threading.Event()
         for rec in store.d["rooms"]:
@@ -206,6 +219,9 @@ class Hub:
     def get(self, rid):
         return self.rooms.get(rid)
 
+    def recent(self, n=40):
+        return sorted(self.activity, key=lambda a: -a["ms"])[:n]
+
     def digests(self):
         with self.mu:
             return [r.digest for r in sorted(self.rooms.values(), key=lambda r: r.rec["created"])]
@@ -240,6 +256,10 @@ class Hub:
             for room in list(self.rooms.values()):
                 try:
                     self._publish_changes(room, room.tick())
+                    drained, room.newsays = room.newsays, []
+                    for a in drained[-20:]:
+                        self.activity.append(a)
+                        self.bus.publish("activity", a)
                 except Exception as e:
                     room.digest = {**room.blank(), "err": f"poll failed: {e}"[:200]}
             att = self.attention()
