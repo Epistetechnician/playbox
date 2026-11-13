@@ -8,7 +8,7 @@ const PB = (() => {
     const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
     let j = {};
     try { j = await r.json(); } catch {}
-    if (!r.ok) throw Object.assign(new Error(j.error || r.statusText), {status: r.status, body: j});
+    if (!r.ok) throw Object.assign(new Error(j.error || r.statusText || (r.status === 401 ? "Your session ended. Reload and sign in again." : r.status === 429 ? "Too many attempts. Wait a minute and try again." : r.status === 403 ? "The hub refused this (" + r.status + "). Reload the page and try again." : "The hub answered " + r.status + ". Reload and try again.")), {status: r.status, body: j});
     return j;
   }
   const friendly = e => e && e.name === "NotAllowedError" ? new Error("Cancelled, or no passkey was available on this device.") : e;

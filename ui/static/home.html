@@ -404,7 +404,7 @@ async function api(method, path, body) {
   try { r = await PB.guarded(path, init); }
   catch (e) {
     const t = String(e && (e.name + " " + e.message));
-    throw new Error(/NotAllowed|cancel|abort/i.test(t) ? "The passkey touch was cancelled. Try again." : e instanceof TypeError ? "Couldn't reach the hub. Check your connection and try again." : (e && e.message) || "Something went wrong. Try again.");
+    throw new Error(/NotAllowed|cancel|abort/i.test(t) ? "The passkey touch was cancelled. Try again." : e instanceof TypeError ? "Couldn't reach the hub. Check your connection and try again." : (e && (e.message || e.name)) || "Something went wrong. Reload the page and try again.");
   }
   if (r.status === 401) { location.href = "/"; throw new Error("signed out"); }
   let j = {};
