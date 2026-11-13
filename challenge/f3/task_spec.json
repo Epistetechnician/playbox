@@ -1,0 +1,29 @@
+{
+  "id": "f3-dry-order2-v1",
+  "vocab": 32,
+  "grammar_order": 2,
+  "grammar_alpha": 0.15,
+  "grammar_seed": 0,
+  "block": 64,
+  "train_tokens": 200000,
+  "train_seed": 1001,
+  "dev_blocks": 256,
+  "dev_seed": 1002,
+  "holdout_blocks": 256,
+  "eval_every": 10,
+  "train_seeds": [1, 2, 3],
+  "threads": 4,
+  "calibration": {
+    "steps": 1200,
+    "gap_seeds": [11, 12, 13, 14, 15],
+    "noise_seed": 11,
+    "noise_reps": 5,
+    "theta_floor": 0.05,
+    "eps_floor": 0.02,
+    "wall_cap_mult": 3.0,
+    "token_cap_mult": 4.0
+  },
+  "dev_recompute_tol": 0.0001,
+  "leak_window": 24,
+  "import_whitelist": ["torch", "numpy", "math", "time", "dataclasses", "typing", "functools", "itertools", "collections"]
+}
