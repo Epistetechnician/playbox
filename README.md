@@ -47,7 +47,7 @@ Counted from the source tree at the commit this README was written against (just
 | A concept crosses between two model families with no text | **87.5%** topic recognition over 160 blind trials (20 topics, chance 4.8%), 71 of 72 no-concept controls correctly answered "none" | [docs/steering.md](docs/steering.md), Qwen3-8B ↔ OLMo-2-7B, gated |
 | A third family works once the receiver is steered at the right layer | Qwen3-8B → DeepSeek-7B from **8/80 to 63/80** at layer fraction 0.9 | [docs/steering.md](docs/steering.md) |
 | One shared latent space instead of a map per pair | **64 int8 bytes** per thought; 10 adapters instead of 20 pair maps; hub matches the pair map at 1,000 anchors (0.717 vs 0.716) | [docs/latent-channels.md](docs/latent-channels.md) §6d |
-| A swarm of senders beats a single sender if you filter for novelty | Novelty filter: **55.7%** recall vs 44.5% for one agent; rare concepts found 54.2% vs 11.5% for a plain sum; sign test p = 2e-9 | [steer/results/telepathy/swarm/report.md](steer/results/telepathy/swarm/report.md) |
+| A swarm of senders beats a single sender if you filter for novelty | Novelty filter: **55.7%** recall vs 44.5% for one agent; rare concepts found 54.2% vs 11.5% for a plain sum; sign test vs the plain sum p = 2e-9, vs random agents p = 1e-5 (see the swarm section for the per-direction split) | [steer/results/telepathy/swarm/report.md](steer/results/telepathy/swarm/report.md) |
 | A cooperative hill-climb gate promotes real wins and rejects cheats | Tier B speedup **2.84×** at token-identical output; 4 of 6 submissions rejected (an invalid scheme, a memoizing cheat, a lossy change, a gain under threshold), 2 promoted; **6/6 signed receipts re-verified** | [challenge/results/](challenge/results/) |
 
 ---
@@ -252,7 +252,7 @@ xychart-beta
 | text "Topics: a, b" (an oracle that gets the true set) | 85.9 | 66.0 (61 to 70) | 82.1 |
 
 - The filter picks one agent from every true concept in **99%** of trials; a random choice of k does so in 32%.
-- It beats summing everything in 127 trials to 48 (exact sign test p = 2e-9) and beats one agent in 140 to 34.
+- It beats summing everything in 127 trials to 48 (exact sign test p = 2e-9), beats one agent in 140 to 34, and beats k randomly chosen agents in 101 to 47 (p = 1e-5). Random agents are the fairer control, and the margin is not uniform: Qwen→OLMo alone is 49 to 31 (p = 0.057, not significant), OLMo→Qwen 52 to 16 (p = 1e-5).
 - Crossing families costs about 11 points of recall against the same-model direction (55.7 vs 67.0).
 - Cost: 0.5 ms to select, about 150 ms per sender to think; the summarizer runs at the same speed with or without the message.
 

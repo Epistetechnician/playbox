@@ -467,7 +467,7 @@ def test_http():
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], cwd=repo, check=True)
         st, j, _ = a.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_create", "args": {"repo": repo, "local": True}})
-        check("host the room from the hub", st == 200 and not j.get("error"))
+        check("host the room from the hub " + json.dumps(j)[:400], st == 200 and not j.get("error"))
         inv = lambda body, c=a, h=None: c.req("POST", f"/api/rooms/{rid}/invite", body, h)
         check("invite needs a session", inv({"ttl": 3600, "grant": 86400, "uses": 1}, anon)[0] == 401)
         check("invite refuses odd durations", inv({"ttl": 12345, "grant": 86400, "uses": 1})[0] == 400 and inv({"ttl": 3600, "grant": 1, "uses": 1})[0] == 400)
