@@ -838,6 +838,24 @@ async function connectAgent(id, btn) {
   paintSetup();
 }
 
+function machineCard(y) {
+  const m = y.machine || {}, r = m.report;
+  const fixable = r && r.checks.some(c => c.fixable);
+  const btn = `${fixable ? `<button class="btn sm" data-act="sysfix" ${m.running ? "disabled" : ""} title="Repairs file and folder permissions only. Asks for your passkey.">Fix permissions</button> ` : ""}<button class="btn sm" data-act="sysmachine" ${m.running ? "disabled" : ""}>${m.running ? "Checking…" : "Re-check machine"}</button>`;
+  const card = body => `<div class="card" style="margin:14px 0"><h2>This machine</h2>${body}</div>`;
+  if (!r) return card(`<p class="mut" style="margin:0 0 12px">${m.running ? "Checking your keys, agents and hub, and fuzzing a throwaway copy of the hub…" : esc(m.error) || "Not checked yet. It runs a minute after the hub starts, or press the button."}</p>${btn}`);
+  const f = r.fuzz, fbad = f && f.violations.length ? 1 : 0;
+  const bad = r.checks.filter(c => c.level === "bad").length + fbad, warn = r.checks.filter(c => c.level === "warn").length;
+  const v = bad ? ["bad", "Failing"] : warn ? ["warn", "Watch"] : ["ok", "Secure"];
+  const rank = {bad: 0, warn: 1, info: 2, ok: 3}, groups = {machine: "Machine", binary: "Playbox", history: "History", agents: "Agent", hub: "Hub", fuzz: "Fuzz"};
+  const rows = [...r.checks].sort((a, b) => rank[a.level] - rank[b.level]).map(c =>
+    `<div class="chk"><i class="led ${c.level === "ok" ? "ok" : c.level === "bad" ? "bad" : c.level === "warn" ? "warn" : "info"}"></i><b>${esc(groups[c.group] || c.group)} · ${esc(c.label)}</b><span class="dt">${esc(c.detail)}</span>${c.fix ? `<span class="fx">${esc(c.fix)}${c.fixable ? " · or: playbox secure --fix" : ""}</span>` : ""}</div>`).join("");
+  const fz = f ? `<div class="chk"><i class="led ${fbad ? "bad" : "ok"}"></i><b>Fuzz · throwaway hub</b><span class="dt">${f.requests.toLocaleString()} malformed and random requests in ${f.seconds.toFixed(1)} s (seed ${f.seed}), ${f.signed_in ? "signed out and signed in" : "signed out only"}: ${fbad ? f.violations.length + " problem(s)" : "no problems"}.</span>${f.violations.map(x => `<span class="fx">${esc(x.kind)}: ${esc(x.request)} · repeat: playbox secure --seed ${f.seed}</span>`).join("")}</div>` : "";
+  return card(`<div class="sysbar" style="margin:0 0 10px"><span class="verdict ${v[0]}"><i class="led ${v[0]}"></i>${v[1]}</span>
+    <span class="mut" style="font-size:13px">Score ${r.score}% · checked ${esc(ago(r.at * 1000))}${m.stale ? " · out of date" : ""} · playbox ${esc(r.playbox)}</span><span style="flex:1"></span>${btn}</div>
+    ${m.error ? `<p class="chip bad" style="white-space:normal">${esc(m.error)}</p>` : ""}<div>${fz}${rows}</div>
+    <p class="mut" style="font-size:12.5px;margin:10px 0 0">Run by the <b>playbox secure</b> command on this machine, every few hours and after each update. Fuzzing never touches this hub: it tests a throwaway copy.</p>`);
+}
 const VIEWS = {
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
@@ -922,6 +940,7 @@ const VIEWS = {
       <div class="sect tools"><h2 class="rule"><span class="ix">·</span>The workflow, live</h2><span class="mut" style="font-size:12.5px">${sel ? `Filtered to ${esc(names[sel])}. Tap it again to clear.` : "Tap a stage to filter the trail."}</span></div>
       <div class="zones"><span>Internet</span><span>Hub · you hold the keys</span><span>Room · agents</span></div>
       <div class="flow">${nodes}</div>
+      ${machineCard(y)}
       <div class="syscols"><div class="card"><h2>Controls</h2><div>${checks}</div></div>
         <div class="card"><h2>Live trail</h2><div class="trail" id="trail">${rows}</div></div></div>
       <p class="mut" style="font-size:12.5px;margin:14px 0 0">This trail only reports what the real checks did. It never holds a key, an invite link, a verify code or a message.</p>`;
@@ -1215,6 +1234,8 @@ document.addEventListener("click", async e => {
   else if (act === "copyagent") { try { const h = JSON.parse(sessionStorage.getItem("pb.agentlink")); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${h.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }
   else if (act === "sysnode") { S.sysStage = S.sysStage === t.dataset.id ? null : t.dataset.id; paintView(true); }
+  else if (act === "sysfix") { t.disabled = true; try { S.sys = await api("POST", "/api/system/machine/fix"); S.sysAt = Date.now(); toast("Repairing permissions"); for (const ms of [3000, 7000, 15000]) setTimeout(() => S.view === "system" && loadSystem(), ms); } catch (er) { toast(er.message, true); } paintView(true); }
+  else if (act === "sysmachine") { t.disabled = true; t.textContent = "Checking…"; try { S.sys = await api("POST", "/api/system/machine"); S.sysAt = Date.now(); for (const ms of [3000, 7000, 15000, 30000]) setTimeout(() => S.view === "system" && loadSystem(), ms); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();

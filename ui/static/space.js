@@ -6,7 +6,14 @@ const PBSpace = (() => {
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const ease = t => t * t * (3 - 2 * t);
-  const RAMP = " .:-=+*#%@";
+  /* 70-step density ramp, light to heavy: the classic ASCII shading ramp, so the tunnel has real tonal depth */
+  const RAMP = " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+  /* a code-editor palette (Tokyo Night on dark, a matching paper variant on light): blue, purple, cyan, green, amber, pink */
+  const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const SYN_DARK = ["#7aa2f7", "#bb9af7", "#7dcfff", "#9ece6a", "#e0af68", "#f7768e"].map(hex);
+  const SYN_LIGHT = ["#2e59c8", "#7847c9", "#0f7290", "#4a7d1f", "#a3640b", "#c4264b"].map(hex);
+  const mix = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+  function grad(stops, t) { const x = clamp(t, 0, .9999) * (stops.length - 1), i = Math.floor(x); return mix(stops[i], stops[i + 1], x - i); }
 
   /* 8x8 Bayer matrix, 0..1 */
   const BAYER = (() => {
@@ -31,6 +38,9 @@ const PBSpace = (() => {
     if (!probe) { probe = document.createElement("i"); probe.style.cssText = "display:none"; document.body.appendChild(probe); }
     const get = v => { probe.style.color = `var(${v})`; const m = getComputedStyle(probe).color.match(/[\d.]+/g) || [128, 128, 128]; return [+m[0], +m[1], +m[2]]; };
     palCache = {bg: get("--bg"), panel: get("--panel"), ink: get("--ink"), mut: get("--mut"), line: get("--line-2"), sig: get("--sig"), ok: get("--ok-led"), bad: get("--bad"), on: get("--on-sig")};
+    palCache.dark = (palCache.bg[0] * .3 + palCache.bg[1] * .59 + palCache.bg[2] * .11) < 128;
+    palCache.syn = palCache.dark ? SYN_DARK : SYN_LIGHT;
+    palCache.packed = palCache.syn.map(c => (c[2] << 16) | (c[1] << 8) | c[0]);
     palAt = now;
     return palCache;
   }
@@ -84,7 +94,7 @@ const PBSpace = (() => {
     const w = Math.max(280, s.el.clientWidth), h = clamp(Math.round(w * .72), 360, Math.round(innerHeight * .74));
     s.dpr = Math.min(2, devicePixelRatio || 1); s.W = w; s.H = h;
     s.cv.width = w * s.dpr; s.cv.height = h * s.dpr; s.cv.style.height = h + "px";
-    s.cell = w < 520 ? 5 : 6;
+    s.cell = w < 520 ? 2 : 3;
     s.bw = Math.ceil(w / s.cell); s.bh = Math.ceil(h / s.cell); s.buf.width = s.bw; s.buf.height = s.bh; s.img = s.bctx.createImageData(s.bw, s.bh); s.u32 = new Uint32Array(s.img.data.buffer); s.bAt = -1;
     frame(s, 0);
   }
@@ -102,17 +112,22 @@ const PBSpace = (() => {
   }
 
   function backdrop(s, t, pal) {
-    const {bw, bh, u32} = s, on = (255 << 24) | (pal.mut[2] << 16) | (pal.mut[1] << 8) | pal.mut[0];
-    const sg = (255 << 24) | (pal.sig[2] << 16) | (pal.sig[1] << 8) | pal.sig[0];
+    /* A flowing, domain-warped field quantised by an 8x8 Bayer matrix into a few translucent syntax-coloured levels.
+       Most pixels stay fully transparent; the dither only shows where the field is high, and fades toward the middle so the rooms read clearly. */
+    const {bw, bh, u32} = s, P = pal.packed, n = P.length, aspect = bh / bw;
     for (let y = 0; y < bh; y++) {
-      const ny = y / bh;
+      const ny = y / bw, vy = y / bh - .5;
       for (let x = 0; x < bw; x++) {
         const nx = x / bw;
-        let f = .5 + .25 * Math.sin(nx * 9 + t * .35 + 1.7 * Math.sin(ny * 5 - t * .2)) + .25 * Math.sin(ny * 11 - t * .27 + 1.3 * Math.cos(nx * 6 + t * .15));
-        const dx = nx - .5, dy = (ny - .5) * .85, d = Math.sqrt(dx * dx + dy * dy);
-        f *= .12 + d * 1.35;
-        const th = bay(x, y), v = f * .5 - th;
-        u32[y * bw + x] = v > 0 ? (v > .2 ? sg : on) : 0;
+        const qx = Math.sin(ny * 6.1 + t * .21) + Math.sin(nx * 4.3 - t * .17), qy = Math.cos(nx * 6.7 - t * .19) + Math.cos(ny * 4.1 + t * .13);
+        const v1 = .5 + .5 * Math.sin(nx * 9 + qx * 1.4 + ny * 7 + qy * 1.2 + t * .25), v2 = .5 + .5 * Math.sin(nx * 21 - qy * 2.3 + ny * 5 + t * .11);
+        let v = v1 * .68 + v2 * .32;
+        const dx = nx - .5, d = Math.sqrt(dx * dx + vy * vy * aspect * aspect * 2.2);
+        v *= .12 + d * 1.7;
+        const th = bay(x, y), lev = v * 3.0 + (th - .5) * 1.25;
+        if (lev < 1) { u32[y * bw + x] = 0; continue; }
+        const ci = ((Math.floor(v1 * 4.2 + nx * 3.2 + ny * 2.4 + t * .05) % n) + n) % n, a = clamp(.1 + (lev - 1) * .08, .1, .3) * 255 | 0;
+        u32[y * bw + x] = (a << 24) | P[ci];
       }
     }
     s.bctx.putImageData(s.img, 0, 0);
@@ -130,14 +145,14 @@ const PBSpace = (() => {
 
     ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    if (rm ? s.bAt < 0 : s.t - s.bAt > .05) { backdrop(s, rm ? 3 : s.t, pal); s.bAt = s.t; }
+    if (rm ? s.bAt < 0 : s.t - s.bAt > .06) { backdrop(s, rm ? 3 : s.t, pal); s.bAt = s.t; }
     ctx.imageSmoothingEnabled = false;
-    ctx.globalAlpha = .45; ctx.drawImage(s.buf, 0, 0, W, H); ctx.globalAlpha = 1;
+    ctx.drawImage(s.buf, 0, 0, W, H);
 
     const fog = d => clamp(1.25 - (d - 2.2) * .16, .25, 1);
     ctx.lineWidth = 1;
     /* floor grid */
-    ctx.strokeStyle = rgb(pal.line, .55);
+    ctx.strokeStyle = rgb(pal.syn[0], .28);
     for (let g = -3; g <= 3; g += .75) for (const horiz of [0, 1]) {
       const a = project(s, horiz ? [-3, -.7, g] : [g, -.7, -3]), b = project(s, horiz ? [3, -.7, g] : [g, -.7, 3]);
       if (!a || !b) continue;
@@ -145,11 +160,11 @@ const PBSpace = (() => {
     }
     /* orbit rings */
     for (const [R, label] of [[1.15, "MINE"], [2.15, "SHARED"]]) {
-      ctx.strokeStyle = rgb(pal.mut, .6); ctx.setLineDash([2, 5]); ctx.beginPath();
+      ctx.strokeStyle = rgb(pal.syn[R > 2 ? 1 : 2], .75); ctx.setLineDash([2, 5]); ctx.beginPath();
       let first = true, dsum = 0, n = 0;
       for (let i = 0; i <= 72; i++) { const a = i / 72 * 6.2832, p = project(s, [R * Math.cos(a), 0, R * Math.sin(a)]); if (!p) { first = true; continue; } dsum += p.d; n++; first ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); first = false; }
       ctx.globalAlpha = n ? fog(dsum / n) : 0; ctx.stroke(); ctx.setLineDash([]);
-      const lp = project(s, [R, 0, 0]); if (lp && n) { ctx.globalAlpha = .8; ctx.fillStyle = rgb(pal.mut); ctx.font = "600 9px ui-monospace,Menlo,monospace"; ctx.fillText(label, lp.x + 6, lp.y - 6); }
+      const lp = project(s, [R, 0, 0]); if (lp && n) { ctx.globalAlpha = .9; ctx.fillStyle = rgb(pal.syn[R > 2 ? 1 : 2]); ctx.font = "600 9px ui-monospace,Menlo,monospace"; ctx.fillText(label, lp.x + 6, lp.y - 6); }
     }
     ctx.globalAlpha = 1;
 
@@ -265,9 +280,10 @@ const PBSpace = (() => {
 
   /* ------------------------------------------------------------------ ASCII dither tunnel, used by the wormhole and the splat */
   function tunnel(ctx, W, H, o) {
-    const pal = palette(), cw = W < 520 ? 8 : 10, ch = W < 520 ? 13 : 16, cols = Math.ceil(W / cw), rows = Math.ceil(H / ch), M = Math.max(W, H);
+    const pal = palette(), cw = W < 520 ? 6 : 7, ch = W < 520 ? 10 : 12, cols = Math.ceil(W / cw), rows = Math.ceil(H / ch), M = Math.max(W, H);
     const cx = o.cx * W, cy = o.cy * H, p = o.p, time = o.time, d = o.dissolve || 0;
-    ctx.font = `600 ${ch - 2}px ui-monospace,Menlo,monospace`; ctx.textBaseline = "top";
+    ctx.font = `500 ${ch - 1}px ui-monospace,Menlo,monospace`; ctx.textBaseline = "top";
+    const stops = [pal.syn[0], pal.syn[1], pal.syn[5], pal.syn[4]];
     const bgc = rgb(pal.bg);
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
       const x = i * cw + cw / 2, y = j * ch + ch / 2, dx = (x - cx) / M * 2, dy = (y - cy) / M * 2, r = Math.hypot(dx, dy), th = bay(i, j);
@@ -277,6 +293,7 @@ const PBSpace = (() => {
       const v = -Math.log(r + .03) * 1.1 + time * (1 + p * 6), u = a / 6.2832 * 8 + v * .22;
       const s1 = Math.pow(.5 + .5 * Math.sin(u * 6.2832), 2.4), s2 = Math.pow(.5 + .5 * Math.sin(v * 6.2832), 1.7);     /* spokes and rings of the tube wall */
       let b = clamp(.12 + (s1 * .55 + s2 * .75) * (.3 + .7 * Math.exp(-r * 1.4)) + .85 * Math.exp(-r * 5.5) + p * .12, 0, 1);
+      b = clamp((b - .16) * 1.55, 0, 1); b = b * b * (3 - 2 * b);      /* stretch the tones so the tube wall reads as rings and spokes, not noise */
       let ox = 0, oy = 0, alpha = 1;
       if (d > 0) {                                                  /* splat: dissolve outward from the centre, chars thrown off */
         const gone = th * .5 + Math.min(1, r) * .42 + (Math.sin(i * 12.9 + j * 78.2) * .5 + .5) * .08;
@@ -284,10 +301,10 @@ const PBSpace = (() => {
         const k = clamp((gone - d * 1.25) * 4, 0, 1);
         if (k < 1) { const ux = dx / (r || 1), uy = dy / (r || 1), thr = (1 - k) * (1 - k) * 46 * (.5 + th); ox = ux * thr; oy = uy * thr; alpha = k; }
       }
-      const idx = Math.floor(clamp(b + (th - .5) * .3, 0, .999) * RAMP.length);
+      const idx = Math.floor(clamp(b + (th - .5) * .045, 0, .999) * RAMP.length);
       if (d <= 0 || alpha >= 1) { ctx.fillStyle = bgc; ctx.fillRect(i * cw, j * ch, cw + .5, ch + .5); }
       if (idx === 0) continue;
-      const hot = r < .13 + p * .22, col = hot ? pal.sig : [lerp(pal.mut[0], pal.ink[0], b), lerp(pal.mut[1], pal.ink[1], b), lerp(pal.mut[2], pal.ink[2], b)];
+      const hot = r < .1 + p * .16, col = hot ? mix(pal.syn[4], pal.dark ? [255, 255, 255] : [60, 30, 0], clamp(b, 0, 1) * .6) : grad(stops, b * .8 + (s1 * .25) + (v * .05 % 1) * .15);
       ctx.fillStyle = rgb(col, alpha); ctx.fillText(RAMP[idx], i * cw + ox + 1, j * ch + oy);
     }
   }

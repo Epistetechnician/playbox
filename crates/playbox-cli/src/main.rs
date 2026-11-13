@@ -6,6 +6,7 @@ mod latent;
 mod python;
 mod release;
 mod rooms;
+mod secure;
 mod session;
 mod service;
 mod setup;
@@ -141,6 +142,7 @@ async fn run() -> Result<ExitCode> {
         Cmd::Experiment { name, args } => python::experiment(name, &args),
         Cmd::World { action, args } => python::world(action, &args),
         Cmd::Init(a) => wizard::run(&a),
+        Cmd::Secure(a) => return secure::run(&a).map(ExitCode::from),
         Cmd::Hub(a) => hub::run(&a),
         Cmd::Doctor { json } => return doctor::run(json),
         Cmd::Demo => trust::demo(),
