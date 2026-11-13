@@ -39,7 +39,24 @@ fn release(root: &Path, v: &str) -> PathBuf {
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     sums(&rel);
+    sign(root, &rel);
     rel
+}
+
+/// The test release key, made once per test root. `run` passes its public half unless a test chooses another.
+fn test_key(root: &Path) -> (PathBuf, String) {
+    let keyfile = root.join("testkey");
+    if !keyfile.exists() {
+        let k = Command::new(BIN).args(["release", "keygen", keyfile.to_str().unwrap()]).output().unwrap();
+        std::fs::write(root.join("testkey.pub"), String::from_utf8_lossy(&k.stdout).trim()).unwrap();
+    }
+    (keyfile, std::fs::read_to_string(root.join("testkey.pub")).unwrap())
+}
+
+fn sign(root: &Path, rel: &Path) {
+    let (keyfile, _) = test_key(root);
+    let s = Command::new(BIN).args(["release", "sign", rel.join("SHA256SUMS").to_str().unwrap(), "--key", keyfile.to_str().unwrap()]).output().unwrap();
+    assert!(s.status.success(), "{}", String::from_utf8_lossy(&s.stderr));
 }
 
 fn sums(rel: &Path) {
@@ -61,7 +78,12 @@ fn install(root: &Path) -> PathBuf {
 }
 
 fn run(exe: &Path, rel: &Path, args: &[&str]) -> Output {
-    Command::new(exe).arg("update").args(args).env("PLAYBOX_BASE_URL", format!("file://{}", rel.display())).output().unwrap()
+    let mut a: Vec<String> = args.iter().map(ToString::to_string).collect();
+    if !a.iter().any(|x| x == "--pubkey" || x == "--no-test-key") {
+        a.extend(["--pubkey".into(), test_key(rel.parent().unwrap()).1]);
+    }
+    a.retain(|x| x != "--no-test-key");
+    Command::new(exe).arg("update").args(a).env("PLAYBOX_BASE_URL", format!("file://{}", rel.display())).output().unwrap()
 }
 
 fn text(o: &Output) -> String {
@@ -142,11 +164,7 @@ fn a_signed_release_needs_the_matching_key() {
     let root = fresh("signed");
     let exe = install(&root);
     let rel = release(&root, "9.9.9");
-    let keyfile = root.join("key");
-    let k = Command::new(BIN).args(["release", "keygen", keyfile.to_str().unwrap()]).output().unwrap();
-    let pubkey = String::from_utf8_lossy(&k.stdout).trim().to_string();
-    let s = Command::new(BIN).args(["release", "sign", rel.join("SHA256SUMS").to_str().unwrap(), "--key", keyfile.to_str().unwrap()]).output().unwrap();
-    assert!(s.status.success(), "{}", text(&s));
+    let (_, pubkey) = test_key(&root);
 
     let other = fresh("otherkey");
     let k2 = Command::new(BIN).args(["release", "keygen", other.join("k").to_str().unwrap()]).output().unwrap();
@@ -155,16 +173,33 @@ fn a_signed_release_needs_the_matching_key() {
     assert!(!o.status.success());
     assert!(text(&o).contains("BAD SIGNATURE"), "{}", text(&o));
 
+    // The key built into the binary (release.pub) is the maintainer's, not the test's.
+    let o = run(&exe, &rel, &["--no-test-key"]);
+    assert!(!o.status.success());
+    assert!(text(&o).contains("any key this build trusts"), "{}", text(&o));
+    assert!(version_of(&exe).contains(env!("CARGO_PKG_VERSION")), "a refused update changes nothing");
+
     let o = run(&exe, &rel, &["--pubkey", &pubkey]);
     assert!(o.status.success(), "{}", text(&o));
     assert!(version_of(&exe).contains("9.9.9"));
 
-    // A key is pinned but the release carries no signature.
-    let unsigned = release(&fresh("unsigned"), "9.9.9");
+    // A key is pinned but the release carries no signature, or the checksum list changed after signing.
+    let uroot = fresh("unsigned");
+    let unsigned = release(&uroot, "9.9.9");
+    std::fs::remove_file(unsigned.join("SHA256SUMS.sig")).unwrap();
     let exe2 = install(&fresh("inst2"));
-    let o = run(&exe2, &unsigned, &["--pubkey", &pubkey]);
+    let o = run(&exe2, &unsigned, &[]);
     assert!(!o.status.success());
     assert!(text(&o).contains("not signed"), "{}", text(&o));
+
+    let troot = fresh("resigned");
+    let tampered = release(&troot, "9.9.9");
+    let mut sums = std::fs::read_to_string(tampered.join("SHA256SUMS")).unwrap();
+    sums.push_str("0000  extra\n");
+    std::fs::write(tampered.join("SHA256SUMS"), sums).unwrap();
+    let o = run(&install(&fresh("inst3")), &tampered, &[]);
+    assert!(!o.status.success());
+    assert!(text(&o).contains("BAD SIGNATURE"), "{}", text(&o));
 }
 
 #[test]

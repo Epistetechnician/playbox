@@ -19,7 +19,7 @@ set -eu
 
 REPO="Epistetechnician/playbox"
 # Release signing key (ed25519, hex). Empty until the maintainer pins one with `playbox release keygen`.
-RELEASE_PUBKEY=""
+RELEASE_PUBKEY="98de00e615455df4e38693740a1471bf8a9385741afa37bad4d6af1ae985a7e4"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'playbox install: %s\n' "$*" >&2; exit 1; }
@@ -78,12 +78,18 @@ else die "need sha256sum or shasum to check the download"; fi
 tar -xzf "$tmp/$asset" -C "$tmp"
 [ -x "$tmp/playbox" ] || die "the archive has no playbox binary"
 
-# 2. The checksum list is signed by the maintainer's key. This uses the downloaded binary, so on its own it
-#    only guards against a mismatched or corrupted upload; `playbox` verifies later updates with the key it
-#    already trusts. It is skipped when no key is pinned or the release has no signature.
-if [ -n "$RELEASE_PUBKEY" ] && curl -fsSL "$base/SHA256SUMS.sig" -o "$tmp/SHA256SUMS.sig" 2>/dev/null; then
-  "$tmp/playbox" release verify "$tmp/SHA256SUMS" --pubkey "$RELEASE_PUBKEY" >/dev/null || die "signature check failed; not installing"
-  say "signature ok"
+# 2. The checksum list is signed by the maintainer's key (pinned above). A pinned key makes the signature mandatory: a release
+#    without one is refused, so stripping the .sig from a mirror cannot downgrade the check. `playbox update` pins the same key
+#    (release.pub) inside the binary. PLAYBOX_ALLOW_UNSIGNED=1 installs an old unsigned release (0.2.1 and earlier) on purpose.
+if [ -n "$RELEASE_PUBKEY" ]; then
+  if curl -fsSL "$base/SHA256SUMS.sig" -o "$tmp/SHA256SUMS.sig" 2>/dev/null; then
+    "$tmp/playbox" release verify "$tmp/SHA256SUMS" --pubkey "$RELEASE_PUBKEY" >/dev/null || die "signature check failed; not installing"
+    say "signature ok"
+  elif [ "${PLAYBOX_ALLOW_UNSIGNED:-}" = 1 ]; then
+    say "warning: this release is unsigned; installing because PLAYBOX_ALLOW_UNSIGNED=1"
+  else
+    die "this release is not signed. Releases from 0.3.0 on are; for an older one set PLAYBOX_ALLOW_UNSIGNED=1"
+  fi
 fi
 
 dest="${PLAYBOX_INSTALL:-$HOME/.local/bin}"

@@ -970,13 +970,13 @@ impl RoomHandler {
             Some(Op::CapList) => return reply(json!({ "capabilities": self.caps.book.describe() }).to_string()),
             Some(Op::Cap { name, args, call_id }) => {
                 return match self.caps.submit(&from.to_string(), &name, args, &call_id) {
-                    Ok(c) => reply(json!({ "call": c }).to_string()),
+                    Ok(c) => reply(json!({ "call": c.signed(&self.attest_key) }).to_string()),
                     Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
                 }
             }
             Some(Op::CapPoll { call_id }) => {
                 return match self.caps.book.view(&from.to_string(), &call_id) {
-                    Some(c) => reply(json!({ "call": c }).to_string()),
+                    Some(c) => reply(json!({ "call": c.signed(&self.attest_key) }).to_string()),
                     None => reply(json!({ "error": "no such call" }).to_string()),
                 }
             }
@@ -2503,7 +2503,7 @@ impl Client {
     pub async fn call_capability(&self, name: &str, args: std::collections::BTreeMap<String, String>, call_id: &str) -> Result<capabilities::Call> {
         let op = Op::Cap { name: name.to_string(), args, call_id: call_id.to_string() };
         let v = self.reply_json(&op, "capability call").await?;
-        call_of(&v)
+        call_of(&v, self.host_id())
     }
 
     /// The state of your own call.
@@ -2513,7 +2513,7 @@ impl Client {
     /// Returns an error if there is no such call.
     pub async fn poll_capability(&self, call_id: &str) -> Result<capabilities::Call> {
         let v = self.reply_json(&Op::CapPoll { call_id: call_id.to_string() }, "capability poll").await?;
-        call_of(&v)
+        call_of(&v, self.host_id())
     }
 
     /// Call a capability and wait up to `wait` for it to finish. A connection that drops mid-wait is not a failure of the call: the
@@ -2834,11 +2834,13 @@ fn conv_field(v: &Value, field: &str) -> Result<Value> {
     Ok(v.get(field).cloned().unwrap_or(Value::Null))
 }
 
-fn call_of(v: &Value) -> Result<capabilities::Call> {
+fn call_of(v: &Value, host: EndpointId) -> Result<capabilities::Call> {
     if let Some(e) = v.get("error").and_then(Value::as_str) {
         bail!("{e}");
     }
-    Ok(serde_json::from_value(v.get("call").cloned().unwrap_or(Value::Null))?)
+    let call: capabilities::Call = serde_json::from_value(v.get("call").cloned().unwrap_or(Value::Null))?;
+    call.verify_result(host.as_bytes())?;
+    Ok(call)
 }
 
 #[cfg(test)]

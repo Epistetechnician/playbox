@@ -17,12 +17,16 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const REPO: &str = "Epistetechnician/playbox";
-/// The release signing key (ed25519, hex) this build trusts. Set at build time by the release workflow; empty in a local build,
-/// which then checks hashes only and says so.
-const PINNED_KEY: &str = match option_env!("PLAYBOX_RELEASE_PUBKEY") {
-    Some(k) => k,
-    None => "",
+/// The release signing keys (ed25519, hex) this build trusts: `release.pub` at the repository root, or `PLAYBOX_RELEASE_PUBKEY` at
+/// build time to replace it (CI, a fork). More than one so a key can be rotated without stranding old installs.
+const PINNED_KEYS: &str = match option_env!("PLAYBOX_RELEASE_PUBKEY") {
+    Some(k) if !k.is_empty() => k,
+    _ => include_str!("../../../release.pub"),
 };
+
+fn pinned_keys() -> Vec<String> {
+    PINNED_KEYS.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(String::from).collect()
+}
 /// Exit status of `--check` when a newer release exists, so scripts can branch on it.
 pub const EXIT_UPDATE_AVAILABLE: u8 = 10;
 
@@ -258,13 +262,16 @@ pub fn run(o: &Opts) -> Result<u8> {
     let sums_raw = fetch(&format!("{base}/SHA256SUMS"))?;
     let sums_path = tmp.0.join("SHA256SUMS");
     std::fs::write(&sums_path, &sums_raw)?;
-    let key = o.pubkey.clone().unwrap_or_else(|| PINNED_KEY.to_string());
-    if key.is_empty() {
+    let keys = o.pubkey.clone().map_or_else(pinned_keys, |k| vec![k]);
+    if keys.is_empty() {
         eprintln!("note: this build pins no release key, so the update is checked against SHA256SUMS only");
     } else {
         let sig = fetch(&format!("{base}/SHA256SUMS.sig")).context("this release is not signed, and this build requires a signature")?;
         std::fs::write(tmp.0.join("SHA256SUMS.sig"), sig)?;
-        crate::release::verify_quiet(&sums_path.to_string_lossy(), None, &key)?;
+        let ok = keys.iter().any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
+        if !ok {
+            bail!("BAD SIGNATURE: SHA256SUMS was not signed by any key this build trusts ({} pinned); not updating", keys.len());
+        }
     }
     let sums = parse_sums(&String::from_utf8_lossy(&sums_raw));
 
@@ -319,6 +326,10 @@ pub fn run(o: &Opts) -> Result<u8> {
         println!("\n{}", m.notes.trim());
     }
     println!("\nrunning agents keep the old version until restarted; undo with: playbox update --rollback");
+    // Every update is followed by a check of the updated install, run by the new binary: a release that moved a file or loosened a
+    // permission shows up now rather than at the next audit. The report is the same one `playbox secure` writes for the hub.
+    println!("\nchecking the updated install (playbox secure):");
+    let _ = Command::new(&exe).args(["secure", "--no-fuzz"]).stdin(Stdio::null()).status();
     Ok(0)
 }
 

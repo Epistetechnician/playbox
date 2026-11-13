@@ -17,6 +17,18 @@ serde_json = "1"
 base64 = "0.22"
 ed25519-dalek = "2"
 
+[[bin]]
+name = "capability_bind"
+path = "fuzz_targets/capability_bind.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "room_state_files"
+path = "fuzz_targets/room_state_files.rs"
+test = false
+doc = false
+
 # Not part of the main workspace: it needs nightly and builds everything with sanitizers.
 [workspace]
 members = ["."]
