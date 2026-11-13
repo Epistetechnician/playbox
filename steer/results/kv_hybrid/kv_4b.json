@@ -1,0 +1,324 @@
+{
+ "model": "Qwen/Qwen3-4B-Instruct-2507",
+ "gpu": "H100",
+ "vllm": "0.25.1",
+ "scenarios": {
+  "indep": {
+   "S": 32,
+   "P": 32,
+   "T": 4
+  },
+  "team": {
+   "S": 64,
+   "P": 8,
+   "T": 16
+  }
+ },
+ "corpus_chunks": 640,
+ "corpus_tokens": 111316,
+ "arms": {
+  "indep/full+cache": {
+   "n": 128,
+   "acc": 0.7031,
+   "ttft_turn1_p50": 3.019,
+   "ttft_later_p50": 5.566,
+   "ttft_all_p50": 5.522,
+   "ttft_all_p95": 5.722,
+   "latency_p50": 5.575,
+   "turns_per_min": 337.9,
+   "wall_s": 22.7,
+   "prompt_tokens_mean": 111342,
+   "cached_frac": 1.0,
+   "gpu_s_per_correct": 0.25,
+   "usd_per_1k_correct": 0.277,
+   "wrong": [
+    {
+     "project": "Nunki-Nine",
+     "got": "KP-7155-A"
+    },
+    {
+     "project": "Fomalhaut-Five",
+     "got": "The cost centre for Project Fomalhaut-Five is not explicitly"
+    },
+    {
+     "project": "Procyon-Nine",
+     "got": "TR-7016-F"
+    },
+    {
+     "project": "Electra-Nine",
+     "got": "The gate pass for Project Electra-Nine is RQ-9513-A."
+    }
+   ]
+  },
+  "indep/rag+cache": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.359,
+   "ttft_later_p50": 0.238,
+   "ttft_all_p50": 0.274,
+   "ttft_all_p95": 0.37,
+   "latency_p50": 0.422,
+   "turns_per_min": 4423.2,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 936,
+   "cached_frac": 0.091,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": []
+  },
+  "indep/hybrid+cache": {
+   "n": 128,
+   "acc": 0.9766,
+   "ttft_turn1_p50": 1.047,
+   "ttft_later_p50": 0.159,
+   "ttft_all_p50": 0.167,
+   "ttft_all_p95": 1.545,
+   "latency_p50": 0.22,
+   "turns_per_min": 2957.5,
+   "wall_s": 2.6,
+   "prompt_tokens_mean": 4195,
+   "cached_frac": 0.765,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.023,
+   "wrong": [
+    {
+     "project": "Okab-Three",
+     "got": "QZ-3700-A"
+    },
+    {
+     "project": "Mirfak-Nine",
+     "got": "PQ-8500-G"
+    },
+    {
+     "project": "Izar-Three",
+     "got": "XQ-8551-H"
+    }
+   ]
+  },
+  "indep/hybrid10+cache": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.37,
+   "ttft_later_p50": 0.125,
+   "ttft_all_p50": 0.135,
+   "ttft_all_p95": 0.574,
+   "latency_p50": 0.188,
+   "turns_per_min": 6017.4,
+   "wall_s": 1.3,
+   "prompt_tokens_mean": 1793,
+   "cached_frac": 0.787,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.011,
+   "wrong": []
+  },
+  "team/rag+cache": {
+   "n": 1024,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.367,
+   "ttft_later_p50": 0.182,
+   "ttft_all_p50": 0.187,
+   "ttft_all_p95": 0.358,
+   "latency_p50": 0.313,
+   "turns_per_min": 11588.9,
+   "wall_s": 5.3,
+   "prompt_tokens_mean": 940,
+   "cached_frac": 0.826,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.006,
+   "wrong": []
+  },
+  "team/hybrid+cache": {
+   "n": 1024,
+   "acc": 0.9648,
+   "ttft_turn1_p50": 0.214,
+   "ttft_later_p50": 0.398,
+   "ttft_all_p50": 0.397,
+   "ttft_all_p95": 0.429,
+   "latency_p50": 0.452,
+   "turns_per_min": 8412.3,
+   "wall_s": 7.3,
+   "prompt_tokens_mean": 4205,
+   "cached_frac": 0.997,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.008,
+   "wrong": [
+    {
+     "project": "Aldebaran-One",
+     "got": "WX-2024-B"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "WQ-7728-B"
+    },
+    {
+     "project": "Aldebaran-One",
+     "got": "PR-4495-A"
+    }
+   ]
+  },
+  "team/hybrid10+cache": {
+   "n": 1024,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.212,
+   "ttft_later_p50": 0.223,
+   "ttft_all_p50": 0.222,
+   "ttft_all_p95": 0.249,
+   "latency_p50": 0.279,
+   "turns_per_min": 13588.0,
+   "wall_s": 4.5,
+   "prompt_tokens_mean": 1803,
+   "cached_frac": 0.995,
+   "gpu_s_per_correct": 0.0,
+   "usd_per_1k_correct": 0.005,
+   "wrong": []
+  },
+  "indep/full-nocache": {
+   "n": 32,
+   "acc": 0.6875,
+   "ttft_turn1_p50": 127.001,
+   "ttft_later_p50": null,
+   "ttft_all_p50": 127.001,
+   "ttft_all_p95": 231.276,
+   "latency_p50": 129.742,
+   "turns_per_min": 8.0,
+   "wall_s": 238.9,
+   "prompt_tokens_mean": 111342,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 10.86,
+   "usd_per_1k_correct": 11.913,
+   "wrong": [
+    {
+     "project": "Nunki-Nine",
+     "got": "KP-7155-A"
+    },
+    {
+     "project": "Fomalhaut-Five",
+     "got": "The cost centre for Project Fomalhaut-Five is not explicitly"
+    },
+    {
+     "project": "Procyon-Nine",
+     "got": "TR-7016-F"
+    },
+    {
+     "project": "Electra-Nine",
+     "got": "QP-9513-A"
+    }
+   ],
+   "turns_run": 1
+  },
+  "indep/rag-nocache": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.361,
+   "ttft_later_p50": 0.262,
+   "ttft_all_p50": 0.27,
+   "ttft_all_p95": 0.411,
+   "latency_p50": 0.46,
+   "turns_per_min": 4064.4,
+   "wall_s": 1.9,
+   "prompt_tokens_mean": 936,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.016,
+   "wrong": []
+  },
+  "indep/hybrid-nocache": {
+   "n": 128,
+   "acc": 0.9766,
+   "ttft_turn1_p50": 1.177,
+   "ttft_later_p50": 1.141,
+   "ttft_all_p50": 1.141,
+   "ttft_all_p95": 1.671,
+   "latency_p50": 2.029,
+   "turns_per_min": 918.2,
+   "wall_s": 8.4,
+   "prompt_tokens_mean": 4195,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.07,
+   "usd_per_1k_correct": 0.073,
+   "wrong": [
+    {
+     "project": "Okab-Three",
+     "got": "QZ-3700-A"
+    },
+    {
+     "project": "Mirfak-Nine",
+     "got": "PQ-8500-G"
+    },
+    {
+     "project": "Izar-Three",
+     "got": "XQ-8551-H"
+    }
+   ]
+  },
+  "indep/hybrid10-nocache": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.468,
+   "ttft_later_p50": 0.408,
+   "ttft_all_p50": 0.415,
+   "ttft_all_p95": 0.709,
+   "latency_p50": 0.835,
+   "turns_per_min": 2273.4,
+   "wall_s": 3.4,
+   "prompt_tokens_mean": 1793,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.029,
+   "wrong": []
+  },
+  "team/rag-nocache": {
+   "n": 1024,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.529,
+   "ttft_later_p50": 0.258,
+   "ttft_all_p50": 0.26,
+   "ttft_all_p95": 0.444,
+   "latency_p50": 0.84,
+   "turns_per_min": 4507.6,
+   "wall_s": 13.6,
+   "prompt_tokens_mean": 940,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": []
+  },
+  "team/hybrid10-nocache": {
+   "n": 1024,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.913,
+   "ttft_later_p50": 0.819,
+   "ttft_all_p50": 0.819,
+   "ttft_all_p95": 0.829,
+   "latency_p50": 1.639,
+   "turns_per_min": 2315.5,
+   "wall_s": 26.5,
+   "prompt_tokens_mean": 1803,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.028,
+   "wrong": []
+  }
+ },
+ "recall": {
+  "indep/rag": 1.0,
+  "indep/hybrid": 1.0,
+  "indep/hybrid10": 1.0,
+  "team/rag": 1.0,
+  "team/hybrid": 1.0,
+  "team/hybrid10": 1.0
+ },
+ "prompt_tokens": {
+  "rag": 923,
+  "hybrid": 4202,
+  "hybrid10": 1802
+ },
+ "cold_full_first_request": {
+  "ttft": 7.68,
+  "prompt_tokens": 111342
+ }
+}

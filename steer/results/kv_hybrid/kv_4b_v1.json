@@ -1,0 +1,146 @@
+{
+ "model": "Qwen/Qwen3-4B-Instruct-2507",
+ "gpu": "H100",
+ "vllm": "0.25.1",
+ "agents": 32,
+ "turns": 4,
+ "corpus_chunks": 640,
+ "corpus_tokens": 111316,
+ "arms": {
+  "full+cache": {
+   "n": 128,
+   "acc": 0.625,
+   "ttft_turn1_p50": 2.924,
+   "ttft_later_p50": 5.011,
+   "ttft_all_p50": 4.937,
+   "ttft_all_p95": 5.314,
+   "latency_p50": 5.055,
+   "turns_per_min": 370.1,
+   "wall_s": 20.7,
+   "prompt_tokens_mean": 111342,
+   "cached_frac": 1.0,
+   "gpu_s_per_correct": 0.26,
+   "usd_per_1k_correct": 0.285,
+   "wrong": [
+    {
+     "q": "Nunki-Nine",
+     "got": "KP-7155-A"
+    },
+    {
+     "q": "Aldebaran-Three",
+     "got": "For Project Aldebaran-Three, the vehicle plate is TT-5601-D."
+    },
+    {
+     "q": "Betelgeuse-One",
+     "got": "QP-4187-H"
+    },
+    {
+     "q": "Deneb-Three",
+     "got": "For Project Deneb-Three, the primary vendor is not explicitl"
+    }
+   ]
+  },
+  "rag+cache": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.382,
+   "ttft_later_p50": 0.311,
+   "ttft_all_p50": 0.316,
+   "ttft_all_p95": 0.437,
+   "latency_p50": 0.457,
+   "turns_per_min": 4093.2,
+   "wall_s": 1.9,
+   "prompt_tokens_mean": 937,
+   "cached_frac": 0.081,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.016,
+   "wrong": []
+  },
+  "hybrid+cache": {
+   "n": 128,
+   "acc": 0.9766,
+   "ttft_turn1_p50": 1.055,
+   "ttft_later_p50": 0.153,
+   "ttft_all_p50": 0.164,
+   "ttft_all_p95": 1.555,
+   "latency_p50": 0.243,
+   "turns_per_min": 2945.0,
+   "wall_s": 2.6,
+   "prompt_tokens_mean": 4195,
+   "cached_frac": 0.764,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.023,
+   "wrong": [
+    {
+     "q": "Nunki-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "q": "Okab-Three",
+     "got": "QZ-3700-A"
+    },
+    {
+     "q": "Betelgeuse-Five",
+     "got": "PP-6484-F"
+    }
+   ]
+  },
+  "full-nocache": {
+   "n": 32,
+   "acc": 0.6875,
+   "ttft_turn1_p50": 125.78,
+   "ttft_later_p50": null,
+   "ttft_all_p50": 125.78,
+   "ttft_all_p95": 229.043,
+   "latency_p50": 128.493,
+   "turns_per_min": 8.1,
+   "wall_s": 236.4,
+   "prompt_tokens_mean": 111342,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 10.74,
+   "usd_per_1k_correct": 11.789,
+   "turns_run": 1
+  },
+  "rag-nocache": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.389,
+   "ttft_later_p50": 0.29,
+   "ttft_all_p50": 0.317,
+   "ttft_all_p95": 0.431,
+   "latency_p50": 0.488,
+   "turns_per_min": 3778.2,
+   "wall_s": 2.0,
+   "prompt_tokens_mean": 937,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.017,
+   "turns_run": 4
+  },
+  "hybrid-nocache": {
+   "n": 128,
+   "acc": 0.9766,
+   "ttft_turn1_p50": 1.168,
+   "ttft_later_p50": 1.13,
+   "ttft_all_p50": 1.13,
+   "ttft_all_p95": 1.657,
+   "latency_p50": 2.006,
+   "turns_per_min": 925.3,
+   "wall_s": 8.3,
+   "prompt_tokens_mean": 4195,
+   "cached_frac": 0.0,
+   "gpu_s_per_correct": 0.07,
+   "usd_per_1k_correct": 0.073,
+   "turns_run": 4
+  }
+ },
+ "recall": {
+  "rag": 1.0,
+  "hybrid": 1.0
+ },
+ "hybrid_prompt_tokens": 4202,
+ "cold_full_first_request": {
+  "ttft": 7.64,
+  "prompt_tokens": 111342
+ }
+}
