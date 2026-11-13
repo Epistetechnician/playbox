@@ -253,6 +253,15 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
     let cfg = HostConfig {
         repo: Some(repo.clone()),
         idle_timeout: Duration::from_secs(3),
+        // An in-process index with a ledger in the state directory, so the memory operations are mutated too.
+        memory: Some(std::sync::Arc::new(
+            playbox_net::shared_memory::SharedMemory::new({
+                let mut c = playbox_net::shared_memory::MemoryConfig::new(std::sync::Arc::new(playbox_net::shared_memory::InMemory::default()), "fuzz");
+                c.ledger = Some(base.join("memory.jsonl"));
+                c
+            })
+            .unwrap(),
+        )),
         ..Default::default()
     };
     let host = Host::open(&base.join("state"), Transport::Local, cfg)
@@ -345,6 +354,16 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         seeds.push(frame(
             "SendMessage",
             Some(message(Op::Feed { since: 0 }, vec![])),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::Remember { text: "the staging VPN is needed".into(), key: Some("k".into()) }, vec![])),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::Recall { query: "staging VPN".into(), max_tokens: Some(500), author: Some("x".into()) }, vec![])),
             g,
         ));
         seeds.push(frame(

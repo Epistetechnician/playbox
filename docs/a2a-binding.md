@@ -72,6 +72,10 @@ default; a non-loopback `--listen` requires `--token` (or `PLAYBOX_BRIDGE_TOKEN`
 token. The bridge's grant expires like any other (default 1h), so restart it with a fresh link then.
 Plain HTTP only: put a TLS proxy in front for anything beyond localhost or a trusted network.
 
+## Room memory
+
+`{"playbox":{"op":"remember","text":"...","key":"..."}}` adds an entry to the room's shared memory and answers `{"doc","status"}`; `{"playbox":{"op":"recall","query":"...","max_tokens":1500,"author":"<member>"}}` answers `{"hits":[{"doc","author","text","at_ms"}]}`. Both need only membership. The host stamps the author and answers `{"error": ...}` when the room has no memory, the entry is refused, or the index is down. See `docs/latent-channels.md` 6p.
+
 ## Room talk: durable and sent once
 
 The room feed (`say`, `feed`, and the room's own events) is kept by a host opened with a state directory in

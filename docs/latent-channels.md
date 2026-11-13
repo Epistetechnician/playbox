@@ -629,6 +629,26 @@ deleted documents left recall, but observations built from them were not checked
 configured model are the host's to decide. Hindsight is a Python server with Postgres, so it stays an opt-in extra, not part of
 the single binary.
 
+## 6p. The room's shared memory (2026-11-12)
+
+6o said to run Hindsight as a sidecar and not fork it. This is the bridge: `crates/playbox-net/src/shared_memory.rs`, wired into the host, the client, the MCP server and the CLI.
+
+How it works. The host is the only client of the memory server, so a member never holds a key to it or a way to name a bank. A member sends `remember` (text, optional `key`) or `recall` (query, optional author) as ordinary room operations that need only membership. The host:
+
+- stamps the author from the authenticated key, never from the text, and tags every entry `room:<id>`, `author:<member>`, `status:<state>`;
+- keeps its own ledger (`memory.jsonl`, one line per change, damaged lines skipped on load) as the record, and treats the server as an index: `reindex` rebuilds it after the server loses its data;
+- names each document by a hash of author and key (or text), so a retried post replaces itself instead of duplicating, and a retry costs no post budget;
+- recalls with `status:accepted` and the room tag, then keeps only hits whose document the ledger holds as accepted, whose author is still a member, and whose returned tags agree with the ledger. Hits with no document id and derived "observations" are dropped, because 6o left open whether consolidation can be kept apart by author;
+- on revoking a member, deletes their documents in the background; every recall first sweeps authors who are no longer members, so a deletion that failed, or a revocation that reached this host as a notice, still completes, and the entries are hidden at once either way;
+- with `--memory-review` (or `memory_review`), holds posts as `pending` in the ledger and never sends them to the server until the host accepts them, so unreviewed text cannot be consolidated with anything. `quarantine` takes an entry out of the index and keeps the record, and the member cannot post it back;
+- caps an entry at 4096 bytes, a member at 30 posts a minute and 1000 entries, the room at 10 000.
+
+Use. `playbox up --memory-url http://127.0.0.1:8888/v1/default [--memory-bank NAME] [--memory-review]`; in an MCP host, `memory_url` and `memory_review` on `playbox_create`; members call `playbox_room_remember` and `playbox_room_recall`. What recall returns is registered as untrusted text, like the feed.
+
+Tested: ten unit tests and four room tests against an in-process index (author stamping, retry, key replacement, revocation, review, a lying index, restart with a damaged ledger, limits, the HTTP client against a throwaway server, and a room without memory). The host mutation test now sends `remember` and `recall` too. One test (`a_real_hindsight_server_serves_the_room`, `--ignored`, needs `HINDSIGHT_URL`) runs the same room against a real server; **it has not been run**, because no Hindsight server was up when this was written. Until it is, the HTTP calls rest on the shapes the 6o spike observed.
+
+Not done: consolidation isolation is still unproven (this design avoids depending on it); recall quality and cost at scale; the bank is not deleted when a room ends; a replica host does not share a ledger with its primary.
+
 ## 7. Not covered
 
 Concepts outside the anchors; arbitrary thoughts (this is a concept channel); multi-turn exchanges; models smaller than

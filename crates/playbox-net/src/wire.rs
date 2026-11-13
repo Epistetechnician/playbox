@@ -122,6 +122,21 @@ pub enum Op {
         #[serde(default)]
         since: u64,
     },
+    /// Add an entry to the room's shared memory. Posting the same text (or the same `key`) again replaces the entry.
+    Remember {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+    },
+    /// Ask the room's shared memory. Answers with entries by current members that the host accepted.
+    Recall {
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_tokens: Option<u32>,
+        /// Only entries by this member (their id).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        author: Option<String>,
+    },
 }
 
 impl Op {
@@ -137,7 +152,7 @@ impl Op {
             Op::Steer { probe: true, .. } => "steer_probe",
             Op::Handoff { .. } => "handoff",
             // Talking in the room needs only membership, like echo.
-            Op::Say { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } => "echo",
+            Op::Say { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
         }
     }
 

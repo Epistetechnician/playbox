@@ -96,6 +96,20 @@ pub async fn up(a: UpArgs) -> Result<()> {
                 playbox_core::steer::Ceiling::LocalInternalExploratory,
             )?)),
         },
+        memory: match &a.memory_url {
+            None => None,
+            Some(url) => {
+                let bank = a.memory_bank.clone().unwrap_or_else(|| {
+                    state
+                        .as_deref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|n| n.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect::<String>())
+                        .filter(|n| !n.is_empty())
+                        .unwrap_or_else(|| "room".to_string())
+                });
+                Some(playbox_net::shared_memory::hindsight_memory(url, &bank, a.memory_review, false, state.as_deref().map(std::path::Path::new))?)
+            }
+        },
         platform: provider,
         limits,
         abuse: {

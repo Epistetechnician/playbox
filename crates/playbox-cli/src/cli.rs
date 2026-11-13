@@ -74,6 +74,16 @@ pub struct UpArgs {
     pub max_tasks_per_minute: Option<u64>,
     #[arg(long, value_name = "N")]
     pub task_budget: Option<u64>,
+    /// Give the room a shared memory kept by a Hindsight server running beside this host (docs/latent-channels.md 6o),
+    /// e.g. http://127.0.0.1:8888/v1/default. Members use `remember` and `recall`.
+    #[arg(long = "memory-url", value_name = "URL")]
+    pub memory_url: Option<String>,
+    /// The room's bank on the memory server (letters, digits, - and _). Default: the state directory's name, else "room".
+    #[arg(long = "memory-bank", value_name = "NAME")]
+    pub memory_bank: Option<String>,
+    /// Hold members' entries as pending until the host accepts them; nothing pending is indexed or recalled.
+    #[arg(long = "memory-review")]
+    pub memory_review: bool,
     /// Accept hub latent messages only for this hub id; repeatable. Without it any hub id is accepted
     #[arg(long = "latent-hub", value_name = "HUB")]
     pub latent_hub: Vec<String>,

@@ -9,6 +9,7 @@ pub mod latent;
 pub mod limits;
 pub mod review;
 pub mod revoke;
+pub mod shared_memory;
 pub mod steer;
 pub mod transport;
 pub mod wire;
@@ -417,6 +418,8 @@ pub struct HostConfig {
     /// Where the room's feed is kept across restarts. `None`: `<state dir>/chat.jsonl` for a host opened with a state
     /// directory, and memory only for an ephemeral host.
     pub chat_log: Option<PathBuf>,
+    /// The room's shared memory (a Hindsight sidecar, kept by the host). `None`: `remember` and `recall` are refused.
+    pub memory: Option<Arc<shared_memory::SharedMemory>>,
 }
 
 impl Default for HostConfig {
@@ -440,6 +443,7 @@ impl Default for HostConfig {
             abuse: limits::AbuseLimits::default(),
             latent: latent::LatentPolicy::default(),
             chat_log: None,
+            memory: None,
         }
     }
 }
@@ -872,6 +876,35 @@ impl RoomHandler {
                     Ok(seq) => reply(json!({ "seq": seq }).to_string()),
                     Err(e) => reply(json!({ "error": e }).to_string()),
                 }
+            }
+            Some(Op::Remember { text, key }) => {
+                let t0 = std::time::Instant::now();
+                let Some(mem) = self.cfg.memory.clone() else { return reply(json!({ "error": "this room has no shared memory" }).to_string()) };
+                let r = mem.remember(&from.to_string(), &text, key.as_deref()).await;
+                self.audit.record(
+                    "remember",
+                    Some(&from.to_string()),
+                    json!({ "ok": r.is_ok(), "bytes": text.len(), "ms": t0.elapsed().as_millis() as u64, "doc": r.as_ref().ok().map(|x| x.doc.clone()), "reason": r.as_ref().err().map(|e| audit::clip(e)) }),
+                );
+                return match r {
+                    Ok(x) => reply(json!({ "doc": x.doc, "status": x.status }).to_string()),
+                    Err(e) => reply(json!({ "error": e }).to_string()),
+                };
+            }
+            Some(Op::Recall { query, max_tokens, author }) => {
+                let t0 = std::time::Instant::now();
+                let Some(mem) = self.cfg.memory.clone() else { return reply(json!({ "error": "this room has no shared memory" }).to_string()) };
+                let members: std::collections::HashSet<String> = self.state.lock().expect("state lock").members.keys().map(std::string::ToString::to_string).collect();
+                let r = mem.recall(&query, max_tokens, author.as_deref(), &|k: &str| members.contains(k)).await;
+                self.audit.record(
+                    "recall",
+                    Some(&from.to_string()),
+                    json!({ "ok": r.is_ok(), "hits": r.as_ref().ok().map(Vec::len), "ms": t0.elapsed().as_millis() as u64, "reason": r.as_ref().err().map(|e| audit::clip(e)) }),
+                );
+                return match r {
+                    Ok(hits) => reply(json!({ "hits": hits }).to_string()),
+                    Err(e) => reply(json!({ "error": e }).to_string()),
+                };
             }
             Some(Op::Feed { since }) => {
                 let me = from.to_string();
@@ -1329,6 +1362,7 @@ pub struct Host {
     auth: Arc<Authority>,
     transport: Transport,
     repl: Arc<revoke::Replication>,
+    memory: Option<Arc<shared_memory::SharedMemory>>,
 }
 
 impl Host {
@@ -1517,6 +1551,7 @@ impl Host {
             cfg.runner.is_some(),
             &cfg.limits,
         );
+        let memory = cfg.memory.clone();
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
@@ -1551,6 +1586,7 @@ impl Host {
             auth,
             transport,
             repl,
+            memory,
         })
     }
 
@@ -1695,6 +1731,13 @@ impl Host {
             json!({ "grant": notice.grant_id.chars().take(8).collect::<String>(), "spread": true }),
         );
         let _ = self.repl.tx.send(text);
+        // The member's entries in the room's shared memory go with their access.
+        if let Some(mem) = self.memory.clone() {
+            let who = id.to_string();
+            tokio::spawn(async move {
+                mem.forget_author(&who).await;
+            });
+        }
         true
     }
 
@@ -2148,6 +2191,34 @@ impl Client {
     pub async fn feed(&self, since: u64) -> Result<chat::Feed> {
         let v = self.reply_json(&Op::Feed { since }, "feed").await?;
         Ok(serde_json::from_value(v)?)
+    }
+
+    /// Add an entry to the room's shared memory. The same text (or `key`) from you replaces the entry, so a retry is safe.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the room has no shared memory, the entry is refused, or the host cannot be reached.
+    pub async fn remember(&self, text: &str, key: Option<&str>) -> Result<shared_memory::Remembered> {
+        let op = Op::Remember { text: text.to_string(), key: key.map(str::to_string) };
+        let v = self.reply_json(&op, "remember").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("remember refused: {e}");
+        }
+        Ok(serde_json::from_value(v)?)
+    }
+
+    /// Ask the room's shared memory. Only entries the host accepted, by members who are still in the room.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the room has no shared memory, the query is refused, or the host cannot be reached.
+    pub async fn recall(&self, query: &str, max_tokens: Option<u32>, author: Option<&str>) -> Result<Vec<shared_memory::Hit>> {
+        let op = Op::Recall { query: query.to_string(), max_tokens, author: author.map(str::to_string) };
+        let v = self.reply_json(&op, "recall").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("recall refused: {e}");
+        }
+        Ok(serde_json::from_value(v.get("hits").cloned().unwrap_or(Value::Null)).unwrap_or_default())
     }
 
     async fn reply_json(&self, op: &Op, what: &str) -> Result<Value> {
