@@ -136,7 +136,7 @@ def make_handler(sidecar, token, page_path, home):
             if url.path == "/manifest.webmanifest":
                 return self._send(200, json.dumps({
                     "name": "Playbox", "short_name": "Playbox", "start_url": "/", "display": "standalone",
-                    "background_color": "#19192f", "theme_color": "#19192f",
+                    "background_color": "#171715", "theme_color": "#171715",
                     "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]}),
                     "application/manifest+json")
             if url.path == "/icon.svg":
@@ -232,13 +232,12 @@ def witness_state(home):
     return {"events": events[-50:], "active": active}
 
 
-LOCKED = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<body style="background:#19192f;color:#f2f2f2;font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0">
-<div style="max-width:28rem;padding:1.5rem"><h1 style="font-weight:600">Locked</h1>
-<p>Open the link printed in the terminal where you started the Playbox UI. It carries the access token.</p></div>"""
+LOCKED = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=color-scheme content="light dark">
+<body style="background:#0f0f0e;color:#ece9e0;font:15px/1.5 'Helvetica Neue',Helvetica,Arial,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
+<div style="max-width:28rem;padding:1.5rem;border:1px solid #6c6a5f;background:#171715"><div style="font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:#ff6b2c;margin-bottom:10px">Locked</div>
+<p style="margin:0">Open the link printed in the terminal where you started the Playbox UI. It carries the access token.</p></div>"""
 
-ICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#19192f"/>
-<text x="256" y="360" text-anchor="middle" font-size="300" fill="#e8c872" font-family="serif">&#9764;</text></svg>"""
+ICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#171715"/><path d="M340 80h40v40h-40zM184 132h40v40h-40zM236 132h40v40h-40zM288 132h40v40h-40zM184 184h40v40h-40zM236 184h40v40h-40zM288 184h40v40h-40zM340 236h40v40h-40zM184 288h40v40h-40zM236 288h40v40h-40zM288 288h40v40h-40zM340 288h40v40h-40zM184 340h40v40h-40zM236 340h40v40h-40zM288 340h40v40h-40zM340 340h40v40h-40zM184 392h40v40h-40zM236 392h40v40h-40zM288 392h40v40h-40zM340 392h40v40h-40z" fill="#2A2A26"/><path d="M132 80h40v40h-40zM184 80h40v40h-40zM236 80h40v40h-40zM288 80h40v40h-40zM132 132h40v40h-40zM340 132h40v40h-40zM132 184h40v40h-40zM340 184h40v40h-40zM132 236h40v40h-40zM184 236h40v40h-40zM236 236h40v40h-40zM288 236h40v40h-40zM132 288h40v40h-40zM132 340h40v40h-40zM132 392h40v40h-40z" fill="#FF5A1F"/></svg>"""
 
 
 def main():

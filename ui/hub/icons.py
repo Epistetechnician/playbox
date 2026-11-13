@@ -4,10 +4,11 @@ import math
 import struct
 import zlib
 
-BG = (0x12, 0x12, 0x2A)
-GOLD = (0xE8, 0xC8, 0x72)
-INDIGO = (0xAA, 0xB4, 0xFF)
-MINT = (0x7F, 0xD6, 0xB0)
+BG = (0x17, 0x17, 0x15)
+LIT = (0xFF, 0x5A, 0x1F)
+DIM = (0x2A, 0x2A, 0x26)
+P_GLYPH = (30, 17, 17, 30, 16, 16, 16)      # the 5x7 dot-matrix "P", one bit per dot
+PITCH, DOT, X0, Y0 = 52, 40, 132, 80
 
 
 def _cov(d):
@@ -25,19 +26,20 @@ def png_icon(size, maskable=False):
             x, y = (px + .5) * k, (py + .5) * k
             if maskable:
                 a = 1.0
-            else:   # rounded square, radius 112
-                qx, qy = abs(x - 256) - (256 - 112), abs(y - 256) - (256 - 112)
-                d = (math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0) - 112) / k
+            else:   # rounded square, radius 96
+                qx, qy = abs(x - 256) - (256 - 96), abs(y - 256) - (256 - 96)
+                d = (math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0) - 96) / k
                 a = _cov(d)
             col = list(BG)
             cx, cy = 256 + (x - 256) / zoom, 256 + (y - 256) / zoom
-            r = math.hypot(cx - 256, cy - 256)
-            layers = [(abs(r - 150) - 7, GOLD, .35), (abs(r - 92) - 7, GOLD, .65), (r - 34, GOLD, 1.0),
-                      (math.hypot(cx - 406, cy - 256) - 16, INDIGO, 1.0), (math.hypot(cx - 174, cy - 126) - 12, MINT, 1.0)]
-            for dist, c, op in layers:
-                t = _cov(dist / k * zoom) * op
-                if t:
-                    col = [col[i] * (1 - t) + c[i] * t for i in range(3)]
+            c = min(4, max(0, round((cx - X0 - DOT / 2) / PITCH)))
+            r = min(6, max(0, round((cy - Y0 - DOT / 2) / PITCH)))
+            qx, qy = abs(cx - (X0 + c * PITCH + DOT / 2)) - (DOT / 2 - 6), abs(cy - (Y0 + r * PITCH + DOT / 2)) - (DOT / 2 - 6)
+            d = math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0) - 6
+            t = _cov(d / k * zoom)
+            if t:
+                c2 = LIT if P_GLYPH[r] >> (4 - c) & 1 else DIM
+                col = [col[i] * (1 - t) + c2[i] * t for i in range(3)]
             row += bytes((int(col[0]), int(col[1]), int(col[2]), int(a * 255)))
         rows.append(bytes(row))
     raw = b"".join(rows)

@@ -400,16 +400,14 @@ def sse(kind, data):
 MANIFEST = {
     "name": "Playbox", "short_name": "Playbox", "description": "Every Playbox room, yours and shared, in one place.",
     "id": "/", "start_url": "/", "scope": "/", "display": "standalone", "orientation": "any",
-    "background_color": "#12122a", "theme_color": "#12122a", "categories": ["developer", "productivity"],
+    "background_color": "#171715", "theme_color": "#171715", "categories": ["developer", "productivity"],
     "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
               {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
               {"src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
               {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}],
     "shortcuts": [{"name": "Attention", "url": "/?view=attention"}]}
 
-ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#12122a"/>
-<circle cx="256" cy="256" r="150" fill="none" stroke="#e8c872" stroke-width="14" opacity=".35"/><circle cx="256" cy="256" r="92" fill="none" stroke="#e8c872" stroke-width="14" opacity=".65"/>
-<circle cx="256" cy="256" r="34" fill="#e8c872"/><circle cx="406" cy="256" r="16" fill="#aab4ff"/><circle cx="174" cy="126" r="12" fill="#7fd6b0"/></svg>"""
+ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#171715"/><path d="M340 80h40v40h-40zM184 132h40v40h-40zM236 132h40v40h-40zM288 132h40v40h-40zM184 184h40v40h-40zM236 184h40v40h-40zM288 184h40v40h-40zM340 236h40v40h-40zM184 288h40v40h-40zM236 288h40v40h-40zM288 288h40v40h-40zM340 288h40v40h-40zM184 340h40v40h-40zM236 340h40v40h-40zM288 340h40v40h-40zM340 340h40v40h-40zM184 392h40v40h-40zM236 392h40v40h-40zM288 392h40v40h-40zM340 392h40v40h-40z" fill="#2A2A26"/><path d="M132 80h40v40h-40zM184 80h40v40h-40zM236 80h40v40h-40zM288 80h40v40h-40zM132 132h40v40h-40zM340 132h40v40h-40zM132 184h40v40h-40zM340 184h40v40h-40zM132 236h40v40h-40zM184 236h40v40h-40zM236 236h40v40h-40zM288 236h40v40h-40zM132 288h40v40h-40zM132 340h40v40h-40zM132 392h40v40h-40z" fill="#FF5A1F"/></svg>"""
 
 
 def lan_ip():
@@ -481,7 +479,7 @@ def main(argv=None):
             if r.returncode != 0:
                 print("`tailscale serve` failed: " + (r.stderr or r.stdout).strip()[:200], flush=True)
                 ts_name = None
-    print(f"\n  ☤  Playbox hub   {base}", flush=True)
+    print(f"\n  ▪ PLAYBOX hub   {base}", flush=True)
     if not auth.enrolled() or a.pair:
         code = auth.mint_code()
         print(f"\n  Pair this device (valid 10 min, single use):\n    {base}/pair#{code}", flush=True)
