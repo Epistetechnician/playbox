@@ -1,6 +1,6 @@
 # What to take from Peerspan, and how, without losing connect-and-verify
 
-Status (2026-11-11). A read of `peerspan/peerspan` (Rust host, docs, integrations), `peerspan/runtime`, `peerspan/peerfs` at their
+Status (2026-11-12): sections 1 to 6 below are built (see the status line in each); only section 7 (PeerFS ideas) is not. Original note, 2026-11-11: a read of `peerspan/peerspan` (Rust host, docs, integrations), `peerspan/runtime`, `peerspan/peerfs` at their
 main branches. Not read: `peerspan-go` (the second host implementation) beyond its listing, `libkrun` (a thin fork), and anything I
 could not infer from code and contracts. Nothing here was built or run; Peerspan's code was not executed. Both projects are
 Apache-2.0, so code can be adopted with its SPDX header and a NOTICE line.
@@ -51,6 +51,8 @@ in CI. Validate on a gman node, not a Mac: the Linux/KVM path has never run.
 
 ## 2. Durable messaging with request-ID dedup (`src/adapter.rs`, `peer` contract)
 
+Status 2026-11-12: built for room talk (`say` with `request_id`, persistent feed, client retry). The latent mailbox was already persistent. Signed receipts for `say`, and SQLite, were not done: JSON files plus atomic rename carry every store so far.
+
 Playbox's chat is memory-only and a lost response is unrecoverable; the latent mailbox (6l) is the only persisted path. Peerspan's
 design, which is sound and worth copying exactly:
 
@@ -71,6 +73,8 @@ log where they are.
 
 ## 3. Shared capabilities with per-call approval (`calls.rs`, `approvals.rs`, `bounds.rs`, `canonical.rs`)
 
+Status 2026-11-12: built, `docs/capabilities.md`. Run in the sandbox, grant-gated by `cap/NAME`, bounds enforced by the host, exactly-once with abandoned-on-restart, owner approval in the console, canonical result hash in the audit log. Bounds are not yet Biscuit checks and results are not yet signed by the host key.
+
 An owner exposes chosen operations of their own MCP tools to peers. Take the model, not the code:
 a call is authorised by policy, persisted before it runs, run exactly once, and polled by id; bounds limit named arguments to listed
 combinations and are checked at submission and again before start; an owner can require per-call approval at a terminal.
@@ -83,12 +87,16 @@ keys, numbers as received, minimal escapes) into the audit log, so the result is
 
 ## 4. Conversations (`conversations.rs` and `conversations/*`, 242 KB + 120 KB)
 
+Status 2026-11-12: first slice built (`crates/playbox-net/src/conversations.rs`): roster, version, ordered log, read marks, rate limit, persistence, and author-signed entries a host cannot forge. Not built: latent-vector attachments, per-author clocks, invitations the invitee accepts, removal.
+
 Multi-party threads with a home host, a roster version, per-author sequence and clock, invitations, read marks, and per-author rate
 limits. Port the **data model and a first slice only**: home-host ordered log, roster, `since` cursor, read marks, rate limit.
 Do not port the 242 KB module. Playbox differences: entries signed by the member key and anchored in the audit log, and a message
 may carry a latent-vector attachment (section 6f). Entries are peer text: treat as untrusted (rule 4).
 
 ## 5. Live delivery into the agent (`integrations/claude-channel`, live-delivery contract)
+
+Status 2026-11-12: built, `docs/live-delivery.md`: nonce handshake, untrusted framing, witness registration. Tested over stdio; not against a running Claude Code. The doctor checks of the client's version and account type were not copied.
 
 Peerspan pushes incoming messages into a running Claude Code session (a channel), with a nonce handshake (`hello` event, the model
 must call `peerspan_ready` with the nonce before any work is delivered), a `doctor` that checks the Claude version, account type and
@@ -97,6 +105,8 @@ doctor checks. This is also the strongest prompt-injection path in the product, 
 plugin has to treat channel events as peer text.
 
 ## 6. Conformance suite (`conformance/`, ~500 KB Python)
+
+Status 2026-11-12: `conformance/` has five fast scenarios and one full, with a CI job. Restart scenarios need a long-lived `playbox up` and are not written.
 
 Black-box scenarios that drive *installed* binaries, in a per-push tier and a full tier. Playbox's tests are in-process Rust plus
 `ui/e2e.py`. Create `conformance/` with scenarios that start real `playbox up` and `playbox mcp`: join, revoke, push/pull, task in
