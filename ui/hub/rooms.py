@@ -160,6 +160,7 @@ class Hub:
         self.rooms = {}
         self.known_attention = set()
         self.activity = deque(maxlen=80)
+        self.extra_attention = []     # callables returning more attention items (join requests)
         self.mu = threading.RLock()
         self.wake = threading.Event()
         for rec in store.d["rooms"]:
@@ -241,6 +242,8 @@ class Hub:
             if d["unread"]:
                 items.append({"id": f"unread:{d['id']}", "room": d["id"], "kind": "unread", "urgent": False, "count": d["unread"],
                               "title": f"{d['unread']} new in {lab}", "body": (d["last"] or {}).get("text", "")[:100]})
+        for fn in self.extra_attention:
+            items += fn()
         return items
 
     def _publish_changes(self, room, new):

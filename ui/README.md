@@ -59,6 +59,19 @@ and Hermes from their own config files; the button runs `playbox setup --only <a
 An agent joins a room as its own member (its sidecar keeps the join in memory), which is why the agent needs its own use of the invite. The room name on the page is the
 host's text, so the command shell-quotes it; a hostile page could still show a different command, so only open invites from people you know.
 
+**Approving who joins (ask-to-join).** By default an invite is an *approval* invite, so a forwarded link can't get the wrong person in. It carries no Playbox key at all:
+its share URL, `https://<host>/i/<id>#a.<secret>`, holds only a random secret in the fragment. Opening it and pressing *Ask to join* (or running the install command)
+**knocks**: the asker's own hub sends the host its Playbox guest id and a name. Both sides compute the same six-digit **verify code** from (invite id, guest id), for
+example `482 913`; the asker's device refuses to continue if the host's reply differs. The asker reads their code to the host in person or in a channel the host
+trusts. The host sees **Join requests** (also an urgent attention item and a push) with the name, the room and the code, and approves only if it matches. Approving
+takes a passkey touch. Only then does the room mint a join link, **bound to that guest id** (`for_guest`), valid ten minutes, handed over exactly once and then
+forgotten. Someone who intercepts it can't use it; someone who forwards the invite URL gets only the ability to ask, and shows up with a different code and name.
+Limits: five pending requests per invite, approvals capped at the invite's count, withdrawing the invite closes it, denying needs no touch. An agent asks the same
+way with its own guest id (the Get started card has a field for it), so it gets its own code and its own bound link. The host address in a link is untrusted: the
+asker's hub only talks to `https` hosts, or to `http` on this machine or a private network, and never follows redirects. The verify code authenticates the *asker to the
+host* only as well as the channel it is read over; a 6-digit code is not a defence against someone who is already listening to that channel. Pick "Let them in" in the
+invite sheet for the older behaviour (the key rides in the link).
+
 **Push.** Web Push with VAPID and **no payload**: the push service learns nothing. The service worker wakes, asks the hub
 (over your session) what needs attention, and shows it. Urgent items push even with the app open; unread only when nobody is watching.
 Live updates use Server-Sent Events. The hub polls each room gently (~8 s watched, ~45 s idle) because every sidecar call is appended

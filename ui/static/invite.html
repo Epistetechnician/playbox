@@ -71,9 +71,10 @@ const GLYPH = {P: [30,17,17,30,16,16,16], L: [16,16,16,16,16,16,31], A: [14,17,1
 
 const id = location.pathname.split("/")[2] || "";
 const frag = location.hash.slice(1);
-let link = "", label = "";
-try { const [l, n] = frag.split("~"); link = unb64u(l || ""); label = n ? unb64u(n) : ""; } catch { link = ""; }
-if (!/^playbox:\/\/[A-Za-z0-9_\-+\/=.#]+$/.test(link)) link = "";
+let link = "", label = "", ask = "";
+if (/^a\.[A-Za-z0-9_-]{16,}$/.test(frag)) ask = frag.slice(2);          // an ask-to-join invite: a secret, no key
+else { try { const [l, n] = frag.split("~"); link = unb64u(l || ""); label = n ? unb64u(n) : ""; } catch { link = ""; }
+  if (!/^playbox:\/\/[A-Za-z0-9_\-+\/=.#]+$/.test(link)) link = ""; }
 const dur = s => s >= 86400 ? `${Math.round(s / 86400)} day${s >= 172800 ? "s" : ""}` : s >= 3600 ? `${Math.round(s / 3600)} hour${s >= 7200 ? "s" : ""}` : `${Math.round(s / 60)} minutes`;
 const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); } catch { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand("copy"); } catch {} a.remove(); } const o = btn.textContent; btn.textContent = "Copied"; setTimeout(() => btn.textContent = o, 1400); };
 
@@ -86,23 +87,26 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
     const why = {expired: "This invite has expired", revoked: "This invite was withdrawn", used: "This invite has already been used", unknown: "This invite isn't recognised"}[v.state] || "This invite can't be used";
     main.innerHTML = `<div class="state bad">${why}</div><p class="mut small">Ask the person who sent it for a fresh link. Invites are single-use and short-lived on purpose.</p>`; return;
   }
-  if (!link) { main.innerHTML = `<div class="state bad">This link is incomplete</div><p class="mut small">The part after the <b>#</b> is missing, usually because the link was cut short when it was copied. Ask for it again and copy the whole thing.</p>`; return; }
-  const fr = b64u(link) + "~" + b64u(v.room);
+  if (!link && !ask) { main.innerHTML = `<div class="state bad">This link is incomplete</div><p class="mut small">The part after the <b>#</b> is missing, usually because the link was cut short when it was copied. Ask for it again and copy the whole thing.</p>`; return; }
+  if (v.approve && !ask) { main.innerHTML = `<div class="state bad">This link is incomplete</div><p class="mut small">The part after the <b>#</b> is missing. Ask for it again and copy the whole thing.</p>`; return; }
+  const askUrl = `${location.origin}/i/${id}#a.${ask}`;
+  const fr = ask ? "a." + b64u(JSON.stringify({b: location.origin, i: id, k: ask, r: v.room, f: v.from})) : b64u(link) + "~" + b64u(v.room);
   const shq = x => "'" + String(x).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/'/g, "'\\''") + "'";   // the room name is the host's text: quote it so it can only ever be one argument
-  const cmd = `curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --join ${shq(link)} --name ${shq(v.room)}`;
+  const cmd = `curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --join ${shq(ask ? askUrl : link)} --name ${shq(v.room)}`;
   const left = () => { const s = Math.max(0, v.expires - Date.now() / 1000 | 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`; };
   main.innerHTML = `<h1><em>${esc(v.from)}</em> invited you to <em>${esc(v.room)}</em></h1>
     <p class="mut">A private room where people and their agents work together, with limits the host sets and a signed record nobody can quietly edit.</p>
     <div class="card"><div class="hd lbl">What this link gives you</div><ul class="facts">
       <li><span>Your access lasts</span><span>${dur(v.grant)}</span></li>
       <li><span>Link works for</span><span id="left">${left()}</span></li>
-      <li><span>Can be used by</span><span>${v.guest_only ? "one specific person" : v.uses === 1 ? "one person (you)" : v.uses === 2 ? "you and your agent" : `up to ${v.uses} people`}</span></li></ul></div>
+      <li><span>${ask ? "Before you're in" : "Can be used by"}</span><span>${ask ? esc(v.from) + " approves you" : v.guest_only ? "one specific person" : v.uses === 1 ? "one person (you)" : v.uses === 2 ? "you and your agent" : `up to ${v.uses} people`}</span></li></ul>
+      ${ask ? `<p class="mut small" style="margin:12px 0 0">You'll be shown a short code. ${esc(v.from)} sees the same one and lets you in once it matches, so this link alone gets nobody in.</p>` : ""}</div>
 
     <div class="card"><div class="hd lbl">I already have Playbox</div>
       <label class="lbl" for="hub" style="display:block;margin-bottom:6px">Your hub's address</label>
       <input id="hub" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://your-hub.example.com">
       <div class="row"><button class="btn primary block" id="go">Open in my Playbox</button></div>
-      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Use the installed app</a><button class="btn sm" id="cpl">Copy for my agent</button></div>
+      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Use the installed app</a>${ask ? "" : `<button class="btn sm" id="cpl">Copy for my agent</button>`}</div>
       <p class="mut small">Your hub opens with the invite filled in. You confirm there; nothing joins until you do.</p></div>
 
     <div class="card"><div class="hd lbl">I'm new</div>
@@ -111,7 +115,7 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
       <div class="row"><button class="btn sm" id="cpc">Copy command</button></div>
       <p class="mut small">It runs the installer published in the Playbox project on GitHub and checks its downloads against a checksum list. Read it first if you like. Needs macOS or Linux with python3. Leave that terminal window open while you use the dashboard.</p></div>
 
-    <p class="safe">This link is a key to one room, not to your computer. It can't be used twice, it expires on its own, and the host can remove you at any time. Only open it if you know ${esc(v.from)}.</p>`;
+    <p class="safe">${ask ? `This link is only a way to ask. It opens nothing by itself, and nobody gets in without ${esc(v.from)}'s approval.` : `This link is a key to one room, not to your computer. It can't be used twice, it expires on its own, and the host can remove you at any time.`} Only use it if you know ${esc(v.from)}.</p>`;
   const hub = $("#hub"); try { hub.value = localStorage.getItem("pb.myhub") || ""; } catch {}
   $("#go").onclick = () => {
     let u = hub.value.trim(); if (!u) { hub.focus(); return; }
@@ -121,7 +125,7 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
     try { localStorage.setItem("pb.myhub", url.origin); } catch {}
     location.href = url.origin + "/join#" + fr;
   };
-  $("#cpl").onclick = e => copy(`Join this Playbox room with playbox_join, using this link: ${link}`, e.target);
+  if ($("#cpl")) $("#cpl").onclick = e => copy(`Join this Playbox room with playbox_join, using this link: ${link}`, e.target);
   $("#cpc").onclick = e => copy($("#cmds").textContent, e.target);
   setInterval(() => { const el = $("#left"); if (el) el.textContent = left(); }, 15000);
 })();

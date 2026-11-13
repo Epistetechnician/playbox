@@ -331,10 +331,10 @@ def test_http():
         check("invite needs a session", inv({"ttl": 3600, "grant": 86400, "uses": 1}, anon)[0] == 401)
         check("invite refuses odd durations", inv({"ttl": 12345, "grant": 86400, "uses": 1})[0] == 400 and inv({"ttl": 3600, "grant": 1, "uses": 1})[0] == 400)
         check("invite refuses a malformed guest id", inv({"ttl": 3600, "grant": 86400, "uses": 1, "guest": "xyz"})[0] == 400)
-        st, j, _ = inv({"ttl": 3600, "grant": 86400, "uses": 1, "from": "Maya"})
+        st, j, _ = inv({"ttl": 3600, "grant": 86400, "uses": 1, "from": "Maya", "approve": False})
         iid, ilink = j.get("id"), j.get("link", "")
         check("invite mints a share url and a playbox link", st == 200 and ilink.startswith("playbox://") and j["url"].endswith("/i/" + (iid or "?")) and j["public"] is False)
-        st, j2, _ = inv({"ttl": 3600, "grant": 86400, "uses": 1}, a, {"Host": "93.184.216.34:80", "Origin": "http://93.184.216.34:80"})
+        st, j2, _ = inv({"ttl": 3600, "grant": 86400, "uses": 1, "approve": False}, a, {"Host": "93.184.216.34:80", "Origin": "http://93.184.216.34:80"})
         check("on a public address the url is marked reachable" + ("" if st == 200 else f" [{st} {j2}]"), st == 200 and j2["public"] is True and j2["url"].startswith("http://93.184.216.34:80/i/"))
         st, pv, _ = anon.req("GET", "/api/invite/" + iid)
         check("anyone can read the invite card, and only the card", st == 200 and pv["state"] == "pending" and pv["room"] == "Lab" and pv["from"] == "Maya" and "link" not in pv and "members" not in pv)
@@ -555,6 +555,126 @@ def test_landing_quoting():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def spawn_hub(mcp, tag):
+    home, port = tempfile.mkdtemp(prefix=f"pbhub-{tag}-"), free_port()
+    p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
+                         stdout=subprocess.PIPE, text=True, env={**os.environ, "PLAYBOX_HUB_FRESH": "2"})
+    code = None
+    for _ in range(12):
+        m = re.search(r"/pair#(\S+)", p.stdout.readline())
+        if m:
+            code = m.group(1)
+            break
+    c = Client(port)
+    st, j, _ = c.req("POST", "/api/auth/weak", {"code": code, "name": tag})
+    return p, c, port, home
+
+
+def test_approval():
+    """Ask-to-join across two real hubs: knock, verify code, approval, a link bound to the asker, deny, limits."""
+    mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
+    if not mcp:
+        print("SKIP approval tests (playbox-mcp not found)")
+        return
+    sys.path.insert(0, UI)
+    from playbox_ui import Sidecar
+    from hub.knock import verify_code
+    hp, host, hport, hhome = spawn_hub(mcp, "host")
+    fp, friend, fport, fhome = spawn_hub(mcp, "friend")
+    extra = []
+    try:
+        repo = os.path.join(hhome, "repo")
+        os.makedirs(repo)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], cwd=repo, check=True)
+        rid = host.req("POST", "/api/rooms", {"label": "Lab", "kind": "mine"})[1]["id"]
+        host.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_create", "args": {"repo": repo, "local": True}})
+        st, inv, _ = host.req("POST", f"/api/rooms/{rid}/invite", {"ttl": 3600, "grant": 86400, "uses": 2, "from": "Shaan"})
+        iid, k = inv.get("id"), inv.get("k")
+        check("an approval invite carries a secret but no Playbox key", st == 200 and inv.get("approve") is True and k and "link" not in inv)
+        check("the share page says it needs approval", host.req("GET", "/api/invite/" + iid)[1].get("approve") is True)
+        anon = Client(hport)
+        kn = lambda body, c=anon: c.req("POST", f"/api/invite/{iid}/knock", body)
+        g0 = "ab" * 32
+        check("a knock with the wrong secret is refused", kn({"k": "nope", "guest": g0, "name": "x"})[0] == 403)
+        check("a knock with a malformed guest id is refused", kn({"k": k, "guest": "xyz", "name": "x"})[0] == 400)
+        check("knocking on an unknown invite is a 404", anon.req("POST", "/api/invite/nope/knock", {"k": k, "guest": g0, "name": "x"})[0] == 404)
+
+        base = f"http://127.0.0.1:{hport}"
+        st, j, _ = friend.req("POST", "/api/knock", {"base": base, "id": iid, "k": k, "label": "Lab", "name": "Maya"})
+        code, froom = j.get("code"), j.get("room")
+        check("the friend's hub knocks and gets a verify code", st == 200 and code and froom, str(j))
+        st, reqs, _ = host.req("GET", "/api/knocks")
+        r0 = (reqs.get("requests") or [{}])[0]
+        check("the host sees the request with the same code and the asker's name", len(reqs["requests"]) == 1 and r0["code"] == code and r0["name"] == "Maya" and r0["label"] == "Lab", str(reqs))
+        att = host.req("GET", "/api/attention")[1]["items"]
+        check("a join request is an urgent attention item", any(a["kind"] == "knock" and a["urgent"] and code in a["body"] for a in att))
+        out = friend.req("GET", "/api/knock/out")[1]["requests"]
+        check("until approved the friend is waiting, not in the room", out[0]["state"] == "waiting" and next(x for x in friend.req("GET", "/api/rooms")[1]["rooms"] if x["id"] == froom)["mode"] == "none")
+        check("the key is not in the host's state while pending", "playbox://" not in open(os.path.join(hhome, "hub.json")).read())
+
+        check("anyone can't approve without a session", Client(hport).req("POST", f"/api/knocks/{r0['rid']}/approve", {})[0] == 401)
+        st, _, _ = host.req("POST", f"/api/knocks/{r0['rid']}/approve", {})
+        check("the host approves", st == 200)
+        mode = None
+        for _ in range(30):
+            mode = next((x["mode"] for x in friend.req("GET", "/api/rooms")[1]["rooms"] if x["id"] == froom), None)
+            if mode == "guest":
+                break
+            time.sleep(1)
+        check("the friend's hub is then in the room as a guest", mode == "guest")
+        check("the knock key is wiped from the host once handed over", all(x["link"] is None for x in json.load(open(os.path.join(hhome, "hub.json")))["knocks"].values()))
+
+        # an agent asks too: the link that comes back is bound to the agent's own id
+        agent = Sidecar(mcp, os.path.join(fhome, "agent"))
+        stranger = Sidecar(mcp, os.path.join(fhome, "stranger"))
+        extra += [agent, stranger]
+        gid = agent.call("playbox_status", {})[1]["guest_id"]
+        st, j, _ = friend.req("POST", "/api/knock", {"base": base, "id": iid, "k": k, "label": "Lab", "name": "Maya's agent", "agent_guest": gid})
+        check("an agent can ask with its own guest id", st == 200 and j["code"] == verify_code(iid, gid) and j["room"] is None, str(j))
+        r1 = host.req("GET", "/api/knocks")[1]["requests"][0]
+        host.req("POST", f"/api/knocks/{r1['rid']}/approve", {})
+        link = None
+        for _ in range(30):
+            row = friend.req("GET", "/api/knock/out")[1]["requests"]
+            link = next((x.get("link") for x in row if x["agent"] and x["state"] == "approved"), None)
+            if link:
+                break
+            time.sleep(1)
+        check("the approved link comes back to the friend's hub for the agent", bool(link))
+        check("a different identity cannot use that link", bool(stranger.call("playbox_join", {"link": link})[0]))
+        check("the asker's identity can", not agent.call("playbox_join", {"link": link})[0])
+        st, _, _ = kn({"k": k, "guest": "cd" * 32, "name": "Late"})
+        check("an invite that has let in everyone it was for takes no more requests", st == 410)
+
+        # deny
+        st, inv2, _ = host.req("POST", f"/api/rooms/{rid}/invite", {"ttl": 3600, "grant": 86400, "uses": 1, "from": "Shaan"})
+        iid2, k2 = inv2["id"], inv2["k"]
+        st, j, _ = friend.req("POST", "/api/knock", {"base": base, "id": iid2, "k": k2, "label": "Second", "name": "Eve"})
+        r2 = host.req("GET", "/api/knocks")[1]["requests"][0]
+        check("deny works without a passkey touch", host.req("POST", f"/api/knocks/{r2['rid']}/deny", {})[0] == 200)
+        state = None
+        for _ in range(20):
+            state = next((x["state"] for x in friend.req("GET", "/api/knock/out")[1]["requests"] if x["rid"] == j["rid"]), None)
+            if state == "denied":
+                break
+            time.sleep(1)
+        check("the friend sees it was denied, and the placeholder room is gone", state == "denied" and not any(x["id"] == j["room"] for x in friend.req("GET", "/api/rooms")[1]["rooms"]))
+        check("a host address that isn't https or private is refused", friend.req("POST", "/api/knock", {"base": "http://example.com", "id": iid2, "k": k2, "name": "x"})[0] == 400)
+        check("withdrawing an approval invite stops new requests", host.req("DELETE", "/api/invites/" + iid2)[0] == 200 and kn_to(anon, iid2, {"k": k2, "guest": "ef" * 32, "name": "x"})[0] == 410)
+    finally:
+        for x in extra:
+            x.close()
+        for p in (hp, fp):
+            p.terminate()
+        for d in (hhome, fhome):
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def kn_to(c, iid, body):
+    return c.req("POST", f"/api/invite/{iid}/knock", body)
+
+
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
@@ -564,5 +684,6 @@ if __name__ == "__main__":
     test_access()
     test_agents()
     test_landing_quoting()
+    test_approval()
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

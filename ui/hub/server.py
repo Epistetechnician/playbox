@@ -22,6 +22,7 @@ from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from . import agents as agentmod
 from .icons import png_icon
 from .invites import Invites, InviteError
+from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from .store import Store
 
@@ -210,6 +211,8 @@ def make_handler(hub, auth, store, opts):
                                         "weak_ok": opts["weak"] and auth.weak_allowed(self.peer, self.headers.get("Host"), self.hdrs())})
             if p.startswith("/api/auth/") and m == "POST":
                 return self.auth_post(p)
+            if p.startswith("/api/invite/") and m == "POST":
+                return self.invite_post(p)
             # everything below needs a session
             sess = self.authed()
             if not sess:
@@ -259,6 +262,54 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": True})
             raise AuthError(404, "not found")
 
+        def invite_post(self, p):
+            """Public, for people holding an approval invite: knock, then poll for the answer. Authenticated by the invite's secret `k`."""
+            auth.throttle(self.peer)
+            parts = p.split("/")      # ['', 'api', 'invite', id, action]
+            rec0 = store.d["invites"].get(parts[3]) if len(parts) == 5 else None
+            if not rec0 or parts[4] not in ("knock", "poll"):
+                auth._fail(self.peer)
+                raise AuthError(404, "no such invite")
+            b = self.body()
+            try:
+                if parts[4] == "knock":
+                    r = hub.knocks.knock(rec0, str(b.get("k", "")), str(b.get("guest", "")), str(b.get("name", "")))
+                    hub.wake.set()
+                    return self.j(200, {"rid": r["rid"], "code": r["code"]})
+                return self.j(200, hub.knocks.poll(rec0, str(b.get("k", "")), str(b.get("rid", ""))))
+            except KnockError as e:
+                if e.code in (403, 404):
+                    auth._fail(self.peer)
+                raise AuthError(e.code, str(e))
+
+        def approve_knock(self, rid, rec, deny=False):
+            if not deny and not self.need_fresh(rec):      # letting someone in: a passkey touch
+                return
+            r = hub.knocks.get(rid)
+            if not r or r["state"] != "pending":
+                raise AuthError(404, "that request is gone")
+            if deny:
+                hub.knocks.set(rid, state="denied")
+                hub.wake.set()
+                return self.j(200, {"ok": True})
+            inv = store.d["invites"].get(r["invite"])
+            room = hub.get(r["room"])
+            if not inv or not room or invites.state(inv) not in ("pending",):
+                raise AuthError(410, "that invite is no longer open")
+            if len([x for x in store.d["knocks"].values() if x["invite"] == inv["id"] and x["state"] in ("approved", "done")]) >= inv["uses"]:
+                raise AuthError(410, "this invite has already let in everyone it was for")
+            sc = room.ensure()
+            err, st = sc.call("playbox_status", {}) if sc else (True, None)
+            host = (st or {}).get("hosting") if isinstance(st, dict) else None
+            if err or not host or not host.get("repo"):
+                raise AuthError(400, "this room isn't hosted from this hub any more")
+            err, data = sc.call("playbox_create", {"repo": host["repo"], "invite_ttl_secs": LINK_TTL, "grant_ttl_secs": inv["grant"], "uses": 1, "for_guest": r["guest"]})
+            if err or not isinstance(data, dict) or not data.get("link"):
+                raise AuthError(502, data if isinstance(data, str) else "the room did not return a link")
+            hub.knocks.set(rid, state="approved", link=data["link"])
+            hub.wake.set()
+            return self.j(200, {"ok": True})
+
         def public_base(self):
             """The address a friend can open. The one this request came in on if that is public, else the tunnel the hub published."""
             host = self.headers.get("Host", "")
@@ -292,9 +343,13 @@ def make_handler(hub, auth, store, opts):
             try:
                 ttl, grant, uses = int(b.get("ttl", 3600)), int(b.get("grant", 86400)), int(b.get("uses", 1))
                 guest = str(b["guest"]).strip().lower() if b.get("guest") else None
-                inv = invites.create(rid, room.rec["label"], str(b.get("from", "")).strip(), ttl, grant, uses, len(host.get("members") or []), guest)
+                approve = bool(b.get("approve", True))
+                inv, k = invites.create(rid, room.rec["label"], str(b.get("from", "")).strip(), ttl, grant, uses, len(host.get("members") or []), guest, approve)
             except (ValueError, TypeError) as e:
                 raise AuthError(400, str(e))
+            if approve:       # no key exists yet: the room mints one, bound to the asker, when you approve
+                base, public = self.public_base()
+                return self.j(200, {"id": inv["id"], "url": f"{base}/i/{inv['id']}", "k": k, "approve": True, "expires": int(inv["expires"]), "public": public})
             args = {"repo": host["repo"], "invite_ttl_secs": ttl, "grant_ttl_secs": grant, "uses": uses}
             if guest:
                 args["for_guest"] = guest
@@ -341,6 +396,26 @@ def make_handler(hub, auth, store, opts):
                     return
                 ok, out = agentmod.connect(p.split("/")[3])
                 return self.j(200 if ok else 502, {"ok": ok, "output": out, "agents": agentmod.detect()})
+            if m == "GET" and p == "/api/knocks":
+                return self.j(200, {"requests": [{"rid": r["rid"], "name": r["name"], "code": r["code"], "room": r["room"], "created": r["created"],
+                                                  "label": store.d["invites"].get(r["invite"], {}).get("label", "")} for r in hub.knocks.pending()]})
+            if m == "POST" and p.startswith("/api/knocks/") and p.rsplit("/", 1)[1] in ("approve", "deny"):
+                return self.approve_knock(p.split("/")[3], rec, deny=p.endswith("/deny"))
+            if m == "POST" and p == "/api/knock":
+                b = self.body()
+                if hub.outgoing_busy():
+                    raise AuthError(429, "you already have requests waiting; let them finish first")
+                try:
+                    r = hub.outgoing.start(str(b.get("base", "")), str(b.get("id", "")), str(b.get("k", "")), str(b.get("label", ""))[:60],
+                                           str(b.get("name", "")).strip()[:40] or rec["name"][:40], b.get("agent_guest") or None)
+                except KnockError as e:
+                    raise AuthError(e.code if 400 <= e.code < 600 else 502, str(e))
+                return self.j(200, {"rid": r["rid"], "code": r["code"], "room": r["room"]})
+            if m == "GET" and p == "/api/knock/out":
+                return self.j(200, {"requests": hub.outgoing.listing()})
+            if m == "DELETE" and p.startswith("/api/knock/out/"):
+                rid2 = p.rsplit("/", 1)[1]
+                return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
             if m == "GET" and p == "/api/invites":
                 return self.j(200, {"invites": invites.listing(hub.digests())})
             if m == "DELETE" and p.startswith("/api/invites/"):
@@ -614,6 +689,12 @@ def main(argv=None):
                 store.save()
 
     hub = Hub(store, a.mcp, push_fn)
+    hub.knocks = Knocks(store)
+    hub.outgoing = Outgoing(hub, store)
+    hub.outgoing_busy = lambda: len([r for r in store.d["knock_out"].values() if r["state"] == "waiting"]) >= 3
+    hub.extra_attention.append(lambda: [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
+                                         "title": f"{r['name']} wants to join {store.d['invites'].get(r['invite'], {}).get('label', 'a room')}",
+                                         "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
     opts = {"public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
@@ -640,9 +721,20 @@ def main(argv=None):
     if cf_url:
         opts["public_url"] = cf_url      # the address friend invites point at (a tailnet address only reaches your own devices)
     link = a.join or os.environ.get("PLAYBOX_JOIN_LINK")
-    if link:
+    if link and link.startswith(("https://", "http://")):          # an ask-to-join invite page: knock, then wait for the host
+        try:
+            u = urllib.parse.urlparse(link)
+            iid, frag = u.path.rstrip("/").rsplit("/", 1)[-1], u.fragment
+            if not frag.startswith("a.") or "/i/" not in u.path:
+                raise ValueError("expected https://<host>/i/<id>#a.<key>")
+            who = os.environ.get("PLAYBOX_JOIN_AS") or os.environ.get("USER") or "New member"
+            kr = hub.outgoing.start(f"{u.scheme}://{u.netloc}", iid, frag[2:], a.room_name or os.environ.get("PLAYBOX_JOIN_NAME") or "Invited room", who)
+            print(f"\n  Asked to join \"{kr['label']}\".\n  Tell the person who invited you this code, out loud or in a message you trust:\n\n      {kr['code']}\n\n  They approve it on their side and the room appears in your dashboard.", flush=True)
+        except (KnockError, ValueError) as e:
+            print(f"  Couldn't ask to join: {e}\n  Ask for a fresh invite; the hub will start anyway.", flush=True)
+    elif link:
         if not link.startswith("playbox://"):
-            print("--join: that doesn't look like a playbox:// invite; skipping.", flush=True)
+            print("--join: that doesn't look like a playbox:// invite or an invite page; skipping.", flush=True)
         else:
             try:
                 jroom = hub.add(a.room_name or os.environ.get("PLAYBOX_JOIN_NAME") or "Invited room", "this machine", "shared")

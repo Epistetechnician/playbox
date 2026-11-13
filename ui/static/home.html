@@ -305,6 +305,9 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 .toast.err{border-left-color:var(--bad)}
 .offline .mono{text-transform:none;letter-spacing:0}
 .setup{margin-bottom:18px}
+.knock{margin-bottom:18px;border-width:2px;border-color:var(--sig)}
+.kq{padding:12px 0;border-bottom:1px dashed var(--line-2)} .kq:last-child{border:0;padding-bottom:0}
+.kcode{margin:8px 0}.kcode .dm{height:40px}
 .sus{list-style:none;margin:0;padding:0;display:grid;gap:14px}
 .su{display:grid;grid-template-columns:26px 1fr;gap:12px;align-items:start}
 .sn{width:26px;height:26px;border:1px solid var(--edge);display:grid;place-items:center;font:700 11px var(--mono);background:var(--panel-2)}
@@ -392,7 +395,7 @@ function sigil(id, size = 36) {
 }
 
 /* ---------- state ---------- */
-const S = {rooms: [], attention: [], activity: [], filter: "all", view: store.get("pb.view", "rooms"), mode: store.get("pb.mode", innerWidth >= 820 ? "orbit" : "list"), live: false, me: null, loaded: false};
+const S = {knocks: [], out: [], rooms: [], attention: [], activity: [], filter: "all", view: store.get("pb.view", "rooms"), mode: store.get("pb.mode", innerWidth >= 820 ? "orbit" : "list"), live: false, me: null, loaded: false};
 const room = id => S.rooms.find(r => r.id === id);
 const STATE_TXT = {live: "Active", idle: "Quiet", hold: "Witness hold", bad: "Chain failed", empty: "No room yet", down: "Unreachable"};
 
@@ -455,7 +458,8 @@ async function startApp(view, inviteRoom) {
   paint();
   connect();
   let pend = null; try { pend = sessionStorage.getItem("pb.invite"); sessionStorage.removeItem("pb.invite"); } catch {}
-  if (pend) { try { const [l, n] = pend.split("~"); const un = x => decodeURIComponent(escape(atob(x.replace(/-/g, "+").replace(/_/g, "/")))); openAdd({link: un(l), label: n ? un(n) : ""}); } catch { toast("That invite link is damaged", true); } }
+  if (pend && pend.startsWith("a.")) { try { openKnock(JSON.parse(decodeURIComponent(escape(atob(pend.slice(2).replace(/-/g, "+").replace(/_/g, "/")))))); } catch { toast("That invite link is damaged", true); } }
+  else if (pend) { try { const [l, n] = pend.split("~"); const un = x => decodeURIComponent(escape(atob(x.replace(/-/g, "+").replace(/_/g, "/")))); openAdd({link: un(l), label: n ? un(n) : ""}); } catch { toast("That invite link is damaged", true); } }
   else if (inviteRoom) openInvite(inviteRoom);
   addEventListener("online", () => { refreshRooms(); connect(); });
   addEventListener("offline", () => { S.live = false; paintStatus(); });
@@ -463,7 +467,19 @@ async function startApp(view, inviteRoom) {
   setInterval(() => { if (!document.hidden) tickAgo(); }, 30000);
   setInterval(() => { const c = $("#clock"); if (c) c.textContent = new Date().toLocaleTimeString([], {hour12: false}); }, 1000);
 }
+async function loadKnocks() { try { S.knocks = (await api("GET", "/api/knocks")).requests; } catch {} if ($("#view") && (S.view === "rooms" || S.view === "attention")) paintView(true); }
+async function loadOut(quiet) {
+  let prev = S.out;
+  try { S.out = (await api("GET", "/api/knock/out")).requests; } catch { return; }
+  for (const r of S.out) { const was = prev.find(x => x.rid === r.rid);
+    if (r.state === "joined" && was && was.state === "waiting") { toast(`You're in "${r.label}"`); refreshRooms(); api("DELETE", `/api/knock/out/${r.rid}`).catch(() => {}); }
+    if (r.state === "denied" && was && was.state === "waiting") toast(`Not this time: "${r.label}" wasn't approved`, true); }
+  S.out = S.out.filter(r => !(r.state === "joined"));
+  clearTimeout(loadOut.t); if (S.out.some(r => r.state === "waiting" || (r.agent && r.state === "approved"))) loadOut.t = setTimeout(loadOut, 3000);
+  if (!quiet && $("#view") && S.view === "rooms") paintView(true);
+}
 async function refreshRooms() {
+  loadKnocks(); loadOut();
   try { const d = await api("GET", "/api/rooms"); S.rooms = d.rooms; S.attention = d.attention; S.activity = d.activity || []; S.loaded = true; S.stale = false; }
   catch (e) { if (e.message === "signed out") return; S.stale = true; }
   mood(); if ($("#view")) paintView();
@@ -496,7 +512,7 @@ function connect() {
     const prev = new Set(S.attention.map(a => a.id));
     S.attention = JSON.parse(e.data).items;
     for (const a of S.attention) if (!prev.has(a.id) && a.urgent) { toast(a.title); localNotify(a); }
-    mood(); paintChrome(); if (S.view === "rooms" || S.view === "attention") paintView(true);
+    mood(); paintChrome(); loadKnocks(); if (S.view === "rooms" || S.view === "attention") paintView(true);
   });
   es.addEventListener("bye", () => { location.href = "/"; });
 }
@@ -649,13 +665,51 @@ function tiles() {
     ${t(broken ? "bad" : withChain.length ? "ok" : "", "Verified", okc, withChain.length ? `of ${withChain.length} signed histories` : "no histories yet")}</div>`;
 }
 
+/* ---------- ask-to-join: requests to you, and requests you have sent ---------- */
+function knockCard() {
+  const inc = S.knocks.map(k => `<div class="kq"><div class="kqh"><b>${esc(k.name)}</b> <span class="mut">wants to join</span> <b>${esc(k.label)}</b></div>
+      <div class="kcode" aria-label="Verify code ${esc(k.code)}">${dm(k.code)}</div>
+      <p class="mut" style="margin:8px 0 12px;font-size:13px">Approve only if this code matches what ${esc(k.name)} reads to you, in person, on a call, or in a message you trust. A code that doesn't match means someone else is asking.</p>
+      <div class="row"><button class="btn primary sm" data-act="kapprove" data-id="${esc(k.rid)}">Approve</button><button class="btn sm danger" data-act="kdeny" data-id="${esc(k.rid)}">Deny</button></div></div>`).join("");
+  const out = S.out.filter(r => r.state !== "joined").map(r => r.state === "waiting"
+      ? `<div class="kq"><div class="kqh"><span class="led hold"></span> <b>Waiting for approval</b> <span class="mut">to join</span> <b>${esc(r.label)}${r.agent ? " (your agent)" : ""}</b></div>
+          <p class="mut" style="margin:8px 0 6px;font-size:13px">Tell the person who invited you this code. They check it matches and approve.</p><div class="kcode">${dm(r.code)}</div>
+          <p style="margin:10px 0 0"><button class="btn sm" data-act="kcancel" data-id="${esc(r.rid)}">Cancel</button></p></div>`
+      : r.agent && r.state === "approved" && r.link ? `<div class="kq"><div class="kqh"><b>Approved.</b> <span class="mut">Tell your agent:</span></div>
+          <div class="card mono" style="margin:8px 0;user-select:all;word-break:break-all;max-height:6em;overflow:auto">${esc(`Join this Playbox room with playbox_join, using this link: ${r.link}`)}</div>
+          <div class="row"><button class="btn sm" data-act="kcopy" data-id="${esc(r.rid)}">Copy</button><button class="btn sm" data-act="kcancel" data-id="${esc(r.rid)}">Done</button></div><p class="mut" style="font-size:12.5px;margin:8px 0 0">The link only works for that agent's own identity.</p></div>`
+      : `<div class="kq"><div class="kqh"><b>${esc(r.label)}:</b> <span class="mut">${r.state === "denied" ? "not approved this time" : r.state === "failed" ? "approved, but joining failed" + (r.note ? ": " + esc(r.note) : "") : "the request expired"}</span></div>
+          <p style="margin:8px 0 0"><button class="btn sm" data-act="kcancel" data-id="${esc(r.rid)}">Dismiss</button></p></div>`).join("");
+  return inc || out ? `<div class="card knock"><h2>Join requests</h2>${inc}${out}</div>` : "";
+}
+function openKnock(d) {
+  sheet().innerHTML = `<form method="dialog" id="kform"><h2>Ask to join ${esc(d.r)}</h2>
+    <p style="margin:14px 0 0"><b>${esc(d.f)}</b> invited you. To make sure it's really you, they'll confirm a short code that this device shows you, then let you in.</p>
+    <label for="kname">Your name, shown to ${esc(d.f)}</label><input id="kname" maxlength="40" autocomplete="off" value="${esc(store.get("pb.name", "") || (S.me?.name || "").split(" ")[0])}">
+    <p class="err" id="kerr"></p>
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" id="ksend" value="x">Ask to join</button></div></form>`;
+  $("#kform").addEventListener("submit", async e => {
+    if (e.submitter?.value === "cancel") return;
+    e.preventDefault();
+    const nm = $("#kname").value.trim(), btn = $("#ksend"); store.set("pb.name", nm);
+    btn.disabled = true; btn.textContent = "Asking…"; $("#kerr").textContent = "";
+    try {
+      await api("POST", "/api/knock", {base: d.b, id: d.i, k: d.k, label: d.r, name: nm});
+      try { sessionStorage.setItem("pb.knockctx", JSON.stringify(d)); } catch {}
+      sheet().close(); await refreshRooms(); loadOut();
+    } catch (err) { $("#kerr").textContent = err.message; btn.disabled = false; btn.textContent = "Ask to join"; }
+  });
+  sheet().showModal(); $("#kname").focus();
+}
+
 /* ---------- first-run: get your agent and a room connected ---------- */
 S.agents = null;
 async function loadAgents() { try { S.agents = (await api("GET", "/api/agents")).agents; } catch { S.agents = []; } if (S.view === "rooms" && $("#setup")) paintSetup(); }
 function setupNeeded() {
   if (store.get("pb.setup.hide", "") === "1") return false;
   const agentOk = S.agents && S.agents.some(a => a.connected);
-  return !agentOk || !S.rooms.length;
+  let pend = false; try { pend = !!(sessionStorage.getItem("pb.knockctx") || sessionStorage.getItem("pb.agentlink")); } catch {}
+  return !agentOk || !S.rooms.length || pend;      // the agent still needs its own way in
 }
 function paintSetup() {
   const el = $("#setup"); if (!el) return;
@@ -663,18 +717,21 @@ function paintSetup() {
   if (!setupNeeded()) { el.innerHTML = ""; return; }
   const ags = (S.agents || []).filter(a => a.installed), hasAgent = ags.some(a => a.connected);
   let held = null; try { held = JSON.parse(sessionStorage.getItem("pb.agentlink") || "null"); } catch {}
+  let kctx = null; try { kctx = JSON.parse(sessionStorage.getItem("pb.knockctx") || "null"); } catch {}
   const step = (n, done, title, body) => `<li class="su ${done ? "done" : ""}"><span class="sn">${done ? "✓" : n}</span><div><b>${title}</b>${body ? `<div class="sb">${body}</div>` : ""}</div></li>`;
   const agentBody = S.agents === null ? `<span class="mut">Looking for coding agents…</span>`
     : !ags.length ? `<span class="mut">No coding agent found here. Install Claude Code, Codex, OpenCode or Hermes, then reload.</span>`
     : `<div class="row" style="gap:8px">${ags.map(a => a.connected ? `<span class="chip ok">${esc(a.name)} connected</span>` : `<button class="btn sm" data-act="agent" data-id="${a.id}">Connect ${esc(a.name)}</button>`).join("")}</div>`;
   const roomBody = S.rooms.length ? "" : `<button class="btn sm primary" data-act="add">+ Add room</button> <span class="mut">paste an invite or host one</span>`;
-  const handBody = held && hasAgent ? `Tell your agent:<div class="card mono" style="margin:8px 0;user-select:all;word-break:break-all;max-height:6em;overflow:auto">${esc(`Join this Playbox room with playbox_join, using this link: ${held.link}`)}</div>
-      <button class="btn sm" data-act="copyagent">Copy</button> <span class="mut" style="font-size:12.5px">Works if the invite allowed you and your agent; otherwise ask for another.</span>` : "";
+  const agentAsk = kctx && hasAgent && !S.out.some(r => r.agent) ? `Ask your agent: <i>what is my Playbox guest_id?</i> Paste its answer here and ${esc(kctx.f)} gets a separate request for your agent, with its own code.
+      <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="agid" class="mono" placeholder="64 hex characters" spellcheck="false" autocomplete="off"><button class="btn sm" data-act="kagent">Ask</button></div>` : "";
+  const handBody = agentAsk || (held && hasAgent ? `Tell your agent:<div class="card mono" style="margin:8px 0;user-select:all;word-break:break-all;max-height:6em;overflow:auto">${esc(`Join this Playbox room with playbox_join, using this link: ${held.link}`)}</div>
+      <button class="btn sm" data-act="copyagent">Copy</button> <span class="mut" style="font-size:12.5px">Works if the invite allowed you and your agent; otherwise ask for another.</span>` : "");
   el.innerHTML = `<div class="card setup"><h2>Get started</h2><ol class="sus">
     ${step(1, !S.me?.weak, "Passkey", S.me?.weak ? "This session has no passkey. Open the hub's HTTPS address to add one." : "")}
     ${step(2, hasAgent, "Connect your coding agent", agentBody)}
     ${step(3, S.rooms.length > 0, "Join or host a room", roomBody)}
-    ${held && S.rooms.length ? step(4, false, "Bring your agent into the room", handBody) : ""}</ol>
+    ${(held || kctx) && S.rooms.length && handBody ? step(4, false, "Bring your agent into the room", handBody) : ""}</ol>
     <p style="margin:12px 0 0"><button class="btn sm" data-act="hidesetup">Hide</button></p></div>`;
 }
 async function connectAgent(id, btn) {
@@ -692,15 +749,17 @@ const VIEWS = {
     const flt = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["attn", "Attention"]];
     const bar = `<div class="sect tools"><h2 class="rule"><span class="ix">01</span>Rooms</h2></div><div class="sect tools" style="margin-top:0"><div class="filters" role="group" aria-label="Filter rooms">${flt.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
       <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
-    if (!S.rooms.length) return `<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
+    if (!S.rooms.length) return `${knockCard()}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
       : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap">${constellation(list)}<div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
-    return `<div id="setup"></div>${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
+    return `${knockCard()}<div id="setup"></div>${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
-    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>`;
+    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}`;
+    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock"));
+    if (!a.length && S.knocks.length) return head;
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
     return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="/r/${i.room}/">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
@@ -869,7 +928,8 @@ function openInvite(id) {
     <label for="ifrom" style="margin-top:14px">Your name, shown to your friend</label><input id="ifrom" maxlength="40" autocomplete="off" value="${esc(store.get("pb.name", ""))}" placeholder="e.g. Shaan">
     <label>Link works for</label>${opt("ttl", [[900, "15 min"], [3600, "1 hour"], [86400, "24 hours"]], 3600)}
     <label>Their access lasts</label>${opt("grant", [[3600, "1 hour"], [86400, "1 day"], [604800, "7 days"]], 86400)}
-    <label>Who can use it</label>${opt("uses", [[1, "One person"], [2, "Them + their agent"], [3, "Up to 3"]], 2)}
+    <label>Before they join</label>${opt("approve", [[1, "I approve each one"], [0, "Let them in"]], 1)}
+    <label>How many can join</label>${opt("uses", [[1, "One person"], [2, "Them + their agent"], [3, "Up to 3"]], 2)}
     <details style="margin-top:14px"><summary class="lbl" style="cursor:pointer">Lock it to one person's id</summary><label for="iguest">Their guest id (64 hex characters, from <span class="mono">playbox id</span>)</label><input id="iguest" class="mono" autocomplete="off" spellcheck="false"><p class="mut" style="font-size:12px;margin:6px 0 0">Anyone else who finds the link is refused and can't use it up.</p></details>
     <p class="err" id="ierr"></p><div id="iout"></div>
     <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Close</button><button class="btn primary" id="imake" value="x">Create link</button></div></form>`;
@@ -881,11 +941,12 @@ function openInvite(id) {
     const btn = $("#imake"), from = $("#ifrom").value.trim(); store.set("pb.name", from);
     btn.disabled = true; btn.textContent = "Creating…"; $("#ierr").textContent = "";
     try {
-      const j = await api("POST", `/api/rooms/${id}/invite`, {...pick(), from, guest: $("#iguest").value.trim() || undefined});
-      const url = `${j.url}#${b64s(j.link)}`;
+      const pk = pick();
+      const j = await api("POST", `/api/rooms/${id}/invite`, {...pk, approve: !!pk.approve, from, guest: $("#iguest").value.trim() || undefined});
+      const url = j.approve ? `${j.url}#a.${j.k}` : `${j.url}#${b64s(j.link)}`;
       const text = `Join my Playbox room "${r.label}": ${url}`;
       $("#iout").innerHTML = `<label>Send this to your friend</label><div class="card mono" id="iurl" style="word-break:break-all;user-select:all;max-height:7.5em;overflow:auto">${esc(url)}</div>
-        <p class="mut" style="font-size:13px;margin:8px 0 0">Works until ${hhmm(j.expires * 1000)}, once it's used it's spent. The part after # never reaches any server.</p>
+        <p class="mut" style="font-size:13px;margin:8px 0 0">${j.approve ? `Works until ${hhmm(j.expires * 1000)}. Nobody gets in on this link alone: you'll see each request here with a short code, and approve only if it matches what they read to you.` : `Works until ${hhmm(j.expires * 1000)}, once it's used it's spent. The part after # never reaches any server.`}</p>
         ${j.public ? "" : `<p class="offline" style="margin:10px 0 0">This hub is only reachable from your own network, so your friend can't open the link yet. Start it with <span class="mono">--cloudflare</span> to get a public address.</p>`}
         <div class="row" style="margin-top:12px"><button class="btn sm" id="icp" value="x">Copy link</button>${navigator.share ? '<button class="btn sm" id="ish" value="x">Share…</button>' : ""}<a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">Preview what they see</a></div>`;
       $("#icp").addEventListener("click", async ev => { ev.preventDefault(); try { await navigator.clipboard.writeText(text); toast("Copied"); } catch { toast("Copy failed", true); } });
@@ -973,7 +1034,14 @@ document.addEventListener("click", async e => {
   else if (act === "theme") toggleTheme();
   else if (act === "edit") openEdit(t.dataset.id);
   else if (act === "agent") connectAgent(t.dataset.id, t);
-  else if (act === "hidesetup") { store.set("pb.setup.hide", "1"); paintSetup(); }
+  else if (act === "kapprove") { t.disabled = true; try { await api("POST", `/api/knocks/${t.dataset.id}/approve`, {}); toast("Approved. They're being let in."); } catch (er) { toast(er.message, true); t.disabled = false; } loadKnocks(); }
+  else if (act === "kdeny") { try { await api("POST", `/api/knocks/${t.dataset.id}/deny`, {}); toast("Denied"); } catch (er) { toast(er.message, true); } loadKnocks(); }
+  else if (act === "kcancel") { const was = S.out.find(x => x.rid === t.dataset.id); try { await api("DELETE", `/api/knock/out/${t.dataset.id}`); } catch {}
+    if (was && was.agent && was.state === "approved") { try { sessionStorage.removeItem("pb.knockctx"); sessionStorage.removeItem("pb.agentlink"); } catch {} }
+    await loadOut(); refreshRooms(); }
+  else if (act === "kcopy") { try { const r = S.out.find(x => x.rid === t.dataset.id); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${r.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
+  else if (act === "kagent") { try { const ctx = JSON.parse(sessionStorage.getItem("pb.knockctx")); await api("POST", "/api/knock", {base: ctx.b, id: ctx.i, k: ctx.k, label: ctx.r, name: (store.get("pb.name", "") || "Me") + "'s agent", agent_guest: $("#agid").value.trim()}); loadOut(); } catch (er) { toast(er.message, true); } }
+  else if (act === "hidesetup") { store.set("pb.setup.hide", "1"); try { sessionStorage.removeItem("pb.knockctx"); sessionStorage.removeItem("pb.agentlink"); } catch {} paintSetup(); }
   else if (act === "copyagent") { try { const h = JSON.parse(sessionStorage.getItem("pb.agentlink")); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${h.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }

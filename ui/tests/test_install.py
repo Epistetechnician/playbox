@@ -74,8 +74,13 @@ def main():
 
         bad = run("--join", "https://evil.example/x", "--no-start")
         check("a non-playbox link is refused", bad.returncode != 0 and "playbox://" in bad.stderr)
+        okurl = run("--join", "https://host.example/i/abc#a.abcdefghijklmnopqrstuv", "--no-start")
+        check("an ask-to-join invite page address is accepted by --join", okurl.returncode == 0, okurl.stderr[-200:])
+        bad = run("--join", "http://host.example/not-an-invite", "--no-start")
+        check("an address that isn't an invite page is refused", bad.returncode != 0)
         bad = run("--frobnicate")
         check("unknown options are refused", bad.returncode != 0)
+        shutil.rmtree(os.path.join(home, ".local/share/playbox-hub"), ignore_errors=True)    # earlier runs installed it
         # tampered bundle
         good = open(os.path.join(mirror, "playbox-hub.tar.gz"), "rb").read()
         open(os.path.join(mirror, "playbox-hub.tar.gz"), "ab").write(b"x")

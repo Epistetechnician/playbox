@@ -35,7 +35,7 @@ while [ $# -gt 0 ]; do
     *) die "unknown option $1" ;;
   esac
 done
-if [ -n "$join" ]; then case "$join" in playbox://*) ;; *) die "that doesn't look like a playbox:// invite link" ;; esac; fi
+if [ -n "$join" ]; then case "$join" in playbox://*|https://*/i/*|http://*/i/*) ;; *) die "that doesn't look like a Playbox invite (a playbox:// link or an invite page address)" ;; esac; fi
 
 have curl || die "curl is required"
 have tar || die "tar is required"

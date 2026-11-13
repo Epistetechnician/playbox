@@ -5,6 +5,8 @@ authenticated API call that minted it."""
 import secrets
 import time
 
+from .knock import khash
+
 MAX_TTL = 7 * 86400
 LINK_TTLS = (900, 3600, 86400)             # how long the link itself works
 GRANT_TTLS = (3600, 86400, 7 * 86400)       # how long the joined member's access lasts
@@ -20,7 +22,7 @@ class Invites:
         self.store = store
         store.d.setdefault("invites", {})
 
-    def create(self, room_id, room_label, from_name, ttl, grant, uses, members_now, guest=None):
+    def create(self, room_id, room_label, from_name, ttl, grant, uses, members_now, guest=None, approve=False):
         if ttl not in LINK_TTLS or grant not in GRANT_TTLS or uses not in USES:
             raise InviteError("choose one of the offered durations and counts")
         if guest is not None and (len(guest) != 64 or any(c not in "0123456789abcdef" for c in guest)):
@@ -28,12 +30,16 @@ class Invites:
         now = time.time()
         iid = secrets.token_urlsafe(16)
         rec = {"id": iid, "room": room_id, "label": room_label[:60], "from": (from_name or "A Playbox user")[:40], "created": now, "expires": now + ttl,
-               "grant": grant, "uses": uses, "members_at": members_now, "guest": bool(guest), "status": "pending"}
+               "grant": grant, "uses": uses, "members_at": members_now, "guest": bool(guest), "status": "pending", "approve": bool(approve)}
+        k = None
+        if approve:
+            k = secrets.token_urlsafe(16)
+            rec["khash"] = khash(k)
         with self.store.lock:
             self._gc(now)
             self.store.d["invites"][iid] = rec
             self.store.save()
-        return rec
+        return rec, k
 
     def _gc(self, now):
         keep = {}
@@ -59,7 +65,7 @@ class Invites:
         st = self.state(rec, members=members)
         out = {"state": st}
         if st == "pending":
-            out.update({"room": rec["label"], "from": rec["from"], "expires": int(rec["expires"]), "grant": rec["grant"], "uses": rec["uses"], "guest_only": rec["guest"]})
+            out.update({"room": rec["label"], "from": rec["from"], "expires": int(rec["expires"]), "grant": rec["grant"], "uses": rec["uses"], "guest_only": rec["guest"], "approve": rec.get("approve", False)})
         return out
 
     def listing(self, room_digests):
@@ -68,7 +74,7 @@ class Invites:
         out = []
         for rec in sorted(self.store.d["invites"].values(), key=lambda r: -r["created"]):
             joined = max(0, members.get(rec["room"], rec["members_at"]) - rec["members_at"])
-            out.append({**{k: rec[k] for k in ("id", "room", "label", "created", "expires", "grant", "uses", "guest")}, "state": self.state(rec, now, members.get(rec["room"])), "joined": joined})
+            out.append({**{k: rec[k] for k in ("id", "room", "label", "created", "expires", "grant", "uses", "guest")}, "state": self.state(rec, now, members.get(rec["room"])), "joined": joined, "approve": rec.get("approve", False)})
         return out
 
     def revoke(self, iid):
