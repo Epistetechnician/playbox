@@ -1,0 +1,27 @@
+calibration 1/3: target from 3 baseline runs of 1200 steps
+  L* = 2.486
+calibration 2/3: holdout gap on distinct seeds
+calibration 3/3: timing noise from repeats of one seed
+  {"target": 2.486, "eps_hold": 0.0243, "theta": 0.12, "noise_cv": 0.0374, "gap_mean": -0.00232, "gap_sd": 0.00733, "base_wall_median": 8.048, "base_tokens_median": 2478080, "wall_cap_s": 24.145, "token_cap": 9912320, "oracle_dev_loss": 2.0126, "fixed_step_dev_losses": [2.4857, 2.4832, 2.5012], "seeds": [1, 2, 3]}
+genesis receipt 9e8d6ceb0a45
+-- scripted-1: lr_3e-3
+seq  1 scripted-1 PROMOTE  promoted               gain=0.5008 caught_false=False
+-- scripted-2: lr_3e-2
+seq  2 scripted-2 REJECT   gain_below_threshold   gain=-0.277 caught_false=False
+-- scripted-3: warmup_50
+seq  3 scripted-3 REJECT   gain_below_threshold   gain=-0.0537 caught_false=False
+-- scripted-4: wd_1e-4
+seq  4 scripted-4 REJECT   gain_below_threshold   gain=-0.0007 caught_false=False
+-- scripted-5: dev_memorizer_INJECTED_BAD
+seq  5 scripted-5 REJECT   holdout_failed         gain=0.6851 caught_false=True
+-- scripted-6: lr_6e-3
+seq  6 scripted-6 PROMOTE  promoted               gain=0.2748 caught_false=False
+-- scripted-7: layers_1
+seq  7 scripted-7 PROMOTE  promoted               gain=0.2338 caught_false=False
+-- scripted-8: batch_16
+seq  8 scripted-8 REJECT   gain_below_threshold   gain=-0.1187 caught_false=False
+-- scripted-9: width_128
+seq  9 scripted-9 PROMOTE  promoted               gain=0.1374 caught_false=False
+-- scripted-10: clip_1.0
+seq 10 scripted-10 REJECT   gain_below_threshold   gain=-0.0448 caught_false=False
+reveal receipt 4bf9e4ea2b64
