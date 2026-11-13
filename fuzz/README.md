@@ -21,6 +21,8 @@ cargo +nightly fuzz run wire_frame    # one target, until you stop it
 | `tpm_evidence` | TPM key blobs, EK certificate chains (X.509), the TPM and Secure Enclave verifiers | the host being judged |
 | `tdx_token` | the Confidential Space token verifier (JWT) | the host being judged |
 | `latent_envelope` | the `PBL2` hub-vector envelope, the reveal that opens its commitment, the host's receipt | any member, or a host a member is judging |
+| `capability_bind` | an owner's capability definition and a member's arguments: the program never changes, no control characters | the owner's file, any member |
+| `room_state_files` | the calls and conversations files a host reads at start | a damaged or edited state directory |
 | `latent_store` | the saved latent mailbox a host reads back at start | a damaged or edited state directory |
 
 Beyond libFuzzer, deterministic mutation tests run in the normal test suites:

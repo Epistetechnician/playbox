@@ -32,5 +32,23 @@ Updating does not restart agents already running: they keep the old binary until
    `SHA256SUMS` with `PLAYBOX_RELEASE_KEY`, and publishes with the changelog section as the release notes. A tag with a `-` (for
    example `v0.3.0-rc.1`) is a pre-release and is not what `update` or `install.sh` fetch by default.
 
-One-time: `playbox release keygen release.key` prints the public key. Store the secret as the `PLAYBOX_RELEASE_KEY` secret, the public half
-as the `PLAYBOX_RELEASE_PUBKEY` repository variable (built into binaries) and in `RELEASE_PUBKEY` in `install.sh`.
+## Keys
+
+`release.pub` (repository root) lists the public keys users trust, one hex key per line, newest first. It is read at build time into the
+binary (`playbox update`) and mirrored in `install.sh` (`RELEASE_PUBKEY`). The secret half is the `PLAYBOX_RELEASE_KEY` Actions secret and
+a 0600 copy in `~/.playbox-release/` on the maintainer's machine; nothing else holds it.
+
+Rotate: `playbox release keygen new.key`; add the new public key as the first line of `release.pub`; set the secret to the new key; release.
+Binaries built from then on trust both keys, so installs signed with the old one still update. Once no supported release is signed with the
+old key, remove its line. If the secret leaks, rotate at once and say so in the changelog: releases signed with the leaked key stay valid for
+binaries that still pin it, so users must reinstall with `install.sh` from a source they trust.
+
+## What a release carries, and how to check it
+
+- `SHA256SUMS` and `SHA256SUMS.sig`: every file below is listed, and the list is signed. `install.sh` and `playbox update` check both and refuse an unsigned release.
+- `playbox.cdx.json`: a CycloneDX SBOM of every crate in the binary.
+- A Sigstore build-provenance attestation for each file: `gh attestation verify playbox-linux-x86_64.tar.gz -R Epistetechnician/playbox` proves
+  the file was built by this repository's release workflow from the tagged commit, with no key of ours involved.
+
+CI gates every push: tests, `cargo audit`, `cargo deny` (`deny.toml`), the conformance suite (including a scenario that runs the previous
+release against the current build), the Linux confinement job, and fuzzing (`.github/workflows/fuzz.yml`).

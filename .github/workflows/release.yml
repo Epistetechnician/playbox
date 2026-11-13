@@ -51,6 +51,10 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write       # build provenance is signed with the workflow's identity (Sigstore), not a key we hold
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -65,17 +69,25 @@ jobs:
           PLAYBOX_RELEASE_KEY: ${{ secrets.PLAYBOX_RELEASE_KEY }}
         run: |
           tar -czf dist/playbox-hub.tar.gz --exclude=__pycache__ --exclude='*.pyc' ui     # the dashboard, for the installer's --join / --hub
+          cargo install cargo-cyclonedx --locked --version 0.5.7 >/dev/null
+          cargo cyclonedx --format json --spec-version 1.5 --override-filename playbox.cdx >/dev/null
+          mv crates/playbox-cli/playbox.cdx.json dist/playbox.cdx.json     # SBOM: every crate and version in the binary
           VERSION="${GITHUB_REF_NAME#v}"
           cargo run --release -q -p playbox-cli -- release manifest "$VERSION" dist --out dist/release.json
           cargo run --release -q -p playbox-cli -- release notes "$VERSION" > notes.md
           cd dist
-          sha256sum playbox-*.tar.gz release.json > SHA256SUMS
+          sha256sum playbox-*.tar.gz release.json playbox.cdx.json > SHA256SUMS
           cd ..
           if [ -n "$PLAYBOX_RELEASE_KEY" ]; then
             cargo run --release -q -p playbox-cli -- release sign dist/SHA256SUMS
           else
             echo "PLAYBOX_RELEASE_KEY not set: publishing without a signature"
           fi
+      - name: Attest provenance
+        # A signed statement that these exact files were built by this workflow from this commit; `gh attestation verify FILE -R Epistetechnician/playbox`
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

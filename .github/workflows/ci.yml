@@ -31,6 +31,14 @@ jobs:
           toolchain: "1.93.1"
       - run: cargo install cargo-audit --locked
       - run: cargo audit  # .cargo/audit.toml lists the reviewed exceptions
+  supply-chain:
+    # Licences, banned crates, registry sources and advisories (deny.toml). `audit` above is the advisory check with the reviewed exceptions.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
   python:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
@@ -72,11 +80,22 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p playbox-cli -p playbox-mcp
+      - name: Build the previous release for the version-skew scenario
+        run: |
+          # The newest tag below the one being built (for a tag build) or the newest tag (for a push): the release users have now.
+          PREV=$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-' | while read -r t; do [ "$(git rev-parse "$t^{commit}")" != "$(git rev-parse HEAD)" ] && echo "$t" && break; done)
+          echo "previous release: $PREV"
+          git worktree add ../prev "$PREV"
+          (cd ../prev && cargo build -p playbox-mcp -p playbox-cli --target-dir "$RUNNER_TEMP/prev-target")
+          echo "PLAYBOX_OLD_BIN=$RUNNER_TEMP/prev-target/debug" >> "$GITHUB_ENV"
       - run: CONFORMANCE_REQUIRE_ALL=1 python3 conformance/run.py
   ui:
     # The cockpit's end-to-end check: two UI servers (host and guest) driven over HTTP like the browser does, each with a real
