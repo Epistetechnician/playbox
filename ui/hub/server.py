@@ -28,6 +28,7 @@ from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from .sec import SecLog, STAGES, posture
 from . import board
+from .machine import Machine
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -48,6 +49,9 @@ def is_local(peer, headers):
 def make_handler(hub, auth, store, opts):
     invites = Invites(store)
     integ = Integrations(store)
+    machine = Machine(opts.get("port") or 7717)
+    if not os.environ.get("PLAYBOX_HUB_NO_MACHINE"):      # the fuzzer's throwaway hub and the tests don't schedule it
+        machine.schedule()
 
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "playbox-hub"
@@ -94,14 +98,31 @@ def make_handler(hub, auth, store, opts):
         def j(self, code, obj, extra=None):
             self.send(code, json.dumps(obj), extra=extra)
 
+        def slurp(self):
+            """Read the request body off the socket up front. A reply sent without reading it (a 401/403, say) would leave the bytes on the
+            keep-alive connection, and the next request on it would be parsed from them (and answered 501)."""
+            if self._raw is not None:
+                return self._raw
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+            except ValueError:
+                n = -1
+            if n < 0 or n > MAX_BODY:
+                self.close_connection = True       # too big to swallow: answer, then drop the connection
+                self._big = True
+                self._raw = b""
+            else:
+                self._raw = self.rfile.read(n) if n else b""
+            return self._raw
+
         def body(self):
+            raw = self.slurp()
             if "application/json" not in self.headers.get("Content-Type", ""):
                 raise AuthError(415, "json only")
-            n = int(self.headers.get("Content-Length", "0") or 0)
-            if n > MAX_BODY:
+            if self._big:
                 raise AuthError(413, "too large")
             try:
-                v = json.loads(self.rfile.read(n) or b"{}")
+                v = json.loads(raw or b"{}")
             except ValueError:
                 raise AuthError(400, "bad json")
             if not isinstance(v, dict):
@@ -148,7 +169,7 @@ def make_handler(hub, auth, store, opts):
             rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
             checks = posture(public=public, access=bool(opts.get("access")), creds=len(store.d["creds"]), weak_sessions=weak, invites=inv, knocks=knocks,
                              push=len(store.d["push"]), rooms=rooms, fresh=fresh)
-            return {"now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
+            return {"machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
                     "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
                               "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
                     "rooms": rooms}
@@ -165,6 +186,7 @@ def make_handler(hub, auth, store, opts):
             self.do_GET()
 
         def do_GET(self):
+            self._raw, self._big = None, False
             try:
                 self.route("GET")
             except AuthError as e:
@@ -182,7 +204,9 @@ def make_handler(hub, auth, store, opts):
             self.mutate("PATCH")
 
         def mutate(self, method):
+            self._raw, self._big = None, False
             try:
+                self.slurp()
                 if not self.origin_ok():
                     return self.j(403, {"error": "cross-origin request refused"})
                 self.route(method)
@@ -574,6 +598,15 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
             if m == "GET" and p == "/api/system":
                 return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/machine/fix":
+                if not self.need_fresh(rec):      # changes permissions on this machine's files
+                    return
+                machine.start(fix=True)
+                hub.sec.add("auth", "Permissions on this machine's key files were repaired from the System view", "info")
+                return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/machine":
+                machine.start()
+                return self.j(200, self.system(rec))
             if m == "POST" and p == "/api/system/verify":
                 n = 0
                 for room in list(hub.rooms.values()):
@@ -895,7 +928,7 @@ def main(argv=None):
     hub.extra_attention.append(lambda: [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
                                          "title": f"{r['name']} wants to join {store.d['invites'].get(r['invite'], {}).get('label', 'a room')}",
                                          "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
-    opts = {"public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
+    opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True

@@ -66,8 +66,12 @@ the memory limit (the kernel boots with `cgroup_disable=memory`), so the runner 
 CPU limits are enforceable.
 
 ### 4. Git data from peers
-Bundles pushed by members and fetched by guests are validated with `transfer.fsckObjects` (a tree containing `.git/hooks/..`
-is rejected). Guest-side `init` and `checkout` now use the same hardened git wrapper as the host (no hooks, symlinks written
+Bundles pushed by members and fetched by guests are imported, then checked with `git -c fsck.hasDotgit=error fsck --strict
+--no-dangling <tip>`; a tree containing `.git/hooks/..` is rejected and the destination ref is put back as it was. The check is
+explicit because `git fetch` from a bundle file does not apply `transfer.fsckObjects` (observed on git 2.43.0), so that setting
+alone silently checks nothing. Minimum git behaviour relied on: `fsck --strict` reports a `.git` path component as an error and
+exits non-zero (`hasDotgit`, git >= 2.2), and `fsck` accepts an object id to check what is reachable from it. Rejected objects
+stay in the object store as unreachable garbage until `git gc` prunes them; they are never checked out. Guest-side `init` and `checkout` now use the same hardened git wrapper as the host (no hooks, symlinks written
 as plain files). Patches a hostile host sends are refused when they try `..`, absolute paths, `.git`, or writing through a
 symlink the same patch creates. Ref names are restricted to `[A-Za-z0-9._/-]`, no leading `-`, no `..`. *Tests:* `playbox-git`.
 

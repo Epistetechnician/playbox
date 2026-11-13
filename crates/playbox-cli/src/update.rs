@@ -326,6 +326,10 @@ pub fn run(o: &Opts) -> Result<u8> {
         println!("\n{}", m.notes.trim());
     }
     println!("\nrunning agents keep the old version until restarted; undo with: playbox update --rollback");
+    // Every update is followed by a check of the updated install, run by the new binary: a release that moved a file or loosened a
+    // permission shows up now rather than at the next audit. The report is the same one `playbox secure` writes for the hub.
+    println!("\nchecking the updated install (playbox secure):");
+    let _ = Command::new(&exe).args(["secure", "--no-fuzz"]).stdin(Stdio::null()).status();
     Ok(0)
 }
 
