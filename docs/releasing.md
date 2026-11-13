@@ -32,6 +32,11 @@ Updating does not restart agents already running: they keep the old binary until
    `SHA256SUMS` with `PLAYBOX_RELEASE_KEY`, and publishes with the changelog section as the release notes. A tag with a `-` (for
    example `v0.3.0-rc.1`) is a pre-release and is not what `update` or `install.sh` fetch by default.
 
+## Requirements and traceability
+
+`docs/requirements.md` lists what Playbox promises, one ID each. A test or scenario that checks one carries `REQ: ID` in a comment; `python3
+conformance/trace.py` (a CI step) fails when a shipped promise has no check. A release's changelog should name the IDs it adds or retires.
+
 ## Keys
 
 `release.pub` (repository root) lists the public keys users trust, one hex key per line, newest first. It is read at build time into the
@@ -47,7 +52,7 @@ binaries that still pin it, so users must reinstall with `install.sh` from a sou
 
 - `SHA256SUMS` and `SHA256SUMS.sig`: every file below is listed, and the list is signed. `install.sh` and `playbox update` check both and refuse an unsigned release.
 - `playbox.cdx.json`: a CycloneDX SBOM of every crate in the binary.
-- A Sigstore build-provenance attestation for each file: `gh attestation verify playbox-linux-x86_64.tar.gz -R Epistetechnician/playbox` proves
+- A Sigstore build-provenance attestation for each file: `gh attestation verify playbox-linux-x86_64.tar.gz -R Epistetechnician/playbox` (add `--format json` in a script: it prints nothing on success without a terminal) proves
   the file was built by this repository's release workflow from the tagged commit, with no key of ours involved.
 
 CI gates every push: tests, `cargo audit`, `cargo deny` (`deny.toml`), the conformance suite (including a scenario that runs the previous

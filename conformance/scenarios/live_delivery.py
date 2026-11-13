@@ -1,5 +1,6 @@
 """Live delivery: nothing before the handshake, then only new messages from others, framed as untrusted."""
 TIER = "fast"
+# REQ: LIVE-1, LIVE-2
 
 
 def run(ctx):

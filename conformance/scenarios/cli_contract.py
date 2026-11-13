@@ -2,6 +2,7 @@
 import json
 
 TIER = "fast"
+# REQ: CLI-1
 
 
 def run(ctx):

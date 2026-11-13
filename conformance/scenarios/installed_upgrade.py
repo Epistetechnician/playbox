@@ -11,6 +11,7 @@ from pathlib import Path
 from harness import Skip, bin_dir, exe
 
 TIER = "fast"
+# REQ: REL-6, ROOM-3
 REPO = Path(__file__).resolve().parents[2]
 
 

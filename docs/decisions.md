@@ -89,3 +89,14 @@ Design and evidence: [steering.md](steering.md). Choices that are easy to get wr
 - **`ablate` is off by default, and guards deny directions near host-listed safety directions unless the grant names the class.** Refusal behavior is mediated by one direction in the models studied, so removing it is a single cheap edit.
 - **Strength is an integer in thousandths of a mean activation norm.** One text form per spec; the unit is per site and per prompt set, which is why neuronary doses cannot be copied across (see steering.md 2c).
 - **Receipts state their ceiling.** `host_claim`, `local_internal_exploratory` or `attested`; nothing raises it automatically yet.
+
+## Release, authority and traceability (2026-11)
+
+- **A pinned key makes the signature mandatory.** `install.sh` and `playbox update` refuse a release with no valid signature instead of skipping the check, so stripping `SHA256SUMS.sig` from a mirror cannot downgrade it. The escape hatch for an old unsigned release is explicit (`PLAYBOX_ALLOW_UNSIGNED=1`). Keys live in `release.pub`, several at once, so one can be rotated without stranding old installs.
+- **Update swaps one file with `rename` and keeps the old binary.** A crash cannot leave half a binary and `--rollback` is a copy, not a download.
+- **The wire protocol number moves only when an older peer would misread a message.** A new optional field never bumps it; an incompatible host is refused with the name of the side that must update. Capability results signed by the host are an additive field, so the number stays 1 and a caller refuses an unsigned result instead.
+- **A capability call's authority is checked again when it runs, and while it runs.** It was authorised when made, which can be 15 minutes before an owner approves it. Revocation, a ban or removal between those moments means no run, and a run in progress is stopped. The call becomes `revoked` and the audit log says why.
+- **Text a member typed is refused if it can mislead and escaped when shown.** Bidi overrides, zero-width and separator characters are refused in capability arguments; the console prints the whole member id (not a prefix, which a ground key can imitate) and escapes control and invisible characters.
+- **Requirements have IDs and every shipped one needs a check that names it.** `docs/requirements.md` is the register; `conformance/trace.py` fails CI on a promise nothing checks, a check for an unknown promise, or a planned promise that already has a check. The register and the tests cannot drift apart without CI saying so.
+- **Upgrades are tested the way people do them.** The `installed_upgrade` scenario installs an older release with `install.sh`, hosts a room with it, upgrades the installed binary, and requires the same member, the history and one unbroken audit chain. The version-skew scenario runs both builds in one room.
+

@@ -72,6 +72,7 @@ def main():
                "PLAYBOX_NO_SETUP": "1", "BROWSER": "true", "PLAYBOX_HUB_HOME": os.path.join(home, "hubhome")}
         run = lambda *a, **k: subprocess.run(["sh", os.path.join(ROOT, "install.sh"), *a], capture_output=True, text=True, env=env, timeout=120, **k)
         # The mirror serves an unsigned release, which install.sh pins a key against and so refuses, unless told it is deliberate.
+        # REQ: REL-2
         refused = run("--no-start")
         check("an unsigned release is refused when a key is pinned", refused.returncode != 0 and "not signed" in refused.stderr, refused.stderr[-200:])
         env["PLAYBOX_ALLOW_UNSIGNED"] = "1"
@@ -89,6 +90,7 @@ def main():
         good = open(os.path.join(mirror, "playbox-hub.tar.gz"), "rb").read()
         open(os.path.join(mirror, "playbox-hub.tar.gz"), "ab").write(b"x")
         bad = run("--hub", "--no-start")
+        # REQ: REL-9
         check("a hub bundle that doesn't match its checksum is refused", bad.returncode != 0 and "checksum mismatch for playbox-hub" in bad.stderr and not os.path.exists(os.path.join(home, ".local/share/playbox-hub")))
         open(os.path.join(mirror, "playbox-hub.tar.gz"), "wb").write(good)
         os.rename(os.path.join(mirror, "playbox-hub.tar.gz"), os.path.join(mirror, "gone"))

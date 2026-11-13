@@ -12,6 +12,14 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ### Added
 - Hub: **Adopt** a room hosted on this machine. A `playbox up --state DIR` host now publishes itself (a private socket under `~/.playbox/hosting`), and Add room > Join lists it with one button; adopting asks for a passkey touch.
 
+### Security
+- A capability call's authority is checked again when the owner approves it and while it runs. A member revoked, banned or removed in between gets no run, and a run in progress is stopped (call state `revoked`; audit `capability_refused` / `capability_cancelled`).
+- Capability arguments with bidi, zero-width or separator characters are refused, and the host console shows the whole member id and escapes what a member typed.
+
+### Testing
+- `docs/requirements.md` gives each promise an ID; `conformance/trace.py` (a CI step) fails when a shipped promise has no check that names it.
+- `installed_upgrade`: an older release installed with `install.sh` hosts a room, is upgraded, and the room, the member and the audit chain carry over.
+
 ### Fixed
 - Hub: the Cloudflare tunnel is retried in the background (with backoff) if it fails to start or later drops, instead of the hub staying offline until restarted.
 

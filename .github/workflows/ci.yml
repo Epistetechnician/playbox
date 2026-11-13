@@ -96,6 +96,7 @@ jobs:
           git worktree add ../prev "$PREV"
           (cd ../prev && cargo build -p playbox-mcp -p playbox-cli --target-dir "$RUNNER_TEMP/prev-target")
           echo "PLAYBOX_OLD_BIN=$RUNNER_TEMP/prev-target/debug" >> "$GITHUB_ENV"
+      - run: python3 conformance/trace.py   # every shipped requirement in docs/requirements.md has a check that names it
       - run: CONFORMANCE_REQUIRE_ALL=1 python3 conformance/run.py
   ui:
     # The cockpit's end-to-end check: two UI servers (host and guest) driven over HTTP like the browser does, each with a real

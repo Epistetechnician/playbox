@@ -4,6 +4,7 @@ import os
 import tempfile
 
 TIER = "fast"
+# REQ: CAP-1, CAP-3, CAP-6
 
 
 def run(ctx):

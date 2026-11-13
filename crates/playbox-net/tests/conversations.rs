@@ -18,6 +18,7 @@ fn text(v: &serde_json::Value, k: &str) -> String {
     v[k].as_str().unwrap_or_default().to_string()
 }
 
+// REQ: CONV-1, CONV-2
 #[tokio::test]
 async fn a_roster_talks_the_rest_of_the_room_cannot_see_it_and_entries_verify() {
     let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default()).await.unwrap();
@@ -59,6 +60,7 @@ async fn a_roster_talks_the_rest_of_the_room_cannot_see_it_and_entries_verify() 
     assert!(c.conv_read(&id, 0, false).await.is_ok());
 }
 
+// REQ: CONV-3
 #[tokio::test]
 async fn conversations_survive_a_host_restart_and_a_retried_post_is_stored_once() {
     let d = tmp("restart");

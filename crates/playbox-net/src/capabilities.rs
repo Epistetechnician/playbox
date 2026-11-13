@@ -692,6 +692,7 @@ mod tests {
         assert_eq!(c.bind(&args("{feat}", "a")).unwrap()[2], "{feat}");
     }
 
+    // REQ: CAP-2
     #[test]
     fn arguments_outside_the_bounds_are_refused() {
         let c = cap(false);
@@ -721,6 +722,7 @@ mod tests {
         assert!(Book::new(vec![cap(false), cap(false)], None).is_err());
     }
 
+    // REQ: CAP-3
     #[test]
     fn a_call_id_runs_once_and_a_retry_returns_the_same_call() {
         let b = Book::new(vec![cap(false)], None).unwrap();
@@ -738,6 +740,7 @@ mod tests {
         assert_eq!(b.submit("m1", "run-tests", args("x", "a"), "id1").unwrap().1, Next::Nothing, "a finished call is not run again");
     }
 
+    // REQ: CAP-4
     #[test]
     fn approval_gates_the_run_and_unanswered_calls_expire() {
         let b = Book::new(vec![cap(true)], None).unwrap();
@@ -757,6 +760,7 @@ mod tests {
         assert!(b.decide("c3", true).is_err());
     }
 
+    // REQ: CAP-8
     #[test]
     fn a_restart_abandons_running_calls_and_never_reruns_them() {
         let dir = std::env::temp_dir().join(format!("playbox-caps-{}", std::process::id()));
@@ -776,6 +780,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    // REQ: CAP-2
     #[test]
     fn invisible_and_bidi_characters_are_refused_and_escaped_on_display() {
         let c = cap(false);
@@ -789,6 +794,7 @@ mod tests {
         assert_eq!(display_safe("Grüße 世界"), "Grüße 世界");
     }
 
+    // REQ: CAP-7
     #[test]
     fn a_result_is_signed_by_the_host_and_cannot_be_altered_or_moved() {
         use ed25519_dalek::SigningKey;

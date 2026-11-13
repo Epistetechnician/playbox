@@ -46,6 +46,7 @@ fn greet(approval: bool) -> Capability {
     }
 }
 
+// REQ: CAP-6
 #[tokio::test]
 async fn a_call_runs_in_the_sandbox_and_its_result_hash_is_in_the_audit_log() {
     let (_h, c, log) = room("basic", vec![greet(false)]).await;
@@ -63,6 +64,7 @@ async fn a_call_runs_in_the_sandbox_and_its_result_hash_is_in_the_audit_log() {
     assert!(text.contains("capability_call") && text.contains("capability_result"));
 }
 
+// REQ: CAP-3
 #[tokio::test]
 async fn a_repeated_call_id_runs_once() {
     let marker = tmp("once").join("count");
@@ -87,6 +89,7 @@ async fn a_repeated_call_id_runs_once() {
     assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 1, "the command must have run exactly once");
 }
 
+// REQ: CAP-1, CAP-2
 #[tokio::test]
 async fn bounds_grants_and_id_reuse_are_enforced() {
     let (_h, c, _) = room("bounds", vec![greet(false)]).await;
@@ -101,6 +104,7 @@ async fn bounds_grants_and_id_reuse_are_enforced() {
     assert!(refused(c.poll_capability("nobody-has-this").await.unwrap_err()).contains("no such call"));
 }
 
+// REQ: CAP-1, GRANT-2
 #[tokio::test]
 async fn a_member_can_narrow_their_grant_so_a_capability_is_no_longer_allowed() {
     let (_h, c, _) = room("narrow", vec![greet(false)]).await;
@@ -109,6 +113,7 @@ async fn a_member_can_narrow_their_grant_so_a_capability_is_no_longer_allowed() 
     assert!(e.contains("not authorized"), "{e}");
 }
 
+// REQ: CAP-4
 #[tokio::test]
 async fn a_call_that_needs_approval_waits_for_the_owner() {
     let (h, c, log) = room("approval", vec![greet(true)]).await;
@@ -130,6 +135,7 @@ async fn a_call_that_needs_approval_waits_for_the_owner() {
     assert!(h.decide_call("a2", true).is_err(), "a decided call cannot be decided again");
 }
 
+// REQ: CAP-5
 #[tokio::test]
 async fn a_member_revoked_while_waiting_for_approval_gets_no_last_run() {
     let dir = tmp("revoked-waiting");
@@ -157,6 +163,7 @@ async fn a_member_revoked_while_waiting_for_approval_gets_no_last_run() {
     assert!(text.contains("capability_refused"), "the refusal is in the audit log");
 }
 
+// REQ: CAP-5
 #[tokio::test]
 async fn a_member_revoked_while_a_call_runs_stops_it() {
     let dir = tmp("revoked-running");

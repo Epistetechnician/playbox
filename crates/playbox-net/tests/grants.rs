@@ -76,6 +76,7 @@ async fn invite_from_another_room_is_forged() {
     assert!(msg(err).contains("not valid for this room"));
 }
 
+// REQ: GRANT-1
 #[tokio::test]
 async fn stolen_grant_is_useless_to_another_key() {
     let (host, link) = room("steal", |_| {}).await;
@@ -92,6 +93,7 @@ async fn stolen_grant_is_useless_to_another_key() {
     assert!(msg(err).contains("not authorized"));
 }
 
+// REQ: GRANT-2
 #[tokio::test]
 async fn attenuated_grant_cannot_do_more() {
     let (host, link) = room("atten", |_| {}).await;
@@ -190,6 +192,7 @@ async fn expired_grant_is_refused() {
     assert!(msg(err).contains("not authorized"));
 }
 
+// REQ: GRANT-3
 #[tokio::test]
 async fn revoked_member_loses_access_and_cannot_rejoin() {
     let (host, link) = room("revoke", |_| {}).await;
@@ -219,6 +222,7 @@ async fn revoked_member_loses_access_and_cannot_rejoin() {
     assert_eq!(other.echo("fine").await.unwrap(), "fine");
 }
 
+// REQ: GRANT-4
 #[tokio::test]
 async fn invite_cannot_be_used_as_a_grant() {
     let (host, link) = room("invite-as-grant", |_| {}).await;
