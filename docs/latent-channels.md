@@ -647,7 +647,9 @@ Use. `playbox up --memory-url http://127.0.0.1:8888/v1/default [--memory-bank NA
 
 Tested: ten unit tests and four room tests against an in-process index (author stamping, retry, key replacement, revocation, review, a lying index, restart with a damaged ledger, limits, the HTTP client against a throwaway server, and a room without memory). The host mutation test now sends `remember` and `recall` too. One test (`a_real_hindsight_server_serves_the_room`, `--ignored`, needs `HINDSIGHT_URL`) runs the same room against a real server; it passed on 2026-11-12 against the unmodified server with local `phi4` (30 s): two members posted contradictory deployment claims, both were recalled with their authors, and after `revoke_member` the server logged one `delete_document`, kept one fact (the other member's) and recall returned only that member's entry.
 
-Not done: consolidation isolation is still unproven (this design avoids depending on it); recall quality and cost at scale; the bank is not deleted when a room ends; a replica host does not share a ledger with its primary.
+Consolidation, rerun with a stronger model (`gpt-oss:20b`, 2026-11-12, `steer/results/hindsight_observations_gptoss.json`). In `combined` mode every observation kept one author's tags (6 of 6, none mixed). In `per_tag` mode none carried both authors (0 of 10), but the observations sit under single-tag scopes: a `status:accepted` observation would blend every accepted author's claims, and an `author:` filter would not return it. The test had only one accepted author, so it could not show that blending; the `per_tag` run also did not finish within 15 minutes on this model. Result: the one-author-per-observation property held, the cross-author case is still untested, and the bridge's choice not to recall observations stands.
+
+Not done: consolidation isolation with two accepted authors is unproven (this design avoids depending on it); recall quality and cost at scale; the bank is not deleted when a room ends; a replica host does not share a ledger with its primary.
 
 ## 7. Not covered
 
