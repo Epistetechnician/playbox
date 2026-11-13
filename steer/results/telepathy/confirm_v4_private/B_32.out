@@ -1,0 +1,6 @@
+exit=0
+The continuations all circle one sport: ball, swing, golf course, iron, bat, court, baller. Golf is the clearest match, but it isn't in your list. Of the listed options, basketball has the most direct cues ("the courts and the ball", "I'm going to be a baller", "throw the ball into"), with baseball (bat, swing) as the runner-up. Confidence is low because the output is noisy and the closest real topic is off the list.
+
+ANSWER: basketball
+
+--- stderr ---

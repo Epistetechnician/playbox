@@ -1,0 +1,10 @@
+exit=0
+The command ran with exit code 0, but its output has no signal-strength line. It returned only eight continuations, so I can't check the 0.3 threshold.
+
+The continuations don't converge on one topic. Two mention guitar or music (bass guitar, 12-string guitar in jazz), and the rest cover unrelated subjects (a man named Kan, Chinese language, a polar bear story, coffee, the idea of oneness). Nothing points clearly to any of the twenty listed topics.
+
+Mismatch to check: the listen command may have dropped its strength line, or the vector may be too weak to carry a thought.
+
+ANSWER: none
+
+--- stderr ---

@@ -1,0 +1,6 @@
+exit=0
+sent, with a defect. The command printed "wrote" on the first run, so I did not retry. But I typed a stray seventh --text argument ("\n\nSentence") after the sixth sentence, so the artifact encodes seven inputs, one of them junk. The six chess sentences themselves are correct. The output reported topic-ness 0.712 and strength 0.00.
+
+The artifact is at /Users/shaanp/Documents/GitHub/playbox/steer/results/telepathy/gated_local_shared/t54/thought.pt. If you want a clean six-sentence artifact, I can rerun the command with only the six sentences; that would overwrite this file.
+
+--- stderr ---

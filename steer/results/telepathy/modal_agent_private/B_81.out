@@ -1,0 +1,6 @@
+exit=0
+The continuations are garbled (smollm2 is small), but the lexical signal is unambiguous: "exhaust," "engine," "fuel and air," "cars," "fuel system, engine," "Racing cars and exhausts," "the engine of a car has to oil it with fuel," "3-speeders." Every one of the eight continuations is about engines, fuel, exhaust, and racing cars.
+
+ANSWER: cars
+
+--- stderr ---

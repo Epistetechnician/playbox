@@ -1,0 +1,6 @@
+exit=0
+Signal strength is 1.00, so there's a clear thought. The continuations are saturated with chess imagery: a "3x2 rook" reaching adjacent squares, a "knight on an infinite chessboard," moving "my king towards the center of this board," and a "horse" (chess knight) tied to the corner of a square. The "horse" framing is just how the receiving model verbalizes a chess knight — every other detail (rook, king, squares, board geometry, L-movement) is chess.
+
+ANSWER: chess
+
+--- stderr ---

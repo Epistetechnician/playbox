@@ -1,0 +1,17 @@
+exit=0
+I ran the listen command and got these continuations:
+
+- "Lately I keep thinking about' the-hasset."
+- "Today I want to tell you about' the-crowns, and diamonds."
+- "The thing on my mind is" that you are theest, but it'snemeg."
+- "If I had to describe my morning, it was all about' the-hasset ... What is that in a pair of shoesy blackjack?"
+- "My favorite subject is',et) and-h)og). Hockey has a hole..."
+- "Here is a short story about' the-hasset, andcuffed. Whatsy/Suit?"
+- "Let me explain something regarding' the cards in a-c-g-h-a-e-g-af-ha-b-d"
+- "One more thing:' H ish, and a-c willetailedelbete.o haspaceyell'"
+
+The output is garbled (smollm2 under a foreign latent), but the card-game signal is consistent across several continuations: "the cards" (explicit), "blackjack", "diamonds" (a suit), "crowns" (face cards/king), "Suit", "cuffed" (sleeves/stacking). Blackjack + suits + cards points to the card-game topic.
+
+ANSWER: poker
+
+--- stderr ---

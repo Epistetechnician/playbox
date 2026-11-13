@@ -1,0 +1,8 @@
+exit=0
+Signal strength is 1.00, so the thought was clearly sent. The continuations keep returning to music and instruments: bass guitar in a band, piano, violin, guitar, and "my favorite subject is music." Several others are unrelated (coffee, a C array, the 1960s), so the signal is noisy.
+
+Of the listed topics, classical-music fits best because piano and violin come up most, though the bass-and-band lines point toward jazz. Low confidence between those two.
+
+ANSWER: classical-music
+
+--- stderr ---

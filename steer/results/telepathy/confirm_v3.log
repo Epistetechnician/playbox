@@ -1,0 +1,3 @@
+{"i": 0, "src": "smollm2", "dst": "qwen3", "truth": "soccer", "guess": "none", "ok": false, "attempts": 1, "secs": 132}
+{"i": 1, "src": "smollm2", "dst": "qwen3", "truth": "classical-music", "guess": "none", "ok": false, "attempts": 1, "secs": 29}
+{"i": 2, "src": "smollm2", "dst": "qwen3", "truth": "cryptocurrency", "guess": "none", "ok": false, "attempts": 1, "secs": 25}

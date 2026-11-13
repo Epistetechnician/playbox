@@ -1,0 +1,6 @@
+exit=0
+The output is garbled, but the recurring tokens are: "the ball" (many times), "dunk/dunked" (3x), "tackle," "kicker," plus noise ("puck," "curl," "shuttle"). The most repeated and list-relevant signal is dunking with a ball — "dunked-dunks," "Dunked and-curled," "Kick-crowns and dunks" — which is basketball vocabulary; soccer has no dunks, and the soccer-specific words (tackle, kicker) appear only once each.
+
+ANSWER: basketball
+
+--- stderr ---

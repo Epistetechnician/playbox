@@ -1,0 +1,6 @@
+exit=0
+The continuations are generic and don't point to any of the 20 topics. The only candidate is "The Book of the Dead" in one line, which is an Egyptian religious text, but a single ambiguous phrase isn't enough to call it religion. The rest (the number 10, a book with pictures, coffee, English class, a dog) carry no topic signal.
+
+ANSWER: none
+
+--- stderr ---

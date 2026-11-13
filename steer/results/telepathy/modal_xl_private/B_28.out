@@ -1,0 +1,6 @@
+exit=0
+The continuations are noisy but cluster around sports, with explicit hits: "the 2019 season of the National Basketball Association (NBA)" and "My favorite subject is basketball." The other mentions (NFL, horse racing, baseball, sprinting) are single scattered tokens; basketball is the only one named directly and repeated.
+
+ANSWER: basketball
+
+--- stderr ---

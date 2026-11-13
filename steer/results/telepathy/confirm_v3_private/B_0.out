@@ -1,0 +1,6 @@
+exit=0
+The command ran and returned continuations, but no signal-strength line, so I can't confirm the strength is at least 0.3. The continuations don't point to one topic from the list: football field, running, phone use while driving, coffee, English, sushi, GPS, and drones are spread across several unrelated subjects. The only loose candidates are "GPS/drone" and "driving," and neither clearly maps to a topic on the list.
+
+ANSWER: none
+
+--- stderr ---

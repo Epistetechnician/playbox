@@ -1,0 +1,6 @@
+exit=0
+The continuations are mostly garbled fragments, but one line stands out as a clear topic reference: "lunch. I guess it's time for a little game of poker". None of the other candidates (ocean, space, chess, etc.) appear in any of the continuations; "poker" is the only one of the twenty topics named.
+
+ANSWER: poker
+
+--- stderr ---

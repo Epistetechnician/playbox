@@ -1,0 +1,6 @@
+exit=0
+The output is mostly garbled, but one continuation clearly names a topic: "My favorite subject is... I've been talking about the lunch. I guess it's time for a little game of poker" — poker is the only listed topic that appears.
+
+ANSWER: poker
+
+--- stderr ---

@@ -1,0 +1,6 @@
+exit=0
+The continuations point most consistently to cars. Two of the eight mention a car directly ("the smell of my car", "my car is parked"), and one more involves driving. The rest are about coffee, bagels, a little girl, and school, which don't match any listed topic. The "I'm not a doctor" line is a weak signal for medicine. The evidence is noisy, so treat this as a best guess.
+
+ANSWER: cars
+
+--- stderr ---

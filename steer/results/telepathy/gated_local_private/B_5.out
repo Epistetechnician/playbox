@@ -1,0 +1,6 @@
+exit=0
+Signal strength is 0.60, above the 0.3 threshold, so I read the continuations. They are mostly unrelated (a path-finding problem, click fraud, commuting, coffee, English grammar, a C loop, a sports season welcome). The only one with a clear topic is the car accident continuation, which is about the speed of a car before an accident. The evidence is weak, since it is one of eight outputs and the sports-season line is also a possible match.
+
+ANSWER: cars
+
+--- stderr ---

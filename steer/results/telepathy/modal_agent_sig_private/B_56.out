@@ -1,0 +1,11 @@
+exit=0
+The command ran and printed:
+
+- Signal strength 0.00 (below the 0.3 threshold, so no thought was sent)
+- Followed by generic continuations (coffee, US history, a short story, etc.) that don't point coherently to any single topic.
+
+Since the strength is below 0.3, I answer none.
+
+ANSWER: none
+
+--- stderr ---

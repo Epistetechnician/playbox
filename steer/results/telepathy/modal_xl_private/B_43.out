@@ -1,0 +1,6 @@
+exit=0
+The continuations repeatedly center on the body and clinical concepts: "my heart," "veins can't get out of the heart," "a disease that can be used in cancer patients," "a drug resistant bacteria," "your system to the patient," "What is a heart? and what does it do in my body, and cancer," and "the drug used in cancer." The garbled token prefixes (Myo-, theo-) are the small model's noise, but the recurring content words — disease, cancer, patient, drug, heart, veins, body — all point to one domain.
+
+ANSWER: medicine
+
+--- stderr ---

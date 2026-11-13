@@ -1,0 +1,65 @@
+[
+ {
+  "i": 0,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "@15",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 49
+ },
+ {
+  "i": 1,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "poker",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 2,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "@9",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 3,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "medicine",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 4,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "jazz",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 5,
+  "src": "qwen3",
+  "dst": "smollm2",
+  "truth": "@5",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ },
+ {
+  "i": 6,
+  "src": "smollm2",
+  "dst": "qwen3",
+  "truth": "@17",
+  "error": "A produced no vector",
+  "ok": false,
+  "secs": 32
+ }
+]

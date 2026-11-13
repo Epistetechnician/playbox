@@ -1,0 +1,17 @@
+exit=0
+Ran the listen command (twice; output is identical each run, so this is the full deterministic set). Reading the continuations:
+
+- "my feet and ankles, and hooves"
+- "my neck, and your tail. You are the world's fastest runner!"
+- "The thing on my mind is a bit like a snake, and the tail of a deer. It's not an eagle-like talon"
+- "I'm a-cow and-hare that shed its tail like an eel"
+- "your feet, and the ankles of your toes"
+- "the tail, and hoo-horns that are your feet. You can't climb these toons"
+- "my head and tail, and hoo-feet"
+- "tiger-like claws of the dace are a threat to your ankles"
+
+Every single continuation is about a creature: hooves, neck, tail, horns, claws, "world's fastest runner," described as snake-like with a long tail and tiger-like claws, "not an eagle-like talon." The thought is clearly about an animal — a long-necked, tailed, clawed fast runner. Among the twenty candidate topics, the only animal is dinosaurs, and the imagery (long neck, big tail, claws, fast runner) fits a dinosaur concept better than anything else on the list (ocean fails on the hoofed/land animals; space fails on deer, cow, hare, tiger).
+
+ANSWER: dinosaurs
+
+--- stderr ---
