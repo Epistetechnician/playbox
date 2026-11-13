@@ -14,7 +14,7 @@
 
 use crate::attest::AttestError;
 use aes::Aes128;
-use cfb_mode::cipher::{AsyncStreamCipher, KeyIvInit};
+use cfb_mode::cipher::KeyIvInit;
 use hmac::{Hmac, Mac};
 use p256::{ecdh::EphemeralSecret, elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use rand_core::{OsRng, RngCore};
