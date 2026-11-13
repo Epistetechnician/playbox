@@ -1,0 +1,126 @@
+{
+ "sender": "qwen8b",
+ "receiver": "dsk",
+ "layers": {
+  "0.2": {
+   "layer": 6,
+   "heldout_cosine": 0.9321,
+   "lambda": 0.3,
+   "norm_b": 305.4894104003906,
+   "grid": {
+    "0.15": {
+     "mapped": 0.0,
+     "direct": 0.0
+    },
+    "0.3": {
+     "mapped": 0.0,
+     "direct": 0.0
+    },
+    "0.45": {
+     "mapped": 0.0,
+     "direct": 0.0
+    },
+    "0.6": {
+     "mapped": 0.0,
+     "direct": 0.0
+    }
+   }
+  },
+  "0.3": {
+   "layer": 9,
+   "heldout_cosine": 0.9346,
+   "lambda": 0.3,
+   "norm_b": 317.6218566894531,
+   "grid": {
+    "0.15": {
+     "mapped": 0.0125,
+     "direct": 0.0
+    },
+    "0.3": {
+     "mapped": 0.075,
+     "direct": 0.0375
+    },
+    "0.45": {
+     "mapped": 0.025,
+     "direct": 0.025
+    },
+    "0.6": {
+     "mapped": 0.0125,
+     "direct": 0.0
+    }
+   }
+  },
+  "0.45": {
+   "layer": 13,
+   "heldout_cosine": 0.9323,
+   "lambda": 0.3,
+   "norm_b": 334.5008850097656,
+   "grid": {
+    "0.15": {
+     "mapped": 0.0375,
+     "direct": 0.0125
+    },
+    "0.3": {
+     "mapped": 0.125,
+     "direct": 0.15
+    },
+    "0.45": {
+     "mapped": 0.1875,
+     "direct": 0.1125
+    },
+    "0.6": {
+     "mapped": 0.15,
+     "direct": 0.1375
+    }
+   }
+  },
+  "0.6": {
+   "layer": 18,
+   "heldout_cosine": 0.9208,
+   "lambda": 0.3,
+   "norm_b": 396.2899169921875,
+   "grid": {
+    "0.15": {
+     "mapped": 0.0,
+     "direct": 0.0
+    },
+    "0.3": {
+     "mapped": 0.275,
+     "direct": 0.1125
+    },
+    "0.45": {
+     "mapped": 0.375,
+     "direct": 0.35
+    },
+    "0.6": {
+     "mapped": 0.6375,
+     "direct": 0.5875
+    }
+   }
+  },
+  "0.75": {
+   "layer": 22,
+   "heldout_cosine": 0.9024,
+   "lambda": 0.3,
+   "norm_b": 508.9209899902344,
+   "grid": {
+    "0.15": {
+     "mapped": 0.05,
+     "direct": 0.0125
+    },
+    "0.3": {
+     "mapped": 0.325,
+     "direct": 0.3375
+    },
+    "0.45": {
+     "mapped": 0.55,
+     "direct": 0.6125
+    },
+    "0.6": {
+     "mapped": 0.6375,
+     "direct": 0.6375
+    }
+   }
+  }
+ }
+}

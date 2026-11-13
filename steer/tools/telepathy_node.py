@@ -36,6 +36,10 @@ PAIRS = ((_a, _b), (_b, _a))
 COEF, FRAC, GEN = 0.75, 0.45, 24
 # TELEPATHY_COEFS="dsk=0.2": steering strength per RECEIVER (default 0.75). Models differ in how hard they can be pushed: DeepSeek-LLM-7B
 # (mean activation norm about 200, against 27 for Qwen3-8B) turns to noise at 0.75 (tools/telepathy_coef_sweep.py picks the value).
+# TELEPATHY_RECV_FRACS="dsk=0.9": the layer (as a fraction of depth) a RECEIVER is steered at, default 0.45. A map is fitted per receiver layer
+# (file suffix _r<frac>). The sender's layer stays 0.45, so senders, probes and the gate are unchanged. DeepSeek-LLM-7B barely responds at 0.45
+# (its own concept direction gets 0 to 15% there) and responds fully at 0.9 (tools/telepathy_layer_sweep.py).
+RECV_FRACS = {k: float(v) for k, v in (e.split("=") for e in os.environ.get("TELEPATHY_RECV_FRACS", "").split(",") if e)}
 COEFS = {k: float(v) for k, v in (e.split("=") for e in os.environ.get("TELEPATHY_COEFS", "").split(",") if e)}
 FIT = os.environ.get("TELEPATHY_FIT", "agent")
 GATE = tuple(float(x) for x in os.environ.get("TELEPATHY_GATE", "0.9,1.1").split(","))
@@ -55,9 +59,9 @@ for name, repo in REPOS.items():
     models[name] = T.load(snapshot_download(repo, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "merges*", "vocab*"] + (["*.bin"] if os.environ.get("TELEPATHY_ALLOW_BIN") else [])))
 MAPS.mkdir(parents=True, exist_ok=True)
 for src, dst in PAIRS:
-    f = MAPS / f"{src}_to_{dst}_{FIT}.pt"
+    f = MAPS / f"{src}_to_{dst}_{FIT}{f'_r{RECV_FRACS[dst]}' if dst in RECV_FRACS else ''}.pt"
     (ma, ta), (mb, tb) = models[src], models[dst]
-    la, lb = T.layer_of(ma, FRAC), T.layer_of(mb, FRAC)
+    la, lb = T.layer_of(ma, FRAC), T.layer_of(mb, RECV_FRACS.get(dst, FRAC))
     if not f.exists():
         r, info = T.fit_map(ma, ta, la, mb, tb, lb)
         torch.save({"w": r.w, "neutral_a": T.sentence_states(ma, ta, NEUTRAL, la).mean(0),
@@ -152,7 +156,7 @@ def listen(r: Listen):
         raise HTTPException(400, "vector has the wrong size for this receiver")
     strength = struct.unpack("<f", raw[n:])[0] if len(raw) == n + 4 else None
     v = torch.frombuffer(bytearray(raw[:n]), dtype=torch.float32).clone()
-    lb = T.layer_of(mb, FRAC)
+    lb = T.layer_of(mb, RECV_FRACS.get(r.dst, FRAC))
     with lock:
         lines = [f"- {p}{T.generate(mb, tb, lb, v, p, GEN)!r}" for p in PROMPTS]
     head = [] if strength is None else [f"signal strength {strength:.2f} (0 = no thought was sent, 1 = a clear thought)"]
