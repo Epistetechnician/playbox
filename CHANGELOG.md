@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Security
 - Releases are signed. `SHA256SUMS` (which lists every archive, `release.json` and the SBOM) carries an ed25519 signature; `install.sh` and `playbox update` refuse a release without a valid one. The trusted keys are `release.pub` in the repository, built into the binary. Releases before 0.3.0 are unsigned: `PLAYBOX_ALLOW_UNSIGNED=1` installs one on purpose.
 - Releases carry a CycloneDX SBOM (`playbox.cdx.json`) and a Sigstore build-provenance attestation (`gh attestation verify FILE -R Epistetechnician/playbox`).
