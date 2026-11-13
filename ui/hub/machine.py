@@ -43,8 +43,8 @@ class Machine:
         return {"report": r, "running": self.running, "error": self.error,
                 "age": int(time.time() - r["at"]) if r and r.get("at") else None, "stale": bool(r and time.time() - r.get("at", 0) > STALE)}
 
-    def start(self):
-        """Begin a run in the background. False when one is running or one just finished."""
+    def start(self, fix=False):
+        """Begin a run in the background. False when one is running or one just finished. `fix` also repairs file permissions, nothing else."""
         with self.lock:
             if self.running or time.time() - self.started < MIN_GAP:
                 return False
@@ -52,12 +52,12 @@ class Machine:
                 self.error = "the `playbox` command isn't on this hub's PATH"
                 return False
             self.running, self.started, self.error = True, time.time(), ""
-        threading.Thread(target=self._run, daemon=True).start()
+        threading.Thread(target=self._run, args=(fix,), daemon=True).start()
         return True
 
-    def _run(self):
+    def _run(self, fix=False):
         try:
-            p = subprocess.run([self.cli(), "secure", "--json", "--port", str(self.port)], capture_output=True, text=True, timeout=240, stdin=subprocess.DEVNULL)
+            p = subprocess.run([self.cli(), "secure", "--json", "--port", str(self.port)] + (["--fix"] if fix else []), capture_output=True, text=True, timeout=240, stdin=subprocess.DEVNULL)
             line = next((l for l in reversed(p.stdout.splitlines()) if l.startswith("{")), "")
             r = json.loads(line)
             if isinstance(r, dict) and isinstance(r.get("checks"), list):

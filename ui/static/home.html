@@ -840,7 +840,8 @@ async function connectAgent(id, btn) {
 
 function machineCard(y) {
   const m = y.machine || {}, r = m.report;
-  const btn = `<button class="btn sm" data-act="sysmachine" ${m.running ? "disabled" : ""}>${m.running ? "Checking…" : "Re-check machine"}</button>`;
+  const fixable = r && r.checks.some(c => c.fixable);
+  const btn = `${fixable ? `<button class="btn sm" data-act="sysfix" ${m.running ? "disabled" : ""} title="Repairs file and folder permissions only. Asks for your passkey.">Fix permissions</button> ` : ""}<button class="btn sm" data-act="sysmachine" ${m.running ? "disabled" : ""}>${m.running ? "Checking…" : "Re-check machine"}</button>`;
   const card = body => `<div class="card" style="margin:14px 0"><h2>This machine</h2>${body}</div>`;
   if (!r) return card(`<p class="mut" style="margin:0 0 12px">${m.running ? "Checking your keys, agents and hub, and fuzzing a throwaway copy of the hub…" : esc(m.error) || "Not checked yet. It runs a minute after the hub starts, or press the button."}</p>${btn}`);
   const f = r.fuzz, fbad = f && f.violations.length ? 1 : 0;
@@ -1233,6 +1234,7 @@ document.addEventListener("click", async e => {
   else if (act === "copyagent") { try { const h = JSON.parse(sessionStorage.getItem("pb.agentlink")); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${h.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }
   else if (act === "sysnode") { S.sysStage = S.sysStage === t.dataset.id ? null : t.dataset.id; paintView(true); }
+  else if (act === "sysfix") { t.disabled = true; try { S.sys = await api("POST", "/api/system/machine/fix"); S.sysAt = Date.now(); toast("Repairing permissions"); for (const ms of [3000, 7000, 15000]) setTimeout(() => S.view === "system" && loadSystem(), ms); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "sysmachine") { t.disabled = true; t.textContent = "Checking…"; try { S.sys = await api("POST", "/api/system/machine"); S.sysAt = Date.now(); for (const ms of [3000, 7000, 15000, 30000]) setTimeout(() => S.view === "system" && loadSystem(), ms); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }

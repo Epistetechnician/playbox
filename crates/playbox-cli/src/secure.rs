@@ -199,6 +199,16 @@ fn machine_checks(out: &mut Vec<Check>) {
             }
         }
     }
+    match platform::detect(&home) {
+        Ok(Some(p)) => out.push(Check::new("machine", "attestation", "Hardware attestation", Level::Ok, format!("this machine can prove its own state with {}", p.kind()))),
+        Ok(None) => out.push(Check::new("machine", "attestation", "Hardware attestation", Level::Warn, "no hardware evidence available: a room can only see that your keys are self-signed").hint("see docs/attestation.md for the Secure Enclave and TPM setups")),
+        Err(e) => out.push(Check::new("machine", "attestation", "Hardware attestation", Level::Warn, format!("couldn't read it: {e}"))),
+    }
+    if std::env::var("PLAYBOX_APPROVERS").is_ok_and(|v| !v.is_empty()) {
+        out.push(Check::new("machine", "approvers", "Approval enforcement", Level::Ok, "risky actions need your approver key (PLAYBOX_APPROVERS is set)"));
+    } else {
+        out.push(Check::new("machine", "approvers", "Approval enforcement", Level::Info, "advisory only: set PLAYBOX_APPROVERS to your `playbox approver-key` to make approvals required"));
+    }
     if cfg!(target_os = "macos") {
         match out_of("fdesetup", &["status"]) {
             Some(t) if t.contains("On") => out.push(Check::new("machine", "disk", "Disk encryption", Level::Ok, "FileVault is on: your keys are encrypted at rest")),
@@ -763,6 +773,26 @@ fn describe(r: &Req) -> String {
     format!("{} {}{}", r.method, r.path.chars().take(80).collect::<String>(), if b.is_empty() { String::new() } else { format!("  body: {b}") })
 }
 
+/// Kills the throwaway hub when dropped, so a panic or an early return can't leave it running.
+struct KillOnDrop(std::process::Child);
+impl std::ops::Deref for KillOnDrop {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for KillOnDrop {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
     let t0 = Instant::now();
     let script = hub::find_hub(opts.hub_dir.as_deref())?;
@@ -782,7 +812,8 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map(KillOnDrop)?;
     let (sout, serr) = (Arc::new(Mutex::new(String::new())), Arc::new(Mutex::new(String::new())));
     for (src, sink) in [(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>), sout.clone()), (child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>), serr.clone())] {
         if let Some(s) = src {
@@ -796,7 +827,7 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
             });
         }
     }
-    let finish = |child: &mut std::process::Child| {
+    let finish = |child: &mut KillOnDrop| {
         let _ = child.kill();
         let _ = child.wait();
         let _ = std::fs::remove_dir_all(&tmp);

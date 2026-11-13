@@ -578,6 +578,12 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
             if m == "GET" and p == "/api/system":
                 return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/machine/fix":
+                if not self.need_fresh(rec):      # changes permissions on this machine's files
+                    return
+                machine.start(fix=True)
+                hub.sec.add("auth", "Permissions on this machine's key files were repaired from the System view", "info")
+                return self.j(200, self.system(rec))
             if m == "POST" and p == "/api/system/machine":
                 machine.start()
                 return self.j(200, self.system(rec))

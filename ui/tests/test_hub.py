@@ -344,6 +344,7 @@ def test_http():
             time.sleep(0.25)
         mr = j["machine"]["report"] or {}
         check("system: the CLI's report is shown with its age", mr.get("playbox") == "9.9.9" and mr["checks"][0]["label"] == "Keys" and j["machine"]["age"] is not None and not j["machine"]["stale"], str(j["machine"]))
+        check("system: fixing permissions needs a session", Client(port).req("POST", "/api/system/machine/fix", {})[0] == 401)
         st, j2, _ = a.req("POST", "/api/system/machine", {})
         check("system: a second re-check right away is ignored, not queued", st == 200 and j2["machine"]["running"] is False)
 
