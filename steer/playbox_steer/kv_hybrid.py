@@ -212,15 +212,21 @@ def stream_chat(base: str, model: str, messages, max_tokens: int = 40, timeout: 
             "prompt_tokens": usage.get("prompt_tokens", 0), "cached_tokens": cached}
 
 
-def run_arm(base, model, arm, chunks, bm, sessions, n_turns, **kw) -> dict:
-    """All sessions run at once (one thread each); a session's turns are sequential."""
+def run_arm(base, model, arm, chunks, bm, sessions, n_turns, builder=None, **kw) -> dict:
+    """All sessions run at once (one thread each); a session's turns are sequential. `builder(arm, chunks, bm, session, turn, **kw)`
+    replaces build_messages for other corpora; a turn with a "letter" is multiple choice and is right when the reply starts with it."""
     rows, lock = [], threading.Lock()
 
     def one(s):
-        for t in range(n_turns):
-            r = stream_chat(base, model, build_messages(arm, chunks, bm, s, t, **kw))
-            answers = s["turns"][t].get("answers") or [s["turns"][t]["answer"]]
-            r.update(turn=t, ok=all(a.lower() in r["text"].lower() for a in answers), project=s["project"])
+        for t in range(min(n_turns, len(s["turns"]))):
+            r = stream_chat(base, model, (builder or build_messages)(arm, chunks, bm, s, t, **kw))
+            turn = s["turns"][t]
+            if "letter" in turn:
+                m = re.match(r"\s*\(?([A-D])\b", r["text"].upper())
+                ok = bool(m) and m.group(1) == turn["letter"]
+            else:
+                ok = all(a.lower() in r["text"].lower() for a in (turn.get("answers") or [turn["answer"]]))
+            r.update(turn=t, ok=ok, project=s["project"])
             with lock:
                 rows.append(r)
 
