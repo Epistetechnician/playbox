@@ -47,6 +47,34 @@ pub const METHOD_ACTIVATE: &str = "playbox.ActivateCredential";
 /// JSON-RPC error code for a missing, invalid, expired or revoked grant (A2A defines none for this).
 pub const ERR_UNAUTHORIZED: i32 = -32040;
 pub const BINDING: &str = "PLAYBOX-IROH";
+
+/// The wire protocol this build speaks. Bump it when a change makes an older peer misread a message (never for a new optional
+/// field, which old peers ignore). Releases carry it in `release.json`, so `playbox update` can say whether a room still works.
+pub const PROTOCOL: u32 = 1;
+/// The oldest wire protocol this build still talks to.
+pub const MIN_PROTOCOL: u32 = 1;
+
+/// Whether this build can talk to a peer that reports `peer` (absent from builds that predate the check, which are compatible
+/// with protocol 1). The error says which side has to update.
+///
+/// # Errors
+///
+/// Returns an error when the protocols are not compatible.
+pub fn check_protocol(peer: Option<u64>, peer_version: &str) -> Result<(), String> {
+    let Some(p) = peer else { return Ok(()) };
+    if p > u64::from(PROTOCOL) {
+        Err(format!(
+            "the room host runs playbox {peer_version} (protocol {p}); this is {} (protocol {PROTOCOL}). Update: playbox update",
+            env!("CARGO_PKG_VERSION")
+        ))
+    } else if p < u64::from(MIN_PROTOCOL) {
+        Err(format!(
+            "the room host runs playbox {peer_version} (protocol {p}), older than this build supports ({MIN_PROTOCOL}). Ask the host to update"
+        ))
+    } else {
+        Ok(())
+    }
+}
 pub const MEDIA_BUNDLE: &str = "application/x-git-bundle";
 pub const MEDIA_PATCH: &str = "text/x-diff";
 
@@ -489,6 +517,16 @@ impl CardExt for AgentCard {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn protocol_check_names_the_side_that_must_update() {
+        assert!(super::check_protocol(None, "?").is_ok());
+        assert!(super::check_protocol(Some(1), "0.1.0").is_ok());
+        let newer = super::check_protocol(Some(99), "9.9.9").unwrap_err();
+        assert!(newer.contains("playbox update"), "{newer}");
+        let older = super::check_protocol(Some(0), "0.0.1").unwrap_err();
+        assert!(older.contains("Ask the host"), "{older}");
+    }
+
     use super::*;
 
     #[test]

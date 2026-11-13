@@ -43,6 +43,7 @@ cargo run -p playbox-cli -- up --local      # prints a link
 cargo run -p playbox-cli -- join '<link>' --local
 cd lean && lake build
 ```
+Installed from a release? `playbox update` upgrades it ([docs/releasing.md](docs/releasing.md), [CHANGELOG.md](CHANGELOG.md)).
 
 ## Stack
 iroh · A2A · git · libkrun · Biscuit · LangGraph · Lean 4

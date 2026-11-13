@@ -3539,7 +3539,9 @@ dependencies = [
  "playbox-net",
  "playbox-runner",
  "ratatui",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
 ]
 
