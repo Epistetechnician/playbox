@@ -172,6 +172,10 @@ pub enum Op {
     Feed {
         #[serde(default)]
         since: u64,
+        /// Wait up to this many seconds (the host caps it) for something new instead of answering an empty feed at once.
+        /// Hosts that do not know the field answer immediately, so the reader just polls.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        wait_secs: u64,
     },
     /// Read a web page through the host's browser, limited to the hosts the host allows. Answers with a task whose
     /// artifact is the page's text, its HTML, or a screenshot.
@@ -606,4 +610,9 @@ mod tests {
             ["echo", "say", "feed", "pull", "push", "run"]
         );
     }
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }

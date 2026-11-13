@@ -980,12 +980,13 @@ impl RoomHandler {
                     None => reply(json!({ "error": "no such call" }).to_string()),
                 }
             }
-            Some(Op::Feed { since }) => {
+            Some(Op::Feed { since, wait_secs }) => {
                 let me = from.to_string();
                 self.audit.chat.touch(&me);
                 let mut ids: Vec<String> = self.state.lock().expect("state lock").members.keys().map(std::string::ToString::to_string).collect();
                 ids.sort();
-                return reply(self.audit.chat.since(since, 200, &ids).to_json().to_string());
+                let wait = Duration::from_secs(wait_secs);
+                return reply(self.audit.chat.wait_since(&me, since, 200, &ids, wait).await.to_json().to_string());
             }
             // Handled in `route`, which has the grant it needs to authorize the specifics.
             Some(Op::Steer { .. } | Op::Handoff { .. }) => return reply("steering is handled by the router".into()),
@@ -1835,6 +1836,18 @@ impl Host {
     #[must_use]
     pub fn feed(&self, since: u64) -> chat::Feed {
         self.audit.chat.touch("host");
+        self.feed_ids_since(since)
+    }
+
+    /// [`Host::feed`], but when nothing is new wait up to `wait` seconds (capped) for something to arrive.
+    pub async fn feed_wait(&self, since: u64, wait: Duration) -> chat::Feed {
+        let mut ids: Vec<String> = self.members().iter().map(std::string::ToString::to_string).collect();
+        ids.sort();
+        ids.insert(0, "host".into());
+        self.audit.chat.wait_since("host", since, 200, &ids, wait).await
+    }
+
+    fn feed_ids_since(&self, since: u64) -> chat::Feed {
         let mut ids: Vec<String> = self
             .members()
             .iter()
@@ -2354,7 +2367,18 @@ impl Client {
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn feed(&self, since: u64) -> Result<chat::Feed> {
-        let v = self.reply_json(&Op::Feed { since }, "feed").await?;
+        let v = self.reply_json(&Op::Feed { since, wait_secs: 0 }, "feed").await?;
+        Ok(serde_json::from_value(v)?)
+    }
+
+    /// [`Client::feed`], but when nothing is new the host holds the request open for up to `wait_secs` (it caps this) and answers
+    /// the moment something arrives. A host that predates this answers at once, so callers should still pace their loop.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn feed_wait(&self, since: u64, wait_secs: u64) -> Result<chat::Feed> {
+        let v = self.reply_json(&Op::Feed { since, wait_secs }, "feed").await?;
         Ok(serde_json::from_value(v)?)
     }
 

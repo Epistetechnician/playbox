@@ -94,7 +94,12 @@ struct Inner {
 #[derive(Default)]
 pub struct Chat {
     inner: Mutex<Inner>,
+    /// Woken whenever something is added to the feed, so a long-poll reader returns at once instead of on its next poll.
+    notify: tokio::sync::Notify,
 }
+
+/// The longest a feed read may wait for something new. Below the connection's idle timeout, so a quiet room never looks like a dead peer.
+pub const MAX_FEED_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 
 #[must_use]
 pub fn now_ms() -> u64 {
@@ -331,6 +336,8 @@ impl Chat {
             }
             Self::persist(&mut g, &line);
         }
+        drop(g);
+        self.notify.notify_waiters();
         Ok(seq)
     }
 
@@ -342,6 +349,8 @@ impl Chat {
         }
         let text = summarize(event, details);
         Self::push(&mut g, "event", peer.unwrap_or(""), None, text);
+        drop(g);
+        self.notify.notify_waiters();
     }
 
     /// Mark a member as present (they polled).
@@ -351,6 +360,26 @@ impl Chat {
             .expect("chat lock")
             .seen
             .insert(who.to_string(), now_ms());
+    }
+
+    /// [`Chat::since`], but when nothing is new yet wait up to `wait` (at most [`MAX_FEED_WAIT`]) for something to arrive and return as
+    /// soon as it does. `who` is marked present while waiting, so a patient reader does not look gone. A zero `wait` is a plain read.
+    pub async fn wait_since(&self, who: &str, since: u64, limit: usize, members: &[String], wait: std::time::Duration) -> Feed {
+        let deadline = std::time::Instant::now() + wait.min(MAX_FEED_WAIT);
+        loop {
+            // Register for wake-ups before looking, so a message that lands in between is not missed.
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            self.touch(who);
+            let feed = self.since(since, limit, members);
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if !feed.items.is_empty() || left.is_zero() {
+                return feed;
+            }
+            // Wake now and then even without news, to keep `who` present across a long wait.
+            let _ = tokio::time::timeout(left.min(std::time::Duration::from_secs(4)), notified).await;
+        }
     }
 
     /// Everything after `since` (at most `limit`), plus who is here. `members` are the ids to list.
@@ -605,5 +634,53 @@ mod tests {
         // A recent id still deduplicates after compaction and reload.
         let who = format!("m{}", (n - 1) % 1000);
         assert_eq!(c.say_once(&who, None, &format!("message {}", n - 1), Some(&format!("r{}", n - 1))).unwrap(), last.seq);
+    }
+    #[tokio::test]
+    async fn a_waiting_read_returns_when_something_arrives() {
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+        let c = Arc::new(Chat::new());
+        let ids = vec!["host".to_string(), "m1".to_string()];
+        // Something already there: no waiting.
+        c.say("m1", None, "first").unwrap();
+        let t = Instant::now();
+        let f = c.wait_since("m2", 0, 50, &ids, Duration::from_secs(5)).await;
+        assert_eq!(f.items.len(), 1);
+        assert!(t.elapsed() < Duration::from_millis(500), "an available item must not wait");
+        // Nothing new: it waits for the next say and returns at once when it lands.
+        let c2 = Arc::clone(&c);
+        let ids2 = ids.clone();
+        let t = Instant::now();
+        let waiter = tokio::spawn(async move { c2.wait_since("m2", 1, 50, &ids2, Duration::from_secs(10)).await });
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        c.say("m1", None, "second").unwrap();
+        let f = waiter.await.unwrap();
+        assert_eq!(f.items.len(), 1);
+        assert_eq!(f.items[0].text, "second");
+        assert!(t.elapsed() >= Duration::from_millis(250) && t.elapsed() < Duration::from_secs(3), "returned on the message, not on the timeout: {:?}", t.elapsed());
+        // An event wakes a waiter too (a join, a push).
+        let c3 = Arc::clone(&c);
+        let waiter = tokio::spawn(async move { c3.wait_since("m2", 2, 50, &["host".to_string()], Duration::from_secs(10)).await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        c.event("join_ok", Some("m3"), &serde_json::json!({}));
+        assert_eq!(waiter.await.unwrap().items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_waiting_read_gives_up_empty_and_is_capped() {
+        use std::time::{Duration, Instant};
+        let c = Chat::new();
+        let ids = vec!["host".to_string()];
+        let t = Instant::now();
+        let f = c.wait_since("m1", 0, 50, &ids, Duration::from_millis(400)).await;
+        assert!(f.items.is_empty());
+        assert!(t.elapsed() >= Duration::from_millis(350) && t.elapsed() < Duration::from_secs(2));
+        // Zero is a plain read.
+        let t = Instant::now();
+        assert!(c.wait_since("m1", 0, 50, &ids, Duration::ZERO).await.items.is_empty());
+        assert!(t.elapsed() < Duration::from_millis(200));
+        // The reader counts as present while it waits.
+        assert!(c.since(0, 10, &["m1".to_string()]).members[0].present);
+        assert_eq!(MAX_FEED_WAIT, Duration::from_secs(20));
     }
 }

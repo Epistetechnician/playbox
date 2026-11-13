@@ -365,7 +365,7 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         ));
         seeds.push(frame(
             "SendMessage",
-            Some(message(Op::Feed { since: 0 }, vec![])),
+            Some(message(Op::Feed { since: 0, wait_secs: 0 }, vec![])),
             g,
         ));
         // Capabilities: with no runner on this host a call is refused before anything could run.

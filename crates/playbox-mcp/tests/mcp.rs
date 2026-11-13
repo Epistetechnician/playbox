@@ -206,6 +206,64 @@ fn the_room_card_is_offered_as_an_mcp_app() {
 }
 
 #[test]
+fn a_waiting_feed_returns_the_moment_the_host_speaks() {
+    let _rooms = ROOMS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let work = scratch("longpoll");
+    let repo = work.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "h@example.com"]);
+    git(&repo, &["config", "user.name", "h"]);
+    std::fs::write(repo.join("README.md"), "x\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+    let mut host = Mcp::start(&work.join("host-home"));
+    let (err, created) = host.tool("playbox_create", json!({"repo": repo, "local": true}));
+    assert!(!err, "{created}");
+    let mut guest = Mcp::start(&work.join("guest-home"));
+    let (err, joined) = guest.tool("playbox_join", json!({"link": created["link"], "local": true, "workspace": work.join("ws")}));
+    assert!(!err, "{joined}");
+    let (_, first) = guest.tool("playbox_feed", json!({"since": 0}));
+    let cursor = first["next"].as_u64().unwrap();
+
+    // Nothing new: the call waits, and gives up empty at the deadline.
+    let t = std::time::Instant::now();
+    let (err, empty) = guest.tool("playbox_feed", json!({"since": cursor, "wait_secs": 2}));
+    assert!(!err && empty["items"].as_array().unwrap().is_empty(), "{empty}");
+    assert!(t.elapsed() >= std::time::Duration::from_millis(1800), "it must have waited: {:?}", t.elapsed());
+
+    // The guest waits; the host speaks after a moment; the guest's call returns at once with the message.
+    let waiter = std::thread::spawn(move || {
+        let t = std::time::Instant::now();
+        let (err, feed) = guest.tool("playbox_feed", json!({"since": cursor, "wait_secs": 15}));
+        (err, feed, t.elapsed(), guest)
+    });
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    let (err, _) = host.tool("playbox_say", json!({"text": "wake up"}));
+    assert!(!err);
+    let (err, feed, took, _guest) = waiter.join().unwrap();
+    assert!(!err, "{feed}");
+    assert!(feed["items"].as_array().unwrap().iter().any(|i| i["text"] == "wake up"), "{feed}");
+    assert!(took < std::time::Duration::from_secs(5), "returned on the message, not the deadline: {took:?}");
+
+    // And the other way: the host waits for the guest.
+    let (_, hf) = host.tool("playbox_feed", json!({"since": 0}));
+    let hcur = hf["next"].as_u64().unwrap();
+    let mut guest2 = _guest;
+    let hw = std::thread::spawn(move || {
+        let t = std::time::Instant::now();
+        let (err, feed) = host.tool("playbox_feed", json!({"since": hcur, "wait_secs": 15}));
+        (err, feed, t.elapsed(), host)
+    });
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    let (err, _) = guest2.tool("playbox_say", json!({"text": "hello host"}));
+    assert!(!err);
+    let (err, feed, took, _host) = hw.join().unwrap();
+    assert!(!err && feed["items"].as_array().unwrap().iter().any(|i| i["text"] == "hello host"), "{feed}");
+    assert!(took < std::time::Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
 fn host_and_guest_collaborate_through_mcp() {
     let _turn = ROOMS
         .lock()

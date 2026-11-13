@@ -116,7 +116,8 @@ def main(argv=None):
     ap.add_argument("--role", default="Be a concise, accurate collaborator.", help="what this agent is for")
     ap.add_argument("--model", default="haiku", help="model for the default responder")
     ap.add_argument("--responder", help="command to use instead of claude -p (JSON on stdin, reply on stdout)")
-    ap.add_argument("--interval", type=float, default=3.0, help="seconds between feed polls")
+    ap.add_argument("--wait", type=int, default=15, help="seconds to hold each feed read open waiting for news (0 = plain polling; capped at 20 by the host)")
+    ap.add_argument("--interval", type=float, default=3.0, help="seconds between feed polls when waiting is off or the host does not support it")
     ap.add_argument("--cooldown", type=float, default=4.0, help="quiet seconds to wait after a message, to batch bursts")
     ap.add_argument("--max-per-hour", type=int, default=40)
     ap.add_argument("--max-streak", type=int, default=6, help="replies in a row without a message from the host before stopping")
@@ -154,7 +155,11 @@ def main(argv=None):
             if a.stop_file and os.path.exists(os.path.expanduser(a.stop_file)):
                 log("stop_file")
                 break
-            feed = m.call("playbox_feed", {"since": cursor})
+            # Wait on the room: the host answers the moment something is said. With a batch pending, wait only for what is left of the cooldown.
+            wait = 0 if not a.wait else (max(1, int(a.cooldown - (time.time() - last_new) + 0.999)) if pending else a.wait)
+            t0 = time.time()
+            feed = m.call("playbox_feed", {"since": cursor, "wait_secs": wait})
+            waited = time.time() - t0
             cursor = max(cursor, feed.get("next", cursor))
             names = {x["id"]: x.get("name") for x in feed.get("members", []) if x.get("name")}
             for i in feed["items"]:
@@ -194,7 +199,8 @@ def main(argv=None):
                         log("replied", chars=len(text), streak=streak)
                     else:
                         log("noop", batch=len(batch))
-            time.sleep(a.interval)
+            if not wait or (not feed["items"] and waited < 0.5):    # waiting off, or this host answered at once: pace the loop ourselves
+                time.sleep(a.interval if not pending else min(a.interval, 0.5))
         log("done")
     except RuntimeError as e:
         log("error", err=str(e)[:200])
