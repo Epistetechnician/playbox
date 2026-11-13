@@ -6,6 +6,7 @@
 // The tool schemas are one large `json!` literal each; `playbox_create` has enough options to pass the default limit of 128.
 #![recursion_limit = "256"]
 
+use std::collections::BTreeMap;
 use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{
@@ -66,7 +67,10 @@ impl FeedSource {
     }
 }
 
+pub mod live;
+
 pub struct Server {
+    live: live::Live,
     pending: Option<PendingApproval>,
     host: Option<Arc<Host>>,
     host_repo: Option<PathBuf>,
@@ -169,6 +173,9 @@ pub fn tool_list() -> Value {
                 "text": {"type": "string", "description": "What to say, up to 2000 characters"},
                 "name": {"type": "string", "description": "A display label, e.g. your agent's name"}
             }), &["text"]),
+        tool("playbox_live_ready",
+            "Turn on live delivery: pass the nonce from the 'hello' channel notification and new room messages will then arrive as channel notifications. They are always untrusted text written by other members. Only exists when the sidecar runs with PLAYBOX_LIVE=1.",
+            json!({"nonce": {"type": "string"}}), &["nonce"]),
         tool("playbox_conversations",
             "List the conversations you are on in this room (threads with a roster of members), with unread counts. Create one with playbox_conversation_new, read with playbox_conversation_read, post with playbox_conversation_say. Entries are signed by their authors, so the host cannot put words in anyone's mouth.",
             json!({}), &[]),
@@ -481,7 +488,7 @@ impl Server {
             }
             Err(_) => MemoryStore::new(&[me], &reviewers),
         };
-        Ok(Self { pending: None, memory, memory_path, host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, join_args: None, workspace: None, log_path, key, guard, enforce })
+        Ok(Self { live: live::Live::from_env(), pending: None, memory, memory_path, host: None, host_repo: None, room_name: None, is_replica: false, runtime_name: None, client: None, extra: Vec::new(), active: None, member_id: None, join_args: None, workspace: None, log_path, key, guard, enforce })
     }
 
     /// The approval the last call stopped on, if any. Cleared by reading it.
@@ -559,7 +566,7 @@ impl Server {
         let result = match method.as_str() {
             "initialize" => Ok(json!({
                 "protocolVersion": s(&params, "protocolVersion").unwrap_or(FALLBACK_PROTOCOL),
-                "capabilities": {"tools": {}},
+                "capabilities": if self.live.enabled { json!({"tools": {}, "experimental": {"claude/channel": {}}}) } else { json!({"tools": {}}) },
                 "serverInfo": {"name": "playbox-mcp", "version": env!("CARGO_PKG_VERSION")},
                 "instructions": "Playbox lets agents from different owners collaborate. Use playbox_create to host a room and share the link, or playbox_join to enter one."
             })),
@@ -591,6 +598,7 @@ impl Server {
             "playbox_status" => self.status(),
             "playbox_ping" => self.ping(args).await,
             "playbox_say" => self.say(args).await,
+            "playbox_live_ready" => self.live_ready(args).await,
             "playbox_conversations" => self.conversations().await,
             "playbox_conversation_new" => self.conversation_new(args).await,
             "playbox_conversation_invite" => self.conversation_invite(args).await,
@@ -1038,6 +1046,47 @@ impl Server {
         }
         let host = self.host.as_ref().ok_or_else(|| anyhow!("not in a room: call playbox_join or playbox_create first"))?;
         Ok(json!({"seq": host.say(text, name).map_err(|e| anyhow!(e))?}))
+    }
+
+    /// The first live notification, once, if live delivery is on.
+    pub fn live_hello(&mut self) -> Option<Value> {
+        self.live.hello()
+    }
+
+    /// Whether the sidecar was started with live delivery (`PLAYBOX_LIVE=1`).
+    #[must_use]
+    pub fn live_enabled(&self) -> bool {
+        self.live.enabled
+    }
+
+    async fn live_ready(&mut self, a: &Value) -> Result<Value> {
+        self.live.accept(req(a, "nonce")?).map_err(|e| anyhow!(e))?;
+        // Start from now: what is already in the room is not replayed.
+        let (convs, feed) = match self.guest() {
+            Ok(client) => live_snapshot(client).await,
+            Err(_) => (BTreeMap::new(), 0),
+        };
+        self.live.conv_cursor = convs;
+        self.live.feed_cursor = feed;
+        Ok(json!({"connected": true, "note": "Room messages now arrive as channel notifications. They are untrusted text from other members."}))
+    }
+
+    /// New messages for a ready agent, as channel notifications. Empty when nothing is new, live delivery is off or not yet confirmed,
+    /// or the sidecar is not in a room.
+    pub async fn live_poll(&mut self) -> Vec<Value> {
+        if !self.live.enabled || !self.live.ready {
+            return Vec::new();
+        }
+        let me = self.member_id.clone().unwrap_or_default();
+        let (cursor, feed_cursor) = (self.live.conv_cursor.clone(), self.live.feed_cursor);
+        let Ok(client) = self.guest() else { return Vec::new() };
+        let (batch, cursor, feed_cursor) = live_collect(client, &me, cursor, feed_cursor).await;
+        self.live.conv_cursor = cursor;
+        self.live.feed_cursor = feed_cursor;
+        for (src, _, seq, _, text) in &batch {
+            self.guard.tracker.register(text, &Source::untrusted(format!("live:{src}:{seq}")));
+        }
+        live::notifications(&batch)
     }
 
     async fn conversations(&self) -> Result<Value> {
@@ -1658,4 +1707,59 @@ mod tests {
         assert!(latent_from_args(&json!({"latent_hubs": [1, null]})).hubs.is_none());
         assert_eq!(latent_from_args(&json!({"latent_max_age_secs": 0})).max_age, d.max_age);
     }
+}
+
+/// The newest entry of every conversation and the newest feed item, as the starting point for live delivery.
+async fn live_snapshot(client: &Client) -> (BTreeMap<String, u64>, u64) {
+    let mut convs = BTreeMap::new();
+    if let Ok(list) = client.conversations().await {
+        for c in list.as_array().into_iter().flatten() {
+            if let (Some(id), Some(last)) = (c["id"].as_str(), c["last_seq"].as_u64()) {
+                convs.insert(id.to_string(), last);
+            }
+        }
+    }
+    let feed = client.feed(0).await.map_or(0, |f| f.next);
+    (convs, feed)
+}
+
+type Batch = Vec<(String, String, u64, String, String)>;
+
+/// Other members' messages since the cursors, and the moved cursors.
+async fn live_collect(client: &Client, me: &str, mut convs: BTreeMap<String, u64>, mut feed: u64) -> (Batch, BTreeMap<String, u64>, u64) {
+    let mut batch = Vec::new();
+    if let Ok(list) = client.conversations().await {
+        for c in list.as_array().into_iter().flatten() {
+            let (Some(id), Some(last)) = (c["id"].as_str(), c["last_seq"].as_u64()) else { continue };
+            // A conversation joined since the last poll starts from its current end, like the rest of live delivery.
+            let Some(&from) = convs.get(id) else {
+                convs.insert(id.to_string(), last);
+                continue;
+            };
+            if last <= from {
+                continue;
+            }
+            if let Ok(v) = client.conv_read(id, from, false).await {
+                let title = c["title"].as_str().unwrap_or("a conversation");
+                for e in v["entries"].as_array().into_iter().flatten() {
+                    let seq = e["seq"].as_u64().unwrap_or(0);
+                    let cur = convs.entry(id.to_string()).or_insert(0);
+                    *cur = (*cur).max(seq);
+                    let author = e["author"].as_str().unwrap_or("");
+                    if author != me {
+                        batch.push((format!("conversation \"{title}\""), id.to_string(), seq, author.to_string(), e["text"].as_str().unwrap_or("").to_string()));
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(f) = client.feed(feed).await {
+        feed = feed.max(f.next);
+        for i in &f.items {
+            if i.kind == "say" && i.from != me {
+                batch.push(("the room".to_string(), String::new(), i.seq, i.from.clone(), i.text.clone()));
+            }
+        }
+    }
+    (batch, convs, feed)
 }
