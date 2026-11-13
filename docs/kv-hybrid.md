@@ -127,3 +127,42 @@ Reading:
 - **A fixed working set breaks when the question leaves it**: `hybrid` scores 2% on two-project questions and 48 to 50% on drift. `adaptive` repairs both (cross 94.1% on 4B, 97.3% on 30B; drift 95.3% and 99.6%), RAG gets 95.7 to 100%, so adaptive matches RAG here but is not faster than it.
 - **Paraphrased questions are mostly a model problem**: with the right chunks in context (hybrid and adaptive recall is 100%), the 4B model answers 16% and the 30B model 51%; RAG's retrieval misses the right chunk (recall 64%) and gets 13% and 22%. The hybrid is ahead of RAG there, by model strength, at low absolute accuracy.
 - **Where this leaves the combined idea**: a cache-friendly working set buys later-turn latency, not throughput or accuracy, on this task; it needs a fallback when the question leaves the working set; and plain RAG is the baseline to beat on a task where retrieval is easy. Not tested: a workload with a much larger shared working set (where caching 4K tokens per agent is a bigger saving than here), a public long-context benchmark, and more than one seed per question kind.
+
+## Public data and larger working sets (QuALITY, 11K-token projects)
+
+Code: `steer/playbox_steer/kv_hybrid_big.py`, `steer/tools/kv_hybrid_public_run.py` (gman H100, vLLM 0.33, prefix cache on, a cache salt per arm). Results: `steer/results/kv_hybrid/kv_pub_<model>.json`. Cost: about 15 minutes of H100 time.
+
+**QuALITY** (Pang et al.; multiple choice; HF `emozilla/quality`): a corpus is 22 validation articles (about 124K tokens, 538 chunks), a session is one article's questions (up to 8), 22 agents at once, two corpora (seeds 0 and 1), 352 questions per arm. Arms: `full` (all articles in the prompt), `rag5` and `rag48` (BM25 on the question and its options; rag48 is 48 chunks, the same prompt size as the hybrid), `hybrid48` (48 chunks retrieved once from the session's first question and kept as a fixed prefix), `doc` (the session's own article: the oracle working set a product would have when a session is opened on a document, 5.8K tokens). K was chosen on separate train-split articles (4B dev accuracy at K = 6, 12, 24, 48: 46%, 59%, 62%, 63%; 30B: 59%, 64%, 71%, 74%); the best was the largest K tried, so K is at the edge of the grid, not saturated.
+
+| model | arm | n | accuracy (95% CI) | first token, turn 1 | first token, later turns | turns/min | prompt tokens | cached |
+|---|---|---|---|---|---|---|---|---|
+| 4B | full | 352 | 52.6% (47-58) | 10.59 s | 5.89 s | 204 | 124,386 | 99% |
+| 4B | rag5 | 352 | 63.1% (58-68) | 0.25 s | 0.20 s | 3313 | 1,292 | 12% |
+| 4B | rag48 | 352 | 69.6% (65-74) | 2.57 s | 4.47 s | 285 | 11,287 | 2% |
+| 4B | hybrid48 | 352 | 59.7% (54-65) | 2.58 s | 0.48 s | 1322 | 11,292 | 87% |
+| 4B | doc | 352 | 76.4% (72-81) | 1.10 s | 0.24 s | 2884 | 5,767 | 86% |
+| 30B | full | 352 | 73.3% (68-78) | 13.25 s | 5.75 s | 196 | 124,386 | 99% |
+| 30B | rag5 | 352 | 73.9% (69-78) | 0.29 s | 0.18 s | 2590 | 1,292 | 12% |
+| 30B | rag48 | 352 | 80.1% (76-84) | 2.89 s | 4.72 s | 258 | 11,288 | 2% |
+| 30B | hybrid48 | 352 | 75.6% (71-80) | 2.91 s | 0.34 s | 1242 | 11,293 | 87% |
+| 30B | doc | 352 | 88.1% (84-91) | 1.23 s | 0.20 s | 2187 | 5,768 | 86% |
+
+**Large synthetic working sets**: 11 projects x 64 chunks (11.3K tokens per project, 256 facts each), 64 agents on 10 projects, 8 turns each, 512 lookups per arm. `hybrid64` caches the whole project as the working set.
+
+| model | arm | n | accuracy (95% CI) | first token, turn 1 | first token, later turns | turns/min | prompt tokens | cached |
+|---|---|---|---|---|---|---|---|---|
+| 4B | full | 512 | 7.2% (5-10) | 11.06 s | 15.64 s | 244 | 124,879 | 100% |
+| 4B | rag | 512 | 96.1% (94-97) | 0.52 s | 0.23 s | 5300 | 960 | 19% |
+| 4B | hybrid64 | 512 | 89.5% (86-92) | 2.35 s | 1.21 s | 2727 | 11,431 | 98% |
+| 30B | full | 512 | 57.6% (53-62) | 14.29 s | 15.17 s | 251 | 124,880 | 100% |
+| 30B | rag | 512 | 98.4% (97-99) | 0.54 s | 0.34 s | 4766 | 961 | 20% |
+| 30B | hybrid64 | 512 | 98.8% (97-99) | 2.54 s | 1.14 s | 2753 | 11,432 | 98% |
+
+Reading:
+
+- **Public data confirms that the practical hybrid is not better than RAG.** Retrieving the working set once from the first question (`hybrid48`) is less accurate than retrieving 48 chunks per question (`rag48`, same prompt size): 59.7% vs 69.6% (4B) and 75.6% vs 80.1% (30B), because later questions need parts of the article the first question did not retrieve. It is much faster than `rag48` (later turns 0.48 s vs 4.47 s on 4B, 1,322 vs 285 turns per minute) because 87% of its prompt comes from cache, but against the small RAG prompt (`rag5`) it is slower (0.48 s vs 0.20 s) and not clearly more accurate (59.7% vs 63.1% on 4B, 75.6% vs 73.9% on 30B).
+- **The one real gain is document-level context.** When the session's document is known (`doc`, an oracle choice), accuracy is 76.4% (4B) and 88.1% (30B), against 63.1% and 73.9% for `rag5` (+13 and +14 points), at later-turn latency level with `rag5` (0.24 vs 0.20 s, 0.20 vs 0.18 s) and 13 to 16% lower throughput (2,884 vs 3,313 and 2,187 vs 2,590 turns per minute). The cache is what makes a 5.8K-token prompt cost about as little as 1.3K. This is only available when something other than retrieval says which document the session is about.
+- **Large cached working sets lose on speed.** With 11K-token working sets that are 98% cached, later turns take 1.2 s (4B) and 1.1 s (30B) against 0.23 and 0.34 s for RAG, and throughput is 2,727 and 2,753 against 5,300 and 4,766 turns per minute. Accuracy equals RAG on the 30B model (98.8% vs 98.4%) and is lower on the 4B (89.5% vs 96.1%). A cache hit removes prefill, not the attention over 11K tokens on every decode step.
+- **Cached full context is worst everywhere**: 52.6% and 73.3% on QuALITY, 7.2% and 57.6% on the synthetic corpus, 5 to 15 s per later turn.
+- **Where this leaves the idea.** Dropping the claim that caching a retrieved working set beats RAG on speed or cost: it does not, in any of the four workloads tried. What survives is smaller: if a session is opened on a known document, caching that document gives about 13 points more accuracy than top-5 retrieval for about 15% less throughput. Not tested: other public benchmarks, other model families, questions that span documents, and a real routing step that picks the document.
+- **Limits.** One run per arm; 4B and 30B Qwen3 only; the 352-question confidence intervals are 4 to 5 points wide, so the `hybrid48` vs `rag5` accuracy differences are not resolved; `doc` uses the oracle article.
