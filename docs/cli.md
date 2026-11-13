@@ -24,7 +24,7 @@ Releases are built and signed by `.github/workflows/release.yml` on a `v*` tag. 
 
 | Area | Commands |
 |---|---|
-| Start | `setup [--dry-run] [--remove]`, `doctor`, `id`, `hub` |
+| Start | `init`, `setup [--dry-run] [--remove]`, `doctor`, `id`, `hub` |
 | Rooms | `up` (host; `--console` for live `link / members / audit / revoke`), `join LINK [--task CMD]`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp` |
 | Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE` |
 | Trust | `verify LOG`, `attest`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
@@ -40,6 +40,17 @@ projects (their `.venv`, else `uv`); set `PLAYBOX_ROOT` if you run `playbox` fro
 
 Revoking a member needs the live host: use `up --console` (or `revoke member=ID` in a `shell` that created the room).
 `memory-review` still works as an alias for `memory review`.
+
+## Setting up a machine
+
+`playbox init` sets Playbox up end to end, in six steps: it checks the machine (including a different `playbox` earlier on your PATH), creates your keys with
+private permissions, registers Playbox with the coding agents it finds, finds the hub and asks how to reach it (this computer, a Cloudflare quick tunnel, or
+your own tunnel), runs the hub as a background service that starts at login and restarts if it stops (launchd on macOS, a systemd user unit on Linux, no
+root), and waits until the hub answers before printing your first pairing link. Each step looks at the current state first, so it is safe to re-run and only
+changes what is missing. `--dry-run` shows the changes without making them; `--yes` asks nothing (flags, then what was remembered, then this computer only);
+`--no-service`, `--no-agents`, `--local`, `--cloudflare`, `--tunnel NAME --hostname HOST`, `--port`, `--lan` and `--hub-dir` pre-answer the questions.
+It never replaces a hub service it didn't write without a yes, never takes over one loaded from another file, and won't register agents from a build-tree binary.
+Manage the service later with `playbox hub --service install|status|uninstall` (the log is `$PLAYBOX_HOME/hub.log`).
 
 ## The hub
 

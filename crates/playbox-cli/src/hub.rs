@@ -2,7 +2,8 @@
 //! and, if you want, put it on the internet through Cloudflare. The hub itself is the Python program in `ui/`;
 //! this finds it, asks how you want to reach it (once, then remembers), and runs it.
 
-use crate::cli::HubArgs;
+use crate::cli::{HubArgs, ServiceAction};
+use crate::service;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,7 +23,7 @@ pub enum Reach {
     Named { tunnel: String, hostname: String },
 }
 
-fn home() -> PathBuf {
+pub(crate) fn home() -> PathBuf {
     std::env::var_os("PLAYBOX_HOME").map_or_else(
         || PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox"),
         PathBuf::from,
@@ -33,11 +34,11 @@ fn config_path() -> PathBuf {
     home().join("hub.json")
 }
 
-fn load() -> Option<Reach> {
+pub(crate) fn load() -> Option<Reach> {
     serde_json::from_str(&std::fs::read_to_string(config_path()).ok()?).ok()
 }
 
-fn save(r: &Reach) -> Result<()> {
+pub(crate) fn save(r: &Reach) -> Result<()> {
     let p = config_path();
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d)?;
@@ -53,7 +54,7 @@ fn save(r: &Reach) -> Result<()> {
 
 /// `ui/playbox_hub.py`, from (in order) --hub-dir / `PLAYBOX_HUB_DIR`, the installer's directory, or a checkout
 /// above the working directory or this binary.
-fn find_hub(explicit: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn find_hub(explicit: Option<&str>) -> Result<PathBuf> {
     let has = |d: &Path| d.join("ui/playbox_hub.py").is_file().then(|| d.join("ui/playbox_hub.py"));
     if let Some(d) = explicit {
         return has(Path::new(d)).with_context(|| format!("{d}/ui/playbox_hub.py is missing"));
@@ -72,7 +73,7 @@ fn find_hub(explicit: Option<&str>) -> Result<PathBuf> {
         )
 }
 
-fn on_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
@@ -94,7 +95,7 @@ fn looks_like_id(t: &str) -> bool {
     t.len() == 36 && t.chars().filter(|&c| c == '-').count() == 4 && t.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-fn ask(prompt: &str, default: &str) -> Result<String> {
+pub(crate) fn ask(prompt: &str, default: &str) -> Result<String> {
     let mut out = std::io::stderr();
     if default.is_empty() {
         write!(out, "{prompt}: ")?;
@@ -108,11 +109,11 @@ fn ask(prompt: &str, default: &str) -> Result<String> {
     Ok(if line.is_empty() { default.to_string() } else { line.to_string() })
 }
 
-fn confirm(prompt: &str) -> Result<bool> {
+pub(crate) fn confirm(prompt: &str) -> Result<bool> {
     Ok(matches!(ask(&format!("{prompt} (y/N)"), "")?.to_lowercase().as_str(), "y" | "yes"))
 }
 
-fn cloudflared() -> Result<PathBuf> {
+pub(crate) fn cloudflared() -> Result<PathBuf> {
     on_path("cloudflared").context("Cloudflare needs `cloudflared`: brew install cloudflared (or https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)")
 }
 
@@ -165,7 +166,7 @@ fn named_tunnel(name: &str, hostname: &str) -> Result<String> {
     Ok(id)
 }
 
-fn ask_reach() -> Result<Reach> {
+pub(crate) fn ask_reach() -> Result<Reach> {
     eprintln!(
         "How do you want to reach the hub?\n  1) Only on this computer (default)\n  2) From anywhere over HTTPS, Cloudflare quick tunnel: free, no account, the address changes each run\n  \
          3) From anywhere over HTTPS, your own Cloudflare tunnel: a stable address, so passkeys survive restarts"
@@ -189,7 +190,7 @@ fn ask_reach() -> Result<Reach> {
 }
 
 /// Flags win; then what was chosen last time; then ask (on a terminal); else local only. Returns (reach, remember it).
-fn choose(a: &HubArgs, saved: Option<Reach>, tty: bool) -> Result<(Reach, bool)> {
+pub(crate) fn choose(a: &HubArgs, saved: Option<Reach>, tty: bool) -> Result<(Reach, bool)> {
     if a.hostname.is_some() && a.tunnel.is_none() {
         bail!("--hostname goes with --tunnel");
     }
@@ -216,7 +217,7 @@ fn choose(a: &HubArgs, saved: Option<Reach>, tty: bool) -> Result<(Reach, bool)>
 }
 
 /// The hub's own command line for this choice.
-fn hub_args(reach: &Reach, a: &HubArgs) -> Vec<String> {
+pub(crate) fn hub_args(reach: &Reach, a: &HubArgs) -> Vec<String> {
     let mut v = Vec::new();
     if let Some(p) = a.port {
         v.extend(["--port".to_string(), p.to_string()]);
@@ -241,7 +242,69 @@ fn hub_args(reach: &Reach, a: &HubArgs) -> Vec<String> {
     v
 }
 
+/// The directory holding this binary first, then the caller's PATH: how the hub finds `playbox`, `playbox-mcp`, `cloudflared`.
+pub(crate) fn hub_path() -> std::ffi::OsString {
+    let mut paths = Vec::new();
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+        paths.push(dir);
+    }
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
+    std::env::join_paths(paths).unwrap_or_default()
+}
+
+/// What the background service runs: the hub, never opening a browser.
+pub(crate) fn service_spec(python: &Path, script: &Path, reach: &Reach, a: &HubArgs) -> service::Spec {
+    let mut quiet = a.clone();
+    quiet.no_open = true;
+    quiet.pair = false;
+    let mut argv = vec![python.to_string_lossy().into_owned(), script.to_string_lossy().into_owned()];
+    argv.extend(hub_args(reach, &quiet));
+    let mut env = vec![("PATH".to_string(), hub_path().to_string_lossy().into_owned())];
+    for k in ["PLAYBOX_HOME", "PLAYBOX_HUB_HOME", "PLAYBOX_HUB_PORT"] {
+        if let Some(v) = std::env::var_os(k).and_then(|v| v.into_string().ok()).filter(|v| !v.is_empty()) {
+            env.push((k.to_string(), v)); // a custom state directory or port chosen for this run must hold for the service too
+        }
+    }
+    service::Spec { argv, env, log: home().join("hub.log"), port: a.port.unwrap_or(7717) }
+}
+
+fn manage_service(a: &HubArgs, action: ServiceAction) -> Result<()> {
+    match action {
+        ServiceAction::Status => {
+            let (running, detail) = service::status();
+            println!("hub service ({}): {detail}\n  definition: {}\n  log: {}", service::label(), service::unit_path().display(), home().join("hub.log").display());
+            if !running {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        ServiceAction::Uninstall => {
+            println!("{}", if service::uninstall()? { "removed the hub service" } else { "the hub service wasn't installed" });
+            Ok(())
+        }
+        ServiceAction::Install => {
+            let script = find_hub(a.hub_dir.as_deref())?;
+            let python = on_path("python3").context("the hub needs python3")?;
+            let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+            let (reach, remember) = choose(a, load(), tty)?;
+            if remember {
+                save(&reach)?;
+            }
+            let spec = service_spec(&python, &script, &reach, a);
+            if service::installed() && !service::up_to_date(&spec) && !(tty && confirm("A different hub service is already installed. Replace it (the old one is kept as a .bak)?")?) {
+                bail!("not replacing the existing service at {}", service::unit_path().display());
+            }
+            let path = service::install(&spec)?;
+            println!("hub service installed: {}\nit starts at login and restarts if it stops. Log: {}", path.display(), spec.log.display());
+            Ok(())
+        }
+    }
+}
+
 pub fn run(a: &HubArgs) -> Result<()> {
+    if let Some(action) = a.service {
+        return manage_service(a, action);
+    }
     let script = find_hub(a.hub_dir.as_deref())?;
     let python = on_path("python3").context("the hub needs python3 (macOS: xcode-select --install; Debian/Ubuntu: apt install python3)")?;
     let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
@@ -258,14 +321,7 @@ pub fn run(a: &HubArgs) -> Result<()> {
     }
     let mut cmd = Command::new(python);
     cmd.arg(&script).args(hub_args(&reach, a));
-    // The hub finds `playbox` and `playbox-mcp` on PATH: put this binary's directory first.
-    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
-        let mut paths = vec![dir];
-        paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
-        if let Ok(p) = std::env::join_paths(paths) {
-            cmd.env("PATH", p);
-        }
-    }
+    cmd.env("PATH", hub_path());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -295,6 +351,7 @@ mod tests {
             pair: false,
             reconfigure: false,
             hub_dir: None,
+            service: None,
             extra: vec![],
         }
     }

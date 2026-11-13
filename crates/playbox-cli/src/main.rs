@@ -1,11 +1,13 @@
 mod cli;
 mod doctor;
 mod hub;
+mod wizard;
 mod latent;
 mod python;
 mod release;
 mod rooms;
 mod session;
+mod service;
 mod setup;
 mod trust;
 mod tui;
@@ -138,6 +140,7 @@ async fn run() -> Result<ExitCode> {
         }
         Cmd::Experiment { name, args } => python::experiment(name, &args),
         Cmd::World { action, args } => python::world(action, &args),
+        Cmd::Init(a) => wizard::run(&a),
         Cmd::Hub(a) => hub::run(&a),
         Cmd::Doctor { json } => return doctor::run(json),
         Cmd::Demo => trust::demo(),

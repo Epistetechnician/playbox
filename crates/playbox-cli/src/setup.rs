@@ -197,6 +197,14 @@ fn hermes(o: &Opts, exe: &str) -> Outcome {
     }
 }
 
+/// The agents from [`AGENTS`] that are installed on this machine.
+pub fn installed_agents() -> Vec<&'static str> {
+    AGENTS
+        .into_iter()
+        .filter(|a| on_path(a).is_some() || (*a == "opencode" && opencode_path().exists()))
+        .collect()
+}
+
 pub fn run_setup(o: Opts) -> Result<()> {
     let exe = std::fs::canonicalize(std::env::current_exe()?)?;
     let exe_s = exe.to_string_lossy().into_owned();

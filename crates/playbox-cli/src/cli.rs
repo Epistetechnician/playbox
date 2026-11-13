@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 const ABOUT: &str = "Agents from different owners, collaborating inside signed, auditable rooms";
 
 const OVERVIEW: &str = "\
-Start here:  setup  doctor  hub
+Start here:  init  setup  doctor  hub
 Rooms:       up  join  shell  bridge  call  mcp  id
 Review:      review  audit  revoke (inside `up --console` or `shell`)
 Trust:       verify  attest  pin  approver-key  approve  record
@@ -27,7 +27,56 @@ pub struct Cli {
 }
 
 /// `playbox hub`: the dashboard app with passkey sign-in, on this machine.
+/// `playbox init`: set Playbox up on this machine, end to end.
 #[derive(Args)]
+pub struct InitArgs {
+    /// Don't ask: take the flags, else what was remembered, else the safe default (this computer only)
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+    /// Show what would change and change nothing
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Don't install the background service (run `playbox hub` yourself)
+    #[arg(long)]
+    pub no_service: bool,
+    /// Don't register Playbox with the coding agents on this machine
+    #[arg(long)]
+    pub no_agents: bool,
+    /// This computer only
+    #[arg(long, conflicts_with_all = ["cloudflare", "tunnel"])]
+    pub local: bool,
+    /// HTTPS from anywhere through a Cloudflare quick tunnel (free, no account, the address changes on every restart)
+    #[arg(long, conflicts_with = "tunnel")]
+    pub cloudflare: bool,
+    /// HTTPS from anywhere through your own Cloudflare tunnel (name or id); needs --hostname
+    #[arg(long, value_name = "NAME")]
+    pub tunnel: Option<String>,
+    /// The public hostname routed to --tunnel
+    #[arg(long, value_name = "HOST")]
+    pub hostname: Option<String>,
+    /// Hub port (default 7717)
+    #[arg(long, value_name = "PORT", env = "PLAYBOX_HUB_PORT")]
+    pub port: Option<u16>,
+    /// Also let phones on this network pair over plain HTTP (weaker than passkeys over HTTPS)
+    #[arg(long)]
+    pub lan: bool,
+    /// Where the hub lives (a checkout, or the installer's directory); default: found automatically
+    #[arg(long, value_name = "DIR", env = "PLAYBOX_HUB_DIR")]
+    pub hub_dir: Option<String>,
+}
+
+/// What to do with the hub's background service.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServiceAction {
+    /// Run the hub in the background and start it at login (launchd on macOS, a systemd user unit on Linux)
+    Install,
+    /// Stop it and remove it
+    Uninstall,
+    /// Is it running?
+    Status,
+}
+
+#[derive(Args, Clone)]
 pub struct HubArgs {
     /// Port to listen on (default 7717)
     #[arg(long, value_name = "PORT", env = "PLAYBOX_HUB_PORT")]
@@ -59,6 +108,9 @@ pub struct HubArgs {
     /// Where the hub lives (a checkout, or the installer's directory); default: found automatically
     #[arg(long, value_name = "DIR", env = "PLAYBOX_HUB_DIR")]
     pub hub_dir: Option<String>,
+    /// Manage the background service instead of running in this window: install (runs at login, restarts if it stops), uninstall, status
+    #[arg(long, value_enum, value_name = "ACTION")]
+    pub service: Option<ServiceAction>,
     /// Anything else, passed to the hub (try `-- --help`)
     #[arg(last = true)]
     pub extra: Vec<String>,
@@ -388,6 +440,8 @@ pub enum Cmd {
         args: Vec<String>,
     },
 
+    /// Set Playbox up on this machine, end to end: keys, your coding agents, the hub, how to reach it, a background service
+    Init(InitArgs),
     /// Start the hub (the dashboard app) on this machine, optionally reachable over HTTPS through Cloudflare
     Hub(HubArgs),
     /// Check this machine: keys, platform evidence, runtimes, python tooling
