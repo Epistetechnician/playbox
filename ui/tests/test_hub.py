@@ -670,6 +670,15 @@ def test_access():
         st, j, _ = via(mint())
         check("tunnelled request with a valid token reaches the hub", st == 200 and j["weak_ok"] is False)
         check("local requests on loopback do not need a token", c.req("GET", "/api/auth/state")[0] == 200)
+        # a refused POST must not leave its body on the keep-alive connection (the next request would be parsed from it: 501)
+        hc = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        hh = {"Host": "playbox.example.com", "Origin": "https://playbox.example.com", "Cf-Connecting-Ip": "203.0.113.9", "Content-Type": "application/json"}
+        hc.request("POST", "/api/rooms/x/invite", json.dumps({"approve": True, "pad": "x" * 500}), hh)
+        r1 = hc.getresponse(); r1.read()
+        hc.request("POST", "/api/auth/stepup/begin", "{}", hh)
+        r2 = hc.getresponse(); r2.read()
+        hc.close()
+        check("a refused POST body does not poison the next request on the connection", r1.status == 403 and r2.status == 403)
     finally:
         p.terminate()
         try:

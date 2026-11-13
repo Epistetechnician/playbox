@@ -98,14 +98,31 @@ def make_handler(hub, auth, store, opts):
         def j(self, code, obj, extra=None):
             self.send(code, json.dumps(obj), extra=extra)
 
+        def slurp(self):
+            """Read the request body off the socket up front. A reply sent without reading it (a 401/403, say) would leave the bytes on the
+            keep-alive connection, and the next request on it would be parsed from them (and answered 501)."""
+            if self._raw is not None:
+                return self._raw
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+            except ValueError:
+                n = -1
+            if n < 0 or n > MAX_BODY:
+                self.close_connection = True       # too big to swallow: answer, then drop the connection
+                self._big = True
+                self._raw = b""
+            else:
+                self._raw = self.rfile.read(n) if n else b""
+            return self._raw
+
         def body(self):
+            raw = self.slurp()
             if "application/json" not in self.headers.get("Content-Type", ""):
                 raise AuthError(415, "json only")
-            n = int(self.headers.get("Content-Length", "0") or 0)
-            if n > MAX_BODY:
+            if self._big:
                 raise AuthError(413, "too large")
             try:
-                v = json.loads(self.rfile.read(n) or b"{}")
+                v = json.loads(raw or b"{}")
             except ValueError:
                 raise AuthError(400, "bad json")
             if not isinstance(v, dict):
@@ -169,6 +186,7 @@ def make_handler(hub, auth, store, opts):
             self.do_GET()
 
         def do_GET(self):
+            self._raw, self._big = None, False
             try:
                 self.route("GET")
             except AuthError as e:
@@ -186,7 +204,9 @@ def make_handler(hub, auth, store, opts):
             self.mutate("PATCH")
 
         def mutate(self, method):
+            self._raw, self._big = None, False
             try:
+                self.slurp()
                 if not self.origin_ok():
                     return self.j(403, {"error": "cross-origin request refused"})
                 self.route(method)
