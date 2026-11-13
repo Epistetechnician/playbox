@@ -386,11 +386,87 @@ def test_cloudflare():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_access():
+    """Cloudflare Access tokens: RS256 checked against a local key (OpenSSL signs), then enforced over HTTP behind a stand-in tunnel."""
+    sys.path.insert(0, UI)
+    from hub.access import Access, AccessError
+    d = tempfile.mkdtemp(prefix="pbacc-")
+    sh = lambda *a, **k: subprocess.run(a, capture_output=True, check=True, **k).stdout
+    key = os.path.join(d, "k.pem")
+    sh("openssl", "genrsa", "-out", key, "2048")
+    n = int(sh("openssl", "rsa", "-in", key, "-noout", "-modulus").decode().strip().split("=")[1], 16)
+    jwks = os.path.join(d, "jwks.json")
+    nb = n.to_bytes(256, "big")
+    json.dump({"keys": [{"kty": "RSA", "kid": "k1", "alg": "RS256", "n": b64u(nb), "e": b64u((65537).to_bytes(3, "big"))}]}, open(jwks, "w"))
+    TEAM, AUD = "lab", "a" * 64
+    ISS = f"https://{TEAM}.cloudflareaccess.com"
+
+    def mint(claims=None, kid="k1", alg="RS256", sign=True):
+        c = {"iss": ISS, "aud": [AUD], "exp": time.time() + 600, "email": "x@example.com", **(claims or {})}
+        h = b64u(json.dumps({"alg": alg, "kid": kid}).encode()) + "." + b64u(json.dumps(c).encode())
+        sig = sh("openssl", "dgst", "-sha256", "-sign", key, input=h.encode()) if sign else b"\0" * 256
+        return h + "." + b64u(sig)
+
+    acc = Access(TEAM, AUD, keys_file=jwks)
+
+    def ok(t):
+        try:
+            return acc.verify(t)
+        except AccessError as e:
+            raise ValueError(str(e))
+    check("access: a valid token verifies", ok(mint())["email"] == "x@example.com")
+    check("access: wrong audience refused", refuses(ok, mint({"aud": ["b" * 64]})))
+    check("access: wrong issuer refused", refuses(ok, mint({"iss": "https://evil.cloudflareaccess.com"})))
+    check("access: expired token refused", refuses(ok, mint({"exp": time.time() - 3600})))
+    check("access: alg none / HS256 refused", refuses(ok, mint(alg="none")) and refuses(ok, mint(alg="HS256")))
+    check("access: unknown key id refused", refuses(ok, mint(kid="other")))
+    check("access: forged signature refused", refuses(ok, mint(sign=False)))
+    t = mint().split(".")
+    t[1] = b64u(json.dumps({"iss": ISS, "aud": [AUD], "exp": time.time() + 600, "email": "attacker@example.com"}).encode())
+    check("access: a tampered payload refused", refuses(ok, ".".join(t)))
+    check("access: garbage refused", refuses(ok, "not-a-jwt") and refuses(ok, ""))
+
+    mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
+    if not mcp:
+        print("SKIP access http tests (playbox-mcp not found)")
+        return
+    fake = os.path.join(d, "cloudflared")
+    open(fake, "w").write("#!/bin/sh\necho 'INF Registered tunnel connection' >&2\nexec sleep 300\n")
+    os.chmod(fake, 0o755)
+    port, home = free_port(), os.path.join(d, "home")
+    env = {**os.environ, "PATH": d + os.pathsep + os.environ["PATH"], "PLAYBOX_HUB_ACCESS_KEYS": jwks}
+    half = subprocess.run([sys.executable, os.path.join(UI, "playbox_hub.py"), "--cloudflare", "--cloudflare-access", TEAM, "--home", home, "--mcp", mcp], capture_output=True, text=True, env=env, timeout=20)
+    check("access: team without an AUD tag is refused at startup", half.returncode != 0 and "AUD" in (half.stdout + half.stderr))
+    p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp, "--cloudflare-tunnel", "tid", "--cloudflare-hostname", "playbox.example.com",
+                          "--cloudflare-access", TEAM, "--cloudflare-aud", AUD, "--pair"], stdout=subprocess.PIPE, text=True, env=env)
+    try:
+        for _ in range(12):
+            if "/pair#" in p.stdout.readline():
+                break
+        c = Client(port)
+        via = lambda tok=None, path="/api/auth/state": c.req("GET", path, None, {"Host": "playbox.example.com", "Cf-Connecting-Ip": "203.0.113.7", **({"Cf-Access-Jwt-Assertion": tok} if tok else {})})
+        check("tunnelled request without a token is refused", via()[0] == 403)
+        check("tunnelled request with a forged token is refused", via(mint(sign=False))[0] == 403)
+        check("tunnelled request with a token for another app is refused", via(mint({"aud": ["b" * 64]}))[0] == 403)
+        check("tunnelled static files are refused too", via(None, "/manifest.webmanifest")[0] == 403)
+        st, j, _ = via(mint())
+        check("tunnelled request with a valid token reaches the hub", st == 200 and j["weak_ok"] is False)
+        check("local requests on loopback do not need a token", c.req("GET", "/api/auth/state")[0] == 200)
+    finally:
+        p.terminate()
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
     test_push_send()
     test_http()
     test_cloudflare()
+    test_access()
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

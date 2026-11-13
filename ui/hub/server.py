@@ -17,6 +17,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import push as webpush
+from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from .icons import png_icon
 from .rooms import Hub
@@ -157,7 +158,22 @@ def make_handler(hub, auth, store, opts):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
+        def access_ok(self):
+            """With Cloudflare Access configured, anything that did not arrive straight on loopback must carry a valid Access token."""
+            acc = opts.get("access")
+            if not acc or is_local(self.client_address[0], self.hdrs()):
+                return True
+            tok = self.headers.get("Cf-Access-Jwt-Assertion", "")
+            try:
+                acc.verify(tok)
+                return True
+            except AccessError:
+                self.send(403, b"This hub only accepts requests that passed Cloudflare Access.", "text/plain; charset=utf-8")
+                return False
+
         def route(self, m):
+            if not self.access_ok():
+                return
             url = urllib.parse.urlparse(self.path)
             p = url.path
             # public shell
@@ -486,6 +502,8 @@ def main(argv=None):
     ap.add_argument("--require-tailnet-login", metavar="LOGIN", help="with --tailscale: also require this Tailscale user (header set by tailscaled)")
     ap.add_argument("--cloudflare", action="store_true", help="publish over HTTPS with a Cloudflare quick tunnel (cloudflared, no account, no open port). Passkeys only; the address changes each run")
     ap.add_argument("--cloudflare-tunnel", metavar="NAME", help="use your own named Cloudflare tunnel (stable address, so passkeys survive restarts); needs --cloudflare-hostname")
+    ap.add_argument("--cloudflare-access", metavar="TEAM", help="Cloudflare Access team (name or name.cloudflareaccess.com): refuse any tunnelled request without a valid Access token; needs --cloudflare-aud")
+    ap.add_argument("--cloudflare-aud", metavar="AUD", help="the Access application's Audience (AUD) tag")
     ap.add_argument("--cloudflare-hostname", metavar="HOST", help="the public hostname routed to that named tunnel")
     ap.add_argument("--no-weak", action="store_true", help="refuse plain-HTTP pairing entirely: passkeys only")
     ap.add_argument("--pair", action="store_true", help="print a fresh pairing link for a new device")
@@ -494,6 +512,11 @@ def main(argv=None):
     if not a.mcp:
         sys.exit("playbox not found. Install it: curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh")
     cloud = a.cloudflare or bool(a.cloudflare_tunnel)
+    team, aud = a.cloudflare_access or os.environ.get("PLAYBOX_ACCESS_TEAM"), a.cloudflare_aud or os.environ.get("PLAYBOX_ACCESS_AUD")
+    if team and not cloud:
+        sys.exit("Cloudflare Access only applies with --cloudflare or --cloudflare-tunnel.")
+    if bool(team) != bool(aud):
+        sys.exit("Cloudflare Access needs both the team (--cloudflare-access) and the AUD tag (--cloudflare-aud).")
     if a.cloudflare_tunnel and not a.cloudflare_hostname:
         sys.exit("--cloudflare-tunnel needs --cloudflare-hostname (the public name routed to that tunnel).")
     if cloud:
@@ -513,7 +536,7 @@ def main(argv=None):
                 store.save()
 
     hub = Hub(store, a.mcp, push_fn)
-    opts = {"weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud}
+    opts = {"weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True

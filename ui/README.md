@@ -33,6 +33,12 @@ A public address is **passkeys only**: plain-HTTP pairing is switched off, and t
 The tunnel stops when the hub does. Limits: a quick tunnel's name changes every run (so pair again, passkeys bind to the hostname), and
 Cloudflare quick tunnels don't stream server-sent events, so the app notices the silent stream after 6 s and polls instead (status shows "Polling").
 For a stable name and live updates use your own named tunnel, `--cloudflare-tunnel NAME --cloudflare-hostname HOST`, and put Cloudflare Access in front of it.
+**Cloudflare Access.** Put Access in front of the named tunnel (a self-hosted application, Public DNS destination, Allow policy for your emails), then start the hub with
+`--cloudflare-access TEAM --cloudflare-aud AUD` (or `PLAYBOX_ACCESS_TEAM` / `PLAYBOX_ACCESS_AUD`). The hub then trusts the signed `Cf-Access-Jwt-Assertion` token, not the network path:
+any tunnelled request without a valid RS256 token for that team and AUD tag is refused, including static files, so a second hostname or a misrouted tunnel can't bypass Access.
+Requests straight on loopback from your own machine don't need one. Signing keys come from `https://TEAM.cloudflareaccess.com/cdn-cgi/access/certs`, cached an hour; if they can't be fetched the hub fails closed.
+Verified with locally signed tokens (OpenSSL) and a stand-in tunnel; not yet against a real Access application.
+
 Tested end to end through a real quick tunnel: pairing, session cookie (`Secure`, `HttpOnly`), API, manifest, service worker; named tunnels and Access are untested.
 
 **Push.** Web Push with VAPID and **no payload**: the push service learns nothing. The service worker wakes, asks the hub
