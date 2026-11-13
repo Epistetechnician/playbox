@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
 ### Added
 - `playbox update`: check for, verify and install a newer release; `--check` (exit status 10 when one exists), `--version`, `--rollback`, `--json`.
   Archives are checked against `SHA256SUMS`, which is checked against the release key built into the binary; the old binary is kept for `--rollback`.
