@@ -135,6 +135,7 @@ pub fn tool_list() -> Value {
                 "task_budget": {"type": "integer", "description": "Tasks the whole room may start since the host started. Default 100000."},
                 "memory_url": {"type": "string", "description": "Give the room a shared memory kept by a Hindsight server running beside this host, e.g. http://127.0.0.1:8888/v1/default. Members then use playbox_room_remember and playbox_room_recall."},
                 "memory_review": {"type": "boolean", "description": "Hold members' memory entries as pending until you accept them. Default false."},
+                "capabilities": {"type": "array", "items": {"type": "object"}, "description": "Operations members may call by name, each run once in the sandbox (docs/capabilities.md): {name, argv with {param} placeholders, params {name: {allowed, max_len}}, approval, image, timeout_secs}. Needs a runtime."},
                 "allowed_secrets": {"type": "array", "items": {"type": "string"}, "description": "Names of secrets in the host's secrets directory that members' tasks may read at /run/secrets. Never shown to members; the audit log records names and hashes."},
                 "confine": {"type": "boolean", "description": "Linux, libkrun only: jail each task's helper, put it in a cgroup with memory/CPU/process limits, and filter its network."},
                 "confine_net": {"type": "string", "description": "With confine: the most network a task may have: none (default), internet, internet+lan."},
@@ -818,6 +819,10 @@ impl Server {
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
                 abuse: abuse_from_args(a),
                 latent: latent_from_args(a),
+                capabilities: match a.get("capabilities") {
+                    None | Some(Value::Null) => Vec::new(),
+                    Some(v) => serde_json::from_value(v.clone()).context("capabilities must be an array of {name, argv, params, approval, image, timeout_secs}")?,
+                },
                 ..Default::default()
             };
             let transport = match transport_arg(a)? {

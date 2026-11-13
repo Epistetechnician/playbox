@@ -66,6 +66,18 @@ jobs:
         run: |
           BIN=$(ls -t target/debug/deps/confine-* | grep -v '\.d$' | head -1)
           PLAYBOX_CONFINE_REQUIRE_ALL=1 PLAYBOX_CONFINE_ONLY=jail "$BIN"
+  conformance:
+    # Black-box scenarios against the built `playbox` and `playbox-mcp` binaries (conformance/). The fast tier runs on every push;
+    # the full tier (docker tasks, secrets) runs locally with `python3 conformance/run.py --tier full`.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p playbox-cli -p playbox-mcp
+      - run: CONFORMANCE_REQUIRE_ALL=1 python3 conformance/run.py
   ui:
     # The cockpit's end-to-end check: two UI servers (host and guest) driven over HTTP like the browser does, each with a real
     # playbox-mcp sidecar. A separate job so a failure here does not hide the results of the others.
