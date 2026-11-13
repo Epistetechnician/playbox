@@ -4,6 +4,7 @@ import hmac
 import http.server
 import ipaddress
 import json
+import re
 import os
 import queue
 import secrets
@@ -21,6 +22,7 @@ from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from . import agents as agentmod
 from .icons import png_icon
+from .integrations import Integrations, IntegError
 from .invites import Invites, InviteError
 from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
@@ -43,6 +45,7 @@ def is_local(peer, headers):
 
 def make_handler(hub, auth, store, opts):
     invites = Invites(store)
+    integ = Integrations(store)
 
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "playbox-hub"
@@ -180,6 +183,8 @@ def make_handler(hub, auth, store, opts):
         def invite_public(m, p):
             """The only paths a friend's browser may reach without Cloudflare Access: the invite page, its status/knock/poll calls
             (each needs the invite's own secret or is a read-only status) and the icon. Everything else needs Access."""
+            if p.startswith("/x/"):       # an agent's own bearer key authenticates these
+                return True
             if m == "GET" and (p == "/icon.svg" or (p.startswith("/i/") and len(p) > 3 and "/" not in p[3:])):
                 return True
             parts = p.split("/")      # ['', 'api', 'invite', id, action?]
@@ -224,6 +229,8 @@ def make_handler(hub, auth, store, opts):
                 return self.auth_post(p)
             if p.startswith("/api/invite/") and m == "POST":
                 return self.invite_post(p)
+            if p.startswith("/x/"):
+                return self.agent_route(m, p, url)
             # everything below needs a session
             sess = self.authed()
             if not sess:
@@ -321,6 +328,92 @@ def make_handler(hub, auth, store, opts):
             hub.wake.set()
             return self.j(200, {"ok": True})
 
+        def agent_route(self, m, p, url):
+            """Agents reach third-party apps only here, with a room-scoped key. The grant level is checked on every call."""
+            auth.throttle(self.peer)
+            h = self.headers.get("Authorization", "")
+            room = integ.token_room(h[7:].strip() if h[:7].lower() == "bearer " else "")
+            if not room:
+                auth._fail(self.peer)
+                return self.j(401, {"error": "missing or invalid agent key"})
+            q = urllib.parse.parse_qs(url.query)
+            try:
+                if m == "GET" and p == "/x/grants":
+                    return self.j(200, {"grants": [{"toolkit": t, "level": g["level"]} for t, g in integ.room_grants(room).items()]})
+                if m == "GET" and p == "/x/tools":
+                    return self.j(200, integ.tools_for(room, (q.get("toolkit") or [""])[0]))
+                if m == "POST" and p == "/x/execute":
+                    b = self.body()
+                    return self.j(200, integ.run(room, b.get("toolkit"), b.get("tool"), b.get("arguments") if b.get("arguments") is not None else {}))
+            except IntegError as e:
+                return self.j(e.status, {"error": e.msg})
+            return self.j(404, {"error": "not found"})
+
+        def integrations_route(self, m, p, url, rec):
+            q = urllib.parse.parse_qs(url.query)
+            if m == "GET" and p == "/api/integrations":
+                st = integ.state()
+                st["accounts"], st["error"] = [], ""
+                if st["configured"]:
+                    try:
+                        st["accounts"] = integ.client().accounts(integ.user_id())
+                    except IntegError as e:
+                        st["error"] = e.msg
+                return self.j(200, st)
+            if m == "POST" and p == "/api/integrations/key":
+                if not self.need_fresh(rec):
+                    return
+                integ.set_key(self.body().get("key"))
+                return self.j(200, integ.state())
+            if m == "DELETE" and p == "/api/integrations/key":
+                if not self.need_fresh(rec):
+                    return
+                integ.clear_key()
+                return self.j(200, integ.state())
+            if m == "GET" and p == "/api/integrations/toolkits":
+                return self.j(200, {"toolkits": integ.client().toolkits((q.get("q") or [""])[0][:60])})
+            if m == "POST" and p == "/api/integrations/connect":
+                if not self.need_fresh(rec):
+                    return
+                tk = str(self.body().get("toolkit") or "")
+                if not re.match(r"^[a-z0-9][a-z0-9_\-]{0,63}$", tk):
+                    raise IntegError(400, "bad toolkit")
+                return self.j(200, {"url": integ.client().connect(integ.user_id(), tk, self.public_base()[0] + "/?view=integrations")})
+            if m == "DELETE" and p.startswith("/api/integrations/accounts/"):
+                if not self.need_fresh(rec):
+                    return
+                aid = p.rsplit("/", 1)[1]
+                integ.client().delete(aid)
+                integ.drop_account(aid)
+                return self.j(200, {"ok": True})
+            if m == "POST" and p.startswith("/api/rooms/") and p.endswith("/grants"):
+                if not self.need_fresh(rec):
+                    return
+                rid, b = p.split("/")[3], self.body()
+                if not hub.get(rid):
+                    raise IntegError(404, "no such room")
+                acct = next((a for a in integ.client().accounts(integ.user_id()) if a["id"] == b.get("account")), None)
+                if not acct:
+                    raise IntegError(404, "that account isn't connected")
+                return self.j(200, {"grant": integ.grant(rid, acct["toolkit"], acct["id"], b.get("level"), rec["name"])})
+            if m == "POST" and p.startswith("/api/rooms/") and p.endswith("/agent-tokens"):
+                if not self.need_fresh(rec):
+                    return
+                rid = p.split("/")[3]
+                if not hub.get(rid):
+                    raise IntegError(404, "no such room")
+                tok, tid = integ.mint_token(rid, self.body().get("label"))
+                return self.j(200, {"token": tok, "id": tid})
+            if m == "DELETE" and p.startswith("/api/agent-tokens/"):
+                if not self.need_fresh(rec):
+                    return
+                return self.j(200, {"ok": integ.revoke_token(p.rsplit("/", 1)[1])})
+            if m == "DELETE" and p.startswith("/api/grants/"):
+                if not self.need_fresh(rec):
+                    return
+                return self.j(200, {"ok": integ.revoke(p.rsplit("/", 1)[1])})
+            return self.j(404, {"error": "not found"})
+
         def public_base(self):
             """The address a friend can open. The one this request came in on if that is public, else the tunnel the hub published."""
             host = self.headers.get("Host", "")
@@ -401,12 +494,17 @@ def make_handler(hub, auth, store, opts):
                     hub.wake.set()
                 return self.j(200, {"room": room.digest, "id": room.id})
             if m == "GET" and p == "/api/agents":
-                return self.j(200, {"agents": agentmod.detect()})
+                return self.j(200, {"agents": agentmod.detect(), "manual": agentmod.manual()})
             if m == "POST" and p.startswith("/api/agents/") and p.endswith("/connect"):
                 if not self.need_fresh(rec):      # this edits the agent's own config files
                     return
                 ok, out = agentmod.connect(p.split("/")[3])
-                return self.j(200 if ok else 502, {"ok": ok, "output": out, "agents": agentmod.detect()})
+                return self.j(200 if ok else 502, {"ok": ok, "output": out, "agents": agentmod.detect(), "manual": agentmod.manual()})
+            if p.startswith("/api/integrations") or (p.startswith("/api/rooms/") and p.rsplit("/", 1)[1] in ("grants", "agent-tokens")) or p.startswith(("/api/grants/", "/api/agent-tokens/")):
+                try:
+                    return self.integrations_route(m, p, url, rec)
+                except IntegError as e:
+                    return self.j(e.status, {"error": e.msg})
             if m == "GET" and p == "/api/knocks":
                 return self.j(200, {"requests": [{"rid": r["rid"], "name": r["name"], "code": r["code"], "room": r["room"], "created": r["created"],
                                                   "label": store.d["invites"].get(r["invite"], {}).get("label", "")} for r in hub.knocks.pending()]})
@@ -442,6 +540,7 @@ def make_handler(hub, auth, store, opts):
                 if m == "DELETE":
                     if not self.need_fresh(rec):
                         return
+                    integ.drop_room(rid)
                     return self.j(200 if hub.remove(rid) else 404, {"ok": True})
             if m == "POST" and p == "/api/devices/pair":
                 if rec["weak"] and not is_local(self.peer, self.hdrs()):

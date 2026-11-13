@@ -331,6 +331,7 @@ const store = {get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { 
 const ICON = {
   rooms: '<circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><circle cx="19" cy="9" r="1.6"/><circle cx="6" cy="16.5" r="1.6"/>',
   attention: '<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',
+  plug: '<path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
   hub: '<rect x="4" y="4" width="16" height="6"/><rect x="4" y="14" width="16" height="6"/><path d="M8 7h.01M8 17h.01"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   shield: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
@@ -563,7 +564,7 @@ addEventListener("load", syncThemeColor);
 matchMedia("(prefers-color-scheme:dark)").addEventListener?.("change", syncThemeColor);
 
 /* ---------- chrome ---------- */
-const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["add", "Add", "add", ""], ["hub", "Hub", "hub", "03"]];
+const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["add", "Add", "add", ""], ["integrations", "Integrations", "plug", "03"], ["hub", "Hub", "hub", "04"]];
 function paint() {
   $("#root").innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
@@ -604,6 +605,7 @@ function paintView(soft) {
   if (S.view === "rooms") { if (S.agents === null) loadAgents(); paintSetup(); }
   if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length) startOrbit();
   enter = false; paintActivity(); countUp();
+  if (S.view === "integrations") { if (S.agents === null) loadAgents(); if (!S.integ) loadInteg(); }
   if (S.view === "hub") { loadInvites(); pushState(); if (installEvt) { $("#installbtn").hidden = false; $("#installhint").hidden = true; } }
 }
 async function loadInvites() {
@@ -723,24 +725,22 @@ function openKnock(d) {
 
 /* ---------- first-run: get your agent and a room connected ---------- */
 S.agents = null;
-async function loadAgents() { try { S.agents = (await api("GET", "/api/agents")).agents; } catch { S.agents = []; } if (S.view === "rooms" && $("#setup")) paintSetup(); }
+async function loadAgents() { try { const j = await api("GET", "/api/agents"); S.agents = j.agents; S.manual = j.manual; } catch { S.agents = []; } if (S.view === "rooms" && $("#setup")) paintSetup(); }
 function setupNeeded() {
-  if (store.get("pb.setup.hide", "") === "1") return false;
-  const agentOk = S.agents && S.agents.some(a => a.connected);
   let pend = false; try { pend = !!(sessionStorage.getItem("pb.knockctx") || sessionStorage.getItem("pb.agentlink")); } catch {}
-  return !agentOk || !S.rooms.length || pend;      // the agent still needs its own way in
+  return pend;      // only while an invite is waiting for the agent to come in
 }
 function paintSetup() {
   const el = $("#setup"); if (!el) return;
-  if (!setupNeeded() && !S.agents) { el.innerHTML = ""; return; }
   if (!setupNeeded()) { el.innerHTML = ""; return; }
   const ags = (S.agents || []).filter(a => a.installed), hasAgent = ags.some(a => a.connected);
   let held = null; try { held = JSON.parse(sessionStorage.getItem("pb.agentlink") || "null"); } catch {}
   let kctx = null; try { kctx = JSON.parse(sessionStorage.getItem("pb.knockctx") || "null"); } catch {}
   const step = (n, done, title, body) => `<li class="su ${done ? "done" : ""}"><span class="sn">${done ? "✓" : n}</span><div><b>${title}</b>${body ? `<div class="sb">${body}</div>` : ""}</div></li>`;
   const agentBody = S.agents === null ? `<span class="mut">Looking for coding agents…</span>`
-    : !ags.length ? `<span class="mut">No coding agent found here. Install Claude Code, Codex, OpenCode or Hermes, then reload.</span>`
+    : !ags.length ? `<span class="mut">No supported agent found here (Claude Code, Claude Desktop / Cowork, Codex, OpenCode, Hermes).</span>`
     : `<div class="row" style="gap:8px">${ags.map(a => a.connected ? `<span class="chip ok">${esc(a.name)} connected</span>` : `<button class="btn sm" data-act="agent" data-id="${a.id}">Connect ${esc(a.name)}</button>`).join("")}</div>`;
+  const other = S.agents === null || !S.manual ? "" : `<div style="margin-top:8px"><button class="btn sm" data-act="othermcp">Another agent (Muse, Instinct, Pi…)</button></div>${S.showManual ? `<div class="sb" style="margin-top:8px">Add this as an MCP server in that agent's settings (stdio):<pre class="card mono" style="margin:8px 0;user-select:all;overflow:auto">${esc(S.manual.json)}</pre><button class="btn sm" data-act="copymcp">Copy</button></div>` : ""}`;
   const roomBody = S.rooms.length ? "" : `<span class="mut">Use <b>Add room</b> below: host one, or paste an invite.</span>`;
   const agentAsk = kctx && hasAgent && !S.out.some(r => r.agent) ? `Ask your agent: <i>what is my Playbox guest_id?</i> Paste its answer here and ${esc(kctx.f)} gets a separate request for your agent, with its own code.
       <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="agid" class="mono" placeholder="64 hex characters" spellcheck="false" autocomplete="off"><button class="btn sm" data-act="kagent">Ask</button></div>` : "";
@@ -748,14 +748,38 @@ function paintSetup() {
       <button class="btn sm" data-act="copyagent">Copy</button> <span class="mut" style="font-size:12.5px">Works if the invite allowed you and your agent; otherwise ask for another.</span>` : "");
   el.innerHTML = `<div class="card setup"><h2>Get started</h2><ol class="sus">
     ${step(1, !S.me?.weak, "Passkey", S.me?.weak ? "This session has no passkey. Open the hub's HTTPS address to add one." : "")}
-    ${step(2, hasAgent, "Connect your coding agent", agentBody)}
+    ${step(2, hasAgent, "Connect your coding agent", hasAgent ? "" : `<button class="btn sm" data-act="gointeg">Open Integrations</button>`)}
     ${step(3, S.rooms.length > 0, "Join or host a room", roomBody)}
     ${(held || kctx) && S.rooms.length && handBody ? step(4, false, "Bring your agent into the room", handBody) : ""}</ol>
     <p style="margin:12px 0 0"><button class="btn sm" data-act="hidesetup">Hide</button></p></div>`;
 }
+function agentKeys(I, rooms) {
+  if (!rooms.length) return "";
+  const rn = id => esc((rooms.find(r => r.id === id) || {}).label || id), ago = t => t ? new Date(t * 1000).toLocaleString() : "never";
+  const keys = (I.tokens || []).map(t => `<div class="stat"><span>${rn(t.room)} · ${esc(t.label)}<br><span class="mut" style="font-size:12px">last used ${esc(ago(t.last))}</span></span><button class="btn sm danger" data-act="rmtok" data-id="${esc(t.id)}">Revoke</button></div>`).join("");
+  const nt = S.newTok ? `<div class="card" style="margin:10px 0"><b>Copy this now. It is shown once.</b><pre class="mono" style="user-select:all;white-space:pre-wrap;word-break:break-all;margin:8px 0">${esc(S.newTok.prompt)}</pre><button class="btn sm" data-act="copytok">Copy</button> <button class="btn sm" data-act="donetok">Done</button></div>` : "";
+  const log = (I.audit || []).slice().reverse().map(x => `<div class="stat"><span class="mono" style="font-size:12px">${esc(x.toolkit)} · ${esc(x.tool)}</span><span class="chip ${x.out === "ok" ? "ok" : x.out.startsWith("denied") ? "warn" : "bad"}" title="${esc(x.out)}">${esc(x.out.split(":")[0])}</span></div>`).join("");
+  return `<h3 style="margin:18px 0 8px">Agent keys</h3><p class="mut" style="font-size:12.5px;margin:0 0 8px">A key lets one room's agent use that room's granted apps, at its granted level, through this hub. The agent never sees your app logins.</p>
+    ${keys}${nt}<div class="row" style="margin-top:8px;flex-wrap:nowrap"><select id="tokroom">${rooms.map(r => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join("")}</select><input id="toklabel" placeholder="label (e.g. claude)" autocomplete="off"><button class="btn sm" data-act="mktok">Make key</button></div>
+    ${log ? `<h3 style="margin:18px 0 8px">Recent calls</h3>${log}` : ""}`;
+}
+async function loadInteg() {
+  try { S.integ = await api("GET", "/api/integrations"); } catch (e) { S.integ = {configured: false, accounts: [], grants: [], levels: [], error: e.message}; }
+  if (S.view === "integrations") paintView(true);
+}
+async function integCall(method, path, body, done) {
+  try { const j = await api(method, path, body); if (done) done(j); }
+  catch (e) { toast(e.message, true); }
+  await loadInteg();
+}
+async function searchApps(q) {
+  S.tkq = q;
+  try { S.tk = (await api("GET", "/api/integrations/toolkits?q=" + encodeURIComponent(q))).toolkits; } catch (e) { S.tk = []; toast(e.message, true); }
+  if (S.view === "integrations") paintView(true);
+}
 async function connectAgent(id, btn) {
   btn.disabled = true; btn.textContent = "Connecting…";
-  try { const j = await api("POST", `/api/agents/${id}/connect`); S.agents = j.agents; toast("Connected. Restart that agent to pick it up."); }
+  try { const j = await api("POST", `/api/agents/${id}/connect`); S.agents = j.agents; S.manual = j.manual; toast("Connected. Restart that agent to pick it up."); }
   catch (e) { toast(e.message, true); try { S.agents = (await api("GET", "/api/agents")).agents; } catch {} }
   paintSetup();
 }
@@ -782,6 +806,37 @@ const VIEWS = {
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
     return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="/r/${i.room}/">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
+  integrations() {
+    const I = S.integ, ags = S.agents;
+    const agentRows = ags === null ? `<p class="mut" style="margin:0">Looking for agents…</p>` : ags.map(a => `<div class="stat"><span>${esc(a.name)}${a.connected ? ' <span class="chip ok">connected</span>' : a.installed ? "" : ' <span class="chip">not found</span>'}</span>
+      ${a.connected ? "" : a.installed ? `<button class="btn sm" data-act="agent" data-id="${a.id}">Connect</button>` : ""}</div>`).join("");
+    const manual = !S.manual ? "" : `<div style="margin-top:12px"><button class="btn sm" data-act="othermcp">Another agent (Muse, Instinct, Pi…)</button>${S.showManual ? `<div class="sb" style="margin-top:8px">Add this as an MCP server in that agent's settings (stdio):<pre class="card mono" style="margin:8px 0;user-select:all;overflow:auto">${esc(S.manual.json)}</pre><button class="btn sm" data-act="copymcp">Copy</button></div>` : ""}</div>`;
+    let apps;
+    if (!I) apps = `<p class="mut" style="margin:0">Loading…</p>`;
+    else if (!I.configured) apps = `<p class="mut" style="margin:0 0 12px">Connect apps (Gmail, GitHub, Slack, Drive and hundreds more) through Composio. The key stays on this hub; browsers and agents never see it.</p>
+      <div class="row" style="flex-wrap:nowrap"><input id="ckey" class="mono" type="password" placeholder="Composio API key" spellcheck="false" autocomplete="off"><button class="btn primary sm" data-act="savekey">Save</button></div>`;
+    else {
+      const rooms = S.rooms, lv = I.levels || [];
+      const accts = I.accounts.map(a => {
+        const gs = I.grants.filter(g => g.account === a.id);
+        const rn = id => esc((rooms.find(r => r.id === id) || {}).label || id);
+        return `<div class="card" style="margin-bottom:10px"><div class="stat" style="border:0;padding:0"><span><b>${esc(a.toolkit)}</b> <span class="chip ${a.status === "ACTIVE" ? "ok" : "warn"}">${esc(a.status.toLowerCase() || "unknown")}</span></span>
+          <button class="btn sm danger" data-act="unlink" data-id="${esc(a.id)}">Disconnect</button></div>
+          ${gs.map(g => `<div class="stat"><span class="mut">${rn(g.room)}</span><span><span class="chip">${esc(g.level)}</span> <button class="btn sm" data-act="ungrant" data-id="${esc(g.id)}">Revoke</button></span></div>`).join("")}
+          ${rooms.length ? `<div class="row" style="margin-top:10px;flex-wrap:nowrap"><select data-grant-room="${esc(a.id)}">${rooms.map(r => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join("")}</select>
+            <select data-grant-level="${esc(a.id)}">${lv.map(l => `<option ${l === "read" ? "selected" : ""}>${l}</option>`).join("")}</select><button class="btn sm" data-act="grant" data-id="${esc(a.id)}">Give room access</button></div>` : ""}</div>`;
+      }).join("");
+      const tks = (S.tk || []).map(t => `<button class="btn sm" data-act="connectapp" data-id="${esc(t.slug)}" title="${esc(t.cats.join(", "))}">${esc(t.name)}</button>`).join(" ");
+      apps = `${I.error ? `<p class="chip bad" style="white-space:normal">${esc(I.error)}</p>` : ""}${accts || `<p class="mut" style="margin:0 0 12px">No apps connected yet.</p>`}
+        <div class="row" style="flex-wrap:nowrap;margin-top:6px"><input id="tkq" placeholder="Search apps (gmail, github, slack…)" value="${esc(S.tkq || "")}" autocomplete="off"><button class="btn sm" data-act="tkgo">Search</button></div>
+        <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">${tks || '<span class="mut">Search to list apps.</span>'}</div>
+        ${agentKeys(I, rooms)}
+        <p class="mut" style="font-size:12.5px;margin:14px 0 0">Key ${esc(I.hint)}${I.from_env ? " (from the environment)" : ""} · <button class="btn sm" data-act="clearkey" ${I.from_env ? "disabled" : ""}>Remove key</button></p>`;
+    }
+    return `<div class="sect"><h2 class="rule"><span class="ix">03</span>Integrations</h2></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
+      <div class="card"><h2>Agents</h2>${agentRows}${manual}</div>
+      <div class="card"><h2>Apps</h2>${apps}</div></div>`;
+  },
   hub() {
     const m = S.me || {};
     const dev = (m.devices || []).map(d => `<div class="stat"><span>${esc(d.name)} ${d.current ? '<span class="chip ok">this device</span>' : ""}<br><span class="mut" style="font-size:12px">paired ${ago(d.created * 1000)} · used ${ago(d.last * 1000)}</span></span>
@@ -790,7 +845,7 @@ const VIEWS = {
       ${s.current ? "" : `<button class="btn sm" data-act="rmses" data-id="${esc(s.key)}">End</button>`}</div>`).join("");
     const secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
     const th = store.get("pb.theme", "auto");
-    return `<div class="sect"><h2 class="rule"><span class="ix">03</span>Hub</h2></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
+    return `<div class="sect"><h2 class="rule"><span class="ix">04</span>Hub</h2></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
       <div class="card"><h2>Invites</h2><div id="invlist"><p class="mut" style="margin:0">Loading…</p></div>
         <p class="mut" style="font-size:12.5px;margin:12px 0 0">Make one from a room's <b>⋯</b> menu. Withdrawing hides the share page; the underlying single-use key still expires on its own clock.</p></div>
       <div class="card"><h2>Notifications</h2><p class="mut" style="margin:0 0 14px">Get a nudge when the witness pauses a write, a history check fails or a room needs you. The push carries no content: your phone wakes, then asks your hub directly.</p>
@@ -872,7 +927,7 @@ function openPalette() {
   const items = [
     ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/`, sig: r.id})),
     {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
-    {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
+    {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
     {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"}];
   const sh = $("#sheet"); let q = "", sel = 0, list = items;
   const draw = () => {
@@ -1098,6 +1153,23 @@ document.addEventListener("click", async e => {
     await loadOut(); refreshRooms(); }
   else if (act === "kcopy") { try { const r = S.out.find(x => x.rid === t.dataset.id); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${r.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "kagent") { try { const ctx = JSON.parse(sessionStorage.getItem("pb.knockctx")); await api("POST", "/api/knock", {base: ctx.b, id: ctx.i, k: ctx.k, label: ctx.r, name: (store.get("pb.name", "") || "Me") + "'s agent", agent_guest: $("#agid").value.trim()}); loadOut(); } catch (er) { toast(er.message, true); } }
+  else if (act === "gointeg") go("integrations");
+  else if (act === "savekey") { const k = $("#ckey").value; integCall("POST", "/api/integrations/key", {key: k}, () => { S.tk = null; toast("Saved"); searchApps(""); }); }
+  else if (act === "clearkey") { if (confirm("Remove the Composio key from this hub? Connected apps stop working until you add it again.")) integCall("DELETE", "/api/integrations/key", null, () => { S.tk = null; }); }
+  else if (act === "tkgo") searchApps($("#tkq").value);
+  else if (act === "connectapp") integCall("POST", "/api/integrations/connect", {toolkit: t.dataset.id}, j => { window.open(j.url, "_blank", "noopener"); toast("Finish signing in in the new tab, then come back and reload."); });
+  else if (act === "unlink") { if (confirm("Disconnect this app? Every room loses access to it.")) integCall("DELETE", `/api/integrations/accounts/${encodeURIComponent(t.dataset.id)}`); }
+  else if (act === "grant") { const id = t.dataset.id; integCall("POST", `/api/rooms/${$(`[data-grant-room="${id}"]`).value}/grants`, {account: id, level: $(`[data-grant-level="${id}"]`).value}); }
+  else if (act === "mktok") integCall("POST", `/api/rooms/${$("#tokroom").value}/agent-tokens`, {label: $("#toklabel").value}, j => {
+    const base = location.origin;
+    S.newTok = {token: j.token, prompt: `Playbox integrations for this room. Hub: ${base}\nKey: ${j.token}\nSend the key as "Authorization: Bearer <key>".\nGET  ${base}/x/grants  (apps and levels this room has)\nGET  ${base}/x/tools?toolkit=<app>  (tools and whether each is allowed)\nPOST ${base}/x/execute  {"toolkit":"<app>","tool":"<TOOL_SLUG>","arguments":{}}\nDon't print or store the key anywhere else.`};
+  });
+  else if (act === "copytok") { try { await navigator.clipboard.writeText(S.newTok.prompt); toast("Copied"); } catch { toast("Copy failed", true); } }
+  else if (act === "donetok") { S.newTok = null; paintView(true); }
+  else if (act === "rmtok") { if (confirm("Revoke this key? The agent using it stops working.")) integCall("DELETE", `/api/agent-tokens/${encodeURIComponent(t.dataset.id)}`); }
+  else if (act === "ungrant") integCall("DELETE", `/api/grants/${encodeURIComponent(t.dataset.id)}`);
+  else if (act === "othermcp") { S.showManual = !S.showManual; paintSetup(); }
+  else if (act === "copymcp") { try { await navigator.clipboard.writeText(S.manual.json); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "hidesetup") { store.set("pb.setup.hide", "1"); try { sessionStorage.removeItem("pb.knockctx"); sessionStorage.removeItem("pb.agentlink"); } catch {} paintSetup(); }
   else if (act === "copyagent") { try { const h = JSON.parse(sessionStorage.getItem("pb.agentlink")); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${h.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }

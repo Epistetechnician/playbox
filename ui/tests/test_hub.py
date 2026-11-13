@@ -217,14 +217,70 @@ def free_port():
     return p
 
 
+
+def fake_composio(accounts):
+    """A stand-in for Composio's API; records the keys it was called with."""
+    import http.server, threading
+    seen = {"keys": [], "deleted": [], "exec": []}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def reply(self, obj, code=200):
+            b = json.dumps(obj).encode()
+            self.send_response(code); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+
+        def do_GET(self):
+            seen["keys"].append(self.headers.get("x-api-key"))
+            if self.headers.get("x-api-key") != "ck_good_key_123":
+                return self.reply({"error": "no"}, 401)
+            if self.path.startswith("/toolkits"):
+                return self.reply({"items": [{"slug": "gmail", "name": "Gmail", "meta": {"categories": [{"name": "email"}]}}, {"slug": "Bad Slug!", "name": "x"}]})
+            if self.path.startswith("/tools"):
+                return self.reply({"items": [{"slug": "GMAIL_FETCH_EMAILS", "description": "read"}, {"slug": "GMAIL_SEND_EMAIL", "description": "send"}, {"slug": "GMAIL_DELETE_MESSAGE", "description": "del"}]})
+            if self.path.startswith("/connected_accounts"):
+                return self.reply({"items": [{"id": a, "toolkit": {"slug": "gmail"}, "status": "active"} for a in accounts if a not in seen["deleted"]]})
+            self.reply({}, 404)
+
+        def do_POST(self):
+            seen["keys"].append(self.headers.get("x-api-key"))
+            n = int(self.headers.get("Content-Length") or 0); raw = self.rfile.read(n)
+            if self.path.startswith("/tools/execute/"):
+                seen["exec"].append((self.path.rsplit("/", 1)[1], json.loads(raw or b"{}")))
+                return self.reply({"successful": True, "data": {"messages": 2}})
+            if self.path == "/tool_router/session":
+                return self.reply({"session_id": "sess_1"})
+            if self.path == "/tool_router/session/sess_1/link":
+                return self.reply({"redirect_url": "https://connect.example/oauth/abc"})
+            self.reply({}, 404)
+
+        def do_DELETE(self):
+            seen["deleted"].append(self.path.rsplit("/", 1)[1]); self.reply({"ok": True})
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, seen
+
+
+def test_classify():
+    from hub.integrations import classify
+    cases = {("gmail", "GMAIL_FETCH_EMAILS"): "read", ("github", "GITHUB_LIST_REPOSITORY_ISSUES"): "read", ("slack", "SLACK_SEARCH_MESSAGES"): "read",
+             ("gmail", "GMAIL_SEND_EMAIL"): "write", ("github", "GITHUB_CREATE_AN_ISSUE_COMMENT"): "write", ("gmail", "GMAIL_DELETE_MESSAGE"): "admin",
+             ("github", "GITHUB_DELETE_A_REPOSITORY"): "admin", ("github", "GITHUB_GET_OR_CREATE_THING"): "write", ("notion", "NOTION_FROBNICATE"): "write",
+             ("gmail", "GITHUB_LIST_ISSUES"): None, ("gmail", "gmail_fetch_emails"): "read", ("gmail", "GMAIL_"): None, ("gmail", "../x"): None}
+    for (tk, tool), want in cases.items():
+        check(f"classify {tool} on {tk} -> {want}", classify(tk, tool) == want, str(classify(tk, tool)))
+
 def test_http():
     mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
     if not mcp:
         print("SKIP http tests (playbox-mcp not found)")
         return
     home, port = tempfile.mkdtemp(prefix="pbhub-"), free_port()
+    fsrv, fseen = fake_composio(["ca_1", "ca_2"])
     p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
-                         stdout=subprocess.PIPE, text=True, env={**os.environ, "PLAYBOX_HUB_FRESH": "2"})
+                         stdout=subprocess.PIPE, text=True,
+                         env={**os.environ, "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
     try:
         code = None
         for _ in range(12):
@@ -273,6 +329,72 @@ def test_http():
         check("room proxy: unknown room 404", a.req("GET", "/r/zzzz/api/state")[0] == 404)
         st, j, _ = a.req("PATCH", f"/api/rooms/{rid}", {"label": "Lab", "kind": "shared"})
         check("rename + reclassify", st == 200 and j["room"]["label"] == "Lab" and j["room"]["kind"] == "shared")
+
+        st, j, _ = a.req("GET", "/api/integrations")
+        check("integrations: no key yet", st == 200 and j["configured"] is False and j["accounts"] == [])
+        check("integrations: a short key is refused", a.req("POST", "/api/integrations/key", {"key": "x"})[0] == 400)
+        check("integrations: toolkits need a key", a.req("GET", "/api/integrations/toolkits")[0] == 409)
+        a.req("POST", "/api/integrations/key", {"key": "ck_bad_key_1234"})
+        check("integrations: a bad key is reported, not leaked", (lambda r: r[0] == 502 and "ck_bad" not in json.dumps(r[1]))(a.req("GET", "/api/integrations/toolkits")))
+        st, j, _ = a.req("POST", "/api/integrations/key", {"key": "ck_good_key_123"})
+        check("integrations: key saved, only a hint comes back", st == 200 and j["configured"] and j["hint"] == "…_123" and "ck_good" not in json.dumps(j))
+        check("integrations: key file is private", oct(os.stat(os.path.join(home, "composio.key")).st_mode & 0o777) == "0o600")
+        st, j, _ = a.req("GET", "/api/integrations/toolkits")
+        check("integrations: toolkits listed, bad slugs dropped", st == 200 and [t["slug"] for t in j["toolkits"]] == ["gmail"] and j["toolkits"][0]["cats"] == ["email"])
+        st, j, _ = a.req("POST", "/api/integrations/connect", {"toolkit": "gmail"})
+        check("integrations: connect returns the provider's sign-in page", st == 200 and j["url"] == "https://connect.example/oauth/abc")
+        check("integrations: connect refuses a bad toolkit name", a.req("POST", "/api/integrations/connect", {"toolkit": "../x"})[0] == 400)
+        st, j, _ = a.req("GET", "/api/integrations")
+        check("integrations: connected accounts listed", st == 200 and [x["id"] for x in j["accounts"]] == ["ca_1", "ca_2"] and j["accounts"][0]["toolkit"] == "gmail")
+        st, j, _ = a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_1", "level": "read"})
+        gid = j.get("grant", {}).get("id")
+        check("integrations: grant an account to a room", st == 200 and gid and j["grant"]["level"] == "read" and j["grant"]["toolkit"] == "gmail")
+        st, j, _ = a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_1", "level": "admin"})
+        check("integrations: granting again changes the level", st == 200 and j["grant"]["id"] == gid and len(a.req("GET", "/api/integrations")[1]["grants"]) == 1)
+        check("integrations: unknown level refused", a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_1", "level": "root"})[0] == 400)
+        check("integrations: an account you haven't connected is refused", a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_999", "level": "read"})[0] == 404)
+        check("integrations: unknown room refused", a.req("POST", "/api/rooms/zzzz/grants", {"account": "ca_1", "level": "read"})[0] == 404)
+        check("integrations: disconnecting removes its grants", a.req("DELETE", "/api/integrations/accounts/ca_1")[0] == 200 and "ca_1" in fseen["deleted"] and a.req("GET", "/api/integrations")[1]["grants"] == [])
+        st, j, _ = a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_2", "level": "write"})
+        check("integrations: revoke a grant", a.req("DELETE", f"/api/grants/{j['grant']['id']}")[0] == 200 and a.req("GET", "/api/integrations")[1]["grants"] == [])
+        check("integrations: only the key header carries the secret", set(fseen["keys"]) <= {"ck_good_key_123", "ck_bad_key_1234"})
+        # --- the enforcing proxy ---
+        a.req("POST", "/api/integrations/key", {"key": "ck_good_key_123"})
+        st, j, _ = a.req("POST", f"/api/rooms/{rid}/agent-tokens", {"label": "claude"})
+        tok = j.get("token", "")
+        check("proxy: mint an agent key (shown once)", st == 200 and tok.startswith("pbx_") and j["id"] in tok)
+        check("proxy: the key is stored hashed", tok.split(".", 1)[1] not in open(os.path.join(home, "hub.json")).read())
+        check("proxy: state lists the key without its secret", (lambda t: t and tok.split(".", 1)[1] not in json.dumps(t))(a.req("GET", "/api/integrations")[1]["tokens"]))
+        ag = Client(port)
+        H = {"Authorization": "Bearer " + tok}
+        check("proxy: no key -> 401", ag.req("GET", "/x/grants")[0] == 401)
+        check("proxy: a wrong key -> 401", ag.req("GET", "/x/grants", headers={"Authorization": "Bearer pbx_" + "0" * 12 + ".x" * 20})[0] == 401)
+        check("proxy: no grant yet -> empty", ag.req("GET", "/x/grants", headers=H)[1]["grants"] == [])
+        st, j, _ = ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_FETCH_EMAILS", "arguments": {}}, H)
+        check("proxy: no grant -> refused", st == 403 and not fseen["exec"])
+        gid2 = a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_2", "level": "read"})[1]["grant"]["id"]
+        st, j, _ = ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_FETCH_EMAILS", "arguments": {"max": 1}}, H)
+        check("proxy: read grant runs a read tool", st == 200 and j["successful"] and fseen["exec"][-1][0] == "GMAIL_FETCH_EMAILS", str(j))
+        ex = fseen["exec"][-1][1]
+        check("proxy: the account and user come from the grant, not the agent", ex["connected_account_id"] == "ca_2" and ex["user_id"].startswith("playbox-") and ex["arguments"] == {"max": 1})
+        n = len(fseen["exec"])
+        check("proxy: read grant refuses a write tool", ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_SEND_EMAIL", "arguments": {}}, H)[0] == 403 and len(fseen["exec"]) == n)
+        check("proxy: read grant refuses an admin tool", ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_DELETE_MESSAGE", "arguments": {}}, H)[0] == 403 and len(fseen["exec"]) == n)
+        check("proxy: a tool from another toolkit is refused", ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GITHUB_LIST_ISSUES", "arguments": {}}, H)[0] == 400)
+        check("proxy: an agent can't name the account", (ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_FETCH_EMAILS", "arguments": {}, "account": "ca_1"}, H)[0] == 200) and fseen["exec"][-1][1]["connected_account_id"] == "ca_2")
+        st, j, _ = ag.req("GET", "/x/tools?toolkit=gmail", headers=H)
+        allowed = {t["slug"]: t["allowed"] for t in j.get("tools", [])}
+        check("proxy: tool list says what this room may call", st == 200 and allowed == {"GMAIL_FETCH_EMAILS": True, "GMAIL_SEND_EMAIL": False, "GMAIL_DELETE_MESSAGE": False}, str(allowed))
+        a.req("POST", f"/api/rooms/{rid}/grants", {"account": "ca_2", "level": "write"})
+        check("proxy: raising the grant allows writes at once", ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_SEND_EMAIL", "arguments": {"to": "a@b.c"}}, H)[0] == 200)
+        check("proxy: write still isn't admin", ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_DELETE_MESSAGE", "arguments": {}}, H)[0] == 403)
+        log = a.req("GET", "/api/integrations")[1]["audit"]
+        check("proxy: every call is logged, denials included", any(x["out"] == "ok" for x in log) and any(x["out"].startswith("denied") for x in log) and all("arguments" not in x for x in log))
+        a.req("DELETE", f"/api/grants/{gid2}")
+        check("proxy: revoking the grant stops the agent", ag.req("POST", "/x/execute", {"toolkit": "gmail", "tool": "GMAIL_FETCH_EMAILS", "arguments": {}}, H)[0] == 403)
+        check("proxy: revoking the key stops the agent", a.req("DELETE", f"/api/agent-tokens/{j['id'] if False else tok.split('.')[0][4:]}")[0] == 200 and ag.req("GET", "/x/grants", headers=H)[0] == 401)
+        check("proxy: only a session can mint keys", Client(port).req("POST", f"/api/rooms/{rid}/agent-tokens", {})[0] == 401)
+        check("integrations: remove the key", a.req("DELETE", "/api/integrations/key")[0] == 200 and not a.req("GET", "/api/integrations")[1]["configured"])
         st, j, _ = a.req("POST", "/api/rooms", {"label": "x", "home": "/nonexistent/zz"})
         check("adopting a missing home refused", st == 400)
 
@@ -545,6 +667,15 @@ def test_agents():
         os.environ["PLAYBOX_CLI"] = fake
         ok, out = agents.connect("claude")
         check("connect runs `playbox setup --only claude`", ok and open(log).read().strip() == "setup --only claude" and "did it" in out)
+        cfgp = agents._desktop_cfg(agents.Path(h))
+        os.makedirs(cfgp.parent)
+        open(cfgp, "w").write(json.dumps({"mcpServers": {"keep": {"command": "x"}}, "other": 1}))
+        check("claude desktop is installed, not yet connected", {a["id"]: a for a in agents.detect()}["desktop"]["installed"] and not {a["id"]: a for a in agents.detect()}["desktop"]["connected"])
+        ok, out = agents.connect("desktop")
+        cfg = json.load(open(cfgp))
+        check("connecting claude desktop adds playbox and keeps the rest", ok and cfg["mcpServers"]["playbox"] == {"command": fake, "args": ["mcp"]} and "keep" in cfg["mcpServers"] and cfg["other"] == 1)
+        check("claude desktop now reads as connected", {a["id"]: a for a in agents.detect()}["desktop"]["connected"])
+        check("manual snippet is a stdio MCP server", json.loads(agents.manual()["json"])["mcpServers"]["playbox"]["args"] == ["mcp"])
         ok, out = agents.connect("claude; rm -rf /")
         check("connect refuses anything that is not a known agent", not ok and open(log).read().strip() == "setup --only claude")
     finally:
@@ -744,6 +875,7 @@ if __name__ == "__main__":
     test_cloudflare()
     test_access()
     test_rehost()
+    test_classify()
     test_agents()
     test_landing_quoting()
     test_approval()

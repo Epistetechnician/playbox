@@ -173,7 +173,7 @@ class Auth:
             "rp": {"id": rp_id, "name": "Playbox"}, "user": {"id": uid, "name": "playbox", "displayName": "Playbox owner"},
             "challenge": b64u(challenge), "pubKeyCredParams": [{"type": "public-key", "alg": -7}],
             "authenticatorSelection": {"residentKey": "preferred", "userVerification": "required"},
-            "attestation": "none", "timeout": 120000, "excludeCredentials": exclude}}
+            "attestation": "none", "timeout": 120000, "excludeCredentials": exclude, "hints": ["client-device"]}}
 
     def register_finish(self, ticket, resp, name, ua, ip):
         ent = self._use_ticket(ticket, "reg")

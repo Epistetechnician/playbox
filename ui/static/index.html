@@ -147,6 +147,10 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-off
 .composer{display:flex;gap:8px;position:sticky;bottom:calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));padding:10px;background:var(--panel);border:1px solid var(--edge);box-shadow:var(--hard)}
 @media (min-width:900px){.composer{bottom:16px}}
 .composer input{flex:1}
+.at{color:var(--sig-ink,var(--sig));font-weight:600}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.tags button{font:600 11px/1 var(--mono);letter-spacing:.04em;padding:6px 8px;background:var(--panel);border:1px solid var(--line-2,var(--edge));color:var(--ink);cursor:pointer;border-radius:2px}
+.tags button:hover,.tags button:focus-visible{border-color:var(--sig-ink,var(--sig))}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 4px}
 .legend i{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px}
 
@@ -371,8 +375,9 @@ const VIEWS = {
     return `<div class="legend"><span><i style="background:var(--ink)"></i>You</span><span><i style="background:var(--sig)"></i>Other members: untrusted text, the witness watches it</span></div>
       <div class="feed" id="feedlist"></div>
       <div class="quick" role="group" aria-label="Quick replies">${QUICK.map(q => `<button type="button" data-act="quick" data-text="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+      <div class="tags" id="tags" role="group" aria-label="Tag someone"></div>
       <form class="composer" id="say" autocomplete="off"><label class="sr" for="saytext">Message</label>
-        <input type="text" id="saytext" placeholder="Say something to the room" maxlength="2000"><button class="btn primary" type="submit">Send</button></form>`;
+        <input type="text" id="saytext" placeholder="Message the room · @ to tag an agent" maxlength="2000"><button class="btn primary" type="submit">Send</button></form>`;
   },
 
   work() {
@@ -484,13 +489,35 @@ function renderResult(w) {
 }
 
 /* ---------- feed ---------- */
+const atHtml = t => esc(t).replace(/(^|[\s(])@([\w.\-]{1,40})/g, '$1<span class="at">@$2</span>');
+const tagOf = n => String(n).trim().replace(/\s+/g, "-").slice(0, 40);
+function tagTargets() {
+  const out = [{tag: "all", label: "Everyone"}], seen = new Set(["all"]);
+  const add = (tag, label) => { const k = tag.toLowerCase(); if (tag && !seen.has(k)) { seen.add(k); out.push({tag, label}); } };
+  for (const it of S.feed) if (it.kind === "say" && it.name && it.from !== myId()) add(tagOf(it.name), it.name);
+  for (const id of members()) add(id.slice(0, 6), short(id));
+  return out;
+}
+function paintTags() {
+  const el = $("#tags"), inp = $("#saytext"); if (!el || !inp) return;
+  const frag = (inp.value.slice(0, inp.selectionStart ?? inp.value.length).match(/@([\w.\-]*)$/) || [])[1];
+  const list = tagTargets().filter(t => frag === undefined || t.tag.toLowerCase().startsWith(frag.toLowerCase()));
+  el.innerHTML = list.map(t => `<button type="button" data-act="tag" data-tag="${esc(t.tag)}" title="Tag ${esc(t.label)}">@${esc(t.tag)}${t.label !== t.tag && t.label !== "Everyone" ? ` · ${esc(t.label)}` : ""}</button>`).join("");
+}
+function insertTag(tag) {
+  const inp = $("#saytext"); if (!inp) return;
+  const pos = inp.selectionStart ?? inp.value.length, before = inp.value.slice(0, pos), after = inp.value.slice(pos);
+  const b = /@[\w.\-]*$/.test(before) ? before.replace(/@[\w.\-]*$/, "") : before + (before && !/\s$/.test(before) ? " " : "");
+  inp.value = `${b}@${tag} ${after}`;
+  const np = b.length + tag.length + 2; inp.focus(); inp.setSelectionRange(np, np); paintTags();
+}
 function feedItemHtml(it) {
   if (it.kind !== "say") return `<div class="sys">${esc(it.text)} · ${esc(hhmm(it.time_ms))}</div>`;
   const fromHost = it.from === "host";                       // the host's own messages carry from:"host"
   const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
   const who = it.name || (fromHost ? "host" : short(it.from)) || "member";
   const tag = fromHost ? "host" : "member";
-  return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div>${esc(it.text)}</div>`;
+  return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div>${atHtml(it.text)}</div>`;
 }
 function paintFeed() {
   const el = $("#feedlist");
@@ -499,7 +526,7 @@ function paintFeed() {
     el.innerHTML = S.feed.length ? S.feed.map(feedItemHtml).join("") : `<div class="empty">No messages yet. Say hello.</div>`;
     if (stick) scrollTo({top: document.documentElement.scrollHeight});
   }
-  paintPulse();
+  paintTags(); paintPulse();
 }
 function paintPulse() {
   const p = $("#pulse");
@@ -733,15 +760,18 @@ document.addEventListener("click", e => {
   if (!t) return;
   if (t.dataset.tab) return show(t.dataset.tab);
   if (t.dataset.reach) { document.querySelectorAll("[data-reach]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
+  if (t.dataset.act === "tag") return insertTag(t.dataset.tag);
   if (t.dataset.act === "revoke") return confirmRevoke(t.dataset.id);
   act(t.dataset.act, t);
 });
+document.addEventListener("input", e => { if (e.target.id === "saytext") paintTags(); });
+document.addEventListener("keyup", e => { if (e.target.id === "saytext" && /Arrow|Home|End/.test(e.key)) paintTags(); });
 document.addEventListener("submit", async e => {
   if (e.target.id !== "say") return;
   e.preventDefault();
   const inp = $("#saytext"), text = inp.value.trim();
   if (!text) return;
-  inp.value = "";
+  inp.value = ""; paintTags();
   const r = await api("playbox_say", {text});
   if (r.error) { inp.value = text; return toast(msgOf(r.data), true); }
   pollFeed();
