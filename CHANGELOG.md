@@ -9,6 +9,18 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
+### Security
+- Releases are signed. `SHA256SUMS` (which lists every archive, `release.json` and the SBOM) carries an ed25519 signature; `install.sh` and `playbox update` refuse a release without a valid one. The trusted keys are `release.pub` in the repository, built into the binary. Releases before 0.3.0 are unsigned: `PLAYBOX_ALLOW_UNSIGNED=1` installs one on purpose.
+- Releases carry a CycloneDX SBOM (`playbox.cdx.json`) and a Sigstore build-provenance attestation (`gh attestation verify FILE -R Epistetechnician/playbox`).
+- Capability results are signed by the host. A caller checks the signature against the host id it dialed and the result hash against the output, so a relayed or copied result cannot be altered or passed off as another member's or another host's. A host before 0.3.0 does not sign, and its capability results are refused.
+- CI: `cargo deny` (licences, banned crates, registry sources, advisories) is required; fuzzing runs on every push to `main` and weekly, with new targets for capability definitions and arguments and for the calls and conversations state files.
+
+### Testing
+- A version-skew scenario runs the current build and the previous release in one room, in both directions.
+- A restart scenario kills the host and starts it again: finished capability calls are not run twice, a call that was running is abandoned, talk and the audit chain survive.
+
 ## [0.2.1] - 2026-11-13
 
 ### Fixed

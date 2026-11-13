@@ -1,0 +1,35 @@
+# cargo-deny: what may enter the dependency tree. `cargo deny check` runs in CI (the `supply-chain` job).
+[graph]
+all-features = false
+
+[advisories]
+# The exceptions in .cargo/audit.toml, plus compile-time-only crates that are unmaintained (no code from them runs in a release binary).
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0387",
+    "RUSTSEC-2024-0436", # paste: unmaintained proc-macro, used at build time only
+    "RUSTSEC-2026-0173", # proc-macro-error2: unmaintained proc-macro helper, build time only
+]
+
+[licenses]
+# Permissive licences only. A new dependency under anything else fails until someone decides to allow it here.
+allow = [
+    "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Unicode-DFS-2016",
+    "Zlib", "CC0-1.0", "MPL-2.0", "0BSD", "BSL-1.0", "OpenSSL", "CDLA-Permissive-2.0", "Unlicense",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true   # path dependencies inside this workspace
+# One TLS and one crypto stack: a second would double what must be audited.
+deny = [
+    { name = "openssl-sys", reason = "rustls only" },
+    { name = "native-tls", reason = "rustls only" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

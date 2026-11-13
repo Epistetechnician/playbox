@@ -179,6 +179,11 @@ pub struct Outcome {
     pub stderr: String,
     /// blake3 of the canonical result, hex. The audit log holds the same value.
     pub result_hash: String,
+    /// The host's ed25519 signature (hex) over the call's identity and `result_hash`, added when the host answers (never stored).
+    /// A caller verifies it against the host id it dialed, so a relay or a copy of the result cannot be altered or passed off as
+    /// another host's or another member's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_sig: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +197,53 @@ pub struct Call {
     pub created_ms: u64,
     #[serde(default)]
     pub outcome: Option<Outcome>,
+}
+
+const RESULT_DOMAIN: &str = "playbox.cap-result.v1";
+
+impl Call {
+    /// The canonical document the result hash covers, rebuilt from the outcome.
+    fn result_hash_of(&self, o: &Outcome) -> String {
+        let doc = json!({"call_id": self.id, "name": self.name, "args": self.args, "exit_code": o.exit_code, "timed_out": o.timed_out, "stdout": o.stdout, "stderr": o.stderr});
+        blake3::hash(canonical(&doc).as_bytes()).to_hex().to_string()
+    }
+
+    /// What the host signs: who it is, whose call, which capability and arguments, how it ended, and the result hash.
+    fn signed_bytes(&self, host: &[u8; 32], o: &Outcome) -> Vec<u8> {
+        let host: String = host.iter().map(|b| format!("{b:02x}")).collect();
+        format!("{RESULT_DOMAIN}\n{host}\n{}\n{}\n{}\n{}\n{:?}\n{}", self.member, self.id, self.name, self.request_hash, self.state, o.result_hash).into_bytes()
+    }
+
+    /// This call with the host's signature on its result, for sending to the caller.
+    #[must_use]
+    pub fn signed(&self, key: &ed25519_dalek::SigningKey) -> Self {
+        use ed25519_dalek::Signer;
+        let mut c = self.clone();
+        if let Some(o) = c.outcome.clone() {
+            let sig = key.sign(&self.signed_bytes(&key.verifying_key().to_bytes(), &o));
+            c.outcome = Some(Outcome { host_sig: Some(sig.to_bytes().iter().map(|b| format!("{b:02x}")).collect()), ..o });
+        }
+        c
+    }
+
+    /// Check a result received from `host`: the hash matches the output, and the host signed it for this member and call.
+    ///
+    /// # Errors
+    ///
+    /// Says what does not match. A call without an outcome has nothing to check and passes.
+    pub fn verify_result(&self, host: &[u8; 32]) -> Result<()> {
+        use ed25519_dalek::Verifier;
+        let Some(o) = &self.outcome else { return Ok(()) };
+        if self.result_hash_of(o) != o.result_hash {
+            bail!("the result of call {} does not match its hash: it was altered", self.id);
+        }
+        let sig = o.host_sig.as_deref().context("the host did not sign this result (hosts before 0.3.0 do not; ask the host to update)")?;
+        let bytes: Vec<u8> = (0..sig.len() / 2).filter_map(|i| u8::from_str_radix(sig.get(2 * i..2 * i + 2)?, 16).ok()).collect();
+        let sig: [u8; 64] = bytes.try_into().map_err(|_| anyhow::anyhow!("the host's signature is malformed"))?;
+        ed25519_dalek::VerifyingKey::from_bytes(host)?
+            .verify(&self.signed_bytes(host, o), &ed25519_dalek::Signature::from_bytes(&sig))
+            .map_err(|_| anyhow::anyhow!("the host's signature on call {} does not verify: this result is not the host's", self.id))
+    }
 }
 
 /// What the caller of [`Book::submit`] or [`Book::decide`] must do next.
@@ -412,7 +464,7 @@ impl Book {
         let (stdout, stderr) = (clip(stdout), clip(stderr));
         let doc = json!({"call_id": c.id, "name": c.name, "args": c.args, "exit_code": exit_code, "timed_out": timed_out, "stdout": stdout, "stderr": stderr});
         let result_hash = blake3::hash(canonical(&doc).as_bytes()).to_hex().to_string();
-        c.outcome = Some(Outcome { exit_code, timed_out, stdout, stderr, result_hash });
+        c.outcome = Some(Outcome { exit_code, timed_out, stdout, stderr, result_hash, host_sig: None });
         c.state = State::Done;
         let out = c.clone();
         self.save(&t);
@@ -633,6 +685,32 @@ mod tests {
         assert_eq!(b.view("m", "r2").unwrap().state, State::Done);
         assert_eq!(b.submit("m", "run-tests", args("x", "a"), "r1").unwrap().1, Next::Nothing);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_result_is_signed_by_the_host_and_cannot_be_altered_or_moved() {
+        use ed25519_dalek::SigningKey;
+        let host = SigningKey::from_bytes(&[3u8; 32]);
+        let hid = host.verifying_key().to_bytes();
+        let b = Book::new(vec![cap(false)], None).unwrap();
+        b.submit("alice", "run-tests", args("x", "a"), "s1").unwrap();
+        let done = b.finish("alice", "s1", Some(0), false, "hi", "").unwrap();
+        let signed = done.signed(&host);
+        signed.verify_result(&hid).expect("the host's own result verifies");
+
+        // The output, the member, the call id and the host are all bound.
+        let mut t = signed.clone();
+        t.outcome.as_mut().unwrap().stdout = "something else".into();
+        assert!(t.verify_result(&hid).unwrap_err().to_string().contains("altered"));
+        let mut t = signed.clone();
+        t.member = "bob".into();
+        assert!(t.verify_result(&hid).is_err(), "another member cannot present alice's result");
+        let mut t = signed.clone();
+        t.id = "s2".into();
+        assert!(t.verify_result(&hid).is_err());
+        let other = SigningKey::from_bytes(&[4u8; 32]).verifying_key().to_bytes();
+        assert!(signed.verify_result(&other).is_err(), "a result from another host does not verify");
+        assert!(done.verify_result(&hid).unwrap_err().to_string().contains("did not sign"), "an unsigned result is refused");
     }
 
     #[test]

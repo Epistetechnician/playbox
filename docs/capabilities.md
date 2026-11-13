@@ -24,6 +24,7 @@ What is enforced, and where:
 | Exactly once | the call is written to `calls.json` before it runs; the same `(member, call_id)` with the same request returns the same call; a different request under the same id is refused; after a restart a running call becomes `abandoned` and is never re-run |
 | Owner approval | with `"approval": true` the call waits; the owner uses `approve ID` / `deny ID` in `up --console` (`calls` lists them); unanswered calls expire after 15 minutes |
 | Verifiable result | `result_hash` is blake3 over a canonical encoding (sorted keys) of call id, name, arguments, exit code, timeout flag and output; the same hash is in the audit log (`capability_result`), as are `capability_call` and `capability_decision` |
+| Host-signed result | The host signs (ed25519, its endpoint key, which is its id) `playbox.cap-result.v1`, its id, the member, call id, capability, request hash, state and `result_hash`. The caller verifies that against the host id it dialed and recomputes `result_hash` from the output, so a relayed or stored result cannot be altered, moved to another member or call, or attributed to another host. Hosts before 0.3.0 do not sign; their results are refused |
 | Untrusted output | the MCP tool registers stdout and stderr as untrusted text in the witness tracker, like a remote task's output |
 
 Members: `playbox_capabilities` lists, `playbox_capability_call name=… args={…} call_id=…` calls. Pass your own `call_id` so a retry

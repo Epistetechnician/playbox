@@ -23,7 +23,15 @@ def bin_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "target" / "debug"
 
 
-def exe(name: str) -> str:
+def exe(name: str, old: bool = False) -> str:
+    if old:
+        d = os.environ.get("PLAYBOX_OLD_BIN")
+        if not d:
+            raise Skip("PLAYBOX_OLD_BIN (a directory with an older release's binaries) is not set")
+        p = Path(d) / name
+        if not p.exists():
+            raise Skip(f"{p} is not built")
+        return str(p)
     p = bin_dir() / name
     if not p.exists():
         raise Skip(f"{p} is not built")
@@ -33,12 +41,12 @@ def exe(name: str) -> str:
 class Mcp:
     """One `playbox-mcp` sidecar over stdio. Notifications that arrive between replies are kept in `pushed`."""
 
-    def __init__(self, home: Path, env: dict | None = None):
+    def __init__(self, home: Path, env: dict | None = None, old: bool = False):
         e = {**os.environ, "PLAYBOX_HOME": str(home), **(env or {})}
         e.pop("PLAYBOX_LOG", None)
         if not (env or {}).get("PLAYBOX_LIVE"):
             e.pop("PLAYBOX_LIVE", None)
-        self.p = subprocess.Popen([exe("playbox-mcp")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=e, text=True, bufsize=1)
+        self.p = subprocess.Popen([exe("playbox-mcp", old)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=e, text=True, bufsize=1)
         self.q: "queue.Queue[dict]" = queue.Queue()
         self.pushed: list[dict] = []
         self.n = 0
@@ -120,8 +128,8 @@ class Ctx:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    def mcp(self, name: str, **env) -> Mcp:
-        m = Mcp(self.dir(name), env)
+    def mcp(self, name: str, old: bool = False, **env) -> Mcp:
+        m = Mcp(self.dir(name), env, old)
         self.procs.append(m)
         return m
 
@@ -135,13 +143,14 @@ class Ctx:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
-def room(ctx: Ctx, guests=1, **create):
-    """A host sidecar with a room and `guests` joined guest sidecars. Returns (host, [guest...], created)."""
-    host = ctx.mcp("host")
+def room(ctx: Ctx, guests=1, old_host=False, old_guests=False, **create):
+    """A host sidecar with a room and `guests` joined guest sidecars. Returns (host, [guest...], created).
+    `old_host` / `old_guests` use the binaries in PLAYBOX_OLD_BIN (a previous release) for that side."""
+    host = ctx.mcp("host", old=old_host)
     created = host.ok("playbox_create", transport="local", name="conf", uses=guests, **create)
     out = []
     for i in range(guests):
-        g = ctx.mcp(f"guest{i}")
+        g = ctx.mcp(f"guest{i}", old=old_guests)
         g.ok("playbox_join", link=created["link"], workspace=str(ctx.dir(f"ws{i}")))
         out.append(g)
     return host, out, created

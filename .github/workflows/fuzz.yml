@@ -1,0 +1,35 @@
+# Coverage-guided fuzzing of everything a stranger, a member or a judged host can hand us as bytes (fuzz/README.md).
+# A short run on every push to main, a long one weekly; a crash uploads the input that caused it.
+name: fuzz
+on:
+  push:
+    branches: [main]
+    paths: ["crates/**", "fuzz/**", ".github/workflows/fuzz.yml"]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      seconds: { description: "seconds per target", default: "300" }
+jobs:
+  fuzz:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: "fuzz -> target" }
+      - run: cargo install cargo-fuzz --locked
+      - name: Seed corpora and run
+        working-directory: fuzz
+        env:
+          SECS: ${{ github.event_name == 'schedule' && '600' || inputs.seconds || '30' }}
+        run: |
+          cargo run --bin seeds
+          sed -i 's/cargo +nightly fuzz/cargo fuzz/' run-all.sh
+          ./run-all.sh "$SECS"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts
