@@ -26,7 +26,12 @@ fn fuzz(hub_root: &Path, tag: &str) -> Value {
     let _ = std::fs::remove_dir_all(&home);
     let text = String::from_utf8_lossy(&o.stdout);
     let line = text.lines().rev().find(|l| l.starts_with('{')).unwrap_or_else(|| panic!("no JSON in: {text}\n{}", String::from_utf8_lossy(&o.stderr)));
-    serde_json::from_str::<Value>(line).unwrap()["fuzz"].clone()
+    let report = serde_json::from_str::<Value>(line).unwrap();
+    if report["fuzz"].is_null() {
+        let why = report["checks"].as_array().and_then(|c| c.iter().find(|c| c["id"] == "fuzz")).map(|c| c.to_string()).unwrap_or_default();
+        panic!("the fuzzer did not run: {why}\nstderr: {}", String::from_utf8_lossy(&o.stderr));
+    }
+    report["fuzz"].clone()
 }
 
 fn kinds(f: &Value) -> Vec<String> {
