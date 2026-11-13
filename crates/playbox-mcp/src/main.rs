@@ -13,7 +13,22 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut out = tokio::io::stdout();
-    while let Some(line) = lines.next_line().await? {
+    // With live delivery on, new room messages are pushed between requests; otherwise this never ticks.
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        let line = tokio::select! {
+            l = lines.next_line() => match l? { Some(l) => l, None => break },
+            _ = tick.tick(), if server.live_enabled() => {
+                let mut pushes: Vec<Value> = server.live_hello().into_iter().collect();
+                pushes.extend(server.live_poll().await);
+                for n in pushes {
+                    out.write_all(format!("{n}\n").as_bytes()).await?;
+                    out.flush().await?;
+                }
+                continue;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }

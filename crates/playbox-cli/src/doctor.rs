@@ -82,6 +82,18 @@ fn collect() -> Vec<Check> {
         Err(e) => add("hardware evidence", "platform attestation", false, e.to_string()),
     }
 
+    let live = std::env::var("PLAYBOX_LIVE").is_ok_and(|v| matches!(v.as_str(), "1" | "on" | "true"));
+    add(
+        "live delivery",
+        "channel push",
+        live,
+        if live {
+            "on in this shell; the agent must answer the hello with playbox_live_ready (docs/live-delivery.md)".into()
+        } else {
+            "off; set PLAYBOX_LIVE=1 in the sidecar's environment to push room messages to a running agent".into()
+        },
+    );
+
     let found = probes.join().unwrap_or_else(|_| vec![false; PROBES.len()]);
     let hint = |label: &str| match label {
         "docker" => "not running",
