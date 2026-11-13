@@ -122,3 +122,9 @@ tell the agent to use `link_file`), or join a room your agent hosts.
 ## Test
 `python3 ui/e2e.py` boots a host UI and a guest UI and drives a full flow over HTTP: access control, create, join, say/feed,
 pull, Docker task with patch, verify, a flipped byte caught, leave, rejoin, revoke, refusal (24 checks).
+
+**Letting a friend in through Cloudflare Access.** Access only admits the emails on its policy, so a friend could not even open an invite page. The hub treats a short list of paths as public
+(`/i/<id>`, `/api/invite/<id>` status, `/api/invite/<id>/knock` and `/poll`, `/icon.svg`): each needs the invite's own secret or is read-only, is rate-limited per client address, and the host
+still approves every knock with a passkey touch. Add a second Access application with a **bypass** policy for exactly those paths on the hub hostname (`<host>/i/*`, `<host>/api/invite/*`,
+`<host>/icon.svg`) so Cloudflare lets them through; every other path still needs your Access login plus a passkey. The hub refuses all other tunnelled requests that lack a valid Access token.
+Rooms the hub hosts are remembered and hosted again when the hub restarts.

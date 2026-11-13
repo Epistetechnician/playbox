@@ -491,6 +491,13 @@ def test_access():
         check("tunnelled request with a forged token is refused", via(mint(sign=False))[0] == 403)
         check("tunnelled request with a token for another app is refused", via(mint({"aud": ["b" * 64]}))[0] == 403)
         check("tunnelled static files are refused too", via(None, "/manifest.webmanifest")[0] == 403)
+        pub = lambda m, path, body=None: c.req(m, path, body, {"Host": "playbox.example.com", "Origin": "https://playbox.example.com", "Cf-Connecting-Ip": "203.0.113.8"})
+        check("friend: invite page opens without Access", pub("GET", "/i/abc")[0] == 200)
+        check("friend: invite status answers without Access", pub("GET", "/api/invite/abc")[0] == 404)
+        check("friend: knock reaches the hub without Access", pub("POST", "/api/invite/abc/knock", {"k": "x"})[0] == 404)
+        check("friend: icon opens without Access", pub("GET", "/icon.svg")[0] == 200)
+        check("friend: everything else still needs Access", all(pub(m, x)[0] == 403 for m, x in
+              (("GET", "/api/rooms"), ("GET", "/api/invites"), ("POST", "/api/rooms/x/invite"), ("GET", "/i/a/b"), ("GET", "/api/invite/a/knock"), ("POST", "/api/invite/a/approve"), ("GET", "/"))))
         st, j, _ = via(mint())
         check("tunnelled request with a valid token reaches the hub", st == 200 and j["weak_ok"] is False)
         check("local requests on loopback do not need a token", c.req("GET", "/api/auth/state")[0] == 200)
@@ -675,6 +682,35 @@ def kn_to(c, iid, body):
     return c.req("POST", f"/api/invite/{iid}/knock", body)
 
 
+def test_rehost():
+    """Hosting lives in the sidecar's memory: a hub that restarts (or respawns a sidecar) must host the room again, or invites stop working."""
+    from hub.rooms import Room
+    mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
+    if not mcp:
+        print("SKIP rehost (playbox-mcp not found)")
+        return
+    d = tempfile.mkdtemp(prefix="pbrh-")
+    repo = os.path.join(d, "repo")
+    os.makedirs(repo)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo, check=True)
+    saved = []
+    r = Room({"id": "t1", "label": "t", "created": 0, "kind": "mine", "home": os.path.join(d, "home")}, mcp, d)
+    r.on_change = lambda: saved.append(1)
+    try:
+        sc = r.ensure()
+        sc.call("playbox_create", {"repo": repo, "local": True})
+        r.tick()
+        check("rehost: the hub remembers what a room hosts", r.rec.get("host", {}).get("repo") == repo and saved)
+        r.sidecar.proc.kill()
+        time.sleep(1)
+        _, st = r.ensure().call("playbox_status", {})
+        check("rehost: a respawned sidecar hosts the room again", isinstance(st, dict) and (st.get("hosting") or {}).get("repo") == repo, str(r.err))
+    finally:
+        r.close()
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
@@ -682,6 +718,7 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
+    test_rehost()
     test_agents()
     test_landing_quoting()
     test_approval()

@@ -65,6 +65,7 @@ class Room:
         self.last_chain = 0
         self.stop = threading.Event()
         self.mu = threading.Lock()
+        self.on_change = None      # set by the hub: persist rec changes
 
     @property
     def id(self):
@@ -85,6 +86,12 @@ class Room:
                 self.err = None
             except Exception as e:   # binary missing, handshake failed
                 self.sidecar, self.err = None, f"sidecar failed to start: {e}"
+            if self.sidecar and self.rec.get("host", {}).get("repo"):
+                # hosting lives in the sidecar's memory: a restarted hub (or a respawned sidecar) must host again or invites stop working
+                try:
+                    self.sidecar.call("playbox_create", {"repo": self.rec["host"]["repo"], "local": bool(self.rec["host"].get("local"))})
+                except Exception as e:
+                    self.err = f"could not host again: {e}"
             return self.sidecar
 
     def close(self):
@@ -109,6 +116,9 @@ class Room:
             d["err"] = str(st)[:200]
             return d
         host, joined = st.get("hosting"), st.get("joined")
+        if host and host.get("repo") and not host.get("replica") and self.rec.get("host", {}).get("repo") != host["repo"]:
+            self.rec["host"] = {"repo": host["repo"]}          # remember what we host so a restart can host it again
+            self.on_change and self.on_change()
         d["mode"] = "both" if host and joined else "host" if host else "guest" if joined else "none"
         d["members"] = len((host or {}).get("members") or []) + (1 if joined else 0)
         d["me"] = (joined or {}).get("member_id") or st.get("guest_id")
@@ -169,6 +179,7 @@ class Hub:
 
     def _start(self, rec):
         r = Room(rec, self.binary, self.store.home)
+        r.on_change = self.store.save
         with self.mu:
             self.rooms[rec["id"]] = r
         return r

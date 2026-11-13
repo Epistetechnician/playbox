@@ -299,7 +299,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 .auth h1{font:600 12px var(--mono);letter-spacing:.14em;text-transform:uppercase;text-align:center;margin-bottom:22px}
 .auth .card{margin-top:18px}
 .auth p{margin:10px 0}
-.err{color:var(--bad);font-size:13px;min-height:1.2em;margin:10px 0 0}
+.err{color:var(--bad);font-size:13px;min-height:1.2em;margin:10px 0 0} .err.wait{color:var(--mut)}
 .toasts{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));display:grid;gap:8px;justify-items:center;z-index:60;pointer-events:none;padding:0 14px}
 .toast{background:var(--ink);color:var(--bg);border-left:4px solid var(--sig);padding:10px 16px;max-width:92vw;font:600 11.5px var(--mono);letter-spacing:.05em;box-shadow:var(--hard);animation:in .14s steps(3)}
 .toast.err{border-left-color:var(--bad)}
@@ -355,11 +355,16 @@ const deviceGuess = () => { const u = navigator.userAgent; const os = /iPhone/.t
 /* every hub call goes through here: 401 sends you to the lock screen, sensitive actions ask for a passkey touch */
 async function api(method, path, body) {
   const init = {method, headers: {"Content-Type": "application/json"}, body: body === undefined ? undefined : JSON.stringify(body)};
-  const r = await PB.guarded(path, init);
+  let r;
+  try { r = await PB.guarded(path, init); }
+  catch (e) {
+    const t = String(e && (e.name + " " + e.message));
+    throw new Error(/NotAllowed|cancel|abort/i.test(t) ? "The passkey touch was cancelled. Try again." : e instanceof TypeError ? "Couldn't reach the hub. Check your connection and try again." : (e && e.message) || "Something went wrong. Try again.");
+  }
   if (r.status === 401) { location.href = "/"; throw new Error("signed out"); }
   let j = {};
   try { j = await r.json(); } catch {}
-  if (!r.ok) throw new Error(j.error || r.statusText);
+  if (!r.ok) throw new Error(j.error || (r.status === 502 || r.status === 504 || r.status === 524 ? "The hub took too long to answer (" + r.status + "). Try again in a moment." : "Something went wrong (" + r.status + "). Try again."));
   return j;
 }
 
@@ -939,7 +944,8 @@ function openInvite(id) {
     if (e.submitter?.value === "cancel") return;
     e.preventDefault();
     const btn = $("#imake"), from = $("#ifrom").value.trim(); store.set("pb.name", from);
-    btn.disabled = true; btn.textContent = "Creating…"; $("#ierr").textContent = "";
+    btn.disabled = true; btn.textContent = "Creating…"; $("#ierr").textContent = ""; $("#iout").innerHTML = "";
+    const slow = setTimeout(() => { if (btn.disabled) $("#ierr").textContent = "Still working. Touch your passkey if it asks, this can take up to 30 seconds."; $("#ierr").classList.add("wait"); }, 6000);
     try {
       const pk = pick();
       const j = await api("POST", `/api/rooms/${id}/invite`, {...pk, approve: !!pk.approve, from, guest: $("#iguest").value.trim() || undefined});
@@ -952,7 +958,17 @@ function openInvite(id) {
       $("#icp").addEventListener("click", async ev => { ev.preventDefault(); try { await navigator.clipboard.writeText(text); toast("Copied"); } catch { toast("Copy failed", true); } });
       $("#ish")?.addEventListener("click", ev => { ev.preventDefault(); navigator.share({title: "Playbox invite", text, url}).catch(() => {}); });
       btn.textContent = "New link"; btn.disabled = false;
-    } catch (err) { $("#ierr").textContent = err.message; btn.disabled = false; btn.textContent = "Create link"; }
+      if (j.approve && "serviceWorker" in navigator && "PushManager" in window && window.isSecureContext && Notification.permission !== "denied") {    // an approval invite is only useful if you hear the knock
+        try {
+          const reg = await swReady();
+          if (!(await reg.pushManager.getSubscription())) {
+            $("#iout").insertAdjacentHTML("beforeend", `<div class="offline" id="inote" style="margin:12px 0 0">This device won't buzz when your friend asks to join. <button class="btn sm" id="ipush" value="x">Turn on notifications</button></div>`);
+            $("#ipush").addEventListener("click", async ev => { ev.preventDefault(); await togglePush(); const sub = await reg.pushManager.getSubscription(); if (sub) $("#inote")?.remove(); });
+          }
+        } catch {}
+      }
+    } catch (err) { $("#ierr").textContent = err.message; btn.disabled = false; btn.textContent = "Try again"; }
+    finally { clearTimeout(slow); $("#ierr").classList.remove("wait"); if ($("#iout").children.length) $("#ierr").textContent = ""; }
   });
   sheet().showModal();
 }

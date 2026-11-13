@@ -176,11 +176,22 @@ def make_handler(hub, auth, store, opts):
                 self.send(403, b"This hub only accepts requests that passed Cloudflare Access.", "text/plain; charset=utf-8")
                 return False
 
+        @staticmethod
+        def invite_public(m, p):
+            """The only paths a friend's browser may reach without Cloudflare Access: the invite page, its status/knock/poll calls
+            (each needs the invite's own secret or is a read-only status) and the icon. Everything else needs Access."""
+            if m == "GET" and (p == "/icon.svg" or (p.startswith("/i/") and len(p) > 3 and "/" not in p[3:])):
+                return True
+            parts = p.split("/")      # ['', 'api', 'invite', id, action?]
+            if parts[:3] == ["", "api", "invite"] and len(parts) in (4, 5) and parts[3]:
+                return (m == "GET" and len(parts) == 4) or (m == "POST" and len(parts) == 5 and parts[4] in ("knock", "poll"))
+            return False
+
         def route(self, m):
-            if not self.access_ok():
-                return
             url = urllib.parse.urlparse(self.path)
             p = url.path
+            if not self.invite_public(m, p) and not self.access_ok():
+                return
             # public shell
             if m == "GET":
                 if p in ("/", "/pair", "/join"):
