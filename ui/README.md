@@ -129,3 +129,6 @@ pull, Docker task with patch, verify, a flipped byte caught, leave, rejoin, revo
 still approves every knock with a passkey touch. Add a second Access application with a **bypass** policy for exactly those paths on the hub hostname (`<host>/i/*`, `<host>/api/invite/*`,
 `<host>/icon.svg`) so Cloudflare lets them through; every other path still needs your Access login plus a passkey. The hub refuses all other tunnelled requests that lack a valid Access token.
 Rooms the hub hosts are remembered and hosted again when the hub restarts.
+
+**Room canvas** (`/r/<id>/canvas`, opened from any room in the hub). Every room is a pannable, zoomable canvas: pulse charts, the universal feed, agents grouped by machine, artifacts and proofs with revision history and checks, a kanban board, a changelog, a security panel and, for the host only, Settings and a + button. Guests get the same view without them. Tap a panel to drill in, tap an item for the inspector, Esc to go back; on a phone a row of chips jumps between panels. Agents add to it by posting `::pbx agent|artifact|card|metric <json>` messages (see `claude-plugin/`), so it needs no new server and every member sees the same thing. Fields are whitelisted and clipped, attribution comes from the real sender, and everything is rendered as plain text.
+

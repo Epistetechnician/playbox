@@ -27,6 +27,7 @@ from .invites import Invites, InviteError
 from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from .sec import SecLog, STAGES, posture
+from . import board
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -34,7 +35,7 @@ MAX_BODY = 1 << 20
 SENSITIVE_TOOLS = {"playbox_revoke"}
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
+PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
 
 
 def is_local(peer, headers):
@@ -686,6 +687,25 @@ def make_handler(hub, auth, store, opts):
                     return self.j(200, {"ok": False, "status": None, "tools": [], "error": room.err})
                 err, st = sc.call("playbox_status", {}, wait=2)
                 return self.j(200, {"ok": not err, "status": st, "tools": sc.tools})
+            if m == "GET" and rest == "/canvas":
+                return self.send(200, (STATIC / "canvas.html").read_bytes(), "text/html; charset=utf-8")
+            if m == "GET" and rest == "/api/canvas":
+                sc = room.ensure()
+                if not sc:
+                    return self.j(502, {"error": room.err or "the room's sidecar is unavailable"})
+                err, st = sc.call("playbox_status", {}, wait=2)
+                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3)
+                if ferr or not isinstance(feed, dict):
+                    return self.j(502, {"error": "this room's feed isn't available yet" if not isinstance(feed, str) else feed})
+                st = st if isinstance(st, dict) else {}
+                me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
+                d = room.digest
+                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000))
+                model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0),
+                              "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
+                                       "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},
+                              "admin": d.get("mode") in ("host", "both")})
+                return self.j(200, model)
             if m == "GET" and rest == "/api/witness":
                 from playbox_ui import witness_state
                 return self.j(200, witness_state(room.home))

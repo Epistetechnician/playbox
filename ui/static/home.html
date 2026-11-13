@@ -216,27 +216,15 @@ button.cell{cursor:pointer} button.cell:hover{background:var(--panel-2)}
 
 /* ---------- radar ---------- */
 .const-wrap{position:relative;border:1px solid var(--edge);background:var(--panel)}
-.const{position:relative;display:block;width:100%;height:auto;max-height:74vh;touch-action:manipulation}
-.const .orbit{fill:none;stroke:var(--line-2)}
-.const .tick{stroke:var(--line-2)} .const .tick.maj{stroke:var(--mut)}
-.const .cross{stroke:var(--line-2);stroke-dasharray:1 5}
-.const .olabel{fill:var(--mut);font:600 9px var(--mono);letter-spacing:.16em}
-.const .edge{stroke:var(--line-2);stroke-width:1}
-.const a{cursor:pointer;outline:none}
-.node .frame{fill:var(--panel);stroke:var(--ink);stroke-width:1.5}
-.node .halo{fill:none;stroke-width:1.5;opacity:0;transform-box:fill-box;transform-origin:center}
-.node.live .frame{stroke:var(--ok-led);stroke-width:2.5} .node.live .halo{stroke:var(--ok-led);opacity:.9;animation:halo 2.4s steps(6) infinite}
-.node.hold .frame{stroke:var(--sig);stroke-width:3} .node.hold .halo{stroke:var(--sig);opacity:1;animation:halo 1s steps(5) infinite}
-.node.bad .frame{stroke:var(--bad);stroke-width:2.5} .node.idle .frame{stroke:var(--mut)}
-.node.empty .frame,.node.down .frame{stroke:var(--line-2);stroke-dasharray:3 3}
-.node:hover .frame,.node:focus-visible .frame{stroke-width:3.5}
-.node text{fill:var(--ink);font:600 9px var(--mono);letter-spacing:.08em;text-anchor:middle;paint-order:stroke;stroke:var(--panel);stroke-width:3px}
-.node .sub{fill:var(--mut);font-size:8.5px;font-weight:500}
-.node .nb{fill:var(--sig)} .node .nbt{fill:var(--on-sig);stroke:none;font:700 9px var(--mono)}
-.me .frame{fill:var(--ink);stroke:var(--ink)}
-.ripple{fill:none;stroke:var(--sig);stroke-width:2;animation:ripple 1.4s steps(7) forwards;transform-box:fill-box;transform-origin:center}
-@keyframes halo{0%{transform:scale(1);opacity:.9}100%{transform:scale(1.6);opacity:0}}
-@keyframes ripple{from{transform:scale(1);opacity:1}to{transform:scale(4);opacity:0}}
+.space{position:relative;background:var(--bg)}
+.space-cv{display:block;width:100%;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.space-hint{position:absolute;left:12px;bottom:10px;font:600 9.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);pointer-events:none}
+.space-panel{position:absolute;right:12px;top:12px;width:min(300px,calc(100% - 24px));background:var(--panel);border:1px solid var(--ink);padding:12px 14px;box-shadow:5px 5px 0 var(--ink)}
+.space-panel .sp-head{display:flex;align-items:center;justify-content:space-between;gap:10px} .space-panel b{font:700 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;overflow-wrap:anywhere}
+.space-panel .sp-meta{font:11px/1.4 var(--mono);color:var(--mut);margin-top:6px} .space-panel .sp-last{margin-top:8px;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.space-panel .sp-row{display:flex;gap:8px;margin-top:12px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media(max-width:600px){.space-panel{top:auto;bottom:10px;right:10px;left:10px;width:auto}.space-hint{display:none}}
 .legend{display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;font:600 10px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mut);border-top:1px solid var(--line-2)}
 .legend span{display:inline-flex;align-items:center;gap:7px}
 
@@ -366,6 +354,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <dialog id="sheet"></dialog>
 <script src="/auth.js"></script>
+<script src="/space.js"></script>
 <script>
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
@@ -659,7 +648,7 @@ function paintView(soft) {
   v.innerHTML = `<div class="view ${enter ? "enter" : ""}"><div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub. Showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)() + "</div>";
   if (selId) $(`.rw[data-room="${selId}"]`)?.classList.add("sel");
   if (S.view === "rooms") { if (S.agents === null) loadAgents(); paintSetup(); }
-  if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length) startOrbit();
+  if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length && $("#space")) mountSpace(); else PBSpace.unmount();
   enter = false; paintActivity(); countUp();
   if (S.view === "integrations") { if (S.agents === null) loadAgents(); if (!S.integ) loadInteg(); }
   if (S.view === "system" && (!S.sys || Date.now() - (S.sysAt || 0) > 5000)) loadSystem();
@@ -719,7 +708,7 @@ function roomRow(r) {
   const last = r.holds.length ? `<small class="last warn">Witness paused ${esc(r.holds[0].tool || "a write")}. Open to review.</small>`
     : r.err ? `<small class="last bad">${esc(r.err)}</small>`
     : r.last ? `<small class="last" title="Text from another party is untrusted"><i></i><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</small>` : `<small class="last">No messages yet</small>`;
-  return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="/r/${r.id}/" aria-label="Open ${esc(r.label)}">
+  return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="/r/${r.id}/canvas" aria-label="Open ${esc(r.label)}">
     <span>${sigil(r.id, 36)}</span>
     <span class="nm"><b>${esc(r.label)}</b><span class="sub">${sub}</span>${last}</span>
     <span class="mt"><span class="chip ${r.kind}">${r.kind === "mine" ? "mine" : "shared"}</span>${r.machine ? `<span class="chip">${esc(r.machine)}</span>` : ""}${r.members ? `<span class="chip">${r.members} in</span>` : ""}${chainChip(r)}</span>
@@ -729,7 +718,7 @@ function roomRow(r) {
     <button class="kebab" data-act="edit" data-id="${r.id}" aria-label="Room options for ${esc(r.label)}">⋯</button></div>`;
 }
 function actRow(a) {
-  return `<a class="lg ${a.me ? "me" : "peer"} ${a.fresh ? "new" : ""}" href="/r/${a.room}/">${sigil(a.room, 26)}<span class="who"><b>${esc(a.from || "member")}</b> in ${esc(a.label)}</span><span class="t" data-ms="${a.ms}">${rel(a.ms)}</span><span class="tx">${esc(a.text)}</span></a>`;
+  return `<a class="lg ${a.me ? "me" : "peer"} ${a.fresh ? "new" : ""}" href="/r/${a.room}/canvas">${sigil(a.room, 26)}<span class="who"><b>${esc(a.from || "member")}</b> in ${esc(a.label)}</span><span class="t" data-ms="${a.ms}">${rel(a.ms)}</span><span class="tx">${esc(a.text)}</span></a>`;
 }
 function paintActivity() {
   const rows = (S.activity || []).map(a => ({...a, fresh: a.fresh && Date.now() - a.ms < 8000}));
@@ -859,7 +848,7 @@ const VIEWS = {
       <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
     if (!S.rooms.length) return `${knockCard()}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
-      : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap">${constellation(list)}<div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared</span></div></div>`
+      : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="/r/${r.id}/" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
     return `${knockCard()}<div id="setup"></div>${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
@@ -968,64 +957,16 @@ const VIEWS = {
 };
 
 /* ---------- radar ---------- */
-const orbit = {angles: {}, raf: 0, last: 0};
-const W = 760, H = 600, CX = W / 2, CY = H / 2, RING = {mine: 138, shared: 248};
-function constellation(list) {
-  for (const k of ["mine", "shared"]) {
-    const rs = list.filter(r => r.kind === k);
-    rs.forEach((r, i) => { if (orbit.angles[r.id] === undefined) orbit.angles[r.id] = (i / rs.length) * 6.2832 + (k === "shared" ? .6 : 0); });
-  }
-  let ticks = "";
-  for (let d = 0; d < 360; d += 5) { const a = d * Math.PI / 180, maj = d % 30 === 0, r1 = RING.shared + 22, r2 = r1 + (maj ? 9 : 4); ticks += `<line class="tick ${maj ? "maj" : ""}" x1="${(CX + r1 * Math.cos(a)).toFixed(1)}" y1="${(CY + r1 * Math.sin(a) * .92).toFixed(1)}" x2="${(CX + r2 * Math.cos(a)).toFixed(1)}" y2="${(CY + r2 * Math.sin(a) * .92).toFixed(1)}"/>`; }
-  const nodes = list.map(r => {
-    const h = 18 + Math.min(r.members, 8), label = (r.label.length > 18 ? r.label.slice(0, 17) + "…" : r.label).toUpperCase();
-    return `<a href="/r/${r.id}/" aria-label="${esc(r.label)}: ${STATE_TXT[r.state] || ""}${r.unread ? `, ${r.unread} unread` : ""}"><g class="node ${r.state}" data-node="${r.id}" transform="translate(${CX} ${CY})">
-      <title>${esc(r.label)} · ${esc(STATE_TXT[r.state] || "")}${r.machine ? " · " + esc(r.machine) : ""}</title>
-      <g class="ripples"></g><rect class="halo" x="${-h}" y="${-h}" width="${h * 2}" height="${h * 2}"/><rect class="frame" x="${-h}" y="${-h}" width="${h * 2}" height="${h * 2}"/>
-      <g transform="translate(${-h + 3} ${-h + 3})">${sigil(r.id, h * 2 - 6)}</g>
-      <text y="${h + 16}">${esc(label)}</text>${r.machine ? `<text class="sub" y="${h + 28}">${esc(r.machine.toUpperCase())}</text>` : ""}
-      ${r.unread ? `<rect class="nb" x="${h - 8}" y="${-h - 8}" width="17" height="15"/><text class="nbt" x="${h + .5}" y="${-h + 3}">${r.unread > 9 ? "9+" : r.unread}</text>` : ""}</g></a>`;
-  }).join("");
-  const edges = list.map(r => `<line class="edge" data-edge="${r.id}" x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY}"/>`).join("");
-  return `<svg class="const" viewBox="${CX - 300} ${CY - 285} 600 575" role="group" aria-label="Your rooms as a radar">
-    <line class="cross" x1="${CX - 290}" y1="${CY}" x2="${CX + 290}" y2="${CY}"/><line class="cross" x1="${CX}" y1="${CY - 280}" x2="${CX}" y2="${CY + 280}"/>
-    <ellipse class="orbit" cx="${CX}" cy="${CY}" rx="${RING.mine}" ry="${RING.mine * .92}"/><ellipse class="orbit" cx="${CX}" cy="${CY}" rx="${RING.shared}" ry="${RING.shared * .92}"/>${ticks}
-    <text class="olabel" x="${CX + 6}" y="${CY - RING.mine * .92 - 6}">MINE</text><text class="olabel" x="${CX + 6}" y="${CY - RING.shared * .92 - 6}">SHARED</text>
-    ${edges}<g class="node me"><rect class="frame" x="${CX - 13}" y="${CY - 13}" width="26" height="26"/><rect x="${CX - 4}" y="${CY - 4}" width="8" height="8" fill="var(--sig)"/><text x="${CX}" y="${CY + 32}">THIS HUB</text></g>${nodes}</svg>`;
+function mountSpace() {
+  const list = S.rooms.filter(r => { const f = S.filter || "all"; return f === "all" || (f === "mine" && r.kind === "mine") || (f === "shared" && r.kind === "shared") || (f === "attn" && (r.state === "hold" || r.state === "bad" || r.unread)); });
+  PBSpace.mount($("#space"), list, (room, from) => { toast("Entering " + room.label); PBSpace.enter(room, from); });
 }
-function placeNodes() {
-  const svg = $(".const"); if (!svg) return;
-  for (const r of S.rooms) {
-    const a = orbit.angles[r.id] ?? 0, R = RING[r.kind] ?? RING.shared;
-    const x = CX + R * Math.cos(a), y = CY + R * Math.sin(a) * .92;
-    const n = svg.querySelector(`[data-node="${r.id}"]`); if (n) n.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
-    const e = svg.querySelector(`line[data-edge="${r.id}"]`);
-    if (e) { e.setAttribute("x2", x.toFixed(1)); e.setAttribute("y2", y.toFixed(1)); e.style.strokeOpacity = r.state === "live" ? .9 : r.state === "hold" ? 1 : .5; e.style.stroke = r.state === "hold" ? "var(--sig)" : r.state === "live" ? "var(--ok-led)" : ""; }
-  }
-}
-function startOrbit() {
-  cancelAnimationFrame(orbit.raf); placeNodes();
-  if (matchMedia("(prefers-reduced-motion:reduce)").matches) return;
-  orbit.last = performance.now();
-  const step = t => {
-    if (!$(".const")) return;
-    const dt = Math.min(.1, (t - orbit.last) / 1000); orbit.last = t;
-    if (!document.hidden) { for (const r of S.rooms) orbit.angles[r.id] = (orbit.angles[r.id] ?? 0) + dt * (r.kind === "mine" ? .035 : -.02); placeNodes(); }
-    orbit.raf = requestAnimationFrame(step);
-  };
-  orbit.raf = requestAnimationFrame(step);
-}
-function ripple(id) {
-  const g = document.querySelector(`[data-node="${id}"] .ripples`); if (!g) return;
-  const c = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  c.setAttribute("class", "ripple"); c.setAttribute("x", "-22"); c.setAttribute("y", "-22"); c.setAttribute("width", "44"); c.setAttribute("height", "44"); g.appendChild(c);
-  c.addEventListener("animationend", () => c.remove());
-}
+function ripple(id) { PBSpace.ping(id); }
 
 /* ---------- command palette ---------- */
 function openPalette() {
   const items = [
-    ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/`, sig: r.id})),
+    ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/canvas`, sig: r.id})),
     {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
     {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
     {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"}];

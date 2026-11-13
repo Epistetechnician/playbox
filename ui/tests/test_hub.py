@@ -467,6 +467,10 @@ def test_http():
         check("posture has the core checks", {"edge", "passkey", "weak", "stepup", "invites", "knocks", "chain", "push"} <= {c["id"] for c in sysj["posture"]})
         blob = json.dumps(sysj)
         check("system never carries a link, a key or a room secret", "playbox://" not in blob and ilink[10:60] not in blob)
+        st, cv, _ = a.req("GET", f"/r/{rid}/api/canvas")
+        check("canvas: a hosted room returns its model with admin rights", st == 200 and cv["admin"] is True and {"members", "feed", "artifacts", "cards", "metrics", "changelog", "stats"} <= set(cv))
+        check("canvas needs a session", anon.req("GET", f"/r/{rid}/api/canvas")[0] in (401, 303))
+        check("canvas page is served", a.req("GET", f"/r/{rid}/canvas")[0] == 200)
         st, sysj2, _ = a.req("POST", "/api/system/verify")
         check("verify re-runs the history check", st == 200 and any("Re-verification" in e["text"] for e in sysj2["events"]))
         st, pv, _ = anon.req("GET", "/api/invite/" + iid)
@@ -838,6 +842,29 @@ def kn_to(c, iid, body):
     return c.req("POST", f"/api/invite/{iid}/knock", body)
 
 
+def test_board():
+    """The room's work surface is built only from feed messages; every field is untrusted and whitelisted."""
+    from hub import board
+    E = board.encode
+    it = lambda n, f, t, ms: {"seq": n, "from": f, "kind": "say", "text": t, "time_ms": ms}
+    check("board: only ::pbx lines with a known kind parse", board.parse(E("card", id="a")) is not None and board.parse("hello") is None and board.parse("::pbx evil {}") is None and board.parse("::pbx card {nope") is None)
+    items = [it(1, "aa", E("agent", name="Ada", machine="mac", role="prover"), 1000), it(2, "aa", E("artifact", id="p", title="Bound", kind="proof", status="checking", checks=[{"name": "build", "ok": True}]), 2000),
+             it(3, "bb", E("artifact", id="p", status="verified"), 3000), it(4, "aa", E("card", id="c", title="X", col="todo"), 4000), it(5, "aa", E("card", id="c", col="done"), 5000),
+             it(6, "bb", E("metric", name="K", value=12), 6000), it(7, "bb", E("metric", name="K", value=float("nan")), 7000), it(8, "aa", "plain <b>text</b>", 8000),
+             it(9, "cc", E("artifact", id="q", title="<script>alert(1)</script>", kind="malware", status="pwned"), 9000), it(10, "cc", E("card", id="z", title="t", col="hacked"), 10000)]
+    m = board.build(items, [{"id": "aa", "present": True}], "aa", 600000)
+    a = {x["id"]: x for x in m["artifacts"]}
+    check("board: an artifact keeps its revisions and takes the newest status", a["p"]["status"] == "verified" and len(a["p"]["revs"]) == 2 and a["p"]["checks"][0]["ok"])
+    check("board: a status change is a changelog line from the real sender", any("from checking to verified" in e["text"] and e["who"] == "bb" for e in m["changelog"]))
+    check("board: a card moves between columns", [c["col"] for c in m["cards"] if c["id"] == "c"] == ["done"] and any("from todo to done" in e["text"] for e in m["changelog"]))
+    check("board: bad kinds, statuses and columns fall back to safe values", a["q"]["kind"] == "note" and a["q"]["status"] == "draft" and [c["col"] for c in m["cards"] if c["id"] == "z"] == ["todo"])
+    check("board: a non-finite metric is dropped", [len(s["pts"]) for s in m["metrics"]] == [1])
+    check("board: plain messages stay plain and work messages are not in the message list", [x["text"] for x in m["feed"]] == ["plain <b>text</b>"])
+    check("board: the agent announcement names the sender and machine", [x["name"] for x in m["members"] if x["id"] == "aa"] == ["Ada"] and [x["machine"] for x in m["members"] if x["id"] == "aa"] == ["mac"])
+    check("board: a claimed owner cannot change who published", a["p"]["by"] == "aa" and a["p"]["last_by"] == "bb")
+    check("board: oversized bodies are ignored", board.parse("::pbx card " + "{" + '"x":"' + "a" * 5000 + '"}') is None)
+
+
 def test_rehost():
     """Hosting lives in the sidecar's memory: a hub that restarts (or respawns a sidecar) must host the room again, or invites stop working."""
     from hub.rooms import Room
@@ -887,6 +914,7 @@ if __name__ == "__main__":
     test_cloudflare()
     test_access()
     test_rehost()
+    test_board()
     test_classify()
     test_agents()
     test_landing_quoting()
