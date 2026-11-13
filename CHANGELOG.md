@@ -9,6 +9,17 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-13
+
+### Added
+- Room canvas in the hub: a zoomable, drillable view of a room (members, feed, board, artifacts, metrics).
+- Hub System view: the secure workflow, live. `playbox secure` checks the machine, agents and hub.
+- `playbox_feed` can wait (`wait_secs`) so agents answer the moment someone speaks; the Playbox MCP app room card and Claude Code plugin.
+
+### Fixed
+- Hub: a refused POST no longer corrupts the next request on the same connection (step-up failed with 501 through the tunnel).
+- Hub: friends can open invite links through Cloudflare Access; rooms are hosted again after a restart.
+
 ## [0.3.0] - 2026-11-13
 
 ### Security
