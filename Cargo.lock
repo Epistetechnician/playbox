@@ -3641,6 +3641,7 @@ dependencies = [
  "playbox-core",
  "rustix",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

@@ -131,6 +131,9 @@ pub fn tool_list() -> Value {
                 "task_budget": {"type": "integer", "description": "Tasks the whole room may start since the host started. Default 100000."},
                 "memory_url": {"type": "string", "description": "Give the room a shared memory kept by a Hindsight server running beside this host, e.g. http://127.0.0.1:8888/v1/default. Members then use playbox_room_remember and playbox_room_recall."},
                 "memory_review": {"type": "boolean", "description": "Hold members' memory entries as pending until you accept them. Default false."},
+                "allowed_secrets": {"type": "array", "items": {"type": "string"}, "description": "Names of secrets in the host's secrets directory that members' tasks may read at /run/secrets. Never shown to members; the audit log records names and hashes."},
+                "confine": {"type": "boolean", "description": "Linux, libkrun only: jail each task's helper, put it in a cgroup with memory/CPU/process limits, and filter its network."},
+                "confine_net": {"type": "string", "description": "With confine: the most network a task may have: none (default), internet, internet+lan."},
                 "latent_hubs": {"type": "array", "items": {"type": "string"}, "description": "Accept hub latent messages (docs/latent-channels.md) only for these hub ids. Without it any hub id is accepted."},
                 "latent_posts_per_minute": {"type": "integer", "description": "Latent messages one member may post per minute. Default 30."},
                 "latent_max_age_secs": {"type": "integer", "description": "How long a latent message stays readable, and an identical one is refused as a replay. Default 3600."},
@@ -196,6 +199,7 @@ pub fn tool_list() -> Value {
                 "image": {"type": "string", "description": "Container image. Default alpine:3"},
                 "cpus": {"type": "number"}, "mem_mib": {"type": "integer"},
                 "timeout_secs": {"type": "integer"}, "network": {"type": "boolean"},
+                "secrets": {"type": "array", "items": {"type": "string"}, "description": "Names of host-held secrets to read at /run/secrets. Must be listed in your grant; you never see the values."},
                 "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Limit the task's network to exactly these destinations (`host` or `host:port`). Must be listed in your grant; needs a host running the openshell runtime."},
                 "apply": {"type": "boolean", "description": "Apply the returned patch to your workspace (staged, not committed). Default false."},
                 "capability": {"type": "string", "description": "A single-use approval for exactly this command, issued by the person you work for with `playbox approve`. Needed when the command contains text copied from another member's task output or patch."}
@@ -699,7 +703,8 @@ impl Server {
                 policy.allowed_images.push(steer_image.clone());
             }
             let runner: Option<Arc<dyn Runner>> = if let Some(name) = runtime {
-                Some(playbox_runner::runner_by_name(name, policy)?)
+                let confine = if b(a, "confine") { Some((s(a, "confine_net").unwrap_or("none").parse()?, true)) } else { None };
+                Some(playbox_runner::runner_with(name, policy, &playbox_runner::RunnerOptions { confine })?)
             } else if b(a, "unsafe_process_runner") && std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() {
                 Some(Arc::new(ProcessRunner))
             } else {
@@ -712,6 +717,7 @@ impl Server {
             };
             let mut limits = playbox_runner::Limits {
                 allowed_hosts: a.get("allowed_hosts").and_then(Value::as_array).map(|v| v.iter().filter_map(|h| h.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+                allowed_secrets: a.get("allowed_secrets").and_then(Value::as_array).map(|v| v.iter().filter_map(|h| h.as_str().map(str::to_string)).collect()).unwrap_or_default(),
                 ..Default::default()
             };
             let steer = match s(a, "steer_store") {
@@ -1070,6 +1076,9 @@ impl Server {
         spec.network = b(a, "network");
         if let Some(v) = a.get("allowed_hosts").and_then(Value::as_array) {
             spec.allowed_hosts = v.iter().filter_map(|h| h.as_str().map(str::to_string)).collect();
+        }
+        if let Some(v) = a.get("secrets").and_then(Value::as_array) {
+            spec.secrets = v.iter().filter_map(|h| h.as_str().map(str::to_string)).collect();
         }
         let run = self.guest()?.run_task_full(base, spec).await?;
         let (runner, out, patch) = (run.runner.clone(), run.output.clone(), run.patch.clone());

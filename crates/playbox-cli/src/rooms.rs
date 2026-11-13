@@ -2,7 +2,7 @@ use crate::cli::{JoinArgs, TransportArgs, UpArgs};
 use anyhow::{bail, Result};
 use playbox_core::{attest, platform, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
-use playbox_runner::{runner_by_name, SandboxPolicy, TaskSpec};
+use playbox_runner::{runner_with, RunnerOptions, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, time::Duration};
 
 pub fn chosen(t: &TransportArgs) -> Result<Transport> {
@@ -45,6 +45,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
     let has_steer = a.steer_store.is_some();
     let mut limits = playbox_runner::Limits {
         allowed_hosts: a.allow_host.clone(),
+        allowed_secrets: a.allow_secret.clone(),
         ..Default::default()
     };
     if has_steer {
@@ -66,7 +67,13 @@ pub async fn up(a: UpArgs) -> Result<()> {
                 if has_steer {
                     policy.allowed_images.push(steer_image.clone());
                 }
-                Some(runner_by_name(&name, policy)?)
+                let opts = RunnerOptions {
+                    confine: a
+                        .confine
+                        .then(|| a.confine_net.parse().map(|l| (l, !a.no_seccomp)))
+                        .transpose()?,
+                };
+                Some(runner_with(&name, policy, &opts)?)
             }
             None => None,
         },

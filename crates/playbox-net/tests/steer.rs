@@ -106,6 +106,7 @@ impl Runner for PyRunner {
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
             policy_digest: None,
+            secrets_used: Vec::new(),
         })
     }
 }
@@ -263,6 +264,7 @@ async fn env_with(
             timeout_secs: 300,
             network: false,
             allowed_hosts: vec![],
+            allowed_secrets: vec![],
         },
         ..Default::default()
     };

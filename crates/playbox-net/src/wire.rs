@@ -169,7 +169,7 @@ impl Op {
                 mem_mib: i64::from(spec.mem_mib),
                 timeout_secs: i64::try_from(spec.timeout_secs).unwrap_or(i64::MAX),
                 net: spec.network && spec.allowed_hosts.is_empty(),
-                hosts: spec.allowed_hosts.clone(),
+                hosts: spec.allowed_hosts.iter().cloned().chain(spec.secrets.iter().map(|n| format!("secret/{n}"))).collect(),
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
                 ..Needs::default()
             },

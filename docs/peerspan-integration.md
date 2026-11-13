@@ -21,8 +21,10 @@ happened. An import is accepted only if it keeps all four:
 
 ## 1. Sandbox hardening from `peerspan/runtime` (highest value, Linux)
 
-Status 2026-11-11: `jail`, `cgroup` and `netpolicy` are built and tested in `playbox-runner` (see `docs/libkrun.md`, "Linux
-confinement"); not yet wired into the helper; seccomp, secrets, disk I/O limits, passt and the attestation measurements remain.
+Status 2026-11-12: wired. `up --runtime libkrun --confine` jails the helper, puts each task in a cgroup, filters its network and
+installs a syscall deny-list; secrets reach tasks at `/run/secrets`; the confinement is in the host's attestation statement (see
+`docs/libkrun.md`). Tested on Linux in CI except a real libkrun VM under it. Remaining: an allow-list seccomp measured on KVM, disk
+I/O limits, passt.
 
 Playbox's libkrun runner (`docs/libkrun.md`) says what it lacks: with the network on, libkrun's TSI gives the guest the host's
 loopback and LAN with no filtering; no pid limit; no disk quota; the helper process runs with the host user's full authority; it has
