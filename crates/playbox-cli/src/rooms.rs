@@ -412,7 +412,10 @@ async fn console(host: &Host) -> Result<()> {
                         let pending = host.pending_calls();
                         println!("{} call(s) waiting for approval", pending.len());
                         for c in pending {
-                            println!("  {}/{}  {} {}", &c.member[..c.member.len().min(12)], c.id, c.name, serde_json::to_string(&c.args)?);
+                            // The whole member id, not a prefix (a key can be ground to match the first 12 characters of a member the owner trusts), and
+                            // the arguments with control and invisible characters escaped, so the line reads as what will run.
+                            let shown: std::collections::BTreeMap<_, _> = c.args.iter().map(|(k, v)| (playbox_net::capabilities::display_safe(k), playbox_net::capabilities::display_safe(v))).collect();
+                            println!("  {}/{}  {} {}", c.member, c.id, c.name, serde_json::to_string(&shown)?);
                         }
                     }
                     (Some(verb @ ("approve" | "deny")), Some(id)) => match host.decide_call(id, verb == "approve") {

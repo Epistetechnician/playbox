@@ -1691,13 +1691,28 @@ impl Host {
             &cfg.limits,
         );
         let memory = cfg.memory.clone();
-        let caps = Arc::new(capabilities::Engine::new(
-            capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
-            cfg.runner.clone(),
-            audit.clone(),
-            cfg.scratch_quota,
-            cfg.limits.clone(),
-        ));
+        let standing_state = state.clone();
+        let caps = Arc::new(
+            capabilities::Engine::new(
+                capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
+                cfg.runner.clone(),
+                audit.clone(),
+                cfg.scratch_quota,
+                cfg.limits.clone(),
+            )
+            .with_standing(Arc::new(move |member: &str, _capability: &str| {
+                let id: EndpointId = member.parse().map_err(|_| "the member id is not valid".to_string())?;
+                let st = standing_state.lock().expect("state lock");
+                if st.banned.contains(&id) {
+                    return Err("the member was revoked".into());
+                }
+                match st.members.get(&id) {
+                    None => Err("the member is no longer in the room".into()),
+                    Some(grant) if st.revoked.contains(grant) => Err("the member's grant was revoked".into()),
+                    Some(_) => Ok(()),
+                }
+            })),
+        );
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),

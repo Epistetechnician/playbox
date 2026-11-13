@@ -63,6 +63,29 @@ pub struct Capability {
     pub mem_mib: Option<u32>,
 }
 
+/// Characters that change how text is shown without being visible: bidi overrides and isolates, zero-width and joiner characters, the
+/// byte-order mark, line and paragraph separators. A member's text that holds one can make an approval screen read differently from
+/// what will run, so arguments with them are refused, and anything shown to the owner is escaped regardless (see [`display_safe`]).
+fn is_deceptive(c: char) -> bool {
+    matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2028}' | '\u{2029}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}' | '\u{00AD}' | '\u{061C}' | '\u{180E}')
+}
+
+/// Text from a member, made safe to print to the owner's terminal or show in an approval prompt: control and invisible characters
+/// become `\u{..}` escapes, so what the owner reads is exactly what is there. Plain printable text, including non-Latin scripts, is
+/// unchanged.
+#[must_use]
+pub fn display_safe(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            if c.is_control() || is_deceptive(c) {
+                format!("\\u{{{:x}}}", c as u32).chars().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
 fn plain_name(s: &str, max: usize) -> bool {
     (1..=max).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
 }
@@ -130,8 +153,8 @@ impl Capability {
             if v.len() > rule.max_len.unwrap_or(DEFAULT_MAX_LEN) {
                 bail!("argument {p:?} is too long");
             }
-            if v.chars().any(char::is_control) {
-                bail!("argument {p:?} contains a control character");
+            if v.chars().any(|c| c.is_control() || is_deceptive(c)) {
+                bail!("argument {p:?} contains a control or invisible character");
             }
             match &rule.allowed {
                 Some(list) if !list.contains(v) => bail!("argument {p:?} is not one of the values this capability allows"),
@@ -169,6 +192,9 @@ pub enum State {
     Expired,
     /// Was running when the host stopped. It is not run again; the member decides whether to call it again with a new id.
     Abandoned,
+    /// The member lost access (revoked, banned, or removed) before the call ran or while it ran. Never visible to that member, who can no
+    /// longer ask; it is for the owner's view and the audit log.
+    Revoked,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -441,6 +467,19 @@ impl Book {
         Ok((out, next))
     }
 
+    /// Mark a call that has not finished as revoked. Returns it if it changed.
+    pub fn revoke_call(&self, member: &str, id: &str) -> Option<Call> {
+        let mut t = self.table.lock().expect("calls lock");
+        let c = t.calls.get_mut(&key(member, id))?;
+        if !matches!(c.state, State::AwaitingApproval | State::Running) {
+            return None;
+        }
+        c.state = State::Revoked;
+        let out = c.clone();
+        self.save(&t);
+        Some(out)
+    }
+
     /// The command and limits for a call that is about to run.
     ///
     /// # Errors
@@ -480,7 +519,14 @@ pub struct Engine {
     quota: playbox_runner::Quota,
     limits: playbox_runner::Limits,
     permits: std::sync::Arc<tokio::sync::Semaphore>,
+    /// Whether a member still holds the authority a call needs, asked again at every step after the first: when the owner approves, just
+    /// before the command starts, and while it runs. A call was authorised when it was made, which can be a long time before it runs
+    /// (it waits for the owner for up to 15 minutes); a member revoked in between must not get one last run.
+    standing: Option<Standing>,
 }
+
+/// `(member, capability)` to `Ok`, or why the member no longer holds the authority.
+pub type Standing = std::sync::Arc<dyn Fn(&str, &str) -> Result<(), String> + Send + Sync>;
 
 impl Engine {
     #[must_use]
@@ -491,7 +537,18 @@ impl Engine {
         quota: playbox_runner::Quota,
         limits: playbox_runner::Limits,
     ) -> Self {
-        Self { book, runner, audit, quota, limits, permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)) }
+        Self { book, runner, audit, quota, limits, permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)), standing: None }
+    }
+
+    /// Re-check a member's authority at every step after the call is made (see the `standing` field).
+    #[must_use]
+    pub fn with_standing(mut self, f: Standing) -> Self {
+        self.standing = Some(f);
+        self
+    }
+
+    fn still_allowed(&self, member: &str, capability: &str) -> Result<(), String> {
+        self.standing.as_ref().map_or(Ok(()), |f| f(member, capability))
     }
 
     /// Whether this host can run capabilities at all (it has a sandbox).
@@ -528,6 +585,12 @@ impl Engine {
         let (call, next) = self.book.decide(which, approve)?;
         self.audit.record("capability_decision", Some(&call.member), json!({"call_id": call.id, "name": call.name, "approved": approve}));
         if next == Next::Run {
+            if let Err(why) = self.still_allowed(&call.member, &call.name) {
+                // The owner said yes to a request from someone who is no longer entitled to make it. Nothing runs.
+                self.audit.record("capability_refused", Some(&call.member), json!({"call_id": call.id, "name": call.name, "reason": why}));
+                self.book.revoke_call(&call.member, &call.id);
+                bail!("not run: {why}");
+            }
             self.start(call.member.clone(), call.id.clone());
         }
         Ok(call)
@@ -538,6 +601,13 @@ impl Engine {
         tokio::spawn(async move {
             let Some(runner) = me.runner.clone() else { return };
             let _permit = me.permits.acquire().await;
+            // Between being made (or approved) and starting there can be a wait for a free slot; ask once more.
+            let Some(capname) = me.book.view(&member, &id).map(|c| c.name) else { return };
+            if let Err(why) = me.still_allowed(&member, &capname) {
+                me.audit.record("capability_refused", Some(&member), json!({"call_id": id, "name": capname, "reason": why}));
+                me.book.revoke_call(&member, &id);
+                return;
+            }
             let (exit, timed_out, out, err) = match me.book.plan(&member, &id) {
                 Err(e) => (None, false, String::new(), format!("{e:#}")),
                 Ok((argv, cap)) => {
@@ -553,12 +623,31 @@ impl Engine {
                         // The task runs as the directory's owner and may be a different user inside a container.
                         #[cfg(unix)]
                         std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o777))?;
-                        playbox_runner::run_with_quota(runner.as_ref(), &spec, &dir, me.quota).await
+                        // Stop the run, which kills its sandbox, if the member loses access while it runs.
+                        tokio::select! {
+                            r = playbox_runner::run_with_quota(runner.as_ref(), &spec, &dir, me.quota) => r.map(Some),
+                            why = async {
+                                loop {
+                                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                                    if let Err(why) = me.still_allowed(&member, &capname) {
+                                        break why;
+                                    }
+                                }
+                            } => {
+                                me.audit.record("capability_cancelled", Some(&member), json!({"call_id": id, "name": capname, "reason": why}));
+                                Ok(None)
+                            }
+                        }
                     }
                     .await;
                     let _ = std::fs::remove_dir_all(&dir);
+                    if matches!(ran, Ok(None)) {
+                        me.book.revoke_call(&member, &id);
+                        return;
+                    }
                     match ran {
-                        Ok(o) => (o.exit_code, o.timed_out, o.stdout, o.stderr),
+                        Ok(Some(o)) => (o.exit_code, o.timed_out, o.stdout, o.stderr),
+                        Ok(None) => unreachable!("handled above"),
                         Err(e) => (None, false, String::new(), format!("{e:#}")),
                     }
                 }
@@ -685,6 +774,19 @@ mod tests {
         assert_eq!(b.view("m", "r2").unwrap().state, State::Done);
         assert_eq!(b.submit("m", "run-tests", args("x", "a"), "r1").unwrap().1, Next::Nothing);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn invisible_and_bidi_characters_are_refused_and_escaped_on_display() {
+        let c = cap(false);
+        for bad in ["a\u{202e}b", "a\u{200b}b", "a\u{2066}b", "a\u{feff}", "a\u{2028}b", "a\u{ad}b", "a\x1b[2Jb"] {
+            assert!(c.bind(&args(bad, "a")).is_err(), "{bad:?}");
+        }
+        assert!(c.bind(&args("Grüße 世界", "a")).is_ok(), "ordinary text in any script is fine");
+        // Whatever reaches an owner's screen shows what is there.
+        assert_eq!(display_safe("ok\u{202e}gnp.exe"), "ok\\u{202e}gnp.exe");
+        assert_eq!(display_safe("a\x1b[31mb\n"), "a\\u{1b}[31mb\\u{a}");
+        assert_eq!(display_safe("Grüße 世界"), "Grüße 世界");
     }
 
     #[test]
