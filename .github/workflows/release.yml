@@ -9,7 +9,18 @@ on:
 permissions:
   contents: write
 jobs:
+  verify:
+    # A tag must match Cargo.toml and have a changelog section; `playbox release prepare X.Y.Z` makes both.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run -q -p playbox-cli -- release check "${GITHUB_REF_NAME#v}"
   build:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -23,7 +34,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
-      - run: cargo build --release -p playbox-cli
+      - name: Build
+        env:
+          # Pinned into the binary so `playbox update` verifies SHA256SUMS.sig. Set the repository variable to the key's public half.
+          PLAYBOX_RELEASE_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PUBKEY }}
+        run: cargo build --release -p playbox-cli
       - name: Package
         run: |
           mkdir out
@@ -50,8 +65,11 @@ jobs:
           PLAYBOX_RELEASE_KEY: ${{ secrets.PLAYBOX_RELEASE_KEY }}
         run: |
           tar -czf dist/playbox-hub.tar.gz --exclude=__pycache__ --exclude='*.pyc' ui     # the dashboard, for the installer's --join / --hub
+          VERSION="${GITHUB_REF_NAME#v}"
+          cargo run --release -q -p playbox-cli -- release manifest "$VERSION" dist --out dist/release.json
+          cargo run --release -q -p playbox-cli -- release notes "$VERSION" > notes.md
           cd dist
-          sha256sum playbox-*.tar.gz > SHA256SUMS
+          sha256sum playbox-*.tar.gz release.json > SHA256SUMS
           cd ..
           if [ -n "$PLAYBOX_RELEASE_KEY" ]; then
             cargo run --release -q -p playbox-cli -- release sign dist/SHA256SUMS
@@ -61,4 +79,7 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/* --generate-notes
+        run: |
+          # A tag like v0.3.0-rc.1 is a pre-release: `playbox update` and install.sh follow "latest", which skips it.
+          case "${{ github.ref_name }}" in *-*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "${{ github.ref_name }}" dist/* --notes-file notes.md $pre

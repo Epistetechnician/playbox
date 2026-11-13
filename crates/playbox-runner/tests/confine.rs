@@ -61,7 +61,7 @@ mod linux {
             ("a run cgroup caps memory and processes and is removed", cgroup_limits),
             ("a cgroup left by a dead supervisor is found", cgroup_stale),
             ("the syscall filter denies mounting, tracing and namespaces but not ordinary work", seccomp_denies),
-            ("the helper's plan joins the cgroup, jails and filters, in that order", plan_enters),
+            ("the helper's plan joins the cgroup, then isolates and filters, in that order", plan_enters),
             ("the host's confinement makes and removes a run's cgroup and refuses more network than allowed", confinement_runs),
             ("the network filter rejects loopback from a run cgroup and only from it", nft_filter),
         ] {

@@ -8,6 +8,7 @@ mod session;
 mod setup;
 mod trust;
 mod tui;
+mod update;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
@@ -74,9 +75,20 @@ async fn run() -> Result<ExitCode> {
         Cmd::Mcp => session::mcp().await,
         Cmd::Id => rooms::guest_id(),
         Cmd::Latent(LatentCmd::Session { link, transport, key }) => latent::session(&link, &transport, key).await,
+        Cmd::Update { check, version, rollback, force, json, pubkey } => {
+            let code = update::run(&update::Opts { check, version, rollback, force, json, pubkey })?;
+            if code != 0 {
+                return Ok(std::process::ExitCode::from(code));
+            }
+            Ok(())
+        }
         Cmd::Release(r) => match r {
             ReleaseCmd::Keygen { out } => release::keygen(&out),
             ReleaseCmd::Sign { file, key } => release::sign(&file, &key),
+            ReleaseCmd::Notes { version, changelog } => release::notes(&version, &changelog),
+            ReleaseCmd::Check { version, changelog, cargo_toml } => release::check(&version, &changelog, &cargo_toml),
+            ReleaseCmd::Prepare { version, changelog, cargo_toml } => release::prepare(&version, &changelog, &cargo_toml),
+            ReleaseCmd::Manifest { version, dir, changelog, out } => release::manifest(&version, &dir, &changelog, &out),
             ReleaseCmd::Verify { file, pubkey, sig } => {
                 release::verify(&file, sig.as_deref(), &pubkey)
             }

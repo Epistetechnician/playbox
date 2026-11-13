@@ -615,7 +615,7 @@ impl RoomHandler {
         )?;
         st.members.insert(from, grant_id);
         st.save();
-        Ok(json!({ "member": from.to_string(), "grant": grant }))
+        Ok(json!({ "member": from.to_string(), "grant": grant, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }))
     }
 
     fn authorize(
@@ -2238,9 +2238,11 @@ impl Client {
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn join(&self, invite: &str) -> Result<String> {
         let r = self
-            .call(wire::METHOD_JOIN, json!({ "invite": invite }))
+            .call(wire::METHOD_JOIN, json!({ "invite": invite, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }))
             .await
             .map_err(|e| anyhow!("join refused: {e:#}"))?;
+        wire::check_protocol(r.get("protocol").and_then(Value::as_u64), r.get("version").and_then(Value::as_str).unwrap_or("?"))
+            .map_err(|e| anyhow!("{e}"))?;
         let grant = r
             .get("grant")
             .and_then(Value::as_str)

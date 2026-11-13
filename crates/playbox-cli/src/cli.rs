@@ -17,7 +17,7 @@ Everything a connected agent can do over MCP, you can do by hand: `playbox shell
 State lives in $PLAYBOX_HOME (default ~/.playbox).";
 
 #[derive(Parser)]
-#[command(name = "playbox", version, about = ABOUT, after_help = OVERVIEW, arg_required_else_help = true, disable_help_subcommand = true)]
+#[command(name = "playbox", version = env!("PLAYBOX_VERSION_LONG"), about = ABOUT, after_help = OVERVIEW, arg_required_else_help = true, disable_help_subcommand = true)]
 pub struct Cli {
     /// Where keys, history, pins and memory live (same as `PLAYBOX_HOME`)
     #[arg(long, global = true, value_name = "DIR")]
@@ -223,6 +223,27 @@ pub enum Cmd {
         #[arg(long, value_name = "AGENT")]
         only: Vec<String>,
     },
+    /// Update playbox to the latest release (checked against SHA256SUMS and the pinned release key)
+    Update {
+        /// Only say whether an update exists (exit status 10 when it does)
+        #[arg(long)]
+        check: bool,
+        /// Install this exact version instead of the latest (also allows a downgrade)
+        #[arg(long, value_name = "X.Y.Z")]
+        version: Option<String>,
+        /// Go back to the version kept from the last update
+        #[arg(long, conflicts_with_all = ["check", "version"])]
+        rollback: bool,
+        /// Reinstall even when already up to date
+        #[arg(long)]
+        force: bool,
+        /// Print the check as JSON
+        #[arg(long)]
+        json: bool,
+        /// Verify against this release public key instead of the one built in
+        #[arg(long, value_name = "HEX")]
+        pubkey: Option<String>,
+    },
     /// Sign and verify releases (maintainers; the installer uses `verify`)
     #[command(subcommand, hide = true)]
     Release(ReleaseCmd),
@@ -414,6 +435,37 @@ pub enum ReleaseCmd {
         file: String,
         #[arg(long, env = "PLAYBOX_RELEASE_KEY", hide_env_values = true)]
         key: String,
+    },
+    /// Print the changelog entries for a version
+    Notes {
+        version: String,
+        #[arg(long, default_value = "CHANGELOG.md")]
+        changelog: String,
+    },
+    /// CI gate for a tag: Cargo.toml and CHANGELOG.md both carry the version
+    Check {
+        version: String,
+        #[arg(long, default_value = "CHANGELOG.md")]
+        changelog: String,
+        #[arg(long, default_value = "Cargo.toml")]
+        cargo_toml: String,
+    },
+    /// Bump the workspace version and roll CHANGELOG.md's Unreleased section into it
+    Prepare {
+        version: String,
+        #[arg(long, default_value = "CHANGELOG.md")]
+        changelog: String,
+        #[arg(long, default_value = "Cargo.toml")]
+        cargo_toml: String,
+    },
+    /// Write release.json for the archives in DIR
+    Manifest {
+        version: String,
+        dir: String,
+        #[arg(long, default_value = "CHANGELOG.md")]
+        changelog: String,
+        #[arg(long, default_value = "release.json")]
+        out: String,
     },
     /// Check FILE.sig against a public key
     Verify {
