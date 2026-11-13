@@ -108,7 +108,29 @@ fn tool(name: &str, desc: &str, props: Value, required: &[&str]) -> Value {
     })
 }
 
+/// The MCP App a host can show next to `playbox_status` and `playbox_feed`: one HTML page, sandboxed by the host.
+pub const ROOM_CARD_URI: &str = "ui://playbox/room";
+const ROOM_CARD_MIME: &str = "text/html;profile=mcp-app";
+const ROOM_CARD: &str = include_str!("room_card.html");
+
+/// The card's page, with the optional hub address filled in. Only a plain http(s) address with no markup characters is accepted.
+fn room_card_html() -> String {
+    let hub = std::env::var("PLAYBOX_HUB_URL").unwrap_or_default();
+    let ok = (hub.starts_with("https://") || hub.starts_with("http://")) && hub.len() < 300 && !hub.chars().any(|c| c.is_whitespace() || c.is_control() || "\"'<>&`\\".contains(c));
+    ROOM_CARD.replace("{{HUB_URL}}", if ok { &hub } else { "" })
+}
+
 pub fn tool_list() -> Value {
+    let mut tools = base_tool_list();
+    for t in tools.as_array_mut().into_iter().flatten() {
+        if matches!(t.get("name").and_then(Value::as_str), Some("playbox_status" | "playbox_feed")) {
+            t["_meta"] = json!({"ui": {"resourceUri": ROOM_CARD_URI}, "ui/resourceUri": ROOM_CARD_URI});
+        }
+    }
+    tools
+}
+
+fn base_tool_list() -> Value {
     json!([
         tool("playbox_create",
             "Start a Playbox room on this machine and return a join link to share. Calling it again returns a fresh single-use link for the same room. Others join with playbox_join.",
@@ -567,12 +589,22 @@ impl Server {
         let result = match method.as_str() {
             "initialize" => Ok(json!({
                 "protocolVersion": s(&params, "protocolVersion").unwrap_or(FALLBACK_PROTOCOL),
-                "capabilities": if self.live.enabled { json!({"tools": {}, "experimental": {"claude/channel": {}}}) } else { json!({"tools": {}}) },
+                "capabilities": if self.live.enabled { json!({"tools": {}, "resources": {}, "experimental": {"claude/channel": {}}}) } else { json!({"tools": {}, "resources": {}}) },
                 "serverInfo": {"name": "playbox-mcp", "version": env!("CARGO_PKG_VERSION")},
                 "instructions": "Playbox lets agents from different owners collaborate. Use playbox_create to host a room and share the link, or playbox_join to enter one."
             })),
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({"tools": tool_list()})),
+            "resources/list" => Ok(json!({"resources": [{
+                "uri": ROOM_CARD_URI, "name": "Playbox room", "mimeType": ROOM_CARD_MIME,
+                "description": "A live card for the room you are in: members, the feed, and a box to post. Shown by hosts that support MCP Apps."}]})),
+            "resources/templates/list" => Ok(json!({"resourceTemplates": []})),
+            "resources/read" => match s(&params, "uri") {
+                Some(ROOM_CARD_URI) => Ok(json!({"contents": [{
+                    "uri": ROOM_CARD_URI, "mimeType": ROOM_CARD_MIME, "text": room_card_html(),
+                    "_meta": {"ui": {"csp": {"connectDomains": [], "resourceDomains": []}, "prefersBorder": false}}}]})),
+                other => Err(json!({"code": -32002, "message": format!("resource not found: {}", other.unwrap_or(""))})),
+            },
             "tools/call" => {
                 let name = s(&params, "name").unwrap_or("").to_string();
                 let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));

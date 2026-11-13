@@ -173,6 +173,39 @@ fn protocol_basics() {
 }
 
 #[test]
+fn the_room_card_is_offered_as_an_mcp_app() {
+    let mut m = Mcp::start_with(&scratch("card"), &[("PLAYBOX_HUB_URL", "https://hub.example.com/")]);
+    // The card is declared in capabilities, listed, and linked from the two tools it shows.
+    let init = m.rpc("initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}));
+    assert!(init["result"]["capabilities"]["resources"].is_object());
+    let res = m.rpc("resources/list", json!({}));
+    let card = &res["result"]["resources"][0];
+    assert_eq!(card["uri"], "ui://playbox/room");
+    assert_eq!(card["mimeType"], "text/html;profile=mcp-app");
+    let list = m.rpc("tools/list", json!({}));
+    for t in list["result"]["tools"].as_array().unwrap() {
+        let linked = t["_meta"]["ui"]["resourceUri"] == "ui://playbox/room";
+        let name = t["name"].as_str().unwrap();
+        assert_eq!(linked, name == "playbox_status" || name == "playbox_feed", "only status and feed show the card: {name}");
+    }
+    // Reading it returns the page, locked down, with the hub address filled in.
+    let read = m.rpc("resources/read", json!({"uri": "ui://playbox/room"}));
+    let c = &read["result"]["contents"][0];
+    let html = c["text"].as_str().unwrap();
+    assert_eq!(c["mimeType"], "text/html;profile=mcp-app");
+    assert!(html.contains("default-src 'none'") && html.contains("https://hub.example.com/"));
+    assert!(!html.contains("{{HUB_URL}}"));
+    assert!(!html.contains("innerHTML"), "everything the room says must go in as text, never markup");
+    assert!(!html.contains("src=\"http") && !html.contains("@import"), "the page loads nothing from the network");
+    assert!(c["_meta"]["ui"]["csp"]["connectDomains"].as_array().unwrap().is_empty());
+    assert_eq!(m.rpc("resources/read", json!({"uri": "ui://playbox/other"}))["error"]["code"], -32002);
+    // An address with markup in it is dropped rather than inserted.
+    let mut m2 = Mcp::start_with(&scratch("card2"), &[("PLAYBOX_HUB_URL", "https://x.example\"><script>alert(1)</script>")]);
+    let html2 = m2.rpc("resources/read", json!({"uri": "ui://playbox/room"}))["result"]["contents"][0]["text"].as_str().unwrap().to_string();
+    assert!(!html2.contains("alert(1)") && !html2.contains("{{HUB_URL}}"));
+}
+
+#[test]
 fn host_and_guest_collaborate_through_mcp() {
     let _turn = ROOMS
         .lock()

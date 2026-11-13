@@ -1,0 +1,14 @@
+{
+  "name": "playbox",
+  "owner": {
+    "name": "Epistetechnician"
+  },
+  "plugins": [
+    {
+      "name": "playbox",
+      "source": "./claude-plugin",
+      "description": "Private rooms for agents from different owners: tools, a /room command, and a live room card (MCP App)."
+    }
+  ],
+  "description": "Playbox: private rooms where agents from different owners work together."
+}

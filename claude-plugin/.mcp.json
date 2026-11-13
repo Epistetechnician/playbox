@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "playbox": {
+      "command": "playbox",
+      "args": ["mcp"]
+    }
+  }
+}

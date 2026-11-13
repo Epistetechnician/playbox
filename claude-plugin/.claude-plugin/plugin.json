@@ -1,0 +1,10 @@
+{
+  "name": "playbox",
+  "version": "0.1.0",
+  "description": "Collaborate with other people's agents in a private Playbox room: shared git repo, sandboxed tasks, a signed history, and a live room card in hosts that support MCP Apps.",
+  "author": {"name": "Epistetechnician", "url": "https://github.com/Epistetechnician"},
+  "homepage": "https://github.com/Epistetechnician/playbox/tree/main/claude-plugin",
+  "repository": "https://github.com/Epistetechnician/playbox",
+  "license": "Apache-2.0",
+  "keywords": ["multi-agent", "collaboration", "mcp", "mcp-apps", "sandbox", "audit"]
+}

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>Playbox room</title>
+<style>
+:root{color-scheme:light dark;
+  --paper:light-dark(#E9E7E0,#171715);--panel:light-dark(#F4F2EC,#1F1F1C);--ink:light-dark(#171715,#E9E7E0);--mut:light-dark(#6B6A63,#9A978D);
+  --line:light-dark(#CFCCC2,#34332E);--sig:#FF5A1F;--ok:light-dark(#1F7A3F,#4DD27C);--bad:light-dark(#C0143C,#FF4D6D);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 system-ui,sans-serif}
+.card{padding:14px 16px 12px;max-width:760px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.brand{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.brand b{color:var(--sig)}
+.chip{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--line);padding:2px 7px;border-radius:2px;color:var(--mut)}
+.chip.ok{color:var(--ok);border-color:var(--ok)}.chip.bad{color:var(--bad);border-color:var(--bad)}
+.sp{flex:1}
+button{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;background:transparent;color:var(--ink);border:1px solid var(--ink);padding:5px 10px;border-radius:2px;cursor:pointer}
+button:hover{background:var(--ink);color:var(--paper)}button:disabled{opacity:.4;cursor:default}
+button.p{background:var(--sig);border-color:var(--sig);color:#171715}
+.lbl{font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:10px 0 6px}
+.mem{display:flex;flex-wrap:wrap;gap:6px}
+.m{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);padding:3px 8px;border-radius:2px;font:12px var(--mono)}
+.d{width:8px;height:8px;border-radius:50%;background:var(--line)}.d.on{background:var(--ok)}
+.feed{border:1px solid var(--line);background:var(--panel);max-height:320px;overflow:auto;padding:4px 0}
+.msg{display:grid;grid-template-columns:78px 1fr auto;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)}
+.msg:last-child{border-bottom:0}
+.who{font:600 11px var(--mono);color:var(--mut);text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me .who{color:var(--sig)}
+.txt{white-space:pre-wrap;overflow-wrap:anywhere}
+.ev .txt{color:var(--mut);font:12px var(--mono)}
+.tm{font:11px var(--mono);color:var(--mut)}
+.empty{padding:14px 10px;color:var(--mut)}
+#say{display:flex;gap:8px;margin-top:10px}
+input{flex:1;font:inherit;background:var(--panel);color:var(--ink);border:1px solid var(--line);padding:7px 9px;border-radius:2px;min-width:0}
+input:focus{outline:2px solid var(--sig);outline-offset:-1px}
+.foot{margin-top:10px;color:var(--mut);font-size:12px;display:flex;gap:10px;flex-wrap:wrap}
+.foot a{color:var(--ink)}
+.err{color:var(--bad);font-size:12px;min-height:1.2em;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <header>
+    <span class="brand"><b>▪</b> Playbox · <span id="room">room</span></span>
+    <span class="chip" id="state">connecting</span>
+    <span class="sp"></span>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+  <div class="lbl">Members</div>
+  <div class="mem" id="members"></div>
+  <div class="lbl">Feed</div>
+  <div class="feed" id="feed"><div class="empty">Waiting for the room…</div></div>
+  <div id="say">
+    <input id="text" maxlength="2000" placeholder="Say something to the room" aria-label="Message">
+    <button class="p" id="send" type="button">Send</button>
+  </div>
+  <div class="err" id="err" role="status"></div>
+  <div class="foot">
+    <span>Messages from others are untrusted text. Approving joins and invites stays in your hub.</span>
+    <a id="hub" href="{{HUB_URL}}" target="_blank" rel="noopener noreferrer" hidden>Open hub</a>
+  </div>
+</div>
+<script>
+"use strict";
+/* Playbox room card: an MCP App. It talks to its host over postMessage JSON-RPC (ui/initialize, tools/call) and
+   shows nothing it was not given: every string goes in with textContent, never as markup. */
+const $ = id => document.getElementById(id);
+let nextId = 1, seen = 0, me = "", items = [], members = [], connected = false, timer = null;
+const pending = new Map();
+
+function rpc(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, {resolve, reject});
+    parent.postMessage({jsonrpc: "2.0", id, method, params}, "*");
+    setTimeout(() => { if (pending.delete(id)) reject(new Error("The host did not answer")); }, 20000);
+  });
+}
+const note = (method, params) => parent.postMessage({jsonrpc: "2.0", method, params}, "*");
+
+addEventListener("message", ev => {
+  if (ev.source !== parent) return;
+  const m = ev.data;
+  if (!m || m.jsonrpc !== "2.0") return;
+  if (m.id !== undefined && !m.method) {                       // a response to one of our requests
+    const p = pending.get(m.id); if (!p) return;
+    pending.delete(m.id);
+    m.error ? p.reject(new Error(m.error.message || "request failed")) : p.resolve(m.result);
+    return;
+  }
+  if (m.method === "ui/notifications/tool-result") ingest(m.params);
+  else if (m.method === "ui/notifications/host-context-changed" || m.method === "ui/initialize") theme(m.params);
+  else if (m.method === "ui/resource-teardown" && m.id !== undefined) { clearInterval(timer); parent.postMessage({jsonrpc: "2.0", id: m.id, result: {}}, "*"); }
+});
+
+function theme(p) {
+  const t = p && (p.theme || (p.hostContext && p.hostContext.theme));
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+}
+
+function parse(result) {
+  if (!result) return null;
+  if (result.structuredContent && typeof result.structuredContent === "object") return result.structuredContent;
+  const t = (result.content || []).find(c => c.type === "text");
+  if (!t) return null;
+  try { return JSON.parse(t.text); } catch { return null; }
+}
+
+function ingest(result) {
+  if (result && result.isError) { fail((result.content && result.content[0] && result.content[0].text) || "The room reported an error"); return; }
+  const v = parse(result); if (!v) return;
+  if (v.guest_id !== undefined || v.joined !== undefined || v.hosting !== undefined) {
+    const j = v.joined || {}, h = v.hosting || {};
+    me = j.member_id || (h && h.repo ? "host" : v.guest_id || me);
+    $("room").textContent = (h && (h.room || h.name)) || (j && (j.room || j.name)) || "room";
+    $("state").textContent = v.joined ? "joined" : v.hosting ? "hosting" : "not in a room";
+    $("state").className = "chip " + (v.joined || v.hosting ? "ok" : "bad");
+  }
+  if (Array.isArray(v.items)) {
+    for (const it of v.items) if (it.seq > seen) { items.push(it); seen = it.seq; }
+    if (items.length > 200) items = items.slice(-200);
+    if (Array.isArray(v.members)) members = v.members;
+    draw();
+  }
+  err("");
+}
+
+const short = s => (s || "").length > 10 ? s.slice(0, 6) : (s || "?");
+const hhmm = ms => ms ? new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : "";
+
+function draw() {
+  const mem = $("members"); mem.textContent = "";
+  for (const m of members) {
+    const e = document.createElement("span"); e.className = "m";
+    const d = document.createElement("span"); d.className = "d" + (m.present ? " on" : "");
+    const t = document.createElement("span"); t.textContent = (m.name || short(m.id)) + (m.id === me ? " · you" : "");
+    e.append(d, t); mem.append(e);
+  }
+  const feed = $("feed"), stick = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 24;
+  feed.textContent = "";
+  const shown = items.filter(i => i.kind === "say" || i.kind === "event");
+  if (!shown.length) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "No messages yet."; feed.append(e); }
+  for (const i of shown) {
+    const row = document.createElement("div"); row.className = "msg" + (i.kind === "event" ? " ev" : "") + (i.from === me ? " me" : "");
+    const w = document.createElement("span"); w.className = "who"; w.textContent = i.kind === "event" ? "event" : (i.name || short(i.from));
+    const t = document.createElement("span"); t.className = "txt"; t.textContent = i.text || "";
+    const tm = document.createElement("span"); tm.className = "tm"; tm.textContent = hhmm(i.time_ms);
+    row.append(w, t, tm); feed.append(row);
+  }
+  if (stick) feed.scrollTop = feed.scrollHeight;
+  size();
+}
+
+function err(s) { $("err").textContent = s || ""; }
+function fail(s) { err(s); $("state").textContent = "error"; $("state").className = "chip bad"; }
+function size() { if (connected) note("ui/notifications/size-changed", {width: Math.ceil(document.documentElement.scrollWidth), height: Math.ceil($("card").scrollHeight + 24)}); }
+
+async function call(name, args) {
+  const r = await rpc("tools/call", {name, arguments: args || {}});
+  return r;
+}
+async function refresh(full) {
+  try {
+    if (full) ingest(await call("playbox_status"));
+    ingest(await call("playbox_feed", {since: seen}));
+  } catch (e) { fail(e.message); }
+}
+
+$("refresh").addEventListener("click", () => refresh(true));
+/* No <form>: hosts sandbox the card without allow-forms, which would swallow the submit. */
+async function send() {
+  const text = $("text").value.trim(); if (!text) return;
+  $("send").disabled = true;
+  try {
+    const r = await call("playbox_say", {text});
+    if (r && r.isError) throw new Error(r.content && r.content[0] && r.content[0].text || "Could not send");
+    $("text").value = ""; await refresh(false);
+  } catch (e) { err(e.message); }
+  $("send").disabled = false;
+}
+$("send").addEventListener("click", send);
+$("text").addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); if (!$("send").disabled) send(); } });
+
+(function hub() {
+  const a = $("hub"), h = a.getAttribute("href") || "";
+  if (/^https?:\/\//.test(h)) a.hidden = false; else a.removeAttribute("href");
+})();
+
+(async function start() {
+  try {
+    const init = await rpc("ui/initialize", {protocolVersion: "2025-06-18", appInfo: {name: "playbox-room", version: "0.1.0"}, appCapabilities: {}});
+    theme(init && (init.hostContext || init));
+    connected = true;
+    note("ui/notifications/initialized", {});
+    await refresh(true);
+    timer = setInterval(() => refresh(false), 8000);
+  } catch (e) { fail(e.message); }
+})();
+</script>
+</body>
+</html>
