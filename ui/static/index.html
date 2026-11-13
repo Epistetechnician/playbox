@@ -288,7 +288,7 @@ function paintNav() {
   const html = TABS.map(([id, label]) => {
     const badge = id === "feed" && S.unread ? `<span class="badge" aria-label="${S.unread} new">${S.unread > 9 ? "9+" : S.unread}</span>` : "";
     return `<button class="nav" data-tab="${id}" ${S.tab === id ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[id === "people" ? "people" : id]}</svg><span>${label}</span>${badge}</button>`;
-  }).join("");
+  }).join("") + (BASE !== "/" ? `<a class="nav" href="${BASE}canvas" style="text-decoration:none"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.room}</svg><span>Canvas</span></a>` : "");
   $("#tabbar").innerHTML = html;
   $("#railnav").innerHTML = html;
 }
