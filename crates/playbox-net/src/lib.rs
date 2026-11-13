@@ -581,7 +581,8 @@ impl RoomHandler {
             mem_mib: i64::from(l.mem_mib),
             timeout_secs: i64::try_from(l.timeout_secs).unwrap_or(i64::MAX),
             net: l.network,
-            hosts: l.allowed_hosts.clone(),
+            // A secret is granted as `secret/NAME` in the same allow-list as hosts: `/` is in no host name or secret name.
+            hosts: l.allowed_hosts.iter().cloned().chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}"))).collect(),
         };
         let ttl = self
             .cfg
@@ -956,6 +957,7 @@ impl RoomHandler {
                     "cmd_hash": h.finalize().to_hex().chars().take(16).collect::<String>(),
                     "image": audit::clip(&spec.image),
                     "cpus": spec.cpus, "mem_mib": spec.mem_mib, "timeout_secs": spec.timeout_secs, "network": spec.network,
+                    "secrets": spec.secrets,
                 });
                 let r = self.run(from, &base, spec).await;
                 self.audit_op(from, "task", &r, t0, details);
@@ -1183,6 +1185,9 @@ impl RoomHandler {
         }
         if let Some(c) = output.exit_code {
             meta.push(("exitCode", json!(c)));
+        }
+        if !output.secrets_used.is_empty() {
+            meta.push(("secretsUsed", json!(output.secrets_used)));
         }
         meta.extend(extra);
         Ok(wire::task(
@@ -2448,6 +2453,9 @@ impl Client {
                 stdout: wire::artifact_text(&t, "stdout").unwrap_or_default(),
                 stderr: wire::artifact_text(&t, "stderr").unwrap_or_default(),
                 policy_digest: text("policyDigest"),
+                secrets_used: wire::meta(&t, "secretsUsed")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or_default(),
             },
             patch: wire::artifact_bytes(&t, "patch").unwrap_or_default(),
             branch: text("branch"),

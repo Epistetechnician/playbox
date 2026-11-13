@@ -56,6 +56,18 @@ pub struct UpArgs {
     /// Let tasks reach this host[:port]; repeatable; only openshell enforces it
     #[arg(long = "allow-host", value_name = "HOST")]
     pub allow_host: Vec<String>,
+    /// Linux, libkrun: run each task's helper in a jail, under a cgroup, behind a network filter (docs/libkrun.md)
+    #[arg(long)]
+    pub confine: bool,
+    /// With --confine: the most network a task may have: none (default), internet, internet+lan
+    #[arg(long, value_name = "LEVEL", default_value = "none", requires = "confine")]
+    pub confine_net: String,
+    /// With --confine: skip the syscall filter (for debugging a guest that needs a denied call)
+    #[arg(long, requires = "confine")]
+    pub no_seccomp: bool,
+    /// Let members' tasks read this secret from the host's secrets directory ($PLAYBOX_HOME/secrets) at /run/secrets; repeatable
+    #[arg(long = "allow-secret", value_name = "NAME")]
+    pub allow_secret: Vec<String>,
     /// Audit log file (`-` is stderr); default DIR/audit.log with --state
     #[arg(long, value_name = "FILE")]
     pub audit_log: Option<String>,

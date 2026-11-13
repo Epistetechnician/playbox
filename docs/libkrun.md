@@ -47,28 +47,46 @@ copy (`PLAYBOX_KRUN_HELPER`, `~/.cargo/bin`, PATH) over a freshly built one besi
 | Guest user | root inside the VM. Files it writes to `/workspace` appear on the host owned by the host user. |
 | Output | Capped at 64 KiB per stream, like the other runners. |
 
-## Linux confinement (built, not yet used by the helper)
+## Linux confinement (`up --runtime libkrun --confine`)
 
-`crates/playbox-runner` now has the pieces that close the gaps in the table above on Linux, taken from the approach of Peerspan's
-runtime (`peerspan/runtime`, Apache-2.0; see `docs/peerspan-integration.md`). They are tested and **not yet called by
-`playbox-krun-helper`**, so a libkrun task still runs unconfined; wiring them in needs a Linux/KVM host with libkrun, which this
-project has not had.
+Taken from the approach of Peerspan's runtime (`peerspan/runtime`, Apache-2.0; see `docs/peerspan-integration.md`). With `--confine`
+(Linux only) the host does four things for every task, and refuses to start if the kernel cannot do them:
 
-- `jail` (Linux): moves a process into new mount, PID, IPC and UTS namespaces (and net, unless the guest keeps a network) and pivots
-  into a tmpfs root holding only the paths listed, with `no_new_privs` and a non-dumpable process. Works without root through a user
-  namespace. Tested as root and as an ordinary user: the jailed process cannot read a host file outside its binds, cannot write a
-  read-only bind, cannot reach the host's loopback, is PID 1 of its namespace and sees no other process.
-- `cgroup` (Linux): a cgroup v2 per run capping memory (guest RAM + 256 MiB), 512 processes, CPU and swap off; `kill_all` on drop;
-  a flock-based way to find cgroups a dead supervisor left behind. Tested as root: limits written, a process moved in dies with the
-  cgroup, stale detection.
-- `netpolicy` (portable): network levels `none`, `internet`, `internet+lan`; the always-rejected ranges (loopback, link-local
-  including the metadata service 169.254.169.254, multicast, reserved, IPv4-mapped and NAT64 aliases of those); and the nftables
-  rules per run, with destinations pinned to resolved addresses and a fail-closed base table. The classification and rule text are
-  unit-tested; **the rules have not been loaded into a kernel** (Docker Desktop's kernel has no `nft_socket`). The CI job `confine`
-  runs that end to end on an Ubuntu runner and fails rather than skips there.
+- **Jail** (`jail`): the helper moves itself into new mount, PID, IPC and UTS namespaces (and net, unless the task has a network)
+  and pivots into a tmpfs root holding only the task's rootfs clone, its workspace, the secrets directory, `/dev/kvm` and the
+  libraries libkrun loads. `no_new_privs`, non-dumpable. Works without root through a user namespace.
+- **cgroup** (`cgroup`): a cgroup v2 per task: guest RAM + 256 MiB, 512 processes, CPU quota, swap off. Everything in it is killed
+  and the cgroup removed when the task ends, however it ends; a flock finds cgroups a dead supervisor left, and host start removes them.
+- **Network** (`netpolicy`): `--confine-net none|internet|internet+lan` is the most any task may have. Each task gets its own
+  nftables chain matched by cgroup, a fail-closed base table rejects a runner cgroup with no chain, and loopback, link-local
+  (169.254.169.254), multicast and IPv4-mapped/NAT64 aliases are rejected at every level. Where the host allows a network, a task may
+  also list `allowed_hosts`: names are resolved once and pinned, so only those addresses and ports are reachable. libkrun's
+  TSI is unchanged; the filter sits on the host side, so the guest never sees the difference.
+- **Syscall filter** (`seccomp`): a deny-list installed after the jail and before libkrun starts a thread: ptrace, mount and the new
+  mount API, namespaces, module and kexec loading, bpf, perf, key rings, reboot, swap, clock changes. Denied calls return `EPERM`.
+  `--no-seccomp` turns it off for debugging.
 
-Not built: the seccomp allow-list for the VMM (it has to be measured against the libkrun in use), disk I/O limits, `/run/secrets`
-injection, passt as the network path (it replaces TSI), and recording these settings in the attestation measurements.
+The order inside the helper is: join the cgroup, enter the jail, install the filter, then boot. A failed step is an exit with a
+message, never an unconfined VM. `Runner::attestation` (the host's signed statement) now carries `jail=…;cgroup=…;pids_max=…;
+net_max=…;seccomp=deny:<hash>;helper=<hash>`, or `confine=off`, so a guest can refuse a host that is not confined.
+
+Tested on Linux in CI (job `confine`, as root and rootless): the jail's view, the cgroup limits and cleanup, the filter's effect
+(mount, ptrace, unshare, bpf refused; files, threads, sockets still work), the helper's plan order, and the network rules loaded into a
+real kernel. **Not tested: a real libkrun VM under all of it.** That needs a Linux/KVM host. The most likely failure there is the
+jail missing a path libkrun opens, or the filter denying a call it makes; the helper reports the failing step, and
+`PLAYBOX_CONFINE_SECCOMP=off` / `--no-seccomp` separates the two.
+
+### Secrets
+
+`TaskSpec.secrets` names files in the host's secrets directory (`$PLAYBOX_HOME/secrets`, mode 0700, one file per secret, 64 KiB,
+16 per task). The host lists which names members may use (`--allow-secret NAME`); the list goes into each member's grant, so a
+request for any other name is "not authorized" before a task is queued. Values are copied into a private staging directory shown
+at `/run/secrets` (read-only; for libkrun a second virtiofs share), outside `/workspace`, and removed when the task ends. The task
+record and the audit log carry the names and the blake3 of each value, never the value. A task that has a secret and a network can
+of course send it out: grant a secret to tasks that run code you trust, or give them no network. Works with the Docker and libkrun runners.
+
+Not built: disk I/O limits, passt as the network path (it would replace TSI), and an allow-list seccomp measured against the libkrun
+in use.
 
 ## What it does not do yet
 

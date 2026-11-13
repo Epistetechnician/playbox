@@ -42,6 +42,7 @@ async fn start(token: Option<&str>) -> (Host, String) {
             timeout_secs: 60,
             network: false,
             allowed_hosts: vec![],
+            allowed_secrets: vec![],
         },
         ..Default::default()
     };

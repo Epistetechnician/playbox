@@ -13,8 +13,13 @@ use tokio::{io::AsyncReadExt, process::Command};
 #[cfg(target_os = "linux")]
 pub mod cgroup;
 #[cfg(target_os = "linux")]
+pub mod confine;
+#[cfg(target_os = "linux")]
 pub mod jail;
 pub mod netpolicy;
+pub mod secrets;
+#[cfg(target_os = "linux")]
+pub mod seccomp;
 pub mod workspace;
 
 /// How strongly a backend separates a task from the host. Ordered: a host can demand a minimum
@@ -93,6 +98,9 @@ pub struct TaskSpec {
     /// Only runners that can enforce it accept a non-empty list; the others refuse the task.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// Names of host-held secrets to show at `/run/secrets` (see [`secrets`]). The task never carries a value.
+    #[serde(default)]
+    pub secrets: Vec<String>,
 }
 
 impl TaskSpec {
@@ -106,6 +114,7 @@ impl TaskSpec {
             timeout_secs: 60,
             network: false,
             allowed_hosts: Vec::new(),
+            secrets: Vec::new(),
         }
     }
 
@@ -117,6 +126,7 @@ impl TaskSpec {
         self.timeout_secs = self.timeout_secs.clamp(1, max.timeout_secs);
         self.network = self.network && max.network;
         self.allowed_hosts.retain(|h| max.allowed_hosts.contains(h));
+        self.secrets.retain(|n| max.allowed_secrets.contains(n));
         self
     }
 }
@@ -129,6 +139,8 @@ pub struct Limits {
     pub network: bool,
     /// Destinations a task may be limited to, for runners that can enforce a host list.
     pub allowed_hosts: Vec<String>,
+    /// Names of host-held secrets a task may ask for (`TaskSpec::secrets`). Empty: none.
+    pub allowed_secrets: Vec<String>,
 }
 
 impl Default for Limits {
@@ -139,6 +151,7 @@ impl Default for Limits {
             timeout_secs: 300,
             network: false,
             allowed_hosts: Vec::new(),
+            allowed_secrets: Vec::new(),
         }
     }
 }
@@ -152,6 +165,9 @@ pub struct TaskOutput {
     /// blake3 of the exact sandbox policy the task ran under, for runners that have one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy_digest: Option<String>,
+    /// The secrets the task could read: names and hashes, never values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets_used: Vec<secrets::SecretUse>,
 }
 
 /// A read-only host directory shown to a task at `container`. Only the host itself builds these (never a
@@ -233,9 +249,53 @@ pub trait Runner: Send + Sync {
 ///
 /// Returns an error if the operation fails; the error carries the cause.
 pub fn runner_by_name(name: &str, policy: SandboxPolicy) -> Result<std::sync::Arc<dyn Runner>> {
+    runner_with(name, policy, &RunnerOptions::from_env())
+}
+
+/// Settings beyond the backend's name.
+#[derive(Debug, Clone, Default)]
+pub struct RunnerOptions {
+    /// Confine each libkrun task (Linux): the most network a task may have, and whether the helper installs the syscall filter.
+    pub confine: Option<(netpolicy::Level, bool)>,
+}
+
+impl RunnerOptions {
+    /// `PLAYBOX_CONFINE=on` (or `1`), `PLAYBOX_CONFINE_NET=none|internet|internet+lan` (default none), `PLAYBOX_CONFINE_SECCOMP=off`.
+    #[must_use]
+    pub fn from_env() -> Self {
+        let on = std::env::var("PLAYBOX_CONFINE").is_ok_and(|v| matches!(v.as_str(), "on" | "1" | "true"));
+        let level = std::env::var("PLAYBOX_CONFINE_NET").ok().and_then(|v| v.parse().ok()).unwrap_or_default();
+        let seccomp = std::env::var("PLAYBOX_CONFINE_SECCOMP").map_or(true, |v| v != "off");
+        Self { confine: on.then_some((level, seccomp)) }
+    }
+}
+
+/// Like [`runner_by_name`], with explicit options.
+///
+/// # Errors
+///
+/// Returns an error for an unknown or unavailable backend, or confinement asked of a backend or platform that cannot provide it.
+pub fn runner_with(name: &str, policy: SandboxPolicy, opts: &RunnerOptions) -> Result<std::sync::Arc<dyn Runner>> {
+    if opts.confine.is_some() && !matches!(name, "libkrun" | "krun") {
+        bail!("confinement applies to the libkrun runner only (the {name} runner has its own isolation)");
+    }
     match name {
         "docker" => Ok(std::sync::Arc::new(DockerRunner::new(policy))),
-        "libkrun" | "krun" => Ok(std::sync::Arc::new(KrunRunner::locate(policy)?)),
+        "libkrun" | "krun" => {
+            #[allow(unused_mut)]
+            let mut r = KrunRunner::locate(policy)?;
+            if let Some((_level, _seccomp)) = opts.confine {
+                #[cfg(target_os = "linux")]
+                {
+                    let mut c = confine::Confinement::new(_level);
+                    c.seccomp = _seccomp;
+                    r = r.with_confinement(c);
+                }
+                #[cfg(not(target_os = "linux"))]
+                bail!("confinement needs Linux; on macOS the libkrun helper is signed with the hypervisor entitlement instead (docs/libkrun.md)");
+            }
+            Ok(std::sync::Arc::new(r))
+        }
         "openshell" => Ok(std::sync::Arc::new(OpenShellRunner::new(policy))),
         "process" if std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() => {
             Ok(std::sync::Arc::new(ProcessRunner))
@@ -343,7 +403,10 @@ fn check_spec(spec: &TaskSpec) -> Result<()> {
         bail!("empty command");
     }
     if !spec.allowed_hosts.is_empty() {
-        bail!("this runner cannot limit a task to specific hosts; use the openshell runner");
+        bail!("this runner cannot limit a task to specific hosts; use the openshell runner or a confined libkrun host");
+    }
+    if !spec.secrets.is_empty() {
+        bail!("this runner cannot hand secrets to a task");
     }
     if spec.image.starts_with('-') || spec.image.contains(char::is_whitespace) {
         bail!("invalid image name");
@@ -376,6 +439,7 @@ async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, b
                 stdout: out.await.unwrap_or_default(),
                 stderr: err.await.unwrap_or_default(),
                 policy_digest: None,
+                secrets_used: Vec::new(),
             },
             false,
         ))
@@ -388,21 +452,34 @@ async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, b
                 stdout: out.await.unwrap_or_default(),
                 stderr: err.await.unwrap_or_default(),
                 policy_digest: None,
+                secrets_used: Vec::new(),
             },
             true,
         ))
     }
 }
 
-#[derive(Default)]
 pub struct DockerRunner {
     policy: SandboxPolicy,
+    secrets: secrets::SecretStore,
+}
+
+impl Default for DockerRunner {
+    fn default() -> Self {
+        Self::new(SandboxPolicy::default())
+    }
 }
 
 impl DockerRunner {
     #[must_use]
     pub fn new(policy: SandboxPolicy) -> Self {
-        Self { policy }
+        Self { policy, secrets: secrets::SecretStore::from_env() }
+    }
+
+    #[must_use]
+    pub fn with_secrets(mut self, store: secrets::SecretStore) -> Self {
+        self.secrets = store;
+        self
     }
 }
 
@@ -487,12 +564,15 @@ impl Runner for DockerRunner {
         workspace: &Path,
         mounts: &[Mount],
     ) -> Result<TaskOutput> {
-        check_spec(spec)?;
+        let mut plain = spec.clone();
+        plain.secrets.clear();
+        check_spec(&plain)?;
         self.policy.check(spec)?;
         for m in mounts {
             m.check()?;
         }
         let meta = tokio::fs::metadata(workspace).await.context("workspace")?;
+        let staged = self.secrets.stage(&spec.secrets, &std::env::temp_dir())?;
         let mut rnd = [0u8; 6];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
         let name = format!(
@@ -546,6 +626,10 @@ impl Runner for DockerRunner {
                 ),
             ]);
         }
+        if !spec.secrets.is_empty() {
+            let dir = staged.path().to_str().context("secrets path is not utf-8")?;
+            cmd.args(["--mount", &format!("type=bind,source={dir},target=/run/secrets,readonly")]);
+        }
         cmd.arg(&spec.image).args(&spec.cmd);
 
         // If this future is dropped (a quota stop, a cancelled request) the `docker run` client dies but the
@@ -555,6 +639,8 @@ impl Runner for DockerRunner {
         if timed_out {
             let _ = Command::new("docker").args(["kill", &name]).output().await;
         }
+        let mut out = out;
+        out.secrets_used = staged.used.clone();
         Ok(out)
     }
 }

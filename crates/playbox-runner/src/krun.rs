@@ -15,9 +15,11 @@
 //! so a guest can reach the host's loopback and LAN. Leave network off on hosts that matter.
 
 use super::{
-    check_spec, quota_exceeded, run_child, Isolation, Quota, Runner, SandboxPolicy, TaskOutput,
-    TaskSpec,
+    check_spec, quota_exceeded, run_child, secrets::SecretStore, Isolation, Quota, Runner, SandboxPolicy,
+    TaskOutput, TaskSpec,
 };
+#[cfg(target_os = "linux")]
+use super::{cgroup::Limits, confine::Confinement, netpolicy::Level};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use std::{
@@ -40,6 +42,11 @@ pub struct KrunRunner {
     quota: Quota,
     /// Only one rootfs export at a time per process.
     export: Arc<tokio::sync::Mutex<()>>,
+    /// The host's credentials a task may ask for by name.
+    secrets: SecretStore,
+    /// Linux confinement of the helper and the task's network; `None` runs the helper as before.
+    #[cfg(target_os = "linux")]
+    confine: Option<Confinement>,
 }
 
 fn playbox_home() -> PathBuf {
@@ -119,7 +126,25 @@ impl KrunRunner {
             root: playbox_home().join("krun"),
             quota: Quota::default(),
             export: Arc::default(),
+            secrets: SecretStore::new(playbox_home().join("secrets")),
+            #[cfg(target_os = "linux")]
+            confine: None,
         }
+    }
+
+    /// Where the host keeps secrets tasks may ask for by name (default `$PLAYBOX_HOME/secrets`).
+    #[must_use]
+    pub fn with_secrets(mut self, store: SecretStore) -> Self {
+        self.secrets = store;
+        self
+    }
+
+    /// Run each task's helper in a jail, under a cgroup, behind a network filter (Linux; see [`Confinement`]).
+    #[cfg(target_os = "linux")]
+    #[must_use]
+    pub fn with_confinement(mut self, c: Confinement) -> Self {
+        self.confine = Some(c);
+        self
     }
 
     async fn docker(args: &[&str]) -> Result<String> {
@@ -241,7 +266,19 @@ impl KrunRunner {
 #[async_trait]
 impl Runner for KrunRunner {
     fn attestation(&self) -> String {
-        self.policy.describe()
+        #[cfg(target_os = "linux")]
+        if let Some(c) = &self.confine {
+            return format!("{};{};helper={}", self.policy.describe(), c.describe(), helper_digest(&self.helper));
+        }
+        format!("{};confine=off", self.policy.describe())
+    }
+
+    fn enforces_host_list(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(c) = &self.confine {
+            return c.max_net > Level::None;
+        }
+        false
     }
 
     fn name(&self) -> &'static str {
@@ -255,6 +292,11 @@ impl Runner for KrunRunner {
     /// Boots a real VM running `true`, so a missing library, firmware, entitlement or hypervisor
     /// fails when the host starts instead of on a member's first task.
     async fn preflight(&self) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        if let Some(c) = &self.confine {
+            let c = c.clone();
+            tokio::task::spawn_blocking(move || c.preflight()).await??;
+        }
         let image = self
             .policy
             .allowed_images
@@ -294,10 +336,24 @@ impl Runner for KrunRunner {
         reason = "the value is bounded, or truncated on purpose; the value is clamped to be non-negative first"
     )]
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
-        check_spec(spec)?;
+        let mut plain = spec.clone();
+        plain.secrets.clear();
+        #[cfg(target_os = "linux")]
+        if self.confine.is_some() {
+            plain.allowed_hosts.clear(); // enforced below by the network filter
+        }
+        check_spec(&plain)?;
         self.policy.check(spec)?;
         let rootfs = self.rootfs(&spec.image).await?;
         let clone = self.clone_rootfs(&rootfs).await?;
+        let staged = self.secrets.stage(&spec.secrets, &self.root.join("run"));
+        let staged = match staged {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = tokio::fs::remove_dir_all(&clone).await;
+                return Err(e);
+            }
+        };
 
         let vcpus = (spec.cpus.ceil() as u32).clamp(1, MAX_VCPUS);
         let mem = spec.mem_mib.max(MIN_MEM_MIB);
@@ -307,6 +363,27 @@ impl Runner for KrunRunner {
             .arg("--workspace")
             .arg(workspace);
         cmd.args(["--cpus", &vcpus.to_string(), "--mem", &mem.to_string()]);
+        if !spec.secrets.is_empty() {
+            cmd.arg("--secrets").arg(staged.path());
+        }
+        // Held until the task ends: dropping it kills the cgroup and removes the network chain.
+        #[cfg(target_os = "linux")]
+        let _guard = match &self.confine {
+            Some(c) => match self.confine_args(c, spec, &clone, workspace, staged.path(), vcpus, mem, &mut cmd).await {
+                Ok(g) => Some(g),
+                Err(e) => {
+                    let _ = tokio::fs::remove_dir_all(&clone).await;
+                    return Err(e);
+                }
+            },
+            None => {
+                if spec.network {
+                    cmd.arg("--network");
+                }
+                None
+            }
+        };
+        #[cfg(not(target_os = "linux"))]
         if spec.network {
             cmd.arg("--network");
         }
@@ -319,8 +396,77 @@ impl Runner for KrunRunner {
             why = quota_exceeded(&clone, self.quota) => Err(why),
         };
         let _ = tokio::fs::remove_dir_all(&clone).await;
-        Ok(result
+        let _ = tokio::fs::remove_dir_all(clone.with_extension("jail")).await;
+        let mut out = result
             .with_context(|| format!("running {}", self.helper.display()))?
-            .0)
+            .0;
+        out.secrets_used = staged.used.clone();
+        Ok(out)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn helper_digest(helper: &Path) -> String {
+    std::fs::read(helper).map_or_else(|_| "unreadable".into(), |b| blake3::hash(&b).to_hex().chars().take(16).collect())
+}
+
+#[cfg(target_os = "linux")]
+impl KrunRunner {
+    /// Create the task's cgroup and network chain and add the helper flags that make it confine itself.
+    #[allow(clippy::too_many_arguments, reason = "one call site; the values are all per-task")]
+    async fn confine_args(
+        &self,
+        c: &Confinement,
+        spec: &TaskSpec,
+        clone: &Path,
+        workspace: &Path,
+        secrets: &Path,
+        vcpus: u32,
+        mem: u32,
+        cmd: &mut Command,
+    ) -> Result<super::confine::RunGuard> {
+        let (level, dests) = if spec.allowed_hosts.is_empty() {
+            (if spec.network { Level::Internet } else { Level::None }, Vec::new())
+        } else {
+            (Level::Internet, resolve_hosts(&spec.allowed_hosts).await?)
+        };
+        let run_id = random_name()?;
+        let limits = Limits { cpus: vcpus as f32, guest_memory_mib: mem };
+        let guard = {
+            let (c, id, dests) = (c.clone(), run_id.clone(), dests);
+            tokio::task::spawn_blocking(move || c.begin(&id, limits, level, &dests)).await??
+        };
+        let jail_dir = clone.with_extension("jail");
+        tokio::fs::create_dir_all(&jail_dir).await?;
+        cmd.arg("--cgroup").arg(c.cgroup_of(&run_id)).arg("--jail-dir").arg(&jail_dir);
+        cmd.arg("--rw").arg(clone).arg("--rw").arg(workspace);
+        if !spec.secrets.is_empty() {
+            cmd.arg("--ro").arg(secrets);
+        }
+        if level > Level::None {
+            cmd.arg("--network");
+        }
+        if c.seccomp {
+            cmd.arg("--seccomp");
+        }
+        Ok(guard)
+    }
+}
+
+/// Resolve `host` or `host:port` (port 443 by default) once, so the filter pins addresses and a later DNS answer cannot move them.
+#[cfg(target_os = "linux")]
+async fn resolve_hosts(hosts: &[String]) -> Result<Vec<std::net::SocketAddr>> {
+    let mut out = Vec::new();
+    for h in hosts {
+        let (name, port) = match h.rsplit_once(':') {
+            Some((n, p)) if !n.contains(':') => (n, p.parse::<u16>().with_context(|| format!("bad port in {h:?}"))?),
+            _ => (h.as_str(), 443),
+        };
+        let found: Vec<_> = tokio::net::lookup_host((name, port)).await.with_context(|| format!("resolving {name}"))?.collect();
+        if found.is_empty() {
+            bail!("{name} did not resolve");
+        }
+        out.extend(found);
+    }
+    Ok(out)
 }

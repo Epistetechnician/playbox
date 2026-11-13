@@ -362,6 +362,7 @@ async fn bare_member() -> (Host, Client) {
             timeout_secs: 30,
             network: false,
             allowed_hosts: vec![],
+            allowed_secrets: vec![],
         },
         ..Default::default()
     };

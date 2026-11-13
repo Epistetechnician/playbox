@@ -60,6 +60,9 @@ mod linux {
             ("a jail with a bad path is refused", jail_refuses_bad_paths),
             ("a run cgroup caps memory and processes and is removed", cgroup_limits),
             ("a cgroup left by a dead supervisor is found", cgroup_stale),
+            ("the syscall filter denies mounting, tracing and namespaces but not ordinary work", seccomp_denies),
+            ("the helper's plan joins the cgroup, jails and filters, in that order", plan_enters),
+            ("the host's confinement makes and removes a run's cgroup and refuses more network than allowed", confinement_runs),
             ("the network filter rejects loopback from a run cgroup and only from it", nft_filter),
         ] {
             if std::env::var("PLAYBOX_CONFINE_ONLY").is_ok_and(|only| !name.contains(only.as_str())) {
@@ -103,6 +106,57 @@ mod linux {
     fn jail_refuses_bad_paths() -> bool {
         let out = child("badpath", &[("PB_ROOT", tmp("root3").display().to_string())]);
         report(&out)
+    }
+
+    fn seccomp_denies() -> bool {
+        report(&child("seccomp", &[]))
+    }
+
+    fn plan_enters() -> bool {
+        let root = match cgroup_root() {
+            Ok(r) => r,
+            Err(e) => return skip(&e),
+        };
+        let cg = match cgroup::RunCgroup::create(&root, "run-plan", cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 }) {
+            Ok(c) => c,
+            Err(e) => return skip(&format!("{e:#}")),
+        };
+        let rw = tmp("plan-rw");
+        let ok = report(&child(
+            "plan",
+            &[("PB_CGROUP", cg.path().display().to_string()), ("PB_RW", rw.display().to_string()), ("PB_ROOT", tmp("plan-root").display().to_string())],
+        ));
+        drop(cg);
+        let _ = fs::remove_dir(&root);
+        ok
+    }
+
+    fn confinement_runs() -> bool {
+        use playbox_runner::{confine::Confinement, netpolicy::Level};
+        let root = match cgroup_root() {
+            Ok(r) => r,
+            Err(e) => return skip(&e),
+        };
+        // With no network allowed the host never touches nftables, so this case runs wherever cgroups do.
+        let mut c = Confinement::new(Level::None);
+        c.cgroup_root = root.join("runs");
+        let _ = fs::create_dir_all(&root); // an earlier case removed it
+        if let Err(e) = cgroup::prepare_root(&c.cgroup_root) {
+            return skip(&format!("{e:#}"));
+        }
+        let limits = cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 };
+        let guard = match c.begin("task-1", limits, Level::None, &[]) {
+            Ok(g) => g,
+            Err(e) => return skip(&format!("{e:#}")),
+        };
+        let made = c.cgroup_of("task-1").is_dir() && guard.cgroup_path().is_some();
+        let more_refused = c.begin("task-2", limits, Level::Internet, &[]).is_err() && !c.cgroup_of("task-2").exists();
+        drop(guard);
+        let removed = !c.cgroup_of("task-1").exists();
+        let described = c.describe().contains("net_max=none") && c.describe().contains("seccomp=deny:");
+        let _ = fs::remove_dir(&c.cgroup_root);
+        let _ = fs::remove_dir(&root);
+        made && more_refused && removed && described
     }
 
     fn report(out: &std::process::Output) -> bool {
@@ -188,6 +242,76 @@ mod linux {
                 let _ = s.write_all(b"x");
                 let _ = s.read(&mut [0u8; 1]);
                 i32::from(fs::read_to_string(get("PB_SECRET").join("key")).is_ok())
+            }
+            "seccomp" => {
+                if let Err(e) = playbox_runner::seccomp::install() {
+                    eprintln!("install: {e:#}");
+                    return 1;
+                }
+                let errno = |rc: i64| if rc == -1 { std::io::Error::last_os_error().raw_os_error() } else { None };
+                // SAFETY: each call is made with null or zero arguments and is meant to fail before touching anything.
+                let mount = errno(unsafe { libc::syscall(libc::SYS_mount, 0, 0, 0, 0, 0) });
+                let ptrace = errno(unsafe { libc::syscall(libc::SYS_ptrace, 0, 0, 0, 0) });
+                let unshare = errno(unsafe { libc::syscall(libc::SYS_unshare, libc::CLONE_NEWNET) });
+                let bpf = errno(unsafe { libc::syscall(libc::SYS_bpf, 0, 0, 0) });
+                let mut bad = Vec::new();
+                for (name, e) in [("mount", mount), ("ptrace", ptrace), ("unshare", unshare), ("bpf", bpf)] {
+                    if e != Some(libc::EPERM) {
+                        bad.push(format!("{name} gave {e:?}, not EPERM"));
+                    }
+                }
+                // Ordinary work still works: files, threads, sockets.
+                if fs::write(std::env::temp_dir().join("seccomp-probe"), "x").is_err() {
+                    bad.push("could not write a file".into());
+                }
+                if std::thread::spawn(|| 1).join().ok() != Some(1) {
+                    bad.push("could not start a thread".into());
+                }
+                if TcpListener::bind("127.0.0.1:0").is_err() {
+                    bad.push("could not open a socket".into());
+                }
+                if bad.is_empty() {
+                    0
+                } else {
+                    eprintln!("{}", bad.join("; "));
+                    1
+                }
+            }
+            "plan" => {
+                let plan = playbox_runner::confine::Plan {
+                    cgroup: Some(get("PB_CGROUP")),
+                    jail: Some(jail(false, vec![], vec![get("PB_RW")])),
+                    seccomp: true,
+                };
+                if let Err(e) = plan.enter() {
+                    let e = format!("{e:#}");
+                    if e.contains("unshare") {
+                        eprintln!("SKIP: {e}");
+                        return 0;
+                    }
+                    eprintln!("enter: {e}");
+                    return 1;
+                }
+                let mut bad = Vec::new();
+                // Joined before the jail, so the cgroup shows in the jailed process's own view.
+                let cg = fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+                if !cg.contains("run-plan") {
+                    bad.push(format!("not in the run cgroup: {}", cg.trim()));
+                }
+                if fs::write(get("PB_RW").join("f"), "x").is_err() {
+                    bad.push("jail does not hold the read-write path".into());
+                }
+                // SAFETY: a call with null arguments, meant to fail.
+                let rc = unsafe { libc::syscall(libc::SYS_mount, 0, 0, 0, 0, 0) };
+                if rc != -1 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EPERM) {
+                    bad.push("the filter is not installed after the jail".into());
+                }
+                if bad.is_empty() {
+                    0
+                } else {
+                    eprintln!("{}", bad.join("; "));
+                    1
+                }
             }
             "badpath" => {
                 for p in ["relative/path", "/a/../etc", "/does/not/exist"] {
