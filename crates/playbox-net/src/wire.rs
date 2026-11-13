@@ -107,6 +107,17 @@ pub enum Op {
         #[serde(default)]
         since: u64,
     },
+    /// Start a conversation with `members` (member ids, all current members of the room). The caller is on the roster and its creator.
+    ConvNew { title: String, #[serde(default)] members: Vec<String> },
+    /// Add members to a conversation (its creator only).
+    ConvInvite { conv: String, members: Vec<String> },
+    /// Post to a conversation. `sig` is the author's signature (hex) over `conversations::signed_text(conv, request_id, text)`; the
+    /// host checks it, stores it with the entry, and a post with the same `request_id` is stored once.
+    ConvPost { conv: String, text: String, request_id: String, sig: String },
+    /// Read a conversation after `since`; with `mark`, move the caller's read mark to the last entry returned.
+    ConvRead { conv: String, #[serde(default)] since: u64, #[serde(default)] mark: bool },
+    /// The conversations the caller is on, with unread counts.
+    ConvList,
     /// List the capabilities the host offers (names, parameters, whether each call needs approval).
     CapList,
     /// Call a capability. `call_id` (1 to 64 letters, digits, - _ .) makes the call run once: the same id with the same request returns
@@ -164,7 +175,7 @@ impl Op {
             Op::Steer { probe: true, .. } => "steer_probe",
             Op::Handoff { .. } => "handoff",
             // Talking in the room needs only membership, like echo.
-            Op::Say { .. } | Op::CapList | Op::Cap { .. } | Op::CapPoll { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
+            Op::Say { .. } | Op::ConvNew { .. } | Op::ConvInvite { .. } | Op::ConvPost { .. } | Op::ConvRead { .. } | Op::ConvList | Op::CapList | Op::Cap { .. } | Op::CapPoll { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
         }
     }
 

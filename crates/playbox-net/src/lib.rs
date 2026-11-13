@@ -4,6 +4,7 @@
 
 pub mod audit;
 pub mod capabilities;
+pub mod conversations;
 pub mod chat;
 pub mod grants;
 pub mod latent;
@@ -425,6 +426,8 @@ pub struct HostConfig {
     pub capabilities: Vec<capabilities::Capability>,
     /// Where calls are kept across restarts. `None`: `<state dir>/calls.json` for a host opened with a state directory.
     pub calls_store: Option<PathBuf>,
+    /// Where conversations are kept across restarts. `None`: `<state dir>/conversations.json` for a host opened with a state directory.
+    pub conversations_store: Option<PathBuf>,
 }
 
 impl Default for HostConfig {
@@ -451,6 +454,7 @@ impl Default for HostConfig {
             memory: None,
             capabilities: Vec::new(),
             calls_store: None,
+            conversations_store: None,
         }
     }
 }
@@ -479,6 +483,7 @@ struct RoomHandler {
     /// Signed hub latent messages posted to the room, kept in `<state dir>/latent.json` when the host has one.
     latent: Arc<latent::Mailbox>,
     caps: Arc<capabilities::Engine>,
+    convs: Arc<conversations::Book>,
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -915,6 +920,48 @@ impl RoomHandler {
                     Err(e) => reply(json!({ "error": e }).to_string()),
                 };
             }
+            Some(Op::ConvList) => return reply(json!({ "conversations": self.convs.list(&from.to_string()) }).to_string()),
+            Some(Op::ConvNew { title, members }) => {
+                let me = from.to_string();
+                let known = self.member_ids();
+                let r = self.convs.create(&me, &title, &members, &|m: &str| known.contains(m));
+                if let Ok(c) = &r {
+                    self.audit.record("conv_new", Some(&me), json!({ "conv": c.id, "roster": c.roster.len() }));
+                }
+                return match r {
+                    Ok(c) => reply(json!({ "conversation": c }).to_string()),
+                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                };
+            }
+            Some(Op::ConvInvite { conv, members }) => {
+                let me = from.to_string();
+                let known = self.member_ids();
+                let r = self.convs.invite(&me, &conv, &members, &|m: &str| known.contains(m));
+                if let Ok(c) = &r {
+                    self.audit.record("conv_invite", Some(&me), json!({ "conv": c.id, "roster": c.roster.len(), "roster_version": c.roster_version }));
+                }
+                return match r {
+                    Ok(c) => reply(json!({ "conversation": c }).to_string()),
+                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                };
+            }
+            Some(Op::ConvPost { conv, text, request_id, sig }) => {
+                let me = from.to_string();
+                let r = self.convs.post(&me, from.as_bytes(), &conv, &text, &request_id, &sig);
+                if let Ok(e) = &r {
+                    self.audit.record("conv_post", Some(&me), json!({ "conv": conv, "seq": e.seq, "bytes": text.len(), "text_hash": blake3::hash(text.as_bytes()).to_hex().to_string() }));
+                }
+                return match r {
+                    Ok(e) => reply(json!({ "entry": e }).to_string()),
+                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                };
+            }
+            Some(Op::ConvRead { conv, since, mark }) => {
+                return match self.convs.read(&from.to_string(), &conv, since, mark) {
+                    Ok(v) => reply(json!({ "conversation": v }).to_string()),
+                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                };
+            }
             Some(Op::CapList) => return reply(json!({ "capabilities": self.caps.book.describe() }).to_string()),
             Some(Op::Cap { name, args, call_id }) => {
                 return match self.caps.submit(&from.to_string(), &name, args, &call_id) {
@@ -1101,6 +1148,11 @@ impl RoomHandler {
     }
 
     /// Resolves once `who` has been revoked (here or by a notice that reached this host).
+    /// Ids of the room's current members, as strings.
+    fn member_ids(&self) -> std::collections::HashSet<String> {
+        self.state.lock().expect("state lock").members.keys().map(std::string::ToString::to_string).collect()
+    }
+
     async fn until_revoked(&self, who: EndpointId) {
         loop {
             if self.state.lock().expect("state lock").banned.contains(&who) {
@@ -1433,6 +1485,7 @@ impl Host {
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
         cfg.calls_store.get_or_insert_with(|| dir.join("calls.json"));
+        cfg.conversations_store.get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
     }
@@ -1458,6 +1511,7 @@ impl Host {
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
         cfg.calls_store.get_or_insert_with(|| dir.join("calls.json"));
+        cfg.conversations_store.get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(
             secret,
@@ -1605,6 +1659,7 @@ impl Host {
             platform: cfg.platform.clone(),
             latent: Arc::new(latent::Mailbox::new(cfg.latent.clone())),
             caps: caps.clone(),
+            convs: Arc::new(conversations::Book::new(cfg.conversations_store.clone())?),
             cfg,
         };
         let sync = revoke::SyncHandler {
@@ -2274,6 +2329,79 @@ impl Client {
         Ok(serde_json::from_value(v.get("hits").cloned().unwrap_or(Value::Null)).unwrap_or_default())
     }
 
+    /// Start a conversation with `members` (their ids, as `members()` lists them).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refuses: an unknown member, a bad title, too few or too many people.
+    pub async fn conv_new(&self, title: &str, members: &[String]) -> Result<Value> {
+        let v = self.reply_json(&Op::ConvNew { title: title.to_string(), members: members.to_vec() }, "conversation").await?;
+        conv_field(&v, "conversation")
+    }
+
+    /// Add members to a conversation you created.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refuses.
+    pub async fn conv_invite(&self, conv: &str, members: &[String]) -> Result<Value> {
+        let v = self.reply_json(&Op::ConvInvite { conv: conv.to_string(), members: members.to_vec() }, "conversation").await?;
+        conv_field(&v, "conversation")
+    }
+
+    /// The conversations you are on, with unread counts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn conversations(&self) -> Result<Value> {
+        let v = self.reply_json(&Op::ConvList, "conversations").await?;
+        Ok(v.get("conversations").cloned().unwrap_or(Value::Null))
+    }
+
+    /// Read a conversation after `since`; `mark` moves your read mark. What others wrote is untrusted text.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if you are not on the roster.
+    pub async fn conv_read(&self, conv: &str, since: u64, mark: bool) -> Result<Value> {
+        let v = self.reply_json(&Op::ConvRead { conv: conv.to_string(), since, mark }, "conversation").await?;
+        conv_field(&v, "conversation")
+    }
+
+    /// Post to a conversation, signed with your key. Retried on a new connection if no answer arrives; the host stores a post once
+    /// per request id, so a retry cannot post twice. Returns the stored entry (with its sequence number).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refuses or never answers.
+    pub async fn conv_say(&self, conv: &str, text: &str) -> Result<Value> {
+        let rid = hex_id(&random_bytes()?[..12]);
+        let sig = hex_id(&self.endpoint.secret_key().sign(&conversations::signed_text(conv, &rid, text)).to_bytes());
+        let op = Op::ConvPost { conv: conv.to_string(), text: text.to_string(), request_id: rid, sig };
+        let mut last = None;
+        for attempt in 0..3u32 {
+            if attempt > 0 {
+                tokio::time::sleep(Duration::from_millis(200 << attempt)).await;
+            }
+            let sent = if attempt == 0 {
+                self.reply_json(&op, "post").await
+            } else {
+                match self.sibling(self.addr.clone()).await {
+                    Ok(c) => c.reply_json(&op, "post").await,
+                    Err(e) => Err(e),
+                }
+            };
+            match sent {
+                Ok(v) => return conv_field(&v, "entry"),
+                // The host answered no: final. Anything else may be the connection.
+                Err(e) if format!("{e:#}").contains("refused") => return Err(e),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| anyhow!("post failed"))).context("the room did not answer; the post may or may not have been stored")
+    }
+
     /// The capabilities the host offers: names, parameters and whether each call needs the owner's approval.
     ///
     /// # Errors
@@ -2595,6 +2723,13 @@ pub async fn join_link(
     Ok(client)
 }
 
+
+fn conv_field(v: &Value, field: &str) -> Result<Value> {
+    if let Some(e) = v.get("error").and_then(Value::as_str) {
+        bail!("{e}");
+    }
+    Ok(v.get(field).cloned().unwrap_or(Value::Null))
+}
 
 fn call_of(v: &Value) -> Result<capabilities::Call> {
     if let Some(e) = v.get("error").and_then(Value::as_str) {
