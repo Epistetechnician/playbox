@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 const ABOUT: &str = "Agents from different owners, collaborating inside signed, auditable rooms";
 
 const OVERVIEW: &str = "\
-Start here:  setup  doctor
+Start here:  setup  doctor  hub
 Rooms:       up  join  shell  bridge  call  mcp  id
 Review:      review  audit  revoke (inside `up --console` or `shell`)
 Trust:       verify  attest  pin  approver-key  approve  record
@@ -24,6 +24,44 @@ pub struct Cli {
     pub home: Option<String>,
     #[command(subcommand)]
     pub command: Cmd,
+}
+
+/// `playbox hub`: the dashboard app with passkey sign-in, on this machine.
+#[derive(Args)]
+pub struct HubArgs {
+    /// Port to listen on (default 7717)
+    #[arg(long, value_name = "PORT", env = "PLAYBOX_HUB_PORT")]
+    pub port: Option<u16>,
+    /// Publish over HTTPS with a Cloudflare quick tunnel: free, no account, a new address each run
+    #[arg(long, conflicts_with_all = ["tunnel", "local"])]
+    pub cloudflare: bool,
+    /// Publish through your own named Cloudflare tunnel (name or id; created for you if it doesn't exist); needs --hostname
+    #[arg(long, value_name = "NAME", conflicts_with = "local")]
+    pub tunnel: Option<String>,
+    /// The public hostname routed to --tunnel, e.g. hub.example.com
+    #[arg(long, value_name = "HOST")]
+    pub hostname: Option<String>,
+    /// This computer only, this run (skip the question and ignore what was remembered)
+    #[arg(long)]
+    pub local: bool,
+    /// Also listen on the local network, so a phone on your Wi-Fi can pair
+    #[arg(long)]
+    pub lan: bool,
+    /// Don't open the browser
+    #[arg(long)]
+    pub no_open: bool,
+    /// Print a fresh pairing link for a new device
+    #[arg(long)]
+    pub pair: bool,
+    /// Ask again how to reach the hub and remember the answer
+    #[arg(long)]
+    pub reconfigure: bool,
+    /// Where the hub lives (a checkout, or the installer's directory); default: found automatically
+    #[arg(long, value_name = "DIR", env = "PLAYBOX_HUB_DIR")]
+    pub hub_dir: Option<String>,
+    /// Anything else, passed to the hub (try `-- --help`)
+    #[arg(last = true)]
+    pub extra: Vec<String>,
 }
 
 /// How peers reach each other.
@@ -350,6 +388,8 @@ pub enum Cmd {
         args: Vec<String>,
     },
 
+    /// Start the hub (the dashboard app) on this machine, optionally reachable over HTTPS through Cloudflare
+    Hub(HubArgs),
     /// Check this machine: keys, platform evidence, runtimes, python tooling
     Doctor {
         /// Machine-readable output; the exit status is 1 if any check is missing

@@ -1,5 +1,6 @@
 mod cli;
 mod doctor;
+mod hub;
 mod latent;
 mod python;
 mod release;
@@ -137,6 +138,7 @@ async fn run() -> Result<ExitCode> {
         }
         Cmd::Experiment { name, args } => python::experiment(name, &args),
         Cmd::World { action, args } => python::world(action, &args),
+        Cmd::Hub(a) => hub::run(&a),
         Cmd::Doctor { json } => return doctor::run(json),
         Cmd::Demo => trust::demo(),
         Cmd::Completions { shell } => {

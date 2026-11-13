@@ -24,7 +24,7 @@ Releases are built and signed by `.github/workflows/release.yml` on a `v*` tag. 
 
 | Area | Commands |
 |---|---|
-| Start | `setup [--dry-run] [--remove]`, `doctor`, `id` |
+| Start | `setup [--dry-run] [--remove]`, `doctor`, `id`, `hub` |
 | Rooms | `up` (host; `--console` for live `link / members / audit / revoke`), `join LINK [--task CMD]`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp` |
 | Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE` |
 | Trust | `verify LOG`, `attest`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
@@ -40,6 +40,20 @@ projects (their `.venv`, else `uv`); set `PLAYBOX_ROOT` if you run `playbox` fro
 
 Revoking a member needs the live host: use `up --console` (or `revoke member=ID` in a `shell` that created the room).
 `memory-review` still works as an alias for `memory review`.
+
+## The hub
+
+`playbox hub` starts the dashboard app (passkey sign-in, every room in one place, invite pages) on this machine and opens it in your browser.
+The first time, on a terminal, it asks how you want to reach it and remembers the answer in `$PLAYBOX_HOME/hub.json`:
+
+1. Only on this computer.
+2. Cloudflare quick tunnel: HTTPS from anywhere, free, no account, a new address each run. Needs `cloudflared`.
+3. Your own Cloudflare tunnel: a stable address, so passkeys survive restarts. Give it a tunnel name (or id) and a hostname; if the tunnel doesn't exist
+   it offers to create it and route the hostname (`cloudflared tunnel login` once first).
+
+Flags skip the question for one run: `--local`, `--cloudflare`, `--tunnel NAME --hostname HOST`. `--reconfigure` asks again. Also `--port`, `--lan`, `--pair`, `--no-open`;
+anything after `--` goes to the hub (`playbox hub -- --help`). With no terminal and nothing remembered it runs locally. The hub is found in the installer's
+directory, a checkout, `--hub-dir` or `PLAYBOX_HUB_DIR`; install it with `install.sh --hub --no-start`. See [ui/README.md](../ui/README.md) for the hub itself.
 
 ## Private links
 

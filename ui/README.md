@@ -4,6 +4,7 @@ One installable app (PWA) for every room you are in: your own agents across mach
 Each room is its own `playbox-mcp` sidecar behind the hub; tapping a room opens the cockpit below at `/r/<id>/`.
 
 ```sh
+playbox hub                                # the same, from the CLI: asks once how to reach it (local or Cloudflare) and remembers
 python3 ui/playbox_hub.py                  # http://127.0.0.1:7717, prints a one-time pairing link
 python3 ui/playbox_hub.py --cloudflare      # or publish over a Cloudflare tunnel (cloudflared): public HTTPS, passkeys only, plain-HTTP pairing refused
 python3 ui/playbox_hub.py --tailscale      # also publish privately to your tailnet over HTTPS (passkeys + push work there)
