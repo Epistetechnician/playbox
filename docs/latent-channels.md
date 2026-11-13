@@ -3,7 +3,7 @@
 Status (2026-11-03). Built: the hub (`steer/playbox_steer/hub.py`), its wire message `PBL1`, and the E8 runner
 (`hub_run.py`), with 7 tests on synthetic models and on tiny random models of three architectures. Real runs:
 section 6a (five families, one H100, 2026-11-03), 6b (k sweep and join test, one A10G on Modal) 6c (anchor-count
-sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening), 6m (audit threshold transfer) and 6n (fuzzing the parsers) and 6o (a shared-memory spike on Hindsight). Builds on E6/E7 in [steering.md](steering.md).
+sweep), 6d (more anchors), 6e (concept cards for a text-only reader), 6f (the hub in a room) 6g (an end-to-end run through a room) 6h (commit-and-challenge audit), 6i (models joining one at a time) 6j (token cost against text), 6k (natural-text anchors, twenty concepts) 6l (room hardening), 6m (audit threshold transfer) and 6n (fuzzing the parsers) and 6o (a shared-memory spike on Hindsight) and 6r (near-miss liars). Builds on E6/E7 in [steering.md](steering.md).
 
 ## 1. The problem
 
@@ -552,8 +552,7 @@ hub (at least about 90, from several concepts), use mean minus 2 sd or something
 liars like these to slip through on the same hub (test 1; hub B showed more, above), and route messages near the cut to a second check. It does not support carrying one cut
 between hubs.
 
-Not tested: liars close to the honest vector (a small payload added to an honest vector, or a swap to a near-synonym
-concept; every liar here is a different topic or noise), a sender that picks sentences to fit its payload, more than three
+Not tested here: liars close to the honest vector (done in 6r: the audit misses payloads up to 25%), a sender that picks sentences to fit its payload, more than three
 small models, instruction-tuned auditors, and a calibration batch that itself contains a liar.
 
 ## 6n. Fuzzing the parsers (2026-11-07)
@@ -671,6 +670,69 @@ Tested. Unit tests cover the allowlist (host, port and subdomain matching, crede
 Against a real browser (Chrome 157, headless, on 2026-11-13): a page on the allowed host that loaded a stylesheet, a preload, a prefetch, an image, two frames (one on a different site, so in another process), a form, and, with scripts on, a beacon, a `fetch`, a `WebSocket` and a popup, all aimed at a forbidden server, plus a 302 and a meta refresh to it. **No request reached the forbidden server, with scripts off or on**; the redirect was refused and the page reported what was blocked. Text, HTML and a screenshot came back. The page's script did not run with scripts off, and `WebSocket` was gone with them on.
 
 Not closed. The forbidden server still saw bare TCP connections (3 with scripts off, 5 with them on) and no bytes: the browser opens speculative connections for `preconnect` hints and navigations before the request is paused. Nothing is sent, but a closed or open port on an internal host can be probed blindly; keep the browser on a network that reaches only what it should. DNS is resolved here and again by the browser, so a name that changes between the two can still land on a private address; the same advice holds. The endpoint is plain `ws://`, so the browser must be local or on a private link. Kitesurf and other CDP servers were not tried; only Chrome was.
+
+## 6r. Near-miss liars: a small payload slips past the audit (2026-11-13)
+
+6h and 6m only tested liars that were a different topic or noise. A sender that wants a payload through would stay close to its
+committed sentences. `steer/tools/e8_audit_nearmiss.py`, `e8_guard_nearmiss.py` and `e8_payload_effect.py` (results in
+`steer/results/e8/e8_audit_nearmiss.json`, `e8_guard_nearmiss.json`, `e8_payload_effect.json`; local CPU, SmolLM2, GPT-2, Pythia-410m,
+the 6g hub of 1000 anchors and k=256) test three things. One run each, fixed seeds, ceiling `local_internal_exploratory`.
+
+**1. The audit.** Every liar commits to concept C's sentences and sends a vector that is mostly C's: `(1-a) C + a X`, where X is the
+next concept or the guarded `medicine`; the nearest other concept in the sender's space; or C plus random noise of relative size e.
+Thresholds come from honest messages only (the five template concepts, 30 messages), and are applied to a fresh run with fifteen natural
+concepts (90 honest, 90 per liar type). The honest messages all passed under every rule (90/90).
+
+| liar | median cosine | AUC against honest | caught, mean minus 2 sd (cut 0.417) |
+|---|---|---|---|
+| honest | 0.504 | | 0 of 90 false alarms |
+| medicine mixed in at 10% | 0.505 | 0.51 | 0 of 90 |
+| medicine mixed in at 25% | 0.496 | 0.59 | 1 of 90 |
+| medicine mixed in at 50% | 0.454 | 0.87 | 15 of 90 |
+| medicine mixed in at 75% | 0.387 | 1.00 | 71 of 90 |
+| next concept mixed in at 25% / 50% / 75% | 0.498 / 0.463 / 0.415 | 0.57 / 0.79 / 0.96 | 0 / 10 / 46 of 90 |
+| nearest other concept, swapped in | 0.396 | 0.99 | 56 of 90 |
+| noise of 25% / 50% / 100% of the norm | 0.487 / 0.447 / 0.356 | 0.64 / 0.86 / 1.00 | 4 / 24 / 79 of 90 |
+
+The audit separates a vector that is mostly a different concept (AUC 0.96 or more from 75% mixing) and misses a vector that is
+mostly the committed one: up to 25% of a payload is indistinguishable from honest cross-family disagreement, whose own spread is
+about 0.4 to 0.6. This is the gap 6m listed as untested, and it is the audit's limit, not a tuning problem: the honest cosines
+are already low.
+
+**2. The receiver's guard (6g).** For every sender, receiver and carrier concept (114 messages per row), the decoded vector's cosine
+with the receiver's own `medicine` direction, against the 0.5 threshold:
+
+| medicine mixed in | blocked | median cosine |
+|---|---|---|
+| 0% (honest) | 3 of 114 (2.6% false blocks) | 0.34 |
+| 10% | 10 of 114 | 0.38 |
+| 25% | 29 of 114 | 0.44 |
+| 50% | 96 of 114 | 0.53 |
+| 75% / 100% | 114 of 114 | 0.59 / 0.62 |
+
+The guard is the stronger of the two controls: it stops most 50% mixes and all of 75% and up, but it also lets three quarters of
+25% mixes through.
+
+**3. Does the payload steer?** The receiver decodes `(1-a) C + a medicine`, scales it to 0.5 receiver norms and generates on the eight
+standard prompts (4 carriers x 6 ordered pairs x 8 prompts = 192 generations per row; the lexicon decoder reads each text):
+
+| medicine mixed in | read as the carrier | read as medicine |
+|---|---|---|
+| 0% | 68% | 0% |
+| 25% | 60% | **0 of 192** |
+| 50% | 32% | 21 of 192 (11%) |
+| 100% | 0% | 75% |
+
+At the strength the room uses, a 25% payload did not show up in a single generation; it appears at 50%, where the guard blocks
+84% of messages and the audit 17%. So in this setup the mixes that evade both controls (25% and below) do not steer, and the ones
+that steer (50% and up) are mostly stopped by the guard. The honest reading is narrower than "safe": it was measured with one
+strength, three small models, a word-list decoder, one guarded concept and a sender that mixes linearly. A receiver run at a higher
+strength, a larger or instruction-tuned receiver, or a payload chosen to be more potent per unit of cosine could move the picture,
+and the audit alone gives no protection against a payload that is not a different topic. The guard should stay in front of any
+receiver; the audit supplies provenance, not safety.
+
+Not tested: stronger receiver strengths, larger receivers, an adaptive sender that optimises the payload against the audit's
+cosine, guards for concepts other than `medicine`, and a calibration batch that contains a liar.
 
 ## 7. Not covered
 

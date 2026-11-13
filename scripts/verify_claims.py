@@ -110,6 +110,22 @@ check("kv 4B hybrid turns/min", round(pooled("hybrid24", "turns_per_min")), 3053
 check("kv 4B hybrid lookup accuracy (%)", round(100 * pooled("hybrid24", "acc"), 1), 96.1)
 check("kv 4B hybrid slower than rag", int(pooled("hybrid24", "turns_per_min") < pooled("rag", "turns_per_min")), 1)
 
+# 7. Near-miss liars (latent-channels.md 6r): audit, guard, payload effect
+E8 = ROOT / "steer/results/e8"
+nm = json.load(open(E8 / "e8_audit_nearmiss.json"))["result"]
+check("nearmiss honest passed (mean-2sd)", int(nm["honest_passed"]["honest_mean_minus_2sd"] == "90/90"), 1)
+check("nearmiss 25% medicine mix caught", int(nm["liars"]["mix_guarded_0.25"]["caught"]["honest_mean_minus_2sd"].split("/")[0]), 1)
+check("nearmiss 50% medicine mix caught", int(nm["liars"]["mix_guarded_0.5"]["caught"]["honest_mean_minus_2sd"].split("/")[0]), 15)
+check("nearmiss 75% medicine mix caught", int(nm["liars"]["mix_guarded_0.75"]["caught"]["honest_mean_minus_2sd"].split("/")[0]), 71)
+gd = json.load(open(E8 / "e8_guard_nearmiss.json"))["by_mix"]
+check("guard false blocks (honest)", gd["0.0"]["blocked"], 3)
+check("guard blocks 25% mix", gd["0.25"]["blocked"], 29)
+check("guard blocks 50% mix", gd["0.5"]["blocked"], 96)
+pe = json.load(open(E8 / "e8_payload_effect.json"))["by_mix"]
+check("payload at 25% mix read as medicine", pe["0.25"]["medicine"], 0)
+check("payload at 50% mix read as medicine", pe["0.5"]["medicine"], 21)
+check("payload at 100% read as medicine", pe["1.0"]["medicine"], 144)
+
 print()
 print("ALL CLAIMS MATCH" if not failed else f"{len(failed)} MISMATCH(ES): {failed}")
 sys.exit(1 if failed else 0)
