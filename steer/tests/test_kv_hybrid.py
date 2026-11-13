@@ -43,3 +43,21 @@ def test_summarize():
             {"ok": False, "ttft": 0.1, "total": 0.5, "turn": 1, "prompt_tokens": 100, "cached_tokens": 90}]
     s = K.summarize({"rows": rows, "wall_s": 6.0})
     assert s["acc"] == 0.5 and s["turns_per_min"] == 20.0 and s["cached_frac"] == 0.45 and s["ttft_later_p50"] == 0.1
+
+
+def test_question_kinds_and_adaptive():
+    chunks, facts, bm = _setup()
+    for kind in ("lookup", "para", "cross", "drift"):
+        ss = K.make_sessions(facts, 4, 4, kind=kind)
+        for s in ss:
+            for t in s["turns"]:
+                assert all(a in facts.values() for a in t["answers"])
+                assert len(t["answers"]) == (2 if kind == "cross" else 1)
+    d = K.make_sessions(facts, 1, 4, kind="drift")[0]
+    assert d["turns"][0]["projects"] != d["turns"][3]["projects"]
+    h = [K.build_messages("hybrid10", chunks, bm, d, t)[0]["content"] for t in range(4)]
+    a = [K.build_messages("adaptive10", chunks, bm, d, t)[0]["content"] for t in range(4)]
+    assert h[0] == h[3] and a[0] == a[1] != a[3]  # hybrid keeps the old working set after the drift, adaptive switches
+    assert d["turns"][3]["answers"][0] in a[3] and d["turns"][3]["answers"][0] not in h[3]
+    c = K.make_sessions(facts, 1, 2, kind="cross")[0]
+    assert all(x in K.build_messages("adaptive10", chunks, bm, c, 0)[0]["content"] for x in c["turns"][0]["answers"][:1])
