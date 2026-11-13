@@ -88,7 +88,7 @@ jobs:
         with:
           toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p playbox-mcp
+      - run: cargo build -p playbox-mcp -p playbox-cli
       - run: PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/e2e.py
       # The hub: passkeys, sessions, invites, tunnel flags, and install.sh --join against a local mirror (needs the debug binaries on PATH).
       - run: PATH="$PWD/target/debug:$PATH" PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/tests/test_hub.py
