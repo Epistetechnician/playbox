@@ -49,6 +49,7 @@ fn mutant(tag: &str, file: &str, from: &str, to: &str) -> PathBuf {
 #[test]
 fn the_real_hub_survives_the_fuzzer() {
     let f = fuzz(&repo(), "real");
+    assert!(f["violations"].is_array(), "the fuzzer produced no result (did the hub start?): {f}");
     assert!(f["violations"].as_array().unwrap().is_empty(), "{f}");
     assert_eq!(f["signed_in"], true, "the fuzzer must get past the front door to test what is behind it");
     assert!(f["requests"].as_u64().unwrap() > 1000);
