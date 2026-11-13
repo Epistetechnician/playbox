@@ -12,6 +12,8 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Playbox</title>
+<script>try{if(sessionStorage.getItem("pb.splat"))document.documentElement.classList.add("pb-splat")}catch{}</script>
+<style>html.pb-splat body{visibility:hidden}</style>
 <script>try{const t=localStorage.getItem("pb.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch{}</script>
 <style>
 /* Playbox cockpit: same tokens as the hub. Paper, ink, one signal colour (orange = look here). */
@@ -221,6 +223,8 @@ dialog h2{color:var(--ink)}
 <dialog id="dlg"></dialog>
 
 <script src="/auth.js" onerror="void 0"></script>
+<script src="/space.js" onload="PBSpace.arrive()" onerror="document.documentElement.classList.remove('pb-splat')"></script>
+<script>setTimeout(function(){document.documentElement.classList.remove("pb-splat")},3500)</script>
 <script>
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
