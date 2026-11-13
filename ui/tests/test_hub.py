@@ -5,6 +5,7 @@
 """
 import hashlib
 import http.client
+import threading
 import json
 import os
 import re
@@ -688,6 +689,48 @@ def test_access():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_tunnel_keeper():
+    """The tunnel is retried in the background: a failed start, then a dead tunnel, each ends with a live one again."""
+    sys.path.insert(0, UI)
+    from hub.server import keep_tunnel
+
+    class P:
+        def __init__(self):
+            self.dead, self.killed = False, False
+        def poll(self):
+            return 1 if self.dead else None
+        def terminate(self):
+            self.killed = True
+
+    starts, procs = [], []
+    stop = threading.Event()
+    opts = {}
+
+    def start():
+        starts.append(1)
+        if len(starts) <= 2:
+            return None, None                       # the network is down
+        p = P()
+        procs.append(p)
+        return p, f"https://t{len(starts)}.example"
+    delays = []
+    ticks = {"n": 0}
+
+    def wait(t):
+        delays.append(t)
+        ticks["n"] += 1
+        if len(procs) == 1 and ticks["n"] > 6 and not procs[0].dead:
+            procs[0].dead = True                    # cloudflared dies after a while
+        if len(procs) == 2 and ticks["n"] > 9:
+            stop.set()
+        return stop.is_set()
+    state = {"proc": None}
+    keep_tunnel(state, opts, start, stop, wait=wait, first=5.0, cap=60.0)
+    check("tunnel: a failed first start is retried with backoff", len(starts) >= 3 and delays[:2] == [5.0, 10.0])
+    check("tunnel: the public address is set once it connects", opts.get("public_url", "").startswith("https://t"))
+    check("tunnel: a tunnel that dies is started again", len(procs) == 2 and opts["public_url"] == f"https://t{len(starts)}.example")
+
+
 def test_agents():
     """Agent detection reads each agent's config; connecting runs `playbox setup --only <agent>` and nothing else."""
     from hub import agents
@@ -940,6 +983,7 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
+    test_tunnel_keeper()
     test_rehost()
     test_board()
     test_classify()

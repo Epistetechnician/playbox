@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Fixed
+- Hub: the Cloudflare tunnel is retried in the background (with backoff) if it fails to start or later drops, instead of the hub staying offline until restarted.
+
 ## [0.3.1] - 2026-11-13
 
 ### Added

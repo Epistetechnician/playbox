@@ -866,12 +866,48 @@ def start_cloudflared(port, tunnel=None, hostname=None):
             if tunnel and "Registered tunnel connection" in line:
                 box.setdefault("url", f"https://{hostname}")
                 found.set()
+        found.set()                   # stderr closed: cloudflared exited, so stop waiting for it
     threading.Thread(target=pump, daemon=True).start()
-    if not found.wait(40) or proc.poll() is not None:
-        print("cloudflared did not come up within 40 s; skipping --cloudflare.", flush=True)
+    if not found.wait(40) or "url" not in box or proc.poll() is not None:
+        print("cloudflared did not come up; the hub keeps retrying in the background.", flush=True)
         proc.terminate()
         return None, None
     return proc, box["url"]
+
+
+def keep_tunnel(state, opts, start, stop, wait=None, first=5.0, cap=60.0):
+    """Keep the tunnel up for as long as the hub runs. `state["proc"]` is the running cloudflared (or None). When it is missing or has exited
+    (the network was down at startup, the laptop slept, cloudflared crashed) start another, backing off from `first` to `cap` seconds.
+    `start()` returns (proc, url); a quick tunnel's address changes on every start, so the public url is updated each time."""
+    wait = wait or stop.wait
+    delay = first
+    while not stop.is_set():
+        proc = state.get("proc")
+        if proc is not None and proc.poll() is None:
+            delay = first
+            if wait(2.0):
+                break
+            continue
+        if proc is not None:
+            print("The Cloudflare tunnel stopped; reconnecting.", flush=True)
+            state["proc"] = None
+        try:
+            proc, url = start()
+        except OSError as e:
+            print(f"Could not start cloudflared: {e}", flush=True)
+            proc, url = None, None
+        if proc is not None:
+            if stop.is_set():          # the hub was stopped while this one was coming up
+                proc.terminate()
+                break
+            state["proc"] = proc
+            opts["public_url"] = url or opts.get("public_url")
+            print(f"Cloudflare tunnel up: {url}", flush=True)
+            delay = first
+        else:
+            if wait(delay):
+                break
+            delay = min(delay * 2, cap)
 
 
 def main(argv=None):
@@ -951,6 +987,10 @@ def main(argv=None):
         threading_serve = __import__("threading").Thread(target=srv.serve_forever, daemon=True)
         threading_serve.start()     # cloudflared checks the origin as it connects, so serve first
         cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
+        tunnel_state = {"proc": cf_proc}
+        tunnel_stop = threading.Event()
+        threading.Thread(target=keep_tunnel, daemon=True, args=(tunnel_state, opts, lambda: start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname), tunnel_stop),
+                         kwargs={"first": float(os.environ.get("PLAYBOX_TUNNEL_RETRY", "5"))}).start()
     if cf_url:
         opts["public_url"] = cf_url      # the address friend invites point at (a tailnet address only reaches your own devices)
     link = a.join or os.environ.get("PLAYBOX_JOIN_LINK")
@@ -1016,7 +1056,9 @@ def main(argv=None):
         pass
     finally:
         hub.close()
-        if cf_proc:
-            cf_proc.terminate()
+        if cloud:
+            tunnel_stop.set()
+            if tunnel_state.get("proc"):
+                tunnel_state["proc"].terminate()
         if ts_name:    # take the tailnet publication down with the hub
             subprocess.run([ts, "serve", "--https=443", "off"], capture_output=True, timeout=15)
