@@ -1026,6 +1026,7 @@ function openAdd(pre) {
     <div class="radio" role="radiogroup" aria-label="How" style="margin-top:14px">
       <label><input type="radio" name="how" value="join" ${hostFirst ? "" : "checked"}>Join<small>with an invite link</small></label>
       <label><input type="radio" name="how" value="host" ${hostFirst ? "checked" : ""}>Host<small>start a new room</small></label></div>
+    <div id="localrow" hidden><label>Hosted on this machine</label><div id="locallist" class="stack" style="display:grid;gap:8px;margin:6px 0 4px"></div><p class="mut" style="font-size:12px;margin:0 0 6px">Rooms started with <code>playbox up --state</code>. Adopting one joins it from the hub; it asks for a passkey touch.</p></div>
     <div id="linkrow"><label for="alink">Invite link</label><textarea id="alink" class="mono" placeholder="playbox://…" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div>
     <label for="alabel">Name</label><input id="alabel" maxlength="60" placeholder="e.g. Lab agents, Acme review" autocomplete="off">
     <div id="hostrow" hidden>
@@ -1041,7 +1042,28 @@ function openAdd(pre) {
     <p class="err" id="aerr"></p>
     <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" id="asave" value="x">${hostFirst ? "Host room" : "Join room"}</button></div></form>`;
   const how = () => document.querySelector("[name=how]:checked").value;
-  const sync = () => { const h = how() === "host" && !$("#ahome").value.trim(); $("#linkrow").hidden = how() !== "join"; $("#hostrow").hidden = !h; $("#asave").textContent = how() === "host" ? "Host room" : "Join room"; };
+  const sync = () => { const h = how() === "host" && !$("#ahome").value.trim(); $("#linkrow").hidden = how() !== "join"; $("#hostrow").hidden = !h; if (typeof syncLocal === "function") syncLocal(); $("#asave").textContent = how() === "host" ? "Host room" : "Join room"; };
+  let localCount = 0;
+  const syncLocal = () => { $("#localrow").hidden = how() !== "join" || !localCount; };
+  const paintLocal = rooms => {
+    const box = $("#locallist"); box.textContent = ""; localCount = rooms.length;
+    for (const r of rooms) {
+      const row = document.createElement("div"); row.className = "card"; row.style.cssText = "display:flex;align-items:center;gap:10px;padding:10px 12px;margin:0";
+      const t = document.createElement("div"); t.style.cssText = "flex:1;min-width:0";
+      const n = document.createElement("b"); n.textContent = r.name;
+      const sub = document.createElement("div"); sub.className = "mut"; sub.style.cssText = "font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; sub.textContent = r.repo || "no repository";
+      t.append(n, sub);
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "btn primary"; btn.textContent = r.adopted ? "Adopted" : "Adopt"; btn.disabled = !!r.adopted;
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Joining…"; $("#aerr").textContent = "";
+        try { const j = await api("POST", "/api/local-rooms/adopt", {id: r.id, label: r.name}); sheet().close(); toast(`"${r.name}" adopted`); await refreshRooms(); location.href = `/r/${j.id}/canvas`; }
+        catch (err) { btn.disabled = false; btn.textContent = "Adopt"; $("#aerr").textContent = err.message; }
+      });
+      row.append(t, btn); box.append(row);
+    }
+    syncLocal();
+  };
+  api("GET", "/api/local-rooms").then(j => paintLocal(j.rooms || [])).catch(() => {});
   sheet().querySelectorAll("[name=how]").forEach(i => i.addEventListener("change", sync));
   $("#ahome").addEventListener("input", sync);
   sync();

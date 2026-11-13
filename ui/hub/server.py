@@ -547,6 +547,42 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"items": hub.attention()})
             if m == "GET" and p == "/api/events":
                 return self.events()
+            if m == "GET" and p == "/api/local-rooms":
+                have = {r.rec.get("adopted_host") for r in hub.rooms.values()} if hasattr(hub, "rooms") else set()
+                return self.j(200, {"rooms": [dict(h, adopted=h["id"] in have) for h in local_hosts()]})
+            if m == "POST" and p == "/api/local-rooms/adopt":
+                if not self.need_fresh(rec):      # this mints a join link into a room: a passkey touch
+                    return
+                b = self.body()
+                hid = str(b.get("id", ""))
+                found = next((h for h in local_hosts() if h["id"] == hid), None)
+                if not found:
+                    raise AuthError(404, "that room is not being hosted on this machine any more")
+                try:
+                    link = ask_host(hosting_dir() / f"{hid}.sock", "link")
+                except OSError as e:
+                    raise AuthError(502, f"the room's host did not answer: {e}")
+                if not link.startswith("playbox://"):
+                    raise AuthError(502, link[:200] or "the room's host would not make a link")
+                label = str(b.get("label") or found["name"])[:60]
+                try:
+                    room = hub.add(label, "this machine", "shared", None)
+                except ValueError as e:
+                    raise AuthError(400, str(e))
+                sc = room.ensure()
+                if not sc:
+                    hub.remove(room.id)
+                    raise AuthError(502, room.err or "sidecar unavailable")
+                err, data = sc.call("playbox_join", {"link": link})
+                if err:
+                    hub.remove(room.id)
+                    raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
+                with store.lock:
+                    room.rec["adopted_host"] = hid
+                    store.save()
+                hub.wake.set()
+                hub.sec.add("join", f'Adopted the room "{label}" hosted on this machine', "ok", room.id)
+                return self.j(200, {"room": room.digest, "id": room.id})
             if m == "POST" and p == "/api/rooms":
                 b = self.body()
                 try:
@@ -609,10 +645,17 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, self.system(rec))
             if m == "POST" and p == "/api/system/verify":
                 n = 0
+                workers = []
                 for room in list(hub.rooms.values()):
                     room.last_chain = 0
-                    hub._publish_changes(room, room.tick(with_chain=True))
+                    # in parallel and for at most 4 s in all: a room whose host has gone away must not hold this request up (the hub's loop finishes the check)
+                    workers.append(threading.Thread(target=lambda r=room: hub._publish_changes(r, r.tick(with_chain=True)), daemon=True))
                     n += 1
+                for w in workers:
+                    w.start()
+                end = time.time() + 4
+                for w in workers:
+                    w.join(max(0.0, end - time.time()))
                 hub.sec.add("history", f"Re-verification requested for {n} room(s)", "info")
                 hub.wake.set()
                 return self.j(200, self.system(rec))
@@ -873,6 +916,49 @@ def start_cloudflared(port, tunnel=None, hostname=None):
         proc.terminate()
         return None, None
     return proc, box["url"]
+
+
+def hosting_dir():
+    """Where `playbox up --state DIR` publishes the rooms it hosts on this machine (see crates/playbox-cli/src/control.rs)."""
+    return Path(os.environ.get("PLAYBOX_HOSTING_DIR") or Path.home() / ".playbox" / "hosting")
+
+
+def ask_host(sock, line, timeout=6.0):
+    """One line to a host's private control socket, one line back. Raises OSError if the host is gone."""
+    import socket as _s
+    with _s.socket(_s.AF_UNIX, _s.SOCK_STREAM) as c:
+        c.settimeout(timeout)
+        c.connect(str(sock))
+        c.sendall((line + "\n").encode())
+        buf = b""
+        while not buf.endswith(b"\n") and len(buf) < 8192:
+            chunk = c.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+    return buf.decode(errors="replace").strip()
+
+
+def local_hosts():
+    """Rooms hosted on this machine that are alive right now: [{id, name, repo, started_ms}]. A record whose socket does not answer is skipped."""
+    out = []
+    d = hosting_dir()
+    try:
+        files = sorted(d.glob("*.json"))
+    except OSError:
+        return out
+    for f in files:
+        try:
+            rec = json.loads(f.read_text())
+            hid = str(rec.get("id", ""))
+            if not re.fullmatch(r"[0-9a-f]{16}", hid) or f.stem != hid:
+                continue
+            if ask_host(d / f"{hid}.sock", "ping", 2.0) != "ok":
+                continue
+            out.append({"id": hid, "name": str(rec.get("name") or "room")[:60], "repo": rec.get("repo"), "started_ms": rec.get("started_ms")})
+        except (OSError, ValueError):
+            continue
+    return out
 
 
 def keep_tunnel(state, opts, start, stop, wait=None, first=5.0, cap=60.0):

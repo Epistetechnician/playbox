@@ -14,7 +14,7 @@ serde_json = "1"
 playbox-core = { path = "../playbox-core" }
 ed25519-dalek.workspace = true
 playbox-net = { path = "../playbox-net" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time"] }
 anyhow = "1"
 playbox-runner = { path = "../playbox-runner" }
 playbox-bridge = { path = "../playbox-bridge" }

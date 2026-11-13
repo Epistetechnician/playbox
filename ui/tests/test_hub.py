@@ -284,7 +284,7 @@ def test_http():
     os.chmod(fakecli, 0o755)
     p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
                          stdout=subprocess.PIPE, text=True,
-                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
+                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_HOSTING_DIR": os.path.join(home, "hosting"), "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
     try:
         code = None
         for _ in range(12):
@@ -490,6 +490,39 @@ def test_http():
         check("canvas: a hosted room returns its model with admin rights", st == 200 and cv["admin"] is True and {"members", "feed", "artifacts", "cards", "metrics", "changelog", "stats"} <= set(cv))
         check("canvas needs a session", anon.req("GET", f"/r/{rid}/api/canvas")[0] in (401, 303))
         check("canvas page is served", a.req("GET", f"/r/{rid}/canvas")[0] == 200)
+        # ---- adopting a room hosted on this machine ----
+        pbx = shutil.which("playbox")
+        if not pbx:
+            print("SKIP adopt tests (playbox not found)")
+        else:
+            sd = os.path.join(home, "adoptstate")
+            os.makedirs(sd)
+            ahost = subprocess.Popen([pbx, "up", "--local", "--console", "--state", sd], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     env={**os.environ, "PLAYBOX_HOME": os.path.join(home, "hosthome"), "PLAYBOX_HOSTING_DIR": os.path.join(home, "hosting")})
+            try:
+                for _ in range(80):
+                    if os.path.isdir(os.path.join(home, "hosting")) and any(f.endswith(".sock") for f in os.listdir(os.path.join(home, "hosting"))):
+                        break
+                    time.sleep(0.25)
+                st, lj, _ = a.req("GET", "/api/local-rooms")
+                check("adopt: a room hosted here is listed", st == 200 and len(lj["rooms"]) == 1 and lj["rooms"][0]["name"] == "adoptstate" and not lj["rooms"][0]["adopted"])
+                check("adopt: needs a session", anon.req("GET", "/api/local-rooms")[0] == 401 and anon.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 401)
+                check("adopt: an unknown or malformed id is refused", a.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 404 and a.req("POST", "/api/local-rooms/adopt", {"id": "../../x"})[0] == 404)
+                hid = lj["rooms"][0]["id"]
+                st, aj, _ = a.req("POST", "/api/local-rooms/adopt", {"id": hid, "label": "Adopted"})
+                check("adopt: the hub joins the room", st == 200 and bool(aj.get("id")))
+                check("adopt: it then shows as adopted", a.req("GET", "/api/local-rooms")[1]["rooms"][0]["adopted"] is True)
+                check("adopt: it is in the hub's room list", any(r["id"] == aj["id"] and r["label"] == "Adopted" for r in a.req("GET", "/api/rooms")[1]["rooms"]))
+                st, cv, _ = a.req("GET", f"/r/{aj['id']}/api/canvas")
+                check("adopt: its canvas loads", st == 200 and cv["room"]["label"] == "Adopted")
+            finally:
+                try:
+                    ahost.stdin.write(b"quit\n")
+                    ahost.stdin.flush()
+                    ahost.wait(timeout=10)
+                except (OSError, subprocess.TimeoutExpired):
+                    ahost.kill()
+            check("adopt: a host that quits is no longer listed", a.req("GET", "/api/local-rooms")[1]["rooms"] == [])
         st, sysj2, _ = a.req("POST", "/api/system/verify")
         check("verify re-runs the history check", st == 200 and any("Re-verification" in e["text"] for e in sysj2["events"]))
         st, pv, _ = anon.req("GET", "/api/invite/" + iid)

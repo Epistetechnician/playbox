@@ -233,12 +233,33 @@ pub async fn up(a: UpArgs) -> Result<()> {
         host.shutdown().await?;
         return ran;
     }
+    // Publish this host for the hub to adopt (a room that keeps its identity with --state; the TUI has its own way in).
+    #[cfg(unix)]
+    let control = match (&state, a.replica_of.is_none()) {
+        (Some(dir), true) => match crate::control::publish(&hex(&host.root_public()), std::path::Path::new(dir), a.repo.as_deref().map(std::path::Path::new)) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("not published for the hub to adopt: {e:#}");
+                None
+            }
+        },
+        _ => None,
+    };
+    #[cfg(unix)]
+    let serve = async {
+        match &control {
+            Some((_, l)) => crate::control::serve(&host, l, |w| link_opts(w, false)).await,
+            None => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let serve = std::future::pending::<()>();
     if a.console {
         println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | quit");
-        console(&host).await?;
+        tokio::select! { r = console(&host) => r?, () = serve => {} }
     } else {
         println!("(ctrl-c to stop)");
-        tokio::signal::ctrl_c().await?;
+        tokio::select! { r = tokio::signal::ctrl_c() => r?, () = serve => {} }
     }
     host.shutdown().await
 }

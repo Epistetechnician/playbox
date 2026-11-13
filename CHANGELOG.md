@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- Hub: **Adopt** a room hosted on this machine. A `playbox up --state DIR` host now publishes itself (a private socket under `~/.playbox/hosting`), and Add room > Join lists it with one button; adopting asks for a passkey touch.
+
 ### Fixed
 - Hub: the Cloudflare tunnel is retried in the background (with backoff) if it fails to start or later drops, instead of the hub staying offline until restarted.
 

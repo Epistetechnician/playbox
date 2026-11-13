@@ -1,4 +1,5 @@
 mod cli;
+mod control;
 mod doctor;
 mod hub;
 mod wizard;
