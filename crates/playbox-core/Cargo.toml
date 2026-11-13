@@ -9,7 +9,7 @@ license.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 thiserror.workspace = true
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "ecdh", "std"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "ecdh", "std"] }
 sha2 = "0.10"
 x509-parser = { version = "0.18.1", features = ["verify"] }
 rsa = { version = "0.9.10", features = ["sha2"] }
