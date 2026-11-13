@@ -1,0 +1,887 @@
+{
+ "model": "Qwen/Qwen3-4B-Instruct-2507",
+ "agents": 32,
+ "turns": 4,
+ "dev": {
+  "4": {
+   "n": 256,
+   "acc": 0.2656,
+   "ttft_turn1_p50": 0.443,
+   "ttft_later_p50": 0.101,
+   "ttft_all_p50": 0.112,
+   "ttft_all_p95": 0.472,
+   "latency_p50": 0.157,
+   "turns_per_min": 14203.4,
+   "wall_s": 1.1,
+   "prompt_tokens_mean": 753,
+   "cached_frac": 0.801,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.017,
+   "wrong": [
+    {
+     "project": "Okab-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Fomalhaut-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Izar-One",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "6": {
+   "n": 256,
+   "acc": 0.4297,
+   "ttft_turn1_p50": 0.449,
+   "ttft_later_p50": 0.141,
+   "ttft_all_p50": 0.154,
+   "ttft_all_p95": 0.504,
+   "latency_p50": 0.209,
+   "turns_per_min": 12890.2,
+   "wall_s": 1.2,
+   "prompt_tokens_mean": 1103,
+   "cached_frac": 0.846,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.012,
+   "wrong": [
+    {
+     "project": "Okab-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Fomalhaut-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Betelgeuse-Nine",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "8": {
+   "n": 256,
+   "acc": 0.5469,
+   "ttft_turn1_p50": 0.489,
+   "ttft_later_p50": 0.127,
+   "ttft_all_p50": 0.156,
+   "ttft_all_p95": 0.671,
+   "latency_p50": 0.213,
+   "turns_per_min": 10890.4,
+   "wall_s": 1.4,
+   "prompt_tokens_mean": 1459,
+   "cached_frac": 0.855,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.011,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "10": {
+   "n": 256,
+   "acc": 0.5547,
+   "ttft_turn1_p50": 0.67,
+   "ttft_later_p50": 0.151,
+   "ttft_all_p50": 0.174,
+   "ttft_all_p95": 0.877,
+   "latency_p50": 0.255,
+   "turns_per_min": 9012.2,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 1791,
+   "cached_frac": 0.852,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.013,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Betelgeuse-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "12": {
+   "n": 256,
+   "acc": 0.5664,
+   "ttft_turn1_p50": 0.688,
+   "ttft_later_p50": 0.177,
+   "ttft_all_p50": 0.183,
+   "ttft_all_p95": 0.945,
+   "latency_p50": 0.246,
+   "turns_per_min": 8471.9,
+   "wall_s": 1.8,
+   "prompt_tokens_mean": 2128,
+   "cached_frac": 0.866,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.014,
+   "wrong": [
+    {
+     "project": "Electra-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Betelgeuse-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "16": {
+   "n": 256,
+   "acc": 0.5625,
+   "ttft_turn1_p50": 0.951,
+   "ttft_later_p50": 0.235,
+   "ttft_all_p50": 0.242,
+   "ttft_all_p95": 1.305,
+   "latency_p50": 0.303,
+   "turns_per_min": 6652.6,
+   "wall_s": 2.3,
+   "prompt_tokens_mean": 2805,
+   "cached_frac": 0.867,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.018,
+   "wrong": [
+    {
+     "project": "Gacrux-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Electra-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "24": {
+   "n": 256,
+   "acc": 0.5586,
+   "ttft_turn1_p50": 1.71,
+   "ttft_later_p50": 0.331,
+   "ttft_all_p50": 0.346,
+   "ttft_all_p95": 2.371,
+   "latency_p50": 0.398,
+   "turns_per_min": 4275.0,
+   "wall_s": 3.6,
+   "prompt_tokens_mean": 4184,
+   "cached_frac": 0.851,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.028,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "WX-7881-A"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  }
+ },
+ "test": {
+  "c0/lookup/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.235,
+   "ttft_later_p50": 0.225,
+   "ttft_all_p50": 0.231,
+   "ttft_all_p95": 0.349,
+   "latency_p50": 0.42,
+   "turns_per_min": 4544.2,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 933,
+   "cached_frac": 0.078,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.014,
+   "wrong": []
+  },
+  "c0/lookup/hybrid12": {
+   "n": 128,
+   "acc": 0.9922,
+   "ttft_turn1_p50": 0.493,
+   "ttft_later_p50": 0.072,
+   "ttft_all_p50": 0.079,
+   "ttft_all_p95": 0.846,
+   "latency_p50": 0.137,
+   "turns_per_min": 5574.8,
+   "wall_s": 1.4,
+   "prompt_tokens_mean": 2117,
+   "cached_frac": 0.763,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.012,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "QP-5515-H"
+    }
+   ]
+  },
+  "c0/lookup/adaptive12": {
+   "n": 128,
+   "acc": 0.9922,
+   "ttft_turn1_p50": 0.07,
+   "ttft_later_p50": 0.056,
+   "ttft_all_p50": 0.058,
+   "ttft_all_p95": 0.094,
+   "latency_p50": 0.124,
+   "turns_per_min": 13682.0,
+   "wall_s": 0.6,
+   "prompt_tokens_mean": 2117,
+   "cached_frac": 0.996,
+   "gpu_s_per_correct": 0.0,
+   "usd_per_1k_correct": 0.005,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "QP-5515-H"
+    }
+   ]
+  },
+  "c0/lookup/full": {
+   "n": 128,
+   "acc": 0.6094,
+   "ttft_turn1_p50": 8.75,
+   "ttft_later_p50": 5.136,
+   "ttft_all_p50": 5.187,
+   "ttft_all_p95": 8.766,
+   "latency_p50": 5.272,
+   "turns_per_min": 309.8,
+   "wall_s": 24.8,
+   "prompt_tokens_mean": 111341,
+   "cached_frac": 0.992,
+   "gpu_s_per_correct": 0.32,
+   "usd_per_1k_correct": 0.349,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-One",
+     "got": "KX-8066-F"
+    },
+    {
+     "project": "Jabbah-Five",
+     "got": "The contract number for Project Jabbah-Five is not provided in the doc"
+    }
+   ]
+  },
+  "c0/para/rag": {
+   "n": 128,
+   "acc": 0.1094,
+   "ttft_turn1_p50": 0.223,
+   "ttft_later_p50": 0.092,
+   "ttft_all_p50": 0.109,
+   "ttft_all_p95": 0.315,
+   "latency_p50": 0.176,
+   "turns_per_min": 9121.3,
+   "wall_s": 0.8,
+   "prompt_tokens_mean": 925,
+   "cached_frac": 0.605,
+   "gpu_s_per_correct": 0.06,
+   "usd_per_1k_correct": 0.066,
+   "wrong": [
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Jabbah-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Gacrux-One",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/para/hybrid12": {
+   "n": 128,
+   "acc": 0.1406,
+   "ttft_turn1_p50": 0.08,
+   "ttft_later_p50": 0.087,
+   "ttft_all_p50": 0.086,
+   "ttft_all_p95": 0.107,
+   "latency_p50": 0.109,
+   "turns_per_min": 14768.6,
+   "wall_s": 0.5,
+   "prompt_tokens_mean": 2119,
+   "cached_frac": 0.991,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.032,
+   "wrong": [
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Jabbah-Nine",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/para/adaptive12": {
+   "n": 128,
+   "acc": 0.1484,
+   "ttft_turn1_p50": 0.078,
+   "ttft_later_p50": 0.091,
+   "ttft_all_p50": 0.09,
+   "ttft_all_p95": 0.104,
+   "latency_p50": 0.112,
+   "turns_per_min": 14900.4,
+   "wall_s": 0.5,
+   "prompt_tokens_mean": 2119,
+   "cached_frac": 0.996,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.03,
+   "wrong": [
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Jabbah-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/cross/rag": {
+   "n": 128,
+   "acc": 0.9531,
+   "ttft_turn1_p50": 0.232,
+   "ttft_later_p50": 0.072,
+   "ttft_all_p50": 0.082,
+   "ttft_all_p95": 0.285,
+   "latency_p50": 0.423,
+   "turns_per_min": 3616.2,
+   "wall_s": 2.1,
+   "prompt_tokens_mean": 941,
+   "cached_frac": 0.154,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.019,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "QP-5328-B, RW-2811-F"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "ZR-9566-G, XR-2462-H"
+    },
+    {
+     "project": "Deneb-Seven",
+     "got": "ZW-8454-H, RP-4250-D"
+    }
+   ]
+  },
+  "c0/cross/hybrid12": {
+   "n": 128,
+   "acc": 0.0078,
+   "ttft_turn1_p50": 0.082,
+   "ttft_later_p50": 0.043,
+   "ttft_all_p50": 0.048,
+   "ttft_all_p95": 0.105,
+   "latency_p50": 0.155,
+   "turns_per_min": 7133.9,
+   "wall_s": 1.1,
+   "prompt_tokens_mean": 2128,
+   "cached_frac": 0.988,
+   "gpu_s_per_correct": 1.08,
+   "usd_per_1k_correct": 1.181,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Electra-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Izar-One",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/cross/adaptive12": {
+   "n": 128,
+   "acc": 0.8828,
+   "ttft_turn1_p50": 0.446,
+   "ttft_later_p50": 0.099,
+   "ttft_all_p50": 0.141,
+   "ttft_all_p95": 0.645,
+   "latency_p50": 0.665,
+   "turns_per_min": 2210.3,
+   "wall_s": 3.5,
+   "prompt_tokens_mean": 1811,
+   "cached_frac": 0.145,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.034,
+   "wrong": [
+    {
+     "project": "Izar-One",
+     "got": "KW-3487-A, TZ-1285-G"
+    },
+    {
+     "project": "Nunki-Seven",
+     "got": "TQ-5412-A for Project Nunki-Seven; NOT FOUND for Project Electra-One"
+    },
+    {
+     "project": "Deneb-One",
+     "got": "QZ-8703-B for Project Deneb-One, WT-8305-H for Project Gacrux-One"
+    }
+   ]
+  },
+  "c0/drift/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.194,
+   "ttft_later_p50": 0.198,
+   "ttft_all_p50": 0.194,
+   "ttft_all_p95": 0.294,
+   "latency_p50": 0.37,
+   "turns_per_min": 5043.8,
+   "wall_s": 1.5,
+   "prompt_tokens_mean": 937,
+   "cached_frac": 0.182,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.013,
+   "wrong": []
+  },
+  "c0/drift/hybrid12": {
+   "n": 128,
+   "acc": 0.5,
+   "ttft_turn1_p50": 0.081,
+   "ttft_later_p50": 0.076,
+   "ttft_all_p50": 0.076,
+   "ttft_all_p95": 0.106,
+   "latency_p50": 0.126,
+   "turns_per_min": 14325.3,
+   "wall_s": 0.5,
+   "prompt_tokens_mean": 2117,
+   "cached_frac": 0.993,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.009,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "QP-5515-H"
+    },
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/drift/adaptive12": {
+   "n": 128,
+   "acc": 0.9844,
+   "ttft_turn1_p50": 0.075,
+   "ttft_later_p50": 0.082,
+   "ttft_all_p50": 0.081,
+   "ttft_all_p95": 0.148,
+   "latency_p50": 0.149,
+   "turns_per_min": 9667.6,
+   "wall_s": 0.8,
+   "prompt_tokens_mean": 2124,
+   "cached_frac": 0.919,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.007,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "QP-5515-H"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "TT-6340-E"
+    }
+   ]
+  },
+  "c1/lookup/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.228,
+   "ttft_later_p50": 0.232,
+   "ttft_all_p50": 0.228,
+   "ttft_all_p95": 0.346,
+   "latency_p50": 0.413,
+   "turns_per_min": 4569.0,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 933,
+   "cached_frac": 0.085,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.014,
+   "wrong": []
+  },
+  "c1/lookup/hybrid12": {
+   "n": 128,
+   "acc": 0.9844,
+   "ttft_turn1_p50": 0.486,
+   "ttft_later_p50": 0.057,
+   "ttft_all_p50": 0.061,
+   "ttft_all_p95": 0.823,
+   "latency_p50": 0.137,
+   "turns_per_min": 5477.1,
+   "wall_s": 1.4,
+   "prompt_tokens_mean": 2126,
+   "cached_frac": 0.759,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.012,
+   "wrong": [
+    {
+     "project": "Electra-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Izar-One",
+     "got": "TT-4645-E"
+    }
+   ]
+  },
+  "c1/lookup/adaptive12": {
+   "n": 128,
+   "acc": 0.9766,
+   "ttft_turn1_p50": 0.076,
+   "ttft_later_p50": 0.065,
+   "ttft_all_p50": 0.067,
+   "ttft_all_p95": 0.098,
+   "latency_p50": 0.134,
+   "turns_per_min": 11530.1,
+   "wall_s": 0.7,
+   "prompt_tokens_mean": 2126,
+   "cached_frac": 0.996,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.006,
+   "wrong": [
+    {
+     "project": "Electra-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Izar-One",
+     "got": "TT-4645-E"
+    },
+    {
+     "project": "Lesath-Nine",
+     "got": "The patent filing for Project Lesath-Nine is listed twice in the docum"
+    }
+   ]
+  },
+  "c1/lookup/full": {
+   "n": 128,
+   "acc": 0.5078,
+   "ttft_turn1_p50": 8.781,
+   "ttft_later_p50": 5.366,
+   "ttft_all_p50": 5.702,
+   "ttft_all_p95": 8.793,
+   "latency_p50": 5.736,
+   "turns_per_min": 295.7,
+   "wall_s": 26.0,
+   "prompt_tokens_mean": 111070,
+   "cached_frac": 0.992,
+   "gpu_s_per_correct": 0.4,
+   "usd_per_1k_correct": 0.438,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "RP-7943-F"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "The insurance policy for Project Kochab-Five is not found in the provi"
+    },
+    {
+     "project": "Betelgeuse-Seven",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/para/rag": {
+   "n": 128,
+   "acc": 0.1328,
+   "ttft_turn1_p50": 0.229,
+   "ttft_later_p50": 0.102,
+   "ttft_all_p50": 0.131,
+   "ttft_all_p95": 0.333,
+   "latency_p50": 0.176,
+   "turns_per_min": 8026.8,
+   "wall_s": 1.0,
+   "prompt_tokens_mean": 929,
+   "cached_frac": 0.53,
+   "gpu_s_per_correct": 0.06,
+   "usd_per_1k_correct": 0.062,
+   "wrong": [
+    {
+     "project": "Nunki-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Canopus-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/para/hybrid12": {
+   "n": 128,
+   "acc": 0.1875,
+   "ttft_turn1_p50": 0.095,
+   "ttft_later_p50": 0.086,
+   "ttft_all_p50": 0.086,
+   "ttft_all_p95": 0.129,
+   "latency_p50": 0.118,
+   "turns_per_min": 13557.3,
+   "wall_s": 0.6,
+   "prompt_tokens_mean": 2128,
+   "cached_frac": 0.991,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.026,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Nunki-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/para/adaptive12": {
+   "n": 128,
+   "acc": 0.1797,
+   "ttft_turn1_p50": 0.086,
+   "ttft_later_p50": 0.087,
+   "ttft_all_p50": 0.087,
+   "ttft_all_p95": 0.113,
+   "latency_p50": 0.113,
+   "turns_per_min": 13823.3,
+   "wall_s": 0.6,
+   "prompt_tokens_mean": 2128,
+   "cached_frac": 0.996,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.027,
+   "wrong": [
+    {
+     "project": "Nunki-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/cross/rag": {
+   "n": 128,
+   "acc": 0.9531,
+   "ttft_turn1_p50": 0.188,
+   "ttft_later_p50": 0.061,
+   "ttft_all_p50": 0.085,
+   "ttft_all_p95": 0.269,
+   "latency_p50": 0.43,
+   "turns_per_min": 3797.3,
+   "wall_s": 2.0,
+   "prompt_tokens_mean": 945,
+   "cached_frac": 0.175,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.018,
+   "wrong": [
+    {
+     "project": "Hadar-Five",
+     "got": "For Project Hadar-Five, the tool serial is XZ-7514-F. For Project Alde"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "For Project Aldebaran-Three, the radio channel is QT-7138-E. For Proje"
+    },
+    {
+     "project": "Okab-Three",
+     "got": "For Project Okab-Three, the escrow account is ZT-4581-B. For Project P"
+    }
+   ]
+  },
+  "c1/cross/hybrid12": {
+   "n": 128,
+   "acc": 0.0078,
+   "ttft_turn1_p50": 0.079,
+   "ttft_later_p50": 0.045,
+   "ttft_all_p50": 0.049,
+   "ttft_all_p95": 0.099,
+   "latency_p50": 0.152,
+   "turns_per_min": 7504.5,
+   "wall_s": 1.0,
+   "prompt_tokens_mean": 2138,
+   "cached_frac": 0.988,
+   "gpu_s_per_correct": 1.02,
+   "usd_per_1k_correct": 1.123,
+   "wrong": [
+    {
+     "project": "Aldebaran-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Nunki-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/cross/adaptive12": {
+   "n": 128,
+   "acc": 0.9375,
+   "ttft_turn1_p50": 0.437,
+   "ttft_later_p50": 0.126,
+   "ttft_all_p50": 0.141,
+   "ttft_all_p95": 0.635,
+   "latency_p50": 0.818,
+   "turns_per_min": 2088.7,
+   "wall_s": 3.7,
+   "prompt_tokens_mean": 1811,
+   "cached_frac": 0.143,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.034,
+   "wrong": [
+    {
+     "project": "Okab-Three",
+     "got": "ZR-5166-H, TX-9395-B"
+    },
+    {
+     "project": "Betelgeuse-Five",
+     "got": "XK-9086-B, ZX-8447-D"
+    },
+    {
+     "project": "Hadar-Five",
+     "got": "XK-5722-A, QZ-7582-B"
+    }
+   ]
+  },
+  "c1/drift/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.217,
+   "ttft_later_p50": 0.208,
+   "ttft_all_p50": 0.211,
+   "ttft_all_p95": 0.314,
+   "latency_p50": 0.38,
+   "turns_per_min": 4928.7,
+   "wall_s": 1.6,
+   "prompt_tokens_mean": 935,
+   "cached_frac": 0.175,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.013,
+   "wrong": []
+  },
+  "c1/drift/hybrid12": {
+   "n": 128,
+   "acc": 0.5,
+   "ttft_turn1_p50": 0.079,
+   "ttft_later_p50": 0.076,
+   "ttft_all_p50": 0.076,
+   "ttft_all_p95": 0.109,
+   "latency_p50": 0.129,
+   "turns_per_min": 13517.9,
+   "wall_s": 0.6,
+   "prompt_tokens_mean": 2126,
+   "cached_frac": 0.992,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.01,
+   "wrong": [
+    {
+     "project": "Nunki-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Electra-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/drift/adaptive12": {
+   "n": 128,
+   "acc": 0.9844,
+   "ttft_turn1_p50": 0.073,
+   "ttft_later_p50": 0.081,
+   "ttft_all_p50": 0.079,
+   "ttft_all_p95": 0.177,
+   "latency_p50": 0.16,
+   "turns_per_min": 8292.0,
+   "wall_s": 0.9,
+   "prompt_tokens_mean": 2131,
+   "cached_frac": 0.892,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.008,
+   "wrong": [
+    {
+     "project": "Fomalhaut-Seven",
+     "got": "XQ-8049-E"
+    },
+    {
+     "project": "Nunki-Seven",
+     "got": "ZQ-8044-C"
+    }
+   ]
+  }
+ },
+ "K": 12
+}

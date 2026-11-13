@@ -61,3 +61,11 @@ def test_question_kinds_and_adaptive():
     assert d["turns"][3]["answers"][0] in a[3] and d["turns"][3]["answers"][0] not in h[3]
     c = K.make_sessions(facts, 1, 2, kind="cross")[0]
     assert all(x in K.build_messages("adaptive10", chunks, bm, c, 0)[0]["content"] for x in c["turns"][0]["answers"][:1])
+
+
+def test_salt_separates_arms_but_not_agents():
+    chunks, facts, bm = _setup()
+    ss = K.make_sessions(facts, 2, 2, n_projects=1)
+    a = [K.build_messages("hybrid10", chunks, bm, s, 0, salt="x")[0]["content"] for s in ss]
+    b = K.build_messages("hybrid10", chunks, bm, ss[0], 0, salt="y")[0]["content"]
+    assert a[0] == a[1] and a[0] != b and a[0].startswith("[run x] ") and b.endswith(a[0][len("[run x] "):])

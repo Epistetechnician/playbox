@@ -160,7 +160,7 @@ def context_text(chunks_subset) -> str:
     return "\n\n".join(c["text"] for c in chunks_subset)
 
 
-def build_messages(arm: str, chunks, bm, session, turn, K_hybrid=24, K_rag=5):
+def build_messages(arm: str, chunks, bm, session, turn, K_hybrid=24, K_rag=5, salt: str = ""):
     q = session["turns"][turn]["q"]
     if arm == "full":
         ctx = context_text(chunks)
@@ -181,7 +181,11 @@ def build_messages(arm: str, chunks, bm, session, turn, K_hybrid=24, K_rag=5):
         ctx = context_text([chunks[i] for i in idx])
     else:
         raise ValueError(arm)
-    return [{"role": "system", "content": PREAMBLE + "\n\nDocuments:\n\n" + ctx}, {"role": "user", "content": q}]
+    # salt: a run id at the very start of the prompt, so no prefix-cache block is shared between arms (every block hash depends on all
+    # tokens before it); agents inside one arm all carry the same salt and still share. Without it, an arm that runs second reuses what
+    # the first arm cached and looks faster than it is.
+    head = f"[run {salt}] " if salt else ""
+    return [{"role": "system", "content": head + PREAMBLE + "\n\nDocuments:\n\n" + ctx}, {"role": "user", "content": q}]
 
 
 def stream_chat(base: str, model: str, messages, max_tokens: int = 40, timeout: int = 900) -> dict:
