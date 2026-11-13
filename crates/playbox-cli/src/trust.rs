@@ -1,4 +1,5 @@
-use anyhow::{bail, Result};
+use crate::cli::PinCmd;
+use anyhow::{bail, Context, Result};
 use ed25519_dalek::SigningKey;
 use playbox_core::{attest, history::Log, platform, store};
 use std::path::PathBuf;
@@ -95,7 +96,7 @@ pub fn record(kind: Option<String>, log: Option<String>, key: Option<String>) ->
 
 pub fn audit_cmd(path: &str, tail: usize) -> Result<()> {
     let p = std::path::Path::new(path);
-    let s = playbox_net::audit::verify(p)?;
+    let s = playbox_net::audit::verify(p).with_context(|| format!("cannot verify {path}"))?;
     println!(
         "audit log valid: {} entries, signed by host key {}…",
         s.entries,
@@ -160,11 +161,11 @@ pub fn attest_cmd(
     Ok(())
 }
 
-pub fn pin_cmd(action: &str, kind: Option<&str>, fingerprint: Option<&str>) -> Result<()> {
+pub fn pin_cmd(cmd: PinCmd) -> Result<()> {
     let path = platform::pins_path(&store::home());
     let mut pins = platform::PinStore::load(&path)?;
-    match (action, kind, fingerprint) {
-        ("list", _, _) => {
+    match cmd {
+        PinCmd::List => {
             if pins.list().is_empty() {
                 println!("no pinned device keys ({})", path.display());
             }
@@ -172,20 +173,13 @@ pub fn pin_cmd(action: &str, kind: Option<&str>, fingerprint: Option<&str>) -> R
                 println!("{k} {f}");
             }
         }
-        ("add", Some(k), Some(f)) => {
-            pins.add(k, f)?;
-            println!("pinned {k} {f}");
+        PinCmd::Add { kind, fingerprint } => {
+            pins.add(&kind, &fingerprint)?;
+            println!("pinned {kind} {fingerprint}");
         }
-        ("remove", Some(k), Some(f)) => println!(
+        PinCmd::Remove { kind, fingerprint } => println!(
             "{}",
-            if pins.remove(k, f)? {
-                "removed"
-            } else {
-                "was not pinned"
-            }
-        ),
-        _ => bail!(
-            "usage: playbox pin list | add <kind> <fingerprint> | remove <kind> <fingerprint>"
+            if pins.remove(&kind, &fingerprint)? { "removed" } else { "was not pinned" }
         ),
     }
     Ok(())
@@ -201,7 +195,8 @@ pub fn verify(path: &str) -> Result<()> {
     .map_err(anyhow::Error::msg)?;
     let refs: Vec<&dyn attest::PlatformVerifier> =
         vs.iter().map(std::convert::AsRef::as_ref).collect();
-    let r = store::verify_deep(std::path::Path::new(path), &refs)?;
+    let r = store::verify_deep(std::path::Path::new(path), &refs)
+        .with_context(|| format!("cannot verify {path}"))?;
     if let Some(e) = &r.chain_error {
         bail!("INVALID chain: {e}");
     }

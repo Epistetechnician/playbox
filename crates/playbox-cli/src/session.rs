@@ -249,14 +249,14 @@ pub async fn memory(cmd: MemoryCmd) -> Result<()> {
             evidence,
             supersedes,
         } => {
-            let mut a = json!({"kind": kind, "topic": topic, "body": body, "evidence": evidence});
+            let mut a = json!({"kind": kind.as_str(), "topic": topic, "body": body, "evidence": evidence});
             if let Some(s) = supersedes {
                 a["supersedes"] = json!(s);
             }
             call("remember", &[], Some(&a.to_string())).await
         }
         MemoryCmd::Recall { kind } => {
-            let a = kind.map_or_else(|| json!({}), |k| json!({"kind": k}));
+            let a = kind.map_or_else(|| json!({}), |k| json!({"kind": k.as_str()}));
             call("recall", &[], Some(&a.to_string())).await
         }
         MemoryCmd::Export => call("memory_export", &[], None).await,

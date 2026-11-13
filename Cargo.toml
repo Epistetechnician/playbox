@@ -12,3 +12,13 @@ rust-version = "1.91"
 blake3 = "1"
 ed25519-dalek = "2"
 thiserror = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"
+opt-level = 3
+
+# Test and dev builds keep debug info off dependencies: smaller target dir, faster link.
+[profile.dev.package."*"]
+debug = false

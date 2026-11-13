@@ -1,6 +1,7 @@
 //! The steering experiments and tools are Python projects in this repository. These commands run them
 //! from the right project directory, using its virtualenv if it has one, else `uv`.
 
+use crate::cli::{Experiment, WorldAction};
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -61,27 +62,25 @@ pub fn steer(sub: &str, args: &[String]) -> Result<()> {
     python("steer", &strings(&["-m", "playbox_steer", sub], args))
 }
 
-pub fn experiment(name: &str, args: &[String]) -> Result<()> {
+pub fn experiment(name: Experiment, args: &[String]) -> Result<()> {
     match name {
-        "e1" => python("orchestrator", &strings(&["experiments/e1_gpt2.py"], args)),
-        "e1-merge" => python("orchestrator", &strings(&["experiments/merge_e1.py"], args)),
-        "e6" | "e6b" | "audit-e6" | "cache-audit" => python(
-            "steer",
-            &strings(
-                &["-m", &format!("playbox_steer.{}", name.replace('-', "_"))],
-                args,
-            ),
-        ),
-        other => {
-            bail!("unknown experiment {other:?}; one of e1 e1-merge e6 e6b audit-e6 cache-audit")
+        Experiment::E1 => python("orchestrator", &strings(&["experiments/e1_gpt2.py"], args)),
+        Experiment::E1Merge => python("orchestrator", &strings(&["experiments/merge_e1.py"], args)),
+        Experiment::E6 | Experiment::E6b | Experiment::AuditE6 | Experiment::CacheAudit => {
+            let module = match name {
+                Experiment::E6 => "e6",
+                Experiment::E6b => "e6b",
+                Experiment::AuditE6 => "audit_e6",
+                _ => "cache_audit",
+            };
+            python("steer", &strings(&["-m", &format!("playbox_steer.{module}")], args))
         }
     }
 }
 
-pub fn world(action: &str, args: &[String]) -> Result<()> {
+pub fn world(action: WorldAction, args: &[String]) -> Result<()> {
     match action {
-        "demo" => python("world", &strings(&["-m", "playbox_world.demo"], args)),
-        "test" => python("world", &strings(&["-m", "pytest", "-q"], args)),
-        other => bail!("unknown world action {other:?}; demo or test"),
+        WorldAction::Demo => python("world", &strings(&["-m", "playbox_world.demo"], args)),
+        WorldAction::Test => python("world", &strings(&["-m", "pytest", "-q"], args)),
     }
 }
