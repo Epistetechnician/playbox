@@ -18,6 +18,7 @@ authors' documents and result files, nothing re-derived), **open**.
 | Python suites `judge`, `world`, Hermes witness | re-run | `judge` 18 passed (CI subset: `test_measures.py` and `test_fear.py` load real models and were skipped), `world` 11 passed, witness plugin 14 passed |
 | Fuzz targets | re-run | all 12 targets, 60 s each, 50k to 310k executions each, no crashes, no artifacts |
 | Qwen3-8B ↔ OLMo-2-7B probe-gated run | re-run | Fresh run on a gman H100 (`steer/tools/node/big_gated_repro.sh`, new seed label `s3`, shipped probe): maps refit at held-out cosine 0.87 / 0.88; topics 71/80 = 88.8% (CI 80 to 94), controls 36/36, 0 retries. Pooled with s1 and s2: 211/240 = 87.9% topics, 107/108 controls. Same node type, same probe and prompts, so this repeats sampling, not the setup |
+| Qwen3-8B → DeepSeek-7B at layer 0.9 | re-run | Fresh run on a gman H100 (`steer/tools/node/dsk_repro.sh`, seed labels `s3` and `s4`, same stack, probe and controls): topics 141/160 = 88.1% (original 139/160), controls 68/72 (original 68/72), 0 retries. Four seeds pooled: 280/320 = 87.5%, 136/144 controls. Same caveat as the OLMo run: the shipped probe and map recipe were reused |
 | Two-machine, India, Pi, T1 Secure Enclave, T3 TDX runs | stored | [tested-on.md](tested-on.md); needs the original hardware |
 
 ## Research numbers (recomputed from raw files)

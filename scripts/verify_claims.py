@@ -61,6 +61,14 @@ t, tn, c, cn = gated(["dsk_pair_r09_s1_private", "dsk_pair_r09_s2_private"])
 check("qwen8b->deepseek layer 0.9 topics correct", t, 139)
 check("qwen8b->deepseek layer 0.9 controls answered none", c, 68)
 
+# 2b. Fresh reproduction on 2026-11-13 (seed labels s3, s4; same stack, probe and controls): 141/160 topics, 68/72 controls
+t, tn, c, cn = gated(["dsk_pair_r09_s3_private", "dsk_pair_r09_s4_private"])
+check("deepseek repro topics correct", t, 141)
+check("deepseek repro controls answered none", c, 68)
+t, tn, c, cn = gated(["dsk_pair_r09_s1_private", "dsk_pair_r09_s2_private", "dsk_pair_r09_s3_private", "dsk_pair_r09_s4_private"])
+check("deepseek four-seed pooled topics correct", t, 280)
+check("deepseek four-seed pooled controls answered none", c, 136)
+
 # 3. Swarm, both directions pooled (400 trials)
 s = json.load(open(TEL / "swarm/summary.json"))["big pair, both directions"]["all"]
 arms = s["arms"]
