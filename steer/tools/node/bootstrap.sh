@@ -12,7 +12,7 @@ model:
   default: qwen3.8-27b
   provider: custom
   base_url: http://127.0.0.1:8000/v1
-  key: BRAIN_KEY_PLACEHOLDER
+  key_env: BRAIN_API_KEY
 approvals:
   mode: "off"
   cron_mode: deny
@@ -20,7 +20,7 @@ Y
 [ -f ~/tp/tokens.env ] || { echo "BRAIN_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -dc A-Za-z0-9)" > ~/tp/tokens.env
   echo "TELEPATHY_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -dc A-Za-z0-9)" >> ~/tp/tokens.env; chmod 600 ~/tp/tokens.env; }
 set -a; . ~/tp/tokens.env; set +a
-sed -i "s/BRAIN_KEY_PLACEHOLDER/$BRAIN_TOKEN/" ~/tp/hermes_home/config.yaml
+echo "BRAIN_API_KEY=$BRAIN_TOKEN" > ~/tp/hermes_home/.env; chmod 600 ~/tp/hermes_home/.env
 chmod 600 ~/tp/hermes_home/config.yaml
 cp ~/tp/code/steer/tools/node/run_proto.sh ~/tp/run_proto.sh
 echo BOOTSTRAP_DONE

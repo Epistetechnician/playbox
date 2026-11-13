@@ -1,0 +1,915 @@
+{
+ "model": "Qwen/Qwen3-4B-Instruct-2507",
+ "agents": 32,
+ "turns": 4,
+ "dev": {
+  "4": {
+   "n": 256,
+   "acc": 0.2656,
+   "ttft_turn1_p50": 0.431,
+   "ttft_later_p50": 0.109,
+   "ttft_all_p50": 0.131,
+   "ttft_all_p95": 0.47,
+   "latency_p50": 0.171,
+   "turns_per_min": 14000.2,
+   "wall_s": 1.1,
+   "prompt_tokens_mean": 762,
+   "cached_frac": 0.799,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.018,
+   "wrong": [
+    {
+     "project": "Izar-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "6": {
+   "n": 256,
+   "acc": 0.4414,
+   "ttft_turn1_p50": 0.532,
+   "ttft_later_p50": 0.132,
+   "ttft_all_p50": 0.154,
+   "ttft_all_p95": 0.656,
+   "latency_p50": 0.218,
+   "turns_per_min": 11163.2,
+   "wall_s": 1.4,
+   "prompt_tokens_mean": 1112,
+   "cached_frac": 0.802,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.013,
+   "wrong": [
+    {
+     "project": "Okab-One",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Fomalhaut-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "8": {
+   "n": 256,
+   "acc": 0.5508,
+   "ttft_turn1_p50": 0.626,
+   "ttft_later_p50": 0.118,
+   "ttft_all_p50": 0.153,
+   "ttft_all_p95": 0.87,
+   "latency_p50": 0.213,
+   "turns_per_min": 9203.9,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 1468,
+   "cached_frac": 0.804,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.013,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Gacrux-Nine",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "10": {
+   "n": 256,
+   "acc": 0.5625,
+   "ttft_turn1_p50": 0.791,
+   "ttft_later_p50": 0.161,
+   "ttft_all_p50": 0.175,
+   "ttft_all_p95": 1.036,
+   "latency_p50": 0.244,
+   "turns_per_min": 8060.0,
+   "wall_s": 1.9,
+   "prompt_tokens_mean": 1801,
+   "cached_frac": 0.814,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": [
+    {
+     "project": "Hadar-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Gacrux-Nine",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "12": {
+   "n": 256,
+   "acc": 0.5664,
+   "ttft_turn1_p50": 0.941,
+   "ttft_later_p50": 0.186,
+   "ttft_all_p50": 0.192,
+   "ttft_all_p95": 1.292,
+   "latency_p50": 0.248,
+   "turns_per_min": 7268.9,
+   "wall_s": 2.1,
+   "prompt_tokens_mean": 2138,
+   "cached_frac": 0.82,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.016,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Betelgeuse-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "16": {
+   "n": 256,
+   "acc": 0.5664,
+   "ttft_turn1_p50": 1.229,
+   "ttft_later_p50": 0.223,
+   "ttft_all_p50": 0.237,
+   "ttft_all_p95": 1.697,
+   "latency_p50": 0.288,
+   "turns_per_min": 5763.8,
+   "wall_s": 2.7,
+   "prompt_tokens_mean": 2815,
+   "cached_frac": 0.829,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.02,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Gacrux-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Electra-One",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "24": {
+   "n": 256,
+   "acc": 0.5742,
+   "ttft_turn1_p50": 1.938,
+   "ttft_later_p50": 0.343,
+   "ttft_all_p50": 0.363,
+   "ttft_all_p95": 2.573,
+   "latency_p50": 0.41,
+   "turns_per_min": 3977.7,
+   "wall_s": 3.9,
+   "prompt_tokens_mean": 4194,
+   "cached_frac": 0.834,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.029,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "WX-7881-A"
+    },
+    {
+     "project": "Hadar-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  }
+ },
+ "test": {
+  "c0/lookup/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.228,
+   "ttft_later_p50": 0.218,
+   "ttft_all_p50": 0.222,
+   "ttft_all_p95": 0.35,
+   "latency_p50": 0.416,
+   "turns_per_min": 4535.9,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 945,
+   "cached_frac": 0.088,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": []
+  },
+  "c0/lookup/hybrid24": {
+   "n": 128,
+   "acc": 0.9688,
+   "ttft_turn1_p50": 1.069,
+   "ttft_later_p50": 0.122,
+   "ttft_all_p50": 0.13,
+   "ttft_all_p95": 1.582,
+   "latency_p50": 0.203,
+   "turns_per_min": 3052.8,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4188,
+   "cached_frac": 0.77,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.022,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "TX-6594-F"
+    },
+    {
+     "project": "Hadar-One",
+     "got": "PK-1022-B"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "ZR-7540-B"
+    }
+   ]
+  },
+  "c0/lookup/adaptive24": {
+   "n": 128,
+   "acc": 0.9688,
+   "ttft_turn1_p50": 1.065,
+   "ttft_later_p50": 0.131,
+   "ttft_all_p50": 0.139,
+   "ttft_all_p95": 1.567,
+   "latency_p50": 0.211,
+   "turns_per_min": 3049.9,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4188,
+   "cached_frac": 0.77,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.022,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "TX-6594-F"
+    },
+    {
+     "project": "Hadar-One",
+     "got": "PK-1022-B"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "ZR-7540-B"
+    }
+   ]
+  },
+  "c0/lookup/full": {
+   "n": 128,
+   "acc": 0.6016,
+   "ttft_turn1_p50": 8.784,
+   "ttft_later_p50": 5.079,
+   "ttft_all_p50": 5.194,
+   "ttft_all_p95": 8.8,
+   "latency_p50": 5.243,
+   "turns_per_min": 309.8,
+   "wall_s": 24.8,
+   "prompt_tokens_mean": 111352,
+   "cached_frac": 0.992,
+   "gpu_s_per_correct": 0.32,
+   "usd_per_1k_correct": 0.353,
+   "wrong": [
+    {
+     "project": "Nunki-Three",
+     "got": "ZP-5645-F"
+    },
+    {
+     "project": "Electra-Three",
+     "got": "TR-7129-F"
+    },
+    {
+     "project": "Hadar-One",
+     "got": "KX-8066-F"
+    }
+   ]
+  },
+  "c0/para/rag": {
+   "n": 128,
+   "acc": 0.1172,
+   "ttft_turn1_p50": 0.231,
+   "ttft_later_p50": 0.084,
+   "ttft_all_p50": 0.095,
+   "ttft_all_p95": 0.322,
+   "latency_p50": 0.147,
+   "turns_per_min": 8690.4,
+   "wall_s": 0.9,
+   "prompt_tokens_mean": 937,
+   "cached_frac": 0.559,
+   "gpu_s_per_correct": 0.06,
+   "usd_per_1k_correct": 0.065,
+   "wrong": [
+    {
+     "project": "Jabbah-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Gacrux-One",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/para/hybrid24": {
+   "n": 128,
+   "acc": 0.1484,
+   "ttft_turn1_p50": 1.064,
+   "ttft_later_p50": 0.165,
+   "ttft_all_p50": 0.173,
+   "ttft_all_p95": 1.599,
+   "latency_p50": 0.209,
+   "turns_per_min": 3153.2,
+   "wall_s": 2.4,
+   "prompt_tokens_mean": 4190,
+   "cached_frac": 0.771,
+   "gpu_s_per_correct": 0.13,
+   "usd_per_1k_correct": 0.141,
+   "wrong": [
+    {
+     "project": "Jabbah-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/para/adaptive24": {
+   "n": 128,
+   "acc": 0.1562,
+   "ttft_turn1_p50": 1.064,
+   "ttft_later_p50": 0.171,
+   "ttft_all_p50": 0.182,
+   "ttft_all_p95": 1.595,
+   "latency_p50": 0.214,
+   "turns_per_min": 3098.7,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4190,
+   "cached_frac": 0.771,
+   "gpu_s_per_correct": 0.12,
+   "usd_per_1k_correct": 0.136,
+   "wrong": [
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Jabbah-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/cross/rag": {
+   "n": 128,
+   "acc": 0.9453,
+   "ttft_turn1_p50": 0.222,
+   "ttft_later_p50": 0.107,
+   "ttft_all_p50": 0.135,
+   "ttft_all_p95": 0.306,
+   "latency_p50": 0.449,
+   "turns_per_min": 3701.9,
+   "wall_s": 2.1,
+   "prompt_tokens_mean": 952,
+   "cached_frac": 0.087,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.019,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "QP-5328-B, RW-2811-F"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "ZR-9566-G, XR-2462-H"
+    },
+    {
+     "project": "Deneb-Seven",
+     "got": "ZW-8454-H, RP-4250-D"
+    }
+   ]
+  },
+  "c0/cross/hybrid24": {
+   "n": 128,
+   "acc": 0.0156,
+   "ttft_turn1_p50": 1.063,
+   "ttft_later_p50": 0.06,
+   "ttft_all_p50": 0.07,
+   "ttft_all_p95": 1.606,
+   "latency_p50": 0.241,
+   "turns_per_min": 2658.3,
+   "wall_s": 2.9,
+   "prompt_tokens_mean": 4198,
+   "cached_frac": 0.768,
+   "gpu_s_per_correct": 1.44,
+   "usd_per_1k_correct": 1.585,
+   "wrong": [
+    {
+     "project": "Nunki-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Okab-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Electra-One",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/cross/adaptive24": {
+   "n": 128,
+   "acc": 0.9297,
+   "ttft_turn1_p50": 0.452,
+   "ttft_later_p50": 0.138,
+   "ttft_all_p50": 0.15,
+   "ttft_all_p95": 0.65,
+   "latency_p50": 0.766,
+   "turns_per_min": 2179.0,
+   "wall_s": 3.5,
+   "prompt_tokens_mean": 1824,
+   "cached_frac": 0.13,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.032,
+   "wrong": [
+    {
+     "project": "Deneb-One",
+     "got": "QZ-8703-B, WT-8305-H"
+    },
+    {
+     "project": "Izar-One",
+     "got": "KW-3487-A, TZ-1285-G"
+    },
+    {
+     "project": "Hadar-One",
+     "got": "Project Hadar-One: RW-7863-B  \nProject Deneb-Seven: RX-1276-D"
+    }
+   ]
+  },
+  "c0/drift/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.218,
+   "ttft_later_p50": 0.216,
+   "ttft_all_p50": 0.217,
+   "ttft_all_p95": 0.353,
+   "latency_p50": 0.421,
+   "turns_per_min": 4471.9,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 949,
+   "cached_frac": 0.085,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": []
+  },
+  "c0/drift/hybrid24": {
+   "n": 128,
+   "acc": 0.4844,
+   "ttft_turn1_p50": 1.069,
+   "ttft_later_p50": 0.152,
+   "ttft_all_p50": 0.166,
+   "ttft_all_p95": 1.577,
+   "latency_p50": 0.185,
+   "turns_per_min": 3090.3,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4188,
+   "cached_frac": 0.77,
+   "gpu_s_per_correct": 0.04,
+   "usd_per_1k_correct": 0.044,
+   "wrong": [
+    {
+     "project": "Hadar-One",
+     "got": "PK-1022-B"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "ZR-7540-B"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c0/drift/adaptive24": {
+   "n": 128,
+   "acc": 0.9531,
+   "ttft_turn1_p50": 1.062,
+   "ttft_later_p50": 0.139,
+   "ttft_all_p50": 0.197,
+   "ttft_all_p95": 1.563,
+   "latency_p50": 0.641,
+   "turns_per_min": 2550.9,
+   "wall_s": 3.0,
+   "prompt_tokens_mean": 4204,
+   "cached_frac": 0.695,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.027,
+   "wrong": [
+    {
+     "project": "Okab-Five",
+     "got": "TX-6594-F"
+    },
+    {
+     "project": "Hadar-One",
+     "got": "PK-1022-B"
+    },
+    {
+     "project": "Canopus-Seven",
+     "got": "ZR-7540-B"
+    }
+   ]
+  },
+  "c1/lookup/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.232,
+   "ttft_later_p50": 0.226,
+   "ttft_all_p50": 0.228,
+   "ttft_all_p95": 0.347,
+   "latency_p50": 0.416,
+   "turns_per_min": 4517.0,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 945,
+   "cached_frac": 0.095,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": []
+  },
+  "c1/lookup/hybrid24": {
+   "n": 128,
+   "acc": 0.9531,
+   "ttft_turn1_p50": 1.074,
+   "ttft_later_p50": 0.126,
+   "ttft_all_p50": 0.134,
+   "ttft_all_p95": 1.573,
+   "latency_p50": 0.202,
+   "turns_per_min": 3052.6,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4193,
+   "cached_frac": 0.769,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.023,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "WR-7071-G"
+    },
+    {
+     "project": "Aldebaran-Nine",
+     "got": "TK-3552-E"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "PW-7620-F"
+    }
+   ]
+  },
+  "c1/lookup/adaptive24": {
+   "n": 128,
+   "acc": 0.9609,
+   "ttft_turn1_p50": 1.064,
+   "ttft_later_p50": 0.123,
+   "ttft_all_p50": 0.129,
+   "ttft_all_p95": 1.558,
+   "latency_p50": 0.2,
+   "turns_per_min": 3076.4,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4193,
+   "cached_frac": 0.769,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.022,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "WR-7071-G"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "PW-7620-F"
+    },
+    {
+     "project": "Aldebaran-Nine",
+     "got": "TK-3552-E"
+    }
+   ]
+  },
+  "c1/lookup/full": {
+   "n": 128,
+   "acc": 0.4766,
+   "ttft_turn1_p50": 8.797,
+   "ttft_later_p50": 5.006,
+   "ttft_all_p50": 5.086,
+   "ttft_all_p95": 8.807,
+   "latency_p50": 5.175,
+   "turns_per_min": 311.0,
+   "wall_s": 24.7,
+   "prompt_tokens_mean": 111081,
+   "cached_frac": 0.992,
+   "gpu_s_per_correct": 0.4,
+   "usd_per_1k_correct": 0.444,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "RP-7943-F"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "PP-7138-E"
+    },
+    {
+     "project": "Okab-Three",
+     "got": "ZT-5166-H"
+    }
+   ]
+  },
+  "c1/para/rag": {
+   "n": 128,
+   "acc": 0.1406,
+   "ttft_turn1_p50": 0.229,
+   "ttft_later_p50": 0.099,
+   "ttft_all_p50": 0.114,
+   "ttft_all_p95": 0.324,
+   "latency_p50": 0.173,
+   "turns_per_min": 7914.1,
+   "wall_s": 1.0,
+   "prompt_tokens_mean": 941,
+   "cached_frac": 0.481,
+   "gpu_s_per_correct": 0.05,
+   "usd_per_1k_correct": 0.059,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Canopus-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/para/hybrid24": {
+   "n": 128,
+   "acc": 0.1719,
+   "ttft_turn1_p50": 1.069,
+   "ttft_later_p50": 0.16,
+   "ttft_all_p50": 0.17,
+   "ttft_all_p95": 1.609,
+   "latency_p50": 0.215,
+   "turns_per_min": 3143.4,
+   "wall_s": 2.4,
+   "prompt_tokens_mean": 4195,
+   "cached_frac": 0.77,
+   "gpu_s_per_correct": 0.11,
+   "usd_per_1k_correct": 0.122,
+   "wrong": [
+    {
+     "project": "Nunki-Nine",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/para/adaptive24": {
+   "n": 128,
+   "acc": 0.1719,
+   "ttft_turn1_p50": 1.063,
+   "ttft_later_p50": 0.153,
+   "ttft_all_p50": 0.173,
+   "ttft_all_p95": 1.603,
+   "latency_p50": 0.212,
+   "turns_per_min": 3155.4,
+   "wall_s": 2.4,
+   "prompt_tokens_mean": 4195,
+   "cached_frac": 0.77,
+   "gpu_s_per_correct": 0.11,
+   "usd_per_1k_correct": 0.121,
+   "wrong": [
+    {
+     "project": "Canopus-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Hadar-Seven",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/cross/rag": {
+   "n": 128,
+   "acc": 0.9688,
+   "ttft_turn1_p50": 0.246,
+   "ttft_later_p50": 0.082,
+   "ttft_all_p50": 0.098,
+   "ttft_all_p95": 0.322,
+   "latency_p50": 0.44,
+   "turns_per_min": 3795.3,
+   "wall_s": 2.0,
+   "prompt_tokens_mean": 956,
+   "cached_frac": 0.103,
+   "gpu_s_per_correct": 0.02,
+   "usd_per_1k_correct": 0.018,
+   "wrong": [
+    {
+     "project": "Aldebaran-Three",
+     "got": "For Project Aldebaran-Three, the radio channel is QT-7138-E. For Proje"
+    },
+    {
+     "project": "Electra-Three",
+     "got": "RP-1762-D, PZ-1697-A"
+    },
+    {
+     "project": "Nunki-Seven",
+     "got": "KP-7973-A, KQ-6587-D"
+    }
+   ]
+  },
+  "c1/cross/hybrid24": {
+   "n": 128,
+   "acc": 0.0234,
+   "ttft_turn1_p50": 1.057,
+   "ttft_later_p50": 0.082,
+   "ttft_all_p50": 0.089,
+   "ttft_all_p95": 1.555,
+   "latency_p50": 0.197,
+   "turns_per_min": 2707.0,
+   "wall_s": 2.8,
+   "prompt_tokens_mean": 4203,
+   "cached_frac": 0.767,
+   "gpu_s_per_correct": 0.95,
+   "usd_per_1k_correct": 1.038,
+   "wrong": [
+    {
+     "project": "Hadar-Five",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Aldebaran-Three",
+     "got": "NOT FOUND"
+    },
+    {
+     "project": "Electra-Three",
+     "got": "NOT FOUND"
+    }
+   ]
+  },
+  "c1/cross/adaptive24": {
+   "n": 128,
+   "acc": 0.9531,
+   "ttft_turn1_p50": 0.451,
+   "ttft_later_p50": 0.126,
+   "ttft_all_p50": 0.155,
+   "ttft_all_p95": 0.653,
+   "latency_p50": 0.695,
+   "turns_per_min": 2119.3,
+   "wall_s": 3.6,
+   "prompt_tokens_mean": 1824,
+   "cached_frac": 0.12,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.033,
+   "wrong": [
+    {
+     "project": "Okab-Three",
+     "got": "ZR-5166-H, TX-9395-B"
+    },
+    {
+     "project": "Fomalhaut-Seven",
+     "got": "PR-6868-D, PR-3414-C"
+    },
+    {
+     "project": "Hadar-Five",
+     "got": "XK-5722-A, QZ-7582-B"
+    }
+   ]
+  },
+  "c1/drift/rag": {
+   "n": 128,
+   "acc": 1.0,
+   "ttft_turn1_p50": 0.235,
+   "ttft_later_p50": 0.214,
+   "ttft_all_p50": 0.225,
+   "ttft_all_p95": 0.362,
+   "latency_p50": 0.422,
+   "turns_per_min": 4508.5,
+   "wall_s": 1.7,
+   "prompt_tokens_mean": 947,
+   "cached_frac": 0.087,
+   "gpu_s_per_correct": 0.01,
+   "usd_per_1k_correct": 0.015,
+   "wrong": []
+  },
+  "c1/drift/hybrid24": {
+   "n": 128,
+   "acc": 0.4766,
+   "ttft_turn1_p50": 1.084,
+   "ttft_later_p50": 0.131,
+   "ttft_all_p50": 0.152,
+   "ttft_all_p95": 1.585,
+   "latency_p50": 0.186,
+   "turns_per_min": 3088.2,
+   "wall_s": 2.5,
+   "prompt_tokens_mean": 4193,
+   "cached_frac": 0.769,
+   "gpu_s_per_correct": 0.04,
+   "usd_per_1k_correct": 0.045,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "WR-7071-G"
+    },
+    {
+     "project": "Nunki-Five",
+     "got": "KR-3339-F"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "PW-7620-F"
+    }
+   ]
+  },
+  "c1/drift/adaptive24": {
+   "n": 128,
+   "acc": 0.9531,
+   "ttft_turn1_p50": 1.067,
+   "ttft_later_p50": 0.191,
+   "ttft_all_p50": 0.223,
+   "ttft_all_p95": 1.569,
+   "latency_p50": 0.659,
+   "turns_per_min": 2507.3,
+   "wall_s": 3.1,
+   "prompt_tokens_mean": 4203,
+   "cached_frac": 0.68,
+   "gpu_s_per_correct": 0.03,
+   "usd_per_1k_correct": 0.028,
+   "wrong": [
+    {
+     "project": "Hadar-Seven",
+     "got": "WR-7071-G"
+    },
+    {
+     "project": "Nunki-Five",
+     "got": "KR-3339-F"
+    },
+    {
+     "project": "Kochab-Five",
+     "got": "PW-7620-F"
+    }
+   ]
+  }
+ },
+ "K": 24
+}

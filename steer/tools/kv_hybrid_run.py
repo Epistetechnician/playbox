@@ -6,7 +6,7 @@ Phase 1 (dev): a different corpus (seed 100) and different questions pick K for 
 (ties: more turns per minute). Phase 2 (test): the original corpus (seed 0) and a second one (seed 1), the chosen K frozen, four
 question kinds (lookup, para = the attribute in other words, cross = two projects in one question, drift = the session changes
 project half way), arms rag / hybrid / adaptive (hybrid keyed on the question's project, RAG for multi-project questions) and, for
-lookup only, the cached full context. 32 agents x 4 turns, prefix cache on."""
+lookup only, the cached full context. 32 agents x 4 turns, prefix cache on, a different cache salt per arm."""
 import json
 import os
 import subprocess
@@ -60,8 +60,8 @@ def corpus(count, seed):
     return chunks, facts, K.BM25([c["text"] for c in chunks])
 
 
-def run(chunks, bm, sessions, arm):
-    r = K.run_arm(BASE, "m", arm, chunks, bm, sessions, T)
+def run(chunks, bm, sessions, arm, salt):
+    r = K.run_arm(BASE, "m", arm, chunks, bm, sessions, T, salt=salt)
     sm = K.summarize(r)
     sm["wrong"] = [{"project": x["project"], "got": x["text"][:70]} for x in r["rows"] if not x["ok"]][:3]
     return sm
@@ -79,9 +79,9 @@ def bench(key):
         # phase 1: choose K on a different corpus and different questions
         ch, fa, bm = corpus(count, 100)
         dev = K.make_sessions(fa, S, T, seed=11, kind="lookup") + K.make_sessions(fa, S, T, seed=12, kind="para")
-        K.stream_chat(BASE, "m", K.build_messages("hybrid8", ch, bm, dev[0], 0))
+        K.stream_chat(BASE, "m", K.build_messages("hybrid8", ch, bm, dev[0], 0, salt="warmup"))
         for k in KS:
-            sm = run(ch, bm, dev, f"hybrid{k}")
+            sm = run(ch, bm, dev, f"hybrid{k}", f"{key}-dev-{k}")
             out["dev"][str(k)] = sm
             print(key, "dev K", k, {x: sm[x] for x in ("acc", "turns_per_min", "ttft_later_p50", "prompt_tokens_mean")}, flush=True)
         best = max(KS, key=lambda k: (out["dev"][str(k)]["acc"], out["dev"][str(k)]["turns_per_min"]))
@@ -90,12 +90,12 @@ def bench(key):
         # phase 2: frozen K on held-out corpora
         for cs in (0, 1):
             ch, fa, bm = corpus(count, cs)
-            K.stream_chat(BASE, "m", K.build_messages("hybrid8", ch, bm, K.make_sessions(fa, 1, 1)[0], 0))
+            K.stream_chat(BASE, "m", K.build_messages("hybrid8", ch, bm, K.make_sessions(fa, 1, 1)[0], 0, salt="warmup"))
             for kind in ("lookup", "para", "cross", "drift"):
                 ses = K.make_sessions(fa, S, T, seed=21 + cs, kind=kind)
                 arms = ["rag", f"hybrid{best}", f"adaptive{best}"] + (["full"] if kind == "lookup" else [])
                 for arm in arms:
-                    sm = run(ch, bm, ses, arm)
+                    sm = run(ch, bm, ses, arm, f"{key}-c{cs}-{kind}-{arm}")
                     out["test"][f"c{cs}/{kind}/{arm}"] = sm
                     print(key, f"c{cs}", kind, arm, {x: sm[x] for x in ("acc", "turns_per_min", "ttft_later_p50", "prompt_tokens_mean")}, flush=True)
     finally:

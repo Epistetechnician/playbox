@@ -1069,9 +1069,17 @@ Second independent runs on the same node and stack (`big_pair_gated_s2`: 20 topi
 
 Cost: node `playbox-e6-cuda` about 46 minutes (about 4 USD), stopped at the end. Report regenerated with `steer/tools/telepathy_report.py` (`results/telepathy/swarm_telepathy_report.pdf`), numbers computed from the result files.
 
-#### Third family (Qwen3-8B with DeepSeek-LLM-7B): started, not evaluated
+#### Third family (Qwen3-8B with DeepSeek-LLM-7B): one direction works, the other does not
 
-The service loads and fits both maps (`TELEPATHY_REPOS="qwen8b=Qwen/Qwen3-8B-Base,dsk=deepseek-ai/deepseek-llm-7b-base"`, bf16, agent fit set): held-out cosine 0.93 for qwen8b to dsk and 0.88 for dsk to qwen8b. DeepSeek ships only `.bin` weights, so the node needs `TELEPATHY_ALLOW_BIN=1` to download them. No probe was calibrated and no eval was run: the compute account ran out of prepaid credit during calibration and the GPU run was skipped. The accuracy of this pair is unmeasured.
+Same recipe as the larger pair (`steer/tools/node/dsk_pipeline.sh` on a gman H100: 248 live Agent A thoughts, a probe per sender on the 4096-dim unit difference vector, shipped as `playbox_steer/telepathy_probe_dsk.json`, report in `results/telepathy/dsk_calib_private/probe_report.json`; held-out pass rates: qwen8b topics 76/80, dsk topics 79/80, filler 0/24 for both). DeepSeek ships only `.bin` weights (`TELEPATHY_ALLOW_BIN=1`). Held-out map cosine 0.93 (qwen8b to dsk) and 0.88 (dsk to qwen8b). Gated eval, 20 topics x 2 reps x 2 directions plus the 36 held-out controls, two seeds, 0 infra failures:
+
+| | seed 1 | seed 2 |
+|---|---|---|
+| dsk to qwen8b, topics | 38/40 | 38/40 |
+| qwen8b to dsk, topics | 3/40 | 5/40 |
+| controls answered "none" | 32/36 | 35/36 |
+
+DeepSeek as the sender and Qwen3-8B as the receiver is as good as any pair so far (76/80 = 95% pooled). DeepSeek as the receiver fails: the gate lets most thoughts through (signal strength 1.00 in the sampled trials) but its continuations are garbled (repeated tokens, broken Chinese fragments), so Agent B answers "none". Cause, partly measured: DeepSeek's mean activation norm is about 7 times Qwen3-8B's (reference 206 against 27; the receiver scale `norm_b` is 334 against 96), and the strength 0.75 used for the other pairs is far too high for it. A strength sweep (`tools/telepathy_coef_sweep.py`, 20 concepts x 8 prompts, lexicon decoder, `results/telepathy/dsk_coef_sweep.json`) shows the window is narrow and low: qwen8b to dsk reaches 16% at 0.3 and 15% at 0.45, 1.9% at 0.75 (noise), against 74% for dsk to qwen8b at 0.75 and rising. So lowering the strength (now `TELEPATHY_COEFS="dsk=0.3"` in the node) does not fix it by itself; a different injection layer or a median-norm scale for DeepSeek is the untested next step. The gated eval was not re-run with a lower strength. Cost: about 15 USD of H100 time (222 minutes, including setup and a first run that failed on my own configuration mistakes).
 
 #### End-to-end efficiency benchmark on Modal
 

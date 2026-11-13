@@ -34,6 +34,9 @@ REPOS = dict(e.split("=") for e in os.environ["TELEPATHY_REPOS"].split(",")) if 
 _a, _b = REPOS
 PAIRS = ((_a, _b), (_b, _a))
 COEF, FRAC, GEN = 0.75, 0.45, 24
+# TELEPATHY_COEFS="dsk=0.2": steering strength per RECEIVER (default 0.75). Models differ in how hard they can be pushed: DeepSeek-LLM-7B
+# (mean activation norm about 200, against 27 for Qwen3-8B) turns to noise at 0.75 (tools/telepathy_coef_sweep.py picks the value).
+COEFS = {k: float(v) for k, v in (e.split("=") for e in os.environ.get("TELEPATHY_COEFS", "").split(",") if e)}
 FIT = os.environ.get("TELEPATHY_FIT", "agent")
 GATE = tuple(float(x) for x in os.environ.get("TELEPATHY_GATE", "0.9,1.1").split(","))
 # topic-ness gate per sender: strength ramps 0 to 1 as the vector's best cosine to any known topic direction goes lo to hi
@@ -134,7 +137,7 @@ def think(r: Think):
         with lock, open(LOG, "a") as f:
             f.write(json.dumps({"src": r.src, "tag": r.tag, "texts": r.texts, "mag": mag, "topicness": topicness, "d": [round(float(x), 5) for x in d]}) + "\n")
     v = d @ m["w"]
-    v = (v / v.norm() * COEF * g * m["norm_b"]).float().cpu().contiguous()
+    v = (v / v.norm() * COEFS.get(r.dst, COEF) * g * m["norm_b"]).float().cpu().contiguous()
     print("think mag", round(mag, 3), "topicness", topicness and round(topicness, 3), "gate", round(g, 3), flush=True)
     return {"mag": mag, "topicness": topicness, "gate": g, "vec": base64.b64encode(v.numpy().tobytes()).decode(), "dim": v.numel()}
 
