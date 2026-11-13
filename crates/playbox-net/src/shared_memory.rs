@@ -138,8 +138,9 @@ impl Hindsight {
         );
         let run = async {
             let mut s = tokio::net::TcpStream::connect((self.host.as_str(), self.port)).await.context("connect to the memory server")?;
-            s.write_all(head.as_bytes()).await?;
-            s.write_all(&payload).await?;
+            let mut out = head.into_bytes();
+            out.extend_from_slice(&payload);
+            s.write_all(&out).await?;
             let mut buf = Vec::new();
             (&mut s).take(MAX_RESPONSE_BYTES as u64 + 1).read_to_end(&mut buf).await?;
             if buf.len() > MAX_RESPONSE_BYTES {
@@ -805,9 +806,22 @@ mod tests {
             let mut seen = Vec::new();
             for answer in [r#"{"success":true}"#.to_string(), r#"{"results":[{"text":"fact","document_id":"d1","type":"world","tags":["room:r"]}]}"#.to_string(), String::new()] {
                 let (mut s, _) = l.accept().await.unwrap();
-                let mut buf = vec![0u8; 16384];
-                let n = s.read(&mut buf).await.unwrap();
-                seen.push(String::from_utf8_lossy(&buf[..n]).to_string());
+                // Read the whole request: the headers, then as many body bytes as Content-Length says.
+                let mut buf = Vec::new();
+                loop {
+                    let mut chunk = [0u8; 4096];
+                    let n = s.read(&mut chunk).await.unwrap();
+                    buf.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(at) = text.find("\r\n\r\n") {
+                        let len = text[..at].lines().find_map(|l| l.strip_prefix("Content-Length: ")).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0);
+                        if buf.len() >= at + 4 + len {
+                            break;
+                        }
+                    }
+                    assert!(n > 0, "the client closed early");
+                }
+                seen.push(String::from_utf8_lossy(&buf).to_string());
                 let code = if answer.is_empty() { "204 No Content" } else { "200 OK" };
                 s.write_all(format!("HTTP/1.1 {code}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).as_bytes()).await.unwrap();
             }
