@@ -376,6 +376,16 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
             g,
         ));
         seeds.push(frame("SendMessage", Some(message(Op::CapPoll { call_id: "fuzz-cap".into() }, vec![])), g));
+        // Conversations: create (an unknown member is refused), post with a bad signature, read, list.
+        seeds.push(frame("SendMessage", Some(message(Op::ConvNew { title: "t".into(), members: vec!["nobody".into()] }, vec![])), g));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::ConvPost { conv: "c-0000000000000000".into(), text: "x".into(), request_id: "r".into(), sig: "00".repeat(64) }, vec![])),
+            g,
+        ));
+        seeds.push(frame("SendMessage", Some(message(Op::ConvRead { conv: "c-0000000000000000".into(), since: 0, mark: true }, vec![])), g));
+        seeds.push(frame("SendMessage", Some(message(Op::ConvInvite { conv: "c-0".into(), members: vec![] }, vec![])), g));
+        seeds.push(frame("SendMessage", Some(message(Op::ConvList, vec![])), g));
         seeds.push(frame(
             "SendMessage",
             Some(message(Op::Remember { text: "the staging VPN is needed".into(), key: Some("k".into()) }, vec![])),
