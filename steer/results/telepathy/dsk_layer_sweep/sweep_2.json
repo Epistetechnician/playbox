@@ -1,0 +1,102 @@
+{
+ "sender": "qwen8b",
+ "receiver": "dsk",
+ "layers": {
+  "0.6": {
+   "layer": 18,
+   "heldout_cosine": 0.9208,
+   "lambda": 0.3,
+   "norm_b": 396.2899169921875,
+   "grid": {
+    "0.6": {
+     "mapped": 0.6375,
+     "direct": 0.5875
+    },
+    "0.8": {
+     "mapped": 0.4625,
+     "direct": 0.6875
+    },
+    "1.0": {
+     "mapped": 0.225,
+     "direct": 0.275
+    },
+    "1.4": {
+     "mapped": 0.0625,
+     "direct": 0.0
+    }
+   }
+  },
+  "0.7": {
+   "layer": 21,
+   "heldout_cosine": 0.9058,
+   "lambda": 0.3,
+   "norm_b": 469.3963623046875,
+   "grid": {
+    "0.6": {
+     "mapped": 0.675,
+     "direct": 0.6625
+    },
+    "0.8": {
+     "mapped": 0.7375,
+     "direct": 0.825
+    },
+    "1.0": {
+     "mapped": 0.7375,
+     "direct": 0.8
+    },
+    "1.4": {
+     "mapped": 0.6125,
+     "direct": 0.5125
+    }
+   }
+  },
+  "0.8": {
+   "layer": 24,
+   "heldout_cosine": 0.8943,
+   "lambda": 0.3,
+   "norm_b": 576.4636840820312,
+   "grid": {
+    "0.6": {
+     "mapped": 0.7,
+     "direct": 0.8625
+    },
+    "0.8": {
+     "mapped": 0.8,
+     "direct": 0.9
+    },
+    "1.0": {
+     "mapped": 0.8125,
+     "direct": 0.9875
+    },
+    "1.4": {
+     "mapped": 0.7625,
+     "direct": 0.925
+    }
+   }
+  },
+  "0.9": {
+   "layer": 27,
+   "heldout_cosine": 0.8766,
+   "lambda": 0.3,
+   "norm_b": 642.3709106445312,
+   "grid": {
+    "0.6": {
+     "mapped": 0.8125,
+     "direct": 0.775
+    },
+    "0.8": {
+     "mapped": 0.875,
+     "direct": 0.95
+    },
+    "1.0": {
+     "mapped": 0.9375,
+     "direct": 0.9875
+    },
+    "1.4": {
+     "mapped": 0.9125,
+     "direct": 0.975
+    }
+   }
+  }
+ }
+}
