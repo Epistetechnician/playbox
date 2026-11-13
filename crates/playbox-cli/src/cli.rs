@@ -1,6 +1,6 @@
 //! The command tree. Parsing only; the work lives in the other modules.
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 const ABOUT: &str = "Agents from different owners, collaborating inside signed, auditable rooms";
 
@@ -241,13 +241,9 @@ pub enum Cmd {
         #[arg(long, value_name = "P")]
         platform: Option<String>,
     },
-    /// Device keys you trust: list | add KIND FP | remove KIND FP
-    Pin {
-        /// list | add | remove
-        action: String,
-        kind: Option<String>,
-        fingerprint: Option<String>,
-    },
+    /// Device keys you trust
+    #[command(subcommand)]
+    Pin(PinCmd),
     /// Create or show your approver key
     ApproverKey(KeyArg),
     /// Approve one refused action; prints a single-use capability
@@ -291,22 +287,24 @@ pub enum Cmd {
     Steer(SteerCmd),
     /// Reproduce a steering experiment from docs/steering.md
     Experiment {
-        /// e1 | e1-merge | e6 | e6b | audit-e6 | cache-audit
-        name: String,
+        name: Experiment,
         /// Passed through to the experiment
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
     /// The learned 3D view of a room (python)
     World {
-        /// demo | test
-        action: String,
+        action: WorldAction,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
     /// Check this machine: keys, platform evidence, runtimes, python tooling
-    Doctor,
+    Doctor {
+        /// Machine-readable output; the exit status is 1 if any check is missing
+        #[arg(long)]
+        json: bool,
+    },
     /// Build and verify a sample history log
     Demo,
     /// Print a shell completion script
@@ -317,8 +315,7 @@ pub enum Cmd {
 pub enum MemoryCmd {
     /// Save a fact, decision, note or skill, signed by your session key
     Remember {
-        /// fact | decision | note | skill
-        kind: String,
+        kind: MemoryKind,
         topic: String,
         body: String,
         /// History entry or commit hashes backing the claim; repeatable
@@ -331,7 +328,7 @@ pub enum MemoryCmd {
     /// List trusted, current entries
     Recall {
         #[arg(long)]
-        kind: Option<String>,
+        kind: Option<MemoryKind>,
     },
     /// Signed event log to share with another sidecar, plus the quarantine
     Export,
@@ -410,4 +407,93 @@ pub enum LatentCmd {
         #[arg(long, value_name = "FILE")]
         key: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum PinCmd {
+    /// Show pinned device keys
+    List,
+    /// Trust a device key (kind and fingerprint as `verify` prints them)
+    Add { kind: String, fingerprint: String },
+    /// Stop trusting a device key
+    Remove { kind: String, fingerprint: String },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum MemoryKind {
+    Fact,
+    Decision,
+    Note,
+    Skill,
+}
+
+impl MemoryKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fact => "fact",
+            Self::Decision => "decision",
+            Self::Note => "note",
+            Self::Skill => "skill",
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum Experiment {
+    E1,
+    E1Merge,
+    E6,
+    E6b,
+    AuditE6,
+    CacheAudit,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum WorldAction {
+    Demo,
+    Test,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn the_command_tree_is_consistent() {
+        Cli::command().debug_assert();
+    }
+
+    /// Whatever the arguments, parsing returns a result: it never panics, so a bad command line is an error message.
+    #[test]
+    fn random_argument_lists_never_panic() {
+        let words = [
+            "up", "join", "shell", "call", "memory", "remember", "recall", "pin", "add", "list", "experiment", "world",
+            "doctor", "--json", "--home", "--task", "--state", "--local", "--tui", "--console", "-", "--", "", "e6",
+            "fact", "x", "--tail", "-1", "99999999999999999999", "playbox://l", "--latent-hub", "--allow-host", "\u{0}",
+            "é", "--key", "--ttl", "approve", "--arg", "completions", "zsh", "--min-host-tier", "t9",
+        ];
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for _ in 0..20_000 {
+            let n = (next() % 6) as usize;
+            let args: Vec<&str> = std::iter::once("playbox")
+                .chain((0..n).map(|_| words[(next() % words.len() as u64) as usize]))
+                .collect();
+            let _ = Cli::try_parse_from(&args);
+        }
+    }
+
+    #[test]
+    fn a_bad_value_is_refused_at_parse_time() {
+        assert!(Cli::try_parse_from(["playbox", "memory", "remember", "bogus", "t", "b"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "experiment", "nope"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "pin", "add", "kind"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "memory", "remember", "fact", "t", "b"]).is_ok());
+    }
 }

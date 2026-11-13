@@ -12,14 +12,50 @@ mod tui;
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use cli::{Cli, Cmd, LatentCmd, ReleaseCmd, SteerCmd};
+use std::process::ExitCode;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> ExitCode {
+    // A closed pipe (`playbox audit log | head`) ends the process quietly instead of a write panic.
+    #[cfg(unix)]
+    // SAFETY: restoring the default disposition of SIGPIPE before any thread exists.
+    unsafe {
+        libc_sigpipe_default();
+    }
+    let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("error: cannot start the async runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match rt.block_on(run()) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("error: {e}");
+            for cause in e.chain().skip(1) {
+                eprintln!("  caused by: {cause}");
+            }
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(unix)]
+unsafe fn libc_sigpipe_default() {
+    extern "C" {
+        fn signal(sig: i32, handler: usize) -> usize;
+    }
+    const SIGPIPE: i32 = 13;
+    const SIG_DFL: usize = 0;
+    signal(SIGPIPE, SIG_DFL);
+}
+
+async fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     if let Some(h) = &cli.home {
         std::env::set_var("PLAYBOX_HOME", h);
     }
-    match cli.command {
+    let r: Result<()> = match cli.command {
         Cmd::Up(a) => rooms::up(a).await,
         Cmd::Join(a) => rooms::join(a).await,
         Cmd::Shell(a) => session::shell(a).await,
@@ -58,11 +94,7 @@ async fn main() -> Result<()> {
         Cmd::Audit { file, tail } => trust::audit_cmd(&file, tail),
         Cmd::Verify { log } => trust::verify(&log),
         Cmd::Attest { log, key, platform } => trust::attest_cmd(log, key, platform),
-        Cmd::Pin {
-            action,
-            kind,
-            fingerprint,
-        } => trust::pin_cmd(&action, kind.as_deref(), fingerprint.as_deref()),
+        Cmd::Pin(p) => trust::pin_cmd(p),
         Cmd::ApproverKey(k) => trust::approver_key(k.key),
         Cmd::Approve {
             action,
@@ -91,9 +123,9 @@ async fn main() -> Result<()> {
             };
             python::steer(name, &args)
         }
-        Cmd::Experiment { name, args } => python::experiment(&name, &args),
-        Cmd::World { action, args } => python::world(&action, &args),
-        Cmd::Doctor => doctor::run(),
+        Cmd::Experiment { name, args } => python::experiment(name, &args),
+        Cmd::World { action, args } => python::world(action, &args),
+        Cmd::Doctor { json } => return doctor::run(json),
         Cmd::Demo => trust::demo(),
         Cmd::Completions { shell } => {
             clap_complete::generate(
@@ -104,5 +136,6 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-    }
+    };
+    r.map(|()| ExitCode::SUCCESS)
 }
