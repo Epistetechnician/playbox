@@ -1096,3 +1096,29 @@ DeepSeek as the sender and Qwen3-8B as the receiver is as good as any pair so fa
 - Generation latency is the same for every arm (about 530 to 660 ms for 24 tokens, p50), prefix or not; sender think is about 230 to 290 ms for 8 sentences. One-time cost: fitting a map took about 11 minutes per direction on the GPU.
 - Reading: the vector is neither smaller nor more accurate than sending the topic word as text. Its value is that no readable text crosses between the agents and B's context stays untouched. It matches or beats the full-sentence text arm, which depends on one prompt format. Single run per arm (decoding is greedy and reproduced exactly across two runs), so differences of a few points between arms are within noise for n = 160.
 - Run notes: the first attempt hit Modal's 60-minute function limit, then the client lost its connection once; the tool now runs one container per direction, saves each result to the volume `playbox-telepathy-bench` and should be run with `--detach` for the larger pair.
+
+#### Cross-family latent swarm: several senders, one summarizer (Qwen3-8B and OLMo-2-7B, H100)
+
+Prompted by SwarmEvolve (arXiv 2611.08483), whose first stated limitation is that all its agents must be the same model because a summarizer can only read KV caches from its own model, with learned translation between models named as the way out. Our fitted maps are that translation, at the level of one steering direction. `steer/playbox_steer/telepathy_swarm.py` (assignment, novelty filter, aggregation, scoring; 7 tests), `telepathy_swarm_run.py` (one direction), `tools/telepathy_swarm_report.py`, results in `steer/results/telepathy/swarm/` (`report.md`, `summary.json`, per-trial JSON).
+
+Setup, per direction: 400 trials in total over both directions (100 per k = 2 and 3, per direction). Each trial draws k true concepts out of 20; 6 sender agents (family A) hold them, one concept held by 6-k+1 agents and every other concept by a single agent; each agent reads 4 of its concept's 8 sentences. The summarizer (family B) gets one message and continues the 8 standard prompts (greedy, 24 tokens, no probe gate). Score: the top-k concepts by lexicon hits across the 8 continuations; recall is the share of the true concepts recovered.
+
+| arm | recall % (400 trials) | all k concepts recovered % (95% CI) | rare concepts found % |
+|---|---|---|---|
+| none | 7.8 | 0.2 (0-1) | 9.4 |
+| text "Topics: a, b" (the true set, deduplicated: an oracle) | 85.9 | 66.0 (61-70) | 82.1 |
+| latent, one random agent | 44.5 | 2.8 (2-5) | 18.2 |
+| latent, all 6 agents summed | 46.7 | 5.5 (4-8) | 11.5 |
+| latent, k random agents | 49.6 | 8.0 (6-11) | 24.1 |
+| latent, novelty filter (k agents farthest apart in cosine) | 55.7 | 17.0 (14-21) | 54.2 |
+| latent, novelty filter at sqrt(k) strength | 43.2 | 12.5 (10-16) | 38.9 |
+| same-model direction (B's own, the upper bound for a vector) | 67.0 | 32.0 (28-37) | 67.0 |
+| random vector | 9.0 | 0.5 (0-2) | 10.4 |
+
+- The novelty filter works as the paper says: it picks one agent from every true concept in 99% of trials (random k of 6: 32%), and the summarizer's recall is higher than with all agents summed (127 trials better, 48 worse; exact sign test p = 2e-9), than with k random agents (101 vs 47, p = 1e-5) and than with one agent (140 vs 34). The gain is in the rare concepts (54% against 12% for the plain sum): summing all agents lets the dominant concept drown the single-agent ones (dominant found 96%, rare 12%). The filter trades some of the dominant concept (57%) for the rare ones.
+- More strength does not help: sqrt(k) times the strength is 12 points worse than the single-vector strength.
+- Crossing families costs about 11 points of recall against the same-model direction (55.7 vs 67.0, p = 9e-13). Direction of the pair matters: olmo2 to qwen8b recalls 60.0% (novelty) and qwen8b to olmo2 51.4%; k = 2 is easier than k = 3 in both (66.0 and 57.5 against 54.0 and 45.3).
+- The vector is far from the text message in this task: oracle text recovers all k concepts in 66% of trials, the best vector in 17%. A vector carries a mixture direction, not a list, and the summarizer is not told how many topics to look for. The text arm is an oracle (it gets the true, deduplicated set) so it is an upper bound for text.
+- Cost: summarizer generation takes the same time with and without a message (about 750 ms per batch of 8 prompts for OLMo-2 and 940 ms for Qwen3-8B); sender think is about 140 to 150 ms per agent; selecting and aggregating takes 0.5 ms; the vector is 16 KB against a 9-token text prefix.
+- Limits: lexicon-scored synthetic concepts, not the paper's program-search task; a single seed per trial; the same concept draws are used for both directions, so the pooled sign tests overstate independence a little (each direction alone gives the same ordering: novelty over all agents p = 0.011 for qwen8b to olmo2); the small pair was not run (the Modal workspace hit its spend limit); no probe gate, so no false-positive measurement.
+- Run notes: both directions ran in parallel on one H100 (gman node, about 30 minutes, maps reused from an earlier run so no refit); batched left-padded generation matches unbatched output exactly in float32 on the small pair. A gman node that reaches the front of the queue stops after its idle window unless a boot command is registered (`gman run -d --on-wake`), and the image's system Python needs a venv for `pip install`.
