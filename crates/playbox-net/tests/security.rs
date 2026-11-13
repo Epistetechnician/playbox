@@ -833,7 +833,7 @@ async fn a_stopped_docker_task_leaves_no_container_running() {
     );
     tokio::time::sleep(Duration::from_secs(2)).await;
     let running = Command::new("docker")
-        .args(["ps", "--filter", "name=playbox-", "--format", "{{.Names}}"])
+        .args(["ps", "--filter", "name=^playbox-[0-9a-f]{12}$", "--format", "{{.Names}}"])
         .output()
         .unwrap();
     assert!(
