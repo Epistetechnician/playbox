@@ -15,7 +15,7 @@ vm.runInContext = vm.runInContext; vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(__dirname + "/../static/sw.js", "utf8"), ctx);
 const ev = (extra = {}) => { const p = []; return {waitUntil: x => p.push(x), done: () => Promise.all(p), ...extra}; };
 (async () => {
-  let e = ev(); L.install(e); await e.done(); assert(cache["pb-v2"].m.has("/"), "shell cached");
+  let e = ev(); L.install(e); await e.done(); assert(cache["pb-v3"].m.has("/"), "shell cached");
   let res; e = ev({request: {method: "GET", url: "http://hub/api/rooms"}, respondWith: p => (res = p)}); L.fetch(e); await res; await new Promise(r => setTimeout(r, 10));
   online = false; e = ev({request: {method: "GET", url: "http://hub/api/rooms"}, respondWith: p => (res = p)}); L.fetch(e);
   assert.deepStrictEqual(await (await res).json(), {rooms: [1]}); console.log("PASS offline: last known rooms served from cache");

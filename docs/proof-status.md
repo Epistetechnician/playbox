@@ -14,7 +14,8 @@ authors' documents and result files, nothing re-derived), **open**.
 | Black-box conformance | re-run | `conformance/run.py`: 6 pass, 1 skipped (`version_skew` needs an older release) |
 | Grant theorems (Lean) | re-run | `lake build` succeeds |
 | Hill-climb gate receipts | re-run + recomputed | `challenge/gate.py verify`: 6 receipts verified; 4 reject, 2 promote |
-| Python suites (`steer`, `judge`, `world`) | open | `steer` run started, did not finish in the time available (likely waits on model weights) |
+| Python suite `steer` | re-run | `uv run --offline --group dev pytest tests`: 128 passed in 16 min |
+| Python suites `judge`, `world` | open | not yet run |
 | Fuzz targets | stored | not re-run this session |
 | Two-machine, India, Pi, T1 Secure Enclave, T3 TDX runs | stored | [tested-on.md](tested-on.md); needs the original hardware |
 
