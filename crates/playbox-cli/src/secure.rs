@@ -802,7 +802,7 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
     let tmp = std::env::temp_dir().join(format!("pbsec-{}-{seed}", std::process::id()));
     std::fs::create_dir_all(&tmp)?;
     let port = free_port();
-    let mut child = Command::new(python)
+    let mut child = Command::new(&python)
         .arg(&script)
         .args(["--port", &port.to_string(), "--home"])
         .arg(tmp.join("hub"))
@@ -832,9 +832,17 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
         let _ = child.wait();
         let _ = std::fs::remove_dir_all(&tmp);
     };
+    let waited = Instant::now();
     if !service::wait_healthy(port, Duration::from_secs(20)) {
+        let state = match child.try_wait() {
+            Ok(Some(st)) => format!("exited with {st}"),
+            Ok(None) => "still running but not answering".to_string(),
+            Err(e) => format!("state unknown ({e})"),
+        };
+        let tail = |m: &Arc<Mutex<String>>| m.lock().map(|g| g.lines().rev().take(3).collect::<Vec<_>>().join(" | ")).unwrap_or_default();
+        let (o, e) = (tail(&sout), tail(&serr));
         finish(&mut child);
-        anyhow::bail!("the throwaway hub didn't start: {}", serr.lock().map(|g| g.lines().last().unwrap_or("").to_string()).unwrap_or_default());
+        anyhow::bail!("the throwaway hub didn't start on port {port} after {:.0}s ({python:?}, hub {state}); stdout: {o}; stderr: {e}", waited.elapsed().as_secs_f32());
     }
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     // Sign the fuzzer in the way a person would on this machine: the one-time pairing code the hub printed.
