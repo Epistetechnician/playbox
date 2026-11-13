@@ -90,6 +90,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p playbox-mcp
       - run: PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/e2e.py
+      # The hub: passkeys, sessions, invites, tunnel flags, and install.sh --join against a local mirror (needs the debug binaries on PATH).
+      - run: PATH="$PWD/target/debug:$PATH" PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/tests/test_hub.py
+      - run: PATH="$PWD/target/debug:$PATH" PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/tests/test_install.py
+      - run: node ui/tests/sw_sim.js
   witness:
     # The Hermes witness plugin has plain unittest tests (pytest cannot collect them: the plugin directory is a package).
     runs-on: ubuntu-22.04

@@ -46,9 +46,18 @@ Tested end to end through a real quick tunnel: pairing, session cookie (`Secure`
 share URL, `https://<your public address>/i/<id>#<link>`. You choose how long the link works (15 min to 24 h), how long their access lasts (1 h to 7 d), and one person or up to
 three; optionally lock it to one person's guest id. The link itself rides in the `#fragment`, which no server sees, and the hub stores only metadata (room name, your name,
 expiry, status), never the key. The page a friend opens shows who invited them, what the grant allows and when it ends, then offers: *Open in my Playbox* (type your
-hub's address once; it opens with the invite filled in, and you confirm), the installed app via a `web+playbox:` handler, *Copy for my agent*, or, if new, two commands
-(`install.sh`, then `playbox join`). If you aren't signed in yet, the invite waits through the passkey login. **Hub → Invites** lists them: pending, joined, spent, expired, withdrawn.
+hub's address once; it opens with the invite filled in, and you confirm), the installed app via a `web+playbox:` handler, *Copy for my agent*, or, if new, **one command**
+(see below). The default "Who can use it" is *them + their agent* (two uses): one for their hub, one for their agent. If you aren't signed in yet, the invite waits through the passkey login. **Hub → Invites** lists them: pending, joined, spent, expired, withdrawn.
 Needs a public address (`--cloudflare`); a tailnet address only reaches your own devices. Phase 1: withdrawing hides the share page, but the underlying key still expires on its own clock.
+
+**Joining as someone new.** The share page gives one command, `curl … install.sh | sh -s -- --join '<link>' --name '<room>'`. It installs `playbox`, registers it with the
+coding agents found (the existing `playbox setup`), installs the hub from `playbox-hub.tar.gz` (same `SHA256SUMS` as the binary; the release workflow now builds it),
+starts the hub, joins the room, and opens `http://localhost:<port>/pair#…` (passkeys need a hostname, so `localhost`, not `127.0.0.1`). The link travels in the
+environment, not in argv. After the passkey, a **Get started** card on Rooms walks through: passkey, *Connect your coding agent* (detects Claude Code, Codex, OpenCode
+and Hermes from their own config files; the button runs `playbox setup --only <agent>` and needs a passkey touch), *Join or host a room*, and *Bring your agent into the room*
+(a ready-to-paste instruction carrying the same link, for the invite's second use). `playbox_hub.py --join LINK --room-name N --open` does the same from a checkout.
+An agent joins a room as its own member (its sidecar keeps the join in memory), which is why the agent needs its own use of the invite. The room name on the page is the
+host's text, so the command shell-quotes it; a hostile page could still show a different command, so only open invites from people you know.
 
 **Push.** Web Push with VAPID and **no payload**: the push service learns nothing. The service worker wakes, asks the hub
 (over your session) what needs attention, and shows it. Urgent items push even with the app open; unread only when nobody is watching.

@@ -8,7 +8,7 @@ import time
 MAX_TTL = 7 * 86400
 LINK_TTLS = (900, 3600, 86400)             # how long the link itself works
 GRANT_TTLS = (3600, 86400, 7 * 86400)       # how long the joined member's access lasts
-USES = (1, 3)
+USES = (1, 2, 3)
 
 
 class InviteError(ValueError):

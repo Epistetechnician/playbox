@@ -503,6 +503,58 @@ def test_access():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_agents():
+    """Agent detection reads each agent's config; connecting runs `playbox setup --only <agent>` and nothing else."""
+    from hub import agents
+    d = tempfile.mkdtemp(prefix="pbag-")
+    old = {k: os.environ.get(k) for k in ("HOME", "PATH", "PLAYBOX_CLI")}
+    try:
+        h = os.path.join(d, "home")
+        os.makedirs(os.path.join(h, ".codex"))
+        open(os.path.join(h, ".codex", "config.toml"), "w").write("[mcp_servers.playbox]\ncommand = \"playbox\"\n")
+        open(os.path.join(h, ".claude.json"), "w").write(json.dumps({"mcpServers": {"other": {}}}))
+        os.environ["HOME"], os.environ["PATH"] = h, "/usr/bin:/bin"
+        got = {a["id"]: a for a in agents.detect()}
+        check("a codex config with playbox is seen as connected", got["codex"]["installed"] and got["codex"]["connected"])
+        check("a claude config without playbox is installed but not connected", got["claude"]["installed"] and not got["claude"]["connected"])
+        check("an agent that is not here is neither", not got["opencode"]["installed"] and not got["opencode"]["connected"])
+        log = os.path.join(d, "calls")
+        fake = os.path.join(d, "playbox")
+        open(fake, "w").write("#!/bin/sh\necho \"$@\" >> %s\necho did it\n" % log)
+        os.chmod(fake, 0o755)
+        os.environ["PLAYBOX_CLI"] = fake
+        ok, out = agents.connect("claude")
+        check("connect runs `playbox setup --only claude`", ok and open(log).read().strip() == "setup --only claude" and "did it" in out)
+        ok, out = agents.connect("claude; rm -rf /")
+        check("connect refuses anything that is not a known agent", not ok and open(log).read().strip() == "setup --only claude")
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_landing_quoting():
+    """The install command on the invite page quotes the host's room name so it can only ever be one shell argument."""
+    page = open(os.path.join(UI, "static", "invite.html")).read()
+    m = re.search(r"const shq = .*?;(?=\s*//)", page)
+    node = shutil.which("node")
+    if not (m and node):
+        print("SKIP landing quoting (node not found)" if m else "FAIL shq not found")
+        check("landing quoting helper exists", bool(m))
+        return
+    evil = "x'; touch PWNED; echo '\n$(touch PWNED2) `touch PWNED3`"
+    d = tempfile.mkdtemp(prefix="pbq-")
+    try:
+        out = subprocess.run([node, "-e", m.group(0) + "; process.stdout.write(shq(%s))" % json.dumps(evil)], capture_output=True, text=True).stdout
+        r = subprocess.run(["sh", "-c", "printf '%s|' " + out], cwd=d, capture_output=True, text=True)
+        check("a hostile room name stays one inert argument", r.returncode == 0 and r.stdout.count("|") == 1 and not any(f.startswith("PWNED") for f in os.listdir(d)), r.stdout[:120])
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
@@ -510,5 +562,7 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
+    test_agents()
+    test_landing_quoting()
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

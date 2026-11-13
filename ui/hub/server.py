@@ -19,6 +19,7 @@ from pathlib import Path
 from . import push as webpush
 from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
+from . import agents as agentmod
 from .icons import png_icon
 from .invites import Invites, InviteError
 from .rooms import Hub
@@ -333,6 +334,13 @@ def make_handler(hub, auth, store, opts):
                         raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
                     hub.wake.set()
                 return self.j(200, {"room": room.digest, "id": room.id})
+            if m == "GET" and p == "/api/agents":
+                return self.j(200, {"agents": agentmod.detect()})
+            if m == "POST" and p.startswith("/api/agents/") and p.endswith("/connect"):
+                if not self.need_fresh(rec):      # this edits the agent's own config files
+                    return
+                ok, out = agentmod.connect(p.split("/")[3])
+                return self.j(200 if ok else 502, {"ok": ok, "output": out, "agents": agentmod.detect()})
             if m == "GET" and p == "/api/invites":
                 return self.j(200, {"invites": invites.listing(hub.digests())})
             if m == "DELETE" and p.startswith("/api/invites/"):
@@ -562,7 +570,7 @@ def start_cloudflared(port, tunnel=None, hostname=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="playbox_hub", description="Playbox hub: every room, one installable app.")
-    ap.add_argument("--port", type=int, default=7717)
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PLAYBOX_HUB_PORT", "7717")))
     ap.add_argument("--home", default=os.environ.get("PLAYBOX_HUB_HOME", str(Path.home() / ".playbox-hub")))
     ap.add_argument("--lan", action="store_true", help="also listen on the local network (phones on your Wi-Fi can pair over plain HTTP)")
     ap.add_argument("--tailscale", action="store_true", help="publish to your tailnet over HTTPS with `tailscale serve` (private to your devices; passkeys work there)")
@@ -573,6 +581,9 @@ def main(argv=None):
     ap.add_argument("--cloudflare-aud", metavar="AUD", help="the Access application's Audience (AUD) tag")
     ap.add_argument("--cloudflare-hostname", metavar="HOST", help="the public hostname routed to that named tunnel")
     ap.add_argument("--no-weak", action="store_true", help="refuse plain-HTTP pairing entirely: passkeys only")
+    ap.add_argument("--join", metavar="LINK", help="join this playbox:// invite as a new room before starting (the installer uses this)")
+    ap.add_argument("--room-name", metavar="NAME", help="what to call the room joined with --join")
+    ap.add_argument("--open", action="store_true", dest="open_browser", help="open the pairing page (or the app, if already paired) in your browser")
     ap.add_argument("--pair", action="store_true", help="print a fresh pairing link for a new device")
     ap.add_argument("--mcp", default=os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp") or shutil.which("playbox"))
     a = ap.parse_args(argv)
@@ -628,12 +639,32 @@ def main(argv=None):
         cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
     if cf_url:
         opts["public_url"] = cf_url      # the address friend invites point at (a tailnet address only reaches your own devices)
+    link = a.join or os.environ.get("PLAYBOX_JOIN_LINK")
+    if link:
+        if not link.startswith("playbox://"):
+            print("--join: that doesn't look like a playbox:// invite; skipping.", flush=True)
+        else:
+            try:
+                jroom = hub.add(a.room_name or os.environ.get("PLAYBOX_JOIN_NAME") or "Invited room", "this machine", "shared")
+                jsc = jroom.ensure()
+                jerr, jdata = jsc.call("playbox_join", {"link": link}) if jsc else (True, jroom.err or "sidecar unavailable")
+            except ValueError as e:
+                jroom, jerr, jdata = None, True, str(e)
+            if jerr:
+                if jroom:
+                    hub.remove(jroom.id)
+                print(f"  Couldn't join that invite: {jdata if isinstance(jdata, str) else json.dumps(jdata)[:200]}\n  It may have expired or been used. Ask for a fresh link; the hub will start anyway.", flush=True)
+            else:
+                hub.wake.set()
+                print(f"  Joined \"{jroom.rec['label']}\".", flush=True)
+    local = f"http://localhost:{port}"          # passkeys need a real hostname as their relying party, and an IP address isn't one
     print(f"\n  ▪ PLAYBOX hub   {base}", flush=True)
     if cf_url:
         print(f"  Public (Cloudflare, HTTPS, passkeys only): {cf_url}", flush=True)
     if (not auth.enrolled() or a.pair or (cf_url and not a.cloudflare_tunnel)):
         code = auth.mint_code()
-        print(f"\n  Pair this device (valid 10 min, single use):\n    {base}/pair#{code}", flush=True)
+        print(f"\n  Pair this device (valid 10 min, single use):\n    {local}/pair#{code}", flush=True)
+        open_url = f"{local}/pair#{code}"
         if cf_url:
             print(f"    {cf_url}/pair#{code}      <- passkeys, from any device (a quick tunnel's address changes each run, so pair again)", flush=True)
         if ts_name:
@@ -641,8 +672,15 @@ def main(argv=None):
         if a.lan and opts["weak"]:
             print(f"    http://{lan_ip()}:{port}/pair#{code}   <- phone on this Wi-Fi (plain HTTP)", flush=True)
     else:
-        print(f"  Sign in with your passkey at {base}" + (f" or https://{ts_name}" if ts_name else ""), flush=True)
+        open_url = local + "/"
+        print(f"  Sign in with your passkey at {local}" + (f" or https://{ts_name}" if ts_name else ""), flush=True)
         print("  New device? restart with --pair, or use Devices inside the app.", flush=True)
+    if a.open_browser:
+        try:
+            import webbrowser
+            webbrowser.open(open_url)
+        except Exception:
+            pass
     try:
         if cloud:
             while threading_serve.is_alive():

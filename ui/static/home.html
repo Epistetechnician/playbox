@@ -304,6 +304,12 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 .toast{background:var(--ink);color:var(--bg);border-left:4px solid var(--sig);padding:10px 16px;max-width:92vw;font:600 11.5px var(--mono);letter-spacing:.05em;box-shadow:var(--hard);animation:in .14s steps(3)}
 .toast.err{border-left-color:var(--bad)}
 .offline .mono{text-transform:none;letter-spacing:0}
+.setup{margin-bottom:18px}
+.sus{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.su{display:grid;grid-template-columns:26px 1fr;gap:12px;align-items:start}
+.sn{width:26px;height:26px;border:1px solid var(--edge);display:grid;place-items:center;font:700 11px var(--mono);background:var(--panel-2)}
+.su.done .sn{background:var(--ok-led);border-color:var(--ok-led);color:var(--on-sig)}
+.su b{font-weight:600}.sb{margin-top:6px}
 .offline{border:1px solid var(--sig);border-left-width:4px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));color:var(--sig-ink);padding:9px 14px;margin-bottom:16px;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}}
 @media(max-width:599px){.cell{padding:11px 12px}.sect.tools .filters{flex:1 1 100%;order:2}.strip{gap:12px;padding-left:12px;padding-right:12px}#strooms{display:none}}
@@ -560,6 +566,7 @@ function paintView(soft) {
   paintChrome();
   v.innerHTML = `<div class="view ${enter ? "enter" : ""}"><div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub. Showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)() + "</div>";
   if (selId) $(`.rw[data-room="${selId}"]`)?.classList.add("sel");
+  if (S.view === "rooms") { if (S.agents === null) loadAgents(); paintSetup(); }
   if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length) startOrbit();
   enter = false; paintActivity(); countUp();
   if (S.view === "hub") { loadInvites(); pushState(); if (installEvt) { $("#installbtn").hidden = false; $("#installhint").hidden = true; } }
@@ -642,6 +649,41 @@ function tiles() {
     ${t(broken ? "bad" : withChain.length ? "ok" : "", "Verified", okc, withChain.length ? `of ${withChain.length} signed histories` : "no histories yet")}</div>`;
 }
 
+/* ---------- first-run: get your agent and a room connected ---------- */
+S.agents = null;
+async function loadAgents() { try { S.agents = (await api("GET", "/api/agents")).agents; } catch { S.agents = []; } if (S.view === "rooms" && $("#setup")) paintSetup(); }
+function setupNeeded() {
+  if (store.get("pb.setup.hide", "") === "1") return false;
+  const agentOk = S.agents && S.agents.some(a => a.connected);
+  return !agentOk || !S.rooms.length;
+}
+function paintSetup() {
+  const el = $("#setup"); if (!el) return;
+  if (!setupNeeded() && !S.agents) { el.innerHTML = ""; return; }
+  if (!setupNeeded()) { el.innerHTML = ""; return; }
+  const ags = (S.agents || []).filter(a => a.installed), hasAgent = ags.some(a => a.connected);
+  let held = null; try { held = JSON.parse(sessionStorage.getItem("pb.agentlink") || "null"); } catch {}
+  const step = (n, done, title, body) => `<li class="su ${done ? "done" : ""}"><span class="sn">${done ? "✓" : n}</span><div><b>${title}</b>${body ? `<div class="sb">${body}</div>` : ""}</div></li>`;
+  const agentBody = S.agents === null ? `<span class="mut">Looking for coding agents…</span>`
+    : !ags.length ? `<span class="mut">No coding agent found here. Install Claude Code, Codex, OpenCode or Hermes, then reload.</span>`
+    : `<div class="row" style="gap:8px">${ags.map(a => a.connected ? `<span class="chip ok">${esc(a.name)} connected</span>` : `<button class="btn sm" data-act="agent" data-id="${a.id}">Connect ${esc(a.name)}</button>`).join("")}</div>`;
+  const roomBody = S.rooms.length ? "" : `<button class="btn sm primary" data-act="add">+ Add room</button> <span class="mut">paste an invite or host one</span>`;
+  const handBody = held && hasAgent ? `Tell your agent:<div class="card mono" style="margin:8px 0;user-select:all;word-break:break-all;max-height:6em;overflow:auto">${esc(`Join this Playbox room with playbox_join, using this link: ${held.link}`)}</div>
+      <button class="btn sm" data-act="copyagent">Copy</button> <span class="mut" style="font-size:12.5px">Works if the invite allowed you and your agent; otherwise ask for another.</span>` : "";
+  el.innerHTML = `<div class="card setup"><h2>Get started</h2><ol class="sus">
+    ${step(1, !S.me?.weak, "Passkey", S.me?.weak ? "This session has no passkey. Open the hub's HTTPS address to add one." : "")}
+    ${step(2, hasAgent, "Connect your coding agent", agentBody)}
+    ${step(3, S.rooms.length > 0, "Join or host a room", roomBody)}
+    ${held && S.rooms.length ? step(4, false, "Bring your agent into the room", handBody) : ""}</ol>
+    <p style="margin:12px 0 0"><button class="btn sm" data-act="hidesetup">Hide</button></p></div>`;
+}
+async function connectAgent(id, btn) {
+  btn.disabled = true; btn.textContent = "Connecting…";
+  try { const j = await api("POST", `/api/agents/${id}/connect`); S.agents = j.agents; toast("Connected. Restart that agent to pick it up."); }
+  catch (e) { toast(e.message, true); try { S.agents = (await api("GET", "/api/agents")).agents; } catch {} }
+  paintSetup();
+}
+
 const VIEWS = {
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
@@ -650,11 +692,11 @@ const VIEWS = {
     const flt = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["attn", "Attention"]];
     const bar = `<div class="sect tools"><h2 class="rule"><span class="ix">01</span>Rooms</h2></div><div class="sect tools" style="margin-top:0"><div class="filters" role="group" aria-label="Filter rooms">${flt.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
       <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
-    if (!S.rooms.length) return `${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
+    if (!S.rooms.length) return `<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
       : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap">${constellation(list)}<div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
-    return `${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
+    return `<div id="setup"></div>${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
@@ -810,6 +852,7 @@ function openAdd(pre) {
     btn.disabled = true; btn.textContent = how === "join" ? "Joining…" : "Adding…"; $("#aerr").textContent = "";
     try {
       const r = await api("POST", "/api/rooms", body);
+      if (how === "join" && body.link) { try { sessionStorage.setItem("pb.agentlink", JSON.stringify({link: body.link, label: body.label, room: r.id})); } catch {} }
       sheet().close(); toast(how === "join" ? "Joined" : "Room added");
       if (how === "host" && !body.home) location.href = `/r/${r.id}/`; else { await refreshRooms(); }
     } catch (err) { $("#aerr").textContent = err.message; btn.disabled = false; btn.textContent = "Add room"; }
@@ -826,7 +869,7 @@ function openInvite(id) {
     <label for="ifrom" style="margin-top:14px">Your name, shown to your friend</label><input id="ifrom" maxlength="40" autocomplete="off" value="${esc(store.get("pb.name", ""))}" placeholder="e.g. Shaan">
     <label>Link works for</label>${opt("ttl", [[900, "15 min"], [3600, "1 hour"], [86400, "24 hours"]], 3600)}
     <label>Their access lasts</label>${opt("grant", [[3600, "1 hour"], [86400, "1 day"], [604800, "7 days"]], 86400)}
-    <label>Who can use it</label>${opt("uses", [[1, "One person"], [3, "Up to 3"]], 1)}
+    <label>Who can use it</label>${opt("uses", [[1, "One person"], [2, "Them + their agent"], [3, "Up to 3"]], 2)}
     <details style="margin-top:14px"><summary class="lbl" style="cursor:pointer">Lock it to one person's id</summary><label for="iguest">Their guest id (64 hex characters, from <span class="mono">playbox id</span>)</label><input id="iguest" class="mono" autocomplete="off" spellcheck="false"><p class="mut" style="font-size:12px;margin:6px 0 0">Anyone else who finds the link is refused and can't use it up.</p></details>
     <p class="err" id="ierr"></p><div id="iout"></div>
     <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Close</button><button class="btn primary" id="imake" value="x">Create link</button></div></form>`;
@@ -929,6 +972,9 @@ document.addEventListener("click", async e => {
   else if (act === "palette") openPalette();
   else if (act === "theme") toggleTheme();
   else if (act === "edit") openEdit(t.dataset.id);
+  else if (act === "agent") connectAgent(t.dataset.id, t);
+  else if (act === "hidesetup") { store.set("pb.setup.hide", "1"); paintSetup(); }
+  else if (act === "copyagent") { try { const h = JSON.parse(sessionStorage.getItem("pb.agentlink")); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${h.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();

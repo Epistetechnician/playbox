@@ -49,6 +49,7 @@ jobs:
         env:
           PLAYBOX_RELEASE_KEY: ${{ secrets.PLAYBOX_RELEASE_KEY }}
         run: |
+          tar -czf dist/playbox-hub.tar.gz --exclude=__pycache__ --exclude='*.pyc' ui     # the dashboard, for the installer's --join / --hub
           cd dist
           sha256sum playbox-*.tar.gz > SHA256SUMS
           cd ..

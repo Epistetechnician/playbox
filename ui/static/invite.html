@@ -88,13 +88,15 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
   }
   if (!link) { main.innerHTML = `<div class="state bad">This link is incomplete</div><p class="mut small">The part after the <b>#</b> is missing, usually because the link was cut short when it was copied. Ask for it again and copy the whole thing.</p>`; return; }
   const fr = b64u(link) + "~" + b64u(v.room);
+  const shq = x => "'" + String(x).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/'/g, "'\\''") + "'";   // the room name is the host's text: quote it so it can only ever be one argument
+  const cmd = `curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --join ${shq(link)} --name ${shq(v.room)}`;
   const left = () => { const s = Math.max(0, v.expires - Date.now() / 1000 | 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`; };
   main.innerHTML = `<h1><em>${esc(v.from)}</em> invited you to <em>${esc(v.room)}</em></h1>
     <p class="mut">A private room where people and their agents work together, with limits the host sets and a signed record nobody can quietly edit.</p>
     <div class="card"><div class="hd lbl">What this link gives you</div><ul class="facts">
       <li><span>Your access lasts</span><span>${dur(v.grant)}</span></li>
       <li><span>Link works for</span><span id="left">${left()}</span></li>
-      <li><span>Can be used by</span><span>${v.guest_only ? "one specific person" : v.uses === 1 ? "one person (you)" : `up to ${v.uses} people`}</span></li></ul></div>
+      <li><span>Can be used by</span><span>${v.guest_only ? "one specific person" : v.uses === 1 ? "one person (you)" : v.uses === 2 ? "you and your agent" : `up to ${v.uses} people`}</span></li></ul></div>
 
     <div class="card"><div class="hd lbl">I already have Playbox</div>
       <label class="lbl" for="hub" style="display:block;margin-bottom:6px">Your hub's address</label>
@@ -104,11 +106,10 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
       <p class="mut small">Your hub opens with the invite filled in. You confirm there; nothing joins until you do.</p></div>
 
     <div class="card"><div class="hd lbl">I'm new</div>
-      <p style="margin-top:0">Two commands. The first installs Playbox and connects it to the coding agents you already use. The second joins this room.</p>
-      <pre id="cmds">curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh
-playbox join '${esc(link)}'</pre>
-      <div class="row"><button class="btn sm" id="cpc">Copy both</button></div>
-      <p class="mut small">Prefer a dashboard and a passkey? After installing, run <b>python3 ui/playbox_hub.py</b> from a Playbox checkout and open this page again: the first button will do the rest.</p></div>
+      <p style="margin-top:0">One command. It installs Playbox, joins this room, starts your own dashboard and opens it in your browser so you can set up a passkey. Then it offers to connect your coding agent.</p>
+      <pre id="cmds">${esc(cmd)}</pre>
+      <div class="row"><button class="btn sm" id="cpc">Copy command</button></div>
+      <p class="mut small">It runs the installer published in the Playbox project on GitHub and checks its downloads against a checksum list. Read it first if you like. Needs macOS or Linux with python3. Leave that terminal window open while you use the dashboard.</p></div>
 
     <p class="safe">This link is a key to one room, not to your computer. It can't be used twice, it expires on its own, and the host can remove you at any time. Only open it if you know ${esc(v.from)}.</p>`;
   const hub = $("#hub"); try { hub.value = localStorage.getItem("pb.myhub") || ""; } catch {}
