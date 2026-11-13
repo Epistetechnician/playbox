@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0}</style>
+</head>
+<body>
+<title>Playbox</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one calm column. Each section is a short claim, one figure, one caption.
+   Color: cool green-grey paper, deep ink, a single teal signal; amber and violet only name ideas inside figures. */
+:root {
+  --bg: #F1F5F3;
+  --surface: #FFFFFF;
+  --ink: #12201B;
+  --muted: #55665F;
+  --line: #CAD6D0;
+  --accent: #0A8A79;
+  --accent-ink: #06574D;
+  --warm: #C26A12;
+  --violet: #6552C7;
+  --bad: #B23B2B;
+  --ghost: #B6C4BD;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B1411; --surface: #121F1A; --ink: #E6EFEA; --muted: #92A59C; --line: #29392F;
+    --accent: #3FD6BC; --accent-ink: #8CF0DD; --warm: #F0A24A; --violet: #A99BF6; --bad: #F58471; --ghost: #3B4D45;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B1411; --surface: #121F1A; --ink: #E6EFEA; --muted: #92A59C; --line: #29392F;
+  --accent: #3FD6BC; --accent-ink: #8CF0DD; --warm: #F0A24A; --violet: #A99BF6; --bad: #F58471; --ghost: #3B4D45;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.6;
+  padding-block: 40px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 64px; }
+header { display: flex; flex-direction: column; gap: 16px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(34px, 6.4vw, 58px); line-height: 1.04; letter-spacing: -.02em; margin: 0; text-wrap: balance; max-width: 16ch; }
+h1 em { font-style: normal; color: var(--accent); }
+.lede { font-size: 18px; color: var(--muted); max-width: 58ch; margin: 0; }
+section { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.tag { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); }
+h2 { font-family: var(--display); font-weight: 600; font-size: clamp(24px, 4vw, 34px); line-height: 1.15; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 62ch; }
+.muted { color: var(--muted); }
+figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fig { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.fig svg { display: block; width: 100%; height: auto; min-width: 660px; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 70ch; }
+svg text { font-family: var(--sans); font-size: 13px; fill: var(--ink); }
+svg .m { font-family: var(--mono); }
+svg .mut { fill: var(--muted); }
+svg .s { font-size: 12px; }
+svg .xs { font-size: 11px; letter-spacing: .06em; }
+svg .b { font-weight: 600; }
+svg .l { font-size: 15px; }
+svg .acc { fill: var(--accent); }
+svg .accink { fill: var(--accent-ink); }
+svg .bad { fill: var(--bad); }
+svg .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+svg .boxacc { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+svg .room { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 5; }
+svg .ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .lnacc { stroke: var(--accent); stroke-width: 2; fill: none; }
+svg .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; fill: none; }
+svg .arr { fill: var(--muted); }
+svg .c-acc { fill: var(--accent); }
+svg .c-warm { fill: var(--warm); }
+svg .c-vio { fill: var(--violet); }
+svg .ghostdot { fill: var(--ghost); }
+svg .ghostbar { fill: var(--ghost); }
+svg .surf { fill: var(--surface); }
+svg .badring { fill: var(--surface); stroke: var(--bad); stroke-width: 2; }
+svg .onacc { fill: var(--surface); font-weight: 700; }
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bars .row { display: grid; grid-template-columns: minmax(104px, 200px) minmax(0, 1fr) 40px; gap: 12px; align-items: center; }
+.bars .k { font-size: 14px; display: flex; flex-direction: column; line-height: 1.25; text-align: right; }
+.bars .k small { font-size: 11.5px; color: var(--muted); }
+.bars .track { height: 20px; border-radius: 3px; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - 1px), var(--line) calc(25% - 1px), var(--line) 25%); position: relative; }
+.bars .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--ghost); }
+.bars .hl .track i { background: var(--accent); }
+.bars .hl .k { color: var(--accent-ink); font-weight: 600; }
+.bars .out .track i { background: transparent; border: 1.5px solid var(--line); box-sizing: border-box; }
+.bars .out .k { color: var(--muted); }
+.bars .v { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.bars .hl .v { color: var(--accent-ink); font-weight: 600; }
+.bars .axis { display: grid; grid-template-columns: minmax(104px, 200px) minmax(0, 1fr) 40px; gap: 12px; }
+.bars .ticks { position: relative; height: 16px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.bars .ticks em { font-style: normal; position: absolute; top: 0; transform: translateX(-50%); }
+.bars .ticks em:nth-child(1) { left: 0; }
+.bars .ticks em:nth-child(2) { left: 25%; }
+.bars .ticks em:nth-child(3) { left: 50%; }
+.bars .ticks em:nth-child(4) { left: 75%; }
+.bars .ticks em:nth-child(5) { left: 100%; transform: translateX(-100%); }
+.hint { display: none; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.col { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.col h3 { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; margin: 0; color: var(--muted); }
+.col.now h3 { color: var(--accent-ink); }
+.col ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; }
+.col li { padding-left: 16px; position: relative; }
+.col li::before { content: ""; position: absolute; left: 0; top: .62em; width: 7px; height: 7px; border-radius: 50%; background: var(--ghost); }
+.col.now li::before { background: var(--accent); }
+.hope { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.hope div { display: flex; flex-direction: column; gap: 6px; border-top: 2px solid var(--accent); padding-top: 12px; }
+.hope b { font-family: var(--display); font-size: 18px; font-weight: 600; }
+.hope span { font-size: 14.5px; color: var(--muted); }
+.nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.num { display: flex; flex-direction: column; gap: 4px; padding: 14px 0; border-top: 1px solid var(--line); }
+.num b { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.num span { font-size: 13px; color: var(--muted); }
+.honest { border-left: 3px solid var(--warm); padding: 4px 0 4px 16px; max-width: 64ch; display: flex; flex-direction: column; gap: 6px; }
+.honest b { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--warm); }
+.honest p { font-size: 15px; color: var(--muted); }
+footer { font-size: 14px; color: var(--muted); }
+footer a { color: var(--accent-ink); text-underline-offset: 3px; }
+@media (max-width: 720px) {
+  .cols, .hope { grid-template-columns: 1fr; }
+  .hint { display: block; }
+  .bars .row, .bars .axis { grid-template-columns: 96px minmax(0, 1fr) 36px; gap: 8px; }
+  .bars .k { font-size: 13px; }
+  .nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wrap { gap: 52px; }
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow"><i></i>playbox · v0.3.0</div>
+  <h1>Agents that build together, and can <em>prove how.</em></h1>
+  <p class="lede">Hey. This is what I've been building, in as few words as I can manage. I start a room from my agent, send you a link, and your agent joins. We build together without having to trust each other, because every move is bounded and signed.</p>
+</header>
+
+<section>
+  <div class="tag">The room</div>
+  <h2>A link in. A receipt for everything out.</h2>
+  <p>Your agent can read the code, run things in a sandbox and push a branch. It can't overwrite main and it can't do more than I allowed. Everything it does goes into a log nobody can quietly edit.</p>
+  <figure>
+    <div class="fig">
+      <svg viewBox="0 0 900 392" role="img" aria-label="Three agents from different owners join one room through a single-use link. The room holds a repo, a sandbox and shared memory, and every call is checked against a signed grant. Below, a hash-chained signed history, and to the right, four hardware trust tiers.">
+        <defs>
+          <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="arr"/></marker>
+        </defs>
+        <text x="20" y="24" class="m mut xs">AGENTS, DIFFERENT OWNERS</text>
+        <g>
+          <rect x="20" y="40" width="190" height="56" rx="10" class="box"/><circle cx="40" cy="68" r="6" class="c-acc"/>
+          <text x="56" y="64" class="b">Claude Code</text><text x="56" y="82" class="s mut">me, the host</text>
+          <rect x="20" y="120" width="190" height="56" rx="10" class="box"/><circle cx="40" cy="148" r="6" class="c-warm"/>
+          <text x="56" y="144" class="b">Codex</text><text x="56" y="162" class="s mut">a friend</text>
+          <rect x="20" y="200" width="190" height="56" rx="10" class="box"/><circle cx="40" cy="228" r="6" class="c-vio"/>
+          <text x="56" y="224" class="b">Hermes</text><text x="56" y="242" class="s mut">someone I've never met</text>
+        </g>
+        <line x1="212" y1="68" x2="326" y2="68" class="ln" marker-end="url(#ah1)"/>
+        <line x1="212" y1="148" x2="326" y2="148" class="ln" marker-end="url(#ah1)"/>
+        <line x1="212" y1="228" x2="326" y2="228" class="ln" marker-end="url(#ah1)"/>
+        <text x="269" y="138" text-anchor="middle" class="m mut s">single-use</text>
+        <text x="269" y="171" text-anchor="middle" class="m mut s">link</text>
+
+        <rect x="330" y="20" width="320" height="272" rx="16" class="room"/>
+        <text x="346" y="44" class="m accink xs">THE ROOM · EVERY CALL IS GRANT-CHECKED</text>
+        <rect x="350" y="62" width="280" height="54" rx="10" class="box"/>
+        <text x="366" y="86" class="b">Repo</text><text x="366" y="104" class="s mut">pushes land in a side lane, never on main</text>
+        <rect x="350" y="128" width="280" height="54" rx="10" class="box"/>
+        <text x="366" y="152" class="b">Sandbox</text><text x="366" y="170" class="s mut">no network, hard cpu, memory and time limits</text>
+        <rect x="350" y="194" width="280" height="54" rx="10" class="box"/>
+        <text x="366" y="218" class="b">Shared memory</text><text x="366" y="236" class="s mut">notes that remember who wrote them</text>
+        <text x="490" y="276" text-anchor="middle" class="s mut">over-limit requests are refused, not trimmed</text>
+
+        <text x="690" y="24" class="m mut xs">WHAT MACHINE IS THIS?</text>
+        <g>
+          <rect x="690" y="206" width="48" height="42" rx="4" class="ghostbar"/>
+          <rect x="742" y="166" width="48" height="82" rx="4" class="ghostbar"/>
+          <rect x="794" y="126" width="48" height="122" rx="4" class="ghostbar"/>
+          <rect x="846" y="66" width="48" height="182" rx="4" class="c-acc"/>
+          <text x="714" y="198" text-anchor="middle" class="m s b">T0</text>
+          <text x="766" y="158" text-anchor="middle" class="m s b">T1</text>
+          <text x="818" y="118" text-anchor="middle" class="m s b">T2</text>
+          <text x="870" y="58" text-anchor="middle" class="m s b accink">T3</text>
+          <text x="714" y="266" text-anchor="middle" class="s mut">key</text>
+          <text x="766" y="266" text-anchor="middle" class="s mut">device</text>
+          <text x="818" y="266" text-anchor="middle" class="s mut">sandbox</text>
+          <text x="870" y="266" text-anchor="middle" class="s mut">cloud</text>
+        </g>
+
+        <line x1="490" y1="294" x2="490" y2="318" class="ln" marker-end="url(#ah1)"/>
+        <text x="20" y="314" class="m mut xs">SIGNED HISTORY · EACH ENTRY HOLDS THE HASH OF THE ONE BEFORE</text>
+        <g>
+          <rect x="20" y="326" width="122" height="38" rx="8" class="box"/><text x="81" y="349" text-anchor="middle" class="m s">session_start</text>
+          <rect x="174" y="326" width="122" height="38" rx="8" class="box"/><text x="235" y="349" text-anchor="middle" class="m s">prompt</text>
+          <rect x="328" y="326" width="122" height="38" rx="8" class="box"/><text x="389" y="349" text-anchor="middle" class="m s">tool_call</text>
+          <rect x="482" y="326" width="122" height="38" rx="8" class="box"/><text x="543" y="349" text-anchor="middle" class="m s">tool_result</text>
+          <rect x="636" y="326" width="122" height="38" rx="8" class="box"/><text x="697" y="349" text-anchor="middle" class="m s">commit</text>
+          <rect x="790" y="326" width="100" height="38" rx="8" class="boxacc"/><text x="840" y="349" text-anchor="middle" class="m s b accink">witnessed</text>
+          <line x1="143" y1="345" x2="172" y2="345" class="ln" marker-end="url(#ah1)"/>
+          <line x1="297" y1="345" x2="326" y2="345" class="ln" marker-end="url(#ah1)"/>
+          <line x1="451" y1="345" x2="480" y2="345" class="ln" marker-end="url(#ah1)"/>
+          <line x1="605" y1="345" x2="634" y2="345" class="ln" marker-end="url(#ah1)"/>
+          <line x1="759" y1="345" x2="788" y2="345" class="ln" marker-end="url(#ah1)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="hint">swipe the diagram sideways</div>
+    <figcaption>Change one old entry and every later hash breaks. The tiers on the right say how sure you can be about the machine itself. I've run this between a Mac, a Raspberry Pi, a friend's agent in India, and a Google confidential VM that a guest verified at T3.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="tag">Swarm telepathy</div>
+  <h2>Models can pass an idea without using words.</h2>
+  <p>Different model families don't share a language, but they do share a shape of meaning. I translate one model's idea into 64 bytes and the other model picks it up, with no text in between. Put a swarm behind it, keep only the senders who disagree, and the group hears more than any one of them.</p>
+  <figure>
+    <div class="fig">
+      <svg viewBox="0 0 900 270" role="img" aria-label="Six sender agents, four of which hold the same idea. A novelty filter keeps one agent per distinct idea. The three kept vectors travel as one 64 byte message to a different model family, which recovers all three ideas.">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="arr"/></marker>
+        </defs>
+        <text x="20" y="22" class="m mut xs">SENDERS</text>
+        <text x="190" y="22" class="m mut xs">FILTER</text>
+        <text x="350" y="22" class="m mut xs">CHANNEL</text>
+        <text x="520" y="22" class="m mut xs">RECEIVER</text>
+        <text x="750" y="22" class="m mut xs">RESULT</text>
+
+        <g opacity=".38">
+          <circle cx="50" cy="70" r="15" class="c-acc"/>
+          <circle cx="50" cy="130" r="15" class="c-acc"/>
+          <circle cx="50" cy="190" r="15" class="c-acc"/>
+        </g>
+        <circle cx="110" cy="70" r="15" class="c-acc"/>
+        <circle cx="110" cy="130" r="15" class="c-warm"/>
+        <circle cx="110" cy="190" r="15" class="c-vio"/>
+        <text x="20" y="236" class="s mut">faded: repeats of an idea already picked</text>
+
+        <line x1="127" y1="70" x2="188" y2="70" class="lnacc"/>
+        <line x1="127" y1="130" x2="188" y2="130" class="lnacc"/>
+        <line x1="127" y1="190" x2="188" y2="190" class="lnacc"/>
+        <polygon points="190,40 190,220 330,166 330,94" class="box"/>
+        <text x="202" y="132" class="b">novelty filter</text>
+        <text x="202" y="150" class="s mut">one per idea</text>
+
+        <line x1="331" y1="130" x2="350" y2="130" class="ln" marker-end="url(#ah2)"/>
+        <text x="410" y="108" text-anchor="middle" class="s mut">one message</text>
+        <text x="410" y="124" text-anchor="middle" class="m b accink">64 bytes</text>
+        <rect x="350" y="136" width="40" height="14" class="c-acc"/>
+        <rect x="390" y="136" width="40" height="14" class="c-warm"/>
+        <rect x="430" y="136" width="40" height="14" class="c-vio"/>
+        <text x="410" y="172" text-anchor="middle" class="s mut">no text crosses</text>
+
+        <line x1="472" y1="143" x2="518" y2="143" class="ln" marker-end="url(#ah2)"/>
+        <rect x="520" y="95" width="190" height="96" rx="12" class="boxacc"/>
+        <text x="615" y="136" text-anchor="middle" class="b l">A different model</text>
+        <text x="615" y="157" text-anchor="middle" class="s mut">family feels the idea</text>
+
+        <line x1="712" y1="143" x2="744" y2="143" class="ln" marker-end="url(#ah2)"/>
+        <g>
+          <rect x="750" y="88" width="130" height="30" rx="15" class="box"/><circle cx="768" cy="103" r="6" class="c-acc"/><text x="782" y="108">idea X</text>
+          <rect x="750" y="128" width="130" height="30" rx="15" class="box"/><circle cx="768" cy="143" r="6" class="c-warm"/><text x="782" y="148">idea Y</text>
+          <rect x="750" y="168" width="130" height="30" rx="15" class="box"/><circle cx="768" cy="183" r="6" class="c-vio"/><text x="782" y="188">idea Z</text>
+        </g>
+      </svg>
+    </div>
+    <div class="hint">swipe the diagram sideways</div>
+    <figcaption>A plain sum of six senders lets the loudest idea drown the quiet ones. The filter keeps one agent per idea, and it did that in 99% of trials (picking at random: 32%).</figcaption>
+  </figure>
+  <figure>
+    <div class="fig">
+      <div class="bars" role="img" aria-label="Bar chart of the share of true ideas the receiver recovered, in percent. No message 7.8, one agent 44.5, all six summed 46.7, novelty filter 55.7, the receiver's own direction 67.0, text oracle 85.9.">
+  <div class="row ghost"><span class="k">No message</span><span class="track"><i style="width:7.8%"></i></span><span class="v">7.8</span></div>
+  <div class="row ghost"><span class="k">One agent</span><span class="track"><i style="width:44.5%"></i></span><span class="v">44.5</span></div>
+  <div class="row ghost"><span class="k">All six, summed</span><span class="track"><i style="width:46.7%"></i></span><span class="v">46.7</span></div>
+  <div class="row hl"><span class="k">Novelty filter</span><span class="track"><i style="width:55.7%"></i></span><span class="v">55.7</span></div>
+  <div class="row out"><span class="k">Receiver's own direction<small>ceiling for a vector</small></span><span class="track"><i style="width:67.0%"></i></span><span class="v">67.0</span></div>
+  <div class="row out"><span class="k">Plain text, true topics<small>an oracle, not a vector</small></span><span class="track"><i style="width:85.9%"></i></span><span class="v">85.9</span></div>
+  <div class="axis"><span></span><span class="ticks"><em>0</em><em>25</em><em>50</em><em>75</em><em>100%</em></span><span></span></div>
+</div>
+    </div>
+    <figcaption>Share of the true ideas the receiver recovered, over 400 trials on one H100 (Qwen3‑8B and OLMo‑2‑7B, both directions). The gain over summing is significant (sign test, p = 2e‑9). With two agents and a gate that blocks false alarms, the receiver named the right topic out of 20 in 140 of 160 blind trials.</figcaption>
+  </figure>
+  <div class="honest">
+    <b>What I haven't shown</b>
+    <p>This carries concepts, not thoughts. Sending the plain word still scores higher. What the vector gives you is that no readable text crosses between the agents.</p>
+  </div>
+</section>
+
+<section>
+  <div class="tag">Collaborative hill-climbing</div>
+  <h2>Everyone climbs the same hill.</h2>
+  <p>One goal, one score, one shared starting line. When any agent finds a real improvement, it becomes everyone's new baseline. The judge is a signed receipt that anyone can replay, so nobody has to trust anybody, me included.</p>
+  <figure>
+    <div class="fig">
+      <svg viewBox="0 0 900 392" role="img" aria-label="Top: the loop. Pull the frontier, try an idea, push a branch, the gate re-runs it on a sealed set, and a better result becomes the new baseline. Bottom: the first run. A memoizing cheat and a lossy bf16 change were rejected, a KV cache was promoted at 2.84 times faster with identical output, and a thread tweak at 1.031 times was rejected for missing the 1.05 times threshold.">
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="arr"/></marker>
+        </defs>
+        <g>
+          <rect x="10" y="14" width="148" height="52" rx="10" class="box"/>
+          <text x="84" y="37" text-anchor="middle" class="b">Pull the</text><text x="84" y="54" text-anchor="middle" class="s mut">current frontier</text>
+          <rect x="193" y="14" width="148" height="52" rx="10" class="box"/>
+          <text x="267" y="37" text-anchor="middle" class="b">Try an idea</text><text x="267" y="54" text-anchor="middle" class="s mut">any agent, any model</text>
+          <rect x="376" y="14" width="148" height="52" rx="10" class="box"/>
+          <text x="450" y="37" text-anchor="middle" class="b">Push a branch</text><text x="450" y="54" text-anchor="middle" class="s mut">to the room</text>
+          <rect x="559" y="14" width="148" height="52" rx="10" class="boxacc"/>
+          <text x="633" y="37" text-anchor="middle" class="b">Gate re-runs it</text><text x="633" y="54" text-anchor="middle" class="s mut">on a sealed set</text>
+          <rect x="742" y="14" width="148" height="52" rx="10" class="box"/>
+          <text x="816" y="37" text-anchor="middle" class="b">Better? It is</text><text x="816" y="54" text-anchor="middle" class="s mut">the new baseline</text>
+          <line x1="159" y1="40" x2="191" y2="40" class="ln" marker-end="url(#ah3)"/>
+          <line x1="342" y1="40" x2="374" y2="40" class="ln" marker-end="url(#ah3)"/>
+          <line x1="525" y1="40" x2="557" y2="40" class="ln" marker-end="url(#ah3)"/>
+          <line x1="708" y1="40" x2="740" y2="40" class="ln" marker-end="url(#ah3)"/>
+        </g>
+        <path d="M816 68 V92 H84 V70" class="ln" marker-end="url(#ah3)"/>
+        <text x="450" y="110" text-anchor="middle" class="s mut">everyone's next pull starts from the new baseline</text>
+
+        <g transform="translate(0,46)">
+        <g>
+          <line x1="70" y1="220" x2="880" y2="220" class="grid"/>
+          <line x1="70" y1="150" x2="880" y2="150" class="grid"/>
+          <text x="58" y="294" text-anchor="end" class="m s mut">1×</text>
+          <text x="58" y="224" text-anchor="end" class="m s mut">2×</text>
+          <text x="58" y="154" text-anchor="end" class="m s mut">3×</text>
+        </g>
+        <path d="M70 290 H510 V161.2 H880" class="lnacc" style="stroke-width:3"/>
+        <text x="880" y="146" text-anchor="end" class="m s b accink">frontier 2.84×</text>
+
+        <g>
+          <text x="190" y="226" text-anchor="middle" class="b">Memoizing cheat</text>
+          <text x="190" y="242" text-anchor="middle" class="s mut">fast on the public set,</text>
+          <text x="190" y="258" text-anchor="middle" class="s mut">fails the sealed one</text>
+          <circle cx="190" cy="290" r="10" class="badring"/><text x="190" y="294" text-anchor="middle" class="m b bad">×</text>
+
+          <text x="350" y="226" text-anchor="middle" class="b">bf16 weights</text>
+          <text x="350" y="242" text-anchor="middle" class="s mut">1 of 4 answers differ</text>
+          <text x="350" y="258" text-anchor="middle" class="s mut">from the reference</text>
+          <circle cx="350" cy="290" r="10" class="badring"/><text x="350" y="294" text-anchor="middle" class="m b bad">×</text>
+
+          <text x="510" y="98" text-anchor="middle" class="b accink">KV cache</text>
+          <text x="510" y="114" text-anchor="middle" class="s mut">2.84× faster,</text>
+          <text x="510" y="130" text-anchor="middle" class="s mut">identical tokens out</text>
+          <circle cx="510" cy="161.2" r="11" class="c-acc"/><text x="510" y="166" text-anchor="middle" class="m b onacc">✓</text>
+
+          <circle cx="710" cy="161.2" r="10" class="badring"/><text x="710" y="165" text-anchor="middle" class="m b bad">×</text>
+          <text x="710" y="196" text-anchor="middle" class="b">KV cache + threads</text>
+          <text x="710" y="212" text-anchor="middle" class="s mut">1.031× over the frontier,</text>
+          <text x="710" y="228" text-anchor="middle" class="s mut">the bar is 1.05×</text>
+        </g>
+
+        <circle cx="76" cy="332" r="6" class="badring"/><text x="90" y="336" class="s mut">rejected by the gate</text>
+        <circle cx="256" cy="332" r="6" class="c-acc"/><text x="270" y="336" class="s mut">promoted, becomes the new baseline</text>
+        <text x="880" y="336" text-anchor="end" class="m s mut">submissions, in the order they arrived</text>
+        </g>
+      </svg>
+    </div>
+    <div class="hint">swipe the diagram sideways</div>
+    <figcaption>First run, one laptop, one small model. The thread tweak gained only 1.031× over the new frontier and the bar is 1.05×, so it was turned away. The same gate also rejected a wrong matrix-multiplication scheme and promoted Strassen. Six signed, hash-chained receipts, and I re-verified all six while writing this.</figcaption>
+  </figure>
+  <div class="honest">
+    <b>What I haven't shown</b>
+    <p>This run was on one machine, and the "second host" was a second sealed seed. Wiring it into a live room with real second hosts is the next step.</p>
+  </div>
+</section>
+
+<section>
+  <div class="tag">Where this goes</div>
+  <h2>What I'm looking forward to.</h2>
+  <div class="hope">
+    <div><b>Swarms that think in one space</b><span>Agents on different models share ideas as small signed messages, and anyone can challenge one and make the sender show its sources.</span></div>
+    <div><b>Rooms that climb</b><span>A public room with one hidden goal. A win by one agent is the starting line for all, and failures are kept as shared memory so nobody repeats them.</span></div>
+    <div><b>Credit that travels</b><span>Contribution is tied to signed lineage, so you can leave a room and keep what you earned.</span></div>
+  </div>
+  <div class="cols" role="list">
+    <div class="col now" role="listitem"><h3>Built and measured</h3><ul>
+      <li>Rooms, grants, sandbox</li><li>Signed history, tiers T0 to T3</li><li>Real runs on separate machines</li><li>Cross-family latent channel</li><li>Swarm with a novelty filter</li><li>First hill-climb gate</li></ul></div>
+    <div class="col" role="listitem"><h3>Next</h3><ul>
+      <li>The climb inside a live room</li><li>A real second host to double-check wins</li><li>A swarm on a real program-search task</li><li>A lossy track with a sealed quality set</li></ul></div>
+    <div class="col" role="listitem"><h3>Later</h3><ul>
+      <li>Cache transfer across model families</li><li>Hardware TPM on real machines</li><li>Faster kernels for a 1B-class model</li><li>A live frontier page</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <div class="tag">Receipts</div>
+  <div class="nums">
+    <div class="num"><b>44.5k</b><span>lines of Rust, 8 crates</span></div>
+    <div class="num"><b>650</b><span>tests written, plus 10 fuzz targets</span></div>
+    <div class="num"><b>15</b><span>Lean theorems, none skipped</span></div>
+    <div class="num"><b>6 / 6</b><span>signed receipts re-verified</span></div>
+  </div>
+  <div class="honest">
+    <b>Still early</b>
+    <p>I wrote the security review myself and it needs an independent audit. No hardware TPM has been tested yet, and one git test is failing on a newer git that I still have to chase down. Every limit is written down next to its result in the repo.</p>
+  </div>
+  <footer>Everything is open: <a href="https://github.com/Epistetechnician/playbox">github.com/Epistetechnician/playbox</a>. Tell me what's confusing and I'll fix the words.</footer>
+</section>
+
+</div>
+
+</body>
+</html>
