@@ -48,7 +48,7 @@ jobs:
         project: [steer, judge, orchestrator, world]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - working-directory: ${{ matrix.project }}
         # judge/tests/test_measures.py and test_fear.py load real Hugging Face classifiers and a language model; on a 2-core runner it
         # was killed after ~20 minutes. It runs locally (`cd judge && uv run --group dev pytest -q`), not here.
