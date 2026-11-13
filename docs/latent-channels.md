@@ -651,6 +651,27 @@ Consolidation, rerun with a stronger model (`gpt-oss:20b`, 2026-11-12, `steer/re
 
 Not done: consolidation isolation with two accepted authors is unproven (this design avoids depending on it); recall quality and cost at scale; the bank is not deleted when a room ends; a replica host does not share a ledger with its primary.
 
+## 6q. Browsing through the host, behind an allowlist (2026-11-13)
+
+A member can read a web page through a browser the host runs, and only pages the host allows. `crates/playbox-net/src/browse.rs` drives any browser that speaks the Chrome DevTools Protocol (headless Chrome, Kitesurf, a hosted CDP service) over a `ws://` endpoint on a trusted address, through a small WebSocket client (`ws.rs`). The operation is `browse` (a new right in member grants): `{"op":"browse","url":...,"mode":"text"|"html"|"screenshot","wait_ms":...}`. It answers with the text, HTML or an image, the final URL, title and status, what was blocked, and how many requests the page made.
+
+What keeps the browser on the list:
+
+- the URL is checked before anything starts: http or https, no credentials, no empty host labels, and a host and port the allowlist names (`example.com`, `*.example.com`, `host:port`; a pattern without a port allows 80 and 443; `*.com` and `*` are refused);
+- a host name is resolved here and refused if any address is private, loopback, link-local (cloud metadata), carrier-grade NAT, NAT64 or reserved, unless `allow_private` is set;
+- each visit gets its own browser context (no cookies or cache shared across visits or members), disposed when the connection closes;
+- every request the page makes is paused at the browser and checked against the same list: subresources, redirects, frames, workers. Frames in other processes and popups are attached before they run and get the same interception; a target the browser cannot intercept is closed. Interception is switched on before the page is asked to load;
+- page scripts are off unless the operator sets `javascript`; with them on, `WebSocket`, `WebTransport` and WebRTC are removed, because interception does not see them;
+- downloads are denied, a visit has a time limit (30 s), a request limit (300), size limits (256 KiB of text, 2 MiB of image), two visits at once, six per member per minute. The audit log records the URL without its query string.
+
+Use. `playbox up --browse-endpoint http://127.0.0.1:9222 --browse-allow example.com --browse-allow '*.docs.rs' [--browse-js]`, with Chrome started as `chrome --headless=new --remote-debugging-port=9222 --user-data-dir=/tmp/profile`; in an MCP host, `browse_endpoint`, `browse_allow` and `browse_javascript` on `playbox_create`; members call `playbox_browse`. The page's text is registered as untrusted.
+
+Tested. Unit tests cover the allowlist (host, port and subdomain matching, credentials, other schemes, look-alike and encoded hosts), the address classes, and a seeded property test over 200 000 generated URLs (an accepted URL is always http or https, has no credentials, and is on a listed host and port); that test found one bug while it was being written, an empty leading label (`https://%2edocs.rs`) matching `*.docs.rs`, fixed. A scripted CDP server checks the sequence (interception and script switch-off before the page loads, an off-list request failed, an allowed one continued). The host mutation test sends `browse` too.
+
+Against a real browser (Chrome 157, headless, on 2026-11-13): a page on the allowed host that loaded a stylesheet, a preload, a prefetch, an image, two frames (one on a different site, so in another process), a form, and, with scripts on, a beacon, a `fetch`, a `WebSocket` and a popup, all aimed at a forbidden server, plus a 302 and a meta refresh to it. **No request reached the forbidden server, with scripts off or on**; the redirect was refused and the page reported what was blocked. Text, HTML and a screenshot came back. The page's script did not run with scripts off, and `WebSocket` was gone with them on.
+
+Not closed. The forbidden server still saw bare TCP connections (3 with scripts off, 5 with them on) and no bytes: the browser opens speculative connections for `preconnect` hints and navigations before the request is paused. Nothing is sent, but a closed or open port on an internal host can be probed blindly; keep the browser on a network that reaches only what it should. DNS is resolved here and again by the browser, so a name that changes between the two can still land on a private address; the same advice holds. The endpoint is plain `ws://`, so the browser must be local or on a private link. Kitesurf and other CDP servers were not tried; only Chrome was.
+
 ## 7. Not covered
 
 Concepts outside the anchors; arbitrary thoughts (this is a concept channel); multi-turn exchanges; models smaller than

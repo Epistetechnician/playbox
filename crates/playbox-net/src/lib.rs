@@ -3,6 +3,7 @@
 //! Peers speak A2A v1 JSON-RPC over iroh streams; see [`wire`] for the binding.
 
 pub mod audit;
+pub mod browse;
 pub mod capabilities;
 pub mod conversations;
 pub mod chat;
@@ -15,6 +16,7 @@ pub mod shared_memory;
 pub mod steer;
 pub mod transport;
 pub mod wire;
+pub mod ws;
 pub use revoke::{Notice, SYNC_ALPN};
 pub use transport::{Transport, TransportChoice};
 
@@ -422,6 +424,8 @@ pub struct HostConfig {
     pub chat_log: Option<PathBuf>,
     /// The room's shared memory (a Hindsight sidecar, kept by the host). `None`: `remember` and `recall` are refused.
     pub memory: Option<Arc<shared_memory::SharedMemory>>,
+    /// A browser members may read allowed pages through. `None`: `browse` is refused.
+    pub browse: Option<Arc<browse::Browser>>,
     /// Operations offered to members by name (see [`capabilities`]). Needs `runner`; each member's grant lists the names.
     pub capabilities: Vec<capabilities::Capability>,
     /// Where calls are kept across restarts. `None`: `<state dir>/calls.json` for a host opened with a state directory.
@@ -452,6 +456,7 @@ impl Default for HostConfig {
             latent: latent::LatentPolicy::default(),
             chat_log: None,
             memory: None,
+            browse: None,
             capabilities: Vec::new(),
             calls_store: None,
             conversations_store: None,
@@ -997,6 +1002,23 @@ impl RoomHandler {
                 self.audit_op(from, "latent_reveal", &r, t0, json!({ "seq": seq }));
                 finish(r)
             }
+            Some(Op::Browse { url, mode, wait_ms }) => {
+                let t0 = std::time::Instant::now();
+                let r = self.browse(from, &url, mode, wait_ms).await;
+                self.audit.record(
+                    "browse",
+                    Some(&from.to_string()),
+                    json!({
+                        "url": browse::clip_url(&url),
+                        "mode": mode,
+                        "ok": r.is_ok(),
+                        "ms": t0.elapsed().as_millis() as u64,
+                        "reason": r.as_ref().err().map(|e| audit::clip(&format!("{e:#}"))),
+                        "blocked": r.as_ref().ok().and_then(|t| wire::meta(t, "blocked")).and_then(Value::as_array).map(Vec::len),
+                    }),
+                );
+                finish(r)
+            }
             Some(Op::Pull { refname }) => {
                 let t0 = std::time::Instant::now();
                 let r = self.pull(&refname).await;
@@ -1081,6 +1103,39 @@ impl RoomHandler {
             .repo
             .clone()
             .ok_or_else(|| refuse("this room has no git repository"))
+    }
+
+    async fn browse(&self, from: EndpointId, url: &str, mode: browse::Mode, wait_ms: Option<u64>) -> Result<Task> {
+        let b = self.cfg.browse.clone().ok_or_else(|| refuse("this room has no browser"))?;
+        let r = b.browse(&from.to_string(), url, mode, wait_ms).await.map_err(|e| match e {
+            browse::BrowseError::Refused(m) => refuse(m),
+            browse::BrowseError::Failed(e) => e,
+        })?;
+        let mut artifacts = Vec::new();
+        if let Some(t) = &r.text {
+            artifacts.push(wire::text_artifact("text", t.clone()));
+        }
+        if let Some(h) = &r.html {
+            artifacts.push(wire::text_artifact("html", h.clone()));
+        }
+        if let Some(png) = &r.screenshot {
+            let (name, media) = if png.starts_with(b"\x89PNG") { ("screenshot.png", "image/png") } else { ("screenshot.jpg", "image/jpeg") };
+            artifacts.push(wire::raw_artifact("screenshot", name, media, png.clone()));
+        }
+        Ok(wire::task(
+            TaskState::Completed,
+            None,
+            artifacts,
+            vec![
+                ("url", json!(r.url)),
+                ("title", json!(r.title)),
+                ("status", json!(r.status)),
+                ("blocked", json!(r.blocked)),
+                ("requests", json!(r.requests)),
+                ("timed_out", json!(r.timed_out)),
+                ("truncated", json!(r.truncated)),
+            ],
+        ))
     }
 
     async fn pull(&self, refname: &str) -> Result<Task> {
@@ -2568,6 +2623,28 @@ impl Client {
         let r: ListTasksResponse =
             serde_json::from_value(self.call(a2a::methods::LIST_TASKS, json!({})).await?)?;
         Ok(r.tasks)
+    }
+
+    /// Read a page through the room host's browser. The host allows only the hosts its operator listed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the room has no browser, the URL is not allowed, or the visit fails.
+    pub async fn browse(&self, url: &str, mode: browse::Mode, wait_ms: Option<u64>) -> Result<browse::Browsed> {
+        let t = self.send_task("browse", &Op::Browse { url: url.to_string(), mode, wait_ms }, vec![]).await?;
+        let m = |k: &str| wire::meta(&t, k).cloned().unwrap_or(Value::Null);
+        Ok(browse::Browsed {
+            url: m("url").as_str().unwrap_or_default().to_string(),
+            title: m("title").as_str().unwrap_or_default().to_string(),
+            status: m("status").as_u64().and_then(|s| u16::try_from(s).ok()),
+            text: wire::artifact_text(&t, "text"),
+            html: wire::artifact_text(&t, "html"),
+            screenshot: wire::artifact_bytes(&t, "screenshot"),
+            blocked: m("blocked").as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+            requests: m("requests").as_u64().unwrap_or(0) as usize,
+            timed_out: m("timed_out").as_bool().unwrap_or(false),
+            truncated: m("truncated").as_bool().unwrap_or(false),
+        })
     }
 
     /// Fetch `refname` from the room; returns its commit id and a git bundle.

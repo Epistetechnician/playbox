@@ -98,6 +98,19 @@ pub struct UpArgs {
     /// The room's bank on the memory server (letters, digits, - and _). Default: the state directory's name, else "room".
     #[arg(long = "memory-bank", value_name = "NAME")]
     pub memory_bank: Option<String>,
+    /// Let members read web pages through a browser on this machine's network: its DevTools endpoint, as ws://host:port/devtools/browser/ID
+    /// or http://host:port (docs/latent-channels.md 6q). Needs at least one --browse-allow.
+    #[arg(long = "browse-endpoint", value_name = "URL")]
+    pub browse_endpoint: Option<String>,
+    /// A host the browser may reach: example.com, *.example.com, or host:port; repeatable. Requests to any other host are blocked.
+    #[arg(long = "browse-allow", value_name = "HOST")]
+    pub browse_allow: Vec<String>,
+    /// Run the pages' scripts (default: off).
+    #[arg(long = "browse-js")]
+    pub browse_js: bool,
+    /// Let the browser reach private and loopback addresses (default: refused).
+    #[arg(long = "browse-allow-private")]
+    pub browse_allow_private: bool,
     /// Hold members' entries as pending until the host accepts them; nothing pending is indexed or recalled.
     #[arg(long = "memory-review")]
     pub memory_review: bool,

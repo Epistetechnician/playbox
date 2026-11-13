@@ -263,6 +263,9 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         repo: Some(repo.clone()),
         idle_timeout: Duration::from_secs(3),
         // An in-process index with a ledger in the state directory, so the memory operations are mutated too.
+        browse: Some(std::sync::Arc::new(
+            playbox_net::browse::Browser::new(playbox_net::browse::BrowseConfig::new("ws://127.0.0.1:9/", vec!["example.com".into()])).unwrap(),
+        )),
         memory: Some(std::sync::Arc::new(
             playbox_net::shared_memory::SharedMemory::new({
                 let mut c = playbox_net::shared_memory::MemoryConfig::new(std::sync::Arc::new(playbox_net::shared_memory::InMemory::default()), "fuzz");
@@ -389,6 +392,11 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         seeds.push(frame(
             "SendMessage",
             Some(message(Op::Remember { text: "the staging VPN is needed".into(), key: Some("k".into()) }, vec![])),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(Op::Browse { url: "https://example.com/page".into(), mode: playbox_net::browse::Mode::Text, wait_ms: Some(10) }, vec![])),
             g,
         ));
         seeds.push(frame(

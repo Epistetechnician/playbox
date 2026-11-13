@@ -152,7 +152,7 @@ impl Hindsight {
     }
 }
 
-fn parse_response(buf: &[u8]) -> Result<(u16, Vec<u8>)> {
+pub(crate) fn parse_response(buf: &[u8]) -> Result<(u16, Vec<u8>)> {
     let split = buf.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| anyhow!("malformed answer from the memory server"))?;
     let head = std::str::from_utf8(&buf[..split]).context("answer header")?;
     let mut lines = head.split("\r\n");

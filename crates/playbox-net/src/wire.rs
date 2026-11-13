@@ -145,6 +145,16 @@ pub enum Op {
         #[serde(default)]
         since: u64,
     },
+    /// Read a web page through the host's browser, limited to the hosts the host allows. Answers with a task whose
+    /// artifact is the page's text, its HTML, or a screenshot.
+    Browse {
+        url: String,
+        #[serde(default)]
+        mode: crate::browse::Mode,
+        /// Wait this long (up to 5000 ms) after the page loads, for scripts to settle. Only matters when the host runs scripts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wait_ms: Option<u64>,
+    },
     /// Add an entry to the room's shared memory. Posting the same text (or the same `key`) again replaces the entry.
     Remember {
         text: String,
@@ -174,6 +184,7 @@ impl Op {
             Op::Steer { probe: false, .. } => "steer",
             Op::Steer { probe: true, .. } => "steer_probe",
             Op::Handoff { .. } => "handoff",
+            Op::Browse { .. } => "browse",
             // Talking in the room needs only membership, like echo.
             Op::Say { .. } | Op::ConvNew { .. } | Op::ConvInvite { .. } | Op::ConvPost { .. } | Op::ConvRead { .. } | Op::ConvList | Op::CapList | Op::Cap { .. } | Op::CapPoll { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
         }

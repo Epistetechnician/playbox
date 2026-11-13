@@ -108,6 +108,15 @@ pub async fn up(a: UpArgs) -> Result<()> {
                 playbox_core::steer::Ceiling::LocalInternalExploratory,
             )?)),
         },
+        browse: match &a.browse_endpoint {
+            None => None,
+            Some(endpoint) => {
+                let mut c = playbox_net::browse::BrowseConfig::new(endpoint, a.browse_allow.clone());
+                c.javascript = a.browse_js;
+                c.allow_private = a.browse_allow_private;
+                Some(std::sync::Arc::new(playbox_net::browse::Browser::new(c)?))
+            }
+        },
         memory: match &a.memory_url {
             None => None,
             Some(url) => {

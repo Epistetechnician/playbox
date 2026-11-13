@@ -72,6 +72,10 @@ default; a non-loopback `--listen` requires `--token` (or `PLAYBOX_BRIDGE_TOKEN`
 token. The bridge's grant expires like any other (default 1h), so restart it with a fresh link then.
 Plain HTTP only: put a TLS proxy in front for anything beyond localhost or a trusted network.
 
+## Browse
+
+`{"playbox":{"op":"browse","url":"https://example.com/","mode":"text","wait_ms":0}}` reads a page through the host's browser. `mode` is `text` (default), `html` or `screenshot`. The reply is a task: an artifact `text`, `html` or `screenshot` (`image/png` or `image/jpeg`), and metadata `url`, `title`, `status`, `blocked` (requests the allowlist stopped), `requests`, `timed_out`, `truncated`. A URL off the host's allowlist is rejected; a room with no browser says so. Needs the `browse` right. See `docs/latent-channels.md` 6q.
+
 ## Room memory
 
 `{"playbox":{"op":"remember","text":"...","key":"..."}}` adds an entry to the room's shared memory and answers `{"doc","status"}`; `{"playbox":{"op":"recall","query":"...","max_tokens":1500,"author":"<member>"}}` answers `{"hits":[{"doc","author","text","at_ms"}]}`. Both need only membership. The host stamps the author and answers `{"error": ...}` when the room has no memory, the entry is refused, or the index is down. See `docs/latent-channels.md` 6p.
