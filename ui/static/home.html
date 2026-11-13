@@ -424,7 +424,20 @@ async function boot() {
 const wordmark = (tag) => `<div class="wordmark">${dm("PLAYBOX", true)}</div><div class="lbl tag" style="text-align:center">${tag}</div>`;
 function paintOffline() { $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("No signal")}<p class="mut" style="text-align:center">The hub can't be reached. Is it running on your machine, and are you on the same network (or tailnet)?</p><button class="btn primary block" onclick="location.reload()">Try again</button></div></div>`; }
 
+/* A passkey prompt is a system sheet the page can't see: say so while it is up, and put the button back if it fails. */
+async function withPrompt(btn, errEl, text, fn) {
+  const was = btn.textContent, hint = document.createElement("p");
+  hint.className = "mut"; hint.style.cssText = "font-size:12.5px;margin:12px 0 0"; hint.textContent = "Your browser should be asking you to confirm with your fingerprint, face or PIN.";
+  btn.disabled = true; btn.textContent = text; errEl.textContent = ""; btn.after(hint);
+  const slow = setTimeout(() => { hint.textContent = "Still waiting. If you can't see a prompt, look for another window or a security-key request, or cancel and try again."; }, 8000);
+  try { await fn(); } catch (e) { errEl.textContent = e.message; btn.disabled = false; btn.textContent = was; } finally { clearTimeout(slow); hint.remove(); }
+}
+/* Passkeys are bound to a hostname, and a browser refuses them on an IP address. The hub prints 127.0.0.1, so people open it. */
+const onLoopbackIp = () => ["127.0.0.1", "[::1]"].includes(location.hostname);
+const localhostUrl = path => `${location.protocol}//localhost${location.port ? ":" + location.port : ""}${path}`;
+
 function paintLock(st) {
+  if (onLoopbackIp()) { $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("Open it by name")}<div class="card"><h2>Use localhost, not 127.0.0.1</h2><p class="mut" style="margin:0">Your browser only allows passkeys on a name, not an IP address. It's the same hub.</p><p style="margin:14px 0 0"><a class="btn primary block" style="text-decoration:none;text-align:center" href="${esc(localhostUrl("/"))}">Open ${esc(localhostUrl("/").replace(/^https?:\/\//, "").replace(/\/$/, ""))}</a></p></div></div></div>`; return; }
   const strong = PB.canPasskey();
   $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("Private room hub")}
     ${strong ? `<button class="btn primary block" id="unlock">Unlock with passkey</button>` :
@@ -432,13 +445,14 @@ function paintLock(st) {
       ${st.weak_ok ? `<label for="code">Pairing code</label><input id="code" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn block" id="weak" style="margin-top:14px">Continue on this network</button>` : ""}</div>`}
     <p class="err" id="err"></p>
     <p class="mut" style="font-size:12.5px;text-align:center">New device? Run <span class="mono">playbox_hub.py --pair</span> on the hub machine, or use Devices inside the app on a device you've already paired.</p></div></div>`;
-  const go = async () => { $("#err").textContent = ""; try { await PB.login(); location.href = "/"; } catch (e) { $("#err").textContent = e.message; } };
+  const go = () => withPrompt($("#unlock"), $("#err"), "Waiting for your passkey…", async () => { await PB.login(); location.href = "/"; });
   $("#unlock")?.addEventListener("click", go);
   $("#weak")?.addEventListener("click", async () => { try { await PB.weak($("#code").value.trim(), deviceGuess()); location.href = "/"; } catch (e) { $("#err").textContent = e.message; } });
   if (strong && !matchMedia("(prefers-reduced-motion:reduce)").matches) setTimeout(go, 250);
 }
 
 function paintPair(st, code) {
+  if (onLoopbackIp()) { $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("Pair this device")}<div class="card"><h2>Use localhost, not 127.0.0.1</h2><p class="mut" style="margin:0">Your browser only allows passkeys on a name, not an IP address. It's the same hub, and your pairing code comes with you.</p><p style="margin:14px 0 0"><a class="btn primary block" style="text-decoration:none;text-align:center" href="${esc(localhostUrl("/pair") + (code ? "#" + encodeURIComponent(code) : ""))}">Continue on localhost</a></p></div></div></div>`; return; }
   const strong = PB.canPasskey();
   $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("Pair this device")}
     ${!code && !st.enrolled ? `<p class="mut" style="text-align:center">This hub has no devices yet. Start it in a terminal and open the pairing link it prints.</p>` : `
@@ -451,7 +465,7 @@ function paintPair(st, code) {
         `<p class="mut">Passkeys need HTTPS and this address is plain HTTP. Open the hub's HTTPS address instead (start it with <span class="mono">--tailscale</span>).</p>`}
     </div>`}<p class="err" id="err"></p></div></div>`;
   const val = () => (code || $("#code")?.value || "").trim();
-  $("#go")?.addEventListener("click", async () => { $("#err").textContent = ""; try { await PB.register(val(), $("#dn").value.trim()); location.href = "/"; } catch (e) { $("#err").textContent = e.message; } });
+  $("#go")?.addEventListener("click", () => withPrompt($("#go"), $("#err"), "Waiting for your passkey…", async () => { await PB.register(val(), $("#dn").value.trim()); location.href = "/"; }));
   $("#weak")?.addEventListener("click", async () => { try { await PB.weak(val(), $("#dn").value.trim()); location.href = "/"; } catch (e) { $("#err").textContent = e.message; } });
 }
 
@@ -727,7 +741,7 @@ function paintSetup() {
   const agentBody = S.agents === null ? `<span class="mut">Looking for coding agents…</span>`
     : !ags.length ? `<span class="mut">No coding agent found here. Install Claude Code, Codex, OpenCode or Hermes, then reload.</span>`
     : `<div class="row" style="gap:8px">${ags.map(a => a.connected ? `<span class="chip ok">${esc(a.name)} connected</span>` : `<button class="btn sm" data-act="agent" data-id="${a.id}">Connect ${esc(a.name)}</button>`).join("")}</div>`;
-  const roomBody = S.rooms.length ? "" : `<button class="btn sm primary" data-act="add">+ Add room</button> <span class="mut">paste an invite or host one</span>`;
+  const roomBody = S.rooms.length ? "" : `<span class="mut">Use <b>Add room</b> below: host one, or paste an invite.</span>`;
   const agentAsk = kctx && hasAgent && !S.out.some(r => r.agent) ? `Ask your agent: <i>what is my Playbox guest_id?</i> Paste its answer here and ${esc(kctx.f)} gets a separate request for your agent, with its own code.
       <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="agid" class="mono" placeholder="64 hex characters" spellcheck="false" autocomplete="off"><button class="btn sm" data-act="kagent">Ask</button></div>` : "";
   const handBody = agentAsk || (held && hasAgent ? `Tell your agent:<div class="card mono" style="margin:8px 0;user-select:all;word-break:break-all;max-height:6em;overflow:auto">${esc(`Join this Playbox room with playbox_join, using this link: ${held.link}`)}</div>
@@ -892,34 +906,61 @@ addEventListener("keydown", e => {
 const sheet = () => $("#sheet");
 function openAdd(pre) {
   const machines = [...new Set(S.rooms.map(r => r.machine).filter(Boolean))];
+  const hostFirst = !(pre && pre.link) && S.rooms.length === 0;      // nothing here yet: the common first move is to host
   sheet().innerHTML = `<form method="dialog" id="addform"><h2>Add a room</h2>
     <div class="radio" role="radiogroup" aria-label="How" style="margin-top:14px">
-      <label><input type="radio" name="how" value="join" checked>Join<small>with an invite link</small></label>
-      <label><input type="radio" name="how" value="host">Host<small>start a new room</small></label></div>
+      <label><input type="radio" name="how" value="join" ${hostFirst ? "" : "checked"}>Join<small>with an invite link</small></label>
+      <label><input type="radio" name="how" value="host" ${hostFirst ? "checked" : ""}>Host<small>start a new room</small></label></div>
     <div id="linkrow"><label for="alink">Invite link</label><textarea id="alink" class="mono" placeholder="playbox://…" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div>
     <label for="alabel">Name</label><input id="alabel" maxlength="60" placeholder="e.g. Lab agents, Acme review" autocomplete="off">
-    <label for="amachine">Where does your side run?</label><input id="amachine" list="machines" maxlength="40" placeholder="this hub, studio-mac, cloud VM…" autocomplete="off"><datalist id="machines">${machines.map(m => `<option value="${esc(m)}">`).join("")}</datalist>
+    <div id="hostrow" hidden>
+      <label>Who can reach it?</label>
+      <div class="radio"><label><input type="radio" name="reach" value="iroh" checked>Anywhere<small>friends on other networks</small></label><label><input type="radio" name="reach" value="local">Same network<small>this machine or Wi-Fi only</small></label></div>
+      <label for="arepo">Git repository <span class="mut">(optional)</span></label><input id="arepo" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p class="mut" style="font-size:12px;margin:6px 0 0">Leave it empty for a room to talk and share notes in. Add one so members can pull and push code.</p>
+    </div>
+    <label for="amachine">This machine <span class="mut">(optional)</span></label><input id="amachine" list="machines" maxlength="40" placeholder="e.g. this laptop, studio-mac, cloud VM" autocomplete="off"><datalist id="machines">${machines.map(m => `<option value="${esc(m)}">`).join("")}</datalist>
     <label>Who is in it?</label>
     <div class="radio"><label><input type="radio" name="kind" value="mine">My agents<small>only things I run</small></label><label><input type="radio" name="kind" value="shared" checked>Shared<small>other people too</small></label></div>
     <details style="margin-top:14px"><summary class="lbl" style="cursor:pointer">Use an existing Playbox home instead</summary><label for="ahome">Path</label><input id="ahome" class="mono" placeholder="/Users/you/.playbox" autocomplete="off" spellcheck="false"><p class="mut" style="font-size:12px;margin:6px 0 0">Adopt a room another tool already uses. Don't point at a home a live agent is using.</p></details>
     <p class="err" id="aerr"></p>
-    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" id="asave" value="x">Add room</button></div></form>`;
-  const sync = () => { $("#linkrow").hidden = document.querySelector("[name=how]:checked").value !== "join"; };
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" id="asave" value="x">${hostFirst ? "Host room" : "Join room"}</button></div></form>`;
+  const how = () => document.querySelector("[name=how]:checked").value;
+  const sync = () => { const h = how() === "host" && !$("#ahome").value.trim(); $("#linkrow").hidden = how() !== "join"; $("#hostrow").hidden = !h; $("#asave").textContent = how() === "host" ? "Host room" : "Join room"; };
   sheet().querySelectorAll("[name=how]").forEach(i => i.addEventListener("change", sync));
+  $("#ahome").addEventListener("input", sync);
+  sync();
   $("#addform").addEventListener("submit", async e => {
     if (e.submitter?.value === "cancel") return;
     e.preventDefault();
-    const how = document.querySelector("[name=how]:checked").value, btn = $("#asave");
+    const mode = how(), btn = $("#asave"), idle = mode === "host" ? "Host room" : "Join room";
     const body = {label: $("#alabel").value.trim(), machine: $("#amachine").value.trim(), kind: document.querySelector("[name=kind]:checked").value, home: $("#ahome").value.trim() || undefined};
-    if (how === "join" && !body.home) { body.link = $("#alink").value.trim(); if (!body.link) { $("#aerr").textContent = "Paste the invite link."; return; } }
-    if (!body.label) body.label = how === "host" ? "New room" : "Joined room";
-    btn.disabled = true; btn.textContent = how === "join" ? "Joining…" : "Adding…"; $("#aerr").textContent = "";
+    if (mode === "join" && !body.home) { body.link = $("#alink").value.trim(); if (!body.link) { $("#aerr").textContent = "Paste the invite link."; return; } }
+    if (!body.label) body.label = mode === "host" ? "New room" : "Joined room";
+    btn.disabled = true; btn.textContent = mode === "join" ? "Joining…" : "Hosting…"; $("#aerr").textContent = "";
+    let r;
     try {
-      const r = await api("POST", "/api/rooms", body);
-      if (how === "join" && body.link) { try { sessionStorage.setItem("pb.agentlink", JSON.stringify({link: body.link, label: body.label, room: r.id})); } catch {} }
-      sheet().close(); toast(how === "join" ? "Joined" : "Room added");
-      if (how === "host" && !body.home) location.href = `/r/${r.id}/`; else { await refreshRooms(); }
-    } catch (err) { $("#aerr").textContent = err.message; btn.disabled = false; btn.textContent = "Add room"; }
+      r = await api("POST", "/api/rooms", body);
+      if (mode === "join" && body.link) { try { sessionStorage.setItem("pb.agentlink", JSON.stringify({link: body.link, label: body.label, room: r.id})); } catch {} }
+      if (mode === "host" && !body.home) {
+        // One step: the room is added and hosted here, so what you typed is all there is to do.
+        const args = {}, repo = $("#arepo").value.trim();
+        if (repo) args.repo = repo;
+        if (document.querySelector("[name=reach]:checked").value === "local") args.local = true;
+        let res;
+        try { res = await PB.guarded(`/r/${r.id}/api/tool`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: "playbox_create", args})}); }
+        catch { throw Object.assign(new Error("Couldn't reach the hub. Check your connection and try again."), {added: r.id}); }
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || j.error) throw Object.assign(new Error((typeof j.data === "string" && j.data) || j.error || "The room was added but couldn't be hosted."), {added: r.id});
+      }
+      sheet().close();
+      if (mode === "host" && !body.home) { toast(`"${body.label}" is hosted`); location.href = body.kind === "shared" ? `/?invite=${r.id}` : `/r/${r.id}/`; }
+      else { toast(mode === "join" ? "Joined" : "Room added"); await refreshRooms(); }
+    } catch (err) {
+      $("#aerr").textContent = err.message + (err.added ? " The room was added; open it to try again." : "");
+      btn.disabled = false; btn.textContent = idle;
+      if (err.added) { await refreshRooms(); btn.textContent = "Open room"; btn.onclick = ev => { ev.preventDefault(); location.href = `/r/${err.added}/`; }; }
+    }
   });
   if (pre && pre.link) { $("#alink").value = pre.link; $("#alabel").value = pre.label || ""; $("#addform").insertAdjacentHTML("afterbegin", `<p class="offline" style="margin:14px 0 0">Joining from an invite link. Only continue if you know who sent it.</p>`); }
   sheet().showModal(); (pre && pre.link ? $("#asave") : $("#alabel")).focus(); if (pre && pre.link) $("#alink").scrollTop = 0;

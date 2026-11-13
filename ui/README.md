@@ -13,7 +13,7 @@ python3 ui/playbox_hub.py --pair           # mint a link to add another device
 
 **Screens.** *Rooms* as a constellation (inner ring your agents, outer ring shared rooms; node colour = active, quiet, witness hold,
 history failed; ripples on new messages) or a list. *Attention* is one inbox across all rooms: witness holds, failed history checks,
-unreachable rooms, unread. *Add* joins by invite link, hosts a new room, or adopts an existing Playbox home. *Hub* manages devices,
+unreachable rooms, unread. *Add* joins by invite link, hosts a new room, or adopts an existing Playbox home. Hosting is one step: name, who can reach it (anywhere or this network), and an optional git repository (leave it empty for a room to talk and share notes in); a shared room then opens its invite sheet. The hub remembers what it hosts, with or without a repository, and hosts it again after a restart. Open the hub as `localhost`, not `127.0.0.1`: browsers refuse passkeys on an IP address, and the pairing page says so and links across. *Hub* manages devices,
 sessions, push and install. Every room gets a deterministic sigil from its id and a verified-chain shield.
 
 **Auth.** Whoever can read the hub's terminal can mint a one-time pairing code (10 min, stored hashed). A code enrolls a **passkey**

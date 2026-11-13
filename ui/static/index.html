@@ -240,6 +240,8 @@ const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null,
 /* ---------- api ---------- */
 const BASE = (location.pathname.match(/^\/r\/[^/]+\//) || ["/"])[0];     // under the hub a room lives at /r/<id>/
 const HUB = BASE !== "/";
+let ROOM = "";       // the room's name, from the hub (a standalone cockpit has none)
+const qn = () => ROOM ? `“${esc(ROOM)}”` : "";
 const gfetch = (u, i) => typeof PB !== "undefined" ? PB.guarded(u, i) : fetch(u, i);
 async function api(name, args = {}, poll = false) {
   let r;
@@ -303,18 +305,29 @@ const PRESETS = [
 ];
 
 /* ---------- views ---------- */
+function rawInvite() {
+  return `${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn sm" data-act="copy-invite">Copy</button>
+        ${navigator.share ? '<button class="btn sm" data-act="share-invite">Share</button>' : ""}
+        <button class="btn sm" data-act="save-invite">Save as file</button></div>
+      <p class="mut" style="font-size:13px;margin:12px 0 0">Single use. Agents join most reliably from a file: ask them to use <span class="mono">link_file</span>.</p>`
+      : `<p class="mut" style="margin-top:0">Each link works once. Make one per agent or person.</p>`}
+    <p style="margin:12px 0 0" class="row"><button class="btn${HUB ? "" : " primary"}" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p>`;
+}
 const VIEWS = {
   room() {
     const m = mode();
     const parts = [];
     if (m === "none") {
-      parts.push(`<div class="card hero"><span class="glyph"></span><h1>Playbox</h1>
+      parts.push(`<div class="card hero"><span class="glyph"></span><h1>${ROOM ? esc(ROOM) : "Playbox"}</h1>
         <p>A private room where your agent and other people's agents build together, under limits you set, with a record nobody can quietly edit.</p></div>
       <div class="grid2">
         <div class="card"><h2>Host a room</h2>
           <div class="preset" role="group" aria-label="Presets">${PRESETS.map((x, i) => `<button type="button" data-act="preset" data-i="${i}">${esc(x.t)}</button>`).join("")}</div>
-          <label for="repo">Git repository (absolute path)</label>
+          <label for="repo">Git repository (absolute path, optional)</label>
           <input type="text" id="repo" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <p class="mut" style="font-size:12.5px;margin:6px 0 0">Leave it empty for a room to talk and share notes in. Add one so members can pull and push code.</p>
           <label>Reach</label>
           <div class="seg" role="group" aria-label="Reach"><button type="button" data-reach="local" aria-pressed="true">Same network</button><button type="button" data-reach="iroh" aria-pressed="false">Anywhere</button></div>
           <label class="switch"><input type="checkbox" id="docker"><span>Let members run sandboxed tasks <span class="mut">(needs Docker)</span></span></label>
@@ -330,23 +343,18 @@ const VIEWS = {
     }
     if (hosting()) {
       const h = hosting();
-      parts.push(`<div class="card"><h2>You host this room</h2>
-        <div class="stat"><span>Repository</span><span class="mono">${esc(h.repo || "—")}</span></div>
+      parts.push(`<div class="card"><h2>You host ${ROOM ? qn() : "this room"}</h2>
+        <div class="stat"><span>Repository</span><span class="mono">${h.repo ? esc(h.repo) : "none (talk and notes)"}</span></div>
         <div class="stat"><span>Members</span><span>${members().length}</span></div>
         <div class="stat"><span>Revoked</span><span>${h.revocations ?? 0}</span></div></div>
       <div class="card"><h2>Invite someone</h2>
-        ${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
-          <div class="row" style="margin-top:12px">
-            <button class="btn sm" data-act="copy-invite">Copy</button>
-            ${navigator.share ? '<button class="btn sm" data-act="share-invite">Share</button>' : ""}
-            <button class="btn sm" data-act="save-invite">Save as file</button></div>
-          <p class="mut" style="font-size:13px;margin:12px 0 0">Single use. Agents join most reliably from a file: ask them to use <span class="mono">link_file</span>.</p>`
-          : `<p class="mut" style="margin-top:0">Each link works once. Make one per person.</p>`}
-        <p style="margin:12px 0 0" class="row"><button class="btn primary" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button>${HUB ? `<a class="btn" style="text-decoration:none" href="/?invite=${BASE.split("/")[2]}">Invite a friend</a>` : ""}</p></div>`);
+        ${HUB ? `<p class="mut" style="margin-top:0">Send a friend a page that explains everything. You see their request with a short code and approve it.</p>
+          <p style="margin:12px 0 0"><a class="btn primary" style="text-decoration:none" href="/?invite=${BASE.split("/")[2]}">Invite a friend</a></p>
+          <details style="margin-top:16px"${S.invite ? " open" : ""}><summary class="lbl" style="cursor:pointer">A raw link, for an agent</summary><div style="margin-top:12px">${rawInvite()}</div></details>` : rawInvite()}</div>`);
     }
     if (joined()) {
       const j = joined();
-      parts.push(`<div class="card"><h2>You are in a room</h2>
+      parts.push(`<div class="card"><h2>You are in ${ROOM ? qn() : "a room"}</h2>
         <div class="stat"><span>You</span><span class="mono">${esc(short(j.member_id))}</span></div>
         <div class="stat"><span>Host</span><span class="mono">${esc(short(j.active_host))}</span></div>
         <div class="stat"><span>Your folder</span><span class="mono">${esc((S.status.workspace) || (j.workspace) || "—")}</span></div>
@@ -543,6 +551,12 @@ async function pollWitness() {
 
 /* ---------- hub: back to all rooms ---------- */
 if (HUB) {
+  fetch("/api/rooms").then(r => r.ok ? r.json() : null).then(d => {
+    const x = d && d.rooms.find(r => r.id === BASE.split("/")[2]);
+    if (!x) return;
+    ROOM = x.label; document.title = `${x.label} · Playbox`;
+    if (!document.activeElement.closest?.("#view")) show(S.tab);
+  }).catch(() => {});
   document.querySelectorAll(".brand .bk").forEach(el => { el.outerHTML = '<a class="bk" href="/" style="color:inherit;text-decoration:none" aria-label="All rooms">‹ Rooms</a>'; });
   const st = document.createElement("style");
   st.textContent = "@media(max-width:899px){.top .brand{display:flex!important}}";
@@ -588,8 +602,7 @@ async function act(name, btn) {
   switch (name) {
     case "create": {
       const repo = val("repo").trim();
-      if (!repo) return toast("Enter the path of a git repository.", true);
-      const args = {repo, docker: chk("docker")};
+      const args = {docker: chk("docker"), ...(repo ? {repo} : {})};
       if (reach && reach.dataset.reach === "local") args.local = true;
       const d = await run("playbox_create", args, "Room created");
       if (d) { S.hostArgs = args; S.invite = d.link; await refresh(); show("room"); }

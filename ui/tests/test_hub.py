@@ -361,6 +361,19 @@ def test_http():
         st, j3, _ = a.req("POST", "/api/rooms", {"label": "Empty"})
         check("a room that is not hosted here cannot mint invites", a.req("POST", f"/api/rooms/{j3['id']}/invite", {"ttl": 3600, "grant": 86400, "uses": 1})[0] == 400)
         a.req("DELETE", f"/api/rooms/{j3['id']}")
+        # A room with no repository (talk and notes only) hosts, mints invites, and is remembered like any other.
+        st, j4, _ = a.req("POST", "/api/rooms", {"label": "Chat only"})
+        rid2 = j4["id"]
+        st, j, _ = a.req("POST", f"/r/{rid2}/api/tool", {"name": "playbox_create", "args": {"local": True}})
+        check("a room can be hosted with no repository", st == 200 and not j.get("error"), str(j))
+        st, j, _ = a.req("POST", f"/api/rooms/{rid2}/invite", {"ttl": 3600, "grant": 86400, "uses": 1, "approve": False})
+        check("a room with no repository mints invites", st == 200 and j.get("link", "").startswith("playbox://"), str(j))
+        st, j, _ = a.req("POST", f"/api/rooms/{rid2}/invite", {"ttl": 3600, "grant": 86400, "uses": 1})
+        check("and approval invites", st == 200 and j.get("approve") is True, str(j))
+        saved = json.load(open(os.path.join(home, "hub.json")))
+        rec2 = next(x for x in saved["rooms"] if x["id"] == rid2)
+        check("the hub remembers it hosts the room (so a restart hosts it again)", rec2.get("host") == {"local": True}, str(rec2.get("host")))
+        a.req("DELETE", f"/api/rooms/{rid2}")
 
         check("room removal works (step-up satisfied locally)", a.req("DELETE", f"/api/rooms/{rid}")[0] == 200 and not any(x["id"] == rid for x in a.req("GET", "/api/rooms")[1]["rooms"]))
         a.req("POST", "/api/auth/logout", {})
@@ -706,6 +719,18 @@ def test_rehost():
         time.sleep(1)
         _, st = r.ensure().call("playbox_status", {})
         check("rehost: a respawned sidecar hosts the room again", isinstance(st, dict) and (st.get("hosting") or {}).get("repo") == repo, str(r.err))
+        r.close()
+        r2 = Room({"id": "t2", "label": "chat", "created": 0, "kind": "mine", "home": os.path.join(d, "home2")}, mcp, d)
+        try:
+            r2.ensure().call("playbox_create", {"local": True})
+            r2.tick()
+            check("rehost: a room with no repository is remembered too", r2.rec.get("host") == {}, str(r2.rec.get("host")))
+            r2.sidecar.proc.kill()
+            time.sleep(1)
+            _, st2 = r2.ensure().call("playbox_status", {})
+            check("rehost: and hosted again after a respawn", isinstance(st2, dict) and bool(st2.get("hosting")), str(r2.err))
+        finally:
+            r2.close()
     finally:
         r.close()
         shutil.rmtree(d, ignore_errors=True)

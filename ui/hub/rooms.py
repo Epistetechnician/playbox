@@ -86,10 +86,12 @@ class Room:
                 self.err = None
             except Exception as e:   # binary missing, handshake failed
                 self.sidecar, self.err = None, f"sidecar failed to start: {e}"
-            if self.sidecar and self.rec.get("host", {}).get("repo"):
-                # hosting lives in the sidecar's memory: a restarted hub (or a respawned sidecar) must host again or invites stop working
+            if self.sidecar and self.rec.get("host") is not None:
+                # hosting lives in the sidecar's memory: a restarted hub (or a respawned sidecar) must host again or invites stop working.
+                # A room with no repository (talk and notes only) is hosted too: `host` is then just {}.
+                h = self.rec["host"]
                 try:
-                    self.sidecar.call("playbox_create", {"repo": self.rec["host"]["repo"], "local": bool(self.rec["host"].get("local"))})
+                    self.sidecar.call("playbox_create", {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))})
                 except Exception as e:
                     self.err = f"could not host again: {e}"
             return self.sidecar
@@ -116,9 +118,11 @@ class Room:
             d["err"] = str(st)[:200]
             return d
         host, joined = st.get("hosting"), st.get("joined")
-        if host and host.get("repo") and not host.get("replica") and self.rec.get("host", {}).get("repo") != host["repo"]:
-            self.rec["host"] = {"repo": host["repo"]}          # remember what we host so a restart can host it again
-            self.on_change and self.on_change()
+        if host and not host.get("replica"):
+            known, repo = self.rec.get("host"), host.get("repo")
+            if known is None or (repo and known.get("repo") != repo):
+                self.rec["host"] = {**(known or {}), **({"repo": repo} if repo else {})}      # remember what we host so a restart can host it again
+                self.on_change and self.on_change()
         d["mode"] = "both" if host and joined else "host" if host else "guest" if joined else "none"
         d["members"] = len((host or {}).get("members") or []) + (1 if joined else 0)
         d["me"] = (joined or {}).get("member_id") or st.get("guest_id")

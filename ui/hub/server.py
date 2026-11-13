@@ -312,9 +312,9 @@ def make_handler(hub, auth, store, opts):
             sc = room.ensure()
             err, st = sc.call("playbox_status", {}) if sc else (True, None)
             host = (st or {}).get("hosting") if isinstance(st, dict) else None
-            if err or not host or not host.get("repo"):
+            if err or not host or host.get("replica"):
                 raise AuthError(400, "this room isn't hosted from this hub any more")
-            err, data = sc.call("playbox_create", {"repo": host["repo"], "invite_ttl_secs": LINK_TTL, "grant_ttl_secs": inv["grant"], "uses": 1, "for_guest": r["guest"]})
+            err, data = sc.call("playbox_create", {**({"repo": host["repo"]} if host.get("repo") else {}), "invite_ttl_secs": LINK_TTL, "grant_ttl_secs": inv["grant"], "uses": 1, "for_guest": r["guest"]})
             if err or not isinstance(data, dict) or not data.get("link"):
                 raise AuthError(502, data if isinstance(data, str) else "the room did not return a link")
             hub.knocks.set(rid, state="approved", link=data["link"])
@@ -349,7 +349,7 @@ def make_handler(hub, auth, store, opts):
                 raise AuthError(502, room.err or "the room's sidecar is unavailable")
             err, st = sc.call("playbox_status", {})
             host = (st or {}).get("hosting") if isinstance(st, dict) else None
-            if err or not host or host.get("replica") or not host.get("repo"):
+            if err or not host or host.get("replica"):
                 raise AuthError(400, "This room isn't hosted from this hub, so it can't mint invites. Open it and host it first, or ask the room's host.")
             try:
                 ttl, grant, uses = int(b.get("ttl", 3600)), int(b.get("grant", 86400)), int(b.get("uses", 1))
@@ -361,7 +361,7 @@ def make_handler(hub, auth, store, opts):
             if approve:       # no key exists yet: the room mints one, bound to the asker, when you approve
                 base, public = self.public_base()
                 return self.j(200, {"id": inv["id"], "url": f"{base}/i/{inv['id']}", "k": k, "approve": True, "expires": int(inv["expires"]), "public": public})
-            args = {"repo": host["repo"], "invite_ttl_secs": ttl, "grant_ttl_secs": grant, "uses": uses}
+            args = {**({"repo": host["repo"]} if host.get("repo") else {}), "invite_ttl_secs": ttl, "grant_ttl_secs": grant, "uses": uses}
             if guest:
                 args["for_guest"] = guest
             err, data = sc.call("playbox_create", args)
@@ -541,6 +541,11 @@ def make_handler(hub, auth, store, opts):
                 if name == "playbox_feed" and not err and isinstance(data, dict) and data.get("items"):
                     room.seen()
                     hub.bus.publish("room", {**room.digest, "unread": 0})
+                if name == "playbox_create" and not err and not args.get("replica_of"):
+                    keep = {k: args[k] for k in ("repo", "local", "docker") if args.get(k)}       # what a restart must host again
+                    if room.rec.get("host") != keep:
+                        room.rec["host"] = keep
+                        room.on_change and room.on_change()
                 if name in ("playbox_create", "playbox_join", "playbox_leave", "playbox_revoke"):
                     hub.wake.set()
                 return self.j(200, {"error": err, "data": data})

@@ -94,6 +94,14 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
   const shq = x => "'" + String(x).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/'/g, "'\\''") + "'";   // the room name is the host's text: quote it so it can only ever be one argument
   const cmd = `curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --join ${shq(ask ? askUrl : link)} --name ${shq(v.room)}`;
   const left = () => { const s = Math.max(0, v.expires - Date.now() / 1000 | 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`; };
+  const ua = navigator.userAgent, plat = /iPhone|iPad|Android/.test(ua) ? "phone" : /Windows/.test(ua) ? "windows" : "computer";
+  let returning = false; try { returning = !!localStorage.getItem("pb.myhub"); } catch {}      // been through this before: lead with "I already have Playbox"
+  const haveCard = `    <div class="card"><div class="hd lbl">${returning ? "I already have Playbox" : "Already have Playbox?"}</div>
+      <label class="lbl" for="hub" style="display:block;margin-bottom:6px">Your hub's address</label>
+      <input id="hub" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://your-hub.example.com">
+      <div class="row"><button class="btn primary block" id="go">Open in my Playbox</button></div>
+      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Use the installed app</a>${ask ? "" : `<button class="btn sm" id="cpl">Copy for my agent</button>`}</div>
+      <p class="mut small">Your hub opens with the invite filled in. You confirm there; nothing joins until you do.</p></div>`;
   main.innerHTML = `<h1><em>${esc(v.from)}</em> invited you to <em>${esc(v.room)}</em></h1>
     <p class="mut">A private room where people and their agents work together, with limits the host sets and a signed record nobody can quietly edit.</p>
     <div class="card"><div class="hd lbl">What this link gives you</div><ul class="facts">
@@ -102,18 +110,18 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
       <li><span>${ask ? "Before you're in" : "Can be used by"}</span><span>${ask ? esc(v.from) + " approves you" : v.guest_only ? "one specific person" : v.uses === 1 ? "one person (you)" : v.uses === 2 ? "you and your agent" : `up to ${v.uses} people`}</span></li></ul>
       ${ask ? `<p class="mut small" style="margin:12px 0 0">You'll be shown a short code. ${esc(v.from)} sees the same one and lets you in once it matches, so this link alone gets nobody in.</p>` : ""}</div>
 
-    <div class="card"><div class="hd lbl">I already have Playbox</div>
-      <label class="lbl" for="hub" style="display:block;margin-bottom:6px">Your hub's address</label>
-      <input id="hub" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://your-hub.example.com">
-      <div class="row"><button class="btn primary block" id="go">Open in my Playbox</button></div>
-      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Use the installed app</a>${ask ? "" : `<button class="btn sm" id="cpl">Copy for my agent</button>`}</div>
-      <p class="mut small">Your hub opens with the invite filled in. You confirm there; nothing joins until you do.</p></div>
+    ${returning ? haveCard : ""}
+    <div class="card"><div class="hd lbl">${returning ? "I'm new" : "Get Playbox and join"}</div>
+      ${plat === "phone" ? `<p style="margin-top:0">Playbox installs on a computer (a Mac or a Linux machine), not on a phone. Open this same link there, or send it to yourself.</p>
+        <div class="row"><button class="btn primary block" id="cpu">Copy this link</button></div>
+        <details style="margin-top:14px"><summary class="lbl" style="cursor:pointer">Show the install command anyway</summary><pre id="cmds" style="margin-top:10px">${esc(cmd)}</pre><div class="row"><button class="btn sm" id="cpc">Copy command</button></div></details>`
+      : `<p style="margin-top:0">One command. It installs Playbox, joins this room, starts your own dashboard and opens it in your browser so you can set up a passkey. Then it offers to connect your coding agent.</p>
+        ${plat === "windows" ? `<p class="offline" style="margin:0 0 12px">The installer runs on macOS and Linux. On Windows, you can try it inside WSL (a Linux terminal), or ask ${esc(v.from)} for another way in.</p>` : ""}
+        <pre id="cmds">${esc(cmd)}</pre>
+        <div class="row"><button class="btn sm${plat === "windows" ? "" : " primary"}" id="cpc">Copy command</button></div>
+        <p class="mut small">It runs the installer published in the Playbox project on GitHub and checks its downloads against a checksum list. Read it first if you like. Needs macOS or Linux with python3. Leave that terminal window open while you use the dashboard.</p>`}</div>
 
-    <div class="card"><div class="hd lbl">I'm new</div>
-      <p style="margin-top:0">One command. It installs Playbox, joins this room, starts your own dashboard and opens it in your browser so you can set up a passkey. Then it offers to connect your coding agent.</p>
-      <pre id="cmds">${esc(cmd)}</pre>
-      <div class="row"><button class="btn sm" id="cpc">Copy command</button></div>
-      <p class="mut small">It runs the installer published in the Playbox project on GitHub and checks its downloads against a checksum list. Read it first if you like. Needs macOS or Linux with python3. Leave that terminal window open while you use the dashboard.</p></div>
+    ${returning ? "" : haveCard}
 
     <p class="safe">${ask ? `This link is only a way to ask. It opens nothing by itself, and nobody gets in without ${esc(v.from)}'s approval.` : `This link is a key to one room, not to your computer. It can't be used twice, it expires on its own, and the host can remove you at any time.`} Only use it if you know ${esc(v.from)}.</p>`;
   const hub = $("#hub"); try { hub.value = localStorage.getItem("pb.myhub") || ""; } catch {}
@@ -127,6 +135,7 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
   };
   if ($("#cpl")) $("#cpl").onclick = e => copy(`Join this Playbox room with playbox_join, using this link: ${link}`, e.target);
   $("#cpc").onclick = e => copy($("#cmds").textContent, e.target);
+  if ($("#cpu")) $("#cpu").onclick = e => copy(location.href, e.target);
   setInterval(() => { const el = $("#left"); if (el) el.textContent = left(); }, 15000);
 })();
 </script>
