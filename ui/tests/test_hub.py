@@ -458,6 +458,17 @@ def test_http():
         check("invite mints a share url and a playbox link", st == 200 and ilink.startswith("playbox://") and j["url"].endswith("/i/" + (iid or "?")) and j["public"] is False)
         st, j2, _ = inv({"ttl": 3600, "grant": 86400, "uses": 1, "approve": False}, a, {"Host": "93.184.216.34:80", "Origin": "http://93.184.216.34:80"})
         check("on a public address the url is marked reachable" + ("" if st == 200 else f" [{st} {j2}]"), st == 200 and j2["public"] is True and j2["url"].startswith("http://93.184.216.34:80/i/"))
+        # ---- the System view: stages, events and posture, with nothing secret in them ----
+        check("system needs a session", anon.req("GET", "/api/system")[0] == 401)
+        st, sysj, _ = a.req("GET", "/api/system")
+        check("system lists the eight stages in order", st == 200 and [x["id"] for x in sysj["stages"]] == ["edge", "auth", "invite", "knock", "approve", "join", "feed", "history"])
+        check("system counts the invites just made", sysj["live"]["invite"]["count"] >= 2 and any(e["stage"] == "invite" for e in sysj["events"]))
+        check("a key invite is flagged as a warning, an approval invite is not", any(e["stage"] == "invite" and e["level"] == "warn" for e in sysj["events"]))
+        check("posture has the core checks", {"edge", "passkey", "weak", "stepup", "invites", "knocks", "chain", "push"} <= {c["id"] for c in sysj["posture"]})
+        blob = json.dumps(sysj)
+        check("system never carries a link, a key or a room secret", "playbox://" not in blob and ilink[10:60] not in blob)
+        st, sysj2, _ = a.req("POST", "/api/system/verify")
+        check("verify re-runs the history check", st == 200 and any("Re-verification" in e["text"] for e in sysj2["events"]))
         st, pv, _ = anon.req("GET", "/api/invite/" + iid)
         check("anyone can read the invite card, and only the card", st == 200 and pv["state"] == "pending" and pv["room"] == "Lab" and pv["from"] == "Maya" and "link" not in pv and "members" not in pv)
         check("the share page is public", anon.req("GET", "/i/" + iid)[0] == 200)
@@ -471,6 +482,7 @@ def test_http():
         e2, _ = Sidecar(mcp, os.path.join(home, "friend2")).call("playbox_join", {"link": ilink})
         check("the link is single use", bool(e2))
         got = 0
+        a.req("POST", "/api/system/verify")      # refresh the room digests now instead of waiting for the idle poll
         for _ in range(25):
             got = next((x["joined"] for x in a.req("GET", "/api/invites")[1]["invites"] if x["id"] == iid), 0)
             if got:

@@ -26,6 +26,7 @@ from .integrations import Integrations, IntegError
 from .invites import Invites, InviteError
 from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
+from .sec import SecLog, STAGES, posture
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -129,9 +130,32 @@ def make_handler(hub, auth, store, opts):
                 return None
             return auth.session(self.cookie())
 
+        def system(self, rec):
+            """Everything the System view draws: stage counters, posture checks and the newest security events."""
+            digests = hub.digests()
+            lst = invites.listing(digests)
+            open_ = [i for i in lst if i["state"] == "pending"]
+            raw = store.d["invites"]
+            inv = {"open": len(open_), "keyed_open": len([i for i in open_ if not raw.get(i["id"], {}).get("approve")]),
+                   "approval_open": len([i for i in open_ if raw.get(i["id"], {}).get("approve")]), "guest_locked_open": len([i for i in open_ if i.get("guest")]),
+                   "states": {st: len([i for i in lst if i["state"] == st]) for st in {i["state"] for i in lst}}}
+            weak = len([x for x in store.d["sessions"].values() if x.get("weak")])
+            public = bool(opts.get("cloudflare") or self.public_base()[1])
+            local = is_local(self.peer, self.hdrs())
+            fresh = auth.is_fresh(rec, local)
+            knocks = len(hub.knocks.pending())
+            rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
+            checks = posture(public=public, access=bool(opts.get("access")), creds=len(store.d["creds"]), weak_sessions=weak, invites=inv, knocks=knocks,
+                             push=len(store.d["push"]), rooms=rooms, fresh=fresh)
+            return {"now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
+                    "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
+                              "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
+                    "rooms": rooms}
+
         def need_fresh(self, rec):
             if auth.is_fresh(rec, is_local(self.peer, self.hdrs())):
                 return True
+            hub.sec.add("auth", "A sensitive action asked for a fresh passkey touch", "info")
             self.j(403, {"error": "stepup", "weak": rec["weak"]})
             return False
 
@@ -176,6 +200,7 @@ def make_handler(hub, auth, store, opts):
                 acc.verify(tok)
                 return True
             except AccessError:
+                hub.sec.add("edge", "Request refused: no valid Cloudflare Access token", "bad")
                 self.send(403, b"This hub only accepts requests that passed Cloudflare Access.", "text/plain; charset=utf-8")
                 return False
 
@@ -211,6 +236,9 @@ def make_handler(hub, auth, store, opts):
                     v = invites.public(iid, room0.digest.get("members") if room0 else None)
                     if not v:
                         auth._fail(self.peer)       # ids are 128-bit; a stream of misses is someone guessing
+                        hub.sec.add("invite", "An unknown invite id was tried", "warn")
+                    else:
+                        hub.sec.add("invite", "An invite page was opened", "info", rec0.get("room") if rec0 else None)
                     return self.j(200 if v else 404, v or {"state": "unknown"})
                 if p in PUBLIC_FILES:
                     f, ct = PUBLIC_FILES[p]
@@ -252,17 +280,24 @@ def make_handler(hub, auth, store, opts):
                 if not (opts["weak"] and auth.weak_allowed(ip, self.headers.get("Host"), self.hdrs())):
                     raise AuthError(403, "plain-HTTP pairing is only allowed on a private network, never through a proxy or tunnel; use HTTPS and a passkey")
                 tok = auth.weak_session(str(b.get("code", "")), ua, ip, str(b.get("name", ""))[:40])
+                hub.sec.add("auth", "Pairing-code session started on the local network (plain HTTP)", "warn")
                 return self.j(200, {"ok": True}, self.set_cookie(tok))
             if p == "/api/auth/register/begin":
                 return self.j(200, auth.register_begin(str(b.get("code", "")), self.rp_id(), ip))
             if p == "/api/auth/register/finish":
                 tok = auth.register_finish(str(b.get("ticket", "")), b.get("response") or {}, str(b.get("name", "")), ua, ip)
+                hub.sec.add("auth", "A passkey was registered", "ok")
                 return self.j(200, {"ok": True}, self.set_cookie(tok))
             if p == "/api/auth/login/begin":
                 return self.j(200, auth.login_begin(self.rp_id()))
             if p == "/api/auth/login/finish":
-                cred = auth.assert_finish(str(b.get("ticket", "")), str(b.get("id", "")), b.get("response") or {}, "login", ip)
+                try:
+                    cred = auth.assert_finish(str(b.get("ticket", "")), str(b.get("id", "")), b.get("response") or {}, "login", ip)
+                except AuthError:
+                    hub.sec.add("auth", "A passkey sign-in was refused", "bad")
+                    raise
                 tok = auth.new_session(cred["id"], False, ua, ip, cred["name"])
+                hub.sec.add("auth", "Signed in with a passkey", "ok")
                 return self.j(200, {"ok": True}, self.set_cookie(tok))
             sess = self.authed()
             if p == "/api/auth/logout":
@@ -276,7 +311,12 @@ def make_handler(hub, auth, store, opts):
                     raise AuthError(403, "a plain-HTTP session cannot do step-up; use a passkey session")
                 return self.j(200, auth.login_begin(self.rp_id(), "stepup", rec["cred"]))
             if p == "/api/auth/stepup/finish":
-                auth.stepup(key, str(b.get("ticket", "")), str(b.get("id", "")), b.get("response") or {}, ip)
+                try:
+                    auth.stepup(key, str(b.get("ticket", "")), str(b.get("id", "")), b.get("response") or {}, ip)
+                except AuthError:
+                    hub.sec.add("auth", "A fresh passkey touch was refused", "bad")
+                    raise
+                hub.sec.add("auth", "Fresh passkey touch accepted for 5 minutes", "ok")
                 return self.j(200, {"ok": True})
             raise AuthError(404, "not found")
 
@@ -292,12 +332,14 @@ def make_handler(hub, auth, store, opts):
             try:
                 if parts[4] == "knock":
                     r = hub.knocks.knock(rec0, str(b.get("k", "")), str(b.get("guest", "")), str(b.get("name", "")))
+                    hub.sec.add("knock", f"Knock from {str(b.get('guest', ''))[:6]}: a verify code is shown to both sides", "info", rec0.get("room"))
                     hub.wake.set()
                     return self.j(200, {"rid": r["rid"], "code": r["code"]})
                 return self.j(200, hub.knocks.poll(rec0, str(b.get("k", "")), str(b.get("rid", ""))))
             except KnockError as e:
                 if e.code in (403, 404):
                     auth._fail(self.peer)
+                    hub.sec.add("knock", "A knock was refused: wrong or unknown invite secret", "warn", rec0.get("room"))
                 raise AuthError(e.code, str(e))
 
         def approve_knock(self, rid, rec, deny=False):
@@ -308,6 +350,7 @@ def make_handler(hub, auth, store, opts):
                 raise AuthError(404, "that request is gone")
             if deny:
                 hub.knocks.set(rid, state="denied")
+                hub.sec.add("approve", "A join request was denied", "info", r.get("room"))
                 hub.wake.set()
                 return self.j(200, {"ok": True})
             inv = store.d["invites"].get(r["invite"])
@@ -325,6 +368,7 @@ def make_handler(hub, auth, store, opts):
             if err or not isinstance(data, dict) or not data.get("link"):
                 raise AuthError(502, data if isinstance(data, str) else "the room did not return a link")
             hub.knocks.set(rid, state="approved", link=data["link"])
+            hub.sec.add("approve", "Approved with a passkey touch; a key bound to the asker was minted", "ok", r.get("room"))
             hub.wake.set()
             return self.j(200, {"ok": True})
 
@@ -453,6 +497,7 @@ def make_handler(hub, auth, store, opts):
                 raise AuthError(400, str(e))
             if approve:       # no key exists yet: the room mints one, bound to the asker, when you approve
                 base, public = self.public_base()
+                hub.sec.add("invite", "Approval invite created: no key in the link" + ("; locked to one agent id" if guest else ""), "ok", rid)
                 return self.j(200, {"id": inv["id"], "url": f"{base}/i/{inv['id']}", "k": k, "approve": True, "expires": int(inv["expires"]), "public": public})
             args = {**({"repo": host["repo"]} if host.get("repo") else {}), "invite_ttl_secs": ttl, "grant_ttl_secs": grant, "uses": uses}
             if guest:
@@ -462,6 +507,7 @@ def make_handler(hub, auth, store, opts):
                 invites.revoke(inv["id"])
                 raise AuthError(502, data if isinstance(data, str) else "the room did not return a link")
             base, public = self.public_base()
+            hub.sec.add("invite", "Key invite created: the link itself carries a key" + ("; locked to one agent id" if guest else ""), "warn", rid)
             return self.j(200, {"id": inv["id"], "url": f"{base}/i/{inv['id']}", "link": data["link"], "expires": int(inv["expires"]), "public": public})
 
         # ---- hub API ----
@@ -525,10 +571,24 @@ def make_handler(hub, auth, store, opts):
             if m == "DELETE" and p.startswith("/api/knock/out/"):
                 rid2 = p.rsplit("/", 1)[1]
                 return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
+            if m == "GET" and p == "/api/system":
+                return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/verify":
+                n = 0
+                for room in list(hub.rooms.values()):
+                    room.last_chain = 0
+                    hub._publish_changes(room, room.tick(with_chain=True))
+                    n += 1
+                hub.sec.add("history", f"Re-verification requested for {n} room(s)", "info")
+                hub.wake.set()
+                return self.j(200, self.system(rec))
             if m == "GET" and p == "/api/invites":
                 return self.j(200, {"invites": invites.listing(hub.digests())})
             if m == "DELETE" and p.startswith("/api/invites/"):
-                return self.j(200, {"ok": invites.revoke(p.rsplit("/", 1)[1])})
+                ok = invites.revoke(p.rsplit("/", 1)[1])
+                if ok:
+                    hub.sec.add("invite", "An invite was withdrawn", "info")
+                return self.j(200, {"ok": ok})
             if m == "POST" and p.startswith("/api/rooms/") and p.endswith("/invite"):
                 return self.make_invite(p.split("/")[3], rec)
             if p.startswith("/api/rooms/"):
@@ -548,12 +608,15 @@ def make_handler(hub, auth, store, opts):
                 if not self.need_fresh(rec):
                     return
                 code = auth.mint_code(note="added from " + rec["name"])
+                hub.sec.add("auth", "A device pairing code was minted (10 minutes)", "info")
                 return self.j(200, {"code": code, "expires_in": 600})
             if m == "DELETE" and p.startswith("/api/devices/"):
                 if not self.need_fresh(rec):
                     return
                 cid = urllib.parse.unquote(p.split("/", 3)[3])
                 ok = auth.revoke_device(cid)
+                if ok:
+                    hub.sec.add("auth", "A passkey device was removed and its sessions ended", "warn")
                 return self.j(200 if ok else 404, {"ok": ok})
             if m == "DELETE" and p.startswith("/api/sessions/"):
                 ok = auth.revoke_session(p.split("/", 3)[3])
@@ -804,6 +867,8 @@ def main(argv=None):
                 store.save()
 
     hub = Hub(store, a.mcp, push_fn)
+    hub.sec = SecLog(hub.bus)
+    hub.sec.add("edge", "Hub started" + (" behind Cloudflare Access" if (team and aud) else " (no Cloudflare Access in front)" if cloud else " on this machine only"), "ok" if (team and aud) or not cloud else "bad")
     hub.knocks = Knocks(store)
     hub.outgoing = Outgoing(hub, store)
     hub.outgoing_busy = lambda: len([r for r in store.d["knock_out"].values() if r["state"] == "waiting"]) >= 3

@@ -19,6 +19,21 @@ import sys
 sys.path.insert(0, str(HERE))
 from playbox_ui import Sidecar, witness_state  # noqa: E402
 
+
+def event_note(text, who):
+    """Turn one room event into a (stage, sentence, level) for the System view. Ids are shortened; nothing secret is in an event."""
+    who = (who or "")[:6]
+    t = text.lower()
+    if t == "join ok":
+        return ("join", f"Member {who} joined with a bound grant" if who else "A member joined", "ok")
+    if t == "join failed":
+        return ("join", f"A join by {who} failed" if who else "A join failed", "warn")
+    if t.startswith("refused"):
+        return ("join", "Refused: " + text[7:].strip()[:100], "warn")
+    if t == "host_start":
+        return ("history", "Room host started; the signed log continues", "info")
+    return ("history", text[:100] or "room event", "info")
+
 LIVE_MS = 5 * 60 * 1000
 CHAIN_EVERY = 300
 
@@ -66,6 +81,9 @@ class Room:
         self.stop = threading.Event()
         self.mu = threading.Lock()
         self.on_change = None      # set by the hub: persist rec changes
+        self.tick_mu = threading.RLock()
+        self.notes = []            # (stage, text, level) the poller turns into security events
+        self.hold_ids = set()
 
     @property
     def id(self):
@@ -102,6 +120,10 @@ class Room:
             self.sidecar.close()
 
     def tick(self, with_chain=False):
+        with self.tick_mu:        # the poller and a 'verify now' request can both tick
+            return self._tick(with_chain)
+
+    def _tick(self, with_chain=False):
         sc = self.ensure()
         d = self.blank()
         d["updated"] = int(time.time() * 1000)
@@ -130,6 +152,10 @@ class Room:
             ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1)
             if not ferr and isinstance(feed, dict):
                 items = [i for i in feed.get("items", []) if isinstance(i, dict) and i.get("seq", 0) > self.seq]
+                if self.primed:
+                    for i in items:
+                        if i.get("kind") == "event":
+                            self.notes.append(event_note(str(i.get("text", "")), str(i.get("from", ""))))
                 if items:
                     self.seq = max(i["seq"] for i in items)
                     says = [i for i in items if i.get("kind") == "say"]
@@ -153,11 +179,17 @@ class Room:
                     if not verr and isinstance(v, dict):
                         d["chain"] = {"ok": v.get("valid") is True, "entries": v.get("entries")}
                         self.last_chain = time.time()
+                        self.notes.append(("history", f"Signed history verified, {v.get('entries')} entries" if d["chain"]["ok"] else "Signed history FAILED verification",
+                                           "ok" if d["chain"]["ok"] else "bad"))
         nb = int(time.time() / 300)
         self.buckets = {k: v for k, v in self.buckets.items() if k > nb - 30}
         d["pulse"] = [self.buckets.get(nb - 23 + i, 0) for i in range(24)]
         w = witness_state(self.home)
         d["holds"] = [{"tool": e.get("tool"), "origin": e.get("origin"), "session": e.get("session")} for e in w["active"]]
+        ids = {str(h.get("session")) for h in d["holds"]}
+        for hid in ids - self.hold_ids:
+            self.notes.append(("feed", "Witness paused a write until you decide", "warn"))
+        self.hold_ids = ids
         recent = d["last"] and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
         d["state"] = ("hold" if d["holds"] else "empty" if d["mode"] == "none" else "bad" if d["chain"] and not d["chain"]["ok"]
                       else "live" if recent else "idle")
@@ -175,6 +207,7 @@ class Hub:
         self.known_attention = set()
         self.activity = deque(maxlen=80)
         self.extra_attention = []     # callables returning more attention items (join requests)
+        self.sec = None               # hub.sec.SecLog, set by the server
         self.mu = threading.RLock()
         self.wake = threading.Event()
         for rec in store.d["rooms"]:
@@ -278,6 +311,12 @@ class Hub:
                     for a in drained[-20:]:
                         self.activity.append(a)
                         self.bus.publish("activity", a)
+                    if self.sec:
+                        for a in drained:
+                            self.sec.add("feed", f"Message from {a.get('from', '')[:6] or 'host'}, kept as untrusted text", "info", room.id)
+                        notes, room.notes = room.notes, []
+                        for stage, text, level in notes:
+                            self.sec.add(stage, text, level, room.id)
                 except Exception as e:
                     room.digest = {**room.blank(), "err": f"poll failed: {e}"[:200]}
             att = self.attention()
