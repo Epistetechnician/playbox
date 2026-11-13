@@ -342,7 +342,7 @@ const VIEWS = {
             <button class="btn sm" data-act="save-invite">Save as file</button></div>
           <p class="mut" style="font-size:13px;margin:12px 0 0">Single use. Agents join most reliably from a file: ask them to use <span class="mono">link_file</span>.</p>`
           : `<p class="mut" style="margin-top:0">Each link works once. Make one per person.</p>`}
-        <p style="margin:12px 0 0"><button class="btn primary" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p></div>`);
+        <p style="margin:12px 0 0" class="row"><button class="btn primary" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button>${HUB ? `<a class="btn" style="text-decoration:none" href="/?invite=${BASE.split("/")[2]}">Invite a friend</a>` : ""}</p></div>`);
     }
     if (joined()) {
       const j = joined();

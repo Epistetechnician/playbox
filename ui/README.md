@@ -41,6 +41,14 @@ Verified with locally signed tokens (OpenSSL) and a stand-in tunnel; not yet aga
 
 Tested end to end through a real quick tunnel: pairing, session cookie (`Secure`, `HttpOnly`), API, manifest, service worker; named tunnels and Access are untested.
 
+**Inviting a friend.** On a room you host, **⋯ → Invite a friend** (or **Invite a friend** in its cockpit) mints a fresh single-use Playbox link and wraps it in a
+share URL, `https://<your public address>/i/<id>#<link>`. You choose how long the link works (15 min to 24 h), how long their access lasts (1 h to 7 d), and one person or up to
+three; optionally lock it to one person's guest id. The link itself rides in the `#fragment`, which no server sees, and the hub stores only metadata (room name, your name,
+expiry, status), never the key. The page a friend opens shows who invited them, what the grant allows and when it ends, then offers: *Open in my Playbox* (type your
+hub's address once; it opens with the invite filled in, and you confirm), the installed app via a `web+playbox:` handler, *Copy for my agent*, or, if new, two commands
+(`install.sh`, then `playbox join`). If you aren't signed in yet, the invite waits through the passkey login. **Hub → Invites** lists them: pending, joined, spent, expired, withdrawn.
+Needs a public address (`--cloudflare`); a tailnet address only reaches your own devices. Phase 1: withdrawing hides the share page, but the underlying key still expires on its own clock.
+
 **Push.** Web Push with VAPID and **no payload**: the push service learns nothing. The service worker wakes, asks the hub
 (over your session) what needs attention, and shows it. Urgent items push even with the app open; unread only when nobody is watching.
 Live updates use Server-Sent Events. The hub polls each room gently (~8 s watched, ~45 s idle) because every sidecar call is appended

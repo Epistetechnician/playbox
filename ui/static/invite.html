@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E9E7E0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F0F0E" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>Playbox invite</title>
+<script>try { const t = localStorage.getItem("pb.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:light-dark(#E9E7E0,#0F0F0E); --panel:light-dark(#F4F2EC,#171715); --panel-2:light-dark(#ECEAE2,#1F1F1C); --field:light-dark(#FBFAF7,#0F0F0E);
+  --ink:light-dark(#171715,#ECE9E0); --ink-2:light-dark(#3B3A36,#C6C3B8); --mut:light-dark(#68665D,#8F8C80);
+  --dim:light-dark(#D9D6CB,#2A2A26); --grid:light-dark(rgba(23,23,21,.07),rgba(236,233,224,.045));
+  --line-2:light-dark(#B9B5A8,#3F3E38); --edge:light-dark(#171715,#6C6A5F);
+  --sig:light-dark(#FF5A1F,#FF6B2C); --sig-ink:light-dark(#B83A0A,#FF8A55); --on-sig:light-dark(#171715,#0F0F0E);
+  --ok:light-dark(#17783F,#4CC380); --bad:light-dark(#C0143C,#FF4D6D);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue","Neue Haas Grotesk",Helvetica,Arial,system-ui,sans-serif;
+}
+:root[data-theme=light]{color-scheme:light} :root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased;background-image:radial-gradient(var(--grid) 1px,transparent 1.3px);background-size:22px 22px}
+button,input{font:inherit;color:inherit}
+.wrap{max-width:520px;margin:0 auto;padding:calc(34px + env(safe-area-inset-top)) 18px 60px}
+.dm{display:block;height:30px;margin:0 auto 6px}.dm .on{fill:var(--ink)}
+.tag{font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);text-align:center;margin-bottom:26px}
+.lbl{font:600 10.5px var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--mut)}
+h1{font:600 24px/1.2 var(--sans);margin:0 0 8px}
+h1 em{font-style:normal;background:var(--ink);color:var(--bg);padding:0 6px}
+.card{background:var(--panel);border:1px solid var(--edge);padding:16px;margin-top:16px}
+.card>.hd{margin:-16px -16px 14px;padding:10px 14px;border-bottom:1px solid var(--line-2);background:var(--panel-2)}
+.facts{display:grid;gap:0;margin:0;padding:0;list-style:none}
+.facts li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line-2)}
+.facts li:last-child{border:0;padding-bottom:0}
+.facts span:first-child{color:var(--mut)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:2px;
+  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;box-shadow:0 2px 0 var(--edge);text-decoration:none}
+.btn:active{transform:translateY(2px);box-shadow:none}
+.btn.primary{background:var(--sig);color:var(--on-sig)} .btn.block{width:100%} .btn.sm{min-height:34px;font-size:10.5px}
+input{width:100%;min-height:44px;padding:9px 11px;border:1px solid var(--line-2);background:var(--field);border-radius:2px;font-size:16px}
+input:focus,.btn:focus-visible{outline:2px solid var(--sig);outline-offset:2px}
+pre{margin:0;padding:12px;background:var(--field);border:1px solid var(--line-2);font:12.5px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;user-select:all}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+p{margin:8px 0}.mut{color:var(--mut)} .small{font-size:13px}
+.state{border:1px solid;padding:14px 16px;margin-top:6px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.state.bad{color:var(--bad);border-color:var(--bad)}
+.safe{border-left:4px solid var(--sig);padding:2px 0 2px 12px;margin:18px 0 0;color:var(--ink-2);font-size:13.5px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="wm"></div><div class="tag">Room invite</div>
+  <div id="main"><p class="mut" style="text-align:center">Checking the invite…</p></div>
+</div>
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const b64u = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = s => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4))));
+const GLYPH = {P: [30,17,17,30,16,16,16], L: [16,16,16,16,16,16,31], A: [14,17,17,31,17,17,17], Y: [17,17,10,4,4,4,4], B: [30,17,17,30,17,17,30], O: [14,17,17,17,17,17,14], X: [17,17,10,4,10,17,17]};
+(function () { let d = "", x = 0; for (const ch of "PLAYBOX") { const g = GLYPH[ch]; for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (g[r] >> (4 - c) & 1) d += `M${x + c * 7} ${r * 7}h5v5h-5z`; x += 42; }
+  $("#wm").innerHTML = `<svg class="dm" viewBox="0 0 ${x - 9} 47" shape-rendering="crispEdges" role="img" aria-label="Playbox"><path class="on" d="${d}"/></svg>`; })();
+
+const id = location.pathname.split("/")[2] || "";
+const frag = location.hash.slice(1);
+let link = "", label = "";
+try { const [l, n] = frag.split("~"); link = unb64u(l || ""); label = n ? unb64u(n) : ""; } catch { link = ""; }
+if (!/^playbox:\/\/[A-Za-z0-9_\-+\/=.#]+$/.test(link)) link = "";
+const dur = s => s >= 86400 ? `${Math.round(s / 86400)} day${s >= 172800 ? "s" : ""}` : s >= 3600 ? `${Math.round(s / 3600)} hour${s >= 7200 ? "s" : ""}` : `${Math.round(s / 60)} minutes`;
+const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); } catch { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand("copy"); } catch {} a.remove(); } const o = btn.textContent; btn.textContent = "Copied"; setTimeout(() => btn.textContent = o, 1400); };
+
+(async function () {
+  let v;
+  try { v = await (await fetch("/api/invite/" + encodeURIComponent(id), {cache: "no-store"})).json(); } catch { v = {state: "unreachable"}; }
+  const main = $("#main");
+  if (v.state === "unreachable") { main.innerHTML = `<div class="state bad">The host's hub can't be reached right now</div><p class="mut small">The person who invited you may have gone offline. Ask them to check that their Playbox hub is running, then try this link again.</p>`; return; }
+  if (v.state !== "pending") {
+    const why = {expired: "This invite has expired", revoked: "This invite was withdrawn", used: "This invite has already been used", unknown: "This invite isn't recognised"}[v.state] || "This invite can't be used";
+    main.innerHTML = `<div class="state bad">${why}</div><p class="mut small">Ask the person who sent it for a fresh link. Invites are single-use and short-lived on purpose.</p>`; return;
+  }
+  if (!link) { main.innerHTML = `<div class="state bad">This link is incomplete</div><p class="mut small">The part after the <b>#</b> is missing, usually because the link was cut short when it was copied. Ask for it again and copy the whole thing.</p>`; return; }
+  const fr = b64u(link) + "~" + b64u(v.room);
+  const left = () => { const s = Math.max(0, v.expires - Date.now() / 1000 | 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`; };
+  main.innerHTML = `<h1><em>${esc(v.from)}</em> invited you to <em>${esc(v.room)}</em></h1>
+    <p class="mut">A private room where people and their agents work together, with limits the host sets and a signed record nobody can quietly edit.</p>
+    <div class="card"><div class="hd lbl">What this link gives you</div><ul class="facts">
+      <li><span>Your access lasts</span><span>${dur(v.grant)}</span></li>
+      <li><span>Link works for</span><span id="left">${left()}</span></li>
+      <li><span>Can be used by</span><span>${v.guest_only ? "one specific person" : v.uses === 1 ? "one person (you)" : `up to ${v.uses} people`}</span></li></ul></div>
+
+    <div class="card"><div class="hd lbl">I already have Playbox</div>
+      <label class="lbl" for="hub" style="display:block;margin-bottom:6px">Your hub's address</label>
+      <input id="hub" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://your-hub.example.com">
+      <div class="row"><button class="btn primary block" id="go">Open in my Playbox</button></div>
+      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Use the installed app</a><button class="btn sm" id="cpl">Copy for my agent</button></div>
+      <p class="mut small">Your hub opens with the invite filled in. You confirm there; nothing joins until you do.</p></div>
+
+    <div class="card"><div class="hd lbl">I'm new</div>
+      <p style="margin-top:0">Two commands. The first installs Playbox and connects it to the coding agents you already use. The second joins this room.</p>
+      <pre id="cmds">curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh
+playbox join '${esc(link)}'</pre>
+      <div class="row"><button class="btn sm" id="cpc">Copy both</button></div>
+      <p class="mut small">Prefer a dashboard and a passkey? After installing, run <b>python3 ui/playbox_hub.py</b> from a Playbox checkout and open this page again: the first button will do the rest.</p></div>
+
+    <p class="safe">This link is a key to one room, not to your computer. It can't be used twice, it expires on its own, and the host can remove you at any time. Only open it if you know ${esc(v.from)}.</p>`;
+  const hub = $("#hub"); try { hub.value = localStorage.getItem("pb.myhub") || ""; } catch {}
+  $("#go").onclick = () => {
+    let u = hub.value.trim(); if (!u) { hub.focus(); return; }
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = (/^(localhost|127\.|\[::1\]|192\.168\.|10\.)/.test(u) ? "http://" : "https://") + u;
+    let url; try { url = new URL(u); } catch { hub.focus(); return; }
+    if (url.protocol !== "https:" && url.protocol !== "http:") { hub.focus(); return; }
+    try { localStorage.setItem("pb.myhub", url.origin); } catch {}
+    location.href = url.origin + "/join#" + fr;
+  };
+  $("#cpl").onclick = e => copy(`Join this Playbox room with playbox_join, using this link: ${link}`, e.target);
+  $("#cpc").onclick = e => copy($("#cmds").textContent, e.target);
+  setInterval(() => { const el = $("#left"); if (el) el.textContent = left(); }, 15000);
+})();
+</script>
+</body>
+</html>

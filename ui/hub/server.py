@@ -20,6 +20,7 @@ from . import push as webpush
 from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from .icons import png_icon
+from .invites import Invites, InviteError
 from .rooms import Hub
 from .store import Store
 
@@ -39,6 +40,8 @@ def is_local(peer, headers):
 
 
 def make_handler(hub, auth, store, opts):
+    invites = Invites(store)
+
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "playbox-hub"
         protocol_version = "HTTP/1.1"
@@ -178,8 +181,19 @@ def make_handler(hub, auth, store, opts):
             p = url.path
             # public shell
             if m == "GET":
-                if p in ("/", "/pair"):
+                if p in ("/", "/pair", "/join"):
                     return self.send(200, (STATIC / "home.html").read_bytes(), "text/html; charset=utf-8")
+                if p.startswith("/i/") and len(p) > 3:
+                    return self.send(200, (STATIC / "invite.html").read_bytes(), "text/html; charset=utf-8")
+                if p.startswith("/api/invite/"):
+                    auth.throttle(self.peer)
+                    iid = p.rsplit("/", 1)[1]
+                    rec0 = store.d["invites"].get(iid)
+                    room0 = hub.get(rec0["room"]) if rec0 else None
+                    v = invites.public(iid, room0.digest.get("members") if room0 else None)
+                    if not v:
+                        auth._fail(self.peer)       # ids are 128-bit; a stream of misses is someone guessing
+                    return self.j(200 if v else 404, v or {"state": "unknown"})
                 if p in PUBLIC_FILES:
                     f, ct = PUBLIC_FILES[p]
                     return self.send(200, (STATIC / f).read_bytes(), ct, {"Service-Worker-Allowed": "/"} if f == "sw.js" else None)
@@ -244,6 +258,52 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": True})
             raise AuthError(404, "not found")
 
+        def public_base(self):
+            """The address a friend can open. The one this request came in on if that is public, else the tunnel the hub published."""
+            host = self.headers.get("Host", "")
+            h = hostname_of(host)
+            private = h in ("localhost",) or h.endswith(".local")
+            try:
+                a = ipaddress.ip_address(h)
+                private = private or a.is_private or a.is_loopback or a.is_link_local
+            except ValueError:
+                pass
+            if not private:
+                return f"{'https' if self.secure() else 'http'}://{host}", True
+            if opts.get("public_url"):
+                return opts["public_url"], True
+            return f"{'https' if self.secure() else 'http'}://{host}", False
+
+        def make_invite(self, rid, rec):
+            if not self.need_fresh(rec):      # an invite is access to a room: ask for a passkey touch
+                return
+            b = self.body()
+            room = hub.get(rid)
+            if not room:
+                raise AuthError(404, "no such room")
+            sc = room.ensure()
+            if not sc:
+                raise AuthError(502, room.err or "the room's sidecar is unavailable")
+            err, st = sc.call("playbox_status", {})
+            host = (st or {}).get("hosting") if isinstance(st, dict) else None
+            if err or not host or host.get("replica") or not host.get("repo"):
+                raise AuthError(400, "This room isn't hosted from this hub, so it can't mint invites. Open it and host it first, or ask the room's host.")
+            try:
+                ttl, grant, uses = int(b.get("ttl", 3600)), int(b.get("grant", 86400)), int(b.get("uses", 1))
+                guest = str(b["guest"]).strip().lower() if b.get("guest") else None
+                inv = invites.create(rid, room.rec["label"], str(b.get("from", "")).strip(), ttl, grant, uses, len(host.get("members") or []), guest)
+            except (ValueError, TypeError) as e:
+                raise AuthError(400, str(e))
+            args = {"repo": host["repo"], "invite_ttl_secs": ttl, "grant_ttl_secs": grant, "uses": uses}
+            if guest:
+                args["for_guest"] = guest
+            err, data = sc.call("playbox_create", args)
+            if err or not isinstance(data, dict) or not data.get("link"):
+                invites.revoke(inv["id"])
+                raise AuthError(502, data if isinstance(data, str) else "the room did not return a link")
+            base, public = self.public_base()
+            return self.j(200, {"id": inv["id"], "url": f"{base}/i/{inv['id']}", "link": data["link"], "expires": int(inv["expires"]), "public": public})
+
         # ---- hub API ----
         def api(self, m, p, url, key, rec):
             if m == "GET" and p == "/api/me":
@@ -273,6 +333,12 @@ def make_handler(hub, auth, store, opts):
                         raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
                     hub.wake.set()
                 return self.j(200, {"room": room.digest, "id": room.id})
+            if m == "GET" and p == "/api/invites":
+                return self.j(200, {"invites": invites.listing(hub.digests())})
+            if m == "DELETE" and p.startswith("/api/invites/"):
+                return self.j(200, {"ok": invites.revoke(p.rsplit("/", 1)[1])})
+            if m == "POST" and p.startswith("/api/rooms/") and p.endswith("/invite"):
+                return self.make_invite(p.split("/")[3], rec)
             if p.startswith("/api/rooms/"):
                 rid = p.split("/")[3]
                 if m == "PATCH":
@@ -428,7 +494,8 @@ MANIFEST = {
               {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
               {"src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
               {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}],
-    "shortcuts": [{"name": "Attention", "url": "/?view=attention"}]}
+    "shortcuts": [{"name": "Attention", "url": "/?view=attention"}],
+    "protocol_handlers": [{"protocol": "web+playbox", "url": "/join#%s"}]}
 
 ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#171715"/><path d="M340 80h40v40h-40zM184 132h40v40h-40zM236 132h40v40h-40zM288 132h40v40h-40zM184 184h40v40h-40zM236 184h40v40h-40zM288 184h40v40h-40zM340 236h40v40h-40zM184 288h40v40h-40zM236 288h40v40h-40zM288 288h40v40h-40zM340 288h40v40h-40zM184 340h40v40h-40zM236 340h40v40h-40zM288 340h40v40h-40zM340 340h40v40h-40zM184 392h40v40h-40zM236 392h40v40h-40zM288 392h40v40h-40zM340 392h40v40h-40z" fill="#2A2A26"/><path d="M132 80h40v40h-40zM184 80h40v40h-40zM236 80h40v40h-40zM288 80h40v40h-40zM132 132h40v40h-40zM340 132h40v40h-40zM132 184h40v40h-40zM340 184h40v40h-40zM132 236h40v40h-40zM184 236h40v40h-40zM236 236h40v40h-40zM288 236h40v40h-40zM132 288h40v40h-40zM132 340h40v40h-40zM132 392h40v40h-40z" fill="#FF5A1F"/></svg>"""
 
@@ -536,7 +603,7 @@ def main(argv=None):
                 store.save()
 
     hub = Hub(store, a.mcp, push_fn)
-    opts = {"weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
+    opts = {"public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True
@@ -559,6 +626,8 @@ def main(argv=None):
         threading_serve = __import__("threading").Thread(target=srv.serve_forever, daemon=True)
         threading_serve.start()     # cloudflared checks the origin as it connects, so serve first
         cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
+    if cf_url:
+        opts["public_url"] = cf_url      # the address friend invites point at (a tailnet address only reaches your own devices)
     print(f"\n  ▪ PLAYBOX hub   {base}", flush=True)
     if cf_url:
         print(f"  Public (Cloudflare, HTTPS, passkeys only): {cf_url}", flush=True)

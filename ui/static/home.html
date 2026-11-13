@@ -130,7 +130,8 @@ h2.rule .ix{color:var(--sig-ink)}
 .btn:hover{background:var(--panel-2)} .btn:active{transform:translateY(2px);box-shadow:none}
 .btn.primary{background:var(--sig);color:var(--on-sig)} .btn.primary:hover{background:color-mix(in srgb,var(--sig) 88%,var(--ink))}
 .btn.danger{color:var(--bad);border-color:var(--bad);box-shadow:0 2px 0 var(--bad)}
-.btn.sm{min-height:32px;padding:0 11px;font-size:10.5px} .btn.block{width:100%}
+.btn.sm{min-height:32px;padding:0 11px;font-size:10.5px}
+a.btn{text-decoration:none} .btn.block{width:100%}
 .btn[disabled]{opacity:.45;cursor:default;box-shadow:none;transform:none}
 label{display:block;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin:14px 0 6px}
 input,textarea,select{width:100%;min-height:42px;padding:9px 11px;border:1px solid var(--line-2);background:var(--field);border-radius:var(--r)}
@@ -302,6 +303,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 .toasts{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));display:grid;gap:8px;justify-items:center;z-index:60;pointer-events:none;padding:0 14px}
 .toast{background:var(--ink);color:var(--bg);border-left:4px solid var(--sig);padding:10px 16px;max-width:92vw;font:600 11.5px var(--mono);letter-spacing:.05em;box-shadow:var(--hard);animation:in .14s steps(3)}
 .toast.err{border-left-color:var(--bad)}
+.offline .mono{text-transform:none;letter-spacing:0}
 .offline{border:1px solid var(--sig);border-left-width:4px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));color:var(--sig-ink);padding:9px 14px;margin-bottom:16px;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}}
 @media(max-width:599px){.cell{padding:11px 12px}.sect.tools .filters{flex:1 1 100%;order:2}.strip{gap:12px;padding-left:12px;padding-right:12px}#strooms{display:none}}
@@ -394,9 +396,14 @@ async function boot() {
   const q = new URLSearchParams(location.search);
   const hashCode = location.pathname === "/pair" ? decodeURIComponent(location.hash.slice(1)) : "";
   if (hashCode) history.replaceState(null, "", "/pair");           // keep the one-time code out of history and Referer
+  if (location.pathname === "/join" && location.hash.length > 1) {    // an invite link: keep it across sign-in, out of history and Referer
+    let f = decodeURIComponent(location.hash.slice(1)); if (f.startsWith("web+playbox:")) f = f.slice(12);
+    try { sessionStorage.setItem("pb.invite", f); } catch {}
+    history.replaceState(null, "", "/join");
+  }
   let st;
   try { st = await (await fetch("/api/auth/state")).json(); } catch { return paintOffline(); }
-  if (st.authed) { if (location.pathname === "/pair") history.replaceState(null, "", "/"); return startApp(q.get("view")); }
+  if (st.authed) { if (location.pathname === "/pair" || location.pathname === "/join") history.replaceState(null, "", "/"); return startApp(q.get("view"), q.get("invite")); }
   if (hashCode || !st.enrolled) return paintPair(st, hashCode);
   paintLock(st);
 }
@@ -435,12 +442,15 @@ function paintPair(st, code) {
 }
 
 /* ---------- app ---------- */
-async function startApp(view) {
+async function startApp(view, inviteRoom) {
   if (view) S.view = view;
   try { S.me = await api("GET", "/api/me"); } catch { return; }
   await refreshRooms();
   paint();
   connect();
+  let pend = null; try { pend = sessionStorage.getItem("pb.invite"); sessionStorage.removeItem("pb.invite"); } catch {}
+  if (pend) { try { const [l, n] = pend.split("~"); const un = x => decodeURIComponent(escape(atob(x.replace(/-/g, "+").replace(/_/g, "/")))); openAdd({link: un(l), label: n ? un(n) : ""}); } catch { toast("That invite link is damaged", true); } }
+  else if (inviteRoom) openInvite(inviteRoom);
   addEventListener("online", () => { refreshRooms(); connect(); });
   addEventListener("offline", () => { S.live = false; paintStatus(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRooms(); });
@@ -552,7 +562,17 @@ function paintView(soft) {
   if (selId) $(`.rw[data-room="${selId}"]`)?.classList.add("sel");
   if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length) startOrbit();
   enter = false; paintActivity(); countUp();
-  if (S.view === "hub") { pushState(); if (installEvt) { $("#installbtn").hidden = false; $("#installhint").hidden = true; } }
+  if (S.view === "hub") { loadInvites(); pushState(); if (installEvt) { $("#installbtn").hidden = false; $("#installhint").hidden = true; } }
+}
+async function loadInvites() {
+  const el = $("#invlist"); if (!el) return;
+  try {
+    const {invites} = await api("GET", "/api/invites");
+    if (!$("#invlist")) return;
+    const dur = s => s >= 86400 ? `${Math.round(s / 86400)}d` : `${Math.round(s / 3600)}h`;
+    $("#invlist").innerHTML = invites.length ? invites.slice(0, 12).map(i => `<div class="stat"><span>${esc(i.label)} <span class="chip ${i.state === "pending" ? "warn" : i.joined ? "ok" : ""}">${i.joined ? `${i.joined} joined` : i.state}</span><br><span class="mut" style="font-size:12px">${i.state === "pending" ? `open until ${hhmm(i.expires * 1000)}` : ago(i.created * 1000)} · access ${dur(i.grant)}${i.guest ? " · locked to one id" : ""}</span></span>
+      ${i.state === "pending" ? `<button class="btn sm" data-act="rminv" data-id="${esc(i.id)}">Withdraw</button>` : ""}</div>`).join("") : `<p class="mut" style="margin:0">None yet.</p>`;
+  } catch { const e2 = $("#invlist"); if (e2) e2.innerHTML = `<p class="mut" style="margin:0">Couldn't load invites.</p>`; }
 }
 function go(view) { if (view === "add") return openAdd(); S.view = view; enter = true; store.set("pb.view", view); history.replaceState(null, "", view === "rooms" ? "/" : `/?view=${view}`); paintView(); scrollTo(0, 0); }
 
@@ -651,6 +671,8 @@ const VIEWS = {
     const secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
     const th = store.get("pb.theme", "auto");
     return `<div class="sect"><h2 class="rule"><span class="ix">03</span>Hub</h2></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
+      <div class="card"><h2>Invites</h2><div id="invlist"><p class="mut" style="margin:0">Loading…</p></div>
+        <p class="mut" style="font-size:12.5px;margin:12px 0 0">Make one from a room's <b>⋯</b> menu. Withdrawing hides the share page; the underlying single-use key still expires on its own clock.</p></div>
       <div class="card"><h2>Notifications</h2><p class="mut" style="margin:0 0 14px">Get a nudge when the witness pauses a write, a history check fails or a room needs you. The push carries no content: your phone wakes, then asks your hub directly.</p>
         <div class="row"><button class="btn" data-act="push" id="pushbtn">Checking…</button></div></div>
       <div class="card"><h2>Install</h2><p class="mut" style="margin:0 0 14px">Playbox runs as an app: its own window, a badge for what needs you, and the last known state while you're offline.</p>
@@ -762,7 +784,7 @@ addEventListener("keydown", e => {
 
 /* ---------- sheets ---------- */
 const sheet = () => $("#sheet");
-function openAdd() {
+function openAdd(pre) {
   const machines = [...new Set(S.rooms.map(r => r.machine).filter(Boolean))];
   sheet().innerHTML = `<form method="dialog" id="addform"><h2>Add a room</h2>
     <div class="radio" role="radiogroup" aria-label="How" style="margin-top:14px">
@@ -792,11 +814,48 @@ function openAdd() {
       if (how === "host" && !body.home) location.href = `/r/${r.id}/`; else { await refreshRooms(); }
     } catch (err) { $("#aerr").textContent = err.message; btn.disabled = false; btn.textContent = "Add room"; }
   });
-  sheet().showModal(); $("#alabel").focus();
+  if (pre && pre.link) { $("#alink").value = pre.link; $("#alabel").value = pre.label || ""; $("#addform").insertAdjacentHTML("afterbegin", `<p class="offline" style="margin:14px 0 0">Joining from an invite link. Only continue if you know who sent it.</p>`); }
+  sheet().showModal(); (pre && pre.link ? $("#asave") : $("#alabel")).focus(); if (pre && pre.link) $("#alink").scrollTop = 0;
+}
+const b64s = x => btoa(x).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const hhmm = ms => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+function openInvite(id) {
+  const r = room(id); if (!r) return toast("That room isn't on this hub", true);
+  const opt = (name, vals, def) => `<div class="seg" role="group" data-opt="${name}" style="display:flex">${vals.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v == def}" style="flex:1">${l}</button>`).join("")}</div>`;
+  sheet().innerHTML = `<form method="dialog" id="invform"><h2>Invite to ${esc(r.label)}</h2>
+    <label for="ifrom" style="margin-top:14px">Your name, shown to your friend</label><input id="ifrom" maxlength="40" autocomplete="off" value="${esc(store.get("pb.name", ""))}" placeholder="e.g. Shaan">
+    <label>Link works for</label>${opt("ttl", [[900, "15 min"], [3600, "1 hour"], [86400, "24 hours"]], 3600)}
+    <label>Their access lasts</label>${opt("grant", [[3600, "1 hour"], [86400, "1 day"], [604800, "7 days"]], 86400)}
+    <label>Who can use it</label>${opt("uses", [[1, "One person"], [3, "Up to 3"]], 1)}
+    <details style="margin-top:14px"><summary class="lbl" style="cursor:pointer">Lock it to one person's id</summary><label for="iguest">Their guest id (64 hex characters, from <span class="mono">playbox id</span>)</label><input id="iguest" class="mono" autocomplete="off" spellcheck="false"><p class="mut" style="font-size:12px;margin:6px 0 0">Anyone else who finds the link is refused and can't use it up.</p></details>
+    <p class="err" id="ierr"></p><div id="iout"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Close</button><button class="btn primary" id="imake" value="x">Create link</button></div></form>`;
+  const pick = () => Object.fromEntries([...sheet().querySelectorAll("[data-opt]")].map(g => [g.dataset.opt, +g.querySelector("[aria-pressed=true]").dataset.v]));
+  sheet().querySelectorAll("[data-opt] button").forEach(b => b.addEventListener("click", () => { b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); }));
+  $("#invform").addEventListener("submit", async e => {
+    if (e.submitter?.value === "cancel") return;
+    e.preventDefault();
+    const btn = $("#imake"), from = $("#ifrom").value.trim(); store.set("pb.name", from);
+    btn.disabled = true; btn.textContent = "Creating…"; $("#ierr").textContent = "";
+    try {
+      const j = await api("POST", `/api/rooms/${id}/invite`, {...pick(), from, guest: $("#iguest").value.trim() || undefined});
+      const url = `${j.url}#${b64s(j.link)}`;
+      const text = `Join my Playbox room "${r.label}": ${url}`;
+      $("#iout").innerHTML = `<label>Send this to your friend</label><div class="card mono" id="iurl" style="word-break:break-all;user-select:all;max-height:7.5em;overflow:auto">${esc(url)}</div>
+        <p class="mut" style="font-size:13px;margin:8px 0 0">Works until ${hhmm(j.expires * 1000)}, once it's used it's spent. The part after # never reaches any server.</p>
+        ${j.public ? "" : `<p class="offline" style="margin:10px 0 0">This hub is only reachable from your own network, so your friend can't open the link yet. Start it with <span class="mono">--cloudflare</span> to get a public address.</p>`}
+        <div class="row" style="margin-top:12px"><button class="btn sm" id="icp" value="x">Copy link</button>${navigator.share ? '<button class="btn sm" id="ish" value="x">Share…</button>' : ""}<a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">Preview what they see</a></div>`;
+      $("#icp").addEventListener("click", async ev => { ev.preventDefault(); try { await navigator.clipboard.writeText(text); toast("Copied"); } catch { toast("Copy failed", true); } });
+      $("#ish")?.addEventListener("click", ev => { ev.preventDefault(); navigator.share({title: "Playbox invite", text, url}).catch(() => {}); });
+      btn.textContent = "New link"; btn.disabled = false;
+    } catch (err) { $("#ierr").textContent = err.message; btn.disabled = false; btn.textContent = "Create link"; }
+  });
+  sheet().showModal();
 }
 function openEdit(id) {
   const r = room(id); if (!r) return;
   sheet().innerHTML = `<form method="dialog" id="editform"><h2>${esc(r.label)}</h2>
+    ${r.mode === "host" || r.mode === "both" ? `<p style="margin:14px 0 0"><button class="btn primary block" data-act="invite" data-id="${r.id}" value="cancel" formnovalidate>Invite a friend</button></p>` : ""}
     <label for="elabel">Name</label><input id="elabel" value="${esc(r.label)}" maxlength="60">
     <label for="emachine">Where it runs</label><input id="emachine" value="${esc(r.machine)}" maxlength="40">
     <label>Who is in it?</label><div class="radio"><label><input type="radio" name="ekind" value="mine" ${r.kind === "mine" ? "checked" : ""}>My agents</label><label><input type="radio" name="ekind" value="shared" ${r.kind === "shared" ? "checked" : ""}>Shared</label></div>
@@ -870,6 +929,8 @@ document.addEventListener("click", async e => {
   else if (act === "palette") openPalette();
   else if (act === "theme") toggleTheme();
   else if (act === "edit") openEdit(t.dataset.id);
+  else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }
+  else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();
   else if (act === "push") togglePush();
   else if (act === "install") { installEvt?.prompt(); installEvt = null; t.hidden = true; }
