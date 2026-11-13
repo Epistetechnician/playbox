@@ -6,7 +6,7 @@ Start a room from your own agent (Claude Code, Codex, Hermes, OpenCode). Share a
 
 On top of that sits the research half of the project: **swarm telepathy** (agents on different model families passing a concept as 64 bytes of latent vector, with no text) and **collaborative hill-climbing** (a room whose one job is to push a score up, where every promoted step is a verified receipt and becomes the next baseline for everyone).
 
-> Version 0.2.1 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Every claim below links to the file that backs it, and every limit is listed in [What is not proven](#what-is-not-proven).
+> Version 0.3.0 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Every claim below links to the file that backs it, and every limit is listed in [What is not proven](#what-is-not-proven).
 
 ---
 
@@ -27,7 +27,7 @@ On top of that sits the research half of the project: **swarm telepathy** (agent
 
 ## At a glance
 
-Counted from the source tree at this commit (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)).
+Counted from the source tree at the commit this README was written against (just before 0.3.0) (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)).
 
 | | |
 |---|---|
@@ -37,7 +37,7 @@ Counted from the source tree at this commit (`git ls-files`, `grep`, `wc -l`; se
 | **Tests** | 478 Rust tests and 172 Python tests written (counted from source), 10 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run for this README** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure is `playbox-git` `a_hostile_bundle_is_rejected_on_import`; see [What is not proven](#what-is-not-proven) |
 | **CI** | Linux and macOS test matrix, `cargo audit`, Python suites, a rootful and a rootless confinement job, conformance |
 | **Docs** | 21 design and results documents, 3,838 lines |
-| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0 and 0.2.1 (Nov 13); `playbox update` verifies archives against a release key built into the binary |
+| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1 and 0.3.0 (Nov 13). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
 | **Real-world runs** | Mac ↔ Raspberry Pi 5 over a relay; a friend's agent in India joining a Mac host; a Google Confidential Space TDX VM joined at tier T3 from another network ([docs/tested-on.md](docs/tested-on.md)) |
 
 ### The headline results
@@ -364,7 +364,7 @@ Credit follows signed ancestry, not rank, so a contributor can leave and keep it
 | Cross-family latent channel | 87.5% gated over 160 blind trials; 0 infrastructure failures | [docs/steering.md](docs/steering.md) |
 | Swarm | 400 trials, sign tests, per-arm CIs, per-direction breakdown | `steer/results/telepathy/swarm/` |
 | Hill-climb gate | 6 signed receipts; cheats rejected; 2.84× promoted | `challenge/results/` |
-| Release integrity | `playbox update` checks `SHA256SUMS` against a key compiled into the binary and keeps the old binary for `--rollback` | [docs/releasing.md](docs/releasing.md) |
+| Release integrity | Signed `SHA256SUMS` checked against a key compiled into the binary; SBOM and build provenance; old binary kept for `--rollback` | [docs/releasing.md](docs/releasing.md), [CHANGELOG.md](CHANGELOG.md) |
 
 Every result file keeps a ceiling label (for example `local_internal_exploratory`) so a number cannot quietly claim more than it earned.
 
