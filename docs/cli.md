@@ -24,7 +24,7 @@ Releases are built and signed by `.github/workflows/release.yml` on a `v*` tag. 
 
 | Area | Commands |
 |---|---|
-| Start | `init`, `setup [--dry-run] [--remove]`, `doctor`, `id`, `hub` |
+| Start | `init`, `secure`, `setup [--dry-run] [--remove]`, `doctor`, `id`, `hub` |
 | Rooms | `up` (host; `--console` for live `link / members / audit / revoke`), `join LINK [--task CMD]`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp` |
 | Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE` |
 | Trust | `verify LOG`, `attest`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
@@ -51,6 +51,19 @@ changes what is missing. `--dry-run` shows the changes without making them; `--y
 `--no-service`, `--no-agents`, `--local`, `--cloudflare`, `--tunnel NAME --hostname HOST`, `--port`, `--lan` and `--hub-dir` pre-answer the questions.
 It never replaces a hub service it didn't write without a yes, never takes over one loaded from another file, and won't register agents from a build-tree binary.
 Manage the service later with `playbox hub --service install|status|uninstall` (the log is `$PLAYBOX_HOME/hub.log`).
+
+## Checking it stays secure
+
+`playbox secure` checks, in about a second, that this machine, your agents and the hub are set up securely, and `playbox secure --fix` repairs file and folder
+permissions (nothing else is ever changed). It checks: who can read your keys, the state folders and the service log; the binary (a build-tree copy, or an
+older `playbox` earlier on your PATH, or a file other accounts can write); disk encryption, firewall and system-integrity settings; every signed history log;
+each coding agent's registration (does it point at a real, current binary nobody else can replace?); and the hub (the service file, browser protections, that
+every private route answers 401 to a stranger, that cross-site requests are refused, whether the hub is reachable from the network, and your public address).
+It then **fuzzes a throwaway copy of the hub** (never your own): 1 500 malformed and random requests (`--deep`: 20 000), signed out and signed in, and flags
+any 5xx, hang, dropped connection, CORS header, stack trace, or stranger let in anywhere but the public pages. A run is repeatable with `--seed N`.
+The report is saved to `$PLAYBOX_HOME/security.json` and shown in the hub's System view, which re-runs it every six hours and on demand; `playbox update`
+runs it after every update, and `playbox init` runs it as its last step. `--json` for scripts, `--strict` to fail on warnings, `--online` to look for updates.
+Exit status: 0 clean, 1 something failing, 3 only warnings with `--strict`.
 
 ## The hub
 
