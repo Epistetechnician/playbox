@@ -451,7 +451,11 @@ def start_cloudflared(port, tunnel=None, hostname=None):
     if not cf:
         print("cloudflared is not installed (brew install cloudflared); skipping --cloudflare.", flush=True)
         return None, None
-    cmd = [cf, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"] + (["run", tunnel] if tunnel else [])
+    cmd = [cf, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"]
+    if tunnel:
+        # a tunnel given by id runs from its credentials file, so no account login (cert.pem) is needed at run time
+        creds = Path.home() / ".cloudflared" / f"{tunnel}.json"
+        cmd += (["--credentials-file", str(creds)] if creds.exists() else []) + ["run", tunnel]
     proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     found = threading.Event()
     box = {}
