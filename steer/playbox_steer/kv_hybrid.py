@@ -104,22 +104,55 @@ class BM25:
         return sorted(range(len(sc)), key=lambda i: -sc[i])[:k]
 
 
+PARA = {"badge code": "the number on the staff pass", "launch date": "the day it goes live", "budget code": "the finance line it is charged to",
+        "lead engineer": "the engineer in charge", "primary vendor": "the main supplier", "ticket number": "the tracking request id",
+        "server rack": "the cabinet housing its computers", "cost centre": "the accounting unit that pays for it",
+        "safety officer": "the person responsible for hazards", "test lab": "the facility where it is trialled",
+        "firmware build": "the software version on its devices", "contract number": "the agreement reference",
+        "site code": "the location identifier", "radio channel": "the frequency its crews talk on",
+        "review board": "the panel that approves changes", "insurance policy": "the coverage reference",
+        "patent filing": "the intellectual property application", "shipping lane": "the route its freight takes",
+        "warehouse bay": "the storage slot for its parts", "audit reference": "the inspection record id",
+        "grant number": "the funding award id", "license key": "the activation string", "cable batch": "the wiring lot",
+        "paint colour code": "the finish shade", "tool serial": "the instrument's manufacturing id",
+        "vehicle plate": "the registration of its truck", "gate pass": "the entry permit", "sensor model": "the detector type",
+        "backup tape": "the archive cartridge label", "escrow account": "the held-funds account",
+        "customs form": "the border declaration", "survey plot": "the land parcel"}
+assert set(PARA) == set(ATTRS)
+
 PREAMBLE = ("You are a records assistant for a large engineering programme. Answer using only the documents provided. "
             "Reply with the exact value only, no explanation. If a value is not in the documents, reply NOT FOUND.")
 
 
-def make_sessions(facts, n_sessions: int, n_turns: int, seed: int = 1, n_projects: int | None = None):
-    """n_projects < n_sessions makes agents share projects (a team on one project), which is where a shared cached prefix pays most.
-    Turns beyond the 32 attributes repeat attributes in a new order (a later turn asking again is still a real lookup)."""
+def make_sessions(facts, n_sessions: int, n_turns: int, seed: int = 1, n_projects: int | None = None, kind: str = "lookup"):
+    """kind: lookup = exact attribute name; para = the attribute described in other words (BM25 cannot match it);
+    cross = a question about two projects (two answers); drift = the first half of a session is about its own project, the second half
+    about another one. n_projects < n_sessions makes agents share projects. Turns beyond the 32 attributes repeat attributes."""
     rng = random.Random(seed)
     projects = sorted({p for p, _ in facts})
     rng.shuffle(projects)
-    projects = projects[:n_projects or n_sessions]
+    pool = projects[:n_projects or n_sessions]
     out = []
     for i in range(n_sessions):
-        p = projects[i % len(projects)]
+        p = pool[i % len(pool)]
+        other = rng.choice([x for x in projects if x != p])
         attrs = [a for _ in range(math.ceil(n_turns / len(ATTRS))) for a in rng.sample(ATTRS, len(ATTRS))][:n_turns]
-        out.append({"project": p, "turns": [{"q": f"What is the {a} for Project {p}?", "attr": a, "answer": facts[(p, a)]} for a in attrs]})
+        turns = []
+        for t, a in enumerate(attrs):
+            if kind == "lookup":
+                turns.append({"q": f"What is the {a} for Project {p}?", "attr": a, "projects": [p], "answers": [facts[(p, a)]]})
+            elif kind == "para":
+                turns.append({"q": f"For Project {p}, what is {PARA[a]}?", "attr": a, "projects": [p], "answers": [facts[(p, a)]]})
+            elif kind == "cross":
+                turns.append({"q": f"What is the {a} for Project {p}, and what is it for Project {other}?", "attr": a, "projects": [p, other],
+                              "answers": [facts[(p, a)], facts[(other, a)]]})
+            elif kind == "drift":
+                q_p = p if t < n_turns // 2 else other
+                turns.append({"q": f"What is the {a} for Project {q_p}?", "attr": a, "projects": [q_p], "answers": [facts[(q_p, a)]]})
+            else:
+                raise ValueError(kind)
+            turns[-1]["answer"] = turns[-1]["answers"][0]
+        out.append({"project": p, "turns": turns})
     return out
 
 
@@ -137,12 +170,21 @@ def build_messages(arm: str, chunks, bm, session, turn, K_hybrid=24, K_rag=5):
         k = int(arm[6:]) if arm[6:] else K_hybrid  # "hybrid" = 24 chunks, "hybrid10" = the 8 project chunks plus 2
         idx = sorted(bm.top(f"Project {session['project']}", k))  # stable: same set, same order, every turn
         ctx = context_text([chunks[i] for i in idx])
+    elif arm.startswith("adaptive"):
+        # hybrid keyed on the QUESTION's project: one project -> its cached working set; two -> retrieve for the question; none -> RAG
+        k = int(arm[8:]) if arm[8:] else K_hybrid
+        ps = session["turns"][turn].get("projects", [session["project"]])
+        if len(ps) == 1:
+            idx = sorted(bm.top(f"Project {ps[0]}", k))
+        else:
+            idx = sorted(bm.top(q, 2 * K_rag))
+        ctx = context_text([chunks[i] for i in idx])
     else:
         raise ValueError(arm)
     return [{"role": "system", "content": PREAMBLE + "\n\nDocuments:\n\n" + ctx}, {"role": "user", "content": q}]
 
 
-def stream_chat(base: str, model: str, messages, max_tokens: int = 24, timeout: int = 900) -> dict:
+def stream_chat(base: str, model: str, messages, max_tokens: int = 40, timeout: int = 900) -> dict:
     body = json.dumps({"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0, "stream": True,
                        "stream_options": {"include_usage": True}}).encode()
     req = urllib.request.Request(base + "/v1/chat/completions", body, {"Content-Type": "application/json"})
@@ -173,8 +215,8 @@ def run_arm(base, model, arm, chunks, bm, sessions, n_turns, **kw) -> dict:
     def one(s):
         for t in range(n_turns):
             r = stream_chat(base, model, build_messages(arm, chunks, bm, s, t, **kw))
-            ans = s["turns"][t]["answer"]
-            r.update(turn=t, ok=ans.lower() in r["text"].lower(), project=s["project"])
+            answers = s["turns"][t].get("answers") or [s["turns"][t]["answer"]]
+            r.update(turn=t, ok=all(a.lower() in r["text"].lower() for a in answers), project=s["project"])
             with lock:
                 rows.append(r)
 
