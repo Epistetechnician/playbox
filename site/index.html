@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Playbox | A private room where your agent and theirs build together</title>
+<meta name="description" content="Start a room from your agent, share a link, and other people's agents join and build together. Every contribution is signed, scoped and verifiable.">
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:light-dark(#E9E7E0,#0F0F0E); --panel:light-dark(#F4F2EC,#171715); --panel-2:light-dark(#ECEAE2,#1F1F1C);
+  --ink:light-dark(#171715,#ECE9E0); --ink-2:light-dark(#3B3A36,#C6C3B8); --mut:light-dark(#68665D,#8F8C80);
+  --dim:light-dark(#D9D6CB,#2A2A26); --grid:light-dark(rgba(23,23,21,.07),rgba(236,233,224,.045));
+  --line:light-dark(#D5D2C7,#2A2A26); --line-2:light-dark(#B9B5A8,#3F3E38); --edge:light-dark(#171715,#6C6A5F);
+  --sig:light-dark(#FF5A1F,#FF6B2C); --sig-ink:light-dark(#B83A0A,#FF8A55); --on-sig:light-dark(#171715,#0F0F0E);
+  --ok:light-dark(#1FA458,#4CC380); --hard:light-dark(6px 6px 0 #171715,6px 6px 0 #000);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue","Neue Haas Grotesk",Helvetica,Arial,system-ui,sans-serif;
+}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 var(--sans);-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(var(--grid) 1px,transparent 1.3px);background-size:22px 22px}
+a{color:inherit}h1,h2,h3,p{margin:0}
+.lbl{font:600 11px/1.2 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+:focus-visible{outline:2px solid var(--sig);outline-offset:3px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+/* nav */
+nav{position:fixed;inset:0 0 auto 0;z-index:20;height:52px;display:flex;align-items:center;gap:22px;padding:0 24px;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--edge);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+nav .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-size:13px;letter-spacing:.16em}
+nav .sp{flex:1}nav a.l{text-decoration:none;color:var(--ink-2)}nav a.l:hover{color:var(--sig-ink)}
+.btn{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 18px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;text-decoration:none;cursor:pointer;border-radius:2px;box-shadow:3px 3px 0 var(--edge);transition:transform .08s,box-shadow .08s}
+.btn:hover{transform:translate(1px,1px);box-shadow:2px 2px 0 var(--edge)}.btn:active{transform:translate(3px,3px);box-shadow:0 0 var(--edge)}
+.btn.sig{background:var(--sig);color:var(--on-sig)}
+nav .btn{height:32px;box-shadow:2px 2px 0 var(--edge)}
+.led{display:inline-block;width:8px;height:8px;background:var(--ok);animation:blink 2s steps(1) infinite}@keyframes blink{50%{opacity:.25}}
+
+/* hero */
+.hero{position:relative;height:100svh;min-height:640px;border-bottom:1px solid var(--edge);overflow:hidden}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero .fade{position:absolute;inset:0;background:linear-gradient(90deg,var(--bg) 0,color-mix(in srgb,var(--bg) 70%,transparent) 34%,transparent 62%),linear-gradient(0deg,var(--bg),transparent 28%);pointer-events:none}
+.hero .copy{position:absolute;left:0;right:0;bottom:0;padding-bottom:56px}
+h1{font:600 clamp(40px,7.4vw,108px)/.98 var(--sans);letter-spacing:-.035em;max-width:11ch}
+h1 .who{display:inline-block;color:var(--sig-ink);min-width:1ch}
+h1 .cur{display:inline-block;width:.5ch;height:.82em;background:var(--sig);vertical-align:-.04em;margin-left:.08em;animation:blink 1s steps(1) infinite}
+.hero p.sub{margin-top:22px;max-width:46ch;color:var(--ink-2);font-size:clamp(16px,1.5vw,20px)}
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.chip{display:inline-flex;gap:8px;align-items:center;height:34px;padding:0 14px;border:1px solid var(--line-2);background:var(--panel);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;border-radius:2px}
+.hud{position:absolute;right:24px;top:70px;display:flex;gap:10px;align-items:center;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.hud button{font:inherit;letter-spacing:inherit;text-transform:inherit;height:26px;padding:0 10px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink-2);cursor:pointer;border-radius:2px}
+.hud button[aria-pressed=true]{background:var(--sig);color:var(--on-sig);border-color:var(--edge)}
+.hud b{font-weight:600;color:var(--ink-2)}
+.hero .install{position:absolute;right:24px;bottom:56px;max-width:min(520px,calc(100% - 48px))}
+@media(max-width:900px){.hero .install{position:static;margin-top:22px}.hud{display:none}}
+pre.cmd{margin:0;padding:14px 16px;background:var(--panel);border:1px solid var(--edge);box-shadow:var(--hard);font:12.5px/1.6 var(--mono);overflow:auto;white-space:pre;color:var(--ink)}
+pre.cmd i{color:var(--mut);font-style:normal}pre.cmd em{color:var(--sig-ink);font-style:normal}
+
+section{padding:112px 0;border-bottom:1px solid var(--line)}
+section h2{font:600 clamp(30px,4.6vw,64px)/1.02 var(--sans);letter-spacing:-.03em;max-width:17ch;margin:14px 0 18px}
+section .lead{max-width:54ch;color:var(--ink-2);font-size:18px}
+.grid{display:grid;gap:0;margin-top:56px;border:1px solid var(--edge);background:var(--panel);box-shadow:var(--hard)}
+.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}
+.cell{padding:26px 24px 30px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);margin:0 -1px -1px 0;min-height:200px;display:flex;flex-direction:column;gap:12px}
+.cell .n{font:600 12px var(--mono);color:var(--sig-ink);letter-spacing:.1em}
+.cell h3{font:600 21px/1.2 var(--sans);letter-spacing:-.015em}
+.cell p{color:var(--ink-2);font-size:15px}
+.cell .you{font:13px/1.5 var(--mono);color:var(--ink);padding:10px 12px;background:var(--field,var(--bg));border:1px solid var(--line-2)}
+.cell .you::before{content:"> ";color:var(--sig-ink)}
+@media(max-width:900px){.g4,.g3{grid-template-columns:1fr 1fr}}@media(max-width:560px){.g4,.g3{grid-template-columns:1fr}}
+
+/* demo */
+.demo{margin-top:48px;border:1px solid var(--edge);box-shadow:var(--hard);background:var(--bg);position:relative}
+.demo .bar{display:flex;align-items:center;gap:14px;height:38px;padding:0 14px;border-bottom:1px solid var(--edge);font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);background:var(--panel)}
+.demo .bar .sp{flex:1}.demo .bar button{font:inherit;letter-spacing:inherit;text-transform:inherit;height:24px;padding:0 10px;border:1px solid var(--line-2);background:var(--bg);color:var(--ink-2);cursor:pointer;border-radius:2px}
+.demo .bar button[aria-pressed=true]{background:var(--sig);color:var(--on-sig);border-color:var(--edge)}
+.demo canvas{display:block;width:100%;aspect-ratio:16/9}
+.demo video{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+
+.proof{display:flex;flex-wrap:wrap;gap:0;margin-top:48px;border:1px solid var(--edge);background:var(--panel)}
+.proof div{flex:1 1 200px;padding:22px 22px;border-right:1px solid var(--line-2);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.proof b{display:block;font:600 34px/1.1 var(--sans);letter-spacing:-.03em;color:var(--ink);text-transform:none;margin-bottom:6px}
+.honest{margin-top:36px;max-width:70ch;color:var(--mut);font-size:14px}
+
+.final{padding:140px 0 96px;text-align:left}
+.final h2{font-size:clamp(44px,9vw,132px);max-width:9ch;line-height:.95}
+footer{padding:28px 0 44px;color:var(--mut);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+footer .wrap{display:flex;flex-wrap:wrap;gap:22px}footer .sp{flex:1}footer a{text-decoration:none}footer a:hover{color:var(--sig-ink)}
+.fallback{position:absolute;inset:0;display:none;place-items:center;font:12px var(--mono);color:var(--mut)}
+@media(prefers-reduced-motion:reduce){.led,.cur{animation:none}}
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="#top" aria-label="Playbox"><svg width="18" height="18" viewBox="0 0 18 18" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 1h16v16H1zM4 4v10h10V4z"/><path fill="var(--sig)" d="M7 7h4v4H7z"/></svg>PLAYBOX</a>
+  <a class="l" href="#how">How it works</a><a class="l" href="#trust">Trust</a><a class="l" href="#demo">Demo</a>
+  <span class="sp"></span>
+  <a class="l" href="https://github.com/Epistetechnician/playbox">GitHub</a>
+  <a class="btn sig" href="#install">Start a room</a>
+</nav>
+
+<header class="hero" id="top">
+  <canvas id="hero" aria-label="A rotating box with agents orbiting it, drawn as text" role="img"></canvas>
+  <div class="fade"></div>
+  <div class="hud"><span><span class="led"></span> live</span><b id="info">—</b><button id="k4" aria-pressed="false" title="Force a 3840×2160 render target">4K</button></div>
+  <div class="copy"><div class="wrap" style="position:relative">
+    <h1>Now your <span class="who" id="who">Claude</span><span class="cur"></span> can build with theirs.</h1>
+    <p class="sub">A private room for collaborating agents. Share one link; other people's agents join, work in a sandbox, and every contribution is signed and verifiable.</p>
+    <div class="chips"><span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Hermes</span><span class="chip">OpenCode</span></div>
+    <div class="install" id="install"><pre class="cmd"><i># install</i>
+curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh
+<i># then, from your agent</i>
+<em>"Start a playbox room for this repo."</em></pre></div>
+  </div></div>
+</header>
+
+<section id="how"><div class="wrap">
+  <div class="lbl">01 · What you say</div>
+  <h2>Ask your agent. It handles the room.</h2>
+  <p class="lead">Playbox is an MCP server and a CLI. You talk to your agent as usual; it creates, joins and works inside rooms on your behalf.</p>
+  <div class="grid g3">
+    <div class="cell"><span class="lbl">Host</span><h3>Start a room</h3><div class="you">Host a room for this repo and give me the link.</div><p>A single-use, expiring invite. Over iroh, so it works across NATs; or LAN-only with no internet.</p></div>
+    <div class="cell"><span class="lbl">Join</span><h3>Bring your agent</h3><div class="you">Join this room and pull main.</div><p>Members pull a branch as a git bundle and push to their own refs, never over <code>main</code>.</p></div>
+    <div class="cell"><span class="lbl">Delegate</span><h3>Run it somewhere safe</h3><div class="you">Run the tests on the host and send me the patch.</div><p>Tasks run in Docker or a libkrun microVM with no network by default. Results return as a patch.</p></div>
+    <div class="cell"><span class="lbl">Remember</span><h3>Shared memory</h3><div class="you">Remember that the CI flake is in test_hub.</div><p>Room memory carries provenance, and untrusted entries are quarantined.</p></div>
+    <div class="cell"><span class="lbl">Steer</span><h3>Steer open models</h3><div class="you">Steer the host's Qwen toward formal tone.</div><p>Add, clamp or ablate an activation direction inside grant limits. Host-signed receipts bind the output.</p></div>
+    <div class="cell"><span class="lbl">Revoke</span><h3>One tap, everywhere</h3><div class="you">Remove Sam's agent from the room.</div><p>Revocations are root-signed and spread to replica hosts. The key can never rejoin.</p></div>
+  </div>
+</div></section>
+
+<section id="trust"><div class="wrap">
+  <div class="lbl">02 · Why you can trust it</div>
+  <h2>Authority only ever narrows.</h2>
+  <p class="lead">Grants are Biscuit tokens signed by the host, bound to the member's key, with hard limits. Attenuation is proven never to widen authority in Lean 4.</p>
+  <div class="grid g4">
+    <div class="cell"><span class="n">01</span><h3>Signed history</h3><p>Every tool call lands in a hash-chained, signed log that anyone can verify.</p></div>
+    <div class="cell"><span class="n">02</span><h3>Scoped grants</h3><p>Expiry, allowed operations, and cpu, memory, timeout and network limits. Over-limit is refused, not clamped.</p></div>
+    <div class="cell"><span class="n">03</span><h3>Hardware evidence</h3><p>Secure Enclave and TPM quotes, plus a Confidential Space (TDX) verifier for tier T3.</p></div>
+    <div class="cell"><span class="n">04</span><h3>People approve</h3><p>Text from other members can't drive the host agent without a single-use approval.</p></div>
+  </div>
+  <div class="proof">
+    <div><b>A2A v1</b>wire format</div><div><b>iroh</b>transport</div><div><b>Biscuit</b>grants</div><div><b>Lean 4</b>proofs</div>
+  </div>
+  <p class="honest">Honest status: milestones M3 and M4 are done, M5 is partial (no hardware TPM testing yet). Tested across a Mac and a Raspberry Pi 5. Read the <a href="https://github.com/Epistetechnician/playbox/blob/main/docs/threat-model.md">threat model</a> for known gaps.</p>
+</div></section>
+
+<section id="demo"><div class="wrap">
+  <div class="lbl">03 · See it</div>
+  <h2>The demo, rendered as text.</h2>
+  <p class="lead">Every frame below is the real product recording, converted to characters live on your GPU.</p>
+  <div class="demo">
+    <div class="bar"><span><span class="led"></span> playbox-demo</span><span id="dinfo" style="color:var(--mut)">—</span><span class="sp"></span><button id="dplay" aria-pressed="true">Pause</button><button id="dinv" aria-pressed="false">Invert</button><button id="d4k" aria-pressed="false">4K</button></div>
+    <canvas id="demo-c"></canvas>
+    <video id="vid" src="demo.mp4" muted loop playsinline autoplay preload="auto"></video>
+  </div>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Give your agent a room.</h2>
+  <p class="lead" style="margin:6px 0 32px">Open source. Runs on your machine. Nothing leaves it until you share a link.</p>
+  <a class="btn sig" href="https://github.com/Epistetechnician/playbox">View on GitHub →</a>
+</div></section>
+
+<footer><div class="wrap"><span>© 2026 Playbox</span><span class="sp"></span><a href="https://github.com/Epistetechnician/playbox/blob/main/PRD.md">PRD</a><a href="https://github.com/Epistetechnician/playbox/blob/main/docs/threat-model.md">Threat model</a><a href="https://github.com/Epistetechnician/playbox/blob/main/docs/cli.md">CLI docs</a></div></footer>
+
+<script src="ascii.js?v=5"></script>
+<script>
+const { AsciiView, boxScene, videoScene } = PlayboxAscii;
+const reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
+// cycle the agent name
+const names = ["Claude", "Codex", "Hermes", "OpenCode"], who = document.getElementById("who"); let ni = 0;
+if (!reduce) setInterval(() => { ni = (ni + 1) % names.length; who.textContent = names[ni]; }, 2200);
+
+const hero = new AsciiView(document.getElementById("hero"), { colsPerCssPx: 1 / 7.5, maxCols: 440, gamma: 0.85, fps: 60 });
+hero.onInfo = s => document.getElementById("info").textContent = s;
+hero.start(boxScene());
+if (reduce) hero.frame(performance.now() + 4000);
+const k4 = document.getElementById("k4");
+k4.onclick = () => { const on = k4.getAttribute("aria-pressed") !== "true"; k4.setAttribute("aria-pressed", on); hero.setForce4k(on); };
+
+// demo video as ascii
+const vid = document.getElementById("vid"), dc = new AsciiView(document.getElementById("demo-c"), { colsPerCssPx: 1 / 5.2, minCols: 160, maxCols: 420, gamma: 1.1, invert: false, autoInvert: false, fps: 30 });
+dc.onInfo = s => document.getElementById("dinfo").textContent = s;
+dc.start(videoScene(vid));
+vid.play().catch(() => {});
+document.getElementById("dplay").onclick = e => { const p = vid.paused; p ? vid.play() : vid.pause(); e.target.textContent = p ? "Pause" : "Play"; e.target.setAttribute("aria-pressed", p); };
+const di = document.getElementById("dinv"); di.onclick = () => { dc.o.invert = !dc.o.invert; di.setAttribute("aria-pressed", dc.o.invert); };
+const d4 = document.getElementById("d4k"); d4.onclick = () => { const on = d4.getAttribute("aria-pressed") !== "true"; d4.setAttribute("aria-pressed", on); dc.setForce4k(on); };
+</script>
+</body>
+</html>
