@@ -85,7 +85,7 @@ jobs:
           fi
       - name: Attest provenance
         # A signed statement that these exact files were built by this workflow from this commit; `gh attestation verify FILE -R Epistetechnician/playbox`
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: "dist/*"
       - name: Publish
