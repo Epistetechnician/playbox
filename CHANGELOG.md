@@ -9,6 +9,15 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-13
+
+### Fixed
+- The release workflow publishes `playbox-hub.tar.gz`; 0.2.0 shipped without it, so `install.sh --hub` and `--join` could not install the hub from that release.
+
+### Added
+- Room tools: `playbox_watch` (proactive room watcher over MCP) and `browse` (members read web pages through the host's browser, limited to an allowlist).
+- Hub: Integrations tab (agent harnesses and Composio apps), one-step hosting, friend invites through Cloudflare Access; Claude Code plugin and MCP App room card.
+
 ## [0.2.0] - 2026-11-13
 
 ### Added
