@@ -28,6 +28,7 @@ from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from .sec import SecLog, STAGES, posture
 from . import board
+from .machine import Machine
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -48,6 +49,9 @@ def is_local(peer, headers):
 def make_handler(hub, auth, store, opts):
     invites = Invites(store)
     integ = Integrations(store)
+    machine = Machine(opts.get("port") or 7717)
+    if not os.environ.get("PLAYBOX_HUB_NO_MACHINE"):      # the fuzzer's throwaway hub and the tests don't schedule it
+        machine.schedule()
 
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "playbox-hub"
@@ -148,7 +152,7 @@ def make_handler(hub, auth, store, opts):
             rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
             checks = posture(public=public, access=bool(opts.get("access")), creds=len(store.d["creds"]), weak_sessions=weak, invites=inv, knocks=knocks,
                              push=len(store.d["push"]), rooms=rooms, fresh=fresh)
-            return {"now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
+            return {"machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
                     "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
                               "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
                     "rooms": rooms}
@@ -574,6 +578,9 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
             if m == "GET" and p == "/api/system":
                 return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/machine":
+                machine.start()
+                return self.j(200, self.system(rec))
             if m == "POST" and p == "/api/system/verify":
                 n = 0
                 for room in list(hub.rooms.values()):
@@ -895,7 +902,7 @@ def main(argv=None):
     hub.extra_attention.append(lambda: [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
                                          "title": f"{r['name']} wants to join {store.d['invites'].get(r['invite'], {}).get('label', 'a room')}",
                                          "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
-    opts = {"public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
+    opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True

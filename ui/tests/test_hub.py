@@ -278,9 +278,12 @@ def test_http():
         return
     home, port = tempfile.mkdtemp(prefix="pbhub-"), free_port()
     fsrv, fseen = fake_composio(["ca_1", "ca_2"])
+    fakecli = os.path.join(home, "fake-playbox")
+    open(fakecli, "w").write('#!/bin/sh\necho \'{"version":1,"at":%d,"playbox":"9.9.9","score":80,"checks":[{"group":"machine","id":"x","label":"Keys","level":"warn","detail":"too open","fix":"chmod 700","fixable":true}],"fuzz":null}\'\n' % int(time.time()))
+    os.chmod(fakecli, 0o755)
     p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
                          stdout=subprocess.PIPE, text=True,
-                         env={**os.environ, "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
+                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
     try:
         code = None
         for _ in range(12):
@@ -329,6 +332,20 @@ def test_http():
         check("room proxy: unknown room 404", a.req("GET", "/r/zzzz/api/state")[0] == 404)
         st, j, _ = a.req("PATCH", f"/api/rooms/{rid}", {"label": "Lab", "kind": "shared"})
         check("rename + reclassify", st == 200 and j["room"]["label"] == "Lab" and j["room"]["kind"] == "shared")
+        st, j, _ = a.req("GET", "/api/system")
+        check("system: the machine report is empty until a check has run", st == 200 and j["machine"]["report"] is None and j["machine"]["running"] is False)
+        check("system: a re-check needs a session", Client(port).req("POST", "/api/system/machine", {})[0] == 401)
+        st, j, _ = a.req("POST", "/api/system/machine", {})
+        check("system: re-check starts", st == 200)
+        for _ in range(40):
+            j = a.req("GET", "/api/system")[1]
+            if j["machine"]["report"]:
+                break
+            time.sleep(0.25)
+        mr = j["machine"]["report"] or {}
+        check("system: the CLI's report is shown with its age", mr.get("playbox") == "9.9.9" and mr["checks"][0]["label"] == "Keys" and j["machine"]["age"] is not None and not j["machine"]["stale"], str(j["machine"]))
+        st, j2, _ = a.req("POST", "/api/system/machine", {})
+        check("system: a second re-check right away is ignored, not queued", st == 200 and j2["machine"]["running"] is False)
 
         st, j, _ = a.req("GET", "/api/integrations")
         check("integrations: no key yet", st == 200 and j["configured"] is False and j["accounts"] == [])
@@ -725,7 +742,7 @@ def test_landing_quoting():
 def spawn_hub(mcp, tag):
     home, port = tempfile.mkdtemp(prefix=f"pbhub-{tag}-"), free_port()
     p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
-                         stdout=subprocess.PIPE, text=True, env={**os.environ, "PLAYBOX_HUB_FRESH": "2"})
+                         stdout=subprocess.PIPE, text=True, env={**os.environ, "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2"})
     code = None
     for _ in range(12):
         m = re.search(r"/pair#(\S+)", p.stdout.readline())
