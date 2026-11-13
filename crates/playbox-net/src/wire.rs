@@ -107,6 +107,18 @@ pub enum Op {
         #[serde(default)]
         since: u64,
     },
+    /// List the capabilities the host offers (names, parameters, whether each call needs approval).
+    CapList,
+    /// Call a capability. `call_id` (1 to 64 letters, digits, - _ .) makes the call run once: the same id with the same request returns
+    /// the same call, whatever happens to the connection.
+    Cap {
+        name: String,
+        #[serde(default)]
+        args: std::collections::BTreeMap<String, String>,
+        call_id: String,
+    },
+    /// The state and, once finished, the result of the caller's own call.
+    CapPoll { call_id: String },
     /// Say something to the whole room.
     Say {
         text: String,
@@ -152,7 +164,7 @@ impl Op {
             Op::Steer { probe: true, .. } => "steer_probe",
             Op::Handoff { .. } => "handoff",
             // Talking in the room needs only membership, like echo.
-            Op::Say { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
+            Op::Say { .. } | Op::CapList | Op::Cap { .. } | Op::CapPoll { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
         }
     }
 
@@ -173,6 +185,8 @@ impl Op {
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
                 ..Needs::default()
             },
+            // A capability is allowed by the grant's `cap/NAME` entry (the same allow-list as hosts and secrets).
+            Op::Cap { name, .. } => Needs { hosts: vec![format!("cap/{name}")], ..Needs::default() },
             // Steering is authorized again in full once the host has read the spec and prompt set.
             _ => Needs::default(),
         }

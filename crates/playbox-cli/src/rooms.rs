@@ -1,5 +1,5 @@
 use crate::cli::{JoinArgs, TransportArgs, UpArgs};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use playbox_core::{attest, platform, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
 use playbox_runner::{runner_with, RunnerOptions, SandboxPolicy, TaskSpec};
@@ -76,6 +76,11 @@ pub async fn up(a: UpArgs) -> Result<()> {
                 Some(runner_with(&name, policy, &opts)?)
             }
             None => None,
+        },
+        capabilities: match &a.capabilities {
+            None => Vec::new(),
+            Some(file) => serde_json::from_slice(&std::fs::read(file).with_context(|| format!("reading {file}"))?)
+                .with_context(|| format!("{file} must be a JSON array of capabilities"))?,
         },
         steer: match a.steer_store.clone() {
             None => None,
@@ -220,7 +225,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
         return ran;
     }
     if a.console {
-        println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | quit");
+        println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | quit");
         console(&host).await?;
     } else {
         println!("(ctrl-c to stop)");
@@ -373,11 +378,22 @@ async fn console(host: &Host) -> Result<()> {
                         }
                         None => println!("no audit log file; start with --state DIR or --audit-log FILE"),
                     },
+                    (Some("calls"), _) => {
+                        let pending = host.pending_calls();
+                        println!("{} call(s) waiting for approval", pending.len());
+                        for c in pending {
+                            println!("  {}/{}  {} {}", &c.member[..c.member.len().min(12)], c.id, c.name, serde_json::to_string(&c.args)?);
+                        }
+                    }
+                    (Some(verb @ ("approve" | "deny")), Some(id)) => match host.decide_call(id, verb == "approve") {
+                        Ok(c) => println!("{verb}d {} ({})", c.id, c.name),
+                        Err(e) => println!("{e:#}"),
+                    },
                     (Some("revoke"), Some(id)) => match id.parse::<playbox_net::EndpointId>() {
                         Ok(id) => println!("{}", if host.revoke_member(&id) { "revoked" } else { "not a current member" }),
                         Err(e) => println!("not a member id: {e}"),
                     },
-                    _ => println!("link | members | audit [N] | revoke <member id> | quit"),
+                    _ => println!("link | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | quit"),
                 }
             }
         }

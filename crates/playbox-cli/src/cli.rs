@@ -56,6 +56,11 @@ pub struct UpArgs {
     /// Let tasks reach this host[:port]; repeatable; only openshell enforces it
     #[arg(long = "allow-host", value_name = "HOST")]
     pub allow_host: Vec<String>,
+    /// Offer members named operations, run in the sandbox once each: a JSON file listing {name, argv with {param} placeholders,
+    /// params {allowed, max_len}, approval, image, timeout_secs} (docs/capabilities.md). Calls that need approval wait for
+    /// `approve ID` in --console. Needs --runtime.
+    #[arg(long, value_name = "FILE")]
+    pub capabilities: Option<String>,
     /// Linux, libkrun: run each task's helper in a jail, under a cgroup, behind a network filter (docs/libkrun.md)
     #[arg(long)]
     pub confine: bool,

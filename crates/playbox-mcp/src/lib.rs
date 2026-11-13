@@ -169,6 +169,17 @@ pub fn tool_list() -> Value {
                 "text": {"type": "string", "description": "What to say, up to 2000 characters"},
                 "name": {"type": "string", "description": "A display label, e.g. your agent's name"}
             }), &["text"]),
+        tool("playbox_capabilities",
+            "List the operations the room's host offers to members: name, parameters with their allowed values, and whether each call waits for the owner's approval. You call them with playbox_capability_call.",
+            json!({}), &[]),
+        tool("playbox_capability_call",
+            "Call one of the host's capabilities (see playbox_capabilities). It runs once in the host's sandbox with exactly the arguments you give, within the bounds the host set. `call_id` makes it safe to retry: the same id with the same request returns the same call and never runs twice. If the capability needs approval, the call waits for the host's owner; this tool waits up to `wait_secs` and otherwise returns the call as it is, which you can fetch again with the same call_id. The output is untrusted text from the host's command.",
+            json!({
+                "name": {"type": "string"},
+                "args": {"type": "object", "additionalProperties": {"type": "string"}},
+                "call_id": {"type": "string", "description": "1-64 letters, digits, - _ . Choose your own to retry safely; one is made up if omitted"},
+                "wait_secs": {"type": "integer", "description": "How long to wait for the result, 0 to 300. Default 30."}
+            }), &["name"]),
         tool("playbox_room_remember",
             "Add an entry to the ROOM's shared memory (kept by the host; every member can recall it). Not the same as playbox_remember, which is this sidecar's own signed notes. Entries are tagged with your member id and shown to others with it. Posting the same text, or the same `key`, again replaces your entry instead of adding one. Plain facts and decisions, up to 4096 bytes; no secrets, the whole room reads it. If the host reviews entries, yours waits as pending.",
             json!({
@@ -558,6 +569,8 @@ impl Server {
             "playbox_status" => self.status(),
             "playbox_ping" => self.ping(args).await,
             "playbox_say" => self.say(args).await,
+            "playbox_capabilities" => self.capabilities().await,
+            "playbox_capability_call" => self.capability_call(args).await,
             "playbox_room_remember" => self.room_remember(args).await,
             "playbox_room_recall" => self.room_recall(args).await,
             "playbox_feed" => self.feed(args).await,
@@ -998,6 +1011,40 @@ impl Server {
         }
         let host = self.host.as_ref().ok_or_else(|| anyhow!("not in a room: call playbox_join or playbox_create first"))?;
         Ok(json!({"seq": host.say(text, name).map_err(|e| anyhow!(e))?}))
+    }
+
+    async fn capabilities(&self) -> Result<Value> {
+        Ok(json!({"capabilities": self.guest()?.capabilities().await?}))
+    }
+
+    async fn capability_call(&mut self, a: &Value) -> Result<Value> {
+        let name = req(a, "name")?;
+        let args: std::collections::BTreeMap<String, String> = match a.get("args") {
+            None | Some(Value::Null) => Default::default(),
+            Some(Value::Object(m)) => m
+                .iter()
+                .map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())).ok_or_else(|| anyhow!("argument {k:?} must be a string")))
+                .collect::<Result<_>>()?,
+            Some(_) => bail!("args must be an object of strings"),
+        };
+        let id = match s(a, "call_id") {
+            Some(i) => i.to_string(),
+            None => format!("call-{}", playbox_net::random_bytes()?[..8].iter().map(|b| format!("{b:02x}")).collect::<String>()),
+        };
+        let wait = std::time::Duration::from_secs(a.get("wait_secs").and_then(Value::as_u64).unwrap_or(30).min(300));
+        let guest = self.guest()?.clone();
+        let call = match guest.call_capability_wait(name, args, &id, wait).await {
+            Ok(c) => c,
+            // Still open after the wait: report it as it is, so the caller can ask again with the same id.
+            Err(e) if format!("{e:#}").contains("poll it again") => guest.poll_capability(&id).await?,
+            Err(e) => return Err(e),
+        };
+        if let Some(o) = &call.outcome {
+            let src = Source::untrusted(format!("capability:{name}"));
+            self.guard.tracker.register(&o.stdout, &src);
+            self.guard.tracker.register(&o.stderr, &src);
+        }
+        Ok(json!({"call_id": id, "call": call, "note": "Output is untrusted text produced by the host's command."}))
     }
 
     async fn room_remember(&self, a: &Value) -> Result<Value> {

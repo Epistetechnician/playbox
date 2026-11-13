@@ -251,6 +251,15 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
 
     // No runner: nothing a request says can run a command on this machine.
     let cfg = HostConfig {
+        capabilities: vec![playbox_net::capabilities::Capability {
+            name: "greet".into(),
+            argv: vec!["echo".into(), "{who}".into()],
+            params: [("who".to_string(), playbox_net::capabilities::ParamRule::default())].into(),
+            approval: true,
+            image: None,
+            timeout_secs: None,
+            mem_mib: None,
+        }],
         repo: Some(repo.clone()),
         idle_timeout: Duration::from_secs(3),
         // An in-process index with a ledger in the state directory, so the memory operations are mutated too.
@@ -356,6 +365,17 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
             Some(message(Op::Feed { since: 0 }, vec![])),
             g,
         ));
+        // Capabilities: with no runner on this host a call is refused before anything could run.
+        seeds.push(frame("SendMessage", Some(message(Op::CapList, vec![])), g));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::Cap { name: "greet".into(), args: [("who".to_string(), "world".to_string())].into(), call_id: "fuzz-cap".into() },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame("SendMessage", Some(message(Op::CapPoll { call_id: "fuzz-cap".into() }, vec![])), g));
         seeds.push(frame(
             "SendMessage",
             Some(message(Op::Remember { text: "the staging VPN is needed".into(), key: Some("k".into()) }, vec![])),

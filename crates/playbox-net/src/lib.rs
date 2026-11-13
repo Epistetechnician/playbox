@@ -3,6 +3,7 @@
 //! Peers speak A2A v1 JSON-RPC over iroh streams; see [`wire`] for the binding.
 
 pub mod audit;
+pub mod capabilities;
 pub mod chat;
 pub mod grants;
 pub mod latent;
@@ -420,6 +421,10 @@ pub struct HostConfig {
     pub chat_log: Option<PathBuf>,
     /// The room's shared memory (a Hindsight sidecar, kept by the host). `None`: `remember` and `recall` are refused.
     pub memory: Option<Arc<shared_memory::SharedMemory>>,
+    /// Operations offered to members by name (see [`capabilities`]). Needs `runner`; each member's grant lists the names.
+    pub capabilities: Vec<capabilities::Capability>,
+    /// Where calls are kept across restarts. `None`: `<state dir>/calls.json` for a host opened with a state directory.
+    pub calls_store: Option<PathBuf>,
 }
 
 impl Default for HostConfig {
@@ -444,6 +449,8 @@ impl Default for HostConfig {
             latent: latent::LatentPolicy::default(),
             chat_log: None,
             memory: None,
+            capabilities: Vec::new(),
+            calls_store: None,
         }
     }
 }
@@ -471,6 +478,7 @@ struct RoomHandler {
     platform: Option<Arc<dyn PlatformProvider>>,
     /// Signed hub latent messages posted to the room, kept in `<state dir>/latent.json` when the host has one.
     latent: Arc<latent::Mailbox>,
+    caps: Arc<capabilities::Engine>,
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -582,7 +590,7 @@ impl RoomHandler {
             timeout_secs: i64::try_from(l.timeout_secs).unwrap_or(i64::MAX),
             net: l.network,
             // A secret is granted as `secret/NAME` in the same allow-list as hosts: `/` is in no host name or secret name.
-            hosts: l.allowed_hosts.iter().cloned().chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}"))).collect(),
+            hosts: l.allowed_hosts.iter().cloned().chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}"))).chain(self.cfg.capabilities.iter().map(|c| format!("cap/{}", c.name))).collect(),
         };
         let ttl = self
             .cfg
@@ -906,6 +914,19 @@ impl RoomHandler {
                     Ok(hits) => reply(json!({ "hits": hits }).to_string()),
                     Err(e) => reply(json!({ "error": e }).to_string()),
                 };
+            }
+            Some(Op::CapList) => return reply(json!({ "capabilities": self.caps.book.describe() }).to_string()),
+            Some(Op::Cap { name, args, call_id }) => {
+                return match self.caps.submit(&from.to_string(), &name, args, &call_id) {
+                    Ok(c) => reply(json!({ "call": c }).to_string()),
+                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                }
+            }
+            Some(Op::CapPoll { call_id }) => {
+                return match self.caps.book.view(&from.to_string(), &call_id) {
+                    Some(c) => reply(json!({ "call": c }).to_string()),
+                    None => reply(json!({ "error": "no such call" }).to_string()),
+                }
             }
             Some(Op::Feed { since }) => {
                 let me = from.to_string();
@@ -1368,6 +1389,7 @@ pub struct Host {
     transport: Transport,
     repl: Arc<revoke::Replication>,
     memory: Option<Arc<shared_memory::SharedMemory>>,
+    caps: Arc<capabilities::Engine>,
 }
 
 impl Host {
@@ -1410,6 +1432,7 @@ impl Host {
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
+        cfg.calls_store.get_or_insert_with(|| dir.join("calls.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
     }
@@ -1434,6 +1457,7 @@ impl Host {
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
         cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
+        cfg.calls_store.get_or_insert_with(|| dir.join("calls.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(
             secret,
@@ -1557,6 +1581,13 @@ impl Host {
             &cfg.limits,
         );
         let memory = cfg.memory.clone();
+        let caps = Arc::new(capabilities::Engine::new(
+            capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
+            cfg.runner.clone(),
+            audit.clone(),
+            cfg.scratch_quota,
+            cfg.limits.clone(),
+        ));
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
@@ -1573,6 +1604,7 @@ impl Host {
             measurements,
             platform: cfg.platform.clone(),
             latent: Arc::new(latent::Mailbox::new(cfg.latent.clone())),
+            caps: caps.clone(),
             cfg,
         };
         let sync = revoke::SyncHandler {
@@ -1592,7 +1624,23 @@ impl Host {
             transport,
             repl,
             memory,
+            caps,
         })
+    }
+
+    /// Calls waiting for the owner's approval.
+    #[must_use]
+    pub fn pending_calls(&self) -> Vec<capabilities::Call> {
+        self.caps.book.pending()
+    }
+
+    /// Approve or deny a waiting call (`member/id`, or the id alone if only one waiting call has it).
+    ///
+    /// # Errors
+    ///
+    /// Fails if no single waiting call matches.
+    pub fn decide_call(&self, which: &str, approve: bool) -> Result<capabilities::Call> {
+        self.caps.decide(which, approve)
     }
 
     #[must_use]
@@ -2226,6 +2274,58 @@ impl Client {
         Ok(serde_json::from_value(v.get("hits").cloned().unwrap_or(Value::Null)).unwrap_or_default())
     }
 
+    /// The capabilities the host offers: names, parameters and whether each call needs the owner's approval.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn capabilities(&self) -> Result<Value> {
+        let v = self.reply_json(&Op::CapList, "capabilities").await?;
+        Ok(v.get("capabilities").cloned().unwrap_or(Value::Null))
+    }
+
+    /// Start a capability call. `call_id` makes it run once however many times it is sent; the answer is the call as the host
+    /// records it (`awaiting_approval`, `running`, or already `done`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refuses (no grant for the capability, arguments outside its bounds, an id reused for a
+    /// different request).
+    pub async fn call_capability(&self, name: &str, args: std::collections::BTreeMap<String, String>, call_id: &str) -> Result<capabilities::Call> {
+        let op = Op::Cap { name: name.to_string(), args, call_id: call_id.to_string() };
+        let v = self.reply_json(&op, "capability call").await?;
+        call_of(&v)
+    }
+
+    /// The state of your own call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there is no such call.
+    pub async fn poll_capability(&self, call_id: &str) -> Result<capabilities::Call> {
+        let v = self.reply_json(&Op::CapPoll { call_id: call_id.to_string() }, "capability poll").await?;
+        call_of(&v)
+    }
+
+    /// Call a capability and wait up to `wait` for it to finish. A connection that drops mid-wait is not a failure of the call: the
+    /// same id is polled again on a new connection.
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::call_capability`]; also when `wait` passes with the call still open (the call is not cancelled, poll it later).
+    pub async fn call_capability_wait(&self, name: &str, args: std::collections::BTreeMap<String, String>, call_id: &str, wait: Duration) -> Result<capabilities::Call> {
+        let mut call = self.call_capability(name, args, call_id).await?;
+        let until = std::time::Instant::now() + wait;
+        while matches!(call.state, capabilities::State::Running | capabilities::State::AwaitingApproval) {
+            if std::time::Instant::now() > until {
+                bail!("call {call_id} is still {:?}; poll it again later", call.state);
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            call = self.poll_capability(call_id).await?;
+        }
+        Ok(call)
+    }
+
     async fn reply_json(&self, op: &Op, what: &str) -> Result<Value> {
         match self
             .send(op, vec![])
@@ -2495,6 +2595,13 @@ pub async fn join_link(
     Ok(client)
 }
 
+
+fn call_of(v: &Value) -> Result<capabilities::Call> {
+    if let Some(e) = v.get("error").and_then(Value::as_str) {
+        bail!("{e}");
+    }
+    Ok(serde_json::from_value(v.get("call").cloned().unwrap_or(Value::Null))?)
+}
 
 #[cfg(test)]
 mod say_retry_tests {
