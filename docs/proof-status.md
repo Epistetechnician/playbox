@@ -10,13 +10,14 @@ authors' documents and result files, nothing re-derived), **open**.
 | Claim | Level | How |
 |---|---|---|
 | Rust workspace tests pass | re-run | `cargo test --workspace --offline`: 29 test binaries, 0 failed |
-| Bundle import refuses a `.git/hooks` tree on old git | re-run (git behaviour), code read | On git 2.43.0 (`ubuntu:24.04`) `git fetch` from a bundle ignores `transfer.fsckObjects` and imports the tree; `fsck --strict` with `hasDotgit=error` rejects it. `bundle_import` runs that fsck (#11). The Rust test itself was not run on 2.43 after the fix; it passes on 2.55.0 |
+| Bundle import refuses a `.git/hooks` tree on old git | re-run (git behaviour), code read | On git 2.43.0 (`ubuntu:24.04`) `git fetch` from a bundle ignores `transfer.fsckObjects` and imports the tree; `fsck --strict` with `hasDotgit=error` rejects it. `bundle_import` runs that fsck (#11). `cargo test -p playbox-git` also passes 6/6 on git 2.43.0 (`ubuntu:24.04`, Rust 1.93.1) and on 2.55.0 |
 | Black-box conformance | re-run | `conformance/run.py`: 6 pass, 1 skipped (`version_skew` needs an older release) |
 | Grant theorems (Lean) | re-run | `lake build` succeeds |
 | Hill-climb gate receipts | re-run + recomputed | `challenge/gate.py verify`: 6 receipts verified; 4 reject, 2 promote |
 | Python suite `steer` | re-run | `uv run --offline --group dev pytest tests`: 128 passed in 16 min |
-| Python suites `judge`, `world` | open | not yet run |
-| Fuzz targets | stored | not re-run this session |
+| Python suites `judge`, `world`, Hermes witness | re-run | `judge` 18 passed (CI subset: `test_measures.py` and `test_fear.py` load real models and were skipped), `world` 11 passed, witness plugin 14 passed |
+| Fuzz targets | re-run | all 12 targets, 60 s each, 50k to 310k executions each, no crashes, no artifacts |
+| Qwen3-8B ↔ OLMo-2-7B probe-gated run | re-run | Fresh run on a gman H100 (`steer/tools/node/big_gated_repro.sh`, new seed label `s3`, shipped probe): maps refit at held-out cosine 0.87 / 0.88; topics 71/80 = 88.8% (CI 80 to 94), controls 36/36, 0 retries. Pooled with s1 and s2: 211/240 = 87.9% topics, 107/108 controls. Same node type, same probe and prompts, so this repeats sampling, not the setup |
 | Two-machine, India, Pi, T1 Secure Enclave, T3 TDX runs | stored | [tested-on.md](tested-on.md); needs the original hardware |
 
 ## Research numbers (recomputed from raw files)
@@ -41,6 +42,6 @@ authors' documents and result files, nothing re-derived), **open**.
 
 ## Not proven
 
-- Re-running any GPU experiment (needs Modal or an H100); only the stored outputs were recomputed.
+- Re-running the other GPU experiments (DeepSeek pair, swarm, hub, kv-hybrid); only their stored outputs were recomputed. The one reproduction above reused the shipped probe, so it does not re-test probe calibration.
 - An independent audit; a hardware TPM; libkrun on Linux/KVM; a real closed-model reader of concept cards.
 - The 3×3 matmul target (best known 23) and a second host for the Commons replica.

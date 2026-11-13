@@ -50,6 +50,12 @@ lo, hi = wilson(t, tn)
 check("qwen8b->olmo2 gated Wilson CI low (%)", round(lo), 81)
 check("qwen8b->olmo2 gated Wilson CI high (%)", round(hi), 92)
 
+# 1b. Fresh reproduction on 2026-11-13 (seed label s3, same node type and shipped probe): 71/80 topics, 36/36 controls
+t3, tn3, c3, cn3 = gated(["big_pair_gated_s3_private"])
+check("s3 reproduction topics correct", t3, 71)
+check("s3 reproduction controls answered none", c3, 36)
+check("three-seed pooled topics correct", gated(["big_pair_gated_private", "big_pair_gated_s2_private", "big_pair_gated_s3_private"])[0], 211)
+
 # 2. Qwen3-8B -> DeepSeek-7B, receiver at layer fraction 0.9, two seeds
 t, tn, c, cn = gated(["dsk_pair_r09_s1_private", "dsk_pair_r09_s2_private"])
 check("qwen8b->deepseek layer 0.9 topics correct", t, 139)
