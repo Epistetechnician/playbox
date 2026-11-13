@@ -457,9 +457,12 @@ let es;
 function connect() {
   if (es) es.close();
   es = new EventSource("/api/events");
-  es.onopen = () => { S.live = true; paintStatus(); };
-  es.onerror = () => { S.live = false; paintStatus(); };
-  es.addEventListener("hello", e => { const d = JSON.parse(e.data); S.rooms = d.rooms; S.attention = d.attention; S.activity = d.activity || []; S.loaded = true; S.stale = false; mood(); paintView(); });
+  // Some paths (Cloudflare quick tunnels) open the stream but never deliver events. No hello in 6 s: poll instead.
+  clearTimeout(connect.t); S.helloed = false;
+  connect.t = setTimeout(() => { if (!S.helloed) { es.close(); S.poll = true; S.live = true; paintStatus(); startPolling(); } }, 6000);
+  es.onopen = () => { if (!S.poll) { S.live = true; paintStatus(); } };
+  es.onerror = () => { if (!S.poll) { S.live = false; paintStatus(); } };
+  es.addEventListener("hello", e => { S.helloed = true; S.poll = false; clearInterval(startPolling.i); const d = JSON.parse(e.data); S.rooms = d.rooms; S.attention = d.attention; S.activity = d.activity || []; S.loaded = true; S.stale = false; mood(); paintView(); });
   es.addEventListener("room", e => {
     const d = JSON.parse(e.data), i = S.rooms.findIndex(r => r.id === d.id), old = S.rooms[i];
     if (i < 0) S.rooms.push(d); else S.rooms[i] = d;
@@ -480,6 +483,10 @@ function connect() {
     mood(); paintChrome(); if (S.view === "rooms" || S.view === "attention") paintView(true);
   });
   es.addEventListener("bye", () => { location.href = "/"; });
+}
+function startPolling() {
+  clearInterval(startPolling.i);
+  startPolling.i = setInterval(() => { if (!document.hidden && S.poll) refreshRooms(); }, 10000);
 }
 function localNotify(a) {
   if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
@@ -531,7 +538,7 @@ function paintChrome() {
   const h = $("#sthost"); if (h) h.textContent = location.host;
 }
 function paintStatus() {
-  const h = `<i class="led ${S.live ? "live" : "hold"}"></i>${S.live ? "Live" : navigator.onLine ? "Reconnecting" : "Offline"}`;
+  const h = `<i class="led ${S.live ? "live" : "hold"}"></i>${S.live ? (S.poll ? "Polling" : "Live") : navigator.onLine ? "Reconnecting" : "Offline"}`;
   const el = $("#linkled"); if (el) el.innerHTML = h;
   const o = $("#offline"); if (o) o.hidden = S.live || !S.loaded;
 }

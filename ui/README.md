@@ -5,6 +5,7 @@ Each room is its own `playbox-mcp` sidecar behind the hub; tapping a room opens 
 
 ```sh
 python3 ui/playbox_hub.py                  # http://127.0.0.1:7717, prints a one-time pairing link
+python3 ui/playbox_hub.py --cloudflare      # or publish over a Cloudflare tunnel (cloudflared): public HTTPS, passkeys only, plain-HTTP pairing refused
 python3 ui/playbox_hub.py --tailscale      # also publish privately to your tailnet over HTTPS (passkeys + push work there)
 python3 ui/playbox_hub.py --lan            # phones on your Wi-Fi can pair over plain HTTP (no passkey)
 python3 ui/playbox_hub.py --pair           # mint a link to add another device
@@ -26,6 +27,13 @@ to the hub machine.
 **Networking.** The hub binds loopback by default. For remote access prefer `--tailscale` (WireGuard identity, real HTTPS, nothing public;
 `--require-tailnet-login you@example.com` additionally checks the Tailscale user header). The hub talks to rooms through Playbox's own
 transport; agents on other machines join the room by link as before.
+
+**Cloudflare tunnel.** `--cloudflare` runs `cloudflared` (a quick tunnel: no account, no open port) and prints an `https://*.trycloudflare.com` pairing link.
+A public address is **passkeys only**: plain-HTTP pairing is switched off, and the login throttle counts per visitor (`Cf-Connecting-Ip`), not per tunnel.
+The tunnel stops when the hub does. Limits: a quick tunnel's name changes every run (so pair again, passkeys bind to the hostname), and
+Cloudflare quick tunnels don't stream server-sent events, so the app notices the silent stream after 6 s and polls instead (status shows "Polling").
+For a stable name and live updates use your own named tunnel, `--cloudflare-tunnel NAME --cloudflare-hostname HOST`, and put Cloudflare Access in front of it.
+Tested end to end through a real quick tunnel: pairing, session cookie (`Secure`, `HttpOnly`), API, manifest, service worker; named tunnels and Access are untested.
 
 **Push.** Web Push with VAPID and **no payload**: the push service learns nothing. The service worker wakes, asks the hub
 (over your session) what needs attention, and shows it. Urgent items push even with the app open; unread only when nobody is watching.

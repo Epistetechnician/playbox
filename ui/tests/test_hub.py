@@ -333,10 +333,64 @@ def test_http():
         shutil.rmtree(home, ignore_errors=True)
 
 
+def test_cloudflare():
+    """--cloudflare against a stand-in cloudflared: passkeys only, throttle per visitor, tunnel process dies with the hub."""
+    mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
+    if not mcp:
+        print("SKIP cloudflare tests (playbox-mcp not found)")
+        return
+    d = tempfile.mkdtemp(prefix="pbcf-")
+    pidf = os.path.join(d, "pid")
+    fake = os.path.join(d, "cloudflared")
+    open(fake, "w").write("#!/bin/sh\necho $$ > %s\necho \"$@\" > %s.args\necho 'INF |  https://fake-name-here.trycloudflare.com  |' >&2\nexec sleep 300\n" % (pidf, pidf))
+    os.chmod(fake, 0o755)
+    port, home = free_port(), os.path.join(d, "home")
+    env = {**os.environ, "PATH": d + os.pathsep + os.environ["PATH"]}
+    bad = subprocess.run([sys.executable, os.path.join(UI, "playbox_hub.py"), "--cloudflare-tunnel", "x", "--home", home, "--mcp", mcp], capture_output=True, text=True, env=env, timeout=20)
+    check("named tunnel without --cloudflare-hostname is refused", bad.returncode != 0 and "cloudflare-hostname" in (bad.stdout + bad.stderr))
+    p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp, "--cloudflare"],
+                         stdout=subprocess.PIPE, text=True, env=env)
+    try:
+        out = ""
+        for _ in range(14):
+            out += p.stdout.readline()
+            if "/pair#" in out and "fake-name-here" in out and out.count("/pair#") >= 2:
+                break
+        check("prints the public tunnel address and a pairing link for it", "https://fake-name-here.trycloudflare.com/pair#" in out)
+        args = open(pidf + ".args").read()
+        check("tunnel points at the loopback hub only", f"--url http://127.0.0.1:{port}" in args)
+        c = Client(port)
+        st, j, _ = c.req("GET", "/api/auth/state", None, {"Host": "fake-name-here.trycloudflare.com", "Cf-Connecting-Ip": "203.0.113.7", "X-Forwarded-For": "203.0.113.7"})
+        check("over the tunnel: weak (plain-HTTP) pairing is not offered", st == 200 and j["weak_ok"] is False and j["rp"] == "fake-name-here.trycloudflare.com")
+        st, _, _ = c.req("POST", "/api/auth/weak", {"code": "whatever"}, {"Host": "fake-name-here.trycloudflare.com", "Origin": "https://fake-name-here.trycloudflare.com", "Cf-Connecting-Ip": "203.0.113.7"})
+        check("over the tunnel: the weak-session endpoint refuses", st in (403, 404, 429))
+        hh = lambda ip: {"Host": "fake-name-here.trycloudflare.com", "Origin": "https://fake-name-here.trycloudflare.com", "Cf-Connecting-Ip": ip}
+        a = [c.req("POST", "/api/auth/register/begin", {"code": "bad"}, hh("203.0.113.7"))[0] for _ in range(10)]
+        check("throttle trips for the visitor who guessed", 429 in a)
+        check("a different visitor behind the same tunnel is not locked out", c.req("POST", "/api/auth/register/begin", {"code": "bad"}, hh("198.51.100.9"))[0] != 429)
+        pid = int(open(pidf).read())
+        p.terminate()
+        p.wait(timeout=15)
+        time.sleep(0.5)
+        try:
+            os.kill(pid, 0)
+            alive = True
+        except OSError:
+            alive = False
+        check("the tunnel process is stopped when the hub exits", not alive)
+        if alive:
+            os.kill(pid, 9)
+    finally:
+        if p.poll() is None:
+            p.kill()
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
     test_push_send()
     test_http()
+    test_cloudflare()
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

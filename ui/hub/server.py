@@ -48,7 +48,11 @@ def make_handler(hub, auth, store, opts):
         # ---- plumbing ----
         @property
         def peer(self):
-            return self.client_address[0]
+            ip = self.client_address[0]
+            # behind our own cloudflared (loopback peer only) the real client is the header Cloudflare sets, so the throttle is per visitor, not global
+            if opts.get("cloudflare") and ip in ("127.0.0.1", "::1"):
+                return self.headers.get("Cf-Connecting-Ip", ip)
+            return ip
 
         def hdrs(self):
             return {k.lower() for k in self.headers.keys()}
@@ -299,26 +303,29 @@ def make_handler(hub, auth, store, opts):
         def events(self):
             q = hub.bus.subscribe()
             self.send_response(200)
-            for k, v in (("Content-Type", "text/event-stream"), ("Cache-Control", "no-store"), ("X-Accel-Buffering", "no"),
-                         ("Connection", "keep-alive"), ("Content-Security-Policy", CSP)):
+            for k, v in (("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache, no-transform"), ("X-Accel-Buffering", "no"),
+                         ("Transfer-Encoding", "chunked"), ("Content-Security-Policy", CSP)):
                 self.send_header(k, v)
             self.end_headers()
             self.close_connection = True
+            def emit(b):    # proper chunked framing: proxies and tunnels flush each event instead of waiting for the stream to end
+                self.wfile.write(b"%x\r\n" % len(b) + b + b"\r\n")
             try:
                 hub.wake.set()
-                self.wfile.write(b"retry: 3000\n\n")
-                self.wfile.write(sse("hello", {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()}))
+                emit(b"retry: 3000\n\n")
+                emit(sse("hello", {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()}))
                 self.wfile.flush()
                 last = time.time()
                 while True:
                     try:
                         kind, data = q.get(timeout=15)
-                        self.wfile.write(sse(kind, data))
+                        emit(sse(kind, data))
                     except queue.Empty:
-                        self.wfile.write(b": ping\n\n")
+                        emit(b": ping\n\n")
                     self.wfile.flush()
                     if not auth.session(self.cookie()):
-                        self.wfile.write(sse("bye", {}))
+                        emit(sse("bye", {}))
+                        self.wfile.write(b"0\r\n\r\n")
                         self.wfile.flush()
                         return
             except (BrokenPipeError, ConnectionResetError, OSError):
@@ -435,6 +442,37 @@ def tailscale_info():
         return ts, None
 
 
+def start_cloudflared(port, tunnel=None, hostname=None):
+    """Run cloudflared in front of the hub. Quick tunnel (no account): random https://*.trycloudflare.com. Named tunnel: your own hostname.
+    Returns (process, https_url) or (None, None)."""
+    import re
+    import threading
+    cf = shutil.which("cloudflared")
+    if not cf:
+        print("cloudflared is not installed (brew install cloudflared); skipping --cloudflare.", flush=True)
+        return None, None
+    cmd = [cf, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"] + (["run", tunnel] if tunnel else [])
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    found = threading.Event()
+    box = {}
+
+    def pump():
+        for line in proc.stderr:      # keep draining so cloudflared never blocks on a full pipe
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+            if m and "url" not in box:
+                box["url"] = m.group(0)
+                found.set()
+            if tunnel and "Registered tunnel connection" in line:
+                box.setdefault("url", f"https://{hostname}")
+                found.set()
+    threading.Thread(target=pump, daemon=True).start()
+    if not found.wait(40) or proc.poll() is not None:
+        print("cloudflared did not come up within 40 s; skipping --cloudflare.", flush=True)
+        proc.terminate()
+        return None, None
+    return proc, box["url"]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="playbox_hub", description="Playbox hub: every room, one installable app.")
     ap.add_argument("--port", type=int, default=7717)
@@ -442,12 +480,20 @@ def main(argv=None):
     ap.add_argument("--lan", action="store_true", help="also listen on the local network (phones on your Wi-Fi can pair over plain HTTP)")
     ap.add_argument("--tailscale", action="store_true", help="publish to your tailnet over HTTPS with `tailscale serve` (private to your devices; passkeys work there)")
     ap.add_argument("--require-tailnet-login", metavar="LOGIN", help="with --tailscale: also require this Tailscale user (header set by tailscaled)")
+    ap.add_argument("--cloudflare", action="store_true", help="publish over HTTPS with a Cloudflare quick tunnel (cloudflared, no account, no open port). Passkeys only; the address changes each run")
+    ap.add_argument("--cloudflare-tunnel", metavar="NAME", help="use your own named Cloudflare tunnel (stable address, so passkeys survive restarts); needs --cloudflare-hostname")
+    ap.add_argument("--cloudflare-hostname", metavar="HOST", help="the public hostname routed to that named tunnel")
     ap.add_argument("--no-weak", action="store_true", help="refuse plain-HTTP pairing entirely: passkeys only")
     ap.add_argument("--pair", action="store_true", help="print a fresh pairing link for a new device")
     ap.add_argument("--mcp", default=os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp") or shutil.which("playbox"))
     a = ap.parse_args(argv)
     if not a.mcp:
         sys.exit("playbox not found. Install it: curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh")
+    cloud = a.cloudflare or bool(a.cloudflare_tunnel)
+    if a.cloudflare_tunnel and not a.cloudflare_hostname:
+        sys.exit("--cloudflare-tunnel needs --cloudflare-hostname (the public name routed to that tunnel).")
+    if cloud:
+        a.no_weak = True          # a public address never gets the plain-HTTP pairing path: passkeys only
     store = Store(a.home)
     auth = Auth(store, allow_weak=not a.no_weak)
 
@@ -463,7 +509,7 @@ def main(argv=None):
                 store.save()
 
     hub = Hub(store, a.mcp, push_fn)
-    opts = {"weak": not a.no_weak, "tailnet_login": a.require_tailnet_login}
+    opts = {"weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True
@@ -479,10 +525,21 @@ def main(argv=None):
             if r.returncode != 0:
                 print("`tailscale serve` failed: " + (r.stderr or r.stdout).strip()[:200], flush=True)
                 ts_name = None
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))   # `kill` must also take the tunnel/tailnet publication down
+    cf_proc = cf_url = None
+    if cloud:
+        threading_serve = __import__("threading").Thread(target=srv.serve_forever, daemon=True)
+        threading_serve.start()     # cloudflared checks the origin as it connects, so serve first
+        cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
     print(f"\n  ▪ PLAYBOX hub   {base}", flush=True)
-    if not auth.enrolled() or a.pair:
+    if cf_url:
+        print(f"  Public (Cloudflare, HTTPS, passkeys only): {cf_url}", flush=True)
+    if (not auth.enrolled() or a.pair or (cf_url and not a.cloudflare_tunnel)):
         code = auth.mint_code()
         print(f"\n  Pair this device (valid 10 min, single use):\n    {base}/pair#{code}", flush=True)
+        if cf_url:
+            print(f"    {cf_url}/pair#{code}      <- passkeys, from any device (a quick tunnel's address changes each run, so pair again)", flush=True)
         if ts_name:
             print(f"    https://{ts_name}/pair#{code}      <- passkeys, from any of your devices", flush=True)
         if a.lan and opts["weak"]:
@@ -491,10 +548,16 @@ def main(argv=None):
         print(f"  Sign in with your passkey at {base}" + (f" or https://{ts_name}" if ts_name else ""), flush=True)
         print("  New device? restart with --pair, or use Devices inside the app.", flush=True)
     try:
-        srv.serve_forever()
+        if cloud:
+            while threading_serve.is_alive():
+                threading_serve.join(1)      # short joins so signals are handled promptly
+        else:
+            srv.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         hub.close()
+        if cf_proc:
+            cf_proc.terminate()
         if ts_name:    # take the tailnet publication down with the hub
             subprocess.run([ts, "serve", "--https=443", "off"], capture_output=True, timeout=15)
