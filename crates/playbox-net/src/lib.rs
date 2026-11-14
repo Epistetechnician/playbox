@@ -62,6 +62,10 @@ const MAX_FRAME: usize = 256 * 1024 * 1024;
 /// a connection is at most this big. After one request succeeds with an invite or a grant, the connection
 /// may send up to `MAX_FRAME`. Clients with a large first request send a tiny one first (see `Client`).
 pub const MAX_UNAUTHENTICATED_REQUEST: usize = 64 * 1024;
+/// How many requests one connection may make before one of them succeeds with an invite or a grant. Each refused
+/// request is written to the audit log and the feed, so without a bound a stranger could fill the host's disk over a
+/// single open connection. An honest client needs a handful (card, attestation, join).
+pub const MAX_UNAUTHENTICATED_REQUESTS: u32 = 32;
 /// How long a connection that has proved something may sit idle, or take to send one request.
 const AUTHENTICATED_PATIENCE: Duration = Duration::from_secs(15 * 60);
 /// Tasks remembered per member for `GetTask` / `ListTasks`.
@@ -331,11 +335,9 @@ impl State {
             banned: self.banned.iter().map(ToString::to_string).collect(),
             notices: self.notices.values().cloned().collect(),
         };
-        let tmp = path.with_extension("tmp");
         let result = serde_json::to_vec_pretty(&saved)
             .map_err(anyhow::Error::from)
-            .and_then(|b| std::fs::write(&tmp, b).map_err(Into::into))
-            .and_then(|()| std::fs::rename(&tmp, path).map_err(Into::into));
+            .and_then(|b| write_atomic(path, &b).map_err(Into::into));
         if let Err(e) = result {
             eprintln!(
                 "playbox: could not save host state to {}: {e:#}",
@@ -343,6 +345,28 @@ impl State {
             );
         }
     }
+}
+
+/// Replace `path` with `bytes` so that a crash or power cut leaves either the old file or the new one, never an empty
+/// or half-written one: write a private (0600) temporary file next to it, flush it to disk, rename it over `path`, then
+/// flush the directory so the rename itself survives. (A rename alone can reach the disk before the data does.)
+pub(crate) fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let tmp = path.with_extension("tmp");
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&tmp)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 /// A 32-byte secret stored as hex in a file readable only by the owner; created if missing.
@@ -1430,7 +1454,15 @@ impl ProtocolHandler for RoomHandler {
             return Ok(());
         };
         let mut authenticated = false;
+        let mut unproven = 0u32;
         loop {
+            if !authenticated {
+                unproven += 1;
+                if unproven > MAX_UNAUTHENTICATED_REQUESTS {
+                    conn.close(3u32.into(), b"too many requests without a grant");
+                    return Ok(());
+                }
+            }
             let (patience, cap) = if authenticated {
                 (self.cfg.authenticated_patience, MAX_FRAME)
             } else {
@@ -2856,6 +2888,26 @@ fn call_of(v: &Value, host: EndpointId) -> Result<capabilities::Call> {
     let call: capabilities::Call = serde_json::from_value(v.get("call").cloned().unwrap_or(Value::Null))?;
     call.verify_result(host.as_bytes())?;
     Ok(call)
+}
+
+#[cfg(test)]
+mod write_atomic_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn state_is_replaced_whole_and_kept_private() {
+        let dir = std::env::temp_dir().join(format!("pbx-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("state.json");
+        let st = State { path: Some(p.clone()), ..Default::default() };
+        st.save();
+        st.save();
+        assert!(State::load(&p).is_ok());
+        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600, "the room's state is for the host only");
+        assert!(!p.with_extension("tmp").exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
 
 #[cfg(test)]

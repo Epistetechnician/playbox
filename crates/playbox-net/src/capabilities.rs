@@ -366,11 +366,10 @@ impl Book {
 
     fn save(&self, t: &Table) {
         if let Some(p) = &self.store {
-            let tmp = p.with_extension("tmp");
             let list: Vec<&Call> = t.calls.values().collect();
             if let Ok(text) = serde_json::to_string(&list) {
-                if std::fs::write(&tmp, text).is_ok() {
-                    let _ = std::fs::rename(&tmp, p);
+                if let Err(e) = crate::write_atomic(p, text.as_bytes()) {
+                    eprintln!("playbox: cannot save the capability calls {}: {e}", p.display());
                 }
             }
         }
