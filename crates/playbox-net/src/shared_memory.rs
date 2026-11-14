@@ -649,6 +649,7 @@ mod tests {
         true
     }
 
+    // REQ: MEM-1
     #[tokio::test]
     async fn an_entry_is_recalled_with_its_author_and_a_retry_does_not_duplicate() {
         let (idx, m) = mem(false, None);
@@ -665,6 +666,7 @@ mod tests {
         assert_eq!(hits.iter().map(|h| h.author.as_str()).collect::<Vec<_>>(), ["alice"]);
     }
 
+    // REQ: MEM-1
     #[tokio::test]
     async fn a_key_replaces_an_entry() {
         let (idx, m) = mem(false, None);
@@ -675,6 +677,7 @@ mod tests {
         assert!(hits.iter().all(|h| h.text.contains("two minutes")), "{hits:?}");
     }
 
+    // REQ: MEM-2
     #[tokio::test]
     async fn revoking_a_member_deletes_their_entries_and_hides_them_at_once() {
         let (idx, m) = mem(false, None);
@@ -692,6 +695,7 @@ mod tests {
         assert!(idx.documents("room1").is_empty());
     }
 
+    // REQ: MEM-3
     #[tokio::test]
     async fn a_pending_entry_never_reaches_the_index_until_accepted() {
         let (idx, m) = mem(true, None);
@@ -728,6 +732,7 @@ mod tests {
         }
     }
 
+    // REQ: MEM-4
     #[tokio::test]
     async fn what_the_ledger_does_not_vouch_for_is_dropped() {
         let m = SharedMemory::new(MemoryConfig::new(Arc::new(Lying(InMemory::default())), "room1")).unwrap();
