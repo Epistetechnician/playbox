@@ -28,7 +28,7 @@ jobs:
           cargo run --bin seeds
           sed -i 's/cargo +nightly fuzz/cargo fuzz/' run-all.sh
           ./run-all.sh "$SECS"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: fuzz-crashes
