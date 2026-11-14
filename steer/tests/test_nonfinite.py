@@ -76,6 +76,33 @@ def test_pbl1_scale_too_big_for_a_float_is_a_value_error():
         H.unpack(hub, H.MAGIC + struct.pack(">I", len(hb)) + hb + blob[8 + n:])
 
 
+def test_files_refuse_oversized_directions_and_unencodable_prompts(tmp_path, monkeypatch):
+    import hashlib
+    import sys
+    import types
+
+    try:
+        import blake3  # noqa: F401
+    except ImportError:      # this test only needs *a* hash function, not blake3 itself
+        monkeypatch.setitem(sys.modules, "blake3", types.SimpleNamespace(blake3=lambda b=b"": hashlib.sha256(b)))
+    from playbox_steer import files
+
+    big = tmp_path / "big.f32"
+    with open(big, "wb") as f:
+        f.truncate(4 * (files.MAX_DIRECTION_DIM + 1))      # sparse: nothing is read before the size check refuses it
+    with pytest.raises(ValueError):
+        files.read_direction(big)
+    ok = tmp_path / "ok.f32"
+    ok.write_bytes(struct.pack("<2f", 1.0, 0.0))
+    with pytest.raises(ValueError):
+        files.read_direction(ok, dim=3)
+    assert files.read_direction(ok, dim=2)[0] == [1.0, 0.0]
+    p = tmp_path / "p.json"
+    p.write_text(json.dumps({"prompts": ["\ud800"]}))       # json.dumps escapes it; json.loads yields a lone surrogate
+    with pytest.raises(ValueError):
+        files.read_prompts(p)
+
+
 def test_quantize_refuses_a_non_finite_thought():
     for bad in (float("nan"), float("inf")):
         with pytest.raises(ValueError):
