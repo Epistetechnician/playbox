@@ -285,7 +285,7 @@ def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unre
         local = task.data_manifest(include_holdout=False)
         want = recs[0]["body"]["data_manifest"]
         bad = [k for k in local if local[k] != want.get(k)]
-        if not rep.add("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", not bad, "differs: " + ", ".join(bad)):
+        if not rep.add("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", not bad, ("differs: " + ", ".join(bad)) if bad else ""):
             return rep, summary
     ok, promos, rejects, caught = check_decisions(rep, recs, work, task.SPEC)
     rv = check_reveal(rep, recs, work, task, allow_unrevealed)
