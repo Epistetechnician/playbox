@@ -48,8 +48,6 @@ def run(ctx):
     old_playbox, old_mcp = exe("playbox", old=True), exe("playbox-mcp", old=True)
     new_playbox = exe("playbox")
     old_v, new_v = version_of(old_playbox), version_of(new_playbox)
-    if old_v == new_v:
-        raise Skip(f"the old and new builds are both {old_v}")
 
     root = ctx.dir("mirrors")
     keyfile = str(root / "key")
@@ -82,8 +80,10 @@ def run(ctx):
     old_host.close()
 
     # 3. Upgrade the installed binary: `playbox update` when this old release has it, else the installer again (both are real paths).
+    # `playbox update` only moves forward, so when the previous release and this build report the same version (work since the last tag
+    # that has not been given a new number yet) the installer is the upgrade path, as it is for a release too old to have `update`.
     upd = subprocess.run([installed, "update", "--help"], capture_output=True, text=True)
-    if upd.returncode == 0:
+    if upd.returncode == 0 and old_v != new_v:
         r = subprocess.run([installed, "update", "--pubkey", pub], capture_output=True, text=True, env={**env, "PLAYBOX_BASE_URL": f"file://{new_rel}"}, timeout=120)
         assert r.returncode == 0, r.stdout + r.stderr
         how = "update"
