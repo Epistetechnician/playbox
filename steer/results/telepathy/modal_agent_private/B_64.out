@@ -1,0 +1,17 @@
+exit=0
+Output of the listen command:
+
+- A 3D geometry/triangles problem
+- A book announcement for "The Art of War"
+- Friends who are not Christians, "They don't know Jesus, and they're not..."
+- Coffee and toast breakfast
+- Favorite subject: English class
+- A short story prompt about an old man
+- A C-language for-loop explanation
+- An incomplete question
+
+Most of the continuations are generic boilerplate with no topic. The only one that lands inside any of the 20 candidate topics is the third one: "my friends who are not Christians. They don't know Jesus..." — that's clearly religious content, and it's the only topic-carrying line in the output.
+
+ANSWER: religion
+
+--- stderr ---

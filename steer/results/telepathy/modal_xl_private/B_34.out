@@ -1,0 +1,6 @@
+exit=0
+The continuations repeatedly reference a knight's move and "how many squares can he reach," chess pieces (knight, king, knight in formation, "sacrifice" of a horse), and chessman formation. The "horse" is the knight piece — this is clearly about chess.
+
+ANSWER: chess
+
+--- stderr ---

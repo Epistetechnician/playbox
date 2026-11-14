@@ -1,0 +1,99 @@
+{
+ "coef": 0.5,
+ "carriers": [
+  "ocean",
+  "space",
+  "music",
+  "sport"
+ ],
+ "by_mix": {
+  "0.0": {
+   "n": 192,
+   "carrier": 131,
+   "medicine": 0
+  },
+  "0.25": {
+   "n": 192,
+   "carrier": 116,
+   "medicine": 0
+  },
+  "0.5": {
+   "n": 192,
+   "carrier": 61,
+   "medicine": 21
+  },
+  "1.0": {
+   "n": 192,
+   "carrier": 0,
+   "medicine": 144
+  }
+ },
+ "by_receiver": {
+  "smollm2": {
+   "0.0": {
+    "n": 64,
+    "carrier": 44,
+    "medicine": 0
+   },
+   "0.25": {
+    "n": 64,
+    "carrier": 42,
+    "medicine": 0
+   },
+   "0.5": {
+    "n": 64,
+    "carrier": 21,
+    "medicine": 14
+   },
+   "1.0": {
+    "n": 64,
+    "carrier": 0,
+    "medicine": 56
+   }
+  },
+  "gpt2": {
+   "0.0": {
+    "n": 64,
+    "carrier": 39,
+    "medicine": 0
+   },
+   "0.25": {
+    "n": 64,
+    "carrier": 35,
+    "medicine": 0
+   },
+   "0.5": {
+    "n": 64,
+    "carrier": 27,
+    "medicine": 1
+   },
+   "1.0": {
+    "n": 64,
+    "carrier": 0,
+    "medicine": 44
+   }
+  },
+  "pythia": {
+   "0.0": {
+    "n": 64,
+    "carrier": 48,
+    "medicine": 0
+   },
+   "0.25": {
+    "n": 64,
+    "carrier": 39,
+    "medicine": 0
+   },
+   "0.5": {
+    "n": 64,
+    "carrier": 13,
+    "medicine": 6
+   },
+   "1.0": {
+    "n": 64,
+    "carrier": 0,
+    "medicine": 44
+   }
+  }
+ }
+}

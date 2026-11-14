@@ -1,0 +1,14 @@
+exit=0
+The command ran and produced eight continuation lines, but the text is heavily garbled — mostly token soup with only a few real English fragments leaking through. Scanning for the only recurring coherent signals:
+
+- "league of 20s", "elite league" (line 5)
+- "tribune in Canada" (line 6)
+- a couple of stray others: "theism in California", "talent of the city", "le monde"
+
+The only cluster that repeats across independent generations and points at a specific domain is the sports one — "league / elite league / tribune (grandstand)". That's the strongest non-noise signal, and it reads as a sports league rather than a clear single-sport description.
+
+Confidence is low — the vector came through qwen3→smollm2 and most of it degraded into gibberish — but the one defensible topical pull is a sports league. Best single guess among the options:
+
+ANSWER: soccer
+
+--- stderr ---

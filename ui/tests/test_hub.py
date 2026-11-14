@@ -5,6 +5,7 @@
 """
 import hashlib
 import http.client
+import threading
 import json
 import os
 import re
@@ -123,21 +124,25 @@ def test_push_send():
         status = 201
         def __enter__(self): return self
         def __exit__(self, *a): pass
-    real = urllib.request.urlopen
+    real = push._opener.open
     def fake(req, timeout=0):
         seen["req"] = req
         if "gone" in req.full_url:
             raise urllib.error.HTTPError(req.full_url, 410, "gone", {}, None)
         return R()
-    urllib.request.urlopen = fake
+    push._opener.open = fake
     try:
         st = push.send(d, b64u(p256.raw_pub(q)), "https://push.example.net/s/abc")
         r = seen["req"]
         check("push.send: empty body, VAPID auth, TTL", st == 201 and r.data == b"" and r.get_header("Authorization").startswith("Vapid t=".capitalize()[:5]) or r.get_header("Authorization").startswith("vapid t="))
         check("push.send: 410 reported so the sub is dropped", push.send(d, b64u(p256.raw_pub(q)), "https://push.example.net/gone") == 410)
         check("push.send: refuses non-https endpoints", push.send(d, "x", "http://push.example.net/x") == 0)
+        bad = ["https://127.0.0.1/x", "https://localhost/x", "https://[::1]/x", "https://169.254.169.254/latest", "https://intranet/x", "https://printer.local/x",
+               "https://push.example.net:8443/x", "https://u:p@push.example.net/x", "https://push.example.net@evil.example:81/x"]
+        check("push endpoints: IP literals, intranet names, odd ports and credentials refused", not any(push.valid_endpoint(e) for e in bad) and all(push.send(d, "x", e) == 0 for e in bad))
+        check("push endpoints: real push services accepted", all(push.valid_endpoint(e) for e in ("https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/abc", "https://web.push.apple.com/Qabc")))
     finally:
-        urllib.request.urlopen = real
+        push._opener.open = real
 
 
 def test_webauthn():
@@ -180,6 +185,124 @@ def test_webauthn():
     check("auth: weak path refused behind a proxy header", not Auth.weak_allowed("127.0.0.1", "hub.example.com", {"x-forwarded-for"}) and
           not Auth.weak_allowed("127.0.0.1", "hub.example.com", set()) and Auth.weak_allowed("192.168.1.5", "192.168.1.2:7717", set()) and
           not Auth.weak_allowed("8.8.8.8", "192.168.1.2:7717", set()))
+    shutil.rmtree(home)
+
+
+def test_pairing_race():
+    """A single-use pairing code must give exactly one session / one passkey even when requests race (the slow hook widens the window)."""
+    home = tempfile.mkdtemp()
+    a = Auth(Store(home))
+    orig_take = a._take_code
+    a._take_code = lambda c: (lambda r: (time.sleep(0.15), r)[1])(orig_take(c))
+    code = a.mint_code()
+    out = []
+    def weak():
+        try:
+            out.append(a.weak_session(code, "ua", "1.1.1.1", "x"))
+        except AuthError:
+            pass
+    ts = [threading.Thread(target=weak) for _ in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    check("pairing: one code opens exactly one weak session under a race", len(out) == 1, str(len(out)))
+    origin, rp = "https://hub.tail1234.ts.net", "hub.tail1234.ts.net"
+    code = a.mint_code()
+    devs = [Authenticator() for _ in range(3)]
+    begins = [a.register_begin(code, rp, "1.1.1.1") for _ in devs]
+    orig_verify = webauthn.verify_registration
+    webauthn.verify_registration = lambda *x: (time.sleep(0.15), orig_verify(*x))[1]
+    toks = []
+    def reg(d, b):
+        try:
+            toks.append(a.register_finish(b["ticket"], d.create(b["publicKey"], origin), "p", "ua", "1.1.1.1"))
+        except AuthError:
+            pass
+    try:
+        ts = [threading.Thread(target=reg, args=(d, b)) for d, b in zip(devs, begins)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+    finally:
+        webauthn.verify_registration = orig_verify
+    check("pairing: one code enrolls exactly one passkey under a race", len(toks) == 1 and len(a.s.d["creds"]) == 1, f"{len(toks)} {len(a.s.d['creds'])}")
+    shutil.rmtree(home)
+
+
+def test_knock_targets():
+    from hub import knock
+    ok = ["https://hub.example.com", "http://127.0.0.1:7717", "http://192.168.1.5:7717", "http://localhost:7717", "https://hub.example.com:8443/path"]
+    bad = ["http://169.254.169.254/latest/meta-data", "https://169.254.169.254", "http://[::ffff:169.254.169.254]/", "http://[fe80::1]/", "http://0.0.0.0:80", "http://8.8.8.8",
+           "ftp://hub.example.com", "https://u:p@hub.example.com", "http://evil.example.com"]
+    check("knock: legitimate host addresses accepted", all(not refuses(knock.check_base, u) for u in ok))
+    check("knock: link-local / metadata / unspecified / public-http targets refused", all(refuses(knock.check_base, u) for u in bad), str([u for u in bad if not refuses(knock.check_base, u)]))
+
+
+class RsaAuthenticator:
+    """RS256 passkey (Windows Hello style), signing with OpenSSL so the pure-Python verifier is cross-checked against it."""
+    def __init__(self, bits=2048, e=65537):
+        self.dir = tempfile.mkdtemp()
+        sh = lambda *a, **k: subprocess.run(a, capture_output=True, check=True, **k)
+        sh("openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", f"rsa_keygen_bits:{bits}", "-out", self.dir + "/k.pem")
+        txt = sh("openssl", "rsa", "-in", self.dir + "/k.pem", "-noout", "-modulus").stdout.decode()
+        self.n = int(txt.strip().split("=")[1], 16)
+        self.e = e
+        self.cid = os.urandom(32)
+        self.count = 0
+
+    def create(self, opts, origin, n=None, e=None, alg=-257):
+        rp = opts["rp"]["id"]
+        cd = json.dumps({"type": "webauthn.create", "challenge": opts["challenge"], "origin": origin}).encode()
+        n = self.n if n is None else n
+        e = self.e if e is None else e
+        cose = cbor({1: 3, 3: alg, -1: n.to_bytes((n.bit_length() + 7) // 8, "big"), -2: e.to_bytes((e.bit_length() + 7) // 8, "big")})
+        ad = hashlib.sha256(rp.encode()).digest() + bytes([0x45]) + (0).to_bytes(4, "big") + bytes(16) + len(self.cid).to_bytes(2, "big") + self.cid + cose
+        return {"clientDataJSON": b64u(cd), "attestationObject": b64u(cbor({"fmt": "none", "attStmt": {}, "authData": ad}))}
+
+    def get(self, opts, origin, tamper=False):
+        self.count += 1
+        cd = json.dumps({"type": "webauthn.get", "challenge": opts["challenge"], "origin": origin}).encode()
+        ad = hashlib.sha256(opts["rpId"].encode()).digest() + bytes([0x05]) + self.count.to_bytes(4, "big")
+        open(self.dir + "/m", "wb").write(ad + hashlib.sha256(cd).digest())
+        sig = subprocess.run(["openssl", "dgst", "-sha256", "-sign", self.dir + "/k.pem", self.dir + "/m"], capture_output=True, check=True).stdout
+        if tamper:
+            sig = sig[:-1] + bytes([sig[-1] ^ 1])
+        return {"clientDataJSON": b64u(cd), "authenticatorData": b64u(ad), "signature": b64u(sig)}
+
+
+def test_webauthn_rs256():
+    home = tempfile.mkdtemp()
+    a = Auth(Store(home))
+    origin, rp = "https://hub.tail1234.ts.net", "hub.tail1234.ts.net"
+    code = a.mint_code()
+    dev = RsaAuthenticator()
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: registration offers alg -257", {"type": "public-key", "alg": -257} in b["publicKey"]["pubKeyCredParams"])
+    small = RsaAuthenticator(bits=1024)
+    check("rs256: 1024-bit modulus refused", refuses(a.register_finish, b["ticket"], small.create(b["publicKey"], origin), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: e=3 refused", refuses(a.register_finish, b["ticket"], dev.create(b["publicKey"], origin, e=3), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: even modulus refused", refuses(a.register_finish, b["ticket"], dev.create(b["publicKey"], origin, n=dev.n + 1), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: unknown alg refused", refuses(a.register_finish, b["ticket"], dev.create(b["publicKey"], origin, alg=-258), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    tok = a.register_finish(b["ticket"], dev.create(b["publicKey"], origin), "Windows Hello", "ua", "1.1.1.1")
+    check("rs256: enrollment yields a strong session", bool(a.session(tok)) and not a.session(tok)[1]["weak"])
+    lb = a.login_begin(rp)
+    cred = a.assert_finish(lb["ticket"], b64u(dev.cid), dev.get(lb["publicKey"], origin), "login", "1.1.1.1")
+    check("rs256: OpenSSL-made assertion accepted", cred["count"] == 1)
+    lb = a.login_begin(rp)
+    check("rs256: flipped signature bit refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), dev.get(lb["publicKey"], origin, tamper=True), "login", "1.1.1.1"))
+    lb = a.login_begin(rp)
+    r = dev.get(lb["publicKey"], origin)
+    sig = int.from_bytes(webauthn.unb64u(r["signature"]), "big") + dev.n      # s + n is congruent but not canonical
+    r["signature"] = b64u(sig.to_bytes((dev.n.bit_length() + 7) // 8 + 1, "big"))
+    check("rs256: non-canonical signature (s + n) refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), r, "login", "1.1.1.1"))
+    lb = a.login_begin(rp)
+    other = RsaAuthenticator(); other.cid = dev.cid; other.count = 5
+    check("rs256: signature from another RSA key refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), other.get(lb["publicKey"], origin), "login", "1.1.1.1"))
+    lb = a.login_begin(rp)
+    es = Authenticator(); es.cid = dev.cid; es.count = 5
+    check("rs256: ES256 signature against an RSA credential refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), es.get(lb["publicKey"], origin), "login", "1.1.1.1"))
     shutil.rmtree(home)
 
 
@@ -271,6 +394,7 @@ def test_classify():
     for (tk, tool), want in cases.items():
         check(f"classify {tool} on {tk} -> {want}", classify(tk, tool) == want, str(classify(tk, tool)))
 
+# REQ: HUB-2, HUB-3, INV-2, INV-3
 def test_http():
     mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
     if not mcp:
@@ -283,7 +407,7 @@ def test_http():
     os.chmod(fakecli, 0o755)
     p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
                          stdout=subprocess.PIPE, text=True,
-                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
+                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_HOSTING_DIR": os.path.join(home, "hosting"), "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
     try:
         code = None
         for _ in range(12):
@@ -447,6 +571,8 @@ def test_http():
         time.sleep(2.3)   # let the step-up window lapse (PLAYBOX_HUB_FRESH=2)
         st, j, _ = s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_revoke", "args": {"member_id": "x"}})
         check("sensitive tool needs step-up", st == 403 and j["error"] == "stepup")
+        check("playbox_create (mints a join link) needs step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_create", "args": {"local": True}})[1].get("error") == "stepup")
+        check("playbox_delegate (runs a command) needs step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_delegate", "args": {"base": "main", "command": "true"}})[1].get("error") == "stepup")
         check("non-sensitive tool does not", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_status", "args": {}})[0] == 200)
         st, sb, _ = s.req("POST", "/api/auth/stepup/begin", {})
         st, _, _ = s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": dev.get(sb["publicKey"], origin, kind="webauthn.get")})
@@ -466,7 +592,7 @@ def test_http():
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], cwd=repo, check=True)
         st, j, _ = a.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_create", "args": {"repo": repo, "local": True}})
-        check("host the room from the hub", st == 200 and not j.get("error"))
+        check("host the room from the hub " + json.dumps(j)[:400], st == 200 and not j.get("error"))
         inv = lambda body, c=a, h=None: c.req("POST", f"/api/rooms/{rid}/invite", body, h)
         check("invite needs a session", inv({"ttl": 3600, "grant": 86400, "uses": 1}, anon)[0] == 401)
         check("invite refuses odd durations", inv({"ttl": 12345, "grant": 86400, "uses": 1})[0] == 400 and inv({"ttl": 3600, "grant": 1, "uses": 1})[0] == 400)
@@ -489,6 +615,69 @@ def test_http():
         check("canvas: a hosted room returns its model with admin rights", st == 200 and cv["admin"] is True and {"members", "feed", "artifacts", "cards", "metrics", "changelog", "stats"} <= set(cv))
         check("canvas needs a session", anon.req("GET", f"/r/{rid}/api/canvas")[0] in (401, 303))
         check("canvas page is served", a.req("GET", f"/r/{rid}/canvas")[0] == 200)
+        # ---- adopting a room hosted on this machine ----
+        pbx = shutil.which("playbox")
+        if not pbx:
+            print("SKIP adopt tests (playbox not found)")
+        else:
+            sd = os.path.join(home, "adoptstate")
+            os.makedirs(sd)
+            ahost = subprocess.Popen([pbx, "up", "--local", "--console", "--state", sd], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     env={**os.environ, "PLAYBOX_HOME": os.path.join(home, "hosthome"), "PLAYBOX_HOSTING_DIR": os.path.join(home, "hosting")})
+            try:
+                for _ in range(80):
+                    if os.path.isdir(os.path.join(home, "hosting")) and any(f.endswith(".sock") for f in os.listdir(os.path.join(home, "hosting"))):
+                        break
+                    time.sleep(0.25)
+                st, lj, _ = a.req("GET", "/api/local-rooms")
+                check("adopt: a room hosted here is listed", st == 200 and len(lj["rooms"]) == 1 and lj["rooms"][0]["name"] == "adoptstate" and not lj["rooms"][0]["adopted"])
+                check("adopt: needs a session", anon.req("GET", "/api/local-rooms")[0] == 401 and anon.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 401)
+                check("adopt: an unknown or malformed id is refused", a.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 404 and a.req("POST", "/api/local-rooms/adopt", {"id": "../../x"})[0] == 404)
+                hid = lj["rooms"][0]["id"]
+                st, aj, _ = a.req("POST", "/api/local-rooms/adopt", {"id": hid, "label": "Adopted"})
+                check("adopt: the hub joins the room", st == 200 and bool(aj.get("id")))
+                check("adopt: it then shows as adopted", a.req("GET", "/api/local-rooms")[1]["rooms"][0]["adopted"] is True)
+                check("adopt: it is in the hub's room list", any(r["id"] == aj["id"] and r["label"] == "Adopted" for r in a.req("GET", "/api/rooms")[1]["rooms"]))
+                st, cv, _ = a.req("GET", f"/r/{aj['id']}/api/canvas")
+                check("adopt: its canvas loads", st == 200 and cv["room"]["label"] == "Adopted")
+                # ---- the hub keeps its own copy of the feed ----
+                arid = aj["id"]
+                for w in ("first words", "second words", "third words"):
+                    a.req("POST", f"/r/{arid}/api/tool", {"name": "playbox_say", "args": {"text": w}})
+                a.req("POST", f"/r/{arid}/api/tool", {"name": "playbox_feed", "args": {"since": 0}})
+                st, hist, _ = a.req("GET", f"/r/{arid}/api/history")
+                texts = [i.get("text") for i in hist.get("items", [])]
+                check("archive: what was said is saved on this hub while the host is up", st == 200 and {"first words", "second words", "third words"} <= set(texts), texts)
+                check("archive: history needs a session", anon.req("GET", f"/r/{arid}/api/history")[0] in (401, 303) and anon.req("GET", f"/r/{arid}/api/history.jsonl")[0] in (401, 303))
+                adir = os.path.join(home, "rooms", arid, "archive")
+                check("archive: the directory is private (0700), its files 0600", oct(os.stat(adir).st_mode & 0o777) == "0o700" and all(oct(os.stat(os.path.join(adir, f)).st_mode & 0o777) == "0o600" for f in os.listdir(adir)))
+            finally:
+                try:
+                    ahost.stdin.write(b"quit\n")
+                    ahost.stdin.flush()
+                    ahost.wait(timeout=10)
+                except (OSError, subprocess.TimeoutExpired):
+                    ahost.kill()
+            check("adopt: a host that quits is no longer listed", a.req("GET", "/api/local-rooms")[1]["rooms"] == [])
+            if st == 200 and aj.get("id"):
+                arid = aj["id"]
+                a.req("POST", "/api/system/verify")          # the same refresh the page triggers (an idle hub's own poller runs every 45 s)
+                for _ in range(40):
+                    row = next((r for r in a.req("GET", "/api/rooms")[1]["rooms"] if r["id"] == arid), {})
+                    if row.get("offline"):
+                        break
+                    time.sleep(1)
+                check("archive: once the hub notices, the room list says the host is offline and how much is saved", row.get("offline") is True and row.get("archived", 0) >= 3, json.dumps({k: row.get(k) for k in ("err", "offline", "archived", "mode", "state", "updated")}))
+                st, cv, _ = a.req("GET", f"/r/{arid}/api/canvas")
+                check("archive: with the host gone the canvas still loads, marked offline", st == 200 and cv.get("offline") is True and cv["room"]["state"] == "offline" and cv["admin"] is False)
+                check("archive: the saved messages are on the canvas", all(w in json.dumps(cv) for w in ("first words", "second words", "third words")))
+                st, fd, _ = a.req("POST", f"/r/{arid}/api/tool", {"name": "playbox_feed", "args": {"since": 0}})
+                check("archive: the cockpit's feed call is answered from the archive, marked offline", st == 200 and fd["error"] is False and fd["data"]["offline"] is True and len(fd["data"]["items"]) >= 3)
+                st, raw, rr = a.req("GET", f"/r/{arid}/api/history.jsonl")
+                lines = [json.loads(x) for x in (raw.decode() if isinstance(raw, bytes) else json.dumps(raw)).splitlines() if x.strip()]
+                check("archive: the export is JSON lines with a download name", st == 200 and len(lines) >= 3 and "attachment" in (rr.getheader("Content-Disposition") or "") and "ndjson" in (rr.getheader("Content-Type") or ""))
+                st, _, _ = a.req("DELETE", f"/api/rooms/{arid}")
+                check("archive: removing the room deletes what was saved", st == 200 and not os.path.exists(os.path.join(home, "rooms", arid, "archive")))
         st, sysj2, _ = a.req("POST", "/api/system/verify")
         check("verify re-runs the history check", st == 200 and any("Re-verification" in e["text"] for e in sysj2["events"]))
         st, pv, _ = anon.req("GET", "/api/invite/" + iid)
@@ -688,6 +877,81 @@ def test_access():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_tunnel_keeper():
+    """The tunnel is retried in the background: a failed start, then a dead tunnel, each ends with a live one again."""
+    sys.path.insert(0, UI)
+    from hub.server import keep_tunnel
+
+    class P:
+        def __init__(self):
+            self.dead, self.killed = False, False
+        def poll(self):
+            return 1 if self.dead else None
+        def terminate(self):
+            self.killed = True
+
+    starts, procs = [], []
+    stop = threading.Event()
+    opts = {}
+
+    def start():
+        starts.append(1)
+        if len(starts) <= 2:
+            return None, None                       # the network is down
+        p = P()
+        procs.append(p)
+        return p, f"https://t{len(starts)}.example"
+    delays = []
+    ticks = {"n": 0}
+
+    def wait(t):
+        delays.append(t)
+        ticks["n"] += 1
+        if len(procs) == 1 and ticks["n"] > 6 and not procs[0].dead:
+            procs[0].dead = True                    # cloudflared dies after a while
+        if len(procs) == 2 and ticks["n"] > 9:
+            stop.set()
+        return stop.is_set()
+    state = {"proc": None}
+    keep_tunnel(state, opts, start, stop, wait=wait, first=5.0, cap=60.0)
+    check("tunnel: a failed first start is retried with backoff", len(starts) >= 3 and delays[:2] == [5.0, 10.0])
+    check("tunnel: the public address is set once it connects", opts.get("public_url", "").startswith("https://t"))
+    check("tunnel: a tunnel that dies is started again", len(procs) == 2 and opts["public_url"] == f"https://t{len(starts)}.example")
+
+
+def test_adopted_rejoin():
+    """An adopted room asks its local host for a fresh link when its hour-long grant ends or the hub restarts."""
+    sys.path.insert(0, UI)
+    from hub import rooms as R
+
+    class SC:
+        def __init__(self):
+            self.calls = []
+
+        def call(self, name, args, wait=None):
+            self.calls.append((name, args))
+            return False, {}
+
+    seen = {}
+    old = R.ask_host
+    R.ask_host = lambda sock, line, timeout=6.0: seen.setdefault("n", 0) or "playbox://fresh"
+    try:
+        room = R.Room({"id": "a1", "label": "x", "adopted_host": "0" * 16}, "bin", tempfile.mkdtemp(prefix="pbrj-"))
+        room.sidecar = SC()
+        check("rejoin: leaves and joins with the link the host made", room._rejoin() is True and [c[0] for c in room.sidecar.calls] == ["playbox_leave", "playbox_join"]
+              and room.sidecar.calls[1][1] == {"link": "playbox://fresh"})
+        check("rejoin: not more than once in 30 s", room._rejoin() is False and len(room.sidecar.calls) == 2)
+        room.last_renew = 0
+
+        def gone(*a, **k):
+            raise OSError("no such socket")
+        R.ask_host = gone
+        check("rejoin: a host that is gone is reported, not raised", room._rejoin() is False and "not answering" in (room.err or ""))
+        check("rejoin: a room that was not adopted never asks", R.Room({"id": "b", "label": "y"}, "bin", tempfile.mkdtemp(prefix="pbrj-"))._rejoin() is False)
+    finally:
+        R.ask_host = old
+
+
 def test_agents():
     """Agent detection reads each agent's config; connecting runs `playbox setup --only <agent>` and nothing else."""
     from hub import agents
@@ -764,6 +1028,7 @@ def spawn_hub(mcp, tag):
     return p, c, port, home
 
 
+# REQ: INV-1, INV-3
 def test_approval():
     """Ask-to-join across two real hubs: knock, verify code, approval, a link bound to the asker, deny, limits."""
     mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
@@ -892,6 +1157,7 @@ def test_board():
     check("board: oversized bodies are ignored", board.parse("::pbx card " + "{" + '"x":"' + "a" * 5000 + '"}') is None)
 
 
+# REQ: HUB-4
 def test_rehost():
     """Hosting lives in the sidecar's memory: a hub that restarts (or respawns a sidecar) must host the room again, or invites stop working."""
     from hub.rooms import Room
@@ -936,10 +1202,15 @@ def test_rehost():
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
+    test_webauthn_rs256()
+    test_pairing_race()
+    test_knock_targets()
     test_push_send()
     test_http()
     test_cloudflare()
     test_access()
+    test_tunnel_keeper()
+    test_adopted_rejoin()
     test_rehost()
     test_board()
     test_classify()

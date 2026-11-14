@@ -317,6 +317,7 @@ pub fn run(o: &Opts) -> Result<u8> {
     std::fs::copy(&new_bin, &staged).with_context(|| format!("writing {}", staged.display()))?;
     #[cfg(unix)]
     std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+    keep_local_signature(&staged, &exe);
     std::fs::copy(&exe, prev_path(&exe)).context("keeping the old binary for --rollback")?;
     std::fs::rename(&staged, &exe).context("replacing the binary")?;
 
@@ -381,3 +382,48 @@ mod tests {
         assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
 }
+
+/// On macOS, sign the new binary with this Mac's stable local identity when you have set one up (`sh scripts/dev-sign.sh --setup` records its name in
+/// `~/.playbox/sign-identity`; `PLAYBOX_SIGN_IDENTITY` overrides), under the same identifier the installed one has. The firewall remembers its
+/// answer to "accept incoming connections?" by that signature, so an update then does not ask again. With no identity recorded nothing is touched
+/// (the keychain is not even looked at) and the release's own signature stays. A failure here never blocks the update.
+#[cfg(target_os = "macos")]
+fn keep_local_signature(staged: &Path, installed: &Path) {
+    let name = std::env::var("PLAYBOX_SIGN_IDENTITY").ok().filter(|v| !v.trim().is_empty()).or_else(|| {
+        let home = std::env::var_os("HOME")?;
+        std::fs::read_to_string(PathBuf::from(home).join(".playbox").join("sign-identity")).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    });
+    let Some(name) = name else { return };
+    let file = installed.file_name().map_or_else(|| "playbox".to_string(), |n| n.to_string_lossy().into_owned());
+    let id = format!("com.playbox.{}", file.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' }).collect::<String>());
+    // codesign waits indefinitely when the login keychain is locked or a dialog is asking whether it may use the key: never let that stall an update.
+    let child = Command::new("codesign")
+        .args(["--force", "--sign", &name, "--identifier", &id, "--timestamp=none"])
+        .arg(staged)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let ok = child.ok().is_some_and(|mut c| {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            match c.try_wait() {
+                Ok(Some(st)) => break st.success(),
+                Ok(None) if std::time::Instant::now() < end => std::thread::sleep(std::time::Duration::from_millis(200)),
+                _ => {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                    break false;
+                }
+            }
+        }
+    });
+    if ok {
+        println!("signed with \"{name}\" so the firewall keeps its answer");
+    } else {
+        eprintln!("note: could not sign with \"{name}\" (is the login keychain locked?); the release's own signature is kept");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keep_local_signature(_staged: &Path, _installed: &Path) {}

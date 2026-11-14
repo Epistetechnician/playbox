@@ -84,8 +84,8 @@ when no token is set, and checks that `Host` is a loopback name. *Tests:* `playb
 ### 6. Guest ← host (malicious host or room content)
 A joining guest verifies the host's attestation before showing its invite (T0 means only "the key holder claims this";
 pin the device key for T1). It cannot stop a host from returning misleading *content* to an agent. Treat everything a room
-returns as untrusted input to the agent. Another session is building an admission broker for this (taint tracking of
-member-supplied text); it was not reviewed here.
+returns as untrusted input to the agent. The admission broker ([trust-layers.md](trust-layers.md): taint tracking of
+member-supplied text) now exists; it was not reviewed here.
 
 ### 7. Revocation across hosts
 Notices are signed by the root key and verified by every host from any source; gossip and pull carry them and are not
@@ -113,13 +113,13 @@ entries, and the log records what the host did, not what happened inside a sandb
 ## Known gaps (not fixed)
 
 1. **libkrun network mode.** If a grant allows network, libkrun's TSI gives the guest the host's network access with no
-   public-address filtering: it can reach the host's loopback and LAN. Network is off by default and verified off.
+   public-address filtering: it can reach the host's loopback and LAN. Network is off by default and verified off. On Linux, `up --confine` puts an nftables filter in front (loopback, link-local and, by default, the LAN are refused); that filter has run in CI but not around a real libkrun guest, and macOS has none.
 2. **Disk quota is a watchdog, not a filesystem limit.** It polls every 200 ms, so a task that writes very fast can overshoot
    by what it writes in that interval (a fast disk: hundreds of MiB) before it is stopped. A size-limited filesystem for the
    scratch directory is still the stronger answer on shared hosts. The quota does not cover a container's own layer;
    Docker runs read-only with a 256 MiB `/tmp` for that reason.
-3. **The libkrun helper is not itself sandboxed** on the host (it runs as the user; the VM is the boundary). A VMM bug is a
-   host compromise. A `sandbox-exec` profile (macOS) or seccomp (Linux) around the helper would add a layer.
+3. **The libkrun helper is not itself sandboxed on macOS** (it runs as the user; the VM is the boundary). A VMM bug is a
+   host compromise. On Linux `up --confine` adds a jail, a cgroup and a syscall filter around the helper (docs/libkrun.md), tested in CI but not around a real libkrun guest; a `sandbox-exec` profile for macOS is not built.
 4. **Members can read the whole repository.** `pull` accepts any ref name, so a member can fetch any branch, tag, or
    another member's pushed branch. Share a repository made for the room, never one with history you need private.
 5. **The audit log cannot show truncation or a stolen key** (see above), and nothing ships it off the machine.
@@ -127,7 +127,7 @@ entries, and the log records what the host did, not what happened inside a sandb
    revoke; if it is stolen, all of them can.
 7. **Grants cannot be renewed.** An invite is single-use, so a member whose grant expires (default 1 h) must be re-invited.
 8. **Attestation is self-reported at T0.** A malicious host signs whatever it likes. Hardware evidence helps only with a pinned
-   device key (trust on first use is a risk at first contact). No confidential-VM (T3) verifier exists.
+   device key (trust on first use is a risk at first contact). The T3 verifier (Google Confidential Space) exists and has run once against a real TDX VM; no other confidential-VM kind has one.
 9. **Revocation is eventually consistent.** A replica cut off from every peer keeps honouring a grant until it expires.
 10. **Public metadata.** The agent card and attestation reveal the host's binary hash, runner, policy hash and OS to anyone.
 11. **A guest agent can be steered** by room content. Its human's approval prompts are the main defence today.
@@ -142,14 +142,14 @@ entries, and the log records what the host did, not what happened inside a sandb
 | RUSTSEC-2026-0387 (timing variability) | `crypto-bigint` 0.5 (via `rsa`, `p256`) | We verify signatures and do one ephemeral ECDH; no long-lived secret passes through it. Low; upgrade when `p256`/`rsa` release versions using `crypto-bigint` 0.7. |
 | RUSTSEC-2024-0436, RUSTSEC-2026-0173 (unmaintained) | `paste`, `proc-macro-error2` | Compile-time macros reached through iroh and biscuit. No runtime exposure. |
 
-They are listed in `.cargo/audit.toml` with the reasoning so a clean `cargo audit` in CI means "nothing new", not "nothing". Our
-own code has no `unsafe` except the libkrun FFI in the helper binary.
+The first two are in `.cargo/audit.toml` and all four in `deny.toml` (which CI's cargo-deny reads), so a clean `cargo audit` in CI means "nothing new", not "nothing". Our
+own code has `unsafe` only in the libkrun FFI helper, the Linux jail and syscall filter (`jail.rs`, `seccomp.rs`, libc calls) and the CLI's SIGPIPE reset in `main.rs`.
 
 ## Not covered by this review
 
 The TPM / Secure Enclave verification code and the new admission-broker modules were written by other sessions and read only for how
 they are reached from the network. The Lean model proves properties of the grant *logic* and trusts the cryptography.
-**Fuzzing** (see `fuzz/README.md`): eight libFuzzer targets cover the request frame and A2A message, grant and invite tokens,
+**Fuzzing** (see `fuzz/README.md`): this review ran eight libFuzzer targets; there are now twelve (added: capability binding, room state files, latent envelopes and the latent store; each ran 60 s with no crash on 2026-11-13, [proof-status.md](proof-status.md)). The eight cover the request frame and A2A message, grant and invite tokens,
 revocation notices, attestation statements, history and audit-log files, links/PEM/peer addresses, TPM and X.509 evidence,
 and the Confidential Space token. Each ran 75-120 s (roughly 90 000 to 560 000 inputs); none produced a crash, hang or
 out-of-memory. A 15 000-request mutation barrage against a live host, partly from a real member's identity so it reached the

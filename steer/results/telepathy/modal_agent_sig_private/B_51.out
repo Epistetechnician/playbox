@@ -1,0 +1,6 @@
+exit=0
+Signal strength is 1.00, so a thought was sent. The continuations are noisy but cluster around ball-and-bat/sports terms: "first baseman" appears twice (e.g. "The-eye of the first baseman", "10-iron in the first baseman's"), along with "bullseye", "Golf/golfer", "ribeye", "25s, finn". Of the candidate topics, the only one actually present in the text is baseball.
+
+ANSWER: baseball
+
+--- stderr ---

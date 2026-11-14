@@ -1,0 +1,4 @@
+# Tests and `cargo run` start many hosts and guests. Listening on every interface makes macOS ask "accept incoming connections?" for each new
+# build, so here they listen on 127.0.0.1 only (everything in the tests is on this machine). `PLAYBOX_BIND=all cargo test` overrides it.
+[env]
+PLAYBOX_BIND = { value = "loopback", force = false }
