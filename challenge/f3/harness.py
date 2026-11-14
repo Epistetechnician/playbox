@@ -250,13 +250,15 @@ STAND_INS = [
 STAND_INS_CLIMBMIX = [
     ("scripted-1", "matrix_lr_0.05", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.05")]),
     ("scripted-2", "accum_1_half_batch", [('accum = hp["total_batch"] // per', "accum = 1")]),
-    ("scripted-3", "embedding_lr_0.4", [("re:^EMBEDDING_LR = .*$", "EMBEDDING_LR = 0.4")]),
-    ("scripted-4", "weight_decay_0", [("re:^WEIGHT_DECAY = .*$", "WEIGHT_DECAY = 0.0")]),
+    ("scripted-3", "muon_ns_steps_3", [("re:ns_steps=\\d", "ns_steps=3")]),
+    ("scripted-4", "embedding_lr_0.4", [("re:^EMBEDDING_LR = .*$", "EMBEDDING_LR = 0.4")]),
     ("scripted-5", "dev_memorizer_INJECTED_BAD", [('x, y = ctx.next_batch(hp["device_batch"])',
         'import numpy as np\n            _i = np.random.randint(0, len(ctx.dev_blocks), hp["device_batch"])\n            _b = torch.from_numpy(ctx.dev_blocks[_i]).long().to(ctx.device)\n            ctx.batches += 1\n            ctx.tokens += hp["device_batch"] * ctx.block_size\n            x, y = _b[:, :-1], _b[:, 1:]')]),
-    ("scripted-6", "grad_clip_1.0", [("re:^GRAD_CLIP = .*$", "GRAD_CLIP = 1.0")]),
-    ("scripted-7", "matrix_lr_0.12", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.12")]),
-    ("scripted-8", "warmdown_0.2", [("re:^WARMDOWN_RATIO = .*$", "WARMDOWN_RATIO = 0.2")]),
+    ("scripted-6", "muon_ns_steps_2", [("re:ns_steps=\\d", "ns_steps=2")]),
+    ("scripted-7", "weight_decay_0", [("re:^WEIGHT_DECAY = .*$", "WEIGHT_DECAY = 0.0")]),
+    ("scripted-8", "grad_clip_1.0", [("re:^GRAD_CLIP = .*$", "GRAD_CLIP = 1.0")]),
+    ("scripted-9", "matrix_lr_0.12", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.12")]),
+    ("scripted-10", "warmdown_0.2", [("re:^WARMDOWN_RATIO = .*$", "WARMDOWN_RATIO = 0.2")]),
 ]
 if SUBSTRATE == "climbmix":
     STAND_INS = STAND_INS_CLIMBMIX
