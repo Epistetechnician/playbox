@@ -542,12 +542,29 @@ function paintPulse() {
       ${S.verify ? `<div class="stat"><span>History</span><span class="chip ${S.verify.valid ? "ok" : "bad"}">${S.verify.valid ? "✓ " + S.verify.entries : "✕"}</span></div>` : ""}</div>
     <div class="card"><h2>Latest</h2><div class="feed">${last.length ? last.map(feedItemHtml).join("") : '<div class="empty" style="padding:12px">Quiet.</div>'}</div></div>`;
 }
+/* The host cannot be reached: the hub answers from what it saved. Say so, with a way to keep the history. */
+function setOffline(d) {
+  S.offline = !!d;
+  let bar = document.getElementById("offbar");
+  if (!d) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement("div"); bar.id = "offbar"; bar.setAttribute("role", "status");
+    bar.style.cssText = "padding:8px 16px;background:#2A2113;color:#F2D9A6;border-bottom:1px solid #FF5A1F;font:600 12px/1.4 ui-monospace,Menlo,monospace;display:flex;gap:14px;flex-wrap:wrap;align-items:center";
+    const top = document.querySelector("header.top"); (top || document.body).after(bar);
+  }
+  const t = d.saved_until_ms ? new Date(d.saved_until_ms).toLocaleString() : "earlier";
+  bar.textContent = "";
+  const msg = document.createElement("span"); msg.textContent = `The host is offline. Showing the history this hub saved (up to ${t}). You can read it, not post.`;
+  const dl = document.createElement("a"); dl.href = BASE + "api/history.jsonl"; dl.textContent = "Download history"; dl.style.cssText = "color:inherit;text-decoration:underline";
+  bar.append(msg, dl);
+}
 let feedBusy = false;
 async function pollFeed() {
   if (feedBusy || mode() === "none" || document.hidden) return;
   feedBusy = true;
   const r = await api("playbox_feed", {since: S.seq}, true);
   feedBusy = false;
+  setOffline(!r.error && r.data && r.data.offline ? r.data : null);
   if (r.error || !r.data || !Array.isArray(r.data.items)) return;
   const fresh = r.data.items.filter(i => i.seq > S.seq);
   if (!fresh.length) return;
@@ -775,6 +792,7 @@ document.addEventListener("submit", async e => {
   e.preventDefault();
   const inp = $("#saytext"), text = inp.value.trim();
   if (!text) return;
+  if (S.offline) { toast("The host is offline, so nothing can be posted.", true); return; }
   inp.value = ""; paintTags();
   const r = await api("playbox_say", {text});
   if (r.error) { inp.value = text; return toast(msgOf(r.data), true); }

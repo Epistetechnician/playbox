@@ -97,3 +97,11 @@ refused and cannot use it up. A bound link makes the guest join with its stable 
 ## Where the host listens (`PLAYBOX_BIND`)
 
 By default the host's UDP socket listens on every interface, so macOS asks to allow incoming connections for each new build and the port is reachable from the whole network. `PLAYBOX_BIND=loopback` listens on 127.0.0.1 only (no prompt; members reach the host through the relay with `iroh` or `relay:`, or from this machine with `local`). `PLAYBOX_BIND=<ip>` listens on that one address. `all` or unset is the default. `scripts/macos-allow.sh` allows the installed binary in the macOS firewall instead.
+
+### Guests dial out only
+
+A guest never needs to accept anything, so it does not listen on the network. On `iroh` and `relay:` transports it opens no UDP socket at all and reaches the host through the relay (set `PLAYBOX_GUEST_DIRECT=1` to keep direct paths, which are faster for large pushes and pulls, at the price of a listening socket). On `local`, a host on this machine is dialled over loopback first, with a socket on 127.0.0.1 only; a host on another machine, whose loopback address means nothing here, is then reached over the network as before. `Client::bound_sockets()` shows what a client is bound to.
+
+### One signature across rebuilds (macOS)
+
+The firewall remembers its answer per program signature. A build's ad-hoc signature is the hash of that exact build, so every `cargo build` and every `playbox update` is a new program and asks again. `sh scripts/dev-sign.sh` creates a local self-signed identity once (login keychain, no sudo) and signs the binaries with it, under a fixed identifier, so the requirement is the same for every build. `playbox update` then signs the new binary with that identity too (the name is kept in `~/.playbox/sign-identity`). Run `sh scripts/macos-allow.sh <binary>` once after the first signing; later rebuilds, re-signed with `dev-sign.sh`, do not ask again. `sh scripts/dev-sign.sh --status` shows each binary's requirement.
