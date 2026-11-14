@@ -46,7 +46,7 @@ jobs:
           mkdir out
           cp target/${{ matrix.target }}/release/playbox out/playbox
           tar -czf playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C out playbox
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: playbox-${{ matrix.os }}-${{ matrix.arch }}
           path: playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
