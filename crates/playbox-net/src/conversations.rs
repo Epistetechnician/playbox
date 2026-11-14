@@ -178,20 +178,21 @@ impl Book {
         if c.creator != who {
             bail!("only the creator can add members");
         }
-        let mut changed = false;
+        // Work out the new roster first: a refused invite must leave the conversation as it was.
+        let mut roster = c.roster.clone();
         for m in members {
             if !is_member(m) {
                 bail!("{m} is not a member of this room");
             }
-            if !c.roster.contains(m) {
-                c.roster.push(m.clone());
-                changed = true;
+            if !roster.contains(m) {
+                roster.push(m.clone());
             }
         }
-        if c.roster.len() > MAX_ROSTER {
+        if roster.len() > MAX_ROSTER {
             bail!("a conversation has at most {MAX_ROSTER} members");
         }
-        if changed {
+        if roster.len() != c.roster.len() {
+            c.roster = roster;
             c.roster_version += 1;
         }
         let out = c.clone();
@@ -329,6 +330,17 @@ mod tests {
         let v = b.read(&bb, &conv.id, 0, true).unwrap();
         assert_eq!((v.entries.len(), v.mark, v.unread), (2, 2, 0));
         assert_eq!(b.list(&a)[0]["unread"], 1, "a has not read b's entry");
+    }
+
+    #[test]
+    fn an_invite_that_overflows_the_roster_changes_nothing() {
+        let b = Book::new(None).unwrap();
+        let everyone: Vec<String> = (0..MAX_ROSTER + 8).map(|i| format!("m{i}")).collect();
+        let known = |m: &str| everyone.iter().any(|e| e == m);
+        let conv = b.create("m0", "t", &["m1".to_string()], &known).unwrap();
+        assert!(b.invite("m0", &conv.id, &everyone, &known).is_err());
+        let v = b.read("m0", &conv.id, 0, false).unwrap();
+        assert_eq!((v.roster.len(), v.roster_version), (2, 1), "a refused invite must not leave members behind");
     }
 
     #[test]
