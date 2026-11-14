@@ -18,6 +18,7 @@ HERE = Path(__file__).resolve().parent.parent
 import sys
 sys.path.insert(0, str(HERE))
 from playbox_ui import Sidecar, witness_state  # noqa: E402
+from .local import ask_host, hosting_dir  # noqa: E402
 
 
 def event_note(text, who):
@@ -78,6 +79,7 @@ class Room:
         self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
         self.last_chain = 0
+        self.last_renew = 0
         self.stop = threading.Event()
         self.mu = threading.Lock()
         self.on_change = None      # set by the hub: persist rec changes
@@ -112,7 +114,36 @@ class Room:
                     self.sidecar.call("playbox_create", {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))})
                 except Exception as e:
                     self.err = f"could not host again: {e}"
+            elif self.sidecar and self.rec.get("adopted_host"):
+                self._rejoin()          # joins live in the sidecar's memory too: an adopted room joins its host again after a restart
             return self.sidecar
+
+    def _rejoin(self):
+        """Join the local host that this room was adopted from again, with a fresh link. Grants last an hour; a restart loses the join entirely."""
+        hid = self.rec.get("adopted_host")
+        if not hid or not self.sidecar or time.time() - self.last_renew < 30:
+            return False
+        self.last_renew = time.time()
+        try:
+            link = ask_host(hosting_dir() / f"{hid}.sock", "link")
+        except OSError as e:
+            self.err = f"the room's host is not answering: {e}"
+            return False
+        if not link.startswith("playbox://"):
+            self.err = link[:160] or "the room's host would not make a link"
+            return False
+        try:
+            self.sidecar.call("playbox_leave", {})          # an error here ("not in a room") is fine
+            err, data = self.sidecar.call("playbox_join", {"link": link})
+        except Exception as e:  # noqa: BLE001
+            self.err = f"could not join again: {e}"
+            return False
+        if err:
+            self.err = f"could not join again: {str(data)[:160]}"
+            return False
+        self.err = None
+        self.notes.append(("join", "Joined the room again with a fresh grant", "ok"))
+        return True
 
     def close(self):
         self.stop.set()
@@ -150,6 +181,9 @@ class Room:
         d["me"] = (joined or {}).get("member_id") or st.get("guest_id")
         if d["mode"] != "none":
             ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1)
+            if ferr and self.rec.get("adopted_host") and isinstance(feed, str) and ("not authorized" in feed or "authorization" in feed or "not in a room" in feed):
+                if self._rejoin():          # the grant ran out (they last an hour): get a new one, then read again
+                    ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1)
             if not ferr and isinstance(feed, dict):
                 items = [i for i in feed.get("items", []) if isinstance(i, dict) and i.get("seq", 0) > self.seq]
                 if self.primed:

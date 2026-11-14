@@ -9,6 +9,10 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Fixed
+- Hub: an adopted room joins its host again by itself when its hour-long grant ends or the hub restarts (before, its feed and canvas went blank).
+- Host: a member that is refused again and again for the same reason is recorded once a minute, and a flood of events can no longer push chat messages out of the feed.
+
 ## [0.3.2] - 2026-11-14
 
 ### Added

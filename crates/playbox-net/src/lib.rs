@@ -1375,7 +1375,7 @@ impl RoomHandler {
         match self.route(from, &frame).await {
             Ok(v) => (JsonRpcResponse::success(id, v), !public),
             Err(e) => {
-                if !public {
+                if !public && refusal_is_new(&from.to_string(), &frame.rpc.method, &e.message) {
                     // Denials and failures of anything that needed a grant or invite. The text is clipped and
                     // contains no token: Biscuit errors name the failed check, not the token.
                     self.audit.record(
@@ -2932,5 +2932,40 @@ mod say_retry_tests {
         // A refusal from the host is final and not retried: an empty message says nothing and costs no extra posts.
         assert!(b.say("   ", None).await.is_err());
         host.shutdown().await.unwrap();
+    }
+}
+
+/// A member that keeps being refused for the same reason (an expired grant, polled every few seconds) is recorded once a minute, not once
+/// per call: the log and the feed stay readable, and the room's history is not pushed out by it.
+fn refusal_is_new(from: &str, method: &str, reason: &str) -> bool {
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+    static SEEN: OnceLock<Mutex<std::collections::HashMap<(String, String, String), Instant>>> = OnceLock::new();
+    let Ok(mut seen) = SEEN.get_or_init(Default::default).lock() else { return true };
+    let now = Instant::now();
+    if seen.len() > 4096 {
+        seen.retain(|_, t| now.duration_since(*t) < Duration::from_secs(60));
+    }
+    let key = (from.to_string(), method.to_string(), reason.chars().take(80).collect());
+    match seen.get(&key) {
+        Some(t) if now.duration_since(*t) < Duration::from_secs(60) => false,
+        _ => {
+            seen.insert(key, now);
+            true
+        }
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::refusal_is_new;
+
+    #[test]
+    fn the_same_refusal_is_recorded_once_a_minute() {
+        assert!(refusal_is_new("m1", "feed", "authorization failed: expired"));
+        assert!(!refusal_is_new("m1", "feed", "authorization failed: expired"));
+        assert!(refusal_is_new("m2", "feed", "authorization failed: expired"), "another member is its own case");
+        assert!(refusal_is_new("m1", "say", "authorization failed: expired"), "so is another method");
+        assert!(refusal_is_new("m1", "feed", "a different reason"));
     }
 }

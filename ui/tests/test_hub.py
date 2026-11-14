@@ -889,6 +889,39 @@ def test_tunnel_keeper():
     check("tunnel: a tunnel that dies is started again", len(procs) == 2 and opts["public_url"] == f"https://t{len(starts)}.example")
 
 
+def test_adopted_rejoin():
+    """An adopted room asks its local host for a fresh link when its hour-long grant ends or the hub restarts."""
+    sys.path.insert(0, UI)
+    from hub import rooms as R
+
+    class SC:
+        def __init__(self):
+            self.calls = []
+
+        def call(self, name, args, wait=None):
+            self.calls.append((name, args))
+            return False, {}
+
+    seen = {}
+    old = R.ask_host
+    R.ask_host = lambda sock, line, timeout=6.0: seen.setdefault("n", 0) or "playbox://fresh"
+    try:
+        room = R.Room({"id": "a1", "label": "x", "adopted_host": "0" * 16}, "bin", tempfile.mkdtemp(prefix="pbrj-"))
+        room.sidecar = SC()
+        check("rejoin: leaves and joins with the link the host made", room._rejoin() is True and [c[0] for c in room.sidecar.calls] == ["playbox_leave", "playbox_join"]
+              and room.sidecar.calls[1][1] == {"link": "playbox://fresh"})
+        check("rejoin: not more than once in 30 s", room._rejoin() is False and len(room.sidecar.calls) == 2)
+        room.last_renew = 0
+
+        def gone(*a, **k):
+            raise OSError("no such socket")
+        R.ask_host = gone
+        check("rejoin: a host that is gone is reported, not raised", room._rejoin() is False and "not answering" in (room.err or ""))
+        check("rejoin: a room that was not adopted never asks", R.Room({"id": "b", "label": "y"}, "bin", tempfile.mkdtemp(prefix="pbrj-"))._rejoin() is False)
+    finally:
+        R.ask_host = old
+
+
 def test_agents():
     """Agent detection reads each agent's config; connecting runs `playbox setup --only <agent>` and nothing else."""
     from hub import agents
@@ -1147,6 +1180,7 @@ if __name__ == "__main__":
     test_cloudflare()
     test_access()
     test_tunnel_keeper()
+    test_adopted_rejoin()
     test_rehost()
     test_board()
     test_classify()

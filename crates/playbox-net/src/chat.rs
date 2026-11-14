@@ -137,9 +137,7 @@ impl Chat {
             name,
             text,
         });
-        while inner.items.len() > KEPT {
-            inner.items.pop_front();
-        }
+        trim(&mut inner.items);
         if let Some(item) = inner.items.back().cloned() {
             Self::persist(inner, &json!({ "t": "item", "item": item }));
         }
@@ -230,9 +228,7 @@ impl Chat {
                                     g.names.insert(item.from.clone(), n.clone());
                                 }
                                 g.items.push_back(item);
-                                while g.items.len() > KEPT {
-                                    g.items.pop_front();
-                                }
+                                trim(&mut g.items);
                             }
                         }
                         Some("req") => {
@@ -434,6 +430,23 @@ impl Chat {
     }
 }
 
+/// Keep the feed to KEPT items. A burst of events (a member being refused in a loop, say) must not push what people said out of the
+/// feed, so while events take up more than half of it the oldest event goes first; otherwise the oldest item does.
+fn trim(items: &mut VecDeque<Item>) {
+    while items.len() > KEPT {
+        let events = items.iter().filter(|i| i.kind == "event").count();
+        let at = if events > KEPT / 2 { items.iter().position(|i| i.kind == "event") } else { None };
+        match at {
+            Some(i) => {
+                items.remove(i);
+            }
+            None => {
+                items.pop_front();
+            }
+        }
+    }
+}
+
 fn clip(s: &str, n: usize) -> String {
     let c: String = s.chars().filter(|c| !c.is_control()).take(n).collect();
     c
@@ -487,6 +500,21 @@ impl Feed {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_burst_of_events_does_not_push_out_what_people_said() {
+        let c = Chat::new();
+        for i in 0..5 {
+            c.say("a", None, &format!("hello {i}")).unwrap();
+        }
+        for i in 0..(KEPT * 3) {
+            c.event("refused", Some("a"), &json!({ "reason": format!("not authorized {i}") }));
+        }
+        let f = c.since(0, 500, &[]);
+        let said = f.items.iter().filter(|i| i.kind == "say").count();
+        assert_eq!(said, 5, "the messages survive a flood of events");
+        assert!(c.since(0, 500, &[]).items.len() <= 500);
+    }
+
     use super::*;
 
     #[test]
