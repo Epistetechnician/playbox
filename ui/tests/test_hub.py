@@ -227,6 +227,15 @@ def test_pairing_race():
     shutil.rmtree(home)
 
 
+def test_knock_targets():
+    from hub import knock
+    ok = ["https://hub.example.com", "http://127.0.0.1:7717", "http://192.168.1.5:7717", "http://localhost:7717", "https://hub.example.com:8443/path"]
+    bad = ["http://169.254.169.254/latest/meta-data", "https://169.254.169.254", "http://[::ffff:169.254.169.254]/", "http://[fe80::1]/", "http://0.0.0.0:80", "http://8.8.8.8",
+           "ftp://hub.example.com", "https://u:p@hub.example.com", "http://evil.example.com"]
+    check("knock: legitimate host addresses accepted", all(not refuses(knock.check_base, u) for u in ok))
+    check("knock: link-local / metadata / unspecified / public-http targets refused", all(refuses(knock.check_base, u) for u in bad), str([u for u in bad if not refuses(knock.check_base, u)]))
+
+
 class RsaAuthenticator:
     """RS256 passkey (Windows Hello style), signing with OpenSSL so the pure-Python verifier is cross-checked against it."""
     def __init__(self, bits=2048, e=65537):
@@ -1129,6 +1138,7 @@ if __name__ == "__main__":
     test_webauthn()
     test_webauthn_rs256()
     test_pairing_race()
+    test_knock_targets()
     test_push_send()
     test_http()
     test_cloudflare()

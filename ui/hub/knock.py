@@ -114,6 +114,13 @@ def check_base(base):
     u = urllib.parse.urlparse(base)
     if u.scheme not in ("https", "http") or not u.hostname or u.username or u.password:
         raise KnockError("that isn't a usable host address")
+    try:
+        lit = ipaddress.ip_address(u.hostname)
+        lit = getattr(lit, "ipv4_mapped", None) or lit
+    except ValueError:
+        lit = None
+    if lit and (lit.is_link_local or lit.is_unspecified or lit.is_multicast):      # 169.254.169.254 (cloud metadata) and friends, over either scheme
+        raise KnockError("that isn't a usable host address")
     if u.scheme == "http":
         h = u.hostname
         try:
