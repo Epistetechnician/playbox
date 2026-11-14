@@ -532,6 +532,7 @@ impl CardExt for AgentCard {
 
 #[cfg(test)]
 mod tests {
+    // REQ: REL-8
     #[test]
     fn protocol_check_names_the_side_that_must_update() {
         assert!(super::check_protocol(None, "?").is_ok());

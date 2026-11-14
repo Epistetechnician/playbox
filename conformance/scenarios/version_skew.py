@@ -2,6 +2,7 @@
 from harness import room
 
 TIER = "fast"
+# REQ: REL-7
 
 
 def talk(host, guest, tag):

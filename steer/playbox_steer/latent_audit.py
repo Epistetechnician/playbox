@@ -57,6 +57,6 @@ def audit(hub: H.Hub, auditor: str, head: dict, vector: torch.Tensor, reveal: by
         return Verdict(False, reasons=["the reveal does not match the commitment"])
     mine = hub.encode(auditor, thought_of(sentences))
     cos = float(torch.nn.functional.cosine_similarity(mine, vector, dim=0))
-    if cos < threshold:
+    if not cos >= threshold:     # also true for NaN (a model that returned NaN/inf): `cos < threshold` is False for NaN and would pass it
         return Verdict(False, cos, [f"the vector does not follow from the revealed sentences (cosine {cos:.2f} < {threshold:.2f})"])
     return Verdict(True, cos)

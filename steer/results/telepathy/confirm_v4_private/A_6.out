@@ -1,0 +1,6 @@
+exit=0
+sent
+
+The first run had my error (two extra empty strings) and failed with a daemon torch dtype error. The rerun used exactly the six sentences and printed "wrote /Users/shaanp/Documents/GitHub/playbox/steer/results/telepathy/confirm_v4_shared/t6/thought.pt: one 2048-float vector for qwen3".
+
+--- stderr ---

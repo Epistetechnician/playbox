@@ -6,8 +6,9 @@
 curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh
 ```
 
-This downloads the release for your OS and CPU, checks it against `SHA256SUMS` (and the maintainer's signature once a
-key is pinned in `install.sh`), puts `playbox` in `~/.local/bin` (no sudo), and runs `playbox setup`. Set
+This downloads the release for your OS and CPU, checks it against `SHA256SUMS` and the maintainer's signature on that file
+(the public key is pinned in `install.sh`; an unsigned release is refused unless you set `PLAYBOX_ALLOW_UNSIGNED=1`, which is
+for 0.2.1 and earlier), puts `playbox` in `~/.local/bin` (no sudo), and runs `playbox setup`. Set
 `PLAYBOX_VERSION` to pin a version or `PLAYBOX_NO_SETUP=1` to skip the agent step.
 
 `playbox setup` registers `playbox mcp` with Claude Code, Codex, OpenCode and Hermes using each one's own command
@@ -15,30 +16,32 @@ key is pinned in `install.sh`), puts `playbox` in `~/.local/bin` (no sudo), and 
 `--remove` undoes it. It ends by printing your guest id and the sentences to tell your agent. Restart the agents it
 names. A guest then says: *Use the playbox MCP tools. Join this room: \<link\>*.
 
-Releases are built and signed by `.github/workflows/release.yml` on a `v*` tag. A maintainer makes the key once with
-`playbox release keygen KEYFILE`, pins the printed public key in `install.sh`, and stores the secret as the
-`PLAYBOX_RELEASE_KEY` secret.
+Releases are built and signed by `.github/workflows/release.yml` on a `v*` tag; the signing key is already pinned in `install.sh` and
+`release.pub`. A new key is made with `playbox release keygen KEYFILE`; the workflow signs with the `PLAYBOX_RELEASE_KEY` secret and,
+if it is not set, publishes an unsigned release that `install.sh` and `playbox update` then refuse. The archive holds only `playbox`;
+`playbox-mcp` is a separate binary you get from `cargo install --path crates/playbox-mcp`, and `playbox mcp` does the same job.
 
 `playbox --help` lists everything; `playbox <command> --help` gives each command's flags. State lives in
 `$PLAYBOX_HOME` (default `~/.playbox`, or `--home DIR`). Run `playbox doctor` to see what this machine can do.
 
 | Area | Commands |
 |---|---|
-| Start | `init`, `setup [--dry-run] [--remove]`, `doctor`, `id`, `hub` |
-| Rooms | `up` (host; `--console` for live `link / members / audit / revoke`), `join LINK [--task CMD]`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp` |
+| Start | `init`, `secure`, `setup [--dry-run] [--remove] [--only AGENT]`, `doctor`, `id`, `hub`, `update [--check] [--rollback]` |
+| Rooms | `up` (host; `--console` for live `link / members / audit / revoke / calls / approve / deny`, or `--tui` for a full-screen chat), `join LINK [--task CMD]`, `chat LINK`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp`, `latent session LINK` |
 | Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE` |
 | Trust | `verify LOG`, `attest`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
 | Memory | `memory remember\|recall\|export\|ingest\|review` |
 | Steering | `steer extract\|random\|manifest\|run\|probe`, `experiment e1\|e1-merge\|e6\|e6b\|audit-e6\|cache-audit`, `world demo\|test` |
-| Other | `doctor`, `demo`, `completions bash\|zsh\|fish` |
+| Other | `demo`, `completions bash\|zsh\|fish` (a hidden `release` command is for maintainers) |
 
 `shell` runs every MCP tool by hand, as a host or a guest: `playbox shell LINK`, then `status`, `ping text=hi`,
-`pull ref=main`, `delegate base=main command="cargo test"`, `steer …`, `push branch=x`. `help TOOL` shows its
-arguments. Anything not given a typed command (`checkpoint`, `receipts_check`, `lineage_check`) runs with
-`playbox call TOOL …`. The Python commands run in the repository's `steer/`, `orchestrator/` and `world/`
+`pull ref=main`, `delegate base=main command="cargo test"`, `steer …`, `push branch=x`. Each tool is a command named like the tool
+without the `playbox_` prefix, with `key=value` arguments; `help` lists them and `help TOOL` shows one's arguments.
+`playbox call TOOL …` runs one tool once in a fresh process, so it only suits tools that need no joined room (`verify`,
+`checkpoint`, `receipts_check`, `lineage_check`, the memory tools). The Python commands run in the repository's `steer/`, `orchestrator/` and `world/`
 projects (their `.venv`, else `uv`); set `PLAYBOX_ROOT` if you run `playbox` from outside the checkout.
 
-Revoking a member needs the live host: use `up --console` (or `revoke member=ID` in a `shell` that created the room).
+Revoking a member needs the live host: use `up --console` or `up --tui` (or `revoke member=ID` in a `shell` that created the room).
 `memory-review` still works as an alias for `memory review`.
 
 ## Setting up a machine
@@ -51,6 +54,19 @@ changes what is missing. `--dry-run` shows the changes without making them; `--y
 `--no-service`, `--no-agents`, `--local`, `--cloudflare`, `--tunnel NAME --hostname HOST`, `--port`, `--lan` and `--hub-dir` pre-answer the questions.
 It never replaces a hub service it didn't write without a yes, never takes over one loaded from another file, and won't register agents from a build-tree binary.
 Manage the service later with `playbox hub --service install|status|uninstall` (the log is `$PLAYBOX_HOME/hub.log`).
+
+## Checking it stays secure
+
+`playbox secure` checks, in about a second, that this machine, your agents and the hub are set up securely, and `playbox secure --fix` repairs file and folder
+permissions (nothing else is ever changed). It checks: who can read your keys, the state folders and the service log; the binary (a build-tree copy, or an
+older `playbox` earlier on your PATH, or a file other accounts can write); disk encryption, firewall and system-integrity settings; every signed history log;
+each coding agent's registration (does it point at a real, current binary nobody else can replace?); and the hub (the service file, browser protections, that
+every private route answers 401 to a stranger, that cross-site requests are refused, whether the hub is reachable from the network, and your public address).
+It then **fuzzes a throwaway copy of the hub** (never your own): 1 500 malformed and random requests (`--deep`: 20 000), signed out and signed in, and flags
+any 5xx, hang, dropped connection, CORS header, stack trace, or stranger let in anywhere but the public pages. A run is repeatable with `--seed N`.
+The report is saved to `$PLAYBOX_HOME/security.json` and shown in the hub's System view, which re-runs it every six hours and on demand; `playbox update`
+runs it (without the fuzz run) after every update, and `playbox init` runs it as its last step. `--json` for scripts, `--strict` to fail on warnings, `--online` to look for updates.
+Exit status: 0 clean, 1 something failing, 3 only warnings with `--strict`.
 
 ## The hub
 
@@ -77,3 +93,15 @@ To make a leaked link useless, bind it to the guest: the guest runs `playbox id`
 `playbox_create` with `for_guest`; console: `link <id>`). Only that key can redeem the invite. Anyone else is
 refused and cannot use it up. A bound link makes the guest join with its stable identity key
 (`$PLAYBOX_HOME/guest.key`); unbound links still use a fresh throwaway key each time.
+
+## Where the host listens (`PLAYBOX_BIND`)
+
+By default the host's UDP socket listens on every interface, so macOS asks to allow incoming connections for each new build and the port is reachable from the whole network. `PLAYBOX_BIND=loopback` listens on 127.0.0.1 only (no prompt; members reach the host through the relay with `iroh` or `relay:`, or from this machine with `local`). `PLAYBOX_BIND=<ip>` listens on that one address. `all` or unset is the default. `scripts/macos-allow.sh` allows the installed binary in the macOS firewall instead.
+
+### Guests dial out only
+
+A guest never needs to accept anything, so it does not listen on the network. On `iroh` and `relay:` transports it opens no UDP socket at all and reaches the host through the relay (set `PLAYBOX_GUEST_DIRECT=1` to keep direct paths, which are faster for large pushes and pulls, at the price of a listening socket). On `local`, a host on this machine is dialled over loopback first, with a socket on 127.0.0.1 only; a host on another machine, whose loopback address means nothing here, is then reached over the network as before. `Client::bound_sockets()` shows what a client is bound to.
+
+### One signature across rebuilds (macOS)
+
+The firewall remembers its answer per program signature. A build's ad-hoc signature is the hash of that exact build, so every `cargo build` and every `playbox update` is a new program and asks again. `sh scripts/dev-sign.sh` creates a local self-signed identity once (login keychain, no sudo) and signs the binaries with it, under a fixed identifier, so the requirement is the same for every build. `playbox update` then signs the new binary with that identity too (the name is kept in `~/.playbox/sign-identity`). Run `sh scripts/macos-allow.sh <binary>` once after the first signing; later rebuilds, re-signed with `dev-sign.sh`, do not ask again. `sh scripts/dev-sign.sh --status` shows each binary's requirement.

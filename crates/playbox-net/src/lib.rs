@@ -62,6 +62,10 @@ const MAX_FRAME: usize = 256 * 1024 * 1024;
 /// a connection is at most this big. After one request succeeds with an invite or a grant, the connection
 /// may send up to `MAX_FRAME`. Clients with a large first request send a tiny one first (see `Client`).
 pub const MAX_UNAUTHENTICATED_REQUEST: usize = 64 * 1024;
+/// How many requests one connection may make before one of them succeeds with an invite or a grant. Each refused
+/// request is written to the audit log and the feed, so without a bound a stranger could fill the host's disk over a
+/// single open connection. An honest client needs a handful (card, attestation, join).
+pub const MAX_UNAUTHENTICATED_REQUESTS: u32 = 32;
 /// How long a connection that has proved something may sit idle, or take to send one request.
 const AUTHENTICATED_PATIENCE: Duration = Duration::from_secs(15 * 60);
 /// Tasks remembered per member for `GetTask` / `ListTasks`.
@@ -331,11 +335,9 @@ impl State {
             banned: self.banned.iter().map(ToString::to_string).collect(),
             notices: self.notices.values().cloned().collect(),
         };
-        let tmp = path.with_extension("tmp");
         let result = serde_json::to_vec_pretty(&saved)
             .map_err(anyhow::Error::from)
-            .and_then(|b| std::fs::write(&tmp, b).map_err(Into::into))
-            .and_then(|()| std::fs::rename(&tmp, path).map_err(Into::into));
+            .and_then(|b| write_atomic(path, &b).map_err(Into::into));
         if let Err(e) = result {
             eprintln!(
                 "playbox: could not save host state to {}: {e:#}",
@@ -343,6 +345,28 @@ impl State {
             );
         }
     }
+}
+
+/// Replace `path` with `bytes` so that a crash or power cut leaves either the old file or the new one, never an empty
+/// or half-written one: write a private (0600) temporary file next to it, flush it to disk, rename it over `path`, then
+/// flush the directory so the rename itself survives. (A rename alone can reach the disk before the data does.)
+pub(crate) fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let tmp = path.with_extension("tmp");
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&tmp)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 /// A 32-byte secret stored as hex in a file readable only by the owner; created if missing.
@@ -1351,7 +1375,7 @@ impl RoomHandler {
         match self.route(from, &frame).await {
             Ok(v) => (JsonRpcResponse::success(id, v), !public),
             Err(e) => {
-                if !public {
+                if !public && refusal_is_new(&from.to_string(), &frame.rpc.method, &e.message) {
                     // Denials and failures of anything that needed a grant or invite. The text is clipped and
                     // contains no token: Biscuit errors name the failed check, not the token.
                     self.audit.record(
@@ -1430,7 +1454,15 @@ impl ProtocolHandler for RoomHandler {
             return Ok(());
         };
         let mut authenticated = false;
+        let mut unproven = 0u32;
         loop {
+            if !authenticated {
+                unproven += 1;
+                if unproven > MAX_UNAUTHENTICATED_REQUESTS {
+                    conn.close(3u32.into(), b"too many requests without a grant");
+                    return Ok(());
+                }
+            }
             let (patience, cap) = if authenticated {
                 (self.cfg.authenticated_patience, MAX_FRAME)
             } else {
@@ -1463,13 +1495,47 @@ impl ProtocolHandler for RoomHandler {
     }
 }
 
+/// How an endpoint's sockets are bound. A host has to be reachable; a guest only dials out, so it has no reason to listen on the network
+/// (and macOS asks "accept incoming connections?" for every build of a program that does).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Bind {
+    Host,
+    /// Dials out only. On `iroh` and `relay:` transports that means no UDP socket at all: the connection goes through the relay.
+    /// `PLAYBOX_GUEST_DIRECT=1` keeps direct paths (faster for big transfers) at the price of a listening socket.
+    Guest,
+    /// Dials a host on this machine: one UDP socket on 127.0.0.1, which the firewall does not ask about.
+    GuestLoopback,
+}
+
+/// Whether `PLAYBOX_BIND` names an interface (anything but unset, empty or `all`): then the user, not the guest logic, decides where to listen.
+fn bind_chosen() -> bool {
+    std::env::var("PLAYBOX_BIND").is_ok_and(|v| !v.trim().is_empty() && v.trim() != "all")
+}
+
 async fn bind(
     secret: SecretKey,
     transport: &Transport,
+    how: Bind,
 ) -> Result<(Endpoint, iroh::address_lookup::memory::MemoryLookup)> {
     // The in-memory lookup is how a host learns the addresses of its sync peers.
     let memory = iroh::address_lookup::memory::MemoryLookup::new();
-    let b = transport.configure(transport.builder())?;
+    let mut b = transport.configure(transport.builder())?;
+    let chosen = bind_chosen();
+    match how {
+        Bind::Host => {}
+        Bind::GuestLoopback => {
+            b = b
+                .clear_ip_transports()
+                .bind_addr(std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0)))
+                .map_err(|e| anyhow!("cannot listen on loopback: {e}"))?;
+        }
+        Bind::Guest => {
+            let direct = std::env::var("PLAYBOX_GUEST_DIRECT").is_ok_and(|v| v == "1");
+            if !chosen && !direct && matches!(transport, Transport::Iroh | Transport::Relay { .. }) {
+                b = b.clear_ip_transports();
+            }
+        }
+    }
     let ep = b
         .secret_key(secret)
         .alpns(vec![ALPN.to_vec()])
@@ -1644,7 +1710,7 @@ impl Host {
                 cfg.workspace.is_some()
             ),
         ));
-        let (endpoint, memory) = bind(secret, &transport).await?;
+        let (endpoint, memory) = bind(secret, &transport, Bind::Host).await?;
         if !transport.needs_online_wait() {
             // No relay to wait for: wait until the endpoint knows at least one direct address,
             // or links created right after start could carry none.
@@ -1691,13 +1757,28 @@ impl Host {
             &cfg.limits,
         );
         let memory = cfg.memory.clone();
-        let caps = Arc::new(capabilities::Engine::new(
-            capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
-            cfg.runner.clone(),
-            audit.clone(),
-            cfg.scratch_quota,
-            cfg.limits.clone(),
-        ));
+        let standing_state = state.clone();
+        let caps = Arc::new(
+            capabilities::Engine::new(
+                capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
+                cfg.runner.clone(),
+                audit.clone(),
+                cfg.scratch_quota,
+                cfg.limits.clone(),
+            )
+            .with_standing(Arc::new(move |member: &str, _capability: &str| {
+                let id: EndpointId = member.parse().map_err(|_| "the member id is not valid".to_string())?;
+                let st = standing_state.lock().expect("state lock");
+                if st.banned.contains(&id) {
+                    return Err("the member was revoked".into());
+                }
+                match st.members.get(&id) {
+                    None => Err("the member is no longer in the room".into()),
+                    Some(grant) if st.revoked.contains(grant) => Err("the member's grant was revoked".into()),
+                    Some(_) => Ok(()),
+                }
+            })),
+        );
         let handler = RoomHandler {
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
@@ -2030,40 +2111,52 @@ impl Client {
         transport: impl Into<Transport>,
     ) -> Result<Self> {
         let transport = transport.into();
-        let (endpoint, _) = bind(secret, &transport).await?;
+        // A host on this machine (its link lists a loopback address) is dialled over loopback first, so this process never listens on the
+        // network. Reaching a host on another machine, whose loopback address means nothing here, fails fast and falls through.
+        if transport == Transport::Local && !bind_chosen() {
+            let local: Vec<_> = addr.ip_addrs().filter(|a| a.ip().is_loopback()).map(|a| iroh::TransportAddr::Ip(*a)).collect();
+            if !local.is_empty() {
+                let near = EndpointAddr::from_parts(addr.id, local);
+                if let Ok(c) = Self::dial(near, addr.clone(), secret.clone(), &transport, Bind::GuestLoopback, 1, Duration::from_secs(3)).await {
+                    return Ok(c);
+                }
+            }
+        }
+        Self::dial(addr.clone(), addr, secret, &transport, Bind::Guest, CONNECT_ATTEMPTS, CONNECT_ATTEMPT_TIMEOUT).await
+    }
+
+    /// Connect to `target`, remembering `addr` (the host's full address) so a closed connection can be reopened the usual way.
+    async fn dial(target: EndpointAddr, addr: EndpointAddr, secret: SecretKey, transport: &Transport, how: Bind, attempts: u32, timeout: Duration) -> Result<Self> {
+        let (endpoint, _) = bind(secret, transport, how).await?;
         // A handshake that never completes is retried on the same endpoint: in practice a stuck
         // first attempt is far more common than a host that is really unreachable.
         let mut last = anyhow!("no connection attempt was made");
         let mut conn = None;
-        for _ in 0..CONNECT_ATTEMPTS {
-            match tokio::time::timeout(
-                CONNECT_ATTEMPT_TIMEOUT,
-                endpoint.connect(addr.clone(), ALPN),
-            )
-            .await
-            {
+        for _ in 0..attempts {
+            match tokio::time::timeout(timeout, endpoint.connect(target.clone(), ALPN)).await {
                 Ok(Ok(c)) => {
                     conn = Some(c);
                     break;
                 }
                 Ok(Err(e)) => last = e.into(),
-                Err(_) => last = anyhow!("timed out after {}s", CONNECT_ATTEMPT_TIMEOUT.as_secs()),
+                Err(_) => last = anyhow!("timed out after {}s", timeout.as_secs()),
             }
         }
-        let conn = conn.ok_or_else(|| {
-            last.context(format!(
-                "could not connect after {CONNECT_ATTEMPTS} attempts"
-            ))
-        })?;
+        let conn = conn.ok_or_else(|| last.context(format!("could not connect after {attempts} attempts")))?;
         Ok(Self {
             endpoint,
             addr,
             conn,
             grant: Mutex::new(None),
             next_id: AtomicI64::new(1),
-            transport,
+            transport: transport.clone(),
             warm: Default::default(),
         })
+    }
+
+    /// The addresses this client's own sockets are bound to: empty when it dials out only through a relay, loopback only for a host on this machine.
+    pub fn bound_sockets(&self) -> Vec<std::net::SocketAddr> {
+        self.endpoint.bound_sockets()
     }
 
     pub fn id(&self) -> EndpointId {
@@ -2844,6 +2937,26 @@ fn call_of(v: &Value, host: EndpointId) -> Result<capabilities::Call> {
 }
 
 #[cfg(test)]
+mod write_atomic_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn state_is_replaced_whole_and_kept_private() {
+        let dir = std::env::temp_dir().join(format!("pbx-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("state.json");
+        let st = State { path: Some(p.clone()), ..Default::default() };
+        st.save();
+        st.save();
+        assert!(State::load(&p).is_ok());
+        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600, "the room's state is for the host only");
+        assert!(!p.with_extension("tmp").exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+}
+
+#[cfg(test)]
 mod say_retry_tests {
     use super::*;
 
@@ -2865,5 +2978,40 @@ mod say_retry_tests {
         // A refusal from the host is final and not retried: an empty message says nothing and costs no extra posts.
         assert!(b.say("   ", None).await.is_err());
         host.shutdown().await.unwrap();
+    }
+}
+
+/// A member that keeps being refused for the same reason (an expired grant, polled every few seconds) is recorded once a minute, not once
+/// per call: the log and the feed stay readable, and the room's history is not pushed out by it.
+fn refusal_is_new(from: &str, method: &str, reason: &str) -> bool {
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+    static SEEN: OnceLock<Mutex<std::collections::HashMap<(String, String, String), Instant>>> = OnceLock::new();
+    let Ok(mut seen) = SEEN.get_or_init(Default::default).lock() else { return true };
+    let now = Instant::now();
+    if seen.len() > 4096 {
+        seen.retain(|_, t| now.duration_since(*t) < Duration::from_secs(60));
+    }
+    let key = (from.to_string(), method.to_string(), reason.chars().take(80).collect());
+    match seen.get(&key) {
+        Some(t) if now.duration_since(*t) < Duration::from_secs(60) => false,
+        _ => {
+            seen.insert(key, now);
+            true
+        }
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::refusal_is_new;
+
+    #[test]
+    fn the_same_refusal_is_recorded_once_a_minute() {
+        assert!(refusal_is_new("m1", "feed", "authorization failed: expired"));
+        assert!(!refusal_is_new("m1", "feed", "authorization failed: expired"));
+        assert!(refusal_is_new("m2", "feed", "authorization failed: expired"), "another member is its own case");
+        assert!(refusal_is_new("m1", "say", "authorization failed: expired"), "so is another method");
+        assert!(refusal_is_new("m1", "feed", "a different reason"));
     }
 }

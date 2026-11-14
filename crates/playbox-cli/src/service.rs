@@ -157,6 +157,15 @@ pub fn install(s: &Spec) -> Result<PathBuf> {
     if let Some(dir) = s.log.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // The log holds one-time pairing links: make it private before the service manager creates it with the default 644.
+    if !s.log.exists() {
+        std::fs::write(&s.log, b"")?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&s.log, std::fs::Permissions::from_mode(0o600));
+    }
     if path.is_file() && !up_to_date(s) {
         let bak = path.with_extension(format!("{}.bak", path.extension().and_then(|e| e.to_str()).unwrap_or("")));
         std::fs::copy(&path, &bak).with_context(|| format!("could not back up {}", path.display()))?;

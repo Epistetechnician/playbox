@@ -1,5 +1,6 @@
 """Conversations: roster-only, ordered, signed by authors, unread marks."""
 TIER = "fast"
+# REQ: CONV-1, CONV-2
 
 
 def run(ctx):

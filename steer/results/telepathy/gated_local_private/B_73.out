@@ -1,0 +1,8 @@
+exit=0
+Signal strength is 1.00, so the thought was clearly sent. The continuations are mostly incoherent, though, so the topic call is weak.
+
+The only explicit topical reference is "the Cubs and the Yankees" in the first continuation, which points to baseball. "Dance" and "funky dance" recur, but dance isn't on the list, and the closest option (jazz) is a guess. Treat this as low confidence.
+
+ANSWER: baseball
+
+--- stderr ---
