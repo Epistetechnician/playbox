@@ -54,5 +54,20 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | REL-8 | A host on a wire protocol this build cannot speak is refused with the side that must update. | shipped |
 | REL-9 | The installer refuses a hub bundle that does not match its checksum. | shipped |
 | REL-10 | Builds are reproducible: the same commit gives the same archive hash. | planned |
+| **Hub** | | |
+| HUB-1 | A passkey is the only way to a full hub session; a pairing code works once and then expires. | shipped |
+| HUB-2 | Revoking a member and removing a device or a room need a fresh passkey touch (waived only on the hub machine itself). | shipped |
+| HUB-3 | A room with no repository hosts, mints invites, and is hosted again after the hub restarts. | shipped |
+| **Invites** | | |
+| INV-1 | An approval invite carries no Playbox key; the host approves each asker against a matching verify code, and the link is bound to that asker and handed over once. | shipped |
+| INV-2 | The hub never stores a join link, and the public invite page shows metadata only. | shipped |
+| INV-3 | An invite works for as many people as it says and no more, and withdrawing it closes it. | shipped |
+| **Room memory** | | |
+| MEM-1 | An entry is recalled with the author the host stamped from the member's key, and posting it again stores it once. | shipped |
+| MEM-2 | Revoking a member deletes their entries from the index and hides them from recall at once. | shipped |
+| MEM-3 | With review on, nothing pending reaches the index or a recall until the host accepts it, and a quarantined entry cannot be posted back. | shipped |
+| MEM-4 | Recall drops anything the host's ledger does not vouch for: unknown documents, derived observations, entries of non-members. | shipped |
+| MEM-5 | The bridge works against an unmodified Hindsight server (an opt-in test, run by hand). | shipped |
+| MEM-6 | Consolidation never blends two authors' claims into one recalled belief. | planned |
 | **Command line** | | |
 | CLI-1 | Arguments are typed, errors exit non-zero with a cause chain, and a closed pipe ends quietly. | shipped |
