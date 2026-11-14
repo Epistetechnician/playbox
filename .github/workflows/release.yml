@@ -13,7 +13,7 @@ jobs:
     # A tag must match Cargo.toml and have a changelog section; `playbox release prepare X.Y.Z` makes both.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
@@ -31,7 +31,7 @@ jobs:
           - { runner: ubuntu-22.04-arm, os: linux, arch: arm64, target: aarch64-unknown-linux-gnu }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
@@ -58,7 +58,7 @@ jobs:
       id-token: write       # build provenance is signed with the workflow's identity (Sigstore), not a key we hold
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"

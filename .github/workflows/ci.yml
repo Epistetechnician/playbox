@@ -16,7 +16,7 @@ jobs:
         runner: [ubuntu-22.04, macos-latest]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
@@ -25,7 +25,7 @@ jobs:
   audit:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
@@ -35,7 +35,7 @@ jobs:
     # Licences, banned crates, registry sources and advisories (deny.toml). `audit` above is the advisory check with the reviewed exceptions.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -47,7 +47,7 @@ jobs:
       matrix:
         project: [steer, judge, orchestrator, world]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
       - working-directory: ${{ matrix.project }}
         # judge/tests/test_measures.py and test_fear.py load real Hugging Face classifiers and a language model; on a 2-core runner it
@@ -58,7 +58,7 @@ jobs:
     # Docker Desktop's kernel lack: cgroup v2 as root, user namespaces, and nftables with cgroup matching. Skips fail here.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
@@ -79,7 +79,7 @@ jobs:
     # the full tier (docker tasks, secrets) runs locally with `python3 conformance/run.py --tier full`.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -103,7 +103,7 @@ jobs:
     # playbox-mcp sidecar. A separate job so a failure here does not hide the results of the others.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
@@ -119,12 +119,12 @@ jobs:
     # The Hermes witness plugin has plain unittest tests (pytest cannot collect them: the plugin directory is a package).
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 -m unittest discover -s hermes-plugin-witness/tests -v
   lean:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: lean
