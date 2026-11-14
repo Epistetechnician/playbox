@@ -9,12 +9,18 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-14
+
 ### Added
 - Hub: **Adopt** a room hosted on this machine. A `playbox up --state DIR` host now publishes itself (a private socket under `~/.playbox/hosting`), and Add room > Join lists it with one button; adopting asks for a passkey touch.
 
 ### Security
 - A capability call's authority is checked again when the owner approves it and while it runs. A member revoked, banned or removed in between gets no run, and a run in progress is stopped (call state `revoked`; audit `capability_refused` / `capability_cancelled`).
 - Capability arguments with bidi, zero-width or separator characters are refused, and the host console shows the whole member id and escapes what a member typed.
+
+### Fixed
+- Releases now include an Intel Mac (`darwin-x86_64`) archive, cross-compiled; the hub bundle (`playbox-hub.tar.gz`) was already built, so `install.sh --join` finds both.
+- The hub and the cockpit no longer wait on a reverse DNS lookup before they listen (it stalled startup on some macOS machines).
 
 ### Testing
 - `docs/requirements.md` gives each promise an ID; `conformance/trace.py` (a CI step) fails when a shipped promise has no check that names it.

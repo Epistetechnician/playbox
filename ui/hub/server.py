@@ -2,6 +2,7 @@
 import argparse
 import hmac
 import http.server
+import socketserver
 import ipaddress
 import json
 import re
@@ -996,6 +997,15 @@ def keep_tunnel(state, opts, start, stop, wait=None, first=5.0, cap=60.0):
             delay = min(delay * 2, cap)
 
 
+class _LocalServer(http.server.ThreadingHTTPServer):
+    """HTTPServer.server_bind calls socket.getfqdn(), a reverse DNS lookup that can stall for tens of seconds on a CI macOS runner before the
+    socket listens. Nothing here uses server_name."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="playbox_hub", description="Playbox hub: every room, one installable app.")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PLAYBOX_HUB_PORT", "7717")))
@@ -1052,7 +1062,7 @@ def main(argv=None):
                                          "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
     opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
+    srv = _LocalServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True
     port = srv.server_address[1]
     base = f"http://127.0.0.1:{port}"
