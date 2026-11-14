@@ -65,7 +65,7 @@ every private route answers 401 to a stranger, that cross-site requests are refu
 It then **fuzzes a throwaway copy of the hub** (never your own): 1 500 malformed and random requests (`--deep`: 20 000), signed out and signed in, and flags
 any 5xx, hang, dropped connection, CORS header, stack trace, or stranger let in anywhere but the public pages. A run is repeatable with `--seed N`.
 The report is saved to `$PLAYBOX_HOME/security.json` and shown in the hub's System view, which re-runs it every six hours and on demand; `playbox update`
-runs it after every update, and `playbox init` runs it as its last step. `--json` for scripts, `--strict` to fail on warnings, `--online` to look for updates.
+runs it (without the fuzz run) after every update, and `playbox init` runs it as its last step. `--json` for scripts, `--strict` to fail on warnings, `--online` to look for updates.
 Exit status: 0 clean, 1 something failing, 3 only warnings with `--strict`.
 
 ## The hub
