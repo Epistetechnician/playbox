@@ -2,7 +2,7 @@
 
 Substrate `task_climbmix` with `task_spec_gpu_mac.json`. Data: climbmix shard 0 (train, capped at 20M tokens), shard 6542 (dev), shard 6541 (sealed holdout). Model: the autoresearch GPT at depth 2 (dim 128, vocab 8192, 256-token rows), Muon+AdamW. Device: CPU, 4 threads (MPS is not reachable from the sandbox this ran in). Metric: bits per byte. Ceiling label: `local_internal_exploratory`. Hardware attestation is self-reported.
 
-Not agents: ten scripted patches to the baseline. The first four to eight were guesses at learning rates and batch size; the two Muon `ns_steps` patches were added after a manual look at four variants on one seed, because the first eight stand-ins produced no promotion on this model (discarded runs: see "Earlier attempts"). One stand-in is the injected bad candidate.
+Not agents: ten scripted patches to the baseline. Most are guesses at learning rates, batch size and schedule; the two Muon `ns_steps` patches were added after a manual look at four variants on one seed, because an earlier set of eight stand-ins produced no promotion on this model (see "Earlier attempts"). One stand-in is the injected bad candidate.
 
 Calibration (frozen in the genesis receipt): target dev bpb L* = 2.01; baseline time to target T0 = 28.2 s (median of 3 seeds); timing noise cv = 0.0008 (one seed, 3 repeats); eval granularity 0.04; theta = 0.05; holdout minus dev gap mean -0.1135 and sd 0.0070 over 3 seeds, so eps = 0.1345.
 

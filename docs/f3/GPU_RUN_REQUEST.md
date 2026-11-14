@@ -1,76 +1,86 @@
 # F3 GPU run: go/no-go request
 
-Decision wanted from the user. Nothing here has been started: no gman node was woken, started, stopped or touched, and no GPU hours were spent. All hours and dollars below are **estimates**, not measurements, except the rate ($5.04/h, gman H100, as measured by the user).
+Decision wanted from the user. Nothing here has been started: no gman node, Modal or paid API was touched, and no GPU hours were spent. All hours and dollars below are **estimates**, except the rate ($5.04/h, gman H100, as measured by the user) and the Mac numbers, which are marked as measured.
 
 ## Proposal
 
-**Conditional GO for a pilot, NO-GO for the full run until the substrate adapter exists and the pilot passes.** The harness, verifier and negative tests work on a CPU toy ([dry_run](dry_run/README.md): 4 promotions, 5 rejections for gain, 1 holdout-caught injected candidate, all re-derived and replayed by the verifier). What is not built is the GPU substrate: `challenge/f3/task.py` generates synthetic data and trains a 2-layer model; it has no adapter for the autoresearch `prepare.py`/`train.py` (climbmix shards, 8192-token BPE, bits per byte). That adapter is about a day of CPU-only work and must be dry-run on the Mac (autoresearch supports MPS) before any GPU time is bought.
+**Go for the pilot, then decide on the full run from the pilot's numbers.** The GPU substrate now exists and has been dry-run on a Mac CPU with real climbmix data: the autoresearch GPT (Muon+AdamW) behind the same harness, bits per byte, a sealed holdout shard, signed receipts, independent verifier with replay. What has not been run is anything on an H100: the H100 spec (`task_spec_gpu.json`) is an estimate until the pilot calibrates it.
+
+Mac dry run, measured ([dry_run_climbmix](dry_run_climbmix/README.md)): 10 scripted candidates gave 2 promotions, 7 rejections and 1 injected dev-memorizer that reached the dev target 8 times faster than the baseline (dev gain 0.87) and was rejected by the holdout (holdout 2.39 bpb against a limit of 2.14; honest candidates 1.88 to 1.90). The verifier passed every check, both promotions reproduced on recorded seeds, and on fresh seeds one kept its gain (0.137) while the other shrank from 0.066 to 0.033 (floor 0.025). Baseline time to target on the Mac CPU was 28.2 s, timing noise cv 0.0008 to 0.0044 across runs, holdout-minus-dev offset -0.05 to -0.11 bpb (depends on which holdout documents the secret seed picks). Each candidate decision took 1.7 to 1.9 times the sum of its training walls. Two things the dry run found were fixed by amendment before the final run (PROTOCOL A2): a too-coarse eval interval made every candidate look slower, and calibration steps were counted in micro-batches.
 
 ## What the real run is
 
-Target: autoresearch GPT (about 50M parameters) on climbmix shards; metric = harness-measured training seconds to a fixed dev bpb `L*`, evaluation excluded, ratio against the frontier on the same host ([PROTOCOL.md](PROTOCOL.md) sections 2, 4, 6). Dev = pinned val shard 6542 (agents see it). Holdout = a shard agents never get, committed by Merkle root in genesis, revealed after the last candidate. Candidates run under `playbox-runner` (no network, no custodian directory), not as plain subprocesses.
+Target: autoresearch GPT (depth 8, about 50M parameters, 2048-token rows) on climbmix shards 0 to 9; metric = harness-measured training seconds to a fixed dev bpb `L*`, evaluation excluded, as a ratio to the frontier on the same host ([PROTOCOL.md](PROTOCOL.md) sections 2, 4, 6, 15). Dev = shard 6542 (agents see it). Holdout = shard 6541, downloaded only into a custodian directory the candidate processes never receive; committed by Merkle root in genesis, revealed after the last candidate. For the real run candidates must run under `playbox-runner` (no network, no custodian directory); the Mac run used a scrubbed subprocess only.
 
 ## Node plan (user to approve; I will not touch gman)
 
 | Role | Node | Notes |
 |---|---|---|
-| Primary | one new H100 node | Not `playbox-tp3` (a command that is not ours is running there), not `playbox-swarm3`, not `jspace-*`. User names the node or approves creating one. gman needs the sandbox bypass, which I did not use: the user must run or authorize the gman commands. |
-| Second host | a different H100 node, separately provisioned, same GPU type | Runs replay only, from a clean checkout at the genesis commit, never given the harness state or `custodian/`. Up only after the round ends. |
+| Primary | one H100 node | Not `playbox-tp3` (a command that is not ours is running there). The user names the node or approves creating one; I have not looked at the state of `playbox-swarm3` or `jspace-*`. gman needs the sandbox bypass, which I did not use: the user runs or authorizes those commands. |
+| Second host | a different H100 node, same GPU type | Replay only, from a clean checkout at the genesis commit, never given the harness state or `custodian/`. Up only after the round ends. Same operator as the primary, so this is a second host, not an independent party. |
 
 ## Commands (primary), in order
 
-`<run>` is `~/f3/run1`. Steps 1 to 3 use a spec file for the real substrate that **does not exist yet** (`task_spec_gpu.json`, written with the adapter); the commands are otherwise those already in the repo.
+`<run>` is `~/f3/run1`. The genesis commit must be the commit that contains the code; the verifier fails otherwise.
 
 ```sh
-# 0. on the node: clean checkout at the pinned commit, data prep (one time, about 2 min per autoresearch README)
-git clone <repo> && git checkout <GENESIS_COMMIT> && uv run prepare.py
-# 1. calibration + genesis receipt (baseline x13 runs; pins protocol/code hashes and the holdout root)
+# 0. node: clean checkout at the genesis commit; torch with CUDA and these packages (versions to pin at the pilot): pyarrow tiktoken requests rustbpe numpy cryptography
+export F3_SUBSTRATE=climbmix F3_SPEC=task_spec_gpu.json F3_DATA_DIR=~/f3/data F3_HOLDOUT_DIR=/srv/f3-custodian/holdout
+# 1. data: 12 shards (10 train, 1 dev, 1 holdout), about 92 MB each = about 1.1 GB; tokenizer is trained on the 10 train shards
+python3 challenge/f3/task_climbmix.py prepare --data --holdout --tokens        # prints the data manifest
+# 2. calibration + genesis receipt (13 baseline runs; pins protocol, code, data manifest, holdout root)
 python3 challenge/f3/harness.py init --work <run>
-cp <run>/host.pub <out-of-band location>        # pin the key before any candidate runs
-# 2. each candidate (agents push files; this is the only entry point)
+cp <run>/host.pub <out-of-band location>        # pin the key before any candidate
+# 3. each candidate (agents push files; the only entry point)
 python3 challenge/f3/harness.py submit --work <run> CAND.py --author NAME
-# 3. end of round
+# 4. end of round
 python3 challenge/f3/harness.py reveal --work <run>
-# 4. verify without the harness
+# 5. verify without the harness
 python3 challenge/f3/verify.py --work <run> --host-pubkey "$(cat host.pub)" --replay none
 ```
 
-Second host, after copying only `receipts.jsonl`, `candidates/` and `host.pub`:
+Second host: same steps 0 and 1 with the primary's `tokenizer/` copied in (BPE training determinism across hosts is not tested), then:
 
 ```sh
-python3 challenge/f3/verify.py --work <copy> --host-pubkey "$(cat host.pub)" --replay all
+python3 challenge/f3/verify.py --work <copy of receipts.jsonl, candidates/, host.pub> --host-pubkey "$(cat host.pub)" --replay all
 ```
 
 ## Hours and cost (estimates)
 
-Assumes baseline time-to-target T0 of about 5 min on an H100 (to be measured in step 1; this is the biggest uncertainty), 3 seeds, frontier re-run with each candidate.
+Basis: autoresearch's README example reports 953 steps in 300 s on an H100 at depth 8 (not measured by us), so a 480-step baseline run is about 150 s of training; the Mac showed per-decision overhead of 1.7 to 1.9x the training wall, assumed to carry over (unverified on H100), giving about 4.5 min per run. T0 and the overhead are the largest uncertainties and are what the pilot measures.
 
 | Phase | Estimate | GPU-h | Cost at $5.04/h |
 |---|---|---|---|
-| Setup, data prep, smoke test | 0.5 h | 0.5 | 2.5 |
-| Calibration (13 baseline runs) | 1.1 h | 1.1 | 5.5 |
-| Round: Q = 20 candidates x about 26 min (6 runs of about 4 min plus evals) | 8.7 h | 8.7 | 43.9 |
-| Second-host replay: up to 5 promotions x 9 runs x about 5 min | 3.8 h | 3.8 | 19.1 |
-| **Total** | **14.1 h** | **14.1** | **about 71** |
-| With 25% contingency | | 17.6 | **about 89** |
+| Setup, 1.1 GB data prep, smoke test | 0.5 h | 0.5 | 2.5 |
+| Calibration (13 baseline runs) | 1.0 h | 1.0 | 5.0 |
+| Round: Q = 20 candidates, 6 runs each, about 27 min | 9 h | 9 | 45.4 |
+| Second-host replay: up to 5 promotions x 9 runs | 3.4 h | 3.4 | 17.1 |
+| **Total** | **13.9 h** | **13.9** | **about 70** |
+| With 25% contingency | | 17.4 | **about 88** |
 
-**Pilot (recommended first step):** Q = 8 candidates, calibration only plus 3.5 h of round, replay of at most 2 promotions: about 6.5 GPU-h, **about 33 USD**. The pilot's job is to measure T0, noise and the real holdout gap, and to confirm the numbers above before committing to Q = 20.
+**Pilot (first step):** Q = 8 candidates, calibration plus 3.6 h of round, replay of at most 2 promotions: about 6.5 GPU-h, **about 33 USD**. Its job: measure T0, noise, overhead and the real dev/holdout offset, and re-set the spec numbers (`steps`, `plan_steps`, `device_batch`) before the full run. Any change goes in a PROTOCOL amendment first.
 
 ## Stop conditions
 
-Stop and report at the first of: Q candidates used; 8 consecutive rejects; cumulative gain of 2x; spend reaching the **hard ceiling of 90 USD** (pilot: 40 USD); any primary-versus-replay disagreement on a promotion (do not continue, report it); a candidate process observed reading outside its working directory; baseline T0 above 10 min or noise cv above 0.10 at calibration (the target is then not usable).
+First of: Q candidates used; 8 consecutive rejects; cumulative gain 2x; spend at the **hard ceiling of 90 USD** (pilot: 40 USD); a promotion that fails replay (stop, report); a candidate process observed reading outside its working directory; at calibration, T0 above 10 min, noise cv above 0.10, or theta above 0.15 (the target is then not usable).
 
 ## Replay plan
 
-Second host replays every promotion on its recorded seeds (steps to target within one eval interval, holdout within tolerance) and on the revealed fresh seeds (gates pass, gain at least theta/2). Wall-clock is only compared within a host. A promotion that fails replay is reported as a false promotion; no retry with different seeds.
+The second host replays every promotion on its recorded seeds (batches to target within one eval interval, holdout within 0.02) and on the revealed fresh seeds (gates pass, gain at least theta/2). Wall-clock is only compared within a host. A promotion that fails replay is reported as a false promotion; no retry with other seeds. Expect marginal promotions to fail: on the Mac, one of two promotions kept only half its gain on fresh seeds.
 
 ## Claims it supports, and does not
 
-Supports: promotions re-derive from signed receipts; a candidate that overfits visible dev is stopped by the sealed holdout; promotions reproduce on a second same-type GPU host. Does not support: that agents beat random search or a tuned recipe (needs a comparator arm; the dry run used scripted patches); anything about other scales or data; honesty of a host that holds the signing key (attestation is self-reported; both hosts are ours); the absence of adaptive holdout overfitting (bounded by Q, not excluded). Details: [PROTOCOL.md](PROTOCOL.md) section 13.
+Supports: promotions re-derive from signed receipts and sources; an overfit-to-dev candidate is stopped by the sealed holdout; promotions reproduce on a second same-type GPU host. Does not support: that agents beat random search or a tuned recipe (the dry runs used scripted patches; a comparator arm needs its own budget); anything about other scales or data; honesty of a host holding the signing key (attestation is self-reported); no adaptive overfitting through the pass/fail bit (bounded by Q only). [PROTOCOL.md](PROTOCOL.md) section 13.
+
+## Known risks found by the dry run
+
+- Small holdouts shift: the holdout-minus-dev offset moved between -0.05 and -0.11 bpb across rounds on 65k-token holdouts. The calibrated tolerance absorbs it, but a large offset loosens the gate. The real holdout is 8x larger per row count.
+- `eps` adds the absolute mean offset even when the holdout is easier than dev; this is the preregistered rule and is looser than needed in that case.
+- The injected memorizer here was easy to catch (holdout 0.5 bpb worse). A subtler overfit would be a better test and is not part of this request.
+- pip and uv could not verify TLS inside the Mac sandbox (curl worked); the node setup should not depend on that.
 
 ## Needed from the user
 
-1. Approve building and Mac-dry-running the GPU substrate adapter (no spend).
-2. Pick or approve the two nodes and run, or authorize, the gman commands (sandbox bypass is yours to grant).
-3. Choose pilot (about 33 USD) or full (about 71 to 89 USD), and confirm the 40 and 90 USD ceilings.
-4. Agents for the round: scripted stand-ins prove nothing about agents; say whether real agents run it and whether a random-search comparator arm should use the same budget.
+1. Pilot go or no-go (about 33 USD, ceiling 40).
+2. The two nodes, and who runs or authorizes the gman commands.
+3. Whether real agents run the round and whether a random-search comparator arm gets the same budget.

@@ -1,56 +1,56 @@
 [PASS] chain: hash links, body hashes, Ed25519 signatures under the pinned key, no duplicates, sequence: 12 receipts
 [PASS] genesis: protocol hash equals the committed PROTOCOL.md
-[PASS] genesis: task spec hash
+[PASS] genesis: task spec hash: task_spec.json
 [PASS] genesis: task.py hash equals the file in the repo state
 [PASS] genesis: baseline.py hash equals the file in the repo state
 [PASS] genesis: harness.py hash equals the file in the repo state
-[PASS] genesis: PROTOCOL.md was committed before the genesis receipt: protocol committed 1794608258, genesis ts 1794609274
-[PASS] genesis: task.py at git commit c5cba09fa9 matches
-[PASS] genesis: baseline.py at git commit c5cba09fa9 matches
-[PASS] genesis: harness.py at git commit c5cba09fa9 matches
+[PASS] genesis: PROTOCOL.md was committed before the genesis receipt: protocol committed 1794608258, genesis ts 1794637715
+[PASS] genesis: task.py at git commit 9a251e8ba0 matches
+[PASS] genesis: baseline.py at git commit 9a251e8ba0 matches
+[PASS] genesis: harness.py at git commit 9a251e8ba0 matches
 [PASS] lineage: baseline archived and hashed
 [PASS] decision seq 1 (64c8a569dd): archived candidate source matches its hash
 [PASS] decision seq 1 (64c8a569dd): parent is the frontier at that point: parent b7a31df1ca, frontier b7a31df1ca
-[PASS] decision seq 1 (64c8a569dd): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.4992; re-derived promote/promoted ratio=0.4992
+[PASS] decision seq 1 (64c8a569dd): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.4939; re-derived promote/promoted ratio=0.4939
 [PASS] decision seq 2 (5bfaaed2a2): archived candidate source matches its hash
 [PASS] decision seq 2 (5bfaaed2a2): parent is the frontier at that point: parent 64c8a569dd, frontier 64c8a569dd
-[PASS] decision seq 2 (5bfaaed2a2): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.277; re-derived reject/gain_below_threshold ratio=1.277
+[PASS] decision seq 2 (5bfaaed2a2): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.3564; re-derived reject/gain_below_threshold ratio=1.3564
 [PASS] decision seq 3 (229c4ef34c): archived candidate source matches its hash
 [PASS] decision seq 3 (229c4ef34c): parent is the frontier at that point: parent 64c8a569dd, frontier 64c8a569dd
-[PASS] decision seq 3 (229c4ef34c): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.0537; re-derived reject/gain_below_threshold ratio=1.0537
+[PASS] decision seq 3 (229c4ef34c): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.0569; re-derived reject/gain_below_threshold ratio=1.0569
 [PASS] decision seq 4 (c6f41559f7): archived candidate source matches its hash
 [PASS] decision seq 4 (c6f41559f7): parent is the frontier at that point: parent 64c8a569dd, frontier 64c8a569dd
-[PASS] decision seq 4 (c6f41559f7): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.0007; re-derived reject/gain_below_threshold ratio=1.0007
+[PASS] decision seq 4 (c6f41559f7): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.0021; re-derived reject/gain_below_threshold ratio=1.0021
 [PASS] decision seq 5 (4bf1d59ac9): archived candidate source matches its hash
 [PASS] decision seq 5 (4bf1d59ac9): parent is the frontier at that point: parent 64c8a569dd, frontier 64c8a569dd
-[PASS] decision seq 5 (4bf1d59ac9): verdict re-derived from recorded measurements: recorded reject/holdout_failed ratio=0.3149; re-derived reject/holdout_failed ratio=0.3149
+[PASS] decision seq 5 (4bf1d59ac9): verdict re-derived from recorded measurements: recorded reject/holdout_failed ratio=0.325; re-derived reject/holdout_failed ratio=0.325
 [PASS] decision seq 6 (f54e675c14): archived candidate source matches its hash
 [PASS] decision seq 6 (f54e675c14): parent is the frontier at that point: parent 64c8a569dd, frontier 64c8a569dd
-[PASS] decision seq 6 (f54e675c14): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.7252; re-derived promote/promoted ratio=0.7252
+[PASS] decision seq 6 (f54e675c14): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.773; re-derived promote/promoted ratio=0.773
 [PASS] decision seq 7 (b8156f045a): archived candidate source matches its hash
 [PASS] decision seq 7 (b8156f045a): parent is the frontier at that point: parent f54e675c14, frontier f54e675c14
-[PASS] decision seq 7 (b8156f045a): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.7662; re-derived promote/promoted ratio=0.7662
+[PASS] decision seq 7 (b8156f045a): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.7441; re-derived promote/promoted ratio=0.7441
 [PASS] decision seq 8 (24f068a768): archived candidate source matches its hash
 [PASS] decision seq 8 (24f068a768): parent is the frontier at that point: parent b8156f045a, frontier b8156f045a
-[PASS] decision seq 8 (24f068a768): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.1187; re-derived reject/gain_below_threshold ratio=1.1187
+[PASS] decision seq 8 (24f068a768): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.1541; re-derived reject/gain_below_threshold ratio=1.1541
 [PASS] decision seq 9 (74de74be96): archived candidate source matches its hash
 [PASS] decision seq 9 (74de74be96): parent is the frontier at that point: parent b8156f045a, frontier b8156f045a
-[PASS] decision seq 9 (74de74be96): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.8626; re-derived promote/promoted ratio=0.8626
+[PASS] decision seq 9 (74de74be96): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.9204; re-derived promote/promoted ratio=0.9204
 [PASS] decision seq 10 (699bdefd3d): archived candidate source matches its hash
 [PASS] decision seq 10 (699bdefd3d): parent is the frontier at that point: parent 74de74be96, frontier 74de74be96
-[PASS] decision seq 10 (699bdefd3d): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.0448; re-derived reject/gain_below_threshold ratio=1.0448
+[PASS] decision seq 10 (699bdefd3d): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=1.0237; re-derived reject/gain_below_threshold ratio=1.0237
 [PASS] holdout: exactly one reveal and it is the last receipt: a reveal before the last decision means the holdout leaked mid-round
 [PASS] holdout: revealed seed and salt open the root committed in genesis
 [PASS] holdout: replay seeds match the commitment in genesis
 [PASS] holdout: no archived candidate source contains the holdout
 [PASS] replay seq 1 (64c8a569dd): recorded seeds reproduce (batches within 10, holdout loss within 0.02)
-[PASS] replay seq 1 (64c8a569dd): fresh replay seeds [1031, 1354, 1466] pass gates and gain >= theta/2: gain 0.528
+[PASS] replay seq 1 (64c8a569dd): fresh replay seeds [1272, 1747, 1779] pass gates and gain >= theta/2: gain 0.507
 [PASS] replay seq 6 (f54e675c14): recorded seeds reproduce (batches within 10, holdout loss within 0.02)
-[PASS] replay seq 6 (f54e675c14): fresh replay seeds [1031, 1354, 1466] pass gates and gain >= theta/2: gain 0.213
+[PASS] replay seq 6 (f54e675c14): fresh replay seeds [1272, 1747, 1779] pass gates and gain >= theta/2: gain 0.227
 [PASS] replay seq 7 (b8156f045a): recorded seeds reproduce (batches within 10, holdout loss within 0.02)
-[PASS] replay seq 7 (b8156f045a): fresh replay seeds [1031, 1354, 1466] pass gates and gain >= theta/2: gain 0.256
+[PASS] replay seq 7 (b8156f045a): fresh replay seeds [1272, 1747, 1779] pass gates and gain >= theta/2: gain 0.248
 [PASS] replay seq 9 (74de74be96): recorded seeds reproduce (batches within 10, holdout loss within 0.02)
-[PASS] replay seq 9 (74de74be96): fresh replay seeds [1031, 1354, 1466] pass gates and gain >= theta/2: gain 0.137
-[PASS] replay seq 5 (4bf1d59ac9): caught false promotion fails the holdout again: holdout 4.225583076477051, limit 2.5103
+[PASS] replay seq 9 (74de74be96): fresh replay seeds [1272, 1747, 1779] pass gates and gain >= theta/2: gain 0.101
+[PASS] replay seq 5 (4bf1d59ac9): caught false promotion fails the holdout again: holdout 4.216680526733398, limit 2.5066
 
 RESULT: VERIFIED  {"receipts": 12, "promotions": 4, "rejections": 6, "caught_false_promotions": 1, "reject_reasons": {"gain_below_threshold": 5, "holdout_failed": 1}}
