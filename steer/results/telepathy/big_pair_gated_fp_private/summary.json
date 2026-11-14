@@ -1,0 +1,48 @@
+{
+ "chance": 0.0476,
+ "concept": {
+  "n": 80,
+  "correct": 70,
+  "acc": 0.875,
+  "ci95": [
+   0.785,
+   0.9307
+  ],
+  "p_vs_chance": 2.8338888367363804e-81
+ },
+ "control": {
+  "n": 36,
+  "correct": 36,
+  "acc": 1.0,
+  "ci95": [
+   0.9036,
+   1.0
+  ]
+ },
+ "false_positive_rate": 0.0,
+ "by_direction": {
+  "olmo2->qwen8b": {
+   "n": 40,
+   "correct": 38,
+   "acc": 0.95,
+   "ci95": [
+    0.835,
+    0.9862
+   ],
+   "p_vs_chance": 4.041069721025371e-48
+  },
+  "qwen8b->olmo2": {
+   "n": 40,
+   "correct": 32,
+   "acc": 0.8,
+   "ci95": [
+    0.6524,
+    0.895
+   ],
+   "p_vs_chance": 2.574586575196063e-35
+  }
+ },
+ "infra_failures": 0,
+ "infra_reasons": [],
+ "mean_attempts": 1.0
+}

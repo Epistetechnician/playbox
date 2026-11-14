@@ -17,7 +17,8 @@ authors' documents and result files, nothing re-derived), **open**.
 | Python suite `steer` | re-run | `uv run --offline --group dev pytest tests`: 128 passed in 16 min |
 | Python suites `judge`, `world`, Hermes witness | re-run | `judge` 18 passed (CI subset: `test_measures.py` and `test_fear.py` load real models and were skipped), `world` 11 passed, witness plugin 14 passed |
 | Fuzz targets | re-run | all 12 targets, 60 s each, 50k to 310k executions each, no crashes, no artifacts |
-| Qwen3-8B ↔ OLMo-2-7B probe-gated run | re-run | Fresh run on a gman H100 (`steer/tools/node/big_gated_repro.sh`, new seed label `s3`, shipped probe): maps refit at held-out cosine 0.87 / 0.88; topics 71/80 = 88.8% (CI 80 to 94), controls 36/36, 0 retries. Pooled with s1 and s2: 211/240 = 87.9% topics, 107/108 controls. Same node type, same probe and prompts, so this repeats sampling, not the setup |
+| Qwen3-8B ↔ OLMo-2-7B probe-gated run | re-run | Fresh run on a gman H100 (`steer/tools/node/big_gated_repro.sh`, new seed label `s3`, shipped probe): maps refit at held-out cosine 0.87 / 0.88; topics 71/80 = 88.8% (CI 80 to 94), controls 36/36, 0 retries. Pooled with s1 and s2: 211/240 = 87.9% topics, 107/108 controls. Same node type and prompts with the shipped probe, so this repeats sampling; the fresh-probe row below re-tests calibration |
+| Probe calibration (Qwen3-8B ↔ OLMo-2-7B) | re-run | Fresh calibration on the H100 (`steer/tools/node/big_calib_repro.sh`): 248 newly logged Agent A thoughts, a new ridge-logistic probe (held-out topic pass 77/80 for both senders, filler 0/24, off-list 2/16 and 3/16, triples 0/4; shipped probe: 77/80 and 79/80, 0/24, 3/16, 0/4), then the gated eval with that probe: topics 70/80 = 87.5% (olmo2→qwen8b 38/40, qwen8b→olmo2 32/40), controls 36/36, 0 retries. This closes the reuse caveat on the earlier reproductions |
 | Qwen3-8B → DeepSeek-7B at layer 0.9 | re-run | Fresh run on a gman H100 (`steer/tools/node/dsk_repro.sh`, seed labels `s3` and `s4`, same stack, probe and controls): topics 141/160 = 88.1% (original 139/160), controls 68/72 (original 68/72), 0 retries. Four seeds pooled: 280/320 = 87.5%, 136/144 controls. Same caveat as the OLMo run: the shipped probe and map recipe were reused |
 | Audit against near-miss liars | re-run, new | [latent-channels.md §6r](latent-channels.md): the audit misses a medicine payload mixed in at 25% or less (1 of 90 caught, honest 90/90 pass) and catches 15 of 90 at 50%; the receiver guard blocks 29 of 114 at 25% and 96 of 114 at 50%; at the room's strength a 25% mix produced medicine in 0 of 192 generations, a 50% mix in 21 of 192. Three small models, a word-list decoder, one strength: not a safety result |
 | Two-machine, India, Pi, T1 Secure Enclave, T3 TDX runs | stored | [tested-on.md](tested-on.md); needs the original hardware |
@@ -44,6 +45,6 @@ authors' documents and result files, nothing re-derived), **open**.
 
 ## Not proven
 
-- Re-running the other GPU experiments (DeepSeek pair, swarm, hub, kv-hybrid); only their stored outputs were recomputed. The one reproduction above reused the shipped probe, so it does not re-test probe calibration.
+- Re-running the other GPU experiments (DeepSeek pair, swarm, hub, kv-hybrid); only their stored outputs were recomputed.
 - An independent audit; a hardware TPM; libkrun on Linux/KVM; a real closed-model reader of concept cards.
 - The 3×3 matmul target (best known 23) and a second host for the Commons replica.
