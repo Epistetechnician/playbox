@@ -112,6 +112,10 @@ def test_leak_scan_and_static_check():
     assert "disallowed" in tc.static_check("import os\ndef build_model(a,b,c): pass\ndef train(c,m): pass\n")
 
 
+def test_calibration_steps_convert_to_micro_batches():
+    assert tc.batches_per_step() == _SPEC["baseline"]["total_batch"] // (_SPEC["baseline"]["device_batch"] * _SPEC["block"]) == 1
+
+
 def test_candidate_process_never_gets_the_holdout_directory():
     with tempfile.TemporaryDirectory() as s:
         assert "F3_HOLDOUT_DIR" not in tc._env(s, holdout=False)
@@ -174,6 +178,8 @@ def test_harness_end_to_end_on_the_fixture_substrate(tmp_path):
     g = recs[0]["body"]
     assert g["substrate"]["task"] == "task_climbmix" and set(g["data_manifest"]) >= {"tokenizer.pkl", "train_tokens.npy", "dev_rows.npy", "holdout_shard"}
     assert "task_climbmix.py" in g["code_sha256"] and "baseline_climbmix.py" in g["code_sha256"] and "climbmix_data.py" in g["code_sha256"]
+    cal = g["calibration"]
+    assert cal["eval_granularity"] == _SPEC["eval_every"] / _SPEC["calibration"]["steps"] and cal["theta"] >= cal["eval_granularity"]
     assert [r["body"]["kind"] for r in recs] == ["genesis", "decision", "decision", "reveal"]
     assert recs[1]["body"]["verdict"] == "reject"  # an unchanged baseline cannot clear the gain threshold
     rep = V.Report()

@@ -145,3 +145,9 @@ Amendments are appended here with the date and are committed before the run they
 - *Tokenizer.* Trained by `rustbpe` on the train shards only (never dev or holdout), as upstream does. Its hash is in the data manifest.
 - *Dry-run scale.* The Mac dry run uses a smaller spec (`task_spec_gpu_mac.json`: 256-token blocks, 2 layers, 3 calibration seeds). `task_spec_gpu.json` is the H100 spec and its scale numbers are estimates until the pilot calibration; they are frozen in the genesis receipt before any candidate runs.
 - *Verifier.* `verify.py` fails if the pinned code differs from the genesis git commit, unless `--allow-dirty` is passed (tests only).
+
+**A2, 2026-11-13, before the second Mac dry run (found by the first one).**
+- *What happened.* The first climbmix Mac run (8 stand-ins, discarded; receipts kept in the session notes, not in the repo) evaluated dev every 20 optimizer steps while the calibration target sat at about 60 steps, so one eval interval was a third of the run. Every candidate that was not a no-op showed a gain of about -0.32 (it crossed the target one interval later), and the measured timing noise (cv 0.004, one seed repeated) said nothing about it. The injected dev memorizer was still caught by the holdout.
+- *Amendment to section 4(3).* `theta = max(theta_floor, ceil(3 * cv, 2 decimals), ceil(eval_granularity, 2 decimals))`, with `eval_granularity = eval_every / S_cal` (both in optimizer steps). The genesis records `eval_granularity`. The synthetic substrate's theta is unchanged by this (0.01 against 0.12).
+- *Unit fix.* Calibration steps are now converted to micro-batches with the substrate's `batches_per_step` before the stop rule is applied (before, `steps` was compared with micro-batches, so a climbmix baseline with 2 micro-batches per step was calibrated at half the intended steps).
+- *Mac spec.* `eval_every` 4 steps, 256 dev and 256 holdout rows, 100 calibration steps.

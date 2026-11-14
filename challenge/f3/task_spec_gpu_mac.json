@@ -4,7 +4,7 @@
  "vocab": 8192,
  "dev_shard": 6542,
  "holdout_shard": 6541,
- "eval_every": 20,
+ "eval_every": 4,
  "train_seeds": [
   1,
   2,
@@ -29,8 +29,8 @@
   0
  ],
  "train_max_tokens": 20000000,
- "dev_rows": 512,
- "holdout_rows": 512,
+ "dev_rows": 256,
+ "holdout_rows": 256,
  "threads": 4,
  "baseline": {
   "depth": 2,

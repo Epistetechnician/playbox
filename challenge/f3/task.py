@@ -95,6 +95,10 @@ def holdout_from_secret(secret: dict) -> np.ndarray:
     return holdout_blocks_from_secret(secret["seed"])
 
 
+def batches_per_step() -> int:
+    return 1
+
+
 def reference_info() -> dict:
     return {"oracle_dev_loss": round(oracle_loss(gen_blocks(SPEC["dev_seed"], SPEC["dev_blocks"])), 4)}
 

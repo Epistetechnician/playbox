@@ -106,7 +106,7 @@ def init(work: Path, secret_seed: int | None = None, log=print) -> dict:
     cal, bp = SPEC["calibration"], BASELINE
     seeds = SPEC["train_seeds"]
     log(f"calibration 1/3: target from {len(seeds)} baseline runs of {cal['steps']} steps")
-    fixed = [task.run_candidate(bp, s, None, stop_batches=cal["steps"]) for s in seeds]
+    fixed = [task.run_candidate(bp, s, None, stop_batches=cal["steps"] * task.batches_per_step()) for s in seeds]
     target = math.ceil(_med([r["dev_loss"] for r in fixed]) * 1000) / 1000
     log(f"  L* = {target}")
     log("calibration 2/3: holdout gap on distinct seeds")
@@ -124,9 +124,10 @@ def init(work: Path, secret_seed: int | None = None, log=print) -> dict:
     log("calibration 3/3: timing noise from repeats of one seed")
     rep = [task.run_candidate(bp, cal["noise_seed"], None, target=target)["wall_s"] for _ in range(cal["noise_reps"])]
     cv = statistics.stdev(rep) / statistics.mean(rep)
-    theta = max(cal["theta_floor"], math.ceil(3 * cv * 100) / 100)
+    gran = SPEC["eval_every"] / cal["steps"]  # one eval interval as a fraction of the calibration run (amendment A2)
+    theta = max(cal["theta_floor"], math.ceil(3 * cv * 100) / 100, math.ceil(gran * 100) / 100)
     base_wall = _med(walls)
-    calib = {"target": target, "eps_hold": eps, "theta": theta, "noise_cv": round(cv, 4), "gap_mean": round(gm, 5), "gap_sd": round(gs, 5),
+    calib = {"target": target, "eps_hold": eps, "theta": theta, "noise_cv": round(cv, 4), "eval_granularity": round(gran, 4), "gap_mean": round(gm, 5), "gap_sd": round(gs, 5),
              "base_wall_median": round(base_wall, 3), "base_tokens_median": int(_med(toks)),
              "wall_cap_s": round(cal["wall_cap_mult"] * base_wall, 3), "token_cap": int(cal["token_cap_mult"] * _med(toks)),
              **task.reference_info(),
@@ -247,15 +248,15 @@ STAND_INS = [
 
 
 STAND_INS_CLIMBMIX = [
-    ("scripted-1", "matrix_lr_0.12", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.12")]),
-    ("scripted-2", "embedding_lr_1.6", [("re:^EMBEDDING_LR = .*$", "EMBEDDING_LR = 1.6")]),
-    ("scripted-3", "warmdown_0.2", [("re:^WARMDOWN_RATIO = .*$", "WARMDOWN_RATIO = 0.2")]),
+    ("scripted-1", "matrix_lr_0.05", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.05")]),
+    ("scripted-2", "accum_1_half_batch", [('accum = hp["total_batch"] // per', "accum = 1")]),
+    ("scripted-3", "embedding_lr_0.4", [("re:^EMBEDDING_LR = .*$", "EMBEDDING_LR = 0.4")]),
     ("scripted-4", "weight_decay_0", [("re:^WEIGHT_DECAY = .*$", "WEIGHT_DECAY = 0.0")]),
     ("scripted-5", "dev_memorizer_INJECTED_BAD", [('x, y = ctx.next_batch(hp["device_batch"])',
         'import numpy as np\n            _i = np.random.randint(0, len(ctx.dev_blocks), hp["device_batch"])\n            _b = torch.from_numpy(ctx.dev_blocks[_i]).long().to(ctx.device)\n            ctx.batches += 1\n            ctx.tokens += hp["device_batch"] * ctx.block_size\n            x, y = _b[:, :-1], _b[:, 1:]')]),
     ("scripted-6", "grad_clip_1.0", [("re:^GRAD_CLIP = .*$", "GRAD_CLIP = 1.0")]),
-    ("scripted-7", "matrix_lr_0.2", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.2")]),
-    ("scripted-8", "adam_betas_0.9_0.98", [("re:^ADAM_BETAS = .*$", "ADAM_BETAS = (0.9, 0.98)")]),
+    ("scripted-7", "matrix_lr_0.12", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.12")]),
+    ("scripted-8", "warmdown_0.2", [("re:^WARMDOWN_RATIO = .*$", "WARMDOWN_RATIO = 0.2")]),
 ]
 if SUBSTRATE == "climbmix":
     STAND_INS = STAND_INS_CLIMBMIX

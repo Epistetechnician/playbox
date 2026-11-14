@@ -101,6 +101,11 @@ def data_manifest(include_holdout: bool = True) -> dict:
     return m
 
 
+def batches_per_step() -> int:
+    """Micro-batches per optimizer step of the baseline (calibration steps are converted with this)."""
+    return HP["total_batch"] // (HP["device_batch"] * T)
+
+
 def reference_info() -> dict:
     return {"vocab": V, "block": T}
 
