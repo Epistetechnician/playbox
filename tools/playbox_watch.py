@@ -119,6 +119,7 @@ def main(argv=None):
     ap.add_argument("--wait", type=int, default=15, help="seconds to hold each feed read open waiting for news (0 = plain polling; capped at 20 by the host)")
     ap.add_argument("--interval", type=float, default=3.0, help="seconds between feed polls when waiting is off or the host does not support it")
     ap.add_argument("--cooldown", type=float, default=4.0, help="quiet seconds to wait after a message, to batch bursts")
+    ap.add_argument("--history", type=int, default=14, help="how many recent chat lines the responder is shown")
     ap.add_argument("--max-per-hour", type=int, default=40)
     ap.add_argument("--max-streak", type=int, default=6, help="replies in a row without a message from the host before stopping")
     ap.add_argument("--duration", type=float, default=1800.0, help="seconds to run")
@@ -145,7 +146,7 @@ def main(argv=None):
         me = j["member_id"]
         feed = m.call("playbox_feed", {"since": 0})
         cursor = feed.get("next", 0)             # history is not answered
-        transcript = [label(i, me, {}) for i in feed["items"] if i["kind"] == "say"][-10:]
+        transcript = [label(i, me, {}) for i in feed["items"] if i["kind"] == "say"][-a.history:]
         log("joined", member=me[:8], cursor=cursor)
         end = time.time() + a.duration
         sent = []                                 # reply times, for the hourly cap
@@ -166,7 +167,7 @@ def main(argv=None):
                 if i["kind"] != "say":
                     continue
                 line = label(i, me, names)
-                transcript = (transcript + [line])[-14:]
+                transcript = (transcript + [line])[-a.history:]
                 if i["from"] == me:
                     continue
                 pending.append(line)
@@ -193,7 +194,7 @@ def main(argv=None):
                     if out and out.strip().upper() != "NOOP":
                         text = f"{a.name}: {out.strip()}"[:MAX_REPLY]
                         m.call("playbox_say", {"text": text})
-                        transcript = (transcript + [f"you: {text}"])[-14:]
+                        transcript = (transcript + [f"you: {text}"])[-a.history:]
                         sent.append(time.time())
                         streak += 1
                         log("replied", chars=len(text), streak=streak)

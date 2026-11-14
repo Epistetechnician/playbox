@@ -453,8 +453,7 @@ impl Mailbox {
             })
             .collect();
         let body = json!({ "seq": g.seq, "entries": entries }).to_string();
-        let tmp = path.with_extension("tmp");
-        let res = std::fs::write(&tmp, body).and_then(|()| std::fs::rename(&tmp, path));
+        let res = crate::write_atomic(path, body.as_bytes());
         if let Err(e) = res {
             eprintln!("playbox: cannot save the latent mailbox {}: {e}", path.display());
         }

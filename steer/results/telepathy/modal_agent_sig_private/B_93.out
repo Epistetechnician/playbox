@@ -1,0 +1,14 @@
+exit=0
+Signal strength is 1.00, so a clear thought was sent.
+
+Reading the continuations, the dominant and most specific content clusters around football:
+- "10-yard line of a football field... toward the sideline"
+- "Los Angeles stadium... the San Diego [Chargers]"
+- "football field... my opponent charges toward the goal line"
+- "The 1986 San Diego Chargers and the Los Angeles Rams in a thrilling battle for glory"
+
+There are secondary, noisier threads (a race car / concrete track, one basketball mention, and a recurring numeric anchor on "10"), but the recurring distinctive tokens — football field, yard line, goal line, stadium, and the two named NFL teams — all point to the football family. In the topic list the matching entry is soccer (the "football" option).
+
+ANSWER: soccer
+
+--- stderr ---

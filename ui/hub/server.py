@@ -2,6 +2,7 @@
 import argparse
 import hmac
 import http.server
+import socketserver
 import ipaddress
 import json
 import re
@@ -18,6 +19,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import push as webpush
+from .local import ask_host, hosting_dir, local_hosts
 from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from . import agents as agentmod
@@ -28,11 +30,12 @@ from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from .sec import SecLog, STAGES, posture
 from . import board
+from .machine import Machine
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 MAX_BODY = 1 << 20
-SENSITIVE_TOOLS = {"playbox_revoke"}
+SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate"}      # playbox_create is sensitive too unless it only replicates (see room_route)
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
@@ -48,6 +51,9 @@ def is_local(peer, headers):
 def make_handler(hub, auth, store, opts):
     invites = Invites(store)
     integ = Integrations(store)
+    machine = Machine(opts.get("port") or 7717)
+    if not os.environ.get("PLAYBOX_HUB_NO_MACHINE"):      # the fuzzer's throwaway hub and the tests don't schedule it
+        machine.schedule()
 
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "playbox-hub"
@@ -94,14 +100,31 @@ def make_handler(hub, auth, store, opts):
         def j(self, code, obj, extra=None):
             self.send(code, json.dumps(obj), extra=extra)
 
+        def slurp(self):
+            """Read the request body off the socket up front. A reply sent without reading it (a 401/403, say) would leave the bytes on the
+            keep-alive connection, and the next request on it would be parsed from them (and answered 501)."""
+            if self._raw is not None:
+                return self._raw
+            try:
+                n = int(self.headers.get("Content-Length", "0") or 0)
+            except ValueError:
+                n = -1
+            if n < 0 or n > MAX_BODY:
+                self.close_connection = True       # too big to swallow: answer, then drop the connection
+                self._big = True
+                self._raw = b""
+            else:
+                self._raw = self.rfile.read(n) if n else b""
+            return self._raw
+
         def body(self):
+            raw = self.slurp()
             if "application/json" not in self.headers.get("Content-Type", ""):
                 raise AuthError(415, "json only")
-            n = int(self.headers.get("Content-Length", "0") or 0)
-            if n > MAX_BODY:
+            if self._big:
                 raise AuthError(413, "too large")
             try:
-                v = json.loads(self.rfile.read(n) or b"{}")
+                v = json.loads(raw or b"{}")
             except ValueError:
                 raise AuthError(400, "bad json")
             if not isinstance(v, dict):
@@ -148,7 +171,7 @@ def make_handler(hub, auth, store, opts):
             rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
             checks = posture(public=public, access=bool(opts.get("access")), creds=len(store.d["creds"]), weak_sessions=weak, invites=inv, knocks=knocks,
                              push=len(store.d["push"]), rooms=rooms, fresh=fresh)
-            return {"now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
+            return {"machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
                     "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
                               "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
                     "rooms": rooms}
@@ -165,6 +188,7 @@ def make_handler(hub, auth, store, opts):
             self.do_GET()
 
         def do_GET(self):
+            self._raw, self._big = None, False
             try:
                 self.route("GET")
             except AuthError as e:
@@ -182,7 +206,9 @@ def make_handler(hub, auth, store, opts):
             self.mutate("PATCH")
 
         def mutate(self, method):
+            self._raw, self._big = None, False
             try:
+                self.slurp()
                 if not self.origin_ok():
                     return self.j(403, {"error": "cross-origin request refused"})
                 self.route(method)
@@ -523,6 +549,42 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"items": hub.attention()})
             if m == "GET" and p == "/api/events":
                 return self.events()
+            if m == "GET" and p == "/api/local-rooms":
+                have = {r.rec.get("adopted_host") for r in hub.rooms.values()} if hasattr(hub, "rooms") else set()
+                return self.j(200, {"rooms": [dict(h, adopted=h["id"] in have) for h in local_hosts()]})
+            if m == "POST" and p == "/api/local-rooms/adopt":
+                if not self.need_fresh(rec):      # this mints a join link into a room: a passkey touch
+                    return
+                b = self.body()
+                hid = str(b.get("id", ""))
+                found = next((h for h in local_hosts() if h["id"] == hid), None)
+                if not found:
+                    raise AuthError(404, "that room is not being hosted on this machine any more")
+                try:
+                    link = ask_host(hosting_dir() / f"{hid}.sock", "link")
+                except OSError as e:
+                    raise AuthError(502, f"the room's host did not answer: {e}")
+                if not link.startswith("playbox://"):
+                    raise AuthError(502, link[:200] or "the room's host would not make a link")
+                label = str(b.get("label") or found["name"])[:60]
+                try:
+                    room = hub.add(label, "this machine", "shared", None)
+                except ValueError as e:
+                    raise AuthError(400, str(e))
+                sc = room.ensure()
+                if not sc:
+                    hub.remove(room.id)
+                    raise AuthError(502, room.err or "sidecar unavailable")
+                err, data = sc.call("playbox_join", {"link": link})
+                if err:
+                    hub.remove(room.id)
+                    raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
+                with store.lock:
+                    room.rec["adopted_host"] = hid
+                    store.save()
+                hub.wake.set()
+                hub.sec.add("join", f'Adopted the room "{label}" hosted on this machine', "ok", room.id)
+                return self.j(200, {"room": room.digest, "id": room.id})
             if m == "POST" and p == "/api/rooms":
                 b = self.body()
                 try:
@@ -574,12 +636,28 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
             if m == "GET" and p == "/api/system":
                 return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/machine/fix":
+                if not self.need_fresh(rec):      # changes permissions on this machine's files
+                    return
+                machine.start(fix=True)
+                hub.sec.add("auth", "Permissions on this machine's key files were repaired from the System view", "info")
+                return self.j(200, self.system(rec))
+            if m == "POST" and p == "/api/system/machine":
+                machine.start()
+                return self.j(200, self.system(rec))
             if m == "POST" and p == "/api/system/verify":
                 n = 0
+                workers = []
                 for room in list(hub.rooms.values()):
                     room.last_chain = 0
-                    hub._publish_changes(room, room.tick(with_chain=True))
+                    # in parallel and for at most 4 s in all: a room whose host has gone away must not hold this request up (the hub's loop finishes the check)
+                    workers.append(threading.Thread(target=lambda r=room: hub._publish_changes(r, r.tick(with_chain=True)), daemon=True))
                     n += 1
+                for w in workers:
+                    w.start()
+                end = time.time() + 4
+                for w in workers:
+                    w.join(max(0.0, end - time.time()))
                 hub.sec.add("history", f"Re-verification requested for {n} room(s)", "info")
                 hub.wake.set()
                 return self.j(200, self.system(rec))
@@ -624,9 +702,11 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200 if ok else 404, {"ok": ok})
             if m == "POST" and p == "/api/push/subscribe":
                 ep = str(self.body().get("endpoint", ""))
-                if not ep.startswith("https://") or len(ep) > 1000:
+                if not webpush.valid_endpoint(ep):
                     raise AuthError(400, "bad endpoint")
                 with store.lock:
+                    if len(store.d["push"]) >= webpush.MAX_SUBS and not any(s["endpoint"] == ep for s in store.d["push"]):
+                        raise AuthError(429, "too many notification subscriptions")
                     if not any(s["endpoint"] == ep for s in store.d["push"]):
                         store.d["push"].append({"endpoint": ep, "name": rec["name"], "created": time.time()})
                         store.save()
@@ -689,19 +769,52 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": not err, "status": st, "tools": sc.tools})
             if m == "GET" and rest == "/canvas":
                 return self.send(200, (STATIC / "canvas.html").read_bytes(), "text/html; charset=utf-8")
+            if m == "GET" and rest == "/api/history":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    since, limit = max(0, int(q.get("since", ["0"])[0])), min(2000, max(1, int(q.get("limit", ["500"])[0])))
+                except ValueError:
+                    raise AuthError(400, "since and limit are numbers")
+                items, nxt = room.archive.read(since, limit)
+                members, me = room.archive.members()
+                return self.j(200, {"items": items, "next": nxt, "members": members, "me": me, "info": room.archive.info()})
+            if m == "GET" and rest == "/api/history.jsonl":
+                data = room.archive.export()
+                name = re.sub(r"[^A-Za-z0-9._-]+", "-", room.rec["label"]).strip("-") or "room"
+                return self.send(200, data, "application/x-ndjson", {"Content-Disposition": f'attachment; filename="{name}-history.jsonl"'})
             if m == "GET" and rest == "/api/canvas":
+                def saved():
+                    """The host cannot be read: show what this hub saved of the room, marked as such."""
+                    info = room.archive.info()
+                    if not info["items"]:
+                        return None
+                    members, me = room.archive.members()
+                    d0 = room.digest
+                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000))
+                    model.update({"now": int(time.time() * 1000), "me": me, "next": info["last_seq"], "offline": True, "archive": info,
+                                  "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d0.get("mode"),
+                                           "state": "offline", "chain": d0.get("chain"), "holds": [], "created": room.rec.get("created")},
+                                  "admin": False})
+                    return model
+                if room.host_gone():
+                    off = saved()
+                    if off:
+                        return self.j(200, off)
                 sc = room.ensure()
                 if not sc:
-                    return self.j(502, {"error": room.err or "the room's sidecar is unavailable"})
-                err, st = sc.call("playbox_status", {}, wait=2)
-                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3)
+                    off = saved()
+                    return self.j(200, off) if off else self.j(502, {"error": room.err or "the room's sidecar is unavailable"})
+                err, st = sc.call("playbox_status", {}, wait=2, timeout=6)
+                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3, timeout=8)
                 if ferr or not isinstance(feed, dict):
-                    return self.j(502, {"error": "this room's feed isn't available yet" if not isinstance(feed, str) else feed})
+                    off = saved()
+                    return self.j(200, off) if off else self.j(502, {"error": "this room's feed isn't available yet" if not isinstance(feed, str) else feed})
+                room.keep(feed)
                 st = st if isinstance(st, dict) else {}
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
                 model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000))
-                model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0),
+                model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
                               "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},
                               "admin": d.get("mode") in ("host", "both")})
@@ -712,14 +825,36 @@ def make_handler(hub, auth, store, opts):
             if m == "POST" and rest == "/api/tool":
                 b = self.body()
                 name, args = b.get("name"), b.get("args") or {}
+                if not isinstance(args, dict):
+                    return self.j(400, {"error": "args must be an object"})
+                def saved_feed(offline=True):
+                    """playbox_feed when the room cannot be read right now: what this hub saved, in the same shape. Marked offline only when the host is gone;
+                    when the connection is merely busy (the poller is mid-call) it is the same data a live read would give, so it is not."""
+                    since = args.get("since") if isinstance(args.get("since"), int) else 0
+                    items, nxt = room.archive.read(max(0, since), 500)
+                    members, me = room.archive.members()
+                    out = {"items": items, "next": nxt, "members": members if not offline else [{**x, "present": False} for x in members]}
+                    if offline:
+                        out.update({"offline": True, "saved_until_ms": room.archive.info()["last_sync_ms"]})
+                    return out
+                if name == "playbox_feed" and room.host_gone() and room.archive.info()["items"]:
+                    return self.j(200, {"error": False, "data": saved_feed()})
                 sc = room.ensure()
                 if not sc:
+                    if name == "playbox_feed" and room.archive.info()["items"]:
+                        return self.j(200, {"error": False, "data": saved_feed()})
                     return self.j(502, {"error": True, "data": room.err})
                 if name not in sc.tools:
                     return self.j(400, {"error": f"unknown tool {name}"})
-                if name in SENSITIVE_TOOLS and not self.need_fresh(rec):
+                # minting a join link (playbox_create) or running a command on the host (playbox_delegate) is as strong as an invite: same passkey touch
+                if (name in SENSITIVE_TOOLS or (name == "playbox_create" and not args.get("replica_of"))) and not self.need_fresh(rec):
                     return
-                err, data = sc.call(name, args, wait=3 if b.get("poll") else None)
+                err, data = sc.call(name, args, wait=3 if (b.get("poll") or name == "playbox_feed") else None, timeout=8 if name == "playbox_feed" else None)
+                if name == "playbox_feed":
+                    if not err and isinstance(data, dict):
+                        room.keep(data)
+                    elif err and room.archive.info()["items"]:
+                        return self.j(200, {"error": False, "data": saved_feed(offline=bool(room.digest.get("offline")) or data != "busy")})
                 if name == "playbox_feed" and not err and isinstance(data, dict) and data.get("items"):
                     room.seen()
                     hub.bus.publish("room", {**room.digest, "unread": 0})
@@ -833,12 +968,63 @@ def start_cloudflared(port, tunnel=None, hostname=None):
             if tunnel and "Registered tunnel connection" in line:
                 box.setdefault("url", f"https://{hostname}")
                 found.set()
+        found.set()                   # stderr closed: cloudflared exited, so stop waiting for it
     threading.Thread(target=pump, daemon=True).start()
-    if not found.wait(40) or proc.poll() is not None:
-        print("cloudflared did not come up within 40 s; skipping --cloudflare.", flush=True)
+    if not found.wait(40) or "url" not in box or proc.poll() is not None:
+        print("cloudflared did not come up; the hub keeps retrying in the background.", flush=True)
         proc.terminate()
         return None, None
     return proc, box["url"]
+
+
+def keep_tunnel(state, opts, start, stop, wait=None, first=5.0, cap=60.0):
+    """Keep the tunnel up for as long as the hub runs. `state["proc"]` is the running cloudflared (or None). When it is missing or has exited
+    (the network was down at startup, the laptop slept, cloudflared crashed) start another, backing off from `first` to `cap` seconds.
+    `start()` returns (proc, url); a quick tunnel's address changes on every start, so the public url is updated each time."""
+    wait = wait or stop.wait
+    delay = first
+    while not stop.is_set():
+        proc = state.get("proc")
+        if proc is not None and proc.poll() is None:
+            delay = first
+            if wait(2.0):
+                break
+            continue
+        if proc is not None:
+            print("The Cloudflare tunnel stopped; reconnecting.", flush=True)
+            state["proc"] = None
+        try:
+            proc, url = start()
+        except OSError as e:
+            print(f"Could not start cloudflared: {e}", flush=True)
+            proc, url = None, None
+        if proc is not None:
+            if stop.is_set():          # the hub was stopped while this one was coming up
+                proc.terminate()
+                break
+            state["proc"] = proc
+            opts["public_url"] = url or opts.get("public_url")
+            print(f"Cloudflare tunnel up: {url}", flush=True)
+            delay = first
+        else:
+            if wait(delay):
+                break
+            delay = min(delay * 2, cap)
+
+
+
+class QuickBindServer(http.server.ThreadingHTTPServer):
+    """`HTTPServer.server_bind` asks `socket.getfqdn()` for the host's name, a reverse-DNS lookup that can take many seconds (a CI runner,
+    a laptop on a captive network) before the hub answers anything. The name is only used for log lines, so use the bound address."""
+
+    daemon_threads = True
+
+    def server_bind(self):
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = port
 
 
 def main(argv=None):
@@ -895,9 +1081,9 @@ def main(argv=None):
     hub.extra_attention.append(lambda: [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
                                          "title": f"{r['name']} wants to join {store.d['invites'].get(r['invite'], {}).get('label', 'a room')}",
                                          "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
-    opts = {"public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
+    opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(hub, auth, store, opts))
+    srv = QuickBindServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True
     port = srv.server_address[1]
     base = f"http://127.0.0.1:{port}"
@@ -918,6 +1104,10 @@ def main(argv=None):
         threading_serve = __import__("threading").Thread(target=srv.serve_forever, daemon=True)
         threading_serve.start()     # cloudflared checks the origin as it connects, so serve first
         cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
+        tunnel_state = {"proc": cf_proc}
+        tunnel_stop = threading.Event()
+        threading.Thread(target=keep_tunnel, daemon=True, args=(tunnel_state, opts, lambda: start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname), tunnel_stop),
+                         kwargs={"first": float(os.environ.get("PLAYBOX_TUNNEL_RETRY", "5"))}).start()
     if cf_url:
         opts["public_url"] = cf_url      # the address friend invites point at (a tailnet address only reaches your own devices)
     link = a.join or os.environ.get("PLAYBOX_JOIN_LINK")
@@ -983,7 +1173,9 @@ def main(argv=None):
         pass
     finally:
         hub.close()
-        if cf_proc:
-            cf_proc.terminate()
+        if cloud:
+            tunnel_stop.set()
+            if tunnel_state.get("proc"):
+                tunnel_state["proc"].terminate()
         if ts_name:    # take the tailnet publication down with the hub
             subprocess.run([ts, "serve", "--https=443", "off"], capture_output=True, timeout=15)

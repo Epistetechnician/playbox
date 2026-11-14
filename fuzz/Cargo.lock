@@ -2679,7 +2679,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-core"
-version = "0.2.1"
+version = "0.3.1"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -2712,7 +2712,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-git"
-version = "0.2.1"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "tokio",
@@ -2720,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-net"
-version = "0.2.1"
+version = "0.3.1"
 dependencies = [
  "a2a-lf",
  "anyhow",
@@ -2748,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-runner"
-version = "0.2.1"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",

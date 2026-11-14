@@ -1,0 +1,6 @@
+exit=0
+The continuations are garbled but carry some signal: "the cells," "a disease that is used for human and bovine," "(M) cells," "used in the blood." Disease, cells, and blood all point to medical subject matter, and no other topic (sports, space, music, etc.) appears anywhere in the output.
+
+ANSWER: medicine
+
+--- stderr ---
