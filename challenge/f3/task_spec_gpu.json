@@ -4,7 +4,7 @@
  "vocab": 8192,
  "dev_shard": 6542,
  "holdout_shard": 6541,
- "eval_every": 20,
+ "eval_every": 10,
  "train_seeds": [
   1,
   2,
@@ -47,10 +47,10 @@
   "head_dim": 128,
   "device_batch": 64,
   "total_batch": 524288,
-  "plan_steps": 720
+  "plan_steps": 360
  },
  "calibration": {
-  "steps": 480,
+  "steps": 240,
   "gap_seeds": [
    11,
    12,
@@ -65,5 +65,5 @@
   "wall_cap_mult": 3.0,
   "token_cap_mult": 4.0
  },
- "_note": "ESTIMATE, not measured: scale taken from autoresearch's README example (depth 8, about 50M params, 2**19 tokens per step, 953 steps in 300 s on an H100). steps/plan_steps/device_batch are to be re-set at the pilot calibration and then frozen before any candidate."
+ "_note": "Pilot setting 2026-11-14. Measured on one H100 (baseline, device_batch 64, 2**19 tokens/step, no compile): about 1.04 s per step, so 240 calibration steps is about 250 s. Scale chosen to fit the 40 USD pilot ceiling; the full-run scale is decided after the pilot."
 }
