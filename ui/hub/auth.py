@@ -61,6 +61,12 @@ class Auth:
                 return None
             return ent
 
+    def _consume_code(self, code):
+        """Check and burn in one step under the store lock: two requests racing with one code cannot both win."""
+        with self.s.lock:
+            ent = self.s.d["pair"].pop(sha(code or ""), None)
+            return bool(ent and ent["exp"] >= time.time())
+
     def _burn_code(self, code):
         with self.s.lock:
             self.s.d["pair"].pop(sha(code), None)
@@ -153,10 +159,9 @@ class Auth:
     def weak_session(self, code, ua, ip, name):
         if not self.allow_weak:
             raise AuthError(403, "plain-HTTP sessions are disabled on this hub")
-        if not self._take_code(code):
+        if not self._consume_code(code):
             self._fail(ip)
             raise AuthError(403, "pairing code is invalid or expired")
-        self._burn_code(code)
         return self.new_session(None, True, ua, ip, name or "Local device")
 
     # ---- passkey registration ----
@@ -171,7 +176,7 @@ class Auth:
             uid = self.s.d["user_id"]
         return {"ticket": t, "publicKey": {
             "rp": {"id": rp_id, "name": "Playbox"}, "user": {"id": uid, "name": "playbox", "displayName": "Playbox owner"},
-            "challenge": b64u(challenge), "pubKeyCredParams": [{"type": "public-key", "alg": -7}],
+            "challenge": b64u(challenge), "pubKeyCredParams": [{"type": "public-key", "alg": -7}, {"type": "public-key", "alg": -257}],
             "authenticatorSelection": {"residentKey": "preferred", "userVerification": "required"},
             "attestation": "none", "timeout": 120000, "excludeCredentials": exclude, "hints": ["client-device"]}}
 
@@ -185,6 +190,8 @@ class Auth:
             self._fail(ip)
             raise AuthError(400, str(e))
         with self.s.lock:
+            if not self._take_code(ent["code"]):       # re-checked under the lock that burns it: one code enrolls one passkey, however many tickets raced
+                raise AuthError(403, "pairing code is invalid or expired")
             if any(c["id"] == cred["id"] for c in self.s.d["creds"]):
                 raise AuthError(409, "this passkey is already enrolled")
             now = time.time()

@@ -8,7 +8,8 @@ The receiver's policy (`Receiver`):
   1. Always: the record's signature, signer, weights and text hash, and that the cache bytes match the record.
   2. With probability `audit_prob`, drawn from the OS random source so the sender cannot predict it: recompute the
      cache from the text and compare entry by entry (the audit from `cache_audit`).
-  3. A signer that fails any check is quarantined and refused from then on.
+  3. A trusted signer whose record has a valid signature but fails a check is quarantined and refused from then on. A record
+     that names a trusted signer without a valid signature, or names a stranger, is refused but quarantines nobody.
 The audit is the only check that catches a sender who signs a cache it did not compute from the text. A judge of
 B's output cannot replace it: judging needs a clean reference, and producing one is the same recompute.
 """
@@ -74,6 +75,8 @@ def unpack(data: bytes) -> tuple[ca.Record, str, DynamicCache]:
         i += 1
     if not layers or len(tensors) != 2 * len(layers):
         raise HandoffError("cache layers are missing or unexpected tensors are present")
+    if any(t.is_floating_point() and not bool(torch.isfinite(t).all()) for kv in layers for t in kv):
+        raise HandoffError("cache holds NaN or infinite values")      # a signer can sign these; they poison every later token
     try:
         return rec, text, DynamicCache.from_legacy_cache(tuple(layers))
     except Exception as e:  # tensors of a shape or type a cache cannot hold

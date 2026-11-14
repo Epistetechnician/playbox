@@ -115,7 +115,10 @@ def fit_hub(states: dict[str, torch.Tensor], anchors: str, k: int = 64, lam: flo
 
 
 def quantize(h: torch.Tensor) -> tuple[bytes, float]:
-    """Symmetric int8 with one scale. k bytes carry the thought."""
+    """Symmetric int8 with one scale. k bytes carry the thought. A NaN or infinite thought is a ValueError: it would otherwise be
+    cast to arbitrary int8 values under a NaN scale and sent as if it meant something."""
+    if not bool(torch.isfinite(h).all()):
+        raise ValueError("the thought has NaN or infinite entries")
     scale = float(h.abs().max().clamp_min(1e-12)) / 127.0
     q = torch.clamp((h / scale).round(), -127, 127).to(torch.int8)
     return bytes(q.numpy().tobytes()), scale
@@ -175,7 +178,10 @@ def unpack(hub: Hub, blob: bytes, max_bytes: int = 1 << 16) -> tuple[dict, torch
     raw_scale = head.get("scale")
     if isinstance(raw_scale, bool) or not isinstance(raw_scale, (int, float)):
         raise ValueError("bad scale")
-    scale = float(raw_scale)
+    try:
+        scale = float(raw_scale)
+    except OverflowError:       # an integer literal of 400 digits parses as an int; float() of it is not a ValueError
+        raise ValueError("bad scale") from None
     if not (scale > 0 and scale < 1e6):
         raise ValueError("bad scale")
     return head, dequantize(raw, scale)
@@ -214,6 +220,8 @@ def pack_signed(hub: Hub, src: str, h: torch.Tensor, private_key, commit: str | 
     import blake3
     from cryptography.hazmat.primitives import serialization
 
+    if not bool(torch.isfinite(h).all()):
+        raise ValueError("the thought has NaN or infinite entries")
     scale_hex = struct.pack(">f", float(h.abs().max().clamp_min(1e-12)) / 127.0).hex()
     scale = struct.unpack(">f", bytes.fromhex(scale_hex))[0]
     raw = bytes(torch.clamp((h / scale).round(), -127, 127).to(torch.int8).numpy().tobytes())

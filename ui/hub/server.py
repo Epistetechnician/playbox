@@ -34,7 +34,7 @@ from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 MAX_BODY = 1 << 20
-SENSITIVE_TOOLS = {"playbox_revoke"}
+SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate"}      # playbox_create is sensitive too unless it only replicates (see room_route)
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
@@ -701,9 +701,11 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200 if ok else 404, {"ok": ok})
             if m == "POST" and p == "/api/push/subscribe":
                 ep = str(self.body().get("endpoint", ""))
-                if not ep.startswith("https://") or len(ep) > 1000:
+                if not webpush.valid_endpoint(ep):
                     raise AuthError(400, "bad endpoint")
                 with store.lock:
+                    if len(store.d["push"]) >= webpush.MAX_SUBS and not any(s["endpoint"] == ep for s in store.d["push"]):
+                        raise AuthError(429, "too many notification subscriptions")
                     if not any(s["endpoint"] == ep for s in store.d["push"]):
                         store.d["push"].append({"endpoint": ep, "name": rec["name"], "created": time.time()})
                         store.save()
@@ -789,12 +791,15 @@ def make_handler(hub, auth, store, opts):
             if m == "POST" and rest == "/api/tool":
                 b = self.body()
                 name, args = b.get("name"), b.get("args") or {}
+                if not isinstance(args, dict):
+                    return self.j(400, {"error": "args must be an object"})
                 sc = room.ensure()
                 if not sc:
                     return self.j(502, {"error": True, "data": room.err})
                 if name not in sc.tools:
                     return self.j(400, {"error": f"unknown tool {name}"})
-                if name in SENSITIVE_TOOLS and not self.need_fresh(rec):
+                # minting a join link (playbox_create) or running a command on the host (playbox_delegate) is as strong as an invite: same passkey touch
+                if (name in SENSITIVE_TOOLS or (name == "playbox_create" and not args.get("replica_of"))) and not self.need_fresh(rec):
                     return
                 err, data = sc.call(name, args, wait=3 if b.get("poll") else None)
                 if name == "playbox_feed" and not err and isinstance(data, dict) and data.get("items"):

@@ -16,6 +16,8 @@ import blake3
 MAX_PROMPTS = 256
 MAX_PROMPT_CHARS = 8192
 MAX_NEW_TOKENS = 512
+MAX_DIRECTION_DIM = 1 << 20
+MAX_PROMPT_FILE_BYTES = 8 << 20
 
 
 def hash_bytes(b: bytes) -> str:
@@ -58,6 +60,9 @@ def write_direction(path: Path, values: list[float]) -> str:
 
 
 def read_direction(path: Path, dim: int | None = None) -> tuple[list[float], str]:
+    size = path.stat().st_size
+    if size > 4 * MAX_DIRECTION_DIM or (dim is not None and size != 4 * dim):    # decide from the size, before reading a file that may be gigabytes
+        raise ValueError(f"direction file is {size} bytes; model width is {dim}, limit {MAX_DIRECTION_DIM} values")
     data = path.read_bytes()
     if len(data) % 4 or not data:
         raise ValueError("direction file must be a non-empty array of float32")
@@ -80,6 +85,8 @@ class PromptSet:
 
 
 def read_prompts(path: Path) -> PromptSet:
+    if path.stat().st_size > MAX_PROMPT_FILE_BYTES:
+        raise ValueError("prompt set file is too large")
     raw = path.read_bytes()
     try:
         j = json.loads(raw)
@@ -93,6 +100,10 @@ def read_prompts(path: Path) -> PromptSet:
     for p in prompts:
         if not isinstance(p, str) or not p or len(p) > MAX_PROMPT_CHARS:
             raise ValueError(f"each prompt must be a non-empty string under {MAX_PROMPT_CHARS} characters")
+        try:
+            p.encode("utf-8")      # a lone surrogate ("\ud800") parses but cannot be tokenized
+        except UnicodeEncodeError:
+            raise ValueError("a prompt is not valid text (lone surrogate)") from None
     n = j.get("max_new_tokens", 32)
     t = j.get("temperature", 0.0)
     if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= MAX_NEW_TOKENS:
