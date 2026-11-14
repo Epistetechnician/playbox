@@ -1,0 +1,11 @@
+-- scripted-1: matrix_lr_0.05
+seq  1 scripted-1 REJECT   gain_below_threshold   gain=0.0012 caught_false=False
+-- scripted-2: accum_1_half_batch
+seq  2 scripted-2 REJECT   target_not_reached     gain=None caught_false=False
+-- scripted-3: muon_ns_steps_3
+seq  3 scripted-3 REJECT   gain_below_threshold   gain=-0.0811 caught_false=False
+-- scripted-4: embedding_lr_0.4
+seq  4 scripted-4 REJECT   gain_below_threshold   gain=-0.0001 caught_false=False
+-- scripted-5: dev_memorizer_INJECTED_BAD
+seq  5 scripted-5 REJECT   holdout_failed         gain=0.8655 caught_false=True
+-- scripted-6: muon_ns_steps_2

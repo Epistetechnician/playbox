@@ -1,0 +1,6 @@
+-- scripted-6: muon_ns_steps_2
+seq  6 scripted-6 REJECT   gain_below_threshold   gain=-0.1579 caught_false=False
+-- scripted-7: weight_decay_0
+seq  7 scripted-7 REJECT   gain_below_threshold   gain=0.0403 caught_false=False
+-- scripted-8: grad_clip_1.0
+seq  8 scripted-8 REJECT   gain_below_threshold   gain=0.0389 caught_false=False
