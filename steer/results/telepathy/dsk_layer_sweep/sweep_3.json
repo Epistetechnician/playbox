@@ -1,0 +1,69 @@
+{
+ "sender": "qwen8b",
+ "receiver": "dsk",
+ "note": "transcribed from the run log (the node stopped before the JSON was copied); 20 concepts x 4 prompts = 80 per cell",
+ "layers": {
+  "0.9": {
+   "layer": 27,
+   "heldout_cosine": 0.877,
+   "grid": {
+    "1.0": {
+     "mapped": 0.9375,
+     "direct": 0.9875
+    },
+    "1.2": {
+     "mapped": 0.95,
+     "direct": 0.9875
+    },
+    "1.5": {
+     "mapped": 0.9375,
+     "direct": 0.9625
+    }
+   }
+  },
+  "0.95": {
+   "layer": 28,
+   "heldout_cosine": 0.873,
+   "grid": {
+    "0.8": {
+     "mapped": 0.9375,
+     "direct": 0.9875
+    },
+    "1.0": {
+     "mapped": 0.9625,
+     "direct": 0.975
+    },
+    "1.2": {
+     "mapped": 0.9375,
+     "direct": 0.9375
+    },
+    "1.5": {
+     "mapped": 0.9375,
+     "direct": 0.925
+    }
+   }
+  },
+  "0.99": {
+   "layer": 29,
+   "heldout_cosine": 0.876,
+   "grid": {
+    "0.8": {
+     "mapped": 0.875,
+     "direct": 0.9375
+    },
+    "1.0": {
+     "mapped": 0.8625,
+     "direct": 0.925
+    },
+    "1.2": {
+     "mapped": 0.8,
+     "direct": 0.925
+    },
+    "1.5": {
+     "mapped": 0.7125,
+     "direct": 0.9375
+    }
+   }
+  }
+ }
+}
