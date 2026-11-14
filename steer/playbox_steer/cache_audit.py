@@ -99,7 +99,10 @@ def max_cache_diff(a, b) -> float:
     for (ka, va), (kb, vb) in zip(la, lb):
         if ka.shape != kb.shape or va.shape != vb.shape:
             return float("inf")
-        worst = max(worst, float((ka - kb).abs().max()), float((va - vb).abs().max()))
+        for d in (float((ka - kb).abs().max()), float((va - vb).abs().max())):
+            if d != d:  # NaN: Python's max() silently drops it, which would let an all-NaN cache read as "no difference"
+                return float("inf")
+            worst = max(worst, d)
     return worst
 
 

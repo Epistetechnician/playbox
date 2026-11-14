@@ -74,6 +74,8 @@ def unpack(data: bytes) -> tuple[ca.Record, str, DynamicCache]:
         i += 1
     if not layers or len(tensors) != 2 * len(layers):
         raise HandoffError("cache layers are missing or unexpected tensors are present")
+    if any(t.is_floating_point() and not bool(torch.isfinite(t).all()) for kv in layers for t in kv):
+        raise HandoffError("cache holds NaN or infinite values")      # a signer can sign these; they poison every later token
     try:
         return rec, text, DynamicCache.from_legacy_cache(tuple(layers))
     except Exception as e:  # tensors of a shape or type a cache cannot hold
