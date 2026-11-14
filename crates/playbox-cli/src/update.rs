@@ -396,10 +396,32 @@ fn keep_local_signature(staged: &Path, installed: &Path) {
     let Some(name) = name else { return };
     let file = installed.file_name().map_or_else(|| "playbox".to_string(), |n| n.to_string_lossy().into_owned());
     let id = format!("com.playbox.{}", file.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' }).collect::<String>());
-    let signed = Command::new("codesign").args(["--force", "--sign", &name, "--identifier", &id, "--timestamp=none"]).arg(staged).stdin(Stdio::null()).output();
-    match signed {
-        Ok(o) if o.status.success() => println!("signed with \"{name}\" so the firewall keeps its answer"),
-        _ => eprintln!("note: could not sign with \"{name}\"; the release's own signature is kept"),
+    // codesign waits indefinitely when the login keychain is locked or a dialog is asking whether it may use the key: never let that stall an update.
+    let child = Command::new("codesign")
+        .args(["--force", "--sign", &name, "--identifier", &id, "--timestamp=none"])
+        .arg(staged)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let ok = child.ok().is_some_and(|mut c| {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            match c.try_wait() {
+                Ok(Some(st)) => break st.success(),
+                Ok(None) if std::time::Instant::now() < end => std::thread::sleep(std::time::Duration::from_millis(200)),
+                _ => {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                    break false;
+                }
+            }
+        }
+    });
+    if ok {
+        println!("signed with \"{name}\" so the firewall keeps its answer");
+    } else {
+        eprintln!("note: could not sign with \"{name}\" (is the login keychain locked?); the release's own signature is kept");
     }
 }
 

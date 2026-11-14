@@ -59,9 +59,21 @@ EOF
 
 sign_one() {
     bin="$1"
+    out="$(mktemp)"
     [ -f "$bin" ] || return 0
     id="com.playbox.$(basename "$bin" | sed 's/[^A-Za-z0-9._-]/-/g')"
-    codesign --force --sign "$NAME" --identifier "$id" --timestamp=none "$bin" 2>&1 | grep -v "replacing existing signature" || true
+    # codesign waits forever if the login keychain is locked or macOS is asking whether it may use the key; give up after 20 s and say what to do.
+    codesign --force --sign "$NAME" --identifier "$id" --timestamp=none "$bin" > "$out" 2>&1 &
+    pid=$!
+    n=0
+    while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 40 ]; do sleep 0.5; n=$((n + 1)); done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        echo "NOT signed: $bin" >&2
+        echo "  codesign is waiting on the keychain. Unlock your login keychain (Keychain Access) or click Always Allow on the dialog about \"$NAME\", then run this again." >&2
+        return 1
+    fi
+    wait "$pid" || { echo "NOT signed: $bin ($(grep -v 'replacing existing signature' "$out" | head -1))" >&2; return 1; }
     echo "signed $bin"
 }
 
@@ -87,6 +99,8 @@ case "${1:-}" in
     *)
         setup
         if [ "$#" -eq 0 ]; then set -- $(default_bins); fi
-        for b in "$@"; do sign_one "$b"; done
+        rc=0
+        for b in "$@"; do sign_one "$b" || rc=1; done
+        exit "$rc"
         ;;
 esac
