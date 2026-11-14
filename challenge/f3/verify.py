@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -103,13 +105,13 @@ def git(repo: Path, *a) -> str:
         return ""
 
 
-def check_genesis(rep: Report, g: dict, repo: Path) -> bool:
+def check_genesis(rep: Report, g: dict, repo: Path, strict_git: bool = True) -> bool:
     b = g["body"]
     ok = True
     proto = repo / "docs/f3/PROTOCOL.md"
     ok &= rep.add("genesis: protocol hash equals the committed PROTOCOL.md", proto.exists() and sha(proto.read_bytes()) == b["protocol_sha256"])
-    spec = repo / "challenge/f3/task_spec.json"
-    ok &= rep.add("genesis: task spec hash", spec.exists() and sha(spec.read_bytes()) == b["spec_sha256"])
+    spec = repo / "challenge/f3" / b.get("substrate", {}).get("spec", "task_spec.json")
+    ok &= rep.add("genesis: task spec hash", spec.exists() and sha(spec.read_bytes()) == b["spec_sha256"], spec.name)
     for name, h in b["code_sha256"].items():
         f = repo / "challenge/f3" / name
         ok &= rep.add(f"genesis: {name} hash equals the file in the repo state", f.exists() and sha(f.read_bytes()) == h)
@@ -120,7 +122,8 @@ def check_genesis(rep: Report, g: dict, repo: Path) -> bool:
     if commit and git(repo, "cat-file", "-t", commit) == "commit":
         for name, h in b["code_sha256"].items():
             blob = subprocess.run(["git", "show", f"{commit}:challenge/f3/{name}"], cwd=repo, capture_output=True).stdout
-            ok &= rep.add(f"genesis: {name} at git commit {commit[:10]} matches", blob != b"" and sha(blob) == h)
+            match = blob != b"" and sha(blob) == h
+            ok &= rep.add(f"genesis: {name} at git commit {commit[:10]} matches", match or not strict_git, "" if match else "run was started from code that is not at that commit (allowed for tests only)")
     else:
         rep.add("genesis: git commit lookup", True, "commit not present in this clone; file hashes above are the binding (soft)")
     return bool(ok)
@@ -194,10 +197,12 @@ def check_reveal(rep: Report, recs, work: Path, task, allow_unrevealed: bool):
         return None
     ok = rep.add("holdout: exactly one reveal and it is the last receipt", len(rv) == 1 and recs[-1]["body"]["kind"] == "reveal", "a reveal before the last decision means the holdout leaked mid-round")
     b = rv[0]["body"]
-    hold = task.holdout_blocks_from_secret(b["holdout_seed"])
+    hold = task.holdout_from_secret({"seed": b["holdout_seed"], "salt": b["holdout_salt"]})
     root = task.merkle_root(bytes.fromhex(b["holdout_salt"]), task.holdout_items(hold))
     ok &= rep.add("holdout: revealed seed and salt open the root committed in genesis", root == g["holdout"]["root"])
     ok &= rep.add("holdout: replay seeds match the commitment in genesis", sha(canon(b["replay"])) == g["replay_seed_commit"])
+    if "data_manifest" in g and hasattr(task, "data_manifest"):
+        ok &= rep.add("holdout: local holdout shard matches the data manifest", task.data_manifest(include_holdout=True).get("holdout_shard") == g["data_manifest"].get("holdout_shard"))
     leaked = []
     for f in sorted((work / "candidates").glob("*.py")):
         why = task.leak_scan(f.read_text(), hold, b["holdout_seed"], b["holdout_salt"])
@@ -260,17 +265,28 @@ def replay(rep: Report, recs, promos, caught, work: Path, task, hold, reveal, mo
 
 
 # ---- driver -------------------------------------------------------------------------------------------------------
-def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unrevealed: bool = False) -> tuple[Report, dict]:
+def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unrevealed: bool = False, strict_git: bool = True) -> tuple[Report, dict]:
     rep = Report()
     recs = read_receipts(work / "receipts.jsonl")
     summary = {}
     if not check_chain(rep, recs, host_pub):
         return rep, summary
-    if not check_genesis(rep, recs[0], repo):
+    if not check_genesis(rep, recs[0], repo, strict_git):
         return rep, summary
-    # task.py is imported only now, after its hash was checked against the genesis.
+    # The substrate module is imported only now, after its hash was checked against the genesis.
+    sub = recs[0]["body"].get("substrate", {"task": "task", "spec": "task_spec.json"})
+    if sub["task"] not in ("task", "task_climbmix"):
+        rep.add("genesis: substrate module is a known one", False, sub["task"])
+        return rep, summary
+    os.environ["F3_SPEC"] = sub["spec"]
     sys.path.insert(0, str(repo / "challenge/f3"))
-    import task
+    task = importlib.import_module(sub["task"])
+    if "data_manifest" in recs[0]["body"]:
+        local = task.data_manifest(include_holdout=False)
+        want = recs[0]["body"]["data_manifest"]
+        bad = [k for k in local if local[k] != want.get(k)]
+        if not rep.add("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", not bad, "differs: " + ", ".join(bad)):
+            return rep, summary
     ok, promos, rejects, caught = check_decisions(rep, recs, work, task.SPEC)
     rv = check_reveal(rep, recs, work, task, allow_unrevealed)
     if rv and mode != "none":
@@ -289,9 +305,10 @@ if __name__ == "__main__":
     ap.add_argument("--repo-root", default=str(HERE.parent.parent))
     ap.add_argument("--replay", default="none", choices=["none", "recorded", "fresh", "all"])
     ap.add_argument("--allow-unrevealed", action="store_true")
+    ap.add_argument("--allow-dirty", action="store_true", help="tests only: accept code that differs from the genesis git commit")
     ap.add_argument("--json")
     a = ap.parse_args()
-    rep, summary = verify(Path(a.work), a.host_pubkey.strip(), Path(a.repo_root), a.replay, a.allow_unrevealed)
+    rep, summary = verify(Path(a.work), a.host_pubkey.strip(), Path(a.repo_root), a.replay, a.allow_unrevealed, not a.allow_dirty)
     print(rep.text())
     ok = not rep.failed
     print(f"\nRESULT: {'VERIFIED' if ok else 'FAILED (' + str(len(rep.failed)) + ' checks)'}  {json.dumps(summary)}")

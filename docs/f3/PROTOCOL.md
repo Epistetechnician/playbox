@@ -134,3 +134,14 @@ Number of candidates, promotions, rejects by reason, caught false promotions, mi
 ## 14. Preregistration mechanics
 
 1. Commit this file. 2. Commit the harness, verifier, tests and archived scripted stand-ins. 3. Generate the host key; publish `host.pub`. 4. Run `init` (calibration, genesis receipt). 5. Run rounds. 6. `reveal`. 7. Verify, then replay. Deviations after step 1 are recorded in the run notes with the reason, never by silently editing this file after its hash is pinned.
+
+## 15. Amendment log
+
+Amendments are appended here with the date and are committed before the run they apply to. None changes the rules in sections 4 (calibration), 6 (promotion rule), 7 (false promotions) or 10 (verification and replay).
+
+**A1, 2026-11-13, before any climbmix run (Phase 1.5: GPU substrate adapter, Mac dry run).**
+- *Substrate contract.* The harness and verifier now load a substrate module named in the genesis receipt (`substrate.task`, one of `task` or `task_climbmix`) with its spec file and baseline. The genesis also pins the substrate's data helper (`climbmix_data.py`) and, for climbmix, a `data_manifest` of sha256 hashes of the tokenizer, token caches and shards. A replaying host must hold byte-identical artifacts or the verifier fails before replaying. The earlier synthetic substrate is unchanged in behavior; its dry run was regenerated because `harness.py` and `task.py` changed.
+- *Climbmix details that section 2 left open.* Loss is bits per byte (bpb) on dev and holdout rows. Dev rows are the first `dev_rows` rows of the pinned val shard (6542), packed sequentially from BOS-prefixed documents (upstream autoresearch uses best-fit packing, so its `val_bpb` is not comparable). The holdout is a separate custodian shard (6541): documents taken in the order of a permutation seeded by the secret seed, packed the same way; the Merkle items are the selected documents' UTF-8 bytes. Train rows are random windows of a pre-tokenized stream of the train shards. The leak scan checks 64-character windows of holdout documents (stride 16) and the seed and salt. The baseline is autoresearch's GPT with Muon+AdamW ported to the candidate contract, with LR and weight-decay schedules over a planned step count, fp32 embeddings, and no `torch.compile` (a candidate that adds it pays the compile time on the clock).
+- *Tokenizer.* Trained by `rustbpe` on the train shards only (never dev or holdout), as upstream does. Its hash is in the data manifest.
+- *Dry-run scale.* The Mac dry run uses a smaller spec (`task_spec_gpu_mac.json`: 256-token blocks, 2 layers, 3 calibration seeds). `task_spec_gpu.json` is the H100 spec and its scale numbers are estimates until the pilot calibration; they are frozen in the genesis receipt before any candidate runs.
+- *Verifier.* `verify.py` fails if the pinned code differs from the genesis git commit, unless `--allow-dirty` is passed (tests only).

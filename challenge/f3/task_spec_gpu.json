@@ -1,0 +1,69 @@
+{
+ "id": "f3-climbmix-h100-v1",
+ "substrate": "climbmix",
+ "vocab": 8192,
+ "dev_shard": 6542,
+ "holdout_shard": 6541,
+ "eval_every": 20,
+ "train_seeds": [
+  1,
+  2,
+  3
+ ],
+ "dev_recompute_tol": 0.001,
+ "leak_window": 64,
+ "leak_stride": 16,
+ "import_whitelist": [
+  "torch",
+  "numpy",
+  "math",
+  "time",
+  "dataclasses",
+  "typing",
+  "functools",
+  "itertools",
+  "collections"
+ ],
+ "block": 2048,
+ "train_shards": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "train_max_tokens": null,
+ "dev_rows": 256,
+ "holdout_rows": 256,
+ "threads": 8,
+ "baseline": {
+  "depth": 8,
+  "aspect_ratio": 64,
+  "head_dim": 128,
+  "device_batch": 64,
+  "total_batch": 524288,
+  "plan_steps": 720
+ },
+ "calibration": {
+  "steps": 480,
+  "gap_seeds": [
+   11,
+   12,
+   13,
+   14,
+   15
+  ],
+  "noise_seed": 11,
+  "noise_reps": 5,
+  "theta_floor": 0.05,
+  "eps_floor": 0.01,
+  "wall_cap_mult": 3.0,
+  "token_cap_mult": 4.0
+ },
+ "_note": "ESTIMATE, not measured: scale taken from autoresearch's README example (depth 8, about 50M params, 2**19 tokens per step, 953 steps in 300 s on an H100). steps/plan_steps/device_batch are to be re-set at the pilot calibration and then frozen before any candidate."
+}

@@ -1,0 +1,57 @@
+{
+ "id": "f3-climbmix-mac-dry-v1",
+ "substrate": "climbmix",
+ "vocab": 8192,
+ "dev_shard": 6542,
+ "holdout_shard": 6541,
+ "eval_every": 20,
+ "train_seeds": [
+  1,
+  2,
+  3
+ ],
+ "dev_recompute_tol": 0.001,
+ "leak_window": 64,
+ "leak_stride": 16,
+ "import_whitelist": [
+  "torch",
+  "numpy",
+  "math",
+  "time",
+  "dataclasses",
+  "typing",
+  "functools",
+  "itertools",
+  "collections"
+ ],
+ "block": 256,
+ "train_shards": [
+  0
+ ],
+ "train_max_tokens": 20000000,
+ "dev_rows": 512,
+ "holdout_rows": 512,
+ "threads": 4,
+ "baseline": {
+  "depth": 2,
+  "aspect_ratio": 64,
+  "head_dim": 64,
+  "device_batch": 16,
+  "total_batch": 8192,
+  "plan_steps": 300
+ },
+ "calibration": {
+  "steps": 200,
+  "gap_seeds": [
+   11,
+   12,
+   13
+  ],
+  "noise_seed": 11,
+  "noise_reps": 3,
+  "theta_floor": 0.05,
+  "eps_floor": 0.02,
+  "wall_cap_mult": 3.0,
+  "token_cap_mult": 4.0
+ }
+}

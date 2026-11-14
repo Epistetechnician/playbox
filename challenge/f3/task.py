@@ -90,6 +90,15 @@ def holdout_blocks_from_secret(secret_seed: int) -> np.ndarray:
     return gen_blocks(secret_seed, SPEC["holdout_blocks"])
 
 
+def holdout_from_secret(secret: dict) -> np.ndarray:
+    """Substrate contract: the holdout object for a custodian secret ({"seed", "salt"})."""
+    return holdout_blocks_from_secret(secret["seed"])
+
+
+def reference_info() -> dict:
+    return {"oracle_dev_loss": round(oracle_loss(gen_blocks(SPEC["dev_seed"], SPEC["dev_blocks"])), 4)}
+
+
 # ---- static checks ------------------------------------------------------------------------------------------
 _DENY_CALLS = {"open", "exec", "eval", "compile", "__import__", "input"}
 

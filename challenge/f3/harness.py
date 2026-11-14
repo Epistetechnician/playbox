@@ -26,12 +26,19 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-import task  # noqa: E402
+import importlib  # noqa: E402
+
+SUBSTRATE = os.environ.get("F3_SUBSTRATE", "synthetic")
+SUBSTRATES = {"synthetic": {"task": "task", "baseline": "baseline.py", "extra": []},
+              "climbmix": {"task": "task_climbmix", "baseline": "baseline_climbmix.py", "extra": ["climbmix_data.py"]}}
+SUB = SUBSTRATES[SUBSTRATE]
+task = importlib.import_module(SUB["task"])
 from common import append_receipt, canon, pubkey_hex, sha256_bytes, sha256_file  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
 SPEC = task.SPEC
+BASELINE = HERE / SUB["baseline"]
 REPO = HERE.parent.parent
 PROTOCOL = REPO / "docs/f3/PROTOCOL.md"
 
@@ -91,12 +98,12 @@ def init(work: Path, secret_seed: int | None = None, log=print) -> dict:
     replay = {"seeds": sorted(sr.sample(range(1000, 2000), 3)), "nonce": sr.randbytes(16).hex()}
     (work / "custodian/secret.json").write_text(json.dumps({**secret, "replay": replay}))
     os.chmod(work / "custodian/secret.json", 0o600)
-    hold = task.holdout_blocks_from_secret(secret["seed"])
+    hold = task.holdout_from_secret(secret)
     root = task.merkle_root(bytes.fromhex(secret["salt"]), task.holdout_items(hold))
     _key(work)
 
-    base = _archive(work, HERE / "baseline.py")
-    cal, bp = SPEC["calibration"], HERE / "baseline.py"
+    base = _archive(work, BASELINE)
+    cal, bp = SPEC["calibration"], BASELINE
     seeds = SPEC["train_seeds"]
     log(f"calibration 1/3: target from {len(seeds)} baseline runs of {cal['steps']} steps")
     fixed = [task.run_candidate(bp, s, None, stop_batches=cal["steps"]) for s in seeds]
@@ -122,14 +129,17 @@ def init(work: Path, secret_seed: int | None = None, log=print) -> dict:
     calib = {"target": target, "eps_hold": eps, "theta": theta, "noise_cv": round(cv, 4), "gap_mean": round(gm, 5), "gap_sd": round(gs, 5),
              "base_wall_median": round(base_wall, 3), "base_tokens_median": int(_med(toks)),
              "wall_cap_s": round(cal["wall_cap_mult"] * base_wall, 3), "token_cap": int(cal["token_cap_mult"] * _med(toks)),
-             "oracle_dev_loss": round(task.oracle_loss(task.gen_blocks(SPEC["dev_seed"], SPEC["dev_blocks"])), 4),
+             **task.reference_info(),
              "fixed_step_dev_losses": [round(r["dev_loss"], 4) for r in fixed], "seeds": seeds}
     log("  " + json.dumps(calib))
     body = {"kind": "genesis", "schema": 1, "protocol_sha256": sha256_file(PROTOCOL), "spec_sha256": sha256_file(task.SPEC_PATH),
-            "code_sha256": {"task.py": sha256_file(HERE / "task.py"), "baseline.py": sha256_file(HERE / "baseline.py"), "harness.py": sha256_file(HERE / "harness.py")},
+            "substrate": {"name": SUBSTRATE, "task": SUB["task"], "spec": task.SPEC_PATH.name, "baseline": SUB["baseline"]},
+            "code_sha256": {n: sha256_file(HERE / n) for n in (SUB["task"] + ".py", SUB["baseline"], "harness.py", *SUB["extra"])},
             "git_commit": _git("rev-parse", "HEAD"),
-            "holdout": {"scheme": "sha256-merkle-salted/v1", "root": root, "blocks": SPEC["holdout_blocks"]},
+            "holdout": {"scheme": "sha256-merkle-salted/v1", "root": root, "blocks": SPEC.get("holdout_blocks", SPEC.get("holdout_rows"))},
             "replay_seed_commit": sha256_bytes(canon(replay)), "calibration": calib, "baseline": {"sha256": base}}
+    if hasattr(task, "data_manifest"):
+        body["data_manifest"] = task.data_manifest()
     rec = _receipt(work, body)
     _save(work, {"genesis": rec["id"], "seq": 0, "frontier": [{"sha256": base, "seq": 0}]})
     (work / "feed.jsonl").write_text("")
@@ -168,7 +178,7 @@ def submit(work: Path, cand: Path, author: str, log=print) -> dict:
     cand_path = work / "candidates" / f"{sha}.py"
     st["seq"] += 1
     sec = _secret(work)
-    hold = task.holdout_blocks_from_secret(sec["seed"])
+    hold = task.holdout_from_secret(sec)
     body = {"kind": "decision", "genesis": st["genesis"], "seq": st["seq"], "author": author, "parent": front["sha256"], "candidate": {"sha256": sha}}
     src = cand_path.read_text()
     bad = task.static_check(src) or task.leak_scan(src, hold, sec["seed"], sec["salt"])
@@ -234,6 +244,21 @@ STAND_INS = [
     ("scripted-9", "width_128", [("re:^D_MODEL = .*$", "D_MODEL = 128")]),
     ("scripted-10", "clip_1.0", [("re:^CLIP = .*$", "CLIP = 1.0")]),
 ]
+
+
+STAND_INS_CLIMBMIX = [
+    ("scripted-1", "matrix_lr_0.12", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.12")]),
+    ("scripted-2", "embedding_lr_1.6", [("re:^EMBEDDING_LR = .*$", "EMBEDDING_LR = 1.6")]),
+    ("scripted-3", "warmdown_0.2", [("re:^WARMDOWN_RATIO = .*$", "WARMDOWN_RATIO = 0.2")]),
+    ("scripted-4", "weight_decay_0", [("re:^WEIGHT_DECAY = .*$", "WEIGHT_DECAY = 0.0")]),
+    ("scripted-5", "dev_memorizer_INJECTED_BAD", [('x, y = ctx.next_batch(hp["device_batch"])',
+        'import numpy as np\n            _i = np.random.randint(0, len(ctx.dev_blocks), hp["device_batch"])\n            _b = torch.from_numpy(ctx.dev_blocks[_i]).long().to(ctx.device)\n            ctx.batches += 1\n            ctx.tokens += hp["device_batch"] * ctx.block_size\n            x, y = _b[:, :-1], _b[:, 1:]')]),
+    ("scripted-6", "grad_clip_1.0", [("re:^GRAD_CLIP = .*$", "GRAD_CLIP = 1.0")]),
+    ("scripted-7", "matrix_lr_0.2", [("re:^MATRIX_LR = .*$", "MATRIX_LR = 0.2")]),
+    ("scripted-8", "adam_betas_0.9_0.98", [("re:^ADAM_BETAS = .*$", "ADAM_BETAS = (0.9, 0.98)")]),
+]
+if SUBSTRATE == "climbmix":
+    STAND_INS = STAND_INS_CLIMBMIX
 
 
 def apply_patch(src: str, edits) -> str | None:
