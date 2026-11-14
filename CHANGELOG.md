@@ -21,6 +21,7 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 - `installed_upgrade`: an older release installed with `install.sh` hosts a room, is upgraded, and the room, the member and the audit chain carry over.
 
 ### Fixed
+- Hub: it no longer waits on a reverse-DNS lookup (`socket.getfqdn`) before it starts answering; on a machine with a slow resolver, startup could take many seconds.
 - Hub: the Cloudflare tunnel is retried in the background (with backoff) if it fails to start or later drops, instead of the hub staying offline until restarted.
 
 ## [0.3.1] - 2026-11-13

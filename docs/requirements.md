@@ -54,5 +54,7 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | REL-8 | A host on a wire protocol this build cannot speak is refused with the side that must update. | shipped |
 | REL-9 | The installer refuses a hub bundle that does not match its checksum. | shipped |
 | REL-10 | Builds are reproducible: the same commit gives the same archive hash. | planned |
+| **Hub** | | |
+| HUB-1 | The hub starts answering without a reverse-DNS lookup, so a slow resolver cannot stall it. | shipped |
 | **Command line** | | |
 | CLI-1 | Arguments are typed, errors exit non-zero with a cause chain, and a closed pipe ends quietly. | shipped |
