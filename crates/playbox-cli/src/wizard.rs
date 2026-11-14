@@ -5,7 +5,7 @@
 
 use crate::cli::{HubArgs, InitArgs};
 use crate::hub::{self, Reach};
-use crate::{service, setup};
+use crate::{secure, service, setup};
 use anyhow::{bail, Result};
 use playbox_core::store;
 use std::io::IsTerminal;
@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-const STEPS: usize = 6;
+const STEPS: usize = 7;
 
 struct Report {
     todo: Vec<String>,
@@ -44,7 +44,7 @@ fn runs(prog: &str, args: &[&str]) -> Option<String> {
 }
 
 /// The first `playbox` on PATH, if it is not `exe` itself: the binary your shell runs isn't the one running this.
-fn shadowed(path: &[PathBuf], exe: &Path) -> Option<PathBuf> {
+pub(crate) fn shadowed(path: &[PathBuf], exe: &Path) -> Option<PathBuf> {
     let me = std::fs::canonicalize(exe).ok()?;
     let first = path.iter().map(|d| d.join("playbox")).find(|p| p.is_file())?;
     (std::fs::canonicalize(&first).ok()? != me).then_some(first)
@@ -276,8 +276,26 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
     Ok(())
 }
 
+/// Check what was just set up, fix what is safe to fix, and fuzz a throwaway copy of the hub.
+fn verify(a: &InitArgs, tty: bool, r: &mut Report) -> Result<()> {
+    Report::step(6, "Verify it is secure");
+    let fix = !a.dry_run && (a.yes || !tty || hub::confirm("Fix permissions that are too open (nothing else is changed)?")?);
+    let opts = secure::Opts { fix, fuzz: !a.dry_run, deep: false, seed: None, online: false, port: a.port, hub_dir: a.hub_dir.clone() };
+    let rep = secure::collect(&opts);
+    if !a.dry_run {
+        secure::save(&rep);
+    }
+    secure::print(&rep);
+    let bad = rep.checks.iter().filter(|c| c.level == secure::Level::Bad).count() + rep.fuzz.as_ref().map_or(0, |f| f.violations.len());
+    if bad > 0 {
+        r.warn(&format!("{bad} security problem(s) above; read them, then run `playbox secure` until it is clean"));
+    }
+    println!("\n  Keep it that way: `playbox secure` re-checks in about a second and the hub's System view shows the last result; it also runs after every `playbox update`.");
+    Ok(())
+}
+
 fn finish(a: &InitArgs, plan: Option<&HubPlan>, r: &Report) {
-    Report::step(6, "Next");
+    Report::step(7, "Next");
     let port = a.port.unwrap_or(7717);
     if plan.is_some() {
         println!("  1. Open http://localhost:{port} and add your passkey (Touch ID, Face ID, Windows Hello or a security key).");
@@ -307,6 +325,7 @@ pub fn run(a: &InitArgs) -> Result<()> {
     agents(a, tty, &mut r)?;
     let plan = the_hub(a, tty, &mut r)?;
     background(a, tty, plan.as_ref(), &mut r)?;
+    verify(a, tty, &mut r)?;
     finish(a, plan.as_ref(), &r);
     if r.todo.is_empty() {
         Ok(())

@@ -32,6 +32,7 @@ names = list(REPOS)
 (ma, ta), (mb, tb) = (T.load(snapshot_download(REPOS[n], allow_patterns=pats)) for n in names)
 la = T.layer_of(ma, 0.45)
 layers = {f: T.layer_of(mb, f) for f in FRACS}
+assert len(set(layers.values())) == len(layers), f"two fractions land on the same layer of this receiver: {layers}"
 
 
 def multi(model, tok, texts, ls):

@@ -77,21 +77,27 @@ fn free_port() -> u16 {
 async fn start_chrome(bin: &str) -> Chrome {
     let port = free_port();
     let dir = std::env::temp_dir().join(format!("pbx-chrome-{port}"));
+    let log = std::env::temp_dir().join(format!("pbx-chrome-{port}.log"));
     let child = Command::new(bin)
-        .args(["--headless=new", &format!("--remote-debugging-port={port}"), "--remote-debugging-address=127.0.0.1", &format!("--user-data-dir={}", dir.display()), "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-background-networking", "about:blank"])
+        .args(["--headless=new", &format!("--remote-debugging-port={port}"), "--remote-debugging-address=127.0.0.1", &format!("--user-data-dir={}", dir.display()), "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage", "--disable-extensions", "--disable-background-networking", "about:blank"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(std::fs::File::create(&log).expect("chrome log"))
         .spawn()
         .expect("start chrome");
-    let c = Chrome { child, port, dir };
-    for _ in 0..100 {
+    let mut c = Chrome { child, port, dir };
+    let said = || std::fs::read_to_string(&log).unwrap_or_default().chars().take(800).collect::<String>();
+    for _ in 0..300 {
+        // A browser that already exited will never listen; say why instead of waiting it out.
+        if let Ok(Some(status)) = c.child.try_wait() {
+            panic!("chrome exited ({status}) before it listened: {}", said());
+        }
         if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
             tokio::time::sleep(Duration::from_millis(300)).await;
             return c;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    panic!("chrome did not start");
+    panic!("chrome did not listen on port {port} within 30 s: {}", said());
 }
 
 /// A web server for tests: `site` serves the pages; `off` is the host that must never be contacted and counts every connection.

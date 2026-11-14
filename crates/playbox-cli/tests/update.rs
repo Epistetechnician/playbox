@@ -94,6 +94,7 @@ fn version_of(exe: &Path) -> String {
     String::from_utf8_lossy(&Command::new(exe).arg("--version").output().unwrap().stdout).trim().to_string()
 }
 
+// REQ: REL-1
 #[test]
 fn check_reports_and_exits_10_when_newer_and_0_when_current() {
     let root = fresh("check");
@@ -114,6 +115,7 @@ fn check_reports_and_exits_10_when_newer_and_0_when_current() {
     assert!(text(&o).contains("up to date"));
 }
 
+// REQ: REL-3, REL-4
 #[test]
 fn update_swaps_the_binary_keeps_the_old_one_and_rollback_restores_it() {
     let root = fresh("swap");
@@ -136,6 +138,7 @@ fn update_swaps_the_binary_keeps_the_old_one_and_rollback_restores_it() {
     assert!(version_of(&real).contains("0.0.1"));
 }
 
+// REQ: REL-1, REL-3
 #[test]
 fn a_tampered_archive_or_manifest_is_refused_and_nothing_changes() {
     let root = fresh("tamper");
@@ -159,6 +162,7 @@ fn a_tampered_archive_or_manifest_is_refused_and_nothing_changes() {
     assert!(text(&o).contains("release.json does not match SHA256SUMS"), "{}", text(&o));
 }
 
+// REQ: REL-2, REL-3
 #[test]
 fn a_signed_release_needs_the_matching_key() {
     let root = fresh("signed");
@@ -210,6 +214,7 @@ fn it_never_updates_a_build_directory_binary() {
     assert!(text(&o).contains("build directory"), "{}", text(&o));
 }
 
+// REQ: REL-5
 #[test]
 fn prepare_and_check_agree_on_a_fresh_workspace() {
     let root = fresh("prepare");

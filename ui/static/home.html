@@ -706,6 +706,7 @@ function meter(pulse, state) {
 function roomRow(r) {
   const sub = `<span class="s-st">${esc(STATE_TXT[r.state] || "")} · </span>` + esc([r.kind === "mine" ? "mine" : "shared", r.machine, r.members ? `${r.members} in room` : ""].filter(Boolean).join(" · "));
   const last = r.holds.length ? `<small class="last warn">Witness paused ${esc(r.holds[0].tool || "a write")}. Open to review.</small>`
+    : r.offline ? `<small class="last warn" title="${esc(r.err || "")}">Host offline. This hub kept ${r.archived} saved message${r.archived === 1 ? "" : "s"}; open to read them.</small>`
     : r.err ? `<small class="last bad">${esc(r.err)}</small>`
     : r.last ? `<small class="last" title="Text from another party is untrusted"><i></i><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</small>` : `<small class="last">No messages yet</small>`;
   return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="/r/${r.id}/canvas" aria-label="Open ${esc(r.label)}">
@@ -838,6 +839,24 @@ async function connectAgent(id, btn) {
   paintSetup();
 }
 
+function machineCard(y) {
+  const m = y.machine || {}, r = m.report;
+  const fixable = r && r.checks.some(c => c.fixable);
+  const btn = `${fixable ? `<button class="btn sm" data-act="sysfix" ${m.running ? "disabled" : ""} title="Repairs file and folder permissions only. Asks for your passkey.">Fix permissions</button> ` : ""}<button class="btn sm" data-act="sysmachine" ${m.running ? "disabled" : ""}>${m.running ? "Checking…" : "Re-check machine"}</button>`;
+  const card = body => `<div class="card" style="margin:14px 0"><h2>This machine</h2>${body}</div>`;
+  if (!r) return card(`<p class="mut" style="margin:0 0 12px">${m.running ? "Checking your keys, agents and hub, and fuzzing a throwaway copy of the hub…" : esc(m.error) || "Not checked yet. It runs a minute after the hub starts, or press the button."}</p>${btn}`);
+  const f = r.fuzz, fbad = f && f.violations.length ? 1 : 0;
+  const bad = r.checks.filter(c => c.level === "bad").length + fbad, warn = r.checks.filter(c => c.level === "warn").length;
+  const v = bad ? ["bad", "Failing"] : warn ? ["warn", "Watch"] : ["ok", "Secure"];
+  const rank = {bad: 0, warn: 1, info: 2, ok: 3}, groups = {machine: "Machine", binary: "Playbox", history: "History", agents: "Agent", hub: "Hub", fuzz: "Fuzz"};
+  const rows = [...r.checks].sort((a, b) => rank[a.level] - rank[b.level]).map(c =>
+    `<div class="chk"><i class="led ${c.level === "ok" ? "ok" : c.level === "bad" ? "bad" : c.level === "warn" ? "warn" : "info"}"></i><b>${esc(groups[c.group] || c.group)} · ${esc(c.label)}</b><span class="dt">${esc(c.detail)}</span>${c.fix ? `<span class="fx">${esc(c.fix)}${c.fixable ? " · or: playbox secure --fix" : ""}</span>` : ""}</div>`).join("");
+  const fz = f ? `<div class="chk"><i class="led ${fbad ? "bad" : "ok"}"></i><b>Fuzz · throwaway hub</b><span class="dt">${f.requests.toLocaleString()} malformed and random requests in ${f.seconds.toFixed(1)} s (seed ${f.seed}), ${f.signed_in ? "signed out and signed in" : "signed out only"}: ${fbad ? f.violations.length + " problem(s)" : "no problems"}.</span>${f.violations.map(x => `<span class="fx">${esc(x.kind)}: ${esc(x.request)} · repeat: playbox secure --seed ${f.seed}</span>`).join("")}</div>` : "";
+  return card(`<div class="sysbar" style="margin:0 0 10px"><span class="verdict ${v[0]}"><i class="led ${v[0]}"></i>${v[1]}</span>
+    <span class="mut" style="font-size:13px">Score ${r.score}% · checked ${esc(ago(r.at * 1000))}${m.stale ? " · out of date" : ""} · playbox ${esc(r.playbox)}</span><span style="flex:1"></span>${btn}</div>
+    ${m.error ? `<p class="chip bad" style="white-space:normal">${esc(m.error)}</p>` : ""}<div>${fz}${rows}</div>
+    <p class="mut" style="font-size:12.5px;margin:10px 0 0">Run by the <b>playbox secure</b> command on this machine, every few hours and after each update. Fuzzing never touches this hub: it tests a throwaway copy.</p>`);
+}
 const VIEWS = {
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
@@ -922,6 +941,7 @@ const VIEWS = {
       <div class="sect tools"><h2 class="rule"><span class="ix">·</span>The workflow, live</h2><span class="mut" style="font-size:12.5px">${sel ? `Filtered to ${esc(names[sel])}. Tap it again to clear.` : "Tap a stage to filter the trail."}</span></div>
       <div class="zones"><span>Internet</span><span>Hub · you hold the keys</span><span>Room · agents</span></div>
       <div class="flow">${nodes}</div>
+      ${machineCard(y)}
       <div class="syscols"><div class="card"><h2>Controls</h2><div>${checks}</div></div>
         <div class="card"><h2>Live trail</h2><div class="trail" id="trail">${rows}</div></div></div>
       <p class="mut" style="font-size:12.5px;margin:14px 0 0">This trail only reports what the real checks did. It never holds a key, an invite link, a verify code or a message.</p>`;
@@ -1007,6 +1027,7 @@ function openAdd(pre) {
     <div class="radio" role="radiogroup" aria-label="How" style="margin-top:14px">
       <label><input type="radio" name="how" value="join" ${hostFirst ? "" : "checked"}>Join<small>with an invite link</small></label>
       <label><input type="radio" name="how" value="host" ${hostFirst ? "checked" : ""}>Host<small>start a new room</small></label></div>
+    <div id="localrow" hidden><label>Hosted on this machine</label><div id="locallist" class="stack" style="display:grid;gap:8px;margin:6px 0 4px"></div><p class="mut" style="font-size:12px;margin:0 0 6px">Rooms started with <code>playbox up --state</code>. Adopting one joins it from the hub; it asks for a passkey touch.</p></div>
     <div id="linkrow"><label for="alink">Invite link</label><textarea id="alink" class="mono" placeholder="playbox://…" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div>
     <label for="alabel">Name</label><input id="alabel" maxlength="60" placeholder="e.g. Lab agents, Acme review" autocomplete="off">
     <div id="hostrow" hidden>
@@ -1022,7 +1043,28 @@ function openAdd(pre) {
     <p class="err" id="aerr"></p>
     <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" id="asave" value="x">${hostFirst ? "Host room" : "Join room"}</button></div></form>`;
   const how = () => document.querySelector("[name=how]:checked").value;
-  const sync = () => { const h = how() === "host" && !$("#ahome").value.trim(); $("#linkrow").hidden = how() !== "join"; $("#hostrow").hidden = !h; $("#asave").textContent = how() === "host" ? "Host room" : "Join room"; };
+  const sync = () => { const h = how() === "host" && !$("#ahome").value.trim(); $("#linkrow").hidden = how() !== "join"; $("#hostrow").hidden = !h; if (typeof syncLocal === "function") syncLocal(); $("#asave").textContent = how() === "host" ? "Host room" : "Join room"; };
+  let localCount = 0;
+  const syncLocal = () => { $("#localrow").hidden = how() !== "join" || !localCount; };
+  const paintLocal = rooms => {
+    const box = $("#locallist"); box.textContent = ""; localCount = rooms.length;
+    for (const r of rooms) {
+      const row = document.createElement("div"); row.className = "card"; row.style.cssText = "display:flex;align-items:center;gap:10px;padding:10px 12px;margin:0";
+      const t = document.createElement("div"); t.style.cssText = "flex:1;min-width:0";
+      const n = document.createElement("b"); n.textContent = r.name;
+      const sub = document.createElement("div"); sub.className = "mut"; sub.style.cssText = "font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; sub.textContent = r.repo || "no repository";
+      t.append(n, sub);
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "btn primary"; btn.textContent = r.adopted ? "Adopted" : "Adopt"; btn.disabled = !!r.adopted;
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Joining…"; $("#aerr").textContent = "";
+        try { const j = await api("POST", "/api/local-rooms/adopt", {id: r.id, label: r.name}); sheet().close(); toast(`"${r.name}" adopted`); await refreshRooms(); location.href = `/r/${j.id}/canvas`; }
+        catch (err) { btn.disabled = false; btn.textContent = "Adopt"; $("#aerr").textContent = err.message; }
+      });
+      row.append(t, btn); box.append(row);
+    }
+    syncLocal();
+  };
+  api("GET", "/api/local-rooms").then(j => paintLocal(j.rooms || [])).catch(() => {});
   sheet().querySelectorAll("[name=how]").forEach(i => i.addEventListener("change", sync));
   $("#ahome").addEventListener("input", sync);
   sync();
@@ -1215,6 +1257,8 @@ document.addEventListener("click", async e => {
   else if (act === "copyagent") { try { const h = JSON.parse(sessionStorage.getItem("pb.agentlink")); await navigator.clipboard.writeText(`Join this Playbox room with playbox_join, using this link: ${h.link}`); toast("Copied"); } catch { toast("Copy failed", true); } }
   else if (act === "invite") { sheet().close(); openInvite(t.dataset.id); }
   else if (act === "sysnode") { S.sysStage = S.sysStage === t.dataset.id ? null : t.dataset.id; paintView(true); }
+  else if (act === "sysfix") { t.disabled = true; try { S.sys = await api("POST", "/api/system/machine/fix"); S.sysAt = Date.now(); toast("Repairing permissions"); for (const ms of [3000, 7000, 15000]) setTimeout(() => S.view === "system" && loadSystem(), ms); } catch (er) { toast(er.message, true); } paintView(true); }
+  else if (act === "sysmachine") { t.disabled = true; t.textContent = "Checking…"; try { S.sys = await api("POST", "/api/system/machine"); S.sysAt = Date.now(); for (const ms of [3000, 7000, 15000, 30000]) setTimeout(() => S.view === "system" && loadSystem(), ms); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();

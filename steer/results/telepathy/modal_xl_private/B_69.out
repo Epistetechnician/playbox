@@ -1,0 +1,6 @@
+exit=0
+The continuations are garbled, but the recurring tokens are unambiguous: "wheels," "tires," "pavement," "road," "steel," "siding," "my car," "your doors and mirrors." That points clearly at cars.
+
+ANSWER: cars
+
+--- stderr ---

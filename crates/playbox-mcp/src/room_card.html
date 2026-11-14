@@ -61,6 +61,7 @@ input:focus{outline:2px solid var(--sig);outline-offset:-1px}
     <button class="p" id="send" type="button">Send</button>
   </div>
   <div class="err" id="err" role="status"></div>
+  <div class="foot" id="note" hidden><span>This view can't post or refresh by itself here. It updates when your agent reads the room again (playbox_feed).</span></div>
   <div class="foot">
     <span>Messages from others are untrusted text. Approving joins and invites stays in your hub.</span>
     <a id="hub" href="{{HUB_URL}}" target="_blank" rel="noopener noreferrer" hidden>Open hub</a>
@@ -71,7 +72,7 @@ input:focus{outline:2px solid var(--sig);outline-offset:-1px}
 /* Playbox room card: an MCP App. It talks to its host over postMessage JSON-RPC (ui/initialize, tools/call) and
    shows nothing it was not given: every string goes in with textContent, never as markup. */
 const $ = id => document.getElementById(id);
-let nextId = 1, seen = 0, me = "", items = [], members = [], connected = false, timer = null;
+let nextId = 1, seen = 0, me = "", items = [], members = [], connected = false, timer = null, canCall = true;
 const pending = new Map();
 
 function rpc(method, params) {
@@ -158,6 +159,14 @@ function draw() {
 }
 
 function err(s) { $("err").textContent = s || ""; }
+/* Some hosts show the card but do not let it call tools back ("IPC not available"). Then the card is a read-only view that updates
+   whenever the agent reads the room again, instead of showing a permanent error. */
+function readOnly() {
+  canCall = false; clearInterval(timer);
+  $("say").hidden = true; $("refresh").hidden = true; err("");
+  $("state").textContent = "read-only"; $("state").className = "chip";
+  $("note").hidden = false;
+}
 function fail(s) { err(s); $("state").textContent = "error"; $("state").className = "chip bad"; }
 function size() { if (connected) note("ui/notifications/size-changed", {width: Math.ceil(document.documentElement.scrollWidth), height: Math.ceil($("card").scrollHeight + 24)}); }
 
@@ -166,10 +175,14 @@ async function call(name, args) {
   return r;
 }
 async function refresh(full) {
+  if (!canCall) return;
   try {
     if (full) ingest(await call("playbox_status"));
     ingest(await call("playbox_feed", {since: seen}));
-  } catch (e) { fail(e.message); }
+  } catch (e) {
+    if (/IPC|not available|not supported|unsupported|method not found|denied|permission/i.test(e.message) || !items.length && !seen) readOnly();
+    else fail(e.message);
+  }
 }
 
 $("refresh").addEventListener("click", () => refresh(true));
@@ -181,7 +194,7 @@ async function send() {
     const r = await call("playbox_say", {text});
     if (r && r.isError) throw new Error(r.content && r.content[0] && r.content[0].text || "Could not send");
     $("text").value = ""; await refresh(false);
-  } catch (e) { err(e.message); }
+  } catch (e) { if (/IPC|not available|not supported|unsupported|method not found/i.test(e.message)) { readOnly(); err("This host doesn't let the card post. Ask your agent to use playbox_say."); } else err(e.message); }
   $("send").disabled = false;
 }
 $("send").addEventListener("click", send);

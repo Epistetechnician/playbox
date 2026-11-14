@@ -159,22 +159,41 @@ pub async fn bundle_import(
     let result = async {
         git(repo, &["bundle", "verify", file_s], None).await?;
         let spec = format!("+{src_ref}:{dest_ref}");
-        // Check every incoming object (paths like `.git/hooks/..`, malformed trees, unsafe .gitmodules)
-        // rather than trusting the sender: the bundle comes from a peer.
+        // Remember what the ref held, so a rejected import leaves it exactly as it was.
+        let previous = rev_parse(repo, dest_ref).await.ok();
+        // `transfer.fsckObjects` is kept for fetches that honour it, but git does not apply it when the
+        // source is a bundle file (observed on 2.43), so the explicit check below is the real guard.
         git(
             repo,
-            &[
-                "-c",
-                "transfer.fsckObjects=true",
-                "fetch",
-                "--no-tags",
-                file_s,
-                &spec,
-            ],
+            &["-c", "transfer.fsckObjects=true", "fetch", "--no-tags", file_s, &spec],
             None,
         )
         .await?;
-        rev_parse(repo, dest_ref).await
+        let new = rev_parse(repo, dest_ref).await?;
+        // Check every object reachable from the new tip (paths like `.git/hooks/..`, malformed trees,
+        // unsafe .gitmodules) rather than trusting the sender: the bundle comes from a peer.
+        let checked = git(
+            repo,
+            &[
+                "-c",
+                "fsck.hasDotgit=error",
+                "fsck",
+                "--strict",
+                "--no-dangling",
+                &new,
+            ],
+            None,
+        )
+        .await;
+        if let Err(e) = checked {
+            let undo = match &previous {
+                Some(old) => git(repo, &["update-ref", dest_ref, old], None).await,
+                None => git(repo, &["update-ref", "-d", dest_ref], None).await,
+            };
+            undo.context("restore ref after rejecting bundle")?;
+            return Err(e.context("fsck rejected the bundle"));
+        }
+        Ok(new)
     }
     .await;
     let _ = tokio::fs::remove_dir_all(&dir).await;
