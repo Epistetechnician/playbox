@@ -184,6 +184,45 @@ def test_webauthn():
     shutil.rmtree(home)
 
 
+def test_pairing_race():
+    """A single-use pairing code must give exactly one session / one passkey even when requests race (the slow hook widens the window)."""
+    home = tempfile.mkdtemp()
+    a = Auth(Store(home))
+    orig_take = a._take_code
+    a._take_code = lambda c: (lambda r: (time.sleep(0.15), r)[1])(orig_take(c))
+    code = a.mint_code()
+    out = []
+    def weak():
+        try:
+            out.append(a.weak_session(code, "ua", "1.1.1.1", "x"))
+        except AuthError:
+            pass
+    ts = [threading.Thread(target=weak) for _ in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    check("pairing: one code opens exactly one weak session under a race", len(out) == 1, str(len(out)))
+    origin, rp = "https://hub.tail1234.ts.net", "hub.tail1234.ts.net"
+    code = a.mint_code()
+    devs = [Authenticator() for _ in range(3)]
+    begins = [a.register_begin(code, rp, "1.1.1.1") for _ in devs]
+    orig_verify = webauthn.verify_registration
+    webauthn.verify_registration = lambda *x: (time.sleep(0.15), orig_verify(*x))[1]
+    toks = []
+    def reg(d, b):
+        try:
+            toks.append(a.register_finish(b["ticket"], d.create(b["publicKey"], origin), "p", "ua", "1.1.1.1"))
+        except AuthError:
+            pass
+    try:
+        ts = [threading.Thread(target=reg, args=(d, b)) for d, b in zip(devs, begins)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+    finally:
+        webauthn.verify_registration = orig_verify
+    check("pairing: one code enrolls exactly one passkey under a race", len(toks) == 1 and len(a.s.d["creds"]) == 1, f"{len(toks)} {len(a.s.d['creds'])}")
+    shutil.rmtree(home)
+
+
 class RsaAuthenticator:
     """RS256 passkey (Windows Hello style), signing with OpenSSL so the pure-Python verifier is cross-checked against it."""
     def __init__(self, bits=2048, e=65537):
@@ -1085,6 +1124,7 @@ if __name__ == "__main__":
     test_crypto()
     test_webauthn()
     test_webauthn_rs256()
+    test_pairing_race()
     test_push_send()
     test_http()
     test_cloudflare()
