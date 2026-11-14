@@ -14,13 +14,13 @@ verifier may *believe*:
 |---|---|---|
 | T0 | The holder of the key signed these measurements | yes |
 | T1 | A pinned device key (Secure Enclave or TPM) signed or quoted this statement | yes, once the key is pinned |
-| T2 | T1, and a TPM quote shows PCR 23 holds the host's measurements and boot PCRs match your reference | yes, with a TPM and reference values |
-| T3 | A confidential-VM report covers the whole host | verifier exists for Google Confidential Space (`tdx`), untested against a real VM; see [trust-layers.md](trust-layers.md) |
+| T2 | T1, and a TPM quote shows PCR 23 holds the host's measurements and boot PCRs match your reference | yes, with a TPM and reference values (tested with a software TPM only) |
+| T3 | A confidential-VM report covers the whole host | yes for Google Confidential Space (`tdx`): checked against a real TDX VM on 2026-10-29; see [trust-layers.md](trust-layers.md) |
 
 `attest::verify` returns the **achieved** tier: T0 unless a `PlatformVerifier` for the statement's
 `platform` kind checks the evidence, and never above what was claimed. Evidence with no verifier is
-kept and reported but not believed. Verifiers exist for the Secure Enclave and TPM 2.0 (below); SEV-SNP and
-TDX verifiers are open work and need a confidential VM to test on.
+kept and reported but not believed. Verifiers exist for the Secure Enclave, TPM 2.0 (below) and Google Confidential Space (Intel TDX, in [trust-layers.md](trust-layers.md)); a
+SEV-SNP verifier is open work.
 
 ## Host attestation
 
@@ -85,8 +85,7 @@ store is keyed per device key, so one pin covers every later statement from that
 **T2** needs more: pinned TPM key, PCR 23 equal to a single extend of the host's declared measurements
 (the host resets PCR 23 and extends it before each quote), *and* operator-supplied reference values that
 match for at least one boot PCR 0-7 (`PLAYBOX_TPM_BOOT_PCRS=0:<hex>,7:<hex>`). Without reference boot values,
-a quote cannot tell an honest host from one that extended whatever it wanted. T3 (confidential VMs) has no
-verifier yet.
+a quote cannot tell an honest host from one that extended whatever it wanted. T3 is the Confidential Space verifier in [trust-layers.md](trust-layers.md).
 
 **Secure Enclave details.** The helper uses CryptoKit, which keeps the key as an opaque handle in a file
 (`~/.playbox/se.key`, mode 0600) usable only on this Mac's Secure Enclave. Keychain-stored Secure Enclave keys
@@ -114,7 +113,7 @@ were tried first and fail in a plain command-line tool with `errSecMissingEntitl
   The tests check that the TPM's own PCR 23 equals our computation of the extend, that two statements
   share one persistent attestation key, that a genuine quote cannot be replayed into another statement,
   and that corrupting a PCR value or the quote is detected.
-- No hardware TPM, no Secure Boot values, and no confidential VM have been tested.
+- No hardware TPM and no Secure Boot values have been tested. A real Google Confidential Space TDX VM has (trust-layers.md, tested-on.md).
 
 To regenerate the TPM fixtures: in a Linux machine or Lima VM with `swtpm`, `swtpm-tools`, `tpm2-tools` and
 Rust, start a fresh software TPM (`swtpm_setup --tpm2 --tpmstate DIR --createek --pcr-banks sha256`, then

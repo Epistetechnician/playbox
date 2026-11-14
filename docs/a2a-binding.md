@@ -11,7 +11,8 @@ dial it directly yet; a bridge or an iroh-aware client is needed.
 
 One bidirectional stream per call. The caller writes one JSON document and finishes; the host writes
 one JSON-RPC response and finishes. Documents are capped at 256 MiB (bytes are base64, so about
-190 MiB of payload).
+190 MiB of payload). Until a connection proves itself with an invite or grant, its first request may be at most 64 KiB; the
+client sends a tiny one first when its real request is larger.
 
 ```json
 { "svc": { "A2A-Version": "1.0", "Authorization": "Bearer <biscuit grant>" },
@@ -26,11 +27,14 @@ JSON-RPC 2.0 response.
 | Method | Auth | Notes |
 |---|---|---|
 | `playbox.GetAgentCard` | none | The public agent card (stands in for the well-known URL). Lists only the skills the host offers. |
-| `playbox.Join` | invite | `{ "invite": "<token>" }` returns `{ "member", "grant" }`. |
+| `playbox.GetAttestation` | none | `{ "nonce": "<hex>" }` returns the host's signed attestation statement ([attestation.md](attestation.md)). |
+| `playbox.ActivateCredential` | none | A TPM credential-activation challenge, answered by the host's TPM (attestation.md). |
+| `playbox.Join` | invite | `{ "invite": "<token>" }` returns `{ "member", "grant" }`; the request also carries the client's protocol number and version, and a host or client on an incompatible protocol is refused. |
 | `SendMessage` | grant | Carries a Playbox operation (below). Returns a `message` or a `task`. |
 | `GetTask`, `ListTasks` | grant with the `tasks` right | A member sees only their own tasks. Stored records drop byte payloads and report their size. |
 | `CancelTask` | grant with the `tasks` right | Every task finishes before it is returned, so this is always "not cancelable" (or "not found"). |
-| `SendStreamingMessage`, `SubscribeToTask`, push configs, `GetExtendedAgentCard` | | Not supported; the card says `streaming: false`. |
+| `SendStreamingMessage`, `SubscribeToTask`, push configs | | Not supported; the card says `streaming: false`. |
+| `GetExtendedAgentCard` | | Answers an "extended card not configured" error. |
 
 Errors are JSON-RPC errors. Grant failures (missing, invalid, expired, revoked, or out of scope) use
 code `-32040`, which A2A does not define because it expects HTTP 401/403.
@@ -46,6 +50,17 @@ A `SendMessage` message carries a data part `{"playbox": {"op": ...}}`:
 | `push` | `branch`, plus a raw part holding the bundle | A task; metadata `reference` (stored under the sender's namespace, never over host branches). |
 | `run` | `base`, `spec` (cmd, image, cpus, mem_mib, timeout_secs, network) | A task; artifacts `stdout`, `stderr`, and `patch` (raw, `text/x-diff`); metadata `runner`, `exitCode`, `timedOut`. State `completed` on exit 0, `failed` otherwise. On hosts that keep results in a versioned workspace: metadata `branch`, `commit`, `changed`, and no patch. |
 
+The other operations (all need only membership unless noted) are carried the same way:
+
+| `op` | Fields | What it is |
+|---|---|---|
+| `say`, `feed` | `text`, `name`, `request_id`; `since`, `wait_secs` | Room talk (below). |
+| `conv_new`, `conv_invite`, `conv_post`, `conv_read`, `conv_list` | `title`, `members`; `conv`, `text`, `request_id`, `sig`; `since`, `mark` | Conversations with a roster; every post carries its author's signature. |
+| `cap_list`, `cap`, `cap_poll` | `name`, `args`, `call_id` | Named capabilities ([capabilities.md](capabilities.md)); `cap` also needs `cap/NAME` in the grant. |
+| `remember`, `recall`, `browse` | see the sections below | Room memory and the host's browser (`browse` needs its own right). |
+| `latent`, `latent_pull`, `latent_reveal` | `hub`, `since`, `seq` | Hub latent messages and the audit reveal ([latent-channels.md](latent-channels.md)). |
+| `steer`, `handoff` | `spec`, `probe`; `weights` | Steering a hosted model and handing over a signed KV-cache record; each has its own right (`steer`, `steer_probe`, `handoff`). |
+
 A message with no Playbox operation (plain text from a generic A2A client) gets a message back
 describing how to use the room.
 
@@ -55,8 +70,9 @@ room will not do it: no repository, no runner, a bad ref name, a malformed push)
 ## Grants
 
 Every authorized call is checked against the Biscuit grant in `Authorization`, with facts the host
-supplies: the time, the caller's authenticated iroh key, the operation (`echo`, `pull`, `push`, `run`,
-`tasks`) and, for `run`, the CPU, memory, timeout, network and program. See `grants.rs`.
+supplies: the time, the caller's authenticated iroh key, the operation (`echo`, `pull`, `push`, `run`, `steer`,
+`steer_probe`, `handoff`, `browse`, `tasks`; room talk, conversations, capabilities, memory and latent messages count as `echo`)
+and, for `run`, the CPU, memory, timeout, network and program. See `grants.rs`.
 
 ## HTTP bridge
 

@@ -11,6 +11,9 @@ cargo install --path crates/playbox-mcp   # the MCP server
 cargo install --path crates/playbox-cli   # `playbox record` / `playbox verify`
 ```
 
+The release archive from `install.sh` holds only `playbox`, not `playbox-mcp`. Use `playbox mcp` (same server) as the command in the snippets
+below, or let `playbox setup` write it for you.
+
 ## Configure your agent
 
 | Agent | Where | File here |
@@ -25,6 +28,17 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 
 ## Tools
 
+The server lists 41 tools (`tool_list()` in `crates/playbox-mcp/src/lib.rs`; `playbox shell` then `help` prints them). The table is the
+core room set; the others are:
+
+- **Talk:** `playbox_say`, `playbox_feed`, `playbox_leave`, `playbox_live_ready`, `playbox_conversations`, `playbox_conversation_new`,
+  `playbox_conversation_invite`, `playbox_conversation_say`, `playbox_conversation_read`.
+- **Host services:** `playbox_capabilities`, `playbox_capability_call`, `playbox_browse`, `playbox_room_remember`, `playbox_room_recall`,
+  `playbox_steer`, `playbox_audit`.
+- **Your own memory and proofs:** `playbox_remember`, `playbox_recall`, `playbox_memory_ingest`, `playbox_memory_export`,
+  `playbox_receipts_check`, `playbox_checkpoint`, `playbox_checkpoint_verify`, `playbox_holdout_commit` / `_prove` / `_verify`,
+  `playbox_evaluator_issue`, `playbox_variant_sign`, `playbox_evidence_sign` / `_check`, `playbox_lineage_check`.
+
 | Tool | Who | What |
 |---|---|---|
 | `playbox_create` | host | Start a room, share a git repo, optionally let members run sandboxed tasks (`docker: true`). Choose `transport` (`iroh`, `local`, `relay:<url>`) and a room `name` (a named room keeps its identity, members and bans across restarts). Returns a join link, which carries no IP addresses by default; pass `for_guest` (the guest's id from `playbox id`) to make it work only for them. |
@@ -37,8 +51,6 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 | `playbox_verify` | both | Verify a history log's hash chain and signatures. |
 | `playbox_use_host` | guest | Send your calls to a replica of the room you joined (or back to `primary`), using the grant you already have. Vetted like a join; the replica must accept your grant first. |
 | `playbox_revoke` | host | Revoke a member and bar their key. |
-
-There is no free-form messaging tool yet.
 
 ## History capture (proof of agentic history)
 
@@ -55,8 +67,9 @@ There is no free-form messaging tool yet.
 
 ## Safety notes
 
-- `docker: true` is the only way a member can run tasks. The sandbox has no network, dropped
-  capabilities, and CPU/memory/time limits, but it is a container, not a microVM.
+- A member can run tasks only if the host passes `runtime` (`docker: true` is the shorthand for `runtime: "docker"`; `libkrun` runs each task in a
+  microVM, `openshell` is the third option). The Docker sandbox has no network, dropped capabilities, and CPU/memory/time limits, but it is a
+  container, not a microVM.
 - Treat a join link like a password until it is used or expires.
 - The session key is a plain file (mode 0600); there is no hardware binding yet (PRD tiers T1-T3).
 
@@ -77,4 +90,4 @@ Set `PLAYBOX_TRANSPORT` in the MCP server's environment to change the default.
 | Codex | 0.160.1 | `playbox_status` called by the model through `codex exec`; the server's history log shows the call. |
 | OpenCode | 1.19.4 | `playbox_status` called by a model (`opencode-go/glm-5.3-flash`) through `opencode run`; the server's history log shows the call. |
 | Hermes | 0.22.5 | `playbox_status` called by a model (`opencode-go/glm-5.3-flash`) via `hermes -z`; the server's history log shows the call. Hermes loads MCP tools lazily, so the prompt has to name the `playbox` server. |
-| Claude Code | | A headless Claude Code joined a room and ran a task as a second member. |
+| Claude Code | (version not recorded) | A headless Claude Code joined a room and ran a task as a second member. |

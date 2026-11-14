@@ -1,15 +1,15 @@
 # Trust layers
 
 Five pieces that sit on top of grants, histories and attestation. Each states what it proves and what
-it does not. All are in `playbox-core` and tested; the broker and memory are wired into the MCP server.
+it does not. All are in `playbox-core` and tested, and each has MCP tools.
 
 | Piece | Module | Wired into |
 |---|---|---|
 | 1. Admission broker (text from other members cannot drive actions unreviewed) | `taint` | `playbox_delegate`, `playbox approve` |
 | 2. Confidential Space verifier (`tdx`, T3) | `confidential` | `PlatformVerifier` registry, `PLAYBOX_ATTEST=tdx` |
-| 3. Signed evaluator, sealed holdout, variant lineage | `evaluator` | library only |
+| 3. Signed evaluator, sealed holdout, variant lineage | `evaluator` | `playbox_holdout_commit` / `_prove` / `_verify`, `playbox_evaluator_issue`, `playbox_variant_sign`, `playbox_evidence_sign` / `_check`, `playbox_lineage_check` |
 | 4. Shared memory with provenance | `memory` | `playbox_remember`, `playbox_recall` |
-| 5. Model receipts and witnessed checkpoints | `receipt`, `witness` | library only |
+| 5. Model receipts and witnessed checkpoints | `receipt`, `witness` | `playbox_receipts_check`, `playbox_checkpoint`, `playbox_checkpoint_verify` (they check what you give them; nothing collects receipts or cosignatures) |
 
 Shared plumbing: `record` is a small signed-text format (domain line, fields, signer, signature) used by
 all of them. `history::Entry::check_signature` was added so a witness can check entries without replaying
@@ -36,7 +36,7 @@ stderr and patches are registered as untrusted automatically.
 
 **Does not prove:** detection is lexical (three-word windows and long identifier-like tokens). A model that
 paraphrases an injected instruction passes. The agent also holds the capability string, so it must not hold
-the approver key. This is a speed bump with an audit trail, not a proof of non-influence. `playbox_delegate`, `playbox_push` and `playbox_revoke` are guarded; each takes a `capability`.
+the approver key. This is a speed bump with an audit trail, not a proof of non-influence. `playbox_delegate`, `playbox_push`, `playbox_revoke` and `playbox_steer` are guarded; each takes a `capability`.
 
 ## 2. Confidential Space verifier (T3)
 
@@ -97,9 +97,8 @@ independent of the host.
 ## Not built
 
 Network protocol for collecting cosignatures; receipt collection from real notaries (TLSNotary) or TEE
-proxies; a network protocol that carries memory events between members (events are exchanged by hand through `playbox_memory_export` / `playbox_memory_ingest`); a real Confidential
-Space run.
+proxies; a network protocol that carries this personal memory's events between members (events are exchanged by hand through `playbox_memory_export` / `playbox_memory_ingest`). A room's own shared memory is a different mechanism: `playbox_room_remember` / `playbox_room_recall`, kept by a memory server beside the host (`up --memory-url`, [latent-channels.md](latent-channels.md) 6o and 6p).
 
-Memory in the MCP server: entries are signed by the sidecar's session key (the owner), persisted in `memory.json` under the home directory and replayed on start. Review of other authors' entries and `playbox_use_host`-style sharing across members are not exposed yet.
+Memory in the MCP server: entries are signed by the sidecar's session key (the owner), persisted in `memory.json` under the home directory and replayed on start. Another author's entry is reviewed offline (`playbox memory review`) and applied with `playbox_memory_ingest`; there is no live review or sharing across members for this memory.
 
 Other MCP tools: `playbox_memory_ingest` / `playbox_memory_export` (quarantined entries leave quarantine only on an event signed by a key in `PLAYBOX_APPROVERS`, produced offline with `playbox memory-review <id> --accept|--reject`), `playbox_receipts_check`, `playbox_checkpoint` / `playbox_checkpoint_verify`, `playbox_lineage_check`. These verify what you give them; nothing collects receipts or cosignatures for you.
