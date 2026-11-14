@@ -6,6 +6,7 @@ negative tests are fast. One slow test re-trains a real candidate to catch a *co
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import random
 import shutil
@@ -336,3 +337,36 @@ def test_committed_dry_run_verifies():
     rep, s = V.verify(d, (d / "host.pub").read_text().strip(), REPO, "none")
     assert not rep.failed, rep.text()
     assert s["promotions"] >= 3 and s["rejections"] >= 3 and s["caught_false_promotions"] >= 1
+
+
+def test_protocol_pin_allows_appended_amendments_but_not_edits(tmp_path):
+    """Amendments only append (PROTOCOL section 15): a run pinned to an earlier text still verifies after one is appended,
+    but an in-place edit of the pinned text does not."""
+    import subprocess
+
+    def git(*a):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=tmp_path, check=True, capture_output=True)
+
+    (tmp_path / "docs/f3").mkdir(parents=True)
+    pf = tmp_path / "docs/f3/PROTOCOL.md"
+    pf.write_text("rules v1\n")
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "-m", "protocol")
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+    b = {"protocol_sha256": hashlib.sha256(b"rules v1\n").hexdigest(), "git_commit": commit}
+
+    def run():
+        rep = V.Report()
+        return V.check_protocol(rep, b, tmp_path, pf)
+
+    assert run()
+    pf.write_text("rules v1\nA9 amendment\n")
+    assert run()  # appended text
+    pf.write_text("rules v2\n")
+    assert not run()  # edited in place
+    pf.write_text("rules v1\n")
+    b["git_commit"] = None
+    assert run()  # unchanged file, no git needed
+    pf.write_text("rules v1\nA9\n")
+    assert not run()  # appended but no commit to show the pinned text came first

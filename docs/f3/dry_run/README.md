@@ -30,4 +30,4 @@ python3 challenge/f3/verify.py --work docs/f3/dry_run --host-pubkey "$(cat docs/
 python3 challenge/f3/verify.py --work docs/f3/dry_run --host-pubkey "$(cat docs/f3/dry_run/host.pub)" --replay all   # about 3 min on CPU
 ```
 
-The genesis binds git commit `9a251e8`; the verifier checks the file hashes in this repo against it. The verifier would fail if `challenge/f3/task.py`, `baseline.py`, `harness.py`, `task_spec.json`, `harness.py` or `docs/f3/PROTOCOL.md` were edited after this run.
+The genesis binds git commit `9a251e8`; the verifier checks the file hashes in this repo against it. The verifier would fail if `challenge/f3/task.py`, `baseline.py`, `harness.py`, `task_spec.json`, `harness.py` were edited after this run, or if the text of `docs/f3/PROTOCOL.md` that was pinned were edited in place (appended amendments are fine).

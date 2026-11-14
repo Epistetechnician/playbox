@@ -1,6 +1,7 @@
 """Pilot driver (not pinned by the genesis; all gating is in harness.py): run the scripted stand-ins against an initialized run.
 
-    pilot.py --work DIR --max N     # submit the next N stand-ins (resumable); does not init or reveal
+    pilot.py --work DIR --max N [--arm pilot1|h100|random]   # submit the next N proposals of an arm (resumable); does not init or reveal
+Arms: pilot1 = harness.STAND_INS (the first pilot's list), h100 and random = arms.py (PROTOCOL A4).
 Use harness.py init first and harness.py reveal after. Environment as for harness.py (F3_SUBSTRATE, F3_SPEC, F3_DATA_DIR, F3_HOLDOUT_DIR).
 """
 import argparse
@@ -10,16 +11,19 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import arms  # noqa: E402
 import harness  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--work", required=True)
 ap.add_argument("--max", type=int, default=None)
+ap.add_argument("--arm", choices=["pilot1", *arms.ARMS], default="pilot1")
 a = ap.parse_args()
 work = Path(a.work).resolve()
 done = {json.loads(l)["body"].get("author") for l in (work / "receipts.jsonl").read_text().splitlines()}
 n = 0
-for author, name, edits in harness.STAND_INS:
+proposals = harness.STAND_INS if a.arm == "pilot1" else arms.ARMS[a.arm]()
+for author, name, edits in proposals:
     if author in done:
         continue
     if a.max is not None and n >= a.max:
