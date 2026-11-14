@@ -3659,6 +3659,7 @@ dependencies = [
  "blake3",
  "cfb-mode",
  "ed25519-dalek 2.2.0",
+ "getrandom 0.4.3",
  "hmac 0.12.1",
  "p256 0.14.0",
  "rand_core 0.6.4",
