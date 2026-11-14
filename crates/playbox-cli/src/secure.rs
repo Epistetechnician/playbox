@@ -809,6 +809,8 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
         .env("PLAYBOX_HOME", tmp.join("pb"))
         .env("PATH", hub::hub_path())
         .env("PLAYBOX_HUB_NO_MACHINE", "1") // this copy must not schedule `playbox secure` itself
+        .env("PYTHONFAULTHANDLER", "1") // so a hub that never answers can be asked where it is stuck (SIGABRT below)
+        .env("PYTHONUNBUFFERED", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -839,10 +841,18 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
             Ok(None) => "still running but not answering".to_string(),
             Err(e) => format!("state unknown ({e})"),
         };
+        // A hub that is up but silent is stuck somewhere. SIGABRT makes Python's fault handler print every thread's stack to stderr,
+        // which is then part of the message, instead of a bare "not answering" that cannot be acted on.
+        #[cfg(unix)]
+        if state.starts_with("still running") {
+            let _ = Command::new("kill").args(["-ABRT", &child.id().to_string()]).status();
+            std::thread::sleep(Duration::from_millis(1500));
+        }
         let tail = |m: &Arc<Mutex<String>>| m.lock().map(|g| g.lines().rev().take(3).collect::<Vec<_>>().join(" | ")).unwrap_or_default();
+        let stack = |m: &Arc<Mutex<String>>| m.lock().map(|g| g.lines().filter(|l| l.contains("File \"") || l.starts_with("Thread") || l.starts_with("Current thread")).take(24).collect::<Vec<_>>().join(" | ")).unwrap_or_default();
         let (o, e) = (tail(&sout), tail(&serr));
         finish(&mut child);
-        anyhow::bail!("the throwaway hub didn't start on port {port} after {:.0}s ({python:?}, hub {state}); stdout: {o}; stderr: {e}", waited.elapsed().as_secs_f32());
+        anyhow::bail!("the throwaway hub didn't start on port {port} after {:.0}s ({python:?}, hub {state}); stdout: {o}; stderr: {e}; where it was stuck: {}", waited.elapsed().as_secs_f32(), stack(&serr));
     }
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     // Sign the fuzzer in the way a person would on this machine: the one-time pairing code the hub printed.

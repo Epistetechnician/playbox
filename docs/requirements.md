@@ -55,9 +55,10 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | REL-9 | The installer refuses a hub bundle that does not match its checksum. | shipped |
 | REL-10 | Builds are reproducible: the same commit gives the same archive hash. | planned |
 | **Hub** | | |
-| HUB-1 | A passkey is the only way to a full hub session; a pairing code works once and then expires. | shipped |
-| HUB-2 | Revoking a member and removing a device or a room need a fresh passkey touch (waived only on the hub machine itself). | shipped |
-| HUB-3 | A room with no repository hosts, mints invites, and is hosted again after the hub restarts. | shipped |
+| HUB-1 | The hub starts answering without a reverse-DNS lookup, so a slow resolver cannot stall it. | shipped |
+| HUB-2 | A passkey is the only way to a full hub session; a pairing code works once and then expires. | shipped |
+| HUB-3 | Revoking a member and removing a device or a room need a fresh passkey touch (waived only on the hub machine itself). | shipped |
+| HUB-4 | A room with no repository hosts, mints invites, and is hosted again after the hub restarts. | shipped |
 | **Invites** | | |
 | INV-1 | An approval invite carries no Playbox key; the host approves each asker against a matching verify code, and the link is bound to that asker and handed over once. | shipped |
 | INV-2 | The hub never stores a join link, and the public invite page shows metadata only. | shipped |

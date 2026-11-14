@@ -394,7 +394,7 @@ def test_classify():
     for (tk, tool), want in cases.items():
         check(f"classify {tool} on {tk} -> {want}", classify(tk, tool) == want, str(classify(tk, tool)))
 
-# REQ: HUB-1, HUB-2, INV-2, INV-3
+# REQ: HUB-2, HUB-3, INV-2, INV-3
 def test_http():
     mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
     if not mcp:
@@ -1094,7 +1094,7 @@ def test_board():
     check("board: oversized bodies are ignored", board.parse("::pbx card " + "{" + '"x":"' + "a" * 5000 + '"}') is None)
 
 
-# REQ: HUB-3
+# REQ: HUB-4
 def test_rehost():
     """Hosting lives in the sidecar's memory: a hub that restarts (or respawns a sidecar) must host the room again, or invites stop working."""
     from hub.rooms import Room

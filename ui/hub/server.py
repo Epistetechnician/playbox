@@ -1002,13 +1002,19 @@ def keep_tunnel(state, opts, start, stop, wait=None, first=5.0, cap=60.0):
             delay = min(delay * 2, cap)
 
 
-class _LocalServer(http.server.ThreadingHTTPServer):
-    """HTTPServer.server_bind calls socket.getfqdn(), a reverse DNS lookup that can stall for tens of seconds on a CI macOS runner before the
-    socket listens. Nothing here uses server_name."""
+
+class QuickBindServer(http.server.ThreadingHTTPServer):
+    """`HTTPServer.server_bind` asks `socket.getfqdn()` for the host's name, a reverse-DNS lookup that can take many seconds (a CI runner,
+    a laptop on a captive network) before the hub answers anything. The name is only used for log lines, so use the bound address."""
+
+    daemon_threads = True
 
     def server_bind(self):
+        import socketserver
         socketserver.TCPServer.server_bind(self)
-        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = port
 
 
 def main(argv=None):
@@ -1067,7 +1073,7 @@ def main(argv=None):
                                          "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
     opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = _LocalServer((host, a.port), make_handler(hub, auth, store, opts))
+    srv = QuickBindServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True
     port = srv.server_address[1]
     base = f"http://127.0.0.1:{port}"
