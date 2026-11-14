@@ -184,6 +184,76 @@ def test_webauthn():
     shutil.rmtree(home)
 
 
+class RsaAuthenticator:
+    """RS256 passkey (Windows Hello style), signing with OpenSSL so the pure-Python verifier is cross-checked against it."""
+    def __init__(self, bits=2048, e=65537):
+        self.dir = tempfile.mkdtemp()
+        sh = lambda *a, **k: subprocess.run(a, capture_output=True, check=True, **k)
+        sh("openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", f"rsa_keygen_bits:{bits}", "-out", self.dir + "/k.pem")
+        txt = sh("openssl", "rsa", "-in", self.dir + "/k.pem", "-noout", "-modulus").stdout.decode()
+        self.n = int(txt.strip().split("=")[1], 16)
+        self.e = e
+        self.cid = os.urandom(32)
+        self.count = 0
+
+    def create(self, opts, origin, n=None, e=None, alg=-257):
+        rp = opts["rp"]["id"]
+        cd = json.dumps({"type": "webauthn.create", "challenge": opts["challenge"], "origin": origin}).encode()
+        n = self.n if n is None else n
+        e = self.e if e is None else e
+        cose = cbor({1: 3, 3: alg, -1: n.to_bytes((n.bit_length() + 7) // 8, "big"), -2: e.to_bytes((e.bit_length() + 7) // 8, "big")})
+        ad = hashlib.sha256(rp.encode()).digest() + bytes([0x45]) + (0).to_bytes(4, "big") + bytes(16) + len(self.cid).to_bytes(2, "big") + self.cid + cose
+        return {"clientDataJSON": b64u(cd), "attestationObject": b64u(cbor({"fmt": "none", "attStmt": {}, "authData": ad}))}
+
+    def get(self, opts, origin, tamper=False):
+        self.count += 1
+        cd = json.dumps({"type": "webauthn.get", "challenge": opts["challenge"], "origin": origin}).encode()
+        ad = hashlib.sha256(opts["rpId"].encode()).digest() + bytes([0x05]) + self.count.to_bytes(4, "big")
+        open(self.dir + "/m", "wb").write(ad + hashlib.sha256(cd).digest())
+        sig = subprocess.run(["openssl", "dgst", "-sha256", "-sign", self.dir + "/k.pem", self.dir + "/m"], capture_output=True, check=True).stdout
+        if tamper:
+            sig = sig[:-1] + bytes([sig[-1] ^ 1])
+        return {"clientDataJSON": b64u(cd), "authenticatorData": b64u(ad), "signature": b64u(sig)}
+
+
+def test_webauthn_rs256():
+    home = tempfile.mkdtemp()
+    a = Auth(Store(home))
+    origin, rp = "https://hub.tail1234.ts.net", "hub.tail1234.ts.net"
+    code = a.mint_code()
+    dev = RsaAuthenticator()
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: registration offers alg -257", {"type": "public-key", "alg": -257} in b["publicKey"]["pubKeyCredParams"])
+    small = RsaAuthenticator(bits=1024)
+    check("rs256: 1024-bit modulus refused", refuses(a.register_finish, b["ticket"], small.create(b["publicKey"], origin), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: e=3 refused", refuses(a.register_finish, b["ticket"], dev.create(b["publicKey"], origin, e=3), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: even modulus refused", refuses(a.register_finish, b["ticket"], dev.create(b["publicKey"], origin, n=dev.n + 1), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    check("rs256: unknown alg refused", refuses(a.register_finish, b["ticket"], dev.create(b["publicKey"], origin, alg=-258), "x", "", "1.1.1.1"))
+    b = a.register_begin(code, rp, "1.1.1.1")
+    tok = a.register_finish(b["ticket"], dev.create(b["publicKey"], origin), "Windows Hello", "ua", "1.1.1.1")
+    check("rs256: enrollment yields a strong session", bool(a.session(tok)) and not a.session(tok)[1]["weak"])
+    lb = a.login_begin(rp)
+    cred = a.assert_finish(lb["ticket"], b64u(dev.cid), dev.get(lb["publicKey"], origin), "login", "1.1.1.1")
+    check("rs256: OpenSSL-made assertion accepted", cred["count"] == 1)
+    lb = a.login_begin(rp)
+    check("rs256: flipped signature bit refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), dev.get(lb["publicKey"], origin, tamper=True), "login", "1.1.1.1"))
+    lb = a.login_begin(rp)
+    r = dev.get(lb["publicKey"], origin)
+    sig = int.from_bytes(webauthn.unb64u(r["signature"]), "big") + dev.n      # s + n is congruent but not canonical
+    r["signature"] = b64u(sig.to_bytes((dev.n.bit_length() + 7) // 8 + 1, "big"))
+    check("rs256: non-canonical signature (s + n) refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), r, "login", "1.1.1.1"))
+    lb = a.login_begin(rp)
+    other = RsaAuthenticator(); other.cid = dev.cid; other.count = 5
+    check("rs256: signature from another RSA key refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), other.get(lb["publicKey"], origin), "login", "1.1.1.1"))
+    lb = a.login_begin(rp)
+    es = Authenticator(); es.cid = dev.cid; es.count = 5
+    check("rs256: ES256 signature against an RSA credential refused", refuses(a.assert_finish, lb["ticket"], b64u(dev.cid), es.get(lb["publicKey"], origin), "login", "1.1.1.1"))
+    shutil.rmtree(home)
+
+
 class Client:
     def __init__(self, port):
         self.port, self.cookie = port, None
@@ -1012,6 +1082,7 @@ def test_rehost():
 if __name__ == "__main__":
     test_crypto()
     test_webauthn()
+    test_webauthn_rs256()
     test_push_send()
     test_http()
     test_cloudflare()

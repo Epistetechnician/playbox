@@ -171,7 +171,7 @@ class Auth:
             uid = self.s.d["user_id"]
         return {"ticket": t, "publicKey": {
             "rp": {"id": rp_id, "name": "Playbox"}, "user": {"id": uid, "name": "playbox", "displayName": "Playbox owner"},
-            "challenge": b64u(challenge), "pubKeyCredParams": [{"type": "public-key", "alg": -7}],
+            "challenge": b64u(challenge), "pubKeyCredParams": [{"type": "public-key", "alg": -7}, {"type": "public-key", "alg": -257}],
             "authenticatorSelection": {"residentKey": "preferred", "userVerification": "required"},
             "attestation": "none", "timeout": 120000, "excludeCredentials": exclude, "hints": ["client-device"]}}
 
