@@ -11,4 +11,7 @@ fn main() {
     println!("cargo:rustc-env=PLAYBOX_VERSION_LONG={long}");
     println!("cargo:rerun-if-env-changed=PLAYBOX_COMMIT");
     println!("cargo:rerun-if-changed=../../.git/HEAD");
+    // HEAD only changes on a branch switch; a new commit on the same branch moves the ref and appends to this log, so watch that too or
+    // `--version` keeps naming the commit of the last switch.
+    println!("cargo:rerun-if-changed=../../.git/logs/HEAD");
 }

@@ -952,6 +952,41 @@ def test_adopted_rejoin():
         R.ask_host = old
 
 
+def test_rehost_retry():
+    """A room that is meant to be hosting but is not (the first attempt was refused) is hosted again on a later tick, and the reason is kept."""
+    sys.path.insert(0, UI)
+    from hub import rooms as R
+
+    class SC:
+        tools = []
+
+        def __init__(self):
+            self.creates, self.fail = 0, True
+
+        def call(self, name, args, wait=None, **kw):
+            if name == "playbox_create":
+                self.creates += 1
+                return (True, "busy: too many attestations in flight") if self.fail else (False, {})
+            if name == "playbox_status":
+                return False, {"hosting": {"repo": "/r", "members": []}} if self.creates and not self.fail else {"hosting": None, "guest_id": "g"}
+            return False, {"items": [], "next": 0, "members": []}
+
+    room = R.Room({"id": "q", "label": "x", "host": {"repo": "/r"}}, "bin", tempfile.mkdtemp(prefix="pbrr-"))
+    sc = SC()
+    room.sidecar = sc
+    room.ensure = lambda: sc
+    check("rehost: a refused host call is reported, not dropped", room._host_again() is False and "busy" in (room.err or ""))
+    room.last_rehost = 0
+    sc.fail = False
+    check("rehost: hosting again clears the error", room._host_again() is True and room.err is None)
+    room.last_rehost = 0
+    sc.fail, sc.creates = True, 0
+    room.tick()
+    check("rehost: a tick tries again when the room should be hosting", sc.creates == 1)
+    room.tick()
+    check("rehost: but not on every tick", sc.creates == 1)
+
+
 def test_agents():
     """Agent detection reads each agent's config; connecting runs `playbox setup --only <agent>` and nothing else."""
     from hub import agents
@@ -1178,6 +1213,7 @@ def test_rehost():
         sc.call("playbox_create", {"repo": repo, "local": True})
         r.tick()
         check("rehost: the hub remembers what a room hosts", r.rec.get("host", {}).get("repo") == repo and saved)
+        r.rec["host"]["local"] = True        # as the hub's tool route stores it; keeps this test off the public relay (and so off the internet)
         r.sidecar.proc.kill()
         time.sleep(1)
         _, st = r.ensure().call("playbox_status", {})
@@ -1188,6 +1224,7 @@ def test_rehost():
             r2.ensure().call("playbox_create", {"local": True})
             r2.tick()
             check("rehost: a room with no repository is remembered too", r2.rec.get("host") == {}, str(r2.rec.get("host")))
+            r2.rec["host"]["local"] = True       # the hub's tool route stores how the room was hosted; the test calls the sidecar directly. Hosting over the public relay would make this test depend on the internet.
             r2.sidecar.proc.kill()
             time.sleep(1)
             _, st2 = r2.ensure().call("playbox_status", {})
@@ -1211,6 +1248,7 @@ if __name__ == "__main__":
     test_access()
     test_tunnel_keeper()
     test_adopted_rejoin()
+    test_rehost_retry()
     test_rehost()
     test_board()
     test_classify()

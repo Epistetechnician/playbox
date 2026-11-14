@@ -9,6 +9,10 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Fixed
+- Hub: a room that should be hosting but is not (the first attempt was refused, for instance because the relay was unreachable at startup) is hosted again on a later tick, and the reason is shown instead of dropped.
+- `playbox --version` named the commit of the last branch switch; it now follows new commits.
+
 ## [0.3.2] - 2026-11-14
 
 ### Added

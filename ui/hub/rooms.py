@@ -81,6 +81,7 @@ class Room:
         self.primed = False        # history that predates the hub is not "unread"
         self.last_chain = 0
         self.last_renew = 0
+        self.last_rehost = 0
         self.stop = threading.Event()
         self.mu = threading.Lock()
         self.on_change = None      # set by the hub: persist rec changes
@@ -147,14 +148,27 @@ class Room:
             if self.sidecar and self.rec.get("host") is not None:
                 # hosting lives in the sidecar's memory: a restarted hub (or a respawned sidecar) must host again or invites stop working.
                 # A room with no repository (talk and notes only) is hosted too: `host` is then just {}.
-                h = self.rec["host"]
-                try:
-                    self.sidecar.call("playbox_create", {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))})
-                except Exception as e:
-                    self.err = f"could not host again: {e}"
+                self._host_again()
             elif self.sidecar and self.rec.get("adopted_host"):
                 self._rejoin()          # joins live in the sidecar's memory too: an adopted room joins its host again after a restart
             return self.sidecar
+
+    def _host_again(self):
+        """Host the room again in a fresh sidecar. The result matters: a refusal used to be dropped, leaving a room that looked up but hosted nothing."""
+        h = self.rec.get("host")
+        if h is None or not self.sidecar:
+            return False
+        self.last_rehost = time.time()
+        try:
+            err, data = self.sidecar.call("playbox_create", {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))}, wait=20)
+        except Exception as e:  # noqa: BLE001
+            self.err = f"could not host again: {e}"
+            return False
+        if err:
+            self.err = f"could not host again: {str(data)[:160]}"
+            return False
+        self.err = None
+        return True
 
     def _rejoin(self):
         """Join the local host that this room was adopted from again, with a fresh link. Grants last an hour; a restart loses the join entirely."""
@@ -216,6 +230,13 @@ class Room:
             d["offline"] = bool(d["archived"])
             return d
         host, joined = st.get("hosting"), st.get("joined")
+        if not host and self.rec.get("host") is not None and time.time() - self.last_rehost > 30:
+            if self._host_again():          # it was meant to be hosting (a failed start, or the sidecar restarted underneath us): try again
+                err, st = sc.call("playbox_status", {}, wait=1)
+                if err or not isinstance(st, dict):
+                    d["err"] = str(st)[:200]
+                    return d
+                host, joined = st.get("hosting"), st.get("joined")
         if host and not host.get("replica"):
             known, repo = self.rec.get("host"), host.get("repo")
             if known is None or (repo and known.get("repo") != repo):
