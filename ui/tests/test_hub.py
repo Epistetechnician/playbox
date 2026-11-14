@@ -518,6 +518,8 @@ def test_http():
         time.sleep(2.3)   # let the step-up window lapse (PLAYBOX_HUB_FRESH=2)
         st, j, _ = s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_revoke", "args": {"member_id": "x"}})
         check("sensitive tool needs step-up", st == 403 and j["error"] == "stepup")
+        check("playbox_create (mints a join link) needs step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_create", "args": {"local": True}})[1].get("error") == "stepup")
+        check("playbox_delegate (runs a command) needs step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_delegate", "args": {"base": "main", "command": "true"}})[1].get("error") == "stepup")
         check("non-sensitive tool does not", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_status", "args": {}})[0] == 200)
         st, sb, _ = s.req("POST", "/api/auth/stepup/begin", {})
         st, _, _ = s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": dev.get(sb["publicKey"], origin, kind="webauthn.get")})
