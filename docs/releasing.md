@@ -28,7 +28,7 @@ Updating does not restart agents already running: they keep the old binary until
 3. If a change makes older peers misread messages, bump `PROTOCOL` in `crates/playbox-net/src/wire.rs` (and `MIN_PROTOCOL` if the old
    one is dropped) and say so in the changelog. A new optional field never needs a bump.
 4. `git tag vX.Y.Z && git push origin main vX.Y.Z`. The `release` workflow first runs `playbox release check` (tag, `Cargo.toml` and
-   changelog agree), builds darwin-arm64, linux-x86_64 and linux-arm64, writes `release.json` (hashes, protocol, notes), signs
+   changelog agree), builds darwin-arm64, darwin-x86_64 (cross-compiled), linux-x86_64 and linux-arm64, writes `release.json` (hashes, protocol, notes), signs
    `SHA256SUMS` with `PLAYBOX_RELEASE_KEY`, and publishes with the changelog section as the release notes. A tag with a `-` (for
    example `v0.3.0-rc.1`) is a pre-release and is not what `update` or `install.sh` fetch by default.
 
