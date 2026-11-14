@@ -25,7 +25,7 @@ class AccessError(Exception):
 
 def rsa_verify(n, e, signed, sig):
     k = (n.bit_length() + 7) // 8
-    if len(sig) != k:
+    if len(sig) != k or int.from_bytes(sig, "big") >= n:     # s >= n would make s and s-n both verify
         raise AccessError("bad signature length")
     em = pow(int.from_bytes(sig, "big"), e, n).to_bytes(k, "big")
     t = SHA256_PREFIX + hashlib.sha256(signed).digest()

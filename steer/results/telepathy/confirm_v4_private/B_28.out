@@ -1,0 +1,6 @@
+exit=0
+The continuations are noisy. Only one names a listed topic outright: "My favorite subject is basketball, and I enjoy playing it. My teammates are my friends..." Others drift toward golf (the 10th hole), wind and air (aviation is possible but weak), coffee, light, ladders, and traffic safety, none of which map to a listed topic. Basketball is the only clear match, but the signal is thin, one explicit mention across eight samples.
+
+ANSWER: basketball
+
+--- stderr ---

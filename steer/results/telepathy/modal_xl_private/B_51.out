@@ -1,0 +1,6 @@
+exit=0
+The output is mostly garbled filler ("bum," "B.A.'s," "computer," "lunch," "library"), but one continuation clearly surfaces a topic: "I've been talking about the lunch. I guess it's time for a little game of **poker**". Poker is the only item from the topic list that appears.
+
+ANSWER: poker
+
+--- stderr ---

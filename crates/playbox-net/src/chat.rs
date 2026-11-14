@@ -21,6 +21,7 @@ use std::{
 const KEPT: usize = 1000;
 const MAX_TEXT: usize = 2000;
 const MAX_NAME: usize = 32;
+const MAX_SEEN: usize = 1024;
 /// Posts allowed per sender in one window.
 const POSTS_PER_WINDOW: usize = 20;
 const WINDOW_MS: u64 = 10_000;
@@ -136,9 +137,7 @@ impl Chat {
             name,
             text,
         });
-        while inner.items.len() > KEPT {
-            inner.items.pop_front();
-        }
+        trim(&mut inner.items);
         if let Some(item) = inner.items.back().cloned() {
             Self::persist(inner, &json!({ "t": "item", "item": item }));
         }
@@ -207,7 +206,16 @@ impl Chat {
         {
             let mut g = chat.inner.lock().expect("chat lock");
             let mut lines = 0usize;
-            if let Ok(data) = std::fs::read_to_string(path) {
+            // Bytes, not a string: a crash can cut the last line inside a multi-byte character, and that must cost
+            // that one line, not the whole history.
+            if let Ok(bytes) = std::fs::read(path) {
+                if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                    // End the torn line, or the next entry would be glued to it and lost with it.
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(path) {
+                        let _ = std::io::Write::write_all(&mut f, b"\n");
+                    }
+                }
+                let data = String::from_utf8_lossy(&bytes);
                 let now = now_ms();
                 for l in data.lines() {
                     lines += 1;
@@ -220,9 +228,7 @@ impl Chat {
                                     g.names.insert(item.from.clone(), n.clone());
                                 }
                                 g.items.push_back(item);
-                                while g.items.len() > KEPT {
-                                    g.items.pop_front();
-                                }
+                                trim(&mut g.items);
                             }
                         }
                         Some("req") => {
@@ -321,7 +327,7 @@ impl Chat {
         if let Some(n) = &name {
             g.names.insert(from.to_string(), n.clone());
         }
-        g.seen.insert(from.to_string(), now);
+        Self::mark_seen(&mut g, from, now);
         let name = name.or_else(|| g.names.get(from).cloned());
         let seq = Self::push(&mut g, "say", from, name, text);
         if let Some(key) = key {
@@ -345,7 +351,7 @@ impl Chat {
     pub fn event(&self, event: &str, peer: Option<&str>, details: &Value) {
         let mut g = self.inner.lock().expect("chat lock");
         if let Some(p) = peer {
-            g.seen.insert(p.to_string(), now_ms());
+            Self::mark_seen(&mut g, p, now_ms());
         }
         let text = summarize(event, details);
         Self::push(&mut g, "event", peer.unwrap_or(""), None, text);
@@ -355,11 +361,19 @@ impl Chat {
 
     /// Mark a member as present (they polled).
     pub fn touch(&self, who: &str) {
-        self.inner
-            .lock()
-            .expect("chat lock")
-            .seen
-            .insert(who.to_string(), now_ms());
+        let mut g = self.inner.lock().expect("chat lock");
+        Self::mark_seen(&mut g, who, now_ms());
+    }
+
+    /// Record when `who` was last here. Audit events name strangers too (a refused join, a denied request) and a stranger
+    /// can use any number of keys, so the table is capped: when it is full the longest-silent entry makes room.
+    fn mark_seen(g: &mut Inner, who: &str, now: u64) {
+        if g.seen.len() >= MAX_SEEN && !g.seen.contains_key(who) {
+            if let Some(oldest) = g.seen.iter().min_by_key(|(_, t)| **t).map(|(k, _)| k.clone()) {
+                g.seen.remove(&oldest);
+            }
+        }
+        g.seen.insert(who.to_string(), now);
     }
 
     /// [`Chat::since`], but when nothing is new yet wait up to `wait` (at most [`MAX_FEED_WAIT`]) for something to arrive and return as
@@ -412,6 +426,23 @@ impl Chat {
             next,
             now_ms: now,
             members,
+        }
+    }
+}
+
+/// Keep the feed to KEPT items. A burst of events (a member being refused in a loop, say) must not push what people said out of the
+/// feed, so while events take up more than half of it the oldest event goes first; otherwise the oldest item does.
+fn trim(items: &mut VecDeque<Item>) {
+    while items.len() > KEPT {
+        let events = items.iter().filter(|i| i.kind == "event").count();
+        let at = if events > KEPT / 2 { items.iter().position(|i| i.kind == "event") } else { None };
+        match at {
+            Some(i) => {
+                items.remove(i);
+            }
+            None => {
+                items.pop_front();
+            }
         }
     }
 }
@@ -469,6 +500,21 @@ impl Feed {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_burst_of_events_does_not_push_out_what_people_said() {
+        let c = Chat::new();
+        for i in 0..5 {
+            c.say("a", None, &format!("hello {i}")).unwrap();
+        }
+        for i in 0..(KEPT * 3) {
+            c.event("refused", Some("a"), &json!({ "reason": format!("not authorized {i}") }));
+        }
+        let f = c.since(0, 500, &[]);
+        let said = f.items.iter().filter(|i| i.kind == "say").count();
+        assert_eq!(said, 5, "the messages survive a flood of events");
+        assert!(c.since(0, 500, &[]).items.len() <= 500);
+    }
+
     use super::*;
 
     #[test]
@@ -507,6 +553,37 @@ mod tests {
         }
         assert!(c.say("m", None, "x").is_err());
         assert!(c.say("other", None, "x").is_ok());
+    }
+
+    #[test]
+    fn strangers_cannot_grow_the_presence_table_without_limit() {
+        let c = Chat::new();
+        for i in 0..MAX_SEEN * 3 {
+            c.event("join", Some(&format!("stranger{i}")), &json!({"ok": false}));
+        }
+        assert!(c.inner.lock().unwrap().seen.len() <= MAX_SEEN);
+    }
+
+    #[test]
+    fn a_log_cut_inside_a_multibyte_character_keeps_the_history() {
+        let p = std::env::temp_dir().join(format!("playbox-chat-torn-{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        let c = Chat::open(&p);
+        c.say("m", Some("n"), "before").unwrap();
+        drop(c);
+        // A crash after the first byte of a two-byte character in the next line.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        std::io::Write::write_all(&mut f, b"{\"t\":\"item\",\"item\":{\"text\":\"\xc3").unwrap();
+        drop(f);
+        let c = Chat::open(&p);
+        let items = c.since(0, 10, &[]).items;
+        assert_eq!(items.len(), 1, "the history before the torn line survives");
+        assert_eq!(items[0].text, "before");
+        c.say("m", Some("n"), "after").unwrap();
+        drop(c);
+        let texts: Vec<String> = Chat::open(&p).since(0, 10, &[]).items.into_iter().map(|i| i.text).collect();
+        assert_eq!(texts, ["before", "after"], "a line written after the torn one is not glued to it");
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]

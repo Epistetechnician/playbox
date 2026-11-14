@@ -1,0 +1,6 @@
+exit=0
+The output is noisy and mostly incoherent, so this is a low-confidence call. The recurring words are "carnage" (twice), "death", "cannons", "marching" and "flag", which point toward politics, the closest option on the list. The one clear sports reference is "Coupe de France", which is soccer, but it appears once.
+
+ANSWER: politics
+
+--- stderr ---

@@ -63,6 +63,52 @@ async fn host_and_guest_meet_only_through_the_relay() {
         client.echo("through the relay").await.unwrap(),
         "through the relay"
     );
+    let bound = client.bound_sockets();
+    if std::env::var("PLAYBOX_BIND").is_ok_and(|v| v.trim().is_empty() || v.trim() == "all") || std::env::var_os("PLAYBOX_BIND").is_none() {
+        assert!(bound.is_empty(), "a guest that dials out through a relay has no listening socket: {bound:?}");
+    } else {
+        assert!(bound.iter().all(|a| a.ip().is_loopback() || std::env::var("PLAYBOX_BIND").is_ok_and(|v| v.parse::<std::net::IpAddr>().is_ok_and(|ip| ip == a.ip()))), "an explicit PLAYBOX_BIND is respected: {bound:?}");
+    }
+    client.close().await;
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_guest_of_a_host_on_this_machine_listens_on_loopback_only() {
+    let host = Host::start(new_secret_key().unwrap(), Transport::Local)
+        .await
+        .unwrap();
+    let link = host.create_link(Duration::from_secs(60), 1).unwrap();
+    assert!(link.addr.ip_addrs().any(|a| a.ip().is_loopback()), "a local link lists loopback");
+    let client = join_link(&link.encode(), new_secret_key().unwrap(), TransportChoice::FromLink)
+        .await
+        .unwrap();
+    assert_eq!(client.echo("same machine").await.unwrap(), "same machine");
+    let bound = client.bound_sockets();
+    assert!(
+        !bound.is_empty() && bound.iter().all(|a| a.ip().is_loopback()),
+        "no socket on a network interface (macOS would ask to allow it): {bound:?}"
+    );
+    client.close().await;
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_guest_falls_back_to_the_network_when_the_host_is_not_on_loopback() {
+    let host = Host::start(new_secret_key().unwrap(), Transport::Local)
+        .await
+        .unwrap();
+    let mut link = host.create_link(Duration::from_secs(60), 1).unwrap();
+    // A host on another machine: its loopback address means nothing here, so only its network addresses are usable.
+    let lan: Vec<_> = link.addr.ip_addrs().filter(|a| !a.ip().is_loopback()).cloned().collect();
+    if lan.is_empty() {
+        return; // no network interface in this environment: nothing to fall back to
+    }
+    link.addr.addrs.retain(|a| !matches!(a, iroh::TransportAddr::Ip(s) if s.ip().is_loopback()));
+    let client = join_link(&link.encode(), new_secret_key().unwrap(), TransportChoice::FromLink)
+        .await
+        .unwrap();
+    assert_eq!(client.echo("over the network").await.unwrap(), "over the network");
     client.close().await;
     host.shutdown().await.unwrap();
 }
