@@ -259,7 +259,7 @@ R.security = d => {
     + line(!holds.length, holds.length ? `${holds.length} write(s) paused by the witness` : "No writes paused", "A witness holds risky writes until the owner decides")
     + line(true, "Messages are untrusted", "Other members' text is shown as plain text and never run")
     + line(M.members.every(m => m.id !== "" ), `${M.members.length} members, ${M.members.filter(m => m.present).length} online`, "Every member joined with a grant bound to its own key")
-    + `<div class="row" style="margin-top:12px"><a class="btn sm" href="/?view=system">Open System view</a>${M.admin ? '<button class="btn sm" data-act="verify">Verify now</button>' : ""}</div>`;
+    + `<div class="row" style="margin-top:12px"><a class="btn sm" href="/?view=system">Open System view</a><a class="btn sm" href="/r/${esc(RID)}/api/history.jsonl" download>Download history</a>${M.admin ? '<button class="btn sm" data-act="verify">Verify now</button>' : ""}</div>`;
 };
 
 R.settings = () => `<p class="lbl">Room</p><div class="row"><b style="font-size:16px">${esc(M.room.label)}</b><span class="chip">${esc(M.room.kind || "")}</span></div><p class="mut" style="font-size:12.5px">${esc(M.room.machine || "no machine set")}</p>
@@ -292,7 +292,16 @@ function drawWorld() {
   $("#plus").hidden = !M.admin; $("#cockpit").href = `/r/${RID}/`; $("#cockpit").hidden = !M.admin && false;
   document.title = `${M.room.label} · Playbox`;
   const ok = M.room.chain ? M.room.chain.ok : true, hold = (M.room.holds || []).length;
-  $("#live").innerHTML = `<i class="led ${!ok ? "bad" : hold ? "warn" : "on"} live"></i><span>${!ok ? "history failed" : hold ? "needs you" : "live"}</span>`;
+  $("#live").innerHTML = M.offline ? `<i class="led warn"></i><span>offline · saved</span>` : `<i class="led ${!ok ? "bad" : hold ? "warn" : "on"} live"></i><span>${!ok ? "history failed" : hold ? "needs you" : "live"}</span>`;
+  let ob = $("#offbar");
+  if (M.offline) {
+    if (!ob) { ob = document.createElement("div"); ob.id = "offbar"; ob.setAttribute("role", "status"); ob.style.cssText = "position:fixed;left:0;right:0;top:46px;z-index:40;padding:8px 16px;background:#2A2113;color:#F2D9A6;border-bottom:1px solid #FF5A1F;font:600 12px/1.4 var(--mono);display:flex;gap:14px;flex-wrap:wrap;align-items:center"; document.body.append(ob); }
+    const t = M.archive && M.archive.last_sync_ms ? new Date(M.archive.last_sync_ms).toLocaleString() : "earlier";
+    ob.textContent = "";
+    const msg = document.createElement("span"); msg.textContent = `The host is offline. Showing the history this hub saved (up to ${t}). You can read and download it, not post.`;
+    const dl = document.createElement("a"); dl.href = `/r/${RID}/api/history.jsonl`; dl.textContent = "Download history"; dl.style.cssText = "color:inherit;text-decoration:underline";
+    ob.append(msg, dl);
+  } else if (ob) ob.remove();
   $("#jump").innerHTML = Object.entries(layout()).map(([id, p]) => `<button data-act="drill" data-id="${id}" class="${focus === id ? "on" : ""}">${esc(p.t.split(" ")[0] === "Universal" ? "Feed" : p.t.split(" ")[0])}</button>`).join("");
   crumbs();
 }

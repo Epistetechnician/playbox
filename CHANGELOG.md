@@ -9,6 +9,13 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- Hub: **a durable copy of every room's feed**, kept on this machine (`<room home>/archive/`, private, size-capped). When a room's host goes away the canvas, cockpit and room list show what the hub saved, marked offline, with **Download history** (JSON lines). Removing a room deletes its archive.
+- Hub: a warning bar when the Cloudflare Access sign-in expires, with a Sign in again button.
+
+### Fixed
+- Hub: reads of a room have deadlines, so an unreachable host can no longer stall the poller (and every other room's updates).
+
 ### Changed
 - Guests dial out only: no UDP socket on the iroh and relay transports (the connection goes through the relay; `PLAYBOX_GUEST_DIRECT=1` keeps direct paths), and a socket on 127.0.0.1 only for a host on the same machine. macOS no longer asks to accept incoming connections for a program that only joins rooms.
 

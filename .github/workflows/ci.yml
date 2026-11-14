@@ -114,6 +114,8 @@ jobs:
       - run: PATH="$PWD/target/debug:$PATH" PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/tests/test_hub.py
       - run: PATH="$PWD/target/debug:$PATH" PLAYBOX_MCP="$PWD/target/debug/playbox-mcp" python3 ui/tests/test_install.py
       - run: python3 ui/tests/test_bind.py
+      - run: python3 ui/tests/test_archive.py
+      - run: python3 ui/tests/test_sidecar_timeout.py
       - run: node ui/tests/sw_sim.js
       - run: node ui/tests/session_watch_sim.js
   witness:

@@ -640,6 +640,17 @@ def test_http():
                 check("adopt: it is in the hub's room list", any(r["id"] == aj["id"] and r["label"] == "Adopted" for r in a.req("GET", "/api/rooms")[1]["rooms"]))
                 st, cv, _ = a.req("GET", f"/r/{aj['id']}/api/canvas")
                 check("adopt: its canvas loads", st == 200 and cv["room"]["label"] == "Adopted")
+                # ---- the hub keeps its own copy of the feed ----
+                arid = aj["id"]
+                for w in ("first words", "second words", "third words"):
+                    a.req("POST", f"/r/{arid}/api/tool", {"name": "playbox_say", "args": {"text": w}})
+                a.req("POST", f"/r/{arid}/api/tool", {"name": "playbox_feed", "args": {"since": 0}})
+                st, hist, _ = a.req("GET", f"/r/{arid}/api/history")
+                texts = [i.get("text") for i in hist.get("items", [])]
+                check("archive: what was said is saved on this hub while the host is up", st == 200 and {"first words", "second words", "third words"} <= set(texts), texts)
+                check("archive: history needs a session", anon.req("GET", f"/r/{arid}/api/history")[0] in (401, 303) and anon.req("GET", f"/r/{arid}/api/history.jsonl")[0] in (401, 303))
+                adir = os.path.join(home, "rooms", arid, "archive")
+                check("archive: the directory is private (0700), its files 0600", oct(os.stat(adir).st_mode & 0o777) == "0o700" and all(oct(os.stat(os.path.join(adir, f)).st_mode & 0o777) == "0o600" for f in os.listdir(adir)))
             finally:
                 try:
                     ahost.stdin.write(b"quit\n")
@@ -648,6 +659,25 @@ def test_http():
                 except (OSError, subprocess.TimeoutExpired):
                     ahost.kill()
             check("adopt: a host that quits is no longer listed", a.req("GET", "/api/local-rooms")[1]["rooms"] == [])
+            if st == 200 and aj.get("id"):
+                arid = aj["id"]
+                a.req("POST", "/api/system/verify")          # the same refresh the page triggers (an idle hub's own poller runs every 45 s)
+                for _ in range(40):
+                    row = next((r for r in a.req("GET", "/api/rooms")[1]["rooms"] if r["id"] == arid), {})
+                    if row.get("offline"):
+                        break
+                    time.sleep(1)
+                check("archive: once the hub notices, the room list says the host is offline and how much is saved", row.get("offline") is True and row.get("archived", 0) >= 3, json.dumps({k: row.get(k) for k in ("err", "offline", "archived", "mode", "state", "updated")}))
+                st, cv, _ = a.req("GET", f"/r/{arid}/api/canvas")
+                check("archive: with the host gone the canvas still loads, marked offline", st == 200 and cv.get("offline") is True and cv["room"]["state"] == "offline" and cv["admin"] is False)
+                check("archive: the saved messages are on the canvas", all(w in json.dumps(cv) for w in ("first words", "second words", "third words")))
+                st, fd, _ = a.req("POST", f"/r/{arid}/api/tool", {"name": "playbox_feed", "args": {"since": 0}})
+                check("archive: the cockpit's feed call is answered from the archive, marked offline", st == 200 and fd["error"] is False and fd["data"]["offline"] is True and len(fd["data"]["items"]) >= 3)
+                st, raw, rr = a.req("GET", f"/r/{arid}/api/history.jsonl")
+                lines = [json.loads(x) for x in (raw.decode() if isinstance(raw, bytes) else json.dumps(raw)).splitlines() if x.strip()]
+                check("archive: the export is JSON lines with a download name", st == 200 and len(lines) >= 3 and "attachment" in (rr.getheader("Content-Disposition") or "") and "ndjson" in (rr.getheader("Content-Type") or ""))
+                st, _, _ = a.req("DELETE", f"/api/rooms/{arid}")
+                check("archive: removing the room deletes what was saved", st == 200 and not os.path.exists(os.path.join(home, "rooms", arid, "archive")))
         st, sysj2, _ = a.req("POST", "/api/system/verify")
         check("verify re-runs the history check", st == 200 and any("Re-verification" in e["text"] for e in sysj2["events"]))
         st, pv, _ = anon.req("GET", "/api/invite/" + iid)

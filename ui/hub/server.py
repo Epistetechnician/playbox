@@ -769,19 +769,52 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"ok": not err, "status": st, "tools": sc.tools})
             if m == "GET" and rest == "/canvas":
                 return self.send(200, (STATIC / "canvas.html").read_bytes(), "text/html; charset=utf-8")
+            if m == "GET" and rest == "/api/history":
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    since, limit = max(0, int(q.get("since", ["0"])[0])), min(2000, max(1, int(q.get("limit", ["500"])[0])))
+                except ValueError:
+                    raise AuthError(400, "since and limit are numbers")
+                items, nxt = room.archive.read(since, limit)
+                members, me = room.archive.members()
+                return self.j(200, {"items": items, "next": nxt, "members": members, "me": me, "info": room.archive.info()})
+            if m == "GET" and rest == "/api/history.jsonl":
+                data = room.archive.export()
+                name = re.sub(r"[^A-Za-z0-9._-]+", "-", room.rec["label"]).strip("-") or "room"
+                return self.send(200, data, "application/x-ndjson", {"Content-Disposition": f'attachment; filename="{name}-history.jsonl"'})
             if m == "GET" and rest == "/api/canvas":
+                def saved():
+                    """The host cannot be read: show what this hub saved of the room, marked as such."""
+                    info = room.archive.info()
+                    if not info["items"]:
+                        return None
+                    members, me = room.archive.members()
+                    d0 = room.digest
+                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000))
+                    model.update({"now": int(time.time() * 1000), "me": me, "next": info["last_seq"], "offline": True, "archive": info,
+                                  "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d0.get("mode"),
+                                           "state": "offline", "chain": d0.get("chain"), "holds": [], "created": room.rec.get("created")},
+                                  "admin": False})
+                    return model
+                if room.host_gone():
+                    off = saved()
+                    if off:
+                        return self.j(200, off)
                 sc = room.ensure()
                 if not sc:
-                    return self.j(502, {"error": room.err or "the room's sidecar is unavailable"})
-                err, st = sc.call("playbox_status", {}, wait=2)
-                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3)
+                    off = saved()
+                    return self.j(200, off) if off else self.j(502, {"error": room.err or "the room's sidecar is unavailable"})
+                err, st = sc.call("playbox_status", {}, wait=2, timeout=6)
+                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3, timeout=8)
                 if ferr or not isinstance(feed, dict):
-                    return self.j(502, {"error": "this room's feed isn't available yet" if not isinstance(feed, str) else feed})
+                    off = saved()
+                    return self.j(200, off) if off else self.j(502, {"error": "this room's feed isn't available yet" if not isinstance(feed, str) else feed})
+                room.keep(feed)
                 st = st if isinstance(st, dict) else {}
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
                 model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000))
-                model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0),
+                model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
                               "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},
                               "admin": d.get("mode") in ("host", "both")})
@@ -794,15 +827,34 @@ def make_handler(hub, auth, store, opts):
                 name, args = b.get("name"), b.get("args") or {}
                 if not isinstance(args, dict):
                     return self.j(400, {"error": "args must be an object"})
+                def saved_feed(offline=True):
+                    """playbox_feed when the room cannot be read right now: what this hub saved, in the same shape. Marked offline only when the host is gone;
+                    when the connection is merely busy (the poller is mid-call) it is the same data a live read would give, so it is not."""
+                    since = args.get("since") if isinstance(args.get("since"), int) else 0
+                    items, nxt = room.archive.read(max(0, since), 500)
+                    members, me = room.archive.members()
+                    out = {"items": items, "next": nxt, "members": members if not offline else [{**x, "present": False} for x in members]}
+                    if offline:
+                        out.update({"offline": True, "saved_until_ms": room.archive.info()["last_sync_ms"]})
+                    return out
+                if name == "playbox_feed" and room.host_gone() and room.archive.info()["items"]:
+                    return self.j(200, {"error": False, "data": saved_feed()})
                 sc = room.ensure()
                 if not sc:
+                    if name == "playbox_feed" and room.archive.info()["items"]:
+                        return self.j(200, {"error": False, "data": saved_feed()})
                     return self.j(502, {"error": True, "data": room.err})
                 if name not in sc.tools:
                     return self.j(400, {"error": f"unknown tool {name}"})
                 # minting a join link (playbox_create) or running a command on the host (playbox_delegate) is as strong as an invite: same passkey touch
                 if (name in SENSITIVE_TOOLS or (name == "playbox_create" and not args.get("replica_of"))) and not self.need_fresh(rec):
                     return
-                err, data = sc.call(name, args, wait=3 if b.get("poll") else None)
+                err, data = sc.call(name, args, wait=3 if (b.get("poll") or name == "playbox_feed") else None, timeout=8 if name == "playbox_feed" else None)
+                if name == "playbox_feed":
+                    if not err and isinstance(data, dict):
+                        room.keep(data)
+                    elif err and room.archive.info()["items"]:
+                        return self.j(200, {"error": False, "data": saved_feed(offline=bool(room.digest.get("offline")) or data != "busy")})
                 if name == "playbox_feed" and not err and isinstance(data, dict) and data.get("items"):
                     room.seen()
                     hub.bus.publish("room", {**room.digest, "unread": 0})
