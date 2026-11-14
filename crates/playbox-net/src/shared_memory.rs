@@ -398,7 +398,16 @@ impl SharedMemory {
         }
         let mut ledger = BTreeMap::new();
         if let Some(p) = &cfg.ledger {
-            if let Ok(text) = std::fs::read_to_string(p) {
+            // Bytes, not a string: a crash can cut the last line inside a multi-byte character, and that must cost
+            // that one line, not the room's whole memory.
+            if let Ok(bytes) = std::fs::read(p) {
+                if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                    // End the torn line, or the next entry would be glued to it and lost with it.
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(p) {
+                        let _ = f.write_all(b"\n");
+                    }
+                }
+                let text = String::from_utf8_lossy(&bytes);
                 for l in text.lines() {
                     // A damaged line is skipped, like the feed's log: one bad write must not lose the room's memory.
                     match serde_json::from_str::<Line>(l) {
@@ -756,6 +765,25 @@ mod tests {
         m2.forget_author("alice").await;
         let (_, m3) = mem(false, Some(p));
         assert!(m3.entries().is_empty(), "deleted entries stay deleted: {}", gone.doc);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_ledger_cut_mid_character_keeps_its_entries_and_the_next_one() {
+        let dir = std::env::temp_dir().join(format!("pbx-mem-torn-{}", now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("memory.jsonl");
+        let (_, m) = mem(false, Some(p.clone()));
+        m.remember("alice", "one fact about caching", None).await.unwrap();
+        drop(m);
+        // A crash in the middle of the next line, after the first byte of a two-byte character.
+        std::fs::OpenOptions::new().append(true).open(&p).unwrap().write_all(b"{\"put\":{\"text\":\"\xc3").unwrap();
+        let (_, m2) = mem(false, Some(p.clone()));
+        assert_eq!(m2.entries().len(), 1, "the room's memory survives the torn line");
+        m2.remember("alice", "a later fact about retries", None).await.unwrap();
+        drop(m2);
+        let (_, m3) = mem(false, Some(p));
+        assert_eq!(m3.entries().len(), 2, "the entry written after the torn line is not lost with it");
         std::fs::remove_dir_all(dir).ok();
     }
 

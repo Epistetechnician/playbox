@@ -211,6 +211,12 @@ impl Chat {
             // Bytes, not a string: a crash can cut the last line inside a multi-byte character, and that must cost
             // that one line, not the whole history.
             if let Ok(bytes) = std::fs::read(path) {
+                if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                    // End the torn line, or the next entry would be glued to it and lost with it.
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(path) {
+                        let _ = std::io::Write::write_all(&mut f, b"\n");
+                    }
+                }
                 let data = String::from_utf8_lossy(&bytes);
                 let now = now_ms();
                 for l in data.lines() {
@@ -545,6 +551,10 @@ mod tests {
         let items = c.since(0, 10, &[]).items;
         assert_eq!(items.len(), 1, "the history before the torn line survives");
         assert_eq!(items[0].text, "before");
+        c.say("m", Some("n"), "after").unwrap();
+        drop(c);
+        let texts: Vec<String> = Chat::open(&p).since(0, 10, &[]).items.into_iter().map(|i| i.text).collect();
+        assert_eq!(texts, ["before", "after"], "a line written after the torn one is not glued to it");
         let _ = std::fs::remove_file(&p);
     }
 
