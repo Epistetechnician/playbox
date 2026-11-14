@@ -1,0 +1,7 @@
+{"seed": 1, "reached": false, "reason": "stop_batches", "wall_s": 245.84435743896756, "batches": 960, "tokens": 125829120, "dev_loss": 1.1788962054791017, "name": "base", "elapsed": 259.2}
+{"seed": 1, "reached": false, "reason": "stop_batches", "wall_s": 114.28707281919196, "batches": 960, "tokens": 125829120, "dev_loss": 1.178156597124342, "name": "compile", "elapsed": 128.8}
+{"seed": 1, "reached": false, "reason": "stop_batches", "wall_s": 95.9894541570684, "batches": 960, "tokens": 125829120, "dev_loss": 1.177371919547596, "name": "compile", "elapsed": 110.0}
+{"seed": 2, "reached": false, "reason": "stop_batches", "wall_s": 245.35381034004968, "batches": 960, "tokens": 125829120, "dev_loss": 1.182257274088751, "name": "base", "elapsed": 258.6}
+{"seed": 2, "reached": false, "reason": "stop_batches", "wall_s": 96.2658404057147, "batches": 960, "tokens": 125829120, "dev_loss": 1.1782095730391642, "name": "compile", "elapsed": 110.3}
+{"seed": 3, "reached": false, "reason": "stop_batches", "wall_s": 245.416596328374, "batches": 960, "tokens": 125829120, "dev_loss": 1.1793209676086192, "name": "base", "elapsed": 258.8}
+{"seed": 3, "reached": false, "reason": "stop_batches", "wall_s": 96.27353415172547, "batches": 960, "tokens": 125829120, "dev_loss": 1.1787130266095933, "name": "compile", "elapsed": 110.3}

@@ -4,7 +4,11 @@ Decision wanted from the user. **Nothing here has been started**: no gman node, 
 
 ## Why a second pilot
 
-Pilot 1 ([pilot/README.md](pilot/README.md)) measured the H100 setup and showed the sealed holdout catching the injected dev memorizer, but it had **0 promotions**, so the replay rule was never exercised on real hardware. The Mac-tuned stand-ins (learning rates, Muon steps) do not move time-to-target at this scale; the best honest gains were 0.040 and 0.039 against a threshold of 0.06. Pilot 2 aims at: at least one promotion, replayed on a second node, plus a no-skill comparator at the same budget.
+Pilot 1 ([pilot/README.md](pilot/README.md)) measured the H100 setup and showed the sealed holdout catching the injected dev memorizer, but it had **0 promotions**, so the replay rule was never exercised on real hardware. The Mac-tuned stand-ins (learning rates, Muon steps) do not move time-to-target at this scale; the best honest gains were 0.040 and 0.039 against a threshold of 0.06. Pilot 2 aims at at least one promotion, replayed on a second node, plus a no-skill comparator at the same budget.
+
+## Smoke result (measured, 1.17 USD): compile gain 0.61
+
+A gated smoke test ran on my own resumed node `f3-pilot-a` ([smoke_p2/README.md](smoke_p2/README.md)): at 240 steps, baseline 245.4 s vs compile 96.3 s (median of 3 seeds), **gain 0.608 against theta 0.06**, cold-cache run alone 0.535, dev loss the same. Compile works under the harness's scrubbed environment. The smoke gate below is therefore passed; `h100-1` should promote, and the later stand-ins are then compared to a compiled frontier (about 96 s per run).
 
 ## What is new (all offline, committed, tested)
 
@@ -12,7 +16,7 @@ Pilot 1 ([pilot/README.md](pilot/README.md)) measured the H100 setup and showed 
 
 | # | Stand-in | Why it might clear theta 0.06 | Risk |
 |---|---|---|---|
-| 1 | `torch.compile(model)` for the training forward | Baseline runs eager at about 1.04 s/step, which I estimate at about 14% of H100 peak; fusing the logit softcap, norms and rotary removes memory-bound passes. The metric is training seconds, so speed counts directly. | Compile time is on the clock (median over 3 seeds hides the one cold seed); compile may fail under the scrubbed `PATH=/usr/bin:/bin`; speedup unmeasured. **This is the one that decides the pilot.** |
+| 1 | `torch.compile(model)` for the training forward | Baseline runs eager at about 1.04 s/step, which I estimate at about 14% of H100 peak; fusing the logit softcap, norms and rotary removes memory-bound passes. The metric is training seconds, so speed counts directly. | Measured by the smoke: works under the scrubbed env, gain 0.61, cold-cache cost about 18 s. The remaining uncertainty is the holdout gate (expected to pass) and the real target-stop decision. |
 | 2 | weight decay 0 + grad clip 1.0 | Each alone gave gain 0.040 at pilot 1 (one eval interval = 0.042); together two intervals = 0.083 | Each alone was within noise (cv 0.018); the sum is unmeasured |
 | 3 | anneal LR to step 240 (plan 360 to 240) | The target is the loss at step 240, but the baseline's LR has only decayed to 0.67 there | Gain is quantized in 10-step intervals (0.042): needs 2 intervals |
 | 4 | injected dev memorizer | Repeats the sealed-holdout test against the frontier of this run | Expected reject (`holdout_failed`) |
@@ -29,7 +33,7 @@ Pilot 1 ([pilot/README.md](pilot/README.md)) measured the H100 setup and showed 
 export F3_SUBSTRATE=climbmix F3_SPEC=task_spec_gpu_p2.json F3_DATA_DIR=~/f3/data F3_HOLDOUT_DIR=/srv/f3-custodian/holdout
 # 0. node: clean checkout committed with fixed author/date; venv with system site packages; pyarrow tiktoken requests rustbpe numpy cryptography
 # 1. data + tokenizer (about 1.1 GB): python3 challenge/f3/task_climbmix.py prepare --data --holdout --tokens
-# 2. SMOKE (about 12 min, may only abort): baseline vs compile, 240 steps = 960 micro-batches, seed 1
+# 2. SMOKE: DONE (see smoke_p2); on a fresh node repeat only if wanted. Original commands:
 python3 challenge/f3/arms.py write --arm h100 --n 1 --out $S/compile.py
 python3 challenge/f3/task_climbmix.py run --candidate challenge/f3/baseline_climbmix.py --seed 1 --out $S/base.json    --stop-batches 960
 python3 challenge/f3/task_climbmix.py run --candidate $S/compile.py                     --seed 1 --out $S/cold.json    --stop-batches 960
@@ -49,20 +53,20 @@ Second node (new, created only after step 5): same tree and fixed-date commit as
 
 ## Cost estimate (ceiling 40 USD)
 
-Basis, **measured at pilot 1**: a full decision takes about 26.5 min on the eager baseline (6 runs of about 250 s plus evaluation); an early-stopped one (memorizer) 15.4 min; calibration (13 runs) about 55 min; non-decision overhead (setup, data, calibration, verify) was 87 min of the node's 281.7 min. **Assumed, not measured:** a compiled frontier runs a decision in about 21 min (runs of about 190 s), memorizer about 12 min; replay costs 9 runs per promotion, about 30 min.
+Basis, **measured at pilot 1**: a full decision takes about 26.5 min on the eager baseline (6 runs of about 250 s plus evaluation); an early-stopped one (memorizer) 15.4 min; calibration (13 runs) about 55 min; non-decision overhead (setup, data, calibration, verify) was 87 min of the node's 281.7 min. **Measured at the smoke:** a compiled run takes 96 s (114 s with a cold cache). **Assumed:** evaluation about 90 s per decision as at pilot 1; replay is 9 runs per promotion, about 15 min for a compiled promotion.
 
 | Item | Hours | USD |
 |---|---|---|
-| Primary: setup, data, smoke | 0.7 | 3.5 |
-| Primary: calibration | 0.9 | 4.5 |
-| Primary: arm `h100`, Q = 4 (compile 24.5, wd/clip 21, anneal 21, memorizer 12 min) | 1.3 | 6.6 |
+| Primary: setup and data on a new node (0.1 h instead if my pilot-1 node `f3-pilot-a`, disk intact, is resumed) | 0.5 | 2.5 |
+| Primary: calibration (eager baseline, 13 runs) | 0.9 | 4.5 |
+| Primary: arm `h100`, Q = 4 (compile 19 min with an eager frontier, wd/clip 11, anneal 11, memorizer 8) | 0.8 | 4.1 |
 | Primary: arm `random`, Q = 4 (4 x 26.5 min, eager) | 1.8 | 8.9 |
 | Primary: reveal, verify | 0.2 | 1.0 |
-| Second node: setup 0.5, replay of 2 promotions 1.0, verify 0.1 | 1.6 | 8.1 |
-| **Total** | **6.5** | **about 32.6** |
-| If a random proposal hits the 737 s wall cap in 2 decisions, or compile gives less than assumed | +0.5 | up to about 35 |
+| Second node: setup 0.5, replay of 2 promotions 0.5, verify 0.1 | 1.1 | 5.5 |
+| **Total** | **5.3** | **about 26.5** |
+| If a random proposal hits the 737 s wall cap in 2 decisions, or any stand-in underperforms | +0.5 | up to about 29 |
 
-Q = 5 per arm would add about 0.8 h (4 USD) and reach about 37 to 38 USD; I recommend Q = 4. **Hard ceiling 40 USD; stop and ask if projected spend before creating the second node exceeds 36 USD.**
+Q = 5 per arm would add about 0.6 h (3 USD), to about 30 USD, so Q = 5 now fits comfortably; Q = 4 stays the default and the reserves (null control, `random-5`) are the first thing to add. **Hard ceiling 40 USD; stop and ask if projected spend before creating the second node exceeds 36 USD.**
 
 ## Stop conditions
 
@@ -74,6 +78,6 @@ Supports (if it goes as planned): a promotion that re-derives from signed receip
 
 ## Needed from the user
 
-1. Go or no-go for pilot 2 (about 33 USD expected, ceiling 40).
+1. Go or no-go for pilot 2 (about 27 USD expected, ceiling 40).
 2. The same node authorization as pilot 1: two new H100 nodes, gman with the sandbox bypass for gman only, nothing else touched (`playbox-tp3` and others are not ours).
-3. Whether to keep Q = 4 per arm (recommended) or Q = 5 (about 37 to 38 USD, thinner margin).
+3. Whether to keep Q = 4 per arm (recommended) or Q = 5 (about 30 USD).
