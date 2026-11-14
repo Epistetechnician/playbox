@@ -20,3 +20,6 @@ Traceback (most recent call last):
   File "/Users/shaanp/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/socketserver.py", line 478, in server_bind
     self.socket.bind(self.server_address)
 OSError: [Errno 48] Address already in use
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+telepathy daemon on 127.0.0.1:8765
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.

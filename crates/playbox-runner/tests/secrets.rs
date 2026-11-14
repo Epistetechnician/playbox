@@ -12,6 +12,7 @@ fn docker_ready() -> bool {
         .unwrap_or(false)
 }
 
+// REQ: BOX-1
 #[tokio::test]
 async fn a_task_reads_its_secret_and_nothing_leaks_into_the_workspace_or_the_record() {
     if !docker_ready() {

@@ -1,0 +1,6 @@
+exit=0
+The continuations are mixed, but cars comes up most often: an icy road with a car, an electric vehicle charging station, and a 20-foot truck hauling concrete. Law shows up once (an accident and law enforcement), and the others (coffee, air, Denver elevation) don't fit any listed topic clearly. This is a judgment from eight short samples, so it's a low-confidence call.
+
+ANSWER: cars
+
+--- stderr ---

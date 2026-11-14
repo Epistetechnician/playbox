@@ -18,6 +18,7 @@ async fn start(review: bool) -> (Host, Arc<InMemory>, Arc<SharedMemory>, Client,
     (host, idx, mem, a, b)
 }
 
+// REQ: MEM-1
 #[tokio::test]
 async fn members_share_what_they_know_and_the_host_stamps_the_author() {
     let (host, _idx, _mem, a, b) = start(false).await;
@@ -35,6 +36,7 @@ async fn members_share_what_they_know_and_the_host_stamps_the_author() {
     host.shutdown().await.unwrap();
 }
 
+// REQ: MEM-2
 #[tokio::test]
 async fn revoking_a_member_removes_what_they_said() {
     let (host, idx, mem, a, b) = start(false).await;
@@ -57,6 +59,7 @@ async fn revoking_a_member_removes_what_they_said() {
     host.shutdown().await.unwrap();
 }
 
+// REQ: MEM-3
 #[tokio::test]
 async fn with_review_on_nothing_is_recalled_until_the_host_accepts() {
     let (host, idx, mem, a, b) = start(true).await;
@@ -85,6 +88,7 @@ async fn a_room_without_memory_says_so() {
 
 /// Against a real Hindsight server (not run by default):
 /// `HINDSIGHT_URL=http://127.0.0.1:8888/v1/default cargo test -p playbox-net --test shared_memory -- --ignored`
+// REQ: MEM-5
 #[tokio::test]
 #[ignore = "needs a running Hindsight server"]
 async fn a_real_hindsight_server_serves_the_room() {

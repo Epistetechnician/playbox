@@ -1,0 +1,42 @@
+{
+ "guarded": "medicine",
+ "threshold": 0.5,
+ "by_mix": {
+  "0.0": {
+   "n": 114,
+   "blocked": 3,
+   "median_cos": 0.337,
+   "max_cos": 0.525
+  },
+  "0.1": {
+   "n": 114,
+   "blocked": 10,
+   "median_cos": 0.383,
+   "max_cos": 0.563
+  },
+  "0.25": {
+   "n": 114,
+   "blocked": 29,
+   "median_cos": 0.441,
+   "max_cos": 0.615
+  },
+  "0.5": {
+   "n": 114,
+   "blocked": 96,
+   "median_cos": 0.529,
+   "max_cos": 0.682
+  },
+  "0.75": {
+   "n": 114,
+   "blocked": 114,
+   "median_cos": 0.59,
+   "max_cos": 0.708
+  },
+  "1.0": {
+   "n": 114,
+   "blocked": 114,
+   "median_cos": 0.615,
+   "max_cos": 0.691
+  }
+ }
+}

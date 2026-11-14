@@ -6,7 +6,7 @@ Start a room from your own agent (Claude Code, Codex, Hermes, OpenCode). Share a
 
 On top of that sits the research half of the project: **swarm telepathy** (agents on different model families passing a concept as 64 bytes of latent vector, with no text) and **collaborative hill-climbing** (a room whose one job is to push a score up, where every promoted step is a verified receipt and becomes the next baseline for everyone).
 
-> Version 0.3.0 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Every claim below links to the file that backs it, and every limit is listed in [What is not proven](#what-is-not-proven).
+> Version 0.3.1 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Most claims below link to the file that backs them. The limits that matter most are in [What is not proven](#what-is-not-proven); the claim-by-claim check is in [docs/audit-claims.md](docs/audit-claims.md).
 
 ---
 
@@ -27,17 +27,17 @@ On top of that sits the research half of the project: **swarm telepathy** (agent
 
 ## At a glance
 
-Counted from the source tree at the commit this README was written against (just before 0.3.0) (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)).
+Counted from the source tree at 0.3.1 plus the unreleased changes after it (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)). The test run in the Tests row is older than the counts.
 
 | | |
 |---|---|
-| **Rust** | 44,560 lines across 8 crates (`playbox-net` 17,685 · `playbox-core` 10,397 · `playbox-cli` 5,285 · `playbox-runner` 4,622 · `playbox-mcp` 4,000 · `playbox-rap` 1,031 · `playbox-git` 897 · `playbox-bridge` 643) |
+| **Rust** | 46,348 lines across 8 crates (`playbox-net` 17,958 · `playbox-core` 10,397 · `playbox-cli` 6,777 · `playbox-runner` 4,624 · `playbox-mcp` 4,002 · `playbox-rap` 1,031 · `playbox-git` 916 · `playbox-bridge` 643) |
 | **Python** | 21,604 lines: steering and telepathy research (11,810), hub app (4,705), orchestrator (1,533), judge (1,443), world view (860), challenge (530), conformance (421), witness plugin (302) |
 | **Lean 4** | 207 lines, 15 theorems, 0 `sorry`: grants can only narrow; expired or revoked grants authorize nothing |
-| **Tests** | 478 Rust tests and 172 Python tests written (counted from source), 10 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run for this README** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure is `playbox-git` `a_hostile_bundle_is_rejected_on_import`; see [What is not proven](#what-is-not-proven) |
+| **Tests** | 494 Rust tests and 172 Python tests written (counted from source; 24 more in `ui/` and `conformance/`), 12 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run for this README** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure was `playbox-git` `a_hostile_bundle_is_rejected_on_import`, fixed afterwards in #11 (see [What is not proven](#what-is-not-proven)). Later re-runs on macOS (git 2.55.0): the full workspace, conformance and the Lean build pass |
 | **CI** | Linux and macOS test matrix, `cargo audit`, Python suites, a rootful and a rootless confinement job, conformance |
-| **Docs** | 21 design and results documents, 3,838 lines |
-| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1 and 0.3.0 (Nov 13). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
+| **Docs** | 24 design and results documents, 4,224 lines |
+| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1, 0.3.0 and 0.3.1 (Nov 13). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
 | **Real-world runs** | Mac ↔ Raspberry Pi 5 over a relay; a friend's agent in India joining a Mac host; a Google Confidential Space TDX VM joined at tier T3 from another network ([docs/tested-on.md](docs/tested-on.md)) |
 
 ### The headline results
@@ -47,7 +47,7 @@ Counted from the source tree at the commit this README was written against (just
 | A concept crosses between two model families with no text | **87.5%** topic recognition over 160 blind trials (20 topics, chance 4.8%), 71 of 72 no-concept controls correctly answered "none" | [docs/steering.md](docs/steering.md), Qwen3-8B ↔ OLMo-2-7B, gated |
 | A third family works once the receiver is steered at the right layer | Qwen3-8B → DeepSeek-7B from **8/80 to 63/80** at layer fraction 0.9 | [docs/steering.md](docs/steering.md) |
 | One shared latent space instead of a map per pair | **64 int8 bytes** per thought; 10 adapters instead of 20 pair maps; hub matches the pair map at 1,000 anchors (0.717 vs 0.716) | [docs/latent-channels.md](docs/latent-channels.md) §6d |
-| A swarm of senders beats a single sender if you filter for novelty | Novelty filter: **55.7%** recall vs 44.5% for one agent; rare concepts found 54.2% vs 11.5% for a plain sum; sign test p = 2e-9 | [steer/results/telepathy/swarm/report.md](steer/results/telepathy/swarm/report.md) |
+| A swarm of senders beats a single sender if you filter for novelty | Novelty filter: **55.7%** recall vs 44.5% for one agent; rare concepts found 54.2% vs 11.5% for a plain sum; sign test vs the plain sum p = 2e-9, vs random agents p = 1e-5 (see the swarm section for the per-direction split) | [steer/results/telepathy/swarm/report.md](steer/results/telepathy/swarm/report.md) |
 | A cooperative hill-climb gate promotes real wins and rejects cheats | Tier B speedup **2.84×** at token-identical output; 4 of 6 submissions rejected (an invalid scheme, a memoizing cheat, a lossy change, a gain under threshold), 2 promoted; **6/6 signed receipts re-verified** | [challenge/results/](challenge/results/) |
 
 ---
@@ -139,7 +139,7 @@ flowchart LR
 
 ### History you can re-verify
 
-Each session writes entries of the form `{seq, prev_hash, kind, payload_hash, time, signer, sig}`. `playbox verify <log>` recomputes the chain and every signature.
+Each session writes entries of the form `{seq, prev, kind, payload_hash, time_ms, signer, sig}`. `playbox verify <log>` recomputes the chain and every signature.
 
 ```mermaid
 flowchart LR
@@ -252,7 +252,7 @@ xychart-beta
 | text "Topics: a, b" (an oracle that gets the true set) | 85.9 | 66.0 (61 to 70) | 82.1 |
 
 - The filter picks one agent from every true concept in **99%** of trials; a random choice of k does so in 32%.
-- It beats summing everything in 127 trials to 48 (exact sign test p = 2e-9) and beats one agent in 140 to 34.
+- It beats summing everything in 127 trials to 48 (exact sign test p = 2e-9), beats one agent in 140 to 34, and beats k randomly chosen agents in 101 to 47 (p = 1e-5). Random agents are the fairer control, and the margin is not uniform: Qwen→OLMo alone is 49 to 31 (p = 0.057, not significant), OLMo→Qwen 52 to 16 (p = 1e-5).
 - Crossing families costs about 11 points of recall against the same-model direction (55.7 vs 67.0).
 - Cost: 0.5 ms to select, about 150 ms per sender to think; the summarizer runs at the same speed with or without the message.
 
@@ -354,19 +354,19 @@ Credit follows signed ancestry, not rank, so a contributor can leave and keep it
 | Layer | What was shown | Evidence in the repo |
 |---|---|---|
 | Rooms over a real network | Join, pull, task, push over the internet from India; relay-only join in 0.3 s, ping 9 ms, task 1.5 s | [docs/tested-on.md](docs/tested-on.md) |
-| Two real machines | Pi hosts, Mac joins; Mac hosts in a libkrun microVM, Pi joins; failover to a replica in 0.3 s; Hermes on the Pi completed a fix in 27 s | [docs/tested-on.md](docs/tested-on.md) |
+| Two real machines | Pi hosts, Mac joins; Mac hosts in a libkrun microVM, Pi joins; a guest switched to a replica in 0.3 s (by hand with `playbox_use_host`; there is no automatic failover); Hermes on the Pi completed a fix in 27 s | [docs/tested-on.md](docs/tested-on.md) |
 | Sandbox | Non-root, no network, fork bomb refused, memory hog killed (137), timeouts enforced; Pi's silently-ignored memory limit found and made a hard refusal | [docs/threat-model.md](docs/threat-model.md) |
 | Revocation | Revoked member refused by the primary and by a replica about 10 ms after the notice | [docs/revocation.md](docs/revocation.md) |
 | T1 hardware identity | Join refused at T0 until the Secure Enclave key was pinned, then verified T1; repeated from India | [docs/attestation.md](docs/attestation.md) |
 | T3 confidential VM | Real TDX token verified; a Mac guest joined a Confidential Space host at T3 across the internet | [docs/trust-layers.md](docs/trust-layers.md) |
 | Grants | Lean theorems with no `sorry`; Rust attacks tried and refused (`security.rs`) | `lean/`, `crates/playbox-net/tests/security.rs` |
-| Parsers | 10 fuzz targets: wire frames, grant tokens, links, attestation, TPM, TDX, latent envelopes | `fuzz/` |
+| Parsers | 12 fuzz targets: wire frames, grant tokens, revocation notices, links, attestation, TPM, TDX, latent envelopes and store, history and audit logs, room state files, capability binding | `fuzz/` |
 | Cross-family latent channel | 87.5% gated over 160 blind trials; 0 infrastructure failures | [docs/steering.md](docs/steering.md) |
 | Swarm | 400 trials, sign tests, per-arm CIs, per-direction breakdown | `steer/results/telepathy/swarm/` |
 | Hill-climb gate | 6 signed receipts; cheats rejected; 2.84× promoted | `challenge/results/` |
 | Release integrity | Signed `SHA256SUMS` checked against a key compiled into the binary; SBOM and build provenance; old binary kept for `--rollback` | [docs/releasing.md](docs/releasing.md), [CHANGELOG.md](CHANGELOG.md) |
 
-Every result file keeps a ceiling label (for example `local_internal_exploratory`) so a number cannot quietly claim more than it earned.
+The latent-channel and steering write-ups label their results with a ceiling (for example `local_internal_exploratory`, in [docs/latent-channels.md](docs/latent-channels.md)) so a number cannot quietly claim more than it earned. The raw result files under `steer/results/` carry no such label.
 
 ### Reproduce the stats
 
@@ -391,7 +391,7 @@ This project's habit is to say what a result does not show. These are the limits
 - **The Commons v0 is one machine.** The "replica" is a second sealed seed, the hardware fingerprint is self-reported (`attested: false`), candidates run as subprocesses behind an import whitelist, and it is not yet wired into a live room. The 2×2 problem is solved; the open target is 3×3 (best known 23).
 - **Attestation proves the platform, not the agent's behavior.** No hardware TPM has been tested, and the libkrun runner on Linux/KVM is untested outside CI confinement.
 - **Rooms are host-centered.** A malicious host can lie about what it ran unless its tier is verified. The admission broker is lexical.
-- **One test fails on a current git.** On git 2.43.0, `a_hostile_bundle_is_rejected_on_import` fails: a bundle whose tree contains `.git/hooks/post-checkout` is imported instead of refused, even though `bundle_import` fetches with `transfer.fsckObjects=true`. The companion test that checks a hook is never *run* on checkout passes. I did not investigate or fix it while writing this README. Until it is understood, treat bundle import from untrusted peers on git 2.43 as unverified; the Docker/microVM sandbox boundary is unaffected.
+- **Bundle import and git versions.** On git 2.43.0 `git fetch` from a bundle file does not apply `transfer.fsckObjects`, so a bundle whose tree contains `.git/hooks/post-checkout` was imported instead of refused; that is why `a_hostile_bundle_is_rejected_on_import` failed in the run above. Reproduced again with plain git in an `ubuntu:24.04` container (2.43.0): the fetch succeeds, and `git -c fsck.hasDotgit=error fsck --strict` on the new tip then fails with `hasDotgit`. `bundle_import` now runs that explicit fsck and restores the ref when it fails (#11, [threat model §4](docs/threat-model.md)); the test passes on git 2.55.0. Re-run since then: `cargo test -p playbox-git` passes 6 of 6 on git 2.43.0 (`ubuntu:24.04`) as well as on 2.55.0 ([docs/proof-status.md](docs/proof-status.md)). The companion test that checks a hook is never *run* on checkout passed throughout. The Docker/microVM sandbox boundary is unaffected.
 - **Self-review.** [docs/threat-model.md](docs/threat-model.md) is written by the authors. Get an independent audit before exposing a host to people you do not know.
 - **Small samples.** Most telepathy cells are one or two seeds; seed-to-seed spread is up to 5 points. A withdrawn benchmark ([docs/kv-hybrid.md](docs/kv-hybrid.md)) is kept in the repo with its retraction, because the first throughput claim did not survive a control.
 
@@ -473,7 +473,7 @@ flowchart TB
 
     TR --> t1["lean/<br/>grant proofs"]
     TR --> t2["fuzz/, conformance/"]
-    TR --> t3["docs/<br/>21 documents"]
+    TR --> t3["docs/<br/>24 documents"]
 ```
 
 A short visual overview for people new to the project: [docs/one-pager.html](docs/one-pager.html).
