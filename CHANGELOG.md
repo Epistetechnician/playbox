@@ -12,6 +12,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [0.3.2] - 2026-11-14
 
 ### Added
+- Hub: **a durable copy of every room's feed**, kept on this machine (`<room home>/archive/`, private, size-capped). When a room's host goes away the canvas, cockpit and room list show what the hub saved, marked offline, with **Download history** (JSON lines). Removing a room deletes its archive.
+- Hub: a warning bar when the Cloudflare Access sign-in expires, with a Sign in again button.
+- `scripts/dev-sign.sh`: sign playbox binaries with one stable local identity so the macOS firewall's answer survives rebuilds; `playbox update` re-signs with it when it is set up.
 - Hub: **Adopt** a room hosted on this machine. A `playbox up --state DIR` host now publishes itself (a private socket under `~/.playbox/hosting`), and Add room > Join lists it with one button; adopting asks for a passkey touch.
 
 ### Security
@@ -19,6 +22,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 - Capability arguments with bidi, zero-width or separator characters are refused, and the host console shows the whole member id and escapes what a member typed.
 
 ### Fixed
+- Hub: reads of a room have deadlines, so an unreachable host can no longer stall the poller (and every other room's updates).
+- Hub: an adopted room joins its host again by itself when its hour-long grant ends or the hub restarts (before, its feed and canvas went blank).
+- Host: a member that is refused again and again for the same reason is recorded once a minute, and a flood of events can no longer push chat messages out of the feed.
 - Releases now include an Intel Mac (`darwin-x86_64`) archive, cross-compiled; the hub bundle (`playbox-hub.tar.gz`) was already built, so `install.sh --join` finds both.
 - The hub and the cockpit no longer wait on a reverse DNS lookup before they listen (it stalled startup on some macOS machines).
 
@@ -29,6 +35,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ### Fixed
 - Hub: it no longer waits on a reverse-DNS lookup (`socket.getfqdn`) before it starts answering; on a machine with a slow resolver, startup could take many seconds.
 - Hub: the Cloudflare tunnel is retried in the background (with backoff) if it fails to start or later drops, instead of the hub staying offline until restarted.
+
+### Changed
+- Guests dial out only: no UDP socket on the iroh and relay transports (the connection goes through the relay; `PLAYBOX_GUEST_DIRECT=1` keeps direct paths), and a socket on 127.0.0.1 only for a host on the same machine. macOS no longer asks to accept incoming connections for a program that only joins rooms.
 
 ## [0.3.1] - 2026-11-13
 

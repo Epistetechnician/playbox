@@ -706,6 +706,7 @@ function meter(pulse, state) {
 function roomRow(r) {
   const sub = `<span class="s-st">${esc(STATE_TXT[r.state] || "")} · </span>` + esc([r.kind === "mine" ? "mine" : "shared", r.machine, r.members ? `${r.members} in room` : ""].filter(Boolean).join(" · "));
   const last = r.holds.length ? `<small class="last warn">Witness paused ${esc(r.holds[0].tool || "a write")}. Open to review.</small>`
+    : r.offline ? `<small class="last warn" title="${esc(r.err || "")}">Host offline. This hub kept ${r.archived} saved message${r.archived === 1 ? "" : "s"}; open to read them.</small>`
     : r.err ? `<small class="last bad">${esc(r.err)}</small>`
     : r.last ? `<small class="last" title="Text from another party is untrusted"><i></i><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</small>` : `<small class="last">No messages yet</small>`;
   return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="/r/${r.id}/canvas" aria-label="Open ${esc(r.label)}">

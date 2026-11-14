@@ -18,6 +18,8 @@ HERE = Path(__file__).resolve().parent.parent
 import sys
 sys.path.insert(0, str(HERE))
 from playbox_ui import Sidecar, witness_state  # noqa: E402
+from .local import ask_host, hosting_dir  # noqa: E402
+from .archive import Archive  # noqa: E402
 
 
 def event_note(text, who):
@@ -78,12 +80,50 @@ class Room:
         self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
         self.last_chain = 0
+        self.last_renew = 0
         self.stop = threading.Event()
         self.mu = threading.Lock()
         self.on_change = None      # set by the hub: persist rec changes
         self.tick_mu = threading.RLock()
         self.notes = []            # (stage, text, level) the poller turns into security events
         self.hold_ids = set()
+        self.archive = Archive(self.home)      # what this hub has seen of the feed, kept on disk: it outlives the host and the host's chat window
+        self.archive_err = None
+        self._gone, self._gone_at = False, 0.0
+
+    def host_gone(self):
+        """True when this room was adopted from a host on this machine and that host no longer answers on its control socket. Cached for 2 s.
+        Calling a dead host through the sidecar can block for a long time (and holds the sidecar for everyone else): never do it when this says no."""
+        hid = self.rec.get("adopted_host")
+        if not hid:
+            return False
+        now = time.time()
+        if now - self._gone_at < 2.0:
+            return self._gone
+        try:
+            self._gone = ask_host(hosting_dir() / f"{hid}.sock", "ping", 1.0) != "ok"
+        except OSError:
+            self._gone = True
+        self._gone_at = now
+        return self._gone
+
+    def gone_digest(self, d):
+        d["err"] = "The room's host is not running any more."
+        d["mode"] = d.get("mode") if d.get("mode") not in (None, "none") else "guest"
+        d["archived"] = self.archive.info()["items"]
+        d["offline"] = bool(d["archived"])
+        d["state"] = "idle"
+        return d
+
+    def keep(self, feed, me=None):
+        """Store a feed read in the archive. A failing disk must never break the poller: say so once, carry on."""
+        try:
+            self.archive.append([i for i in feed.get("items", []) if isinstance(i, dict)], feed.get("members") if isinstance(feed.get("members"), list) else None, me)
+            self.archive_err = None
+        except OSError as e:
+            if self.archive_err is None:
+                self.notes.append(("history", f"Could not save this room's history on disk: {e}", "bad"))
+            self.archive_err = str(e)
 
     @property
     def id(self):
@@ -112,7 +152,36 @@ class Room:
                     self.sidecar.call("playbox_create", {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))})
                 except Exception as e:
                     self.err = f"could not host again: {e}"
+            elif self.sidecar and self.rec.get("adopted_host"):
+                self._rejoin()          # joins live in the sidecar's memory too: an adopted room joins its host again after a restart
             return self.sidecar
+
+    def _rejoin(self):
+        """Join the local host that this room was adopted from again, with a fresh link. Grants last an hour; a restart loses the join entirely."""
+        hid = self.rec.get("adopted_host")
+        if not hid or not self.sidecar or time.time() - self.last_renew < 30:
+            return False
+        self.last_renew = time.time()
+        try:
+            link = ask_host(hosting_dir() / f"{hid}.sock", "link")
+        except OSError as e:
+            self.err = f"the room's host is not answering: {e}"
+            return False
+        if not link.startswith("playbox://"):
+            self.err = link[:160] or "the room's host would not make a link"
+            return False
+        try:
+            self.sidecar.call("playbox_leave", {})          # an error here ("not in a room") is fine
+            err, data = self.sidecar.call("playbox_join", {"link": link})
+        except Exception as e:  # noqa: BLE001
+            self.err = f"could not join again: {e}"
+            return False
+        if err:
+            self.err = f"could not join again: {str(data)[:160]}"
+            return False
+        self.err = None
+        self.notes.append(("join", "Joined the room again with a fresh grant", "ok"))
+        return True
 
     def close(self):
         self.stop.set()
@@ -124,20 +193,27 @@ class Room:
             return self._tick(with_chain)
 
     def _tick(self, with_chain=False):
-        sc = self.ensure()
         d = self.blank()
         d["updated"] = int(time.time() * 1000)
         d["unread"] = self.digest.get("unread", 0)
         d["last"] = self.digest.get("last")
         d["chain"] = self.digest.get("chain")
+        if self.host_gone():
+            return self.gone_digest(d)         # no sidecar call at all: it would only wait on a host that is not there
+        sc = self.ensure()
         if not sc:
             d["err"] = self.err
+            d["archived"] = self.archive.info()["items"]
+            d["offline"] = bool(d["archived"])
             return d
-        err, st = sc.call("playbox_status", {}, wait=1)
+        feed_failed = False
+        err, st = sc.call("playbox_status", {}, wait=1, timeout=6)
         if err and st == "busy":
             return {**self.digest, "label": d["label"], "machine": d["machine"], "kind": d["kind"]}   # cockpit is using it; keep the last digest
         if err or not isinstance(st, dict):
             d["err"] = str(st)[:200]
+            d["archived"] = self.archive.info()["items"]
+            d["offline"] = bool(d["archived"])
             return d
         host, joined = st.get("hosting"), st.get("joined")
         if host and not host.get("replica"):
@@ -149,8 +225,15 @@ class Room:
         d["members"] = len((host or {}).get("members") or []) + (1 if joined else 0)
         d["me"] = (joined or {}).get("member_id") or st.get("guest_id")
         if d["mode"] != "none":
-            ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1)
+            ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1, timeout=6)
+            if ferr and self.rec.get("adopted_host") and isinstance(feed, str) and ("not authorized" in feed or "authorization" in feed or "not in a room" in feed):
+                if self._rejoin():          # the grant ran out (they last an hour): get a new one, then read again
+                    ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1, timeout=6)
             if not ferr and isinstance(feed, dict):
+                if isinstance(feed.get("next"), int) and feed["next"] < self.seq:
+                    self.archive.host_restarted()       # the host's numbering started over: keep the old history as an earlier epoch
+                    self.seq = 0
+                self.keep(feed, d["me"])
                 items = [i for i in feed.get("items", []) if isinstance(i, dict) and i.get("seq", 0) > self.seq]
                 if self.primed:
                     for i in items:
@@ -170,12 +253,13 @@ class Room:
                     if says:
                         m = says[-1]
                         d["last"] = {"from": (m.get("from") or "")[:12], "text": str(m.get("text", ""))[:160], "ms": m.get("time_ms")}
+            feed_failed = bool(ferr)
             if not ferr:
                 self.primed = True
             if with_chain or time.time() - self.last_chain > CHAIN_EVERY:
                 path = st.get("history_log")
                 if path:
-                    verr, v = sc.call("playbox_verify", {"path": path}, wait=2)
+                    verr, v = sc.call("playbox_verify", {"path": path}, wait=2, timeout=10)
                     if not verr and isinstance(v, dict):
                         d["chain"] = {"ok": v.get("valid") is True, "entries": v.get("entries")}
                         self.last_chain = time.time()
@@ -190,6 +274,8 @@ class Room:
         for hid in ids - self.hold_ids:
             self.notes.append(("feed", "Witness paused a write until you decide", "warn"))
         self.hold_ids = ids
+        d["archived"] = self.archive.info()["items"]
+        d["offline"] = bool(d["mode"] != "none" and feed_failed and d["archived"])
         recent = d["last"] and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
         d["state"] = ("hold" if d["holds"] else "empty" if d["mode"] == "none" else "bad" if d["chain"] and not d["chain"]["ok"]
                       else "live" if recent else "idle")
@@ -244,6 +330,7 @@ class Hub:
         if not room:
             return False
         room.close()
+        room.archive.delete()          # removing a room from the hub also forgets what the hub saved of it
         with self.store.lock:
             self.store.d["rooms"] = [r for r in self.store.d["rooms"] if r["id"] != rid]
             self.store.save()

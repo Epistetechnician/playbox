@@ -18,7 +18,9 @@ import shutil
 import socket
 import subprocess
 import sys
+import queue
 import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -37,36 +39,58 @@ class Sidecar:
                                      stderr=subprocess.DEVNULL, text=True, env=env, bufsize=1)
         self.lock = threading.Lock()
         self.next_id = 0
+        self.lines = queue.Queue()          # stdout lines, read by a thread so a call can have a deadline
+        threading.Thread(target=self._pump, daemon=True, name="sidecar-reader").start()
         self.tools = []
         self._rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
                                  "clientInfo": {"name": "playbox-ui", "version": "0.1"}})
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         self.tools = [t["name"] for t in self._rpc("tools/list", {}).get("result", {}).get("tools", [])]
 
+    def _pump(self):
+        try:
+            for line in self.proc.stdout:
+                self.lines.put(line)
+        finally:
+            self.lines.put(None)
+
     def _send(self, msg):
         self.proc.stdin.write(json.dumps(msg) + "\n")
         self.proc.stdin.flush()
 
-    def _rpc(self, method, params):
+    def _rpc(self, method, params, timeout=None):
+        """One request. With `timeout`, stop waiting after that many seconds (raises TimeoutError); the answer, if it ever comes, is skipped by id."""
         self.next_id += 1
         want = self.next_id
         self._send({"jsonrpc": "2.0", "id": want, "method": method, "params": params})
+        end = None if timeout is None else time.monotonic() + timeout
         while True:
-            line = self.proc.stdout.readline()
-            if not line:
+            try:
+                line = self.lines.get(timeout=None if end is None else max(0.0, end - time.monotonic()))
+            except queue.Empty:
+                raise TimeoutError(f"no answer in {timeout:g} s")
+            if line is None:
+                self.lines.put(None)
                 raise RuntimeError("playbox-mcp exited")
-            msg = json.loads(line)
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
             if msg.get("id") == want:
                 return msg
 
-    def call(self, name, args, wait=None):
-        """Returns (is_error, parsed_json_or_text). `wait` seconds to get the lock, else (True, 'busy')."""
+    def call(self, name, args, wait=None, timeout=None):
+        """Returns (is_error, parsed_json_or_text). `wait` seconds to get the lock, else (True, 'busy'). `timeout` seconds for the answer, else (True, 'timeout: ...')
+        (a host that is gone can leave a call waiting a very long time; polls and reads must not)."""
         if not self.lock.acquire(timeout=wait if wait is not None else -1):
             return True, "busy"
         try:
             if self.proc.poll() is not None:
                 return True, "the playbox-mcp sidecar has exited; restart the UI"
-            res = self._rpc("tools/call", {"name": name, "arguments": args}).get("result", {})
+            try:
+                res = self._rpc("tools/call", {"name": name, "arguments": args}, timeout).get("result", {})
+            except TimeoutError as e:
+                return True, f"timeout: {e}"
         finally:
             self.lock.release()
         text = "".join(c.get("text", "") for c in res.get("content", []))

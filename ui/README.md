@@ -106,6 +106,30 @@ Needs `playbox` (or `playbox-mcp`) on PATH, or `PLAYBOX_MCP=/path`. Stdlib Pytho
 
 On wide screens a right-hand "Pulse" panel shows the room state and latest messages beside every tab.
 
+## What the hub keeps of a room
+
+A room's **host** keeps its chat (`chat.jsonl` in its `--state` directory) and a signed audit log. A hub that joined or adopted someone's room only
+*reads* that feed, so it used to show nothing once the host went away, or once the host's bounded chat window had dropped old lines. The hub now
+keeps its own copy:
+
+- **Where:** `<room home>/archive/` (for a hub-created room, `~/.playbox-hub/rooms/<id>/archive/`): `feed-NNNN.jsonl` segments (one JSON object per
+  message or event: `seq`, `kind`, `from`, `name`, `text`, `time_ms`, `epoch`) and `meta.json` (counters, the cursor, the last member list). Directories
+  are `0700` and files `0600`. Nothing leaves this machine.
+- **When:** every time the hub reads a room's feed (its poller, the canvas, the cockpit), new items are appended, once each by sequence number.
+  Appends are fsynced; a crash can only tear the last line, which readers skip and the next append repairs. A host whose numbering started over
+  starts a new `epoch`, so two different histories never merge.
+- **Size:** segments roll at 8 MiB and the oldest are deleted past 256 MiB per room (`PLAYBOX_HUB_ARCHIVE_MAX_MB`).
+- **Offline:** when the host cannot be reached, the canvas, the cockpit's feed and the room list answer from the archive and say so ("Host offline.
+  Showing the history this hub saved"); posting is disabled. For a room adopted from this machine the hub knows the host is gone the moment its control
+  socket stops answering, and never calls the dead host. Every other read has a deadline (6 to 8 s), so one unreachable room cannot stall the others.
+- **Get it out:** `GET /r/<id>/api/history?since=N&limit=M` pages through it; `GET /r/<id>/api/history.jsonl` (the canvas's **Download history**)
+  exports every epoch as JSON lines.
+- **Delete it:** removing a room from the hub also deletes its archive.
+
+What it is not: a replacement for the host's own record (the host's `chat.jsonl` and signed audit log stay the source of truth), and not the room
+memory. Shared *memory* (facts agents store and recall) is a separate, optional feature on a Hindsight server (`playbox up --memory-url`, see
+`docs/latent-channels.md` section 6o). The archive is an exact copy of what was said, for reading and export.
+
 ## How it relates to Hermes
 The UI runs **its own** `playbox-mcp` sidecar. It is you, the person, in the room, next to the agents; it does not
 attach to the sidecar Hermes spawns. Host here and let a Hermes agent join with the link (save it as a file and

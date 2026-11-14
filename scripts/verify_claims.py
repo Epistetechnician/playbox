@@ -56,6 +56,15 @@ check("s3 reproduction topics correct", t3, 71)
 check("s3 reproduction controls answered none", c3, 36)
 check("three-seed pooled topics correct", gated(["big_pair_gated_private", "big_pair_gated_s2_private", "big_pair_gated_s3_private"])[0], 211)
 
+# 1c. Fresh probe (2026-11-14): 248 new live Agent A thoughts, probe refit, then the gated eval with that probe: 70/80, 36/36
+tf, tnf, cf, cnf = gated(["big_pair_gated_fp_private"])
+check("fresh-probe topics correct", tf, 70)
+check("fresh-probe controls answered none", cf, 36)
+rep = json.load(open(TEL / "big_calib_fp_private/probe_report.json"))
+check("fresh probe qwen8b held-out topic pass", rep["qwen8b"]["heldout_pass_rate"]["topic"][0], 77)
+check("fresh probe olmo2 held-out topic pass", rep["olmo2"]["heldout_pass_rate"]["topic"][0], 77)
+check("fresh probe held-out filler pass (both senders)", rep["qwen8b"]["heldout_pass_rate"]["filler"][0] + rep["olmo2"]["heldout_pass_rate"]["filler"][0], 0)
+
 # 2. Qwen3-8B -> DeepSeek-7B, receiver at layer fraction 0.9, two seeds
 t, tn, c, cn = gated(["dsk_pair_r09_s1_private", "dsk_pair_r09_s2_private"])
 check("qwen8b->deepseek layer 0.9 topics correct", t, 139)
