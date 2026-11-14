@@ -81,7 +81,7 @@ to that room's signed history. State lives in `~/.playbox-hub/hub.json` (0600).
 Not covered: no QR pairing yet (copy or share the link); push delivery to real Apple/Google/Mozilla services is implemented but not tested
 against them; the embedded dev browser refuses service-worker scripts, so the worker is exercised in Node (ui/tests/sw_sim.js) rather than a real browser.
 
-Tests: `python3 ui/tests/test_hub.py` (crypto, a software passkey authenticator, and an HTTP run against a real hub: 60 checks).
+Tests: `python3 ui/tests/test_hub.py` (crypto, a software passkey authenticator, and an HTTP run against a real hub; it prints one PASS or FAIL line per check, and has more than the 60 it had when this line was written), `python3 ui/tests/test_install.py` (`install.sh --join` against a local mirror) and `node ui/tests/sw_sim.js`. CI runs all of them and `ui/e2e.py`.
 
 # Playbox cockpit (single room)
 
@@ -122,7 +122,7 @@ tell the agent to use `link_file`), or join a room your agent hosts.
 
 ## Test
 `python3 ui/e2e.py` boots a host UI and a guest UI and drives a full flow over HTTP: access control, create, join, say/feed,
-pull, Docker task with patch, verify, a flipped byte caught, leave, rejoin, revoke, refusal (24 checks).
+pull, Docker task with patch, verify, a flipped byte caught, leave, rejoin, revoke, refusal (it prints one line per check).
 
 **Letting a friend in through Cloudflare Access.** Access only admits the emails on its policy, so a friend could not even open an invite page. The hub treats a short list of paths as public
 (`/i/<id>`, `/api/invite/<id>` status, `/api/invite/<id>/knock` and `/poll`, `/icon.svg`): each needs the invite's own secret or is read-only, is rate-limited per client address, and the host
