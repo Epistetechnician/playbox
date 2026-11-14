@@ -10,6 +10,7 @@ Stdlib only. Binds to 127.0.0.1 unless --lan is given; every request needs the a
 import argparse
 import hmac
 import http.server
+import socketserver
 import json
 import os
 import secrets
@@ -240,6 +241,15 @@ LOCKED = """<!doctype html><meta charset=utf-8><meta name=viewport content="widt
 ICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#171715"/><path d="M340 80h40v40h-40zM184 132h40v40h-40zM236 132h40v40h-40zM288 132h40v40h-40zM184 184h40v40h-40zM236 184h40v40h-40zM288 184h40v40h-40zM340 236h40v40h-40zM184 288h40v40h-40zM236 288h40v40h-40zM288 288h40v40h-40zM340 288h40v40h-40zM184 340h40v40h-40zM236 340h40v40h-40zM288 340h40v40h-40zM340 340h40v40h-40zM184 392h40v40h-40zM236 392h40v40h-40zM288 392h40v40h-40zM340 392h40v40h-40z" fill="#2A2A26"/><path d="M132 80h40v40h-40zM184 80h40v40h-40zM236 80h40v40h-40zM288 80h40v40h-40zM132 132h40v40h-40zM340 132h40v40h-40zM132 184h40v40h-40zM340 184h40v40h-40zM132 236h40v40h-40zM184 236h40v40h-40zM236 236h40v40h-40zM288 236h40v40h-40zM132 288h40v40h-40zM132 340h40v40h-40zM132 392h40v40h-40z" fill="#FF5A1F"/></svg>"""
 
 
+class _LocalServer(http.server.ThreadingHTTPServer):
+    """HTTPServer.server_bind calls socket.getfqdn(), a reverse DNS lookup that can stall for tens of seconds on a CI macOS runner before the
+    socket listens. Nothing here uses server_name."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=7717)
@@ -256,7 +266,7 @@ def main():
     page_path.read_text()  # fail early if missing
     sidecar = Sidecar(a.mcp, a.home)
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(sidecar, token, page_path, a.home or os.environ.get("PLAYBOX_HOME") or str(Path.home() / ".playbox")))
+    srv = _LocalServer((host, a.port), make_handler(sidecar, token, page_path, a.home or os.environ.get("PLAYBOX_HOME") or str(Path.home() / ".playbox")))
     print(f"Playbox UI  http://127.0.0.1:{srv.server_address[1]}/?t={token}", flush=True)
     if a.lan:
         print(f"On your phone  http://{lan_ip()}:{srv.server_address[1]}/?t={token}   (same Wi-Fi; the token is the key)", flush=True)
