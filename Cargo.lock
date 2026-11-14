@@ -3547,7 +3547,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "playbox-bridge"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "a2a-lf",
  "anyhow",
@@ -3561,7 +3561,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-cli"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3583,7 +3583,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-core"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "aes 0.9.4",
  "base64 0.22.1",
@@ -3602,7 +3602,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-git"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "tokio",
@@ -3610,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-mcp"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -3625,7 +3625,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-net"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "a2a-lf",
  "anyhow",
@@ -3654,7 +3654,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-rap"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -3672,7 +3672,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-runner"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",

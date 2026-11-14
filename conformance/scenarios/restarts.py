@@ -4,6 +4,7 @@ import tempfile
 import threading
 
 TIER = "fast"
+# REQ: ROOM-2, ROOM-3, CAP-3, CAP-8
 
 
 def run(ctx):

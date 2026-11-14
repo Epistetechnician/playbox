@@ -10,6 +10,7 @@ Stdlib only. Binds to 127.0.0.1 unless --lan is given; every request needs the a
 import argparse
 import hmac
 import http.server
+import socketserver
 import json
 import os
 import secrets
@@ -17,7 +18,9 @@ import shutil
 import socket
 import subprocess
 import sys
+import queue
 import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -36,36 +39,58 @@ class Sidecar:
                                      stderr=subprocess.DEVNULL, text=True, env=env, bufsize=1)
         self.lock = threading.Lock()
         self.next_id = 0
+        self.lines = queue.Queue()          # stdout lines, read by a thread so a call can have a deadline
+        threading.Thread(target=self._pump, daemon=True, name="sidecar-reader").start()
         self.tools = []
         self._rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
                                  "clientInfo": {"name": "playbox-ui", "version": "0.1"}})
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         self.tools = [t["name"] for t in self._rpc("tools/list", {}).get("result", {}).get("tools", [])]
 
+    def _pump(self):
+        try:
+            for line in self.proc.stdout:
+                self.lines.put(line)
+        finally:
+            self.lines.put(None)
+
     def _send(self, msg):
         self.proc.stdin.write(json.dumps(msg) + "\n")
         self.proc.stdin.flush()
 
-    def _rpc(self, method, params):
+    def _rpc(self, method, params, timeout=None):
+        """One request. With `timeout`, stop waiting after that many seconds (raises TimeoutError); the answer, if it ever comes, is skipped by id."""
         self.next_id += 1
         want = self.next_id
         self._send({"jsonrpc": "2.0", "id": want, "method": method, "params": params})
+        end = None if timeout is None else time.monotonic() + timeout
         while True:
-            line = self.proc.stdout.readline()
-            if not line:
+            try:
+                line = self.lines.get(timeout=None if end is None else max(0.0, end - time.monotonic()))
+            except queue.Empty:
+                raise TimeoutError(f"no answer in {timeout:g} s")
+            if line is None:
+                self.lines.put(None)
                 raise RuntimeError("playbox-mcp exited")
-            msg = json.loads(line)
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
             if msg.get("id") == want:
                 return msg
 
-    def call(self, name, args, wait=None):
-        """Returns (is_error, parsed_json_or_text). `wait` seconds to get the lock, else (True, 'busy')."""
+    def call(self, name, args, wait=None, timeout=None):
+        """Returns (is_error, parsed_json_or_text). `wait` seconds to get the lock, else (True, 'busy'). `timeout` seconds for the answer, else (True, 'timeout: ...')
+        (a host that is gone can leave a call waiting a very long time; polls and reads must not)."""
         if not self.lock.acquire(timeout=wait if wait is not None else -1):
             return True, "busy"
         try:
             if self.proc.poll() is not None:
                 return True, "the playbox-mcp sidecar has exited; restart the UI"
-            res = self._rpc("tools/call", {"name": name, "arguments": args}).get("result", {})
+            try:
+                res = self._rpc("tools/call", {"name": name, "arguments": args}, timeout).get("result", {})
+            except TimeoutError as e:
+                return True, f"timeout: {e}"
         finally:
             self.lock.release()
         text = "".join(c.get("text", "") for c in res.get("content", []))
@@ -240,6 +265,16 @@ LOCKED = """<!doctype html><meta charset=utf-8><meta name=viewport content="widt
 ICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#171715"/><path d="M340 80h40v40h-40zM184 132h40v40h-40zM236 132h40v40h-40zM288 132h40v40h-40zM184 184h40v40h-40zM236 184h40v40h-40zM288 184h40v40h-40zM340 236h40v40h-40zM184 288h40v40h-40zM236 288h40v40h-40zM288 288h40v40h-40zM340 288h40v40h-40zM184 340h40v40h-40zM236 340h40v40h-40zM288 340h40v40h-40zM340 340h40v40h-40zM184 392h40v40h-40zM236 392h40v40h-40zM288 392h40v40h-40zM340 392h40v40h-40z" fill="#2A2A26"/><path d="M132 80h40v40h-40zM184 80h40v40h-40zM236 80h40v40h-40zM288 80h40v40h-40zM132 132h40v40h-40zM340 132h40v40h-40zM132 184h40v40h-40zM340 184h40v40h-40zM132 236h40v40h-40zM184 236h40v40h-40zM236 236h40v40h-40zM288 236h40v40h-40zM132 288h40v40h-40zM132 340h40v40h-40zM132 392h40v40h-40z" fill="#FF5A1F"/></svg>"""
 
 
+
+class _QuickBind(http.server.ThreadingHTTPServer):
+    """Skip `socket.getfqdn()` in `server_bind`: a reverse-DNS lookup that can stall startup for many seconds and is only used in logs."""
+
+    def server_bind(self):
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=7717)
@@ -256,7 +291,7 @@ def main():
     page_path.read_text()  # fail early if missing
     sidecar = Sidecar(a.mcp, a.home)
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = http.server.ThreadingHTTPServer((host, a.port), make_handler(sidecar, token, page_path, a.home or os.environ.get("PLAYBOX_HOME") or str(Path.home() / ".playbox")))
+    srv = _QuickBind((host, a.port), make_handler(sidecar, token, page_path, a.home or os.environ.get("PLAYBOX_HOME") or str(Path.home() / ".playbox")))
     print(f"Playbox UI  http://127.0.0.1:{srv.server_address[1]}/?t={token}", flush=True)
     if a.lan:
         print(f"On your phone  http://{lan_ip()}:{srv.server_address[1]}/?t={token}   (same Wi-Fi; the token is the key)", flush=True)

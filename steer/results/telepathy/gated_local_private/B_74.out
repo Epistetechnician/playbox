@@ -1,0 +1,6 @@
+exit=0
+ANSWER: none
+
+Signal strength is 0.00, which is below the 0.3 threshold. The command reports that no thought was sent, so the continuations are unconditioned and I did not match them to a topic.
+
+--- stderr ---
