@@ -124,6 +124,7 @@ impl Audit {
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub fn open(path: &Path, key: SigningKey) -> Result<Self> {
+        drop_torn_tail(path)?;
         let (seq, prev) = if path.exists() && std::fs::metadata(path)?.len() > 0 {
             let s =
                 verify_with(path, Some(&key.verifying_key().to_bytes())).with_context(|| {
@@ -188,7 +189,17 @@ impl Audit {
         let sig = self.key.sign(hash.as_bytes());
         let line = format!("{body}\t{}\n", hex(&sig.to_bytes()));
         let written = match &mut st.sink {
-            Sink::File(f) => f.write_all(line.as_bytes()).and_then(|()| f.flush()),
+            Sink::File(f) => {
+                let before = f.metadata().map(|m| m.len()).ok();
+                let r = f.write_all(line.as_bytes()).and_then(|()| f.flush());
+                if r.is_err() {
+                    // A partial line would sit in front of the next entry and break the chain for good.
+                    if let Some(n) = before {
+                        let _ = f.set_len(n);
+                    }
+                }
+                r
+            }
             Sink::Stderr => std::io::stderr().write_all(format!("audit: {line}").as_bytes()),
             Sink::Off => Ok(()),
         };
@@ -200,6 +211,20 @@ impl Audit {
             Err(e) => eprintln!("playbox: could not write the audit log: {e}"),
         }
     }
+}
+
+/// Every entry ends in a newline and is written in one call, so a file that does not end in one was cut off in the
+/// middle of an entry (a crash, a full disk). That entry was never acknowledged: cut it off, or the host would refuse
+/// to start on its own log.
+fn drop_torn_tail(path: &Path) -> Result<()> {
+    let Ok(data) = std::fs::read(path) else { return Ok(()) };
+    if data.is_empty() || data.ends_with(b"\n") {
+        return Ok(());
+    }
+    let keep = data.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    eprintln!("playbox: dropping a partly written last entry from the audit log {}", path.display());
+    OpenOptions::new().write(true).open(path)?.set_len(keep as u64)?;
+    Ok(())
 }
 
 /// What a successful check found.
@@ -392,6 +417,22 @@ mod tests {
         );
         // And a host will not silently extend a log that is not its own.
         assert!(Audit::open(&p, k.clone()).is_err());
+    }
+
+    #[test]
+    fn a_torn_last_entry_does_not_lock_the_host_out() {
+        let (p, k) = (tmp("torn"), key(1));
+        let a = Audit::open(&p, k.clone()).unwrap();
+        start(&a, &k);
+        a.record("join", Some("peer"), json!({"ok": true}));
+        drop(a);
+        // A crash in the middle of the next entry.
+        let mut f = OpenOptions::new().append(true).open(&p).unwrap();
+        f.write_all(b"{\"seq\":2,\"t\":1,\"prev\":\"ab").unwrap();
+        drop(f);
+        let a = Audit::open(&p, k.clone()).expect("a torn tail is dropped, not fatal");
+        a.record("push", Some("peer"), json!({}));
+        assert_eq!(verify(&p).unwrap().entries, 3);
     }
 
     #[test]

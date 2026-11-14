@@ -1,6 +1,6 @@
 # What has been tested, and where
 
-Automated tests (`cargo test`, 145 on the last run) run on one machine. This page records the runs that
+Automated tests (`cargo test --workspace`; 494 `#[test]` functions in the Rust source, plus Python suites and the conformance scenarios) run on one machine. This page records the runs that
 used real second machines or hardware, so claims in the other docs can be weighed.
 
 ## Two machines: Mac (Apple Silicon, macOS 26) and Raspberry Pi 5 (Debian 13, aarch64)
@@ -48,9 +48,23 @@ Each run is in the host's audit log (valid hash chain, 71 entries at the end).
 **Found:** `playbox shell` could not take a multi-line capability, so `key=@file` argument values were added. Invites are single-use, so a
 guest whose session ends must be given a new link, and a guest's workspace belongs to its member id.
 
+## Google Confidential Space (Intel TDX), 2026-10-29
+
+A `c3-standard-4` Confidential Space VM produced a real attestation token, which the verifier checks (fixture in `crates/playbox-core/tests/fixtures/confidential-space`).
+A Playbox host then ran as the VM's workload with `PLAYBOX_ATTEST=tdx`, and a guest on a Mac, across the internet through n0's relay, joined with `min_host_tier: T3`
+and verified the host at T3 (its image digest was on the guest's allow-list). Two bugs found and fixed: Google's hardware model string `GCP_INTEL_TDX`, and HTTP
+chunked encoding from the launcher socket. Not tested: a real token with the wrong digest or project (a fixture covers it), and long-running hosts (the token expires).
+Details: [trust-layers.md](trust-layers.md).
+
+## Agents driving the MCP server (2026-10-29)
+
+Codex 0.160.1, OpenCode 1.19.4 and Hermes 0.22.5 each called `playbox_status` through the real agent's MCP loader, and the server's history log shows the call; a headless
+Claude Code joined a room and ran a task as a second member ([adapters/README.md](../adapters/README.md)). Not tested: a running Claude Code receiving live-delivery
+notifications ([live-delivery.md](live-delivery.md)).
+
 ## Not yet tested
 
 - The libkrun runner on Linux/KVM (the Pi has `/dev/kvm`, but libkrun is not packaged for it).
 - A network where direct paths are impossible (the India run used a relay-only link, but direct paths were not blocked).
-- Tier T3 / confidential-VM attestation, and a hardware TPM (a software TPM and the Mac's Secure Enclave were used).
-- Codex and OpenCode driving the MCP server (Claude Code, Hermes and a scripted client have).
+- A hardware TPM (a software TPM and the Mac's Secure Enclave were used), and a confidential VM other than Google Confidential Space.
+- Cloudflare Access in front of a named tunnel, and Web Push to real Apple, Google or Mozilla services ([ui/README.md](../ui/README.md)).

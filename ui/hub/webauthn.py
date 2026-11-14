@@ -1,4 +1,4 @@
-"""Passkeys (WebAuthn level 2, ES256 only), verified in pure Python.
+"""Passkeys (WebAuthn level 2, ES256 and RS256), verified in pure Python.
 
 What is checked: challenge, type, origin host == RP ID, rpIdHash, user-present AND user-verified flags,
 signature over authData || SHA-256(clientDataJSON), and the signature counter when the authenticator has one.
@@ -12,6 +12,10 @@ import struct
 from urllib.parse import urlparse
 
 from . import p256
+
+ES256, RS256 = -7, -257
+RSA_MIN_BITS, RSA_MAX_BITS = 2048, 8192
+SHA256_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")   # DigestInfo for SHA-256 (RFC 8017)
 
 
 def b64u(b):
@@ -76,6 +80,20 @@ def cbor_decode(buf, i=0, depth=0):
     raise WebAuthnError("unsupported CBOR")
 
 
+def rsa_pkcs1_sha256_verify(n, e, msg, sig):
+    """RSASSA-PKCS1-v1_5 / SHA-256 (RFC 8017 8.2.2). Compares the whole padded block, so no Bleichenbacher-style forgeries."""
+    k = (n.bit_length() + 7) // 8
+    if len(sig) != k or int.from_bytes(sig, "big") >= n:
+        return False
+    em = pow(int.from_bytes(sig, "big"), e, n).to_bytes(k, "big")
+    t = SHA256_PREFIX + hashlib.sha256(msg).digest()
+    return em == b"\x00\x01" + b"\xff" * (k - len(t) - 3) + b"\x00" + t
+
+
+def _rsa_key_ok(n, e):
+    return RSA_MIN_BITS <= n.bit_length() <= RSA_MAX_BITS and n & 1 and e & 1 and 65537 <= e < 1 << 64
+
+
 def _client_data(raw, ctype, challenge, rp_id):
     try:
         cd = json.loads(raw)
@@ -125,8 +143,16 @@ def verify_registration(resp, challenge, rp_id):
     if not 16 <= len(cid) <= 1023 or len(cid) != cid_len:
         raise WebAuthnError("bad credential id")
     key, _ = cbor_decode(ad, 55 + cid_len)
-    if not isinstance(key, dict) or key.get(1) != 2 or key.get(3) != -7 or key.get(-1) != 1:
-        raise WebAuthnError("only ES256 (P-256) passkeys are supported")
+    if isinstance(key, dict) and key.get(1) == 3 and key.get(3) == RS256:
+        nb, eb = key.get(-1), key.get(-2)
+        if not (isinstance(nb, bytes) and isinstance(eb, bytes) and 0 < len(eb) <= 8 and nb[:1] != b"\0" and eb[:1] != b"\0"):
+            raise WebAuthnError("bad public key")
+        n, e = int.from_bytes(nb, "big"), int.from_bytes(eb, "big")
+        if not _rsa_key_ok(n, e):
+            raise WebAuthnError("RSA key too small or exponent unsupported (need >= 2048 bits, e >= 65537, odd)")
+        return {"id": b64u(cid), "alg": RS256, "n": nb.hex(), "e": eb.hex(), "count": count}
+    if not isinstance(key, dict) or key.get(1) != 2 or key.get(3) != ES256 or key.get(-1) != 1:
+        raise WebAuthnError("only ES256 (P-256) and RS256 passkeys are supported")
     x, y = key.get(-2), key.get(-3)
     if not (isinstance(x, bytes) and isinstance(y, bytes) and len(x) == len(y) == 32):
         raise WebAuthnError("bad public key")
@@ -146,10 +172,18 @@ def verify_assertion(resp, challenge, rp_id, cred):
         raise WebAuthnError("malformed assertion")
     _client_data(cd_raw, "webauthn.get", challenge, rp_id)
     _, count = _auth_data(ad, rp_id)
-    pub = (int.from_bytes(bytes.fromhex(cred["x"]), "big"), int.from_bytes(bytes.fromhex(cred["y"]), "big"))
-    r, s = p256.der_decode(sig)
-    if not p256.verify_hash(pub, hashlib.sha256(ad + hashlib.sha256(cd_raw).digest()).digest(), r, s):
-        raise WebAuthnError("bad signature")
+    signed = ad + hashlib.sha256(cd_raw).digest()
+    if cred.get("alg") == RS256:
+        if not rsa_pkcs1_sha256_verify(int.from_bytes(bytes.fromhex(cred["n"]), "big"), int.from_bytes(bytes.fromhex(cred["e"]), "big"), signed, sig):
+            raise WebAuthnError("bad signature")
+    else:
+        pub = (int.from_bytes(bytes.fromhex(cred["x"]), "big"), int.from_bytes(bytes.fromhex(cred["y"]), "big"))
+        try:
+            r, s = p256.der_decode(sig)
+        except ValueError:
+            raise WebAuthnError("bad signature")
+        if not p256.verify_hash(pub, hashlib.sha256(signed).digest(), r, s):
+            raise WebAuthnError("bad signature")
     if (count or cred.get("count")) and count <= cred.get("count", 0):
         raise WebAuthnError("signature counter went backwards (cloned authenticator?)")
     return count

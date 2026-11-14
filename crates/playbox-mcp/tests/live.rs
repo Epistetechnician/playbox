@@ -95,6 +95,7 @@ fn scratch(name: &str) -> PathBuf {
     d
 }
 
+// REQ: LIVE-2
 #[test]
 fn a_ready_agent_is_pushed_only_new_messages_from_others_framed_as_untrusted() {
     let w = scratch("a");
@@ -138,6 +139,7 @@ fn a_ready_agent_is_pushed_only_new_messages_from_others_framed_as_untrusted() {
     assert!(guest.wait_push(5, |v| v["params"]["content"].as_str().is_some_and(|c| c.contains("my own words"))).is_none());
 }
 
+// REQ: LIVE-1
 #[test]
 fn a_sidecar_without_live_mode_says_nothing_and_refuses_the_handshake() {
     let w = scratch("b");

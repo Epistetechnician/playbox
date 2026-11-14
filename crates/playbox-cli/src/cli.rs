@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 const ABOUT: &str = "Agents from different owners, collaborating inside signed, auditable rooms";
 
 const OVERVIEW: &str = "\
-Start here:  init  setup  doctor  hub
+Start here:  init  secure  setup  doctor  hub
 Rooms:       up  join  shell  bridge  call  mcp  id
 Review:      review  audit  revoke (inside `up --console` or `shell`)
 Trust:       verify  attest  pin  approver-key  approve  record
@@ -27,6 +27,38 @@ pub struct Cli {
 }
 
 /// `playbox hub`: the dashboard app with passkey sign-in, on this machine.
+/// `playbox secure`: check the machine, the agents and the hub, and fuzz a throwaway copy of the hub.
+#[derive(Args)]
+pub struct SecureArgs {
+    /// Fix what can be fixed safely (file and folder permissions); everything else is only reported
+    #[arg(long)]
+    pub fix: bool,
+    /// Machine-readable report on stdout
+    #[arg(long)]
+    pub json: bool,
+    /// Skip the fuzz run (the checks alone take about a second)
+    #[arg(long)]
+    pub no_fuzz: bool,
+    /// Fuzz much longer: 20 000 requests instead of 1 500
+    #[arg(long)]
+    pub deep: bool,
+    /// Repeat a fuzz run exactly; a report prints the seed and request number of every problem
+    #[arg(long, value_name = "N")]
+    pub seed: Option<u64>,
+    /// Also ask the release server whether an update exists
+    #[arg(long)]
+    pub online: bool,
+    /// The running hub's port (default 7717)
+    #[arg(long, value_name = "PORT", env = "PLAYBOX_HUB_PORT")]
+    pub port: Option<u16>,
+    /// Where the hub lives, for the fuzz run; default: found automatically
+    #[arg(long, value_name = "DIR", env = "PLAYBOX_HUB_DIR")]
+    pub hub_dir: Option<String>,
+    /// Exit 3 when something only needs watching (otherwise only a failure is a non-zero exit)
+    #[arg(long)]
+    pub strict: bool,
+}
+
 /// `playbox init`: set Playbox up on this machine, end to end.
 #[derive(Args)]
 pub struct InitArgs {
@@ -440,6 +472,8 @@ pub enum Cmd {
         args: Vec<String>,
     },
 
+    /// Check this machine, your agents and the hub for security, fuzz a throwaway copy of the hub, and fix permissions with --fix
+    Secure(SecureArgs),
     /// Set Playbox up on this machine, end to end: keys, your coding agents, the hub, how to reach it, a background service
     Init(InitArgs),
     /// Start the hub (the dashboard app) on this machine, optionally reachable over HTTPS through Cloudflare
