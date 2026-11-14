@@ -124,21 +124,25 @@ def test_push_send():
         status = 201
         def __enter__(self): return self
         def __exit__(self, *a): pass
-    real = urllib.request.urlopen
+    real = push._opener.open
     def fake(req, timeout=0):
         seen["req"] = req
         if "gone" in req.full_url:
             raise urllib.error.HTTPError(req.full_url, 410, "gone", {}, None)
         return R()
-    urllib.request.urlopen = fake
+    push._opener.open = fake
     try:
         st = push.send(d, b64u(p256.raw_pub(q)), "https://push.example.net/s/abc")
         r = seen["req"]
         check("push.send: empty body, VAPID auth, TTL", st == 201 and r.data == b"" and r.get_header("Authorization").startswith("Vapid t=".capitalize()[:5]) or r.get_header("Authorization").startswith("vapid t="))
         check("push.send: 410 reported so the sub is dropped", push.send(d, b64u(p256.raw_pub(q)), "https://push.example.net/gone") == 410)
         check("push.send: refuses non-https endpoints", push.send(d, "x", "http://push.example.net/x") == 0)
+        bad = ["https://127.0.0.1/x", "https://localhost/x", "https://[::1]/x", "https://169.254.169.254/latest", "https://intranet/x", "https://printer.local/x",
+               "https://push.example.net:8443/x", "https://u:p@push.example.net/x", "https://push.example.net@evil.example:81/x"]
+        check("push endpoints: IP literals, intranet names, odd ports and credentials refused", not any(push.valid_endpoint(e) for e in bad) and all(push.send(d, "x", e) == 0 for e in bad))
+        check("push endpoints: real push services accepted", all(push.valid_endpoint(e) for e in ("https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/abc", "https://web.push.apple.com/Qabc")))
     finally:
-        urllib.request.urlopen = real
+        push._opener.open = real
 
 
 def test_webauthn():

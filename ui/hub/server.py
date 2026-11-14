@@ -700,9 +700,11 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200 if ok else 404, {"ok": ok})
             if m == "POST" and p == "/api/push/subscribe":
                 ep = str(self.body().get("endpoint", ""))
-                if not ep.startswith("https://") or len(ep) > 1000:
+                if not webpush.valid_endpoint(ep):
                     raise AuthError(400, "bad endpoint")
                 with store.lock:
+                    if len(store.d["push"]) >= webpush.MAX_SUBS and not any(s["endpoint"] == ep for s in store.d["push"]):
+                        raise AuthError(429, "too many notification subscriptions")
                     if not any(s["endpoint"] == ep for s in store.d["push"]):
                         store.d["push"].append({"endpoint": ep, "name": rec["name"], "created": time.time()})
                         store.save()
