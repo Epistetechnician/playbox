@@ -62,6 +62,10 @@ const MAX_FRAME: usize = 256 * 1024 * 1024;
 /// a connection is at most this big. After one request succeeds with an invite or a grant, the connection
 /// may send up to `MAX_FRAME`. Clients with a large first request send a tiny one first (see `Client`).
 pub const MAX_UNAUTHENTICATED_REQUEST: usize = 64 * 1024;
+/// How many requests one connection may make before one of them succeeds with an invite or a grant. Each refused
+/// request is written to the audit log and the feed, so without a bound a stranger could fill the host's disk over a
+/// single open connection. An honest client needs a handful (card, attestation, join).
+pub const MAX_UNAUTHENTICATED_REQUESTS: u32 = 32;
 /// How long a connection that has proved something may sit idle, or take to send one request.
 const AUTHENTICATED_PATIENCE: Duration = Duration::from_secs(15 * 60);
 /// Tasks remembered per member for `GetTask` / `ListTasks`.
@@ -1430,7 +1434,15 @@ impl ProtocolHandler for RoomHandler {
             return Ok(());
         };
         let mut authenticated = false;
+        let mut unproven = 0u32;
         loop {
+            if !authenticated {
+                unproven += 1;
+                if unproven > MAX_UNAUTHENTICATED_REQUESTS {
+                    conn.close(3u32.into(), b"too many requests without a grant");
+                    return Ok(());
+                }
+            }
             let (patience, cap) = if authenticated {
                 (self.cfg.authenticated_patience, MAX_FRAME)
             } else {

@@ -267,6 +267,26 @@ async fn a_stranger_cannot_make_the_host_swallow_a_huge_request() {
     );
 }
 
+/// Every refused request is written to the audit log and the feed, so a stranger must not be able to keep one
+/// connection open and make them without end.
+#[tokio::test]
+async fn a_stranger_gets_a_bounded_number_of_refused_requests_per_connection() {
+    let host = host_alone().await;
+    let ep = stranger().await;
+    let conn = ep.connect(host.addr(), playbox_net::ALPN).await.unwrap();
+    let mut answered = 0;
+    for _ in 0..(playbox_net::MAX_UNAUTHENTICATED_REQUESTS * 3) {
+        if ask(&conn, &frame("tasks/list")).await.is_err() {
+            break;
+        }
+        answered += 1;
+    }
+    assert!(
+        answered <= playbox_net::MAX_UNAUTHENTICATED_REQUESTS,
+        "{answered} refused requests were answered on one connection"
+    );
+}
+
 #[tokio::test]
 async fn silent_connections_are_dropped() {
     let host = host_alone().await;
