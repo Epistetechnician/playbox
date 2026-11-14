@@ -93,3 +93,7 @@ To make a leaked link useless, bind it to the guest: the guest runs `playbox id`
 `playbox_create` with `for_guest`; console: `link <id>`). Only that key can redeem the invite. Anyone else is
 refused and cannot use it up. A bound link makes the guest join with its stable identity key
 (`$PLAYBOX_HOME/guest.key`); unbound links still use a fresh throwaway key each time.
+
+## Where the host listens (`PLAYBOX_BIND`)
+
+By default the host's UDP socket listens on every interface, so macOS asks to allow incoming connections for each new build and the port is reachable from the whole network. `PLAYBOX_BIND=loopback` listens on 127.0.0.1 only (no prompt; members reach the host through the relay with `iroh` or `relay:`, or from this machine with `local`). `PLAYBOX_BIND=<ip>` listens on that one address. `all` or unset is the default. `scripts/macos-allow.sh` allows the installed binary in the macOS firewall instead.

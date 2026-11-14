@@ -97,6 +97,7 @@ impl Transport {
     }
 
     pub(crate) fn configure(&self, b: Builder) -> Result<Builder> {
+        let b = bind_from_env(b, std::env::var("PLAYBOX_BIND").ok().as_deref())?;
         Ok(match self {
             Self::Local => b,
             Self::Iroh => b,
@@ -118,6 +119,26 @@ impl Transport {
             Self::Local | Self::Relay { .. } => iroh::Endpoint::builder(presets::Minimal),
         }
     }
+}
+
+/// Where the endpoint's UDP socket listens. By default on every interface, which makes macOS ask "allow incoming
+/// connections?" for each new build of the program, and exposes the port to the whole network.
+///
+/// `PLAYBOX_BIND=loopback`: listen on 127.0.0.1 only. No prompt, and nothing on the network can reach the host
+/// directly; with `iroh` or `relay:` transports, members still connect through the relay (outbound only), and with
+/// `local` only processes on this machine can. `PLAYBOX_BIND=<ip>` listens on that one address (a LAN or VPN address).
+fn bind_from_env(b: Builder, value: Option<&str>) -> Result<Builder> {
+    let Some(v) = value.map(str::trim).filter(|v| !v.is_empty() && *v != "all") else {
+        return Ok(b);
+    };
+    let ip: std::net::IpAddr = if v == "loopback" {
+        std::net::Ipv4Addr::LOCALHOST.into()
+    } else {
+        v.parse().with_context(|| format!("PLAYBOX_BIND must be `loopback`, `all` or an IP address, got {v:?}"))?
+    };
+    b.clear_ip_transports()
+        .bind_addr(std::net::SocketAddr::new(ip, 0))
+        .map_err(|e| anyhow!("cannot listen on {ip}: {e}"))
 }
 
 /// Which transport a joiner uses.
@@ -214,6 +235,16 @@ mod tests {
             Transport::Local
         );
         assert_eq!(TransportChoice::FromLink.resolve(None), Transport::Iroh);
+    }
+
+    #[test]
+    fn bind_setting_is_validated() {
+        let b = || iroh::Endpoint::builder(presets::Minimal);
+        assert!(bind_from_env(b(), None).is_ok());
+        assert!(bind_from_env(b(), Some("all")).is_ok());
+        assert!(bind_from_env(b(), Some("loopback")).is_ok());
+        assert!(bind_from_env(b(), Some("192.168.1.5")).is_ok());
+        assert!(bind_from_env(b(), Some("not-an-ip")).is_err());
     }
 
     #[test]
