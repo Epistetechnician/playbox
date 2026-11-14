@@ -38,10 +38,10 @@
   "head_dim": 64,
   "device_batch": 16,
   "total_batch": 8192,
-  "plan_steps": 300
+  "plan_steps": 150
  },
  "calibration": {
-  "steps": 200,
+  "steps": 100,
   "gap_seeds": [
    11,
    12,
