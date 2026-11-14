@@ -1,0 +1,8 @@
+{"seq": 1, "author": "scripted-1", "candidate": "a8c77fab8beb", "verdict": "reject", "reason": "gain_below_threshold", "gain": 0.0012, "receipt": "d88291ddb727"}
+{"seq": 2, "author": "scripted-2", "candidate": "c38b570872a9", "verdict": "reject", "reason": "target_not_reached", "gain": null, "receipt": "280f87a09e10"}
+{"seq": 3, "author": "scripted-3", "candidate": "556f1dd61566", "verdict": "reject", "reason": "gain_below_threshold", "gain": -0.0811, "receipt": "e3e0f89a0af5"}
+{"seq": 4, "author": "scripted-4", "candidate": "314fc7977da0", "verdict": "reject", "reason": "gain_below_threshold", "gain": -0.0001, "receipt": "1f4109a49c0b"}
+{"seq": 5, "author": "scripted-5", "candidate": "39079932c004", "verdict": "reject", "reason": "holdout_failed", "gain": 0.8655, "receipt": "0bf679d59ced"}
+{"seq": 6, "author": "scripted-6", "candidate": "1b3df86124b6", "verdict": "reject", "reason": "gain_below_threshold", "gain": -0.1579, "receipt": "8dc84b7a49d1"}
+{"seq": 7, "author": "scripted-7", "candidate": "dcdacc9ecdfe", "verdict": "reject", "reason": "gain_below_threshold", "gain": 0.0403, "receipt": "5256d376528a"}
+{"seq": 8, "author": "scripted-8", "candidate": "6a07d1d15a17", "verdict": "reject", "reason": "gain_below_threshold", "gain": 0.0389, "receipt": "8c0f7a4e53c1"}

@@ -49,8 +49,8 @@ def hardware() -> dict:
     return {"machine": platform.machine(), "system": platform.platform(), "python": platform.python_version(), "attested": False}
 
 
-def append_receipt(log: Path, body: dict) -> dict:
-    k = host_key()
+def append_receipt(log: Path, body: dict, key: Ed25519PrivateKey | None = None) -> dict:
+    k = key or host_key()
     prev = "0" * 64
     if log.exists() and log.read_text().strip():
         prev = json.loads(log.read_text().strip().splitlines()[-1])["id"]
