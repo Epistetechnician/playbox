@@ -9,6 +9,12 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Changed
+- Guests dial out only: no UDP socket on the iroh and relay transports (the connection goes through the relay; `PLAYBOX_GUEST_DIRECT=1` keeps direct paths), and a socket on 127.0.0.1 only for a host on the same machine. macOS no longer asks to accept incoming connections for a program that only joins rooms.
+
+### Added
+- `scripts/dev-sign.sh`: sign playbox binaries with one stable local identity so the macOS firewall's answer survives rebuilds; `playbox update` re-signs with it when it is set up.
+
 ### Fixed
 - Hub: an adopted room joins its host again by itself when its hour-long grant ends or the hub restarts (before, its feed and canvas went blank).
 - Host: a member that is refused again and again for the same reason is recorded once a minute, and a flood of events can no longer push chat messages out of the feed.
