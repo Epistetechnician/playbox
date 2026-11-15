@@ -608,6 +608,9 @@ def test_http():
         check("system lists the eight stages in order", st == 200 and [x["id"] for x in sysj["stages"]] == ["edge", "auth", "invite", "knock", "approve", "join", "feed", "history"])
         check("system counts the invites just made", sysj["live"]["invite"]["count"] >= 2 and any(e["stage"] == "invite" for e in sysj["events"]))
         check("a key invite is flagged as a warning, an approval invite is not", any(e["stage"] == "invite" and e["level"] == "warn" for e in sysj["events"]))
+        hh = sysj.get("health") or {}
+        check("system carries a health report: tunnel, one entry per room, problems", {"tunnel", "rooms", "problems", "ok"} <= set(hh) and len(hh["rooms"]) == len(sysj["rooms"]) and isinstance(hh["started_ms"], int))
+        check("a hub with no tunnel configured does not call that a problem", not hh["tunnel"]["configured"] and not any("tunnel" in x.lower() for x in hh["problems"]))
         check("posture has the core checks", {"edge", "passkey", "weak", "stepup", "invites", "knocks", "chain", "push"} <= {c["id"] for c in sysj["posture"]})
         blob = json.dumps(sysj)
         check("system never carries a link, a key or a room secret", "playbox://" not in blob and ilink[10:60] not in blob)

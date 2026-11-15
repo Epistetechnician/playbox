@@ -48,6 +48,9 @@ def is_local(peer, headers):
         return False
 
 
+STARTED = time.time()
+
+
 def make_handler(hub, auth, store, opts):
     invites = Invites(store)
     integ = Integrations(store)
@@ -171,10 +174,26 @@ def make_handler(hub, auth, store, opts):
             rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
             checks = posture(public=public, access=bool(opts.get("access")), creds=len(store.d["creds"]), weak_sessions=weak, invites=inv, knocks=knocks,
                              push=len(store.d["push"]), rooms=rooms, fresh=fresh)
-            return {"machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
+            return {"health": self.health(), "machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
                     "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
                               "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
                     "rooms": rooms}
+
+        def health(self):
+            """What is broken or about to be, in plain fields: the tunnel, and for each room its host, its last error and when its grant was renewed.
+            A grant lasts an hour; an adopted room asks for a new one by itself, so `renewed_ms` older than that with an error means it is stuck."""
+            ts = opts.get("tunnel_state")
+            proc = ts.get("proc") if ts else None
+            tunnel = {"configured": bool(opts.get("cloudflare")), "up": bool(proc is not None and proc.poll() is None), "url": opts.get("public_url") or ""}
+            rooms = []
+            for r in list(hub.rooms.values()):
+                d = r.digest
+                rooms.append({"id": r.id, "label": r.rec.get("label", ""), "state": d.get("state"), "mode": d.get("mode"), "err": d.get("err") or r.err,
+                              "offline": bool(d.get("offline")), "hosted": r.rec.get("host") is not None, "adopted": bool(r.rec.get("adopted_host")),
+                              "host_gone": r.host_gone(), "renewed_ms": int(r.last_renew * 1000) or None, "rehosted_ms": int(r.last_rehost * 1000) or None})
+            problems = ([] if tunnel["up"] or not tunnel["configured"] else ["The Cloudflare tunnel is down: the public address does not work. The hub is retrying."]) \
+                + [f'{x["label"] or x["id"]}: {x["err"]}' for x in rooms if x["err"]]
+            return {"tunnel": tunnel, "rooms": rooms, "problems": problems, "ok": not problems, "started_ms": int(STARTED * 1000)}
 
         def need_fresh(self, rec):
             if auth.is_fresh(rec, is_local(self.peer, self.hdrs())):
@@ -1105,6 +1124,7 @@ def main(argv=None):
         threading_serve.start()     # cloudflared checks the origin as it connects, so serve first
         cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
         tunnel_state = {"proc": cf_proc}
+        opts["tunnel_state"] = tunnel_state
         tunnel_stop = threading.Event()
         threading.Thread(target=keep_tunnel, daemon=True, args=(tunnel_state, opts, lambda: start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname), tunnel_stop),
                          kwargs={"first": float(os.environ.get("PLAYBOX_TUNNEL_RETRY", "5"))}).start()

@@ -911,6 +911,12 @@ const VIEWS = {
       <div class="card"><h2>Apps</h2>${apps}</div></div>`;
   },
   system() {
+    const healthCard = y => {
+      const h = y.health; if (!h) return "";
+      const t = h.tunnel, tun = !t.configured ? "" : `<div class="chk"><i class="led ${t.up ? "ok" : "bad"}"></i><b>Public address</b><span class="dt">${t.up ? esc(t.url || "up") : "down: the hub is retrying"}</span></div>`;
+      const rr = h.rooms.map(r => `<div class="chk"><i class="led ${r.err ? "bad" : r.offline || r.host_gone ? "warn" : "ok"}"></i><b>${esc(r.label || r.id)}</b><span class="dt">${esc(r.err || (r.host_gone ? "its host is not running" : r.offline ? "showing saved history" : r.hosted ? "hosting here" : r.adopted ? "joined from this machine" : "joined"))}${r.renewed_ms ? ` · grant renewed ${esc(ago(r.renewed_ms))}` : ""}</span></div>`).join("");
+      return `<div class="card" style="margin:14px 0"><h2>Health ${h.ok ? '<span class="chip ok">all good</span>' : `<span class="chip warn">${h.problems.length} to look at</span>`}</h2><div>${tun}${rr || '<p class="mut" style="margin:0">No rooms yet.</p>'}</div><p class="mut" style="font-size:12.5px;margin:10px 0 0">Hub up since ${esc(ago(h.started_ms))}.</p></div>`;
+    };
     const y = S.sys, head = `<div class="sect"><h2 class="rule"><span class="ix">03</span>System</h2></div>`;
     if (!y) return head + (S.sysErr ? `<div class="card empty">${esc(S.sysErr)}</div>` : `<div class="boot">Reading the live protocol state</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div>`);
     const bad = y.posture.filter(c => c.level === "bad").length, warn = y.posture.filter(c => c.level === "warn").length, ok = y.posture.length - bad - warn;
@@ -941,6 +947,7 @@ const VIEWS = {
       <div class="sect tools"><h2 class="rule"><span class="ix">·</span>The workflow, live</h2><span class="mut" style="font-size:12.5px">${sel ? `Filtered to ${esc(names[sel])}. Tap it again to clear.` : "Tap a stage to filter the trail."}</span></div>
       <div class="zones"><span>Internet</span><span>Hub · you hold the keys</span><span>Room · agents</span></div>
       <div class="flow">${nodes}</div>
+      ${healthCard(y)}
       ${machineCard(y)}
       <div class="syscols"><div class="card"><h2>Controls</h2><div>${checks}</div></div>
         <div class="card"><h2>Live trail</h2><div class="trail" id="trail">${rows}</div></div></div>
