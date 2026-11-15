@@ -184,7 +184,10 @@ impl Book {
         if roster.len() < 2 || roster.len() > MAX_ROSTER {
             bail!("a conversation has 2 to {MAX_ROSTER} members");
         }
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if i.convs.values().filter(|c| c.creator == creator).count() >= MAX_PER_CREATOR {
             bail!("too many conversations ({MAX_PER_CREATOR})");
         }
@@ -222,7 +225,10 @@ impl Book {
         members: &[String],
         is_member: &dyn Fn(&str) -> bool,
     ) -> Result<Conversation> {
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let c = i
             .convs
             .get_mut(conv)
@@ -273,7 +279,10 @@ impl Book {
         if !valid_id(request_id) {
             bail!("request_id must be 1-64 letters, digits, - _ .");
         }
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let c = i
             .convs
             .get(conv)
@@ -323,7 +332,10 @@ impl Book {
     ///
     /// Refuses a reader who is not on the roster.
     pub fn read(&self, who: &str, conv: &str, since: u64, mark: bool) -> Result<View> {
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let c = i
             .convs
             .get_mut(conv)
@@ -367,7 +379,10 @@ impl Book {
     /// The conversations `who` is on, with unread counts.
     #[must_use]
     pub fn list(&self, who: &str) -> Value {
-        let i = self.inner.lock().expect("conversations lock");
+        let i = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         json!(i
             .convs
             .values()
@@ -387,7 +402,10 @@ impl Book {
         who: &str,
         after: &BTreeMap<String, u64>,
     ) -> Vec<(String, String, Entry)> {
-        let i = self.inner.lock().expect("conversations lock");
+        let i = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut out = Vec::new();
         for c in i
             .convs

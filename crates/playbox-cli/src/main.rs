@@ -1,3 +1,5 @@
+#![allow(unsafe_code)] // audited FFI/syscall boundary; see SAFETY comments
+
 mod cli;
 mod control;
 mod doctor;

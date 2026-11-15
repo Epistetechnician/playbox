@@ -146,7 +146,9 @@ impl State {
 /// Verify `text` and apply it. `Ok(true)` if it changed anything.
 pub(crate) fn apply_text(state: &Mutex<State>, auth: &Authority, text: &str) -> Result<bool> {
     let n = Notice::parse(text, auth)?;
-    let mut st = state.lock().expect("state lock");
+    let mut st = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let new = st.apply(&n, text);
     if new {
         st.save();
@@ -239,7 +241,12 @@ impl Replication {
     }
 
     pub fn stop(&self) {
-        for t in self.tasks.lock().expect("tasks lock").drain(..) {
+        for t in self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain(..)
+        {
             t.abort();
         }
     }
@@ -268,7 +275,10 @@ impl Replication {
             // Already running: remember the new peers (replacing any older address for the same host)
             // and ask gossip to dial them.
             {
-                let mut known = r.peers.lock().expect("peers lock");
+                let mut known = r
+                    .peers
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 for p in peers {
                     known.retain(|k| k.id != p.id);
                     known.push(p);

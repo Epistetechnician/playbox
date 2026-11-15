@@ -57,7 +57,10 @@ pub struct Admission {
 
 impl Drop for Admission {
     fn drop(&mut self) {
-        let mut g = self.inner.lock().expect("limiter lock");
+        let mut g = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(n) = g.inflight.get_mut(&self.who) {
             *n = n.saturating_sub(1);
             if *n == 0 {
@@ -123,7 +126,10 @@ impl Limiter {
 
     fn admit_at(&self, who: EndpointId, now: Instant) -> Result<Admission, LimitError> {
         let c = &self.cfg;
-        let mut g = self.inner.lock().expect("limiter lock");
+        let mut g = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if g.started >= c.task_budget {
             return Err(LimitError::Budget(c.task_budget));
         }

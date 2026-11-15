@@ -172,7 +172,10 @@ impl Audit {
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn record(&self, event: &str, peer: Option<&str>, details: Value) {
         self.chat.event(event, peer, &details);
-        let mut st = self.state.lock().expect("audit lock");
+        let mut st = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if matches!(st.sink, Sink::Off) {
             return;
         }

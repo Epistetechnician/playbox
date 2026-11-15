@@ -341,7 +341,10 @@ impl Browser {
     }
 
     fn rate_ok(&self, who: &str) -> bool {
-        let mut g = self.visits.lock().expect("visit lock");
+        let mut g = self
+            .visits
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let q = g.entry(who.to_string()).or_default();
         let now = Instant::now();
         while q

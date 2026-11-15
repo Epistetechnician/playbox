@@ -361,7 +361,10 @@ impl Backend for InMemory {
 
     async fn recall(&self, bank: &str, req: &RecallRequest) -> Result<Vec<RawHit>> {
         let q = words(&req.query);
-        let g = self.banks.lock().expect("index lock");
+        let g = self
+            .banks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut hits: Vec<(usize, RawHit)> = g
             .get(bank)
             .into_iter()
@@ -391,7 +394,12 @@ impl Backend for InMemory {
             .lock()
             .expect("index lock")
             .push(doc.to_string());
-        if let Some(b) = self.banks.lock().expect("index lock").get_mut(bank) {
+        if let Some(b) = self
+            .banks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_mut(bank)
+        {
             b.remove(doc);
         }
         Ok(())
@@ -601,7 +609,10 @@ impl SharedMemory {
     }
 
     fn rate_ok(&self, author: &str) -> bool {
-        let mut g = self.posts.lock().expect("post lock");
+        let mut g = self
+            .posts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let q = g.entry(author.to_string()).or_default();
         let now = Instant::now();
         while q
@@ -651,7 +662,10 @@ impl SharedMemory {
         };
         let _io = self.io.lock().await;
         let (replaces, same) = {
-            let g = self.ledger.lock().expect("ledger lock");
+            let g = self
+                .ledger
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let old = g.get(&doc);
             if old.is_none() {
                 if g.len() >= self.cfg.max_entries {
@@ -747,7 +761,10 @@ impl SharedMemory {
             .recall(&self.cfg.room, &req)
             .await
             .map_err(|e| format!("{e:#}"))?;
-        let g = self.ledger.lock().expect("ledger lock");
+        let g = self
+            .ledger
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut seen = BTreeSet::new();
         let mut out = Vec::new();
         for h in raw {
@@ -800,7 +817,10 @@ impl SharedMemory {
             if self.cfg.backend.delete(&self.cfg.room, &d).await.is_ok()
                 && self.append(&Line::Del { doc: d.clone() }).is_ok()
             {
-                self.ledger.lock().expect("ledger lock").remove(&d);
+                self.ledger
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remove(&d);
                 n += 1;
             }
         }

@@ -232,7 +232,10 @@ impl SteerHost {
 
     /// Count a run against `who`'s budget, before it starts so a failing run cannot be repeated for free.
     fn charge(&self, who: EndpointId, tokens: u64) -> Result<()> {
-        let mut u = self.usage.lock().expect("usage lock");
+        let mut u = self
+            .usage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let used = u.entry(who).or_default();
         if used.runs >= self.caps.max_runs {
             bail!("steering budget used up: {} runs", self.caps.max_runs);
@@ -260,7 +263,10 @@ fn load_quarantine(path: &Path) -> std::collections::HashSet<EndpointId> {
 
 impl SteerHost {
     fn quarantine(&self, who: EndpointId) {
-        let mut q = self.quarantined.lock().expect("quarantine lock");
+        let mut q = self
+            .quarantined
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         q.insert(who);
         let ids: Vec<String> = q.iter().map(std::string::ToString::to_string).collect();
         if let Ok(b) = serde_json::to_vec(&ids) {
@@ -954,7 +960,13 @@ impl RoomHandler {
     /// Resolves once `who` is banned, here or by a notice that reached this host.
     async fn until_banned(&self, who: EndpointId) {
         loop {
-            if self.state.lock().expect("state lock").banned.contains(&who) {
+            if self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .banned
+                .contains(&who)
+            {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;

@@ -214,7 +214,10 @@ impl Chat {
     pub fn open(path: &Path) -> Self {
         let chat = Self::new();
         {
-            let mut g = chat.inner.lock().expect("chat lock");
+            let mut g = chat
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut lines = 0usize;
             // Bytes, not a string: a crash can cut the last line inside a multi-byte character, and that must cost
             // that one line, not the whole history.
@@ -336,7 +339,10 @@ impl Chat {
             return Err("nothing to say".into());
         }
         let name = name.map(|n| clean(n, MAX_NAME)).filter(|n| !n.is_empty());
-        let mut g = self.inner.lock().expect("chat lock");
+        let mut g = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = now_ms();
         let key = request_id.map(|id| (from.to_string(), id.to_string()));
         let hash = blake3::hash(format!("{}\n{text}", name.as_deref().unwrap_or("")).as_bytes())
@@ -403,7 +409,10 @@ impl Chat {
 
     /// Something happened in the room. Only a short summary is kept, never arguments or reasons in full.
     pub fn event(&self, event: &str, peer: Option<&str>, details: &Value) {
-        let mut g = self.inner.lock().expect("chat lock");
+        let mut g = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(p) = peer {
             Self::mark_seen(&mut g, p, now_ms());
         }
@@ -415,7 +424,10 @@ impl Chat {
 
     /// Mark a member as present (they polled).
     pub fn touch(&self, who: &str) {
-        let mut g = self.inner.lock().expect("chat lock");
+        let mut g = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Self::mark_seen(&mut g, who, now_ms());
     }
 
@@ -465,7 +477,10 @@ impl Chat {
 
     /// Everything after `since` (at most `limit`), plus who is here. `members` are the ids to list.
     pub fn since(&self, since: u64, limit: usize, members: &[String]) -> Feed {
-        let g = self.inner.lock().expect("chat lock");
+        let g = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = now_ms();
         let items: Vec<Item> = g
             .items
