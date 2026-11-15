@@ -72,7 +72,7 @@ def test_channels_only_where_they_apply():
     from playbox_steer.kv_hybrid import BM25
     bm = BM25([c["text"] for c in chunks])
     seen = {}
-    for arm in ("hybrid", "latent_free", "latent_q", "swarm", "text_word"):
+    for arm in ("hybrid", "latent_free", "latent_q", "swarm", "text_word", "text_swarm"):
         io, meter = Stub(), M.Meter()
         M.run_arm(arm, io, chunks, bm, sessions, CONCEPTS, meter, latent=FakeLatent(), lexicon_id=lexicon_id)
         seen[arm] = io.calls
@@ -82,6 +82,7 @@ def test_channels_only_where_they_apply():
         assert "prefill" not in seen[arm] and [c[2] for c in gens(arm)] == [True, False, False] * 2  # vector on the topic turn only
     assert seen["swarm"].count("prefill") == 2 and [(c[1], c[2]) for c in gens("swarm")] == [(False, True), (True, False), (True, False)] * 2
     assert "prefill" not in seen["text_word"]
+    assert seen["text_swarm"].count("prefill") == 2 and [(c[1], c[2]) for c in gens("text_swarm")] == [(False, False), (True, False), (True, False)] * 2
 
 
 def test_cached_prefix_gives_the_same_tokens_and_survives_reuse(llama_dir):

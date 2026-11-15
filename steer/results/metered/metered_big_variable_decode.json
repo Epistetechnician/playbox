@@ -1,0 +1,288 @@
+{
+ "sender": "/home/dev/tp/hf/hub/models--allenai--OLMo-2-1124-7B/snapshots/7df9a82518afdecae4e8c026b27adccc8c1f0032",
+ "receiver": "/home/dev/tp/hf/hub/models--Qwen--Qwen3-8B-Base/snapshots/49e3418fbbbca6ecbdf9608b4d22e5a407081db4",
+ "n_sessions": 40,
+ "fact_turns": 7,
+ "corpus_chunks": 360,
+ "corpus_tokens": 58656,
+ "rate_usd_h": 3.765,
+ "amortise_sessions": 1000,
+ "fit_s": 528.43,
+ "map": {
+  "heldout_cosine_by_lambda": {
+   "0.1": 0.8657,
+   "0.3": 0.8801,
+   "1.0": 0.8846,
+   "3.0": 0.8769
+  },
+  "lambda": 1.0,
+  "n_fit": 9360
+ },
+ "layer": {
+  "sender": 14,
+  "receiver": 16
+ },
+ "coef": 0.75,
+ "device": "NVIDIA H100 80GB HBM3",
+ "arms": {
+  "none": {
+   "gpu_s_phases": {
+    "gen": 111.573
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 111.573,
+   "gpu_s_per_session": 2.7893,
+   "usd_per_1000_sessions": 2.9172,
+   "ctx_tokens_per_turn": 17.1,
+   "topic": {
+    "n": 40,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.088
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 0,
+   "correct_per_usd": 0.0
+  },
+  "text_word": {
+   "gpu_s_phases": {
+    "gen": 116.7012
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 116.7012,
+   "gpu_s_per_session": 2.9175,
+   "usd_per_1000_sessions": 3.0513,
+   "ctx_tokens_per_turn": 17.6,
+   "topic": {
+    "n": 40,
+    "correct": 23,
+    "acc": 0.575,
+    "ci95": [
+     0.422,
+     0.715
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 23,
+   "correct_per_usd": 188.4
+  },
+  "text_rag": {
+   "gpu_s_phases": {
+    "gen": 74.6812
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 74.6812,
+   "gpu_s_per_session": 1.867,
+   "usd_per_1000_sessions": 1.9526,
+   "ctx_tokens_per_turn": 917.1,
+   "topic": {
+    "n": 40,
+    "correct": 3,
+    "acc": 0.075,
+    "ci95": [
+     0.026,
+     0.199
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 274,
+    "acc": 0.9786,
+    "ci95": [
+     0.954,
+     0.99
+    ]
+   },
+   "correct_total": 277,
+   "correct_per_usd": 3546.5
+  },
+  "hybrid": {
+   "gpu_s_phases": {
+    "cache_build": 3.5445,
+    "gen": 73.9174
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 77.4619,
+   "gpu_s_per_session": 1.9365,
+   "usd_per_1000_sessions": 2.0253,
+   "ctx_tokens_per_turn": 1697.5,
+   "topic": {
+    "n": 40,
+    "correct": 2,
+    "acc": 0.05,
+    "ci95": [
+     0.014,
+     0.165
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 272,
+    "acc": 0.9714,
+    "ci95": [
+     0.945,
+     0.985
+    ]
+   },
+   "correct_total": 274,
+   "correct_per_usd": 3382.2
+  },
+  "latent_q": {
+   "gpu_s_phases": {
+    "think": 8.8356,
+    "gen": 118.7403
+   },
+   "fit_amortised_s": 21.1373,
+   "gpu_s_total": 148.7132,
+   "gpu_s_per_session": 3.7178,
+   "usd_per_1000_sessions": 3.8882,
+   "ctx_tokens_per_turn": 17.1,
+   "topic": {
+    "n": 40,
+    "correct": 21,
+    "acc": 0.525,
+    "ci95": [
+     0.375,
+     0.671
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 21,
+   "correct_per_usd": 135.0
+  },
+  "latent_free": {
+   "gpu_s_phases": {
+    "think": 8.7905,
+    "gen": 124.8918
+   },
+   "fit_amortised_s": 21.1373,
+   "gpu_s_total": 154.8196,
+   "gpu_s_per_session": 3.8705,
+   "usd_per_1000_sessions": 4.0479,
+   "ctx_tokens_per_turn": 15.4,
+   "topic": {
+    "n": 40,
+    "correct": 23,
+    "acc": 0.575,
+    "ci95": [
+     0.422,
+     0.715
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 23,
+   "correct_per_usd": 142.0
+  },
+  "swarm": {
+   "gpu_s_phases": {
+    "cache_build": 2.3647,
+    "think": 8.8095,
+    "gen": 74.281
+   },
+   "fit_amortised_s": 21.1373,
+   "gpu_s_total": 106.5925,
+   "gpu_s_per_session": 2.6648,
+   "usd_per_1000_sessions": 2.787,
+   "ctx_tokens_per_turn": 1485.7,
+   "topic": {
+    "n": 40,
+    "correct": 23,
+    "acc": 0.575,
+    "ci95": [
+     0.422,
+     0.715
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 272,
+    "acc": 0.9714,
+    "ci95": [
+     0.945,
+     0.985
+    ]
+   },
+   "correct_total": 295,
+   "correct_per_usd": 2646.3
+  }
+ },
+ "samples": {
+  "none": [
+   " astronomy",
+   "The safety officer for Project Lesath-Three was Dr. Roberta Bondar",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is the same as for Project Les"
+  ],
+  "text_word": [
+   " ocean",
+   "The safety officer for Project Lesath-Three was Dr. Roberta Bondar",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is the same as for Project Les"
+  ],
+  "text_rag": [
+   " NOT FOUND",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ],
+  "hybrid": [
+   " engineering",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ],
+  "latent_q": [
+   " The sea\nThe waves crash against the rocks. A gull cries in a",
+   "The safety officer for Project Lesath-Three was Dr. Roberta Bondar",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is the same as for Project Les"
+  ],
+  "latent_free": [
+   " the ocean. The water is a deep blue, and waves crash against jagged",
+   "The safety officer for Project Lesath-Three was Dr. Roberta Bondar",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is the same as for Project Les"
+  ],
+  "swarm": [
+   " the ocean. The water is a deep blue, and waves crash against jagged",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ]
+ }
+}
