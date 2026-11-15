@@ -502,6 +502,9 @@ fn keep_local_signature(staged: &Path, installed: &Path) {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn keep_local_signature(_staged: &Path, _installed: &Path) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,6 +538,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(not(target_os = "macos"))]
-fn keep_local_signature(_staged: &Path, _installed: &Path) {}

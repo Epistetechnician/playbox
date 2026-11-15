@@ -147,6 +147,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the verifier checks that PROTOCOL.md was committed before each genesis receipt, from history
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
