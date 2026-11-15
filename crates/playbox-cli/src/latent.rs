@@ -24,8 +24,16 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 pub async fn session(link: &str, transport: &TransportArgs, key: Option<String>) -> Result<()> {
     let key_path = key.map_or_else(|| store::home().join("guest.key"), PathBuf::from);
-    let client = join_link(link, identity_key(&key_path)?, rooms::join_choice(transport)?).await?;
-    println!("{}", json!({ "ready": true, "id": client.id().to_string() }));
+    let client = join_link(
+        link,
+        identity_key(&key_path)?,
+        rooms::join_choice(transport)?,
+    )
+    .await?;
+    println!(
+        "{}",
+        json!({ "ready": true, "id": client.id().to_string() })
+    );
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {
         if line.trim().is_empty() {
@@ -55,12 +63,16 @@ async fn handle(client: &playbox_net::Client, line: &str) -> Result<Value> {
         return Ok(json!({ "seq": seq }));
     }
     if let Some(r) = req["reveal"].as_str() {
-        let seq = req["seq"].as_u64().ok_or_else(|| anyhow!("reveal needs a seq"))?;
+        let seq = req["seq"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("reveal needs a seq"))?;
         client.latent_reveal(seq, &B64.decode(r)?).await?;
         return Ok(json!({ "seq": seq }));
     }
     if let Some(hub) = req["pull"].as_str() {
-        let (items, next) = client.latent_pull(hub, req["since"].as_u64().unwrap_or(0)).await?;
+        let (items, next) = client
+            .latent_pull(hub, req["since"].as_u64().unwrap_or(0))
+            .await?;
         let items: Vec<Value> = items
             .into_iter()
             .map(|d| {

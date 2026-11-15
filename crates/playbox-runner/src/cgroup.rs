@@ -39,13 +39,19 @@ pub struct RunCgroup {
 }
 
 fn valid_name(name: &str) -> bool {
-    (1..=64).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    (1..=64).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
 
 /// Whether `root` is a cgroup v2 directory this process may create children in.
 #[must_use]
 pub fn usable(root: &Path) -> bool {
-    root.join("cgroup.controllers").is_file() && fs::metadata(root).map(|m| !m.permissions().readonly()).unwrap_or(false)
+    root.join("cgroup.controllers").is_file()
+        && fs::metadata(root)
+            .map(|m| !m.permissions().readonly())
+            .unwrap_or(false)
 }
 
 /// Make `root` a cgroup this process can create runs in: create it, and enable the controllers a run needs on its parent so
@@ -77,12 +83,20 @@ impl RunCgroup {
             bail!("bad cpu limit {}", limits.cpus);
         }
         fs::create_dir_all(root).with_context(|| format!("creating {}", root.display()))?;
-        let controllers = fs::read_to_string(root.join("cgroup.controllers")).context("not a cgroup v2 directory")?;
+        let controllers = fs::read_to_string(root.join("cgroup.controllers"))
+            .context("not a cgroup v2 directory")?;
         let need = ["cpu", "memory", "pids"];
-        if let Some(missing) = need.iter().find(|c| !controllers.split_whitespace().any(|x| x == **c)) {
-            bail!("the {missing} controller is not available at {}", root.display());
+        if let Some(missing) = need
+            .iter()
+            .find(|c| !controllers.split_whitespace().any(|x| x == **c))
+        {
+            bail!(
+                "the {missing} controller is not available at {}",
+                root.display()
+            );
         }
-        fs::write(root.join("cgroup.subtree_control"), "+cpu +memory +pids").context("enabling controllers")?;
+        fs::write(root.join("cgroup.subtree_control"), "+cpu +memory +pids")
+            .context("enabling controllers")?;
         let path = root.join(name);
         fs::create_dir(&path).with_context(|| format!("creating {}", path.display()))?;
         let lock = File::open(&path)?;
@@ -92,7 +106,11 @@ impl RunCgroup {
         me.set("memory.max", &mem.to_string())?;
         me.set("memory.swap.max", "0")?;
         me.set("pids.max", &PIDS_MAX.to_string())?;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "bounded above by 256 cpus")]
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "bounded above by 256 cpus"
+        )]
         let quota = (f64::from(limits.cpus) * CPU_PERIOD_US as f64) as u64;
         me.set("cpu.max", &format!("{quota} {CPU_PERIOD_US}"))?;
         Ok(me)
@@ -119,7 +137,9 @@ impl RunCgroup {
     /// Whether any process is still in the cgroup.
     #[must_use]
     pub fn populated(&self) -> bool {
-        fs::read_to_string(self.path.join("cgroup.procs")).map(|s| !s.trim().is_empty()).unwrap_or(false)
+        fs::read_to_string(self.path.join("cgroup.procs"))
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
     }
 
     /// Kill every process in the cgroup and wait for them to leave.
@@ -168,7 +188,11 @@ pub fn stale(root: &Path) -> Result<Vec<PathBuf>> {
 pub fn remove(path: &Path) -> Result<()> {
     let _ = fs::write(path.join("cgroup.kill"), "1");
     let until = Instant::now() + DRAIN_TIMEOUT;
-    while fs::read_to_string(path.join("cgroup.procs")).map(|s| !s.trim().is_empty()).unwrap_or(false) && Instant::now() < until {
+    while fs::read_to_string(path.join("cgroup.procs"))
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+        && Instant::now() < until
+    {
         std::thread::sleep(Duration::from_millis(10));
     }
     fs::remove_dir(path).with_context(|| format!("removing {}", path.display()))

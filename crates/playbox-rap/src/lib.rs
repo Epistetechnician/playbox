@@ -21,8 +21,8 @@ use ed25519_dalek::SigningKey;
 use playbox_core::{store, taint::issue_capability};
 use playbox_mcp::{tool_list, FeedSource, PendingApproval, Server};
 use rap_protocol::{
-    send_subscription_event, send_tool_result, send_user_choice, PlainCallbackClient, RapInvocation, ToolDef,
-    ToolsetManifest,
+    send_subscription_event, send_tool_result, send_user_choice, PlainCallbackClient,
+    RapInvocation, ToolDef, ToolsetManifest,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -275,7 +275,14 @@ async fn invoke(
         send_tool_result(&rap.client, &inv, &result_text(&out), None, false).await;
         done.running.lock().await.remove(&finished);
     }));
-    running.insert(key, Running { group, call, task: task.abort_handle() });
+    running.insert(
+        key,
+        Running {
+            group,
+            call,
+            task: task.abort_handle(),
+        },
+    );
     StatusCode::OK
 }
 
@@ -331,81 +338,141 @@ impl Rap {
     /// Confirm the subscription, then forward new feed items as `subscription_event`s until it ends.
     async fn subscribe(self: &Arc<Self>, inv: RapInvocation) {
         let id = inv.id.to_string();
-        let ms = inv.arguments["interval_ms"].as_u64().map_or(self.poll, |m| Duration::from_millis(m.clamp(500, 60_000)));
-        let max = Duration::from_secs(inv.arguments["max_secs"].as_u64().unwrap_or(3600).clamp(1, 86_400));
+        let ms = inv.arguments["interval_ms"]
+            .as_u64()
+            .map_or(self.poll, |m| Duration::from_millis(m.clamp(500, 60_000)));
+        let max = Duration::from_secs(
+            inv.arguments["max_secs"]
+                .as_u64()
+                .unwrap_or(3600)
+                .clamp(1, 86_400),
+        );
         let rap = Arc::clone(self);
         let (group, callback) = (inv.group_id.to_string(), inv.callback_url.clone());
         let mut subs = self.subs.lock().await;
         if let Some(old) = subs.remove(&id) {
             old.task.abort();
         }
-        let task = tokio::spawn(rap_protocol::log_panic("playbox-rap subscription", async move {
-            // Read the feed without the server, so a long call (a delegated task) does not hold events
-            // back. The server is only needed to find the feed and to mark what others said as untrusted.
-            let mut source: Option<FeedSource> = rap.server.lock().await.feed_source();
-            // Note where the feed ends before confirming: an agent that reacts to the confirmation by
-            // speaking right away must not have that item mistaken for old news. A cursor far ahead is
-            // pulled back to the head of the feed. Outside a room there is nothing to follow yet, so
-            // start from the beginning and let the first items through.
-            let mut since = match &source {
-                Some(src) => src.feed(u64::MAX).await.map_or(0, |f| f.next),
-                None => 0,
-            };
-            send_tool_result(&rap.client, &inv, "subscribed to room events from now on", None, true).await;
-            let deadline = tokio::time::Instant::now() + max;
-            while tokio::time::Instant::now() < deadline {
-                if source.is_none() {
-                    // Not in a room when subscribed, or the connection was replaced. Never wait on a busy server.
-                    source = rap.server.try_lock().ok().and_then(|s| s.feed_source());
-                }
-                if let Some(src) = &source {
-                    match src.feed(since).await {
-                        Ok(feed) => {
-                            let mut complete = true;
-                            for item in &feed.items {
-                                if item.kind == "say" && item.from != src.me() {
-                                    // Other members' words are untrusted from here on, so copying them into
-                                    // a command needs approval. Marking needs the server; if a long call holds
-                                    // it, stop here and try again next tick rather than send them unmarked.
-                                    match rap.server.try_lock() {
-                                        Ok(mut s) => s.mark_untrusted(&item.text, &format!("chat:{}", item.seq)),
-                                        Err(_) => {
-                                            complete = false;
-                                            break;
+        let task = tokio::spawn(rap_protocol::log_panic(
+            "playbox-rap subscription",
+            async move {
+                // Read the feed without the server, so a long call (a delegated task) does not hold events
+                // back. The server is only needed to find the feed and to mark what others said as untrusted.
+                let mut source: Option<FeedSource> = rap.server.lock().await.feed_source();
+                // Note where the feed ends before confirming: an agent that reacts to the confirmation by
+                // speaking right away must not have that item mistaken for old news. A cursor far ahead is
+                // pulled back to the head of the feed. Outside a room there is nothing to follow yet, so
+                // start from the beginning and let the first items through.
+                let mut since = match &source {
+                    Some(src) => src.feed(u64::MAX).await.map_or(0, |f| f.next),
+                    None => 0,
+                };
+                send_tool_result(
+                    &rap.client,
+                    &inv,
+                    "subscribed to room events from now on",
+                    None,
+                    true,
+                )
+                .await;
+                let deadline = tokio::time::Instant::now() + max;
+                while tokio::time::Instant::now() < deadline {
+                    if source.is_none() {
+                        // Not in a room when subscribed, or the connection was replaced. Never wait on a busy server.
+                        source = rap.server.try_lock().ok().and_then(|s| s.feed_source());
+                    }
+                    if let Some(src) = &source {
+                        match src.feed(since).await {
+                            Ok(feed) => {
+                                let mut complete = true;
+                                for item in &feed.items {
+                                    if item.kind == "say" && item.from != src.me() {
+                                        // Other members' words are untrusted from here on, so copying them into
+                                        // a command needs approval. Marking needs the server; if a long call holds
+                                        // it, stop here and try again next tick rather than send them unmarked.
+                                        match rap.server.try_lock() {
+                                            Ok(mut s) => s.mark_untrusted(
+                                                &item.text,
+                                                &format!("chat:{}", item.seq),
+                                            ),
+                                            Err(_) => {
+                                                complete = false;
+                                                break;
+                                            }
                                         }
                                     }
+                                    let mut ev = serde_json::to_value(item).unwrap_or_default();
+                                    ev["untrusted"] = json!(item.kind == "say");
+                                    send_subscription_event(
+                                        &rap.client,
+                                        &inv.callback_url,
+                                        inv.group_id.clone(),
+                                        inv.id.clone(),
+                                        &ev.to_string(),
+                                        true,
+                                        false,
+                                    )
+                                    .await;
+                                    since = item.seq;
                                 }
-                                let mut ev = serde_json::to_value(item).unwrap_or_default();
-                                ev["untrusted"] = json!(item.kind == "say");
-                                send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), &ev.to_string(), true, false).await;
-                                since = item.seq;
+                                if complete {
+                                    since = since.max(feed.next);
+                                }
                             }
-                            if complete {
-                                since = since.max(feed.next);
-                            }
+                            Err(_) => source = None,
                         }
-                        Err(_) => source = None,
                     }
+                    tokio::time::sleep(ms).await;
                 }
-                tokio::time::sleep(ms).await;
-            }
-            rap.subs.lock().await.remove(&inv.id.to_string());
-            send_subscription_event(&rap.client, &inv.callback_url, inv.group_id.clone(), inv.id.clone(), "subscription ended: time limit", true, true).await;
-        }))
+                rap.subs.lock().await.remove(&inv.id.to_string());
+                send_subscription_event(
+                    &rap.client,
+                    &inv.callback_url,
+                    inv.group_id.clone(),
+                    inv.id.clone(),
+                    "subscription ended: time limit",
+                    true,
+                    true,
+                )
+                .await;
+            },
+        ))
         .abort_handle();
-        subs.insert(id, Sub { group, callback, task });
+        subs.insert(
+            id,
+            Sub {
+                group,
+                callback,
+                task,
+            },
+        );
     }
 
     /// Stop the subscriptions matching `keep_not`, telling each runtime it has ended.
     async fn end_subs(&self, mut matches: impl FnMut(&str, &Sub) -> bool, why: &str) {
         let ended: Vec<(String, Sub)> = {
             let mut subs = self.subs.lock().await;
-            let ids: Vec<String> = subs.iter().filter(|(id, s)| matches(id, s)).map(|(id, _)| id.clone()).collect();
-            ids.into_iter().filter_map(|id| subs.remove(&id).map(|s| (id, s))).collect()
+            let ids: Vec<String> = subs
+                .iter()
+                .filter(|(id, s)| matches(id, s))
+                .map(|(id, _)| id.clone())
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| subs.remove(&id).map(|s| (id, s)))
+                .collect()
         };
         for (id, sub) in ended {
             sub.task.abort();
-            send_subscription_event(&self.client, &sub.callback, sub.group.clone().into(), id.into(), why, true, true).await;
+            send_subscription_event(
+                &self.client,
+                &sub.callback,
+                sub.group.clone().into(),
+                id.into(),
+                why,
+                true,
+                true,
+            )
+            .await;
         }
     }
 }
@@ -425,7 +492,11 @@ async fn cancel(State(rap): State<Arc<Rap>>, h: HeaderMap, Json(c): Json<Cancel>
     if !authorized(&rap, &h) {
         return StatusCode::UNAUTHORIZED;
     }
-    rap.end_subs(|id, s| id == c.tool_call_id && s.group == c.thread_id, "subscription ended: cancelled").await;
+    rap.end_subs(
+        |id, s| id == c.tool_call_id && s.group == c.thread_id,
+        "subscription ended: cancelled",
+    )
+    .await;
     let stopped = {
         let mut running = rap.running.lock().await;
         match running.get(&c.tool_call_id) {
@@ -448,7 +519,11 @@ async fn close(State(rap): State<Arc<Rap>>, h: HeaderMap, Json(c): Json<Close>) 
     if !authorized(&rap, &h) {
         return StatusCode::UNAUTHORIZED;
     }
-    rap.end_subs(|_, s| s.group == c.thread_id, "subscription ended: thread closed").await;
+    rap.end_subs(
+        |_, s| s.group == c.thread_id,
+        "subscription ended: thread closed",
+    )
+    .await;
     StatusCode::OK
 }
 

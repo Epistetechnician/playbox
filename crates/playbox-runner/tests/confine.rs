@@ -91,7 +91,13 @@ mod linux {
         let port = listener.local_addr().unwrap().port();
         let out = child(
             "confined",
-            &[("PB_SECRET", secret_dir.display().to_string()), ("PB_RO", ro.display().to_string()), ("PB_RW", rw.display().to_string()), ("PB_PORT", port.to_string()), ("PB_ROOT", tmp("root").display().to_string())],
+            &[
+                ("PB_SECRET", secret_dir.display().to_string()),
+                ("PB_RO", ro.display().to_string()),
+                ("PB_RW", rw.display().to_string()),
+                ("PB_PORT", port.to_string()),
+                ("PB_ROOT", tmp("root").display().to_string()),
+            ],
         );
         report(&out)
     }
@@ -104,7 +110,11 @@ mod linux {
         let accept = std::thread::spawn(move || listener.accept().is_ok());
         let out = child(
             "networked",
-            &[("PB_SECRET", secret_dir.display().to_string()), ("PB_PORT", port.to_string()), ("PB_ROOT", tmp("root2").display().to_string())],
+            &[
+                ("PB_SECRET", secret_dir.display().to_string()),
+                ("PB_PORT", port.to_string()),
+                ("PB_ROOT", tmp("root2").display().to_string()),
+            ],
         );
         if !out.status.success() || String::from_utf8_lossy(&out.stderr).contains("SKIP:") {
             // The child never got as far as connecting. Release the accept, or this case waits for it forever.
@@ -116,7 +126,10 @@ mod linux {
     }
 
     fn jail_refuses_bad_paths() -> bool {
-        let out = child("badpath", &[("PB_ROOT", tmp("root3").display().to_string())]);
+        let out = child(
+            "badpath",
+            &[("PB_ROOT", tmp("root3").display().to_string())],
+        );
         report(&out)
     }
 
@@ -129,14 +142,25 @@ mod linux {
             Ok(r) => r,
             Err(e) => return skip(&e),
         };
-        let cg = match cgroup::RunCgroup::create(&root, "run-plan", cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 }) {
+        let cg = match cgroup::RunCgroup::create(
+            &root,
+            "run-plan",
+            cgroup::Limits {
+                cpus: 1.0,
+                guest_memory_mib: 64,
+            },
+        ) {
             Ok(c) => c,
             Err(e) => return skip(&format!("{e:#}")),
         };
         let rw = tmp("plan-rw");
         let ok = report(&child(
             "plan",
-            &[("PB_CGROUP", cg.path().display().to_string()), ("PB_RW", rw.display().to_string()), ("PB_ROOT", tmp("plan-root").display().to_string())],
+            &[
+                ("PB_CGROUP", cg.path().display().to_string()),
+                ("PB_RW", rw.display().to_string()),
+                ("PB_ROOT", tmp("plan-root").display().to_string()),
+            ],
         ));
         drop(cg);
         let _ = fs::remove_dir(&root);
@@ -156,16 +180,21 @@ mod linux {
         if let Err(e) = cgroup::prepare_root(&c.cgroup_root) {
             return skip(&format!("{e:#}"));
         }
-        let limits = cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 };
+        let limits = cgroup::Limits {
+            cpus: 1.0,
+            guest_memory_mib: 64,
+        };
         let guard = match c.begin("task-1", limits, Level::None, &[]) {
             Ok(g) => g,
             Err(e) => return skip(&format!("{e:#}")),
         };
         let made = c.cgroup_of("task-1").is_dir() && guard.cgroup_path().is_some();
-        let more_refused = c.begin("task-2", limits, Level::Internet, &[]).is_err() && !c.cgroup_of("task-2").exists();
+        let more_refused = c.begin("task-2", limits, Level::Internet, &[]).is_err()
+            && !c.cgroup_of("task-2").exists();
         drop(guard);
         let removed = !c.cgroup_of("task-1").exists();
-        let described = c.describe().contains("net_max=none") && c.describe().contains("seccomp=deny:");
+        let described =
+            c.describe().contains("net_max=none") && c.describe().contains("seccomp=deny:");
         let _ = fs::remove_dir(&c.cgroup_root);
         let _ = fs::remove_dir(&root);
         made && more_refused && removed && described
@@ -184,7 +213,13 @@ mod linux {
 
     fn run_child(case: &str) -> i32 {
         let get = |k: &str| PathBuf::from(std::env::var(k).unwrap_or_default());
-        let jail = |network: bool, ro: Vec<PathBuf>, rw: Vec<PathBuf>| Jail { dir: get("PB_ROOT"), read_only: ro, read_write: rw, devices: vec![], network };
+        let jail = |network: bool, ro: Vec<PathBuf>, rw: Vec<PathBuf>| Jail {
+            dir: get("PB_ROOT"),
+            read_only: ro,
+            read_write: rw,
+            devices: vec![],
+            network,
+        };
         let entered = |j: Jail| -> Result<(), String> { j.enter().map_err(|e| format!("{e:#}")) };
         match case {
             "confined" => {
@@ -200,7 +235,11 @@ mod linux {
                 if fs::read_to_string(get("PB_SECRET").join("key")).is_ok() {
                     bad.push("read the host secret");
                 }
-                if fs::read_to_string(get("PB_RO").join("file")).ok().as_deref() != Some("readable") {
+                if fs::read_to_string(get("PB_RO").join("file"))
+                    .ok()
+                    .as_deref()
+                    != Some("readable")
+                {
                     bad.push("could not read the read-only share");
                 }
                 if fs::write(get("PB_RO").join("new"), "x").is_ok() {
@@ -217,14 +256,31 @@ mod linux {
                     bad.push("is not PID 1 of its namespace");
                 }
                 let status = fs::read_to_string("/proc/self/status").unwrap_or_default();
-                if !status.lines().any(|l| l.starts_with("NoNewPrivs:") && l.trim_end().ends_with('1')) {
+                if !status
+                    .lines()
+                    .any(|l| l.starts_with("NoNewPrivs:") && l.trim_end().ends_with('1'))
+                {
                     bad.push("can still gain privileges");
                 }
-                let pids = fs::read_dir("/proc").unwrap().filter_map(Result::ok).filter(|e| e.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit())).count();
+                let pids = fs::read_dir("/proc")
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .filter(|e| {
+                        e.file_name()
+                            .to_string_lossy()
+                            .bytes()
+                            .all(|b| b.is_ascii_digit())
+                    })
+                    .count();
                 if pids > 2 {
                     bad.push("sees other processes");
                 }
-                if fs::read_dir("/").unwrap().filter_map(Result::ok).any(|e| matches!(e.file_name().to_str(), Some("home" | "Users" | "etc" | "usr" | "root"))) {
+                if fs::read_dir("/").unwrap().filter_map(Result::ok).any(|e| {
+                    matches!(
+                        e.file_name().to_str(),
+                        Some("home" | "Users" | "etc" | "usr" | "root")
+                    )
+                }) {
                     bad.push("sees the host's top-level directories");
                 }
                 if bad.is_empty() {
@@ -260,20 +316,38 @@ mod linux {
                     eprintln!("install: {e:#}");
                     return 1;
                 }
-                let errno = |rc: i64| if rc == -1 { std::io::Error::last_os_error().raw_os_error() } else { None };
+                let errno = |rc: i64| {
+                    if rc == -1 {
+                        std::io::Error::last_os_error().raw_os_error()
+                    } else {
+                        None
+                    }
+                };
                 // SAFETY: each call is made with null or zero arguments and is meant to fail before touching anything.
                 let mount = errno(unsafe { libc::syscall(libc::SYS_mount, 0, 0, 0, 0, 0) });
                 let ptrace = errno(unsafe { libc::syscall(libc::SYS_ptrace, 0, 0, 0, 0) });
-                let unshare = errno(unsafe { libc::syscall(libc::SYS_unshare, libc::CLONE_NEWNET) });
+                let unshare =
+                    errno(unsafe { libc::syscall(libc::SYS_unshare, libc::CLONE_NEWNET) });
                 let bpf = errno(unsafe { libc::syscall(libc::SYS_bpf, 0, 0, 0) });
                 let mut bad = Vec::new();
-                for (name, e) in [("mount", mount), ("ptrace", ptrace), ("unshare", unshare), ("bpf", bpf)] {
+                for (name, e) in [
+                    ("mount", mount),
+                    ("ptrace", ptrace),
+                    ("unshare", unshare),
+                    ("bpf", bpf),
+                ] {
                     if e != Some(libc::EPERM) {
                         bad.push(format!("{name} gave {e:?}, not EPERM"));
                     }
                 }
                 // Ordinary work still works: files, threads, sockets.
-                if fs::write(std::env::temp_dir().join(format!("playbox-seccomp-probe-{}", std::process::id())), "x").is_err() {
+                if fs::write(
+                    std::env::temp_dir()
+                        .join(format!("playbox-seccomp-probe-{}", std::process::id())),
+                    "x",
+                )
+                .is_err()
+                {
                     bad.push("could not write a file".into());
                 }
                 if std::thread::spawn(|| 1).join().ok() != Some(1) {
@@ -355,7 +429,10 @@ mod linux {
     fn own_cgroup() -> String {
         fs::read_to_string("/proc/self/cgroup")
             .ok()
-            .and_then(|s| s.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
+            .and_then(|s| {
+                s.lines()
+                    .find_map(|l| l.strip_prefix("0::").map(str::to_string))
+            })
             .unwrap_or_else(|| "/".into())
     }
 
@@ -379,19 +456,32 @@ mod linux {
         // Inside a container the cgroup we start in holds this process, and cgroup v2 forbids enabling controllers for children of
         // a cgroup that has processes: move into a leaf first, as an init system would.
         let leaf = root.join("playbox-test-leaf");
-        if base == own_cgroup() && base != "/" || std::env::var_os("PLAYBOX_TEST_MOVE_ALL_PROCS").is_some() {
+        if base == own_cgroup() && base != "/"
+            || std::env::var_os("PLAYBOX_TEST_MOVE_ALL_PROCS").is_some()
+        {
             let _ = fs::create_dir(&leaf);
-            fs::write(leaf.join("cgroup.procs"), std::process::id().to_string()).map_err(|e| format!("moving into a leaf cgroup: {e}"))?;
+            fs::write(leaf.join("cgroup.procs"), std::process::id().to_string())
+                .map_err(|e| format!("moving into a leaf cgroup: {e}"))?;
         }
         // The shells that started this test are in the root cgroup too. Moving every process there is only right in a throwaway
         // container, so it needs an explicit opt-in; on a real host the test would skip instead of touching other processes.
         if leaf.is_dir() && std::env::var_os("PLAYBOX_TEST_MOVE_ALL_PROCS").is_some() {
-            for pid in fs::read_to_string(root.join("cgroup.procs")).unwrap_or_default().split_whitespace() {
+            for pid in fs::read_to_string(root.join("cgroup.procs"))
+                .unwrap_or_default()
+                .split_whitespace()
+            {
                 let _ = fs::write(leaf.join("cgroup.procs"), pid);
             }
         }
         let r = root.join("playbox-test");
-        cgroup::prepare_root(&r).map_err(|e| format!("{e:#} (controllers here: {})", fs::read_to_string(root.join("cgroup.controllers")).unwrap_or_default().trim()))?;
+        cgroup::prepare_root(&r).map_err(|e| {
+            format!(
+                "{e:#} (controllers here: {})",
+                fs::read_to_string(root.join("cgroup.controllers"))
+                    .unwrap_or_default()
+                    .trim()
+            )
+        })?;
         Ok(r)
     }
 
@@ -402,13 +492,25 @@ mod linux {
                 return skip(&e);
             }
         };
-        let c = match cgroup::RunCgroup::create(&root, "run-limits", cgroup::Limits { cpus: 1.5, guest_memory_mib: 64 }) {
+        let c = match cgroup::RunCgroup::create(
+            &root,
+            "run-limits",
+            cgroup::Limits {
+                cpus: 1.5,
+                guest_memory_mib: 64,
+            },
+        ) {
             Ok(c) => c,
             Err(e) => {
                 return skip(&format!("{e:#}"));
             }
         };
-        let read = |f: &str| fs::read_to_string(c.path().join(f)).unwrap().trim().to_string();
+        let read = |f: &str| {
+            fs::read_to_string(c.path().join(f))
+                .unwrap()
+                .trim()
+                .to_string()
+        };
         let ok = read("memory.max") == ((64u64 << 20) + cgroup::OVERHEAD_BYTES).to_string()
             && read("pids.max") == "512"
             && read("cpu.max") == "150000 100000"
@@ -421,7 +523,15 @@ mod linux {
         drop(c);
         let reaped = sleeper.wait().map(|s| !s.success()).unwrap_or(false);
         let removed = !path.exists();
-        let bad_name = cgroup::RunCgroup::create(&root, "../x", cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 }).is_err();
+        let bad_name = cgroup::RunCgroup::create(
+            &root,
+            "../x",
+            cgroup::Limits {
+                cpus: 1.0,
+                guest_memory_mib: 64,
+            },
+        )
+        .is_err();
         let _ = fs::remove_dir(&root);
         ok && in_cgroup && reaped && removed && bad_name
     }
@@ -437,16 +547,37 @@ mod linux {
             }
         };
         let nft = |input: &str| -> Result<(), String> {
-            let mut c = Command::new("nft").args(["-f", "-"]).stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("nft: {e}"))?;
+            let mut c = Command::new("nft")
+                .args(["-f", "-"])
+                .stdin(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("nft: {e}"))?;
             c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
             let out = c.wait_with_output().unwrap();
-            if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+            if out.status.success() {
+                Ok(())
+            } else {
+                Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+            }
         };
-        let rel = root.strip_prefix("/sys/fs/cgroup").unwrap().to_str().unwrap().to_string();
+        let rel = root
+            .strip_prefix("/sys/fs/cgroup")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         if std::env::var_os("PLAYBOX_TEST_CGROUP_BASE").is_none() && own_cgroup() == "/" {
             return skip("private cgroup namespace; run with --cgroupns=host so nftables sees the same paths");
         }
-        let run = match cgroup::RunCgroup::create(&root, "deadbeef0123", cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 }) {
+        let run = match cgroup::RunCgroup::create(
+            &root,
+            "deadbeef0123",
+            cgroup::Limits {
+                cpus: 1.0,
+                guest_memory_mib: 64,
+            },
+        ) {
             Ok(c) => c,
             Err(e) => {
                 return skip(&format!("{e:#}"));
@@ -465,8 +596,15 @@ mod linux {
             std::thread::spawn(move || while listener.accept().is_ok() {});
             let probe = |in_cgroup: bool| -> bool {
                 let mut c = Command::new("sh");
-                let script = if in_cgroup { format!("echo $$ > {}/cgroup.procs; exec timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}'", run.path().display()) } else { format!("exec timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}'") };
-                c.args(["-c", &script]).status().map(|s| s.success()).unwrap_or(false)
+                let script = if in_cgroup {
+                    format!("echo $$ > {}/cgroup.procs; exec timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}'", run.path().display())
+                } else {
+                    format!("exec timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}'")
+                };
+                c.args(["-c", &script])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
             };
             let outside = probe(false);
             let inside = probe(true);
@@ -475,7 +613,9 @@ mod linux {
             }
             Ok(!inside)
         })();
-        let _ = Command::new("nft").args(["delete", "table", "inet", "playbox_runner"]).status();
+        let _ = Command::new("nft")
+            .args(["delete", "table", "inet", "playbox_runner"])
+            .status();
         drop(run);
         let _ = fs::remove_dir(&root);
         match result {
@@ -491,7 +631,14 @@ mod linux {
                 return skip(&e);
             }
         };
-        let live = match cgroup::RunCgroup::create(&root, "run-live", cgroup::Limits { cpus: 1.0, guest_memory_mib: 64 }) {
+        let live = match cgroup::RunCgroup::create(
+            &root,
+            "run-live",
+            cgroup::Limits {
+                cpus: 1.0,
+                guest_memory_mib: 64,
+            },
+        ) {
             Ok(c) => c,
             Err(e) => {
                 return skip(&format!("{e:#}"));
@@ -506,5 +653,5 @@ mod linux {
         let _ = fs::remove_dir(&root);
         ok
     }
-        // REQ: BOX-2
+    // REQ: BOX-2
 }

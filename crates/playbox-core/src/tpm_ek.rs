@@ -16,7 +16,11 @@ use crate::attest::AttestError;
 use aes::Aes128;
 use cfb_mode::cipher::KeyIvInit;
 use hmac::{Hmac, Mac};
-use p256::{ecdh::EphemeralSecret, elliptic_curve::sec1::ToSec1Point, PublicKey};
+use p256::{
+    ecdh::EphemeralSecret,
+    elliptic_curve::{sec1::ToSec1Point, Generate},
+    PublicKey,
+};
 use rand_core::{OsRng, RngCore};
 use rsa::{pkcs1::DecodeRsaPublicKey, Oaep, RsaPublicKey};
 use sha2::{Digest, Sha256};
@@ -412,7 +416,9 @@ pub fn make_credential(
             (seed.to_vec(), tpm2b(&enc))
         }
         EkKey::Ecc(k) => {
-            let eph = EphemeralSecret::random(&mut p256::elliptic_curve::rand_core::UnwrapErr(getrandom::SysRng));
+            let eph = EphemeralSecret::generate_from_rng(
+                &mut p256::elliptic_curve::rand_core::UnwrapErr(getrandom::SysRng),
+            );
             let eph_pt = eph.public_key().to_sec1_point(false);
             let ek_pt = k.to_sec1_point(false);
             let (ex, ey) = (eph_pt.x().expect("x"), eph_pt.y().expect("y"));

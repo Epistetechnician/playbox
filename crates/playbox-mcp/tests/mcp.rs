@@ -174,7 +174,10 @@ fn protocol_basics() {
 
 #[test]
 fn the_room_card_is_offered_as_an_mcp_app() {
-    let mut m = Mcp::start_with(&scratch("card"), &[("PLAYBOX_HUB_URL", "https://hub.example.com/")]);
+    let mut m = Mcp::start_with(
+        &scratch("card"),
+        &[("PLAYBOX_HUB_URL", "https://hub.example.com/")],
+    );
     // The card is declared in capabilities, listed, and linked from the two tools it shows.
     let init = m.rpc("initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}));
     assert!(init["result"]["capabilities"]["resources"].is_object());
@@ -186,7 +189,11 @@ fn the_room_card_is_offered_as_an_mcp_app() {
     for t in list["result"]["tools"].as_array().unwrap() {
         let linked = t["_meta"]["ui"]["resourceUri"] == "ui://playbox/room";
         let name = t["name"].as_str().unwrap();
-        assert_eq!(linked, name == "playbox_status" || name == "playbox_feed", "only status and feed show the card: {name}");
+        assert_eq!(
+            linked,
+            name == "playbox_status" || name == "playbox_feed",
+            "only status and feed show the card: {name}"
+        );
     }
     // Reading it returns the page, locked down, with the hub address filled in.
     let read = m.rpc("resources/read", json!({"uri": "ui://playbox/room"}));
@@ -195,19 +202,43 @@ fn the_room_card_is_offered_as_an_mcp_app() {
     assert_eq!(c["mimeType"], "text/html;profile=mcp-app");
     assert!(html.contains("default-src 'none'") && html.contains("https://hub.example.com/"));
     assert!(!html.contains("{{HUB_URL}}"));
-    assert!(!html.contains("innerHTML"), "everything the room says must go in as text, never markup");
-    assert!(!html.contains("src=\"http") && !html.contains("@import"), "the page loads nothing from the network");
-    assert!(c["_meta"]["ui"]["csp"]["connectDomains"].as_array().unwrap().is_empty());
-    assert_eq!(m.rpc("resources/read", json!({"uri": "ui://playbox/other"}))["error"]["code"], -32002);
+    assert!(
+        !html.contains("innerHTML"),
+        "everything the room says must go in as text, never markup"
+    );
+    assert!(
+        !html.contains("src=\"http") && !html.contains("@import"),
+        "the page loads nothing from the network"
+    );
+    assert!(c["_meta"]["ui"]["csp"]["connectDomains"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        m.rpc("resources/read", json!({"uri": "ui://playbox/other"}))["error"]["code"],
+        -32002
+    );
     // An address with markup in it is dropped rather than inserted.
-    let mut m2 = Mcp::start_with(&scratch("card2"), &[("PLAYBOX_HUB_URL", "https://x.example\"><script>alert(1)</script>")]);
-    let html2 = m2.rpc("resources/read", json!({"uri": "ui://playbox/room"}))["result"]["contents"][0]["text"].as_str().unwrap().to_string();
+    let mut m2 = Mcp::start_with(
+        &scratch("card2"),
+        &[(
+            "PLAYBOX_HUB_URL",
+            "https://x.example\"><script>alert(1)</script>",
+        )],
+    );
+    let html2 = m2.rpc("resources/read", json!({"uri": "ui://playbox/room"}))["result"]["contents"]
+        [0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(!html2.contains("alert(1)") && !html2.contains("{{HUB_URL}}"));
 }
 
 #[test]
 fn a_waiting_feed_returns_the_moment_the_host_speaks() {
-    let _rooms = ROOMS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _rooms = ROOMS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let work = scratch("longpoll");
     let repo = work.join("repo");
     std::fs::create_dir_all(&repo).unwrap();
@@ -221,7 +252,10 @@ fn a_waiting_feed_returns_the_moment_the_host_speaks() {
     let (err, created) = host.tool("playbox_create", json!({"repo": repo, "local": true}));
     assert!(!err, "{created}");
     let mut guest = Mcp::start(&work.join("guest-home"));
-    let (err, joined) = guest.tool("playbox_join", json!({"link": created["link"], "local": true, "workspace": work.join("ws")}));
+    let (err, joined) = guest.tool(
+        "playbox_join",
+        json!({"link": created["link"], "local": true, "workspace": work.join("ws")}),
+    );
     assert!(!err, "{joined}");
     let (_, first) = guest.tool("playbox_feed", json!({"since": 0}));
     let cursor = first["next"].as_u64().unwrap();
@@ -229,8 +263,15 @@ fn a_waiting_feed_returns_the_moment_the_host_speaks() {
     // Nothing new: the call waits, and gives up empty at the deadline.
     let t = std::time::Instant::now();
     let (err, empty) = guest.tool("playbox_feed", json!({"since": cursor, "wait_secs": 2}));
-    assert!(!err && empty["items"].as_array().unwrap().is_empty(), "{empty}");
-    assert!(t.elapsed() >= std::time::Duration::from_millis(1800), "it must have waited: {:?}", t.elapsed());
+    assert!(
+        !err && empty["items"].as_array().unwrap().is_empty(),
+        "{empty}"
+    );
+    assert!(
+        t.elapsed() >= std::time::Duration::from_millis(1800),
+        "it must have waited: {:?}",
+        t.elapsed()
+    );
 
     // The guest waits; the host speaks after a moment; the guest's call returns at once with the message.
     let waiter = std::thread::spawn(move || {
@@ -243,8 +284,18 @@ fn a_waiting_feed_returns_the_moment_the_host_speaks() {
     assert!(!err);
     let (err, feed, took, _guest) = waiter.join().unwrap();
     assert!(!err, "{feed}");
-    assert!(feed["items"].as_array().unwrap().iter().any(|i| i["text"] == "wake up"), "{feed}");
-    assert!(took < std::time::Duration::from_secs(5), "returned on the message, not the deadline: {took:?}");
+    assert!(
+        feed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["text"] == "wake up"),
+        "{feed}"
+    );
+    assert!(
+        took < std::time::Duration::from_secs(5),
+        "returned on the message, not the deadline: {took:?}"
+    );
 
     // And the other way: the host waits for the guest.
     let (_, hf) = host.tool("playbox_feed", json!({"since": 0}));
@@ -259,7 +310,14 @@ fn a_waiting_feed_returns_the_moment_the_host_speaks() {
     let (err, _) = guest2.tool("playbox_say", json!({"text": "hello host"}));
     assert!(!err);
     let (err, feed, took, _host) = hw.join().unwrap();
-    assert!(!err && feed["items"].as_array().unwrap().iter().any(|i| i["text"] == "hello host"), "{feed}");
+    assert!(
+        !err && feed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["text"] == "hello host"),
+        "{feed}"
+    );
     assert!(took < std::time::Duration::from_secs(5), "{took:?}");
 }
 
@@ -1236,40 +1294,111 @@ fn an_agent_steers_a_hosted_model_through_mcp() {
     raw_args["include_raw"] = json!(true);
     let (err, run) = guest.tool("playbox_steer", raw_args.clone());
     assert!(!err, "{run}");
-    let (receipt, output_raw) = (run["receipt_record"].as_str().unwrap().to_string(), run["output_raw"].as_str().unwrap().to_string());
-    assert!(receipt.starts_with("playbox.steer-receipt.v1\n"), "the exact signed record is returned");
-    let sign_variant = |host: &mut Mcp, scores: Value| host.tool("playbox_variant_sign", json!({"evaluator": evaluator, "custodians": [custodian], "patch": "", "scores": scores, "cost": 1})).1;
+    let (receipt, output_raw) = (
+        run["receipt_record"].as_str().unwrap().to_string(),
+        run["output_raw"].as_str().unwrap().to_string(),
+    );
+    assert!(
+        receipt.starts_with("playbox.steer-receipt.v1\n"),
+        "the exact signed record is returned"
+    );
+    let sign_variant = |host: &mut Mcp, scores: Value| {
+        host.tool("playbox_variant_sign", json!({"evaluator": evaluator, "custodians": [custodian], "patch": "", "scores": scores, "cost": 1})).1
+    };
     let variant = sign_variant(&mut host, json!([0.3, 0.4, 0.5]));
-    let (err, sealed_ev) = guest.tool("playbox_evidence_sign", json!({"evaluator": evaluator, "variant": variant["variant"], "receipts": [receipt]}));
+    let (err, sealed_ev) = guest.tool(
+        "playbox_evidence_sign",
+        json!({"evaluator": evaluator, "variant": variant["variant"], "receipts": [receipt]}),
+    );
     assert!(!err, "{sealed_ev}");
     let host_id = created["host_id"].clone();
-    let check = |host: &mut Mcp, evidence: &Value, variant: &Value, receipts: Value, extra: Value| {
+    let check = |host: &mut Mcp,
+                 evidence: &Value,
+                 variant: &Value,
+                 receipts: Value,
+                 extra: Value| {
         let mut a = json!({"evidence": evidence, "evaluator": evaluator, "variant": variant["variant"], "custodians": [custodian], "hosts": [host_id], "receipts": receipts});
         for (k, v) in extra.as_object().unwrap() {
             a[k] = v.clone();
         }
         host.tool("playbox_evidence_check", a)
     };
-    let (err, ok) = check(&mut host, &sealed_ev["evidence"], &variant, json!([receipt]), json!({"weights": weights, "image": run["receipt"]["image"]}));
+    let (err, ok) = check(
+        &mut host,
+        &sealed_ev["evidence"],
+        &variant,
+        json!([receipt]),
+        json!({"weights": weights, "image": run["receipt"]["image"]}),
+    );
     assert!(!err, "{ok}");
-    assert_eq!((ok["runs"].as_u64(), ok["weakest_ceiling"].as_str()), (Some(1), Some("local_internal_exploratory")));
-    assert_eq!(ok["output_hashes"][0].as_str().unwrap(), hex(blake3::hash(output_raw.as_bytes()).as_bytes()), "the receipt binds the exact output bytes, so a verifier can replay the scores");
+    assert_eq!(
+        (ok["runs"].as_u64(), ok["weakest_ceiling"].as_str()),
+        (Some(1), Some("local_internal_exploratory"))
+    );
+    assert_eq!(
+        ok["output_hashes"][0].as_str().unwrap(),
+        hex(blake3::hash(output_raw.as_bytes()).as_bytes()),
+        "the receipt binds the exact output bytes, so a verifier can replay the scores"
+    );
     // Each cheat is refused for its own reason.
     let refuse = |r: (bool, Value), needle: &str| {
-        assert!(r.0 && r.1.as_str().unwrap().contains(needle), "wanted {needle:?}, got {}", r.1);
+        assert!(
+            r.0 && r.1.as_str().unwrap().contains(needle),
+            "wanted {needle:?}, got {}",
+            r.1
+        );
     };
     let other_scores = sign_variant(&mut host, json!([0.9, 0.9, 0.9]));
-    refuse(check(&mut host, &sealed_ev["evidence"], &other_scores, json!([receipt]), json!({})), "different variant");
+    refuse(
+        check(
+            &mut host,
+            &sealed_ev["evidence"],
+            &other_scores,
+            json!([receipt]),
+            json!({}),
+        ),
+        "different variant",
+    );
     let (_, second) = guest.tool("playbox_steer", raw_args.clone());
-    refuse(check(&mut host, &sealed_ev["evidence"], &variant, json!([second["receipt_record"]]), json!({})), "not the run");
+    refuse(
+        check(
+            &mut host,
+            &sealed_ev["evidence"],
+            &variant,
+            json!([second["receipt_record"]]),
+            json!({}),
+        ),
+        "not the run",
+    );
     let mut unpinned = json!({"evidence": sealed_ev["evidence"], "evaluator": evaluator, "variant": variant["variant"], "custodians": [custodian], "hosts": ["11".repeat(32)], "receipts": [receipt]});
-    refuse(host.tool("playbox_evidence_check", unpinned.clone()), "does not pin");
+    refuse(
+        host.tool("playbox_evidence_check", unpinned.clone()),
+        "does not pin",
+    );
     unpinned["hosts"] = json!([host_id]);
     unpinned["weights"] = json!("00".repeat(32));
-    refuse(host.tool("playbox_evidence_check", unpinned), "weights other");
-    refuse(check(&mut host, &sealed_ev["evidence"], &variant, json!([receipt]), json!({"min_ceiling": "attested"})), "weaker ceiling");
+    refuse(
+        host.tool("playbox_evidence_check", unpinned),
+        "weights other",
+    );
+    refuse(
+        check(
+            &mut host,
+            &sealed_ev["evidence"],
+            &variant,
+            json!([receipt]),
+            json!({"min_ceiling": "attested"}),
+        ),
+        "weaker ceiling",
+    );
     // Only the evaluator's custodian can sign evidence; the agent's sidecar is not it.
-    refuse(host.tool("playbox_evidence_sign", json!({"evaluator": evaluator, "variant": variant["variant"], "receipts": [receipt]})), "custodian");
+    refuse(
+        host.tool(
+            "playbox_evidence_sign",
+            json!({"evaluator": evaluator, "variant": variant["variant"], "receipts": [receipt]}),
+        ),
+        "custodian",
+    );
 
     // Over the strength cap: refused by the grant, not clamped.
     let mut loud = args.clone();
@@ -1539,7 +1668,6 @@ fn a_custodian_seals_a_holdout_and_an_agent_signs_a_lineage_that_checks() {
     assert!(e);
 }
 
-
 /// A host that hangs up on a silent member (here after two seconds; fifteen minutes by default) must not strand an
 /// agent: the member's sidecar reopens the connection on its next call and carries on as the same member.
 #[test]
@@ -1547,10 +1675,16 @@ fn a_sidecar_reconnects_after_the_host_closes_an_idle_connection() {
     let _turn = ROOMS.lock().unwrap_or_else(|e| e.into_inner());
     let work = scratch("reconnect");
     let mut host = Mcp::start(&work.join("h"));
-    let (err, created) = host.tool("playbox_create", json!({"local": true, "idle_patience_secs": 2}));
+    let (err, created) = host.tool(
+        "playbox_create",
+        json!({"local": true, "idle_patience_secs": 2}),
+    );
     assert!(!err, "{created}");
     let mut guest = Mcp::start(&work.join("g"));
-    let (err, joined) = guest.tool("playbox_join", json!({"link": created["link"], "local": true, "workspace": work.join("ws")}));
+    let (err, joined) = guest.tool(
+        "playbox_join",
+        json!({"link": created["link"], "local": true, "workspace": work.join("ws")}),
+    );
     assert!(!err, "{joined}");
     let member = joined["member_id"].clone();
     let (err, pong) = guest.tool("playbox_ping", json!({"text": "one"}));
@@ -1558,9 +1692,15 @@ fn a_sidecar_reconnects_after_the_host_closes_an_idle_connection() {
 
     std::thread::sleep(std::time::Duration::from_millis(3500));
     let (err, pong) = guest.tool("playbox_ping", json!({"text": "two"}));
-    assert!(!err && pong["echo"] == "two", "the sidecar should have reopened the connection: {pong}");
+    assert!(
+        !err && pong["echo"] == "two",
+        "the sidecar should have reopened the connection: {pong}"
+    );
     let (_, status) = guest.tool("playbox_status", json!({}));
-    assert_eq!(status["joined"]["member_id"], member, "still the same member");
+    assert_eq!(
+        status["joined"]["member_id"], member,
+        "still the same member"
+    );
 }
 
 #[test]
@@ -1585,7 +1725,11 @@ fn a_guest_can_join_from_a_link_file_and_leave_to_join_again() {
     );
     assert!(!err, "{created}");
     let link_path = work.join("link.txt");
-    std::fs::write(&link_path, format!("  {}\n", created["link"].as_str().unwrap())).unwrap();
+    std::fs::write(
+        &link_path,
+        format!("  {}\n", created["link"].as_str().unwrap()),
+    )
+    .unwrap();
 
     let mut guest = Mcp::start(&work.join("guest-home"));
     let (err, none) = guest.tool("playbox_join", json!({"local": true}));
@@ -1600,7 +1744,10 @@ fn a_guest_can_join_from_a_link_file_and_leave_to_join_again() {
         "playbox_join",
         json!({"link_file": link_path, "local": true}),
     );
-    assert!(err && again.to_string().contains("playbox_leave"), "{again}");
+    assert!(
+        err && again.to_string().contains("playbox_leave"),
+        "{again}"
+    );
 
     let (err, left) = guest.tool("playbox_leave", json!({}));
     assert!(!err && left["left"] == true, "{left}");

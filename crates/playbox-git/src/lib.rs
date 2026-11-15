@@ -165,7 +165,14 @@ pub async fn bundle_import(
         // source is a bundle file (observed on 2.43), so the explicit check below is the real guard.
         git(
             repo,
-            &["-c", "transfer.fsckObjects=true", "fetch", "--no-tags", file_s, &spec],
+            &[
+                "-c",
+                "transfer.fsckObjects=true",
+                "fetch",
+                "--no-tags",
+                file_s,
+                &spec,
+            ],
             None,
         )
         .await?;

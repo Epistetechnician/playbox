@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
 }
 
 /// Run the fuzzer against `<hub_root>/ui` with a private home; returns the `fuzz` object of the JSON report.
@@ -25,17 +28,33 @@ fn fuzz(hub_root: &Path, tag: &str) -> Value {
         .unwrap();
     let _ = std::fs::remove_dir_all(&home);
     let text = String::from_utf8_lossy(&o.stdout);
-    let line = text.lines().rev().find(|l| l.starts_with('{')).unwrap_or_else(|| panic!("no JSON in: {text}\n{}", String::from_utf8_lossy(&o.stderr)));
+    let line = text
+        .lines()
+        .rev()
+        .find(|l| l.starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON in: {text}\n{}", String::from_utf8_lossy(&o.stderr)));
     let report = serde_json::from_str::<Value>(line).unwrap();
     if report["fuzz"].is_null() {
-        let why = report["checks"].as_array().and_then(|c| c.iter().find(|c| c["id"] == "fuzz")).map(|c| c.to_string()).unwrap_or_default();
-        panic!("the fuzzer did not run: {why}\nstderr: {}", String::from_utf8_lossy(&o.stderr));
+        let why = report["checks"]
+            .as_array()
+            .and_then(|c| c.iter().find(|c| c["id"] == "fuzz"))
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+        panic!(
+            "the fuzzer did not run: {why}\nstderr: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
     }
     report["fuzz"].clone()
 }
 
 fn kinds(f: &Value) -> Vec<String> {
-    f["violations"].as_array().unwrap().iter().map(|v| v["kind"].as_str().unwrap().to_string()).collect()
+    f["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["kind"].as_str().unwrap().to_string())
+        .collect()
 }
 
 /// A copy of `ui/` with `from` replaced by `to` in `file`.
@@ -43,10 +62,19 @@ fn mutant(tag: &str, file: &str, from: &str, to: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("pbsec-mut-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    assert!(Command::new("cp").arg("-R").arg(repo().join("ui")).arg(root.join("ui")).status().unwrap().success());
+    assert!(Command::new("cp")
+        .arg("-R")
+        .arg(repo().join("ui"))
+        .arg(root.join("ui"))
+        .status()
+        .unwrap()
+        .success());
     let p = root.join("ui").join(file);
     let src = std::fs::read_to_string(&p).unwrap();
-    assert!(src.contains(from), "the hub changed: {from:?} is gone from {file}; update this test");
+    assert!(
+        src.contains(from),
+        "the hub changed: {from:?} is gone from {file}; update this test"
+    );
     std::fs::write(&p, src.replacen(from, to, 1)).unwrap();
     root
 }
@@ -54,18 +82,34 @@ fn mutant(tag: &str, file: &str, from: &str, to: &str) -> PathBuf {
 #[test]
 fn the_real_hub_survives_the_fuzzer() {
     let f = fuzz(&repo(), "real");
-    assert!(f["violations"].is_array(), "the fuzzer produced no result (did the hub start?): {f}");
+    assert!(
+        f["violations"].is_array(),
+        "the fuzzer produced no result (did the hub start?): {f}"
+    );
     assert!(f["violations"].as_array().unwrap().is_empty(), "{f}");
-    assert_eq!(f["signed_in"], true, "the fuzzer must get past the front door to test what is behind it");
+    assert_eq!(
+        f["signed_in"], true,
+        "the fuzzer must get past the front door to test what is behind it"
+    );
     assert!(f["requests"].as_u64().unwrap() > 1000);
 }
 
 #[test]
 fn a_hub_that_lets_bad_json_crash_a_handler_is_caught() {
-    let root = mutant("json", "hub/server.py", "            except ValueError:\n                raise AuthError(400, \"bad json\")", "            except ValueError:\n                raise");
+    let root = mutant(
+        "json",
+        "hub/server.py",
+        "            except ValueError:\n                raise AuthError(400, \"bad json\")",
+        "            except ValueError:\n                raise",
+    );
     let k = kinds(&fuzz(&root, "json"));
     let _ = std::fs::remove_dir_all(&root);
-    assert!(k.iter().any(|k| k.contains("dropped") || k.contains("unhandled") || k.contains("server error")), "{k:?}");
+    assert!(
+        k.iter().any(|k| k.contains("dropped")
+            || k.contains("unhandled")
+            || k.contains("server error")),
+        "{k:?}"
+    );
 }
 
 #[test]

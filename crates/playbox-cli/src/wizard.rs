@@ -34,27 +34,43 @@ impl Report {
     }
     fn warn(&mut self, msg: &str) {
         println!("  todo  {msg}");
-        self.todo.push(msg.lines().next().unwrap_or(msg).to_string());
+        self.todo
+            .push(msg.lines().next().unwrap_or(msg).to_string());
     }
 }
 
 fn runs(prog: &str, args: &[&str]) -> Option<String> {
-    let o = Command::new(prog).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
-    o.status.success().then(|| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    let o = Command::new(prog)
+        .args(args)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    o.status
+        .success()
+        .then(|| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
 /// The first `playbox` on PATH, if it is not `exe` itself: the binary your shell runs isn't the one running this.
 pub(crate) fn shadowed(path: &[PathBuf], exe: &Path) -> Option<PathBuf> {
     let me = std::fs::canonicalize(exe).ok()?;
-    let first = path.iter().map(|d| d.join("playbox")).find(|p| p.is_file())?;
+    let first = path
+        .iter()
+        .map(|d| d.join("playbox"))
+        .find(|p| p.is_file())?;
     (std::fs::canonicalize(&first).ok()? != me).then_some(first)
 }
 
 fn machine(r: &mut Report) -> Result<()> {
     Report::step(1, "This machine");
     let exe = std::fs::canonicalize(std::env::current_exe()?)?;
-    Report::ok(&format!("playbox {} at {}", env!("CARGO_PKG_VERSION"), exe.display()));
-    let dirs: Vec<PathBuf> = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
+    Report::ok(&format!(
+        "playbox {} at {}",
+        env!("CARGO_PKG_VERSION"),
+        exe.display()
+    ));
+    let dirs: Vec<PathBuf> =
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
     if let Some(other) = shadowed(&dirs, &exe) {
         r.warn(&format!(
             "your shell runs {} first, not this binary; copy this one over it (remove the old file first) or delete the old one",
@@ -68,7 +84,10 @@ fn machine(r: &mut Report) -> Result<()> {
         Some(v) => Report::ok(&v),
         None => r.warn("python3 not found; the hub needs it (macOS: xcode-select --install; Debian/Ubuntu: apt install python3)"),
     }
-    for (prog, what) in [("cloudflared", "only for reaching the hub over Cloudflare"), ("docker", "only for sandboxed tasks")] {
+    for (prog, what) in [
+        ("cloudflared", "only for reaching the hub over Cloudflare"),
+        ("docker", "only for sandboxed tasks"),
+    ] {
         if hub::on_path(prog).is_some() {
             Report::ok(&format!("{prog} ({what})"));
         } else {
@@ -82,9 +101,24 @@ fn identity(dry: bool, r: &mut Report) -> Result<()> {
     Report::step(2, "Your keys");
     let home = store::home();
     let keys = ["guest.key", "session.key", "approver.key"];
-    let missing: Vec<&str> = keys.iter().copied().filter(|k| !home.join(k).exists()).collect();
+    let missing: Vec<&str> = keys
+        .iter()
+        .copied()
+        .filter(|k| !home.join(k).exists())
+        .collect();
     if dry {
-        Report::change(true, &format!("keys in {}: {}", home.display(), if missing.is_empty() { "all present".into() } else { format!("would create {}", missing.join(", ")) }));
+        Report::change(
+            true,
+            &format!(
+                "keys in {}: {}",
+                home.display(),
+                if missing.is_empty() {
+                    "all present".into()
+                } else {
+                    format!("would create {}", missing.join(", "))
+                }
+            ),
+        );
         return Ok(());
     }
     std::fs::create_dir_all(&home)?;
@@ -94,7 +128,10 @@ fn identity(dry: bool, r: &mut Report) -> Result<()> {
         let mode = std::fs::metadata(&home)?.permissions().mode() & 0o777;
         if mode & 0o077 != 0 {
             std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700))?;
-            Report::change(false, &format!("{} was {mode:o}; now 700 (only you)", home.display()));
+            Report::change(
+                false,
+                &format!("{} was {mode:o}; now 700 (only you)", home.display()),
+            );
         }
     }
     let guest = playbox_net::identity_key(&home.join("guest.key"))?;
@@ -116,7 +153,12 @@ fn yes_no(a: &InitArgs, tty: bool, q: &str) -> Result<bool> {
     if a.yes || !tty {
         return Ok(true);
     }
-    Ok(!matches!(hub::ask(&format!("{q} (Y/n)"), "y")?.to_lowercase().as_str(), "n" | "no"))
+    Ok(!matches!(
+        hub::ask(&format!("{q} (Y/n)"), "y")?
+            .to_lowercase()
+            .as_str(),
+        "n" | "no"
+    ))
 }
 
 fn agents(a: &InitArgs, tty: bool, r: &mut Report) -> Result<()> {
@@ -138,7 +180,11 @@ fn agents(a: &InitArgs, tty: bool, r: &mut Report) -> Result<()> {
         Report::note("skipped");
         return Ok(());
     }
-    if let Err(e) = setup::run_setup(setup::Opts { dry_run: a.dry_run, remove: false, only: found.iter().map(|s| (*s).to_string()).collect() }) {
+    if let Err(e) = setup::run_setup(setup::Opts {
+        dry_run: a.dry_run,
+        remove: false,
+        only: found.iter().map(|s| (*s).to_string()).collect(),
+    }) {
         r.warn(&format!("agent setup failed: {e}"));
     }
     Ok(())
@@ -204,7 +250,11 @@ fn the_hub(a: &InitArgs, tty: bool, r: &mut Report) -> Result<Option<HubPlan>> {
     if a.lan {
         r.warn("--lan lets phones on this network pair over plain HTTP, which is weaker than a passkey over HTTPS; only on a network you trust");
     }
-    Ok(Some(HubPlan { python, script, reach }))
+    Ok(Some(HubPlan {
+        python,
+        script,
+        reach,
+    }))
 }
 
 fn log_len(p: &Path) -> usize {
@@ -225,7 +275,10 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
     if service::installed() && service::up_to_date(&spec) {
         let (running, detail) = service::status();
         if running && service::wait_healthy(spec.port, Duration::from_secs(3)) {
-            Report::ok(&format!("already installed and running ({})", service::unit_path().display()));
+            Report::ok(&format!(
+                "already installed and running ({})",
+                service::unit_path().display()
+            ));
             return Ok(());
         }
         Report::note(&format!("installed but {detail}; starting it"));
@@ -233,8 +286,18 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
         let interactive = !a.yes && tty;
         let at = service::unit_path();
         if a.dry_run {
-            let what = if interactive { "would ask before replacing it" } else { "would leave it alone" };
-            Report::change(true, &format!("a different hub service is installed at {}; {what}", at.display()));
+            let what = if interactive {
+                "would ask before replacing it"
+            } else {
+                "would leave it alone"
+            };
+            Report::change(
+                true,
+                &format!(
+                    "a different hub service is installed at {}; {what}",
+                    at.display()
+                ),
+            );
             return Ok(());
         }
         let replace = interactive && hub::confirm(&format!("A different hub service is installed at {}. Replace it (the old one is kept as a .bak)?", at.display()))?;
@@ -244,7 +307,14 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
         }
     }
     if a.dry_run {
-        Report::change(true, &format!("install and start {}, logging to {}", service::unit_path().display(), spec.log.display()));
+        Report::change(
+            true,
+            &format!(
+                "install and start {}, logging to {}",
+                service::unit_path().display(),
+                spec.log.display()
+            ),
+        );
         return Ok(());
     }
     if !yes_no(a, tty, "Start the hub at login and keep it running?")? {
@@ -254,13 +324,26 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
     let before = log_len(&spec.log);
     match service::install(&spec) {
         Ok(path) => {
-            Report::change(false, &format!("installed {}; it starts at login and restarts if it stops", path.display()));
-            Report::ok(&format!("the hub answers on port {} (log: {})", spec.port, spec.log.display()));
+            Report::change(
+                false,
+                &format!(
+                    "installed {}; it starts at login and restarts if it stops",
+                    path.display()
+                ),
+            );
+            Report::ok(&format!(
+                "the hub answers on port {} (log: {})",
+                spec.port,
+                spec.log.display()
+            ));
             let log = std::fs::read_to_string(&spec.log).unwrap_or_default();
             let fresh = log.get(before..).unwrap_or(&log);
             let links = service::pairing_links(fresh);
             if links.is_empty() {
-                println!("        sign in with your passkey at http://localhost:{}", spec.port);
+                println!(
+                    "        sign in with your passkey at http://localhost:{}",
+                    spec.port
+                );
             } else {
                 println!("        add your first passkey with one of these (single use, 10 minutes; anyone holding a link can enrol, so don't share it):");
                 for l in links {
@@ -268,7 +351,9 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
                 }
             }
             if !cfg!(target_os = "macos") {
-                Report::note("to keep it running when you're logged out: loginctl enable-linger $USER");
+                Report::note(
+                    "to keep it running when you're logged out: loginctl enable-linger $USER",
+                );
             }
         }
         Err(e) => r.warn(&format!("couldn't start the service: {e:#}")),
@@ -279,14 +364,30 @@ fn background(a: &InitArgs, tty: bool, plan: Option<&HubPlan>, r: &mut Report) -
 /// Check what was just set up, fix what is safe to fix, and fuzz a throwaway copy of the hub.
 fn verify(a: &InitArgs, tty: bool, r: &mut Report) -> Result<()> {
     Report::step(6, "Verify it is secure");
-    let fix = !a.dry_run && (a.yes || !tty || hub::confirm("Fix permissions that are too open (nothing else is changed)?")?);
-    let opts = secure::Opts { fix, fuzz: !a.dry_run, deep: false, seed: None, online: false, port: a.port, hub_dir: a.hub_dir.clone() };
+    let fix = !a.dry_run
+        && (a.yes
+            || !tty
+            || hub::confirm("Fix permissions that are too open (nothing else is changed)?")?);
+    let opts = secure::Opts {
+        fix,
+        fuzz: !a.dry_run,
+        deep: false,
+        seed: None,
+        online: false,
+        port: a.port,
+        hub_dir: a.hub_dir.clone(),
+    };
     let rep = secure::collect(&opts);
     if !a.dry_run {
         secure::save(&rep);
     }
     secure::print(&rep);
-    let bad = rep.checks.iter().filter(|c| c.level == secure::Level::Bad).count() + rep.fuzz.as_ref().map_or(0, |f| f.violations.len());
+    let bad = rep
+        .checks
+        .iter()
+        .filter(|c| c.level == secure::Level::Bad)
+        .count()
+        + rep.fuzz.as_ref().map_or(0, |f| f.violations.len());
     if bad > 0 {
         r.warn(&format!("{bad} security problem(s) above; read them, then run `playbox secure` until it is clean"));
     }
@@ -318,7 +419,14 @@ pub fn run(a: &InitArgs) -> Result<()> {
         bail!("--hostname goes with --tunnel");
     }
     let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
-    println!("Playbox setup{}", if a.dry_run { "  (dry run: nothing is changed)" } else { "" });
+    println!(
+        "Playbox setup{}",
+        if a.dry_run {
+            "  (dry run: nothing is changed)"
+        } else {
+            ""
+        }
+    );
     let mut r = Report { todo: vec![] };
     machine(&mut r)?;
     identity(a.dry_run, &mut r)?;
@@ -347,9 +455,21 @@ mod tests {
         std::fs::write(a.join("playbox"), "old").unwrap();
         std::fs::write(b.join("playbox"), "new").unwrap();
         let new = b.join("playbox");
-        assert_eq!(shadowed(&[a.clone(), b.clone()], &new), Some(a.join("playbox")), "old one first");
-        assert_eq!(shadowed(&[b.clone(), a.clone()], &new), None, "this one first");
-        assert_eq!(shadowed(&[d.join("none")], &new), None, "not on PATH at all");
+        assert_eq!(
+            shadowed(&[a.clone(), b.clone()], &new),
+            Some(a.join("playbox")),
+            "old one first"
+        );
+        assert_eq!(
+            shadowed(&[b.clone(), a.clone()], &new),
+            None,
+            "this one first"
+        );
+        assert_eq!(
+            shadowed(&[d.join("none")], &new),
+            None,
+            "not on PATH at all"
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -370,6 +490,9 @@ mod tests {
         };
         let h = hub_args(&a);
         assert!(h.no_open && !h.pair && h.service.is_none());
-        assert_eq!((h.port, h.tunnel.as_deref(), h.hostname.as_deref()), (Some(9000), Some("t"), Some("h.example.com")));
+        assert_eq!(
+            (h.port, h.tunnel.as_deref(), h.hostname.as_deref()),
+            (Some(9000), Some("t"), Some("h.example.com"))
+        );
     }
 }

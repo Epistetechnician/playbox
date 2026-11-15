@@ -65,15 +65,28 @@ async fn an_idle_connection_is_closed_by_the_host_and_can_be_reopened() {
         authenticated_patience: Duration::from_millis(600),
         ..Default::default()
     };
-    let host = Host::start_with(new_secret_key().unwrap(), true, cfg).await.unwrap();
-    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
-    let c = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+    let host = Host::start_with(new_secret_key().unwrap(), true, cfg)
+        .await
+        .unwrap();
+    let link = host
+        .create_link(Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
+    let c = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
     assert_eq!(c.echo("before").await.unwrap(), "before");
     assert!(!c.is_closed());
 
     tokio::time::sleep(Duration::from_millis(1500)).await;
-    assert!(c.is_closed(), "the host should have hung up on the silent member");
-    assert!(c.echo("after").await.is_err(), "the closed connection no longer works");
+    assert!(
+        c.is_closed(),
+        "the host should have hung up on the silent member"
+    );
+    assert!(
+        c.echo("after").await.is_err(),
+        "the closed connection no longer works"
+    );
 
     let again = c.reconnect().await.unwrap();
     assert_eq!(again.id(), c.id(), "same member identity");
@@ -88,13 +101,23 @@ async fn an_idle_connection_is_closed_by_the_host_and_can_be_reopened() {
 async fn a_loopback_only_host_still_serves_its_room() {
     use playbox_net::{join_link, new_secret_key, Host, HostConfig};
     std::env::set_var("PLAYBOX_BIND", "loopback");
-    let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default()).await.unwrap();
+    let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+        .await
+        .unwrap();
     let addr = host.addr();
     std::env::remove_var("PLAYBOX_BIND");
     let ips: Vec<_> = addr.ip_addrs().collect();
-    assert!(!ips.is_empty() && ips.iter().all(|a| a.ip().is_loopback()), "listening beyond loopback: {ips:?}");
-    let link = host.create_link(std::time::Duration::from_secs(60), 1).unwrap().encode();
-    let a = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+    assert!(
+        !ips.is_empty() && ips.iter().all(|a| a.ip().is_loopback()),
+        "listening beyond loopback: {ips:?}"
+    );
+    let link = host
+        .create_link(std::time::Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
+    let a = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
     a.say("hello over loopback", None).await.unwrap();
     a.close().await;
     host.shutdown().await.unwrap();

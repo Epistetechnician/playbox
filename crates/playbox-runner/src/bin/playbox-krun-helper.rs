@@ -102,7 +102,11 @@ fn main() {
 
     confine(cgroup, jail_dir, &rw, &ro, network, seccomp);
 
-    let script = if secrets.is_some() { GUEST_SCRIPT_SECRETS } else { GUEST_SCRIPT };
+    let script = if secrets.is_some() {
+        GUEST_SCRIPT_SECRETS
+    } else {
+        GUEST_SCRIPT
+    };
     let (root, workspace, tag) = (c(&root), c(&workspace), c("workspace"));
     let secrets_dir = secrets.as_deref().map(c);
     let secrets_tag = c("secrets");
@@ -136,7 +140,10 @@ fn main() {
             krun_add_virtiofs(ctx, tag.as_ptr(), workspace.as_ptr()),
         );
         if let Some(dir) = &secrets_dir {
-            check("krun_add_virtiofs (secrets)", krun_add_virtiofs(ctx, secrets_tag.as_ptr(), dir.as_ptr()));
+            check(
+                "krun_add_virtiofs (secrets)",
+                krun_add_virtiofs(ctx, secrets_tag.as_ptr(), dir.as_ptr()),
+            );
         }
         if !network {
             // No vsock device means no TSI, and so no network of any kind.
@@ -159,8 +166,18 @@ fn main() {
 /// Join the run's cgroup, enter the jail and install the syscall filter, in that order, before any thread exists. Any failure exits:
 /// a helper that was asked to confine itself never boots a VM unconfined.
 #[cfg(target_os = "linux")]
-fn confine(cgroup: Option<String>, jail_dir: Option<String>, rw: &[String], ro: &[String], network: bool, seccomp: bool) {
-    use playbox_runner::{confine::{library_dirs, Plan}, jail::Jail};
+fn confine(
+    cgroup: Option<String>,
+    jail_dir: Option<String>,
+    rw: &[String],
+    ro: &[String],
+    network: bool,
+    seccomp: bool,
+) {
+    use playbox_runner::{
+        confine::{library_dirs, Plan},
+        jail::Jail,
+    };
     use std::path::PathBuf;
     let jail = jail_dir.map(|dir| {
         let mut read_only: Vec<PathBuf> = library_dirs();
@@ -172,11 +189,19 @@ fn confine(cgroup: Option<String>, jail_dir: Option<String>, rw: &[String], ro: 
             dir: dir.into(),
             read_only,
             read_write: rw.iter().map(PathBuf::from).collect(),
-            devices: ["/dev/kvm", "/dev/null", "/dev/zero", "/dev/urandom"].iter().map(PathBuf::from).filter(|p| p.exists()).collect(),
+            devices: ["/dev/kvm", "/dev/null", "/dev/zero", "/dev/urandom"]
+                .iter()
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+                .collect(),
             network,
         }
     });
-    let plan = Plan { cgroup: cgroup.map(PathBuf::from), jail, seccomp };
+    let plan = Plan {
+        cgroup: cgroup.map(PathBuf::from),
+        jail,
+        seccomp,
+    };
     if plan.cgroup.is_some() || plan.jail.is_some() || plan.seccomp {
         if let Err(e) = plan.enter() {
             die(&format!("cannot confine myself, so not booting: {e:#}"));
@@ -185,7 +210,14 @@ fn confine(cgroup: Option<String>, jail_dir: Option<String>, rw: &[String], ro: 
 }
 
 #[cfg(not(target_os = "linux"))]
-fn confine(cgroup: Option<String>, jail_dir: Option<String>, _rw: &[String], _ro: &[String], _network: bool, seccomp: bool) {
+fn confine(
+    cgroup: Option<String>,
+    jail_dir: Option<String>,
+    _rw: &[String],
+    _ro: &[String],
+    _network: bool,
+    seccomp: bool,
+) {
     if cgroup.is_some() || jail_dir.is_some() || seccomp {
         die("confinement flags need Linux");
     }

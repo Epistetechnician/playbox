@@ -15,8 +15,14 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use rustix::fs::{statvfs, StatVfsMountFlags};
-use rustix::mount::{mount, mount_bind, mount_change, mount_remount, unmount, MountFlags, MountPropagationFlags, UnmountFlags};
-use rustix::process::{getgid, getuid, pivot_root, set_dumpable_behavior, set_parent_process_death_signal, DumpableBehavior, Signal};
+use rustix::mount::{
+    mount, mount_bind, mount_change, mount_remount, unmount, MountFlags, MountPropagationFlags,
+    UnmountFlags,
+};
+use rustix::process::{
+    getgid, getuid, pivot_root, set_dumpable_behavior, set_parent_process_death_signal,
+    DumpableBehavior, Signal,
+};
 use rustix::thread::{set_no_new_privs, unshare_unsafe, UnshareFlags};
 use std::fs;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -68,8 +74,15 @@ fn flags_of(path: &Path) -> Result<MountFlags> {
 }
 
 fn target_of(root: &Path, path: &Path) -> Result<PathBuf> {
-    if !path.is_absolute() || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-        bail!("jail paths must be absolute without `..`: {}", path.display());
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        bail!(
+            "jail paths must be absolute without `..`: {}",
+            path.display()
+        );
     }
     Ok(root.join(path.strip_prefix("/").unwrap_or(path)))
 }
@@ -79,17 +92,24 @@ impl Jail {
         let dst = target_of(root, src)?;
         let meta = fs::metadata(src).with_context(|| format!("jail path {}", src.display()))?;
         if meta.is_dir() {
-            fs::DirBuilder::new().recursive(true).mode(0o755).create(&dst)?;
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o755)
+                .create(&dst)?;
         } else {
             if let Some(parent) = dst.parent() {
-                fs::DirBuilder::new().recursive(true).mode(0o755).create(parent)?;
+                fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o755)
+                    .create(parent)?;
             }
             fs::File::create(&dst)?;
         }
         mount_bind(src, &dst).with_context(|| format!("bind {}", src.display()))?;
         if read_only {
             let flags = flags_of(src)? | MountFlags::BIND | MountFlags::RDONLY;
-            mount_remount(&dst, flags, "").with_context(|| format!("remount {} read-only", src.display()))?;
+            mount_remount(&dst, flags, "")
+                .with_context(|| format!("remount {} read-only", src.display()))?;
         }
         Ok(())
     }
@@ -108,7 +128,10 @@ impl Jail {
         let rootless = !uid.is_root();
         set_no_new_privs(true).context("no_new_privs")?;
 
-        let mut flags = UnshareFlags::NEWNS | UnshareFlags::NEWIPC | UnshareFlags::NEWUTS | UnshareFlags::NEWPID;
+        let mut flags = UnshareFlags::NEWNS
+            | UnshareFlags::NEWIPC
+            | UnshareFlags::NEWUTS
+            | UnshareFlags::NEWPID;
         if !self.network {
             flags |= UnshareFlags::NEWNET;
         }
@@ -117,12 +140,21 @@ impl Jail {
         }
         // SAFETY: the caller is single-threaded (documented), and nothing else in the process relies on the namespaces
         // this replaces.
-        unsafe { unshare_unsafe(flags) }.context("unshare (is the kernel allowing user namespaces?)")?;
+        unsafe { unshare_unsafe(flags) }
+            .context("unshare (is the kernel allowing user namespaces?)")?;
         if rootless {
-            let map = |what: &str, r: std::io::Result<()>| r.with_context(|| format!("{what}{}", userns_restriction_hint()));
+            let map = |what: &str, r: std::io::Result<()>| {
+                r.with_context(|| format!("{what}{}", userns_restriction_hint()))
+            };
             map("setgroups", fs::write("/proc/self/setgroups", "deny"))?;
-            map("uid_map", fs::write("/proc/self/uid_map", format!("{0} {0} 1\n", uid.as_raw())))?;
-            map("gid_map", fs::write("/proc/self/gid_map", format!("{0} {0} 1\n", gid.as_raw())))?;
+            map(
+                "uid_map",
+                fs::write("/proc/self/uid_map", format!("{0} {0} 1\n", uid.as_raw())),
+            )?;
+            map(
+                "gid_map",
+                fs::write("/proc/self/gid_map", format!("{0} {0} 1\n", gid.as_raw())),
+            )?;
         }
         // After the maps: a non-dumpable process's /proc/self files belong to root, which would have refused the writes above.
         set_dumpable_behavior(DumpableBehavior::NotDumpable).context("dumpable")?;
@@ -146,7 +178,9 @@ impl Jail {
                 if r == pid {
                     break;
                 }
-                if r < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                if r < 0
+                    && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
+                {
                     std::process::exit(125);
                 }
             }
@@ -161,16 +195,31 @@ impl Jail {
         // The jailed process: PID 1 of its namespace. If the original dies, so does this.
         drop(alive_w);
         set_parent_process_death_signal(Some(Signal::KILL)).context("pdeathsig")?;
-        let mut fd = libc::pollfd { fd: std::os::fd::AsRawFd::as_raw_fd(&alive_r), events: libc::POLLIN, revents: 0 };
+        let mut fd = libc::pollfd {
+            fd: std::os::fd::AsRawFd::as_raw_fd(&alive_r),
+            events: libc::POLLIN,
+            revents: 0,
+        };
         // SAFETY: one valid pollfd; a zero timeout returns at once.
         let ready = unsafe { libc::poll(&mut fd, 1, 0) };
         if ready != 0 {
             bail!("the original process is already gone");
         }
         drop(alive_r);
-        mount_change("/", MountPropagationFlags::REC | MountPropagationFlags::PRIVATE).context("make mounts private")?;
+        mount_change(
+            "/",
+            MountPropagationFlags::REC | MountPropagationFlags::PRIVATE,
+        )
+        .context("make mounts private")?;
         let root = self.dir.as_path();
-        mount("tmpfs", root, "tmpfs", MountFlags::NOSUID | MountFlags::NODEV, c"mode=0755,size=4m").context("tmpfs root")?;
+        mount(
+            "tmpfs",
+            root,
+            "tmpfs",
+            MountFlags::NOSUID | MountFlags::NODEV,
+            c"mode=0755,size=4m",
+        )
+        .context("tmpfs root")?;
         for p in &self.read_only {
             self.bind(root, p, true)?;
         }
@@ -182,14 +231,22 @@ impl Jail {
         }
         let proc_dir = root.join("proc");
         fs::DirBuilder::new().mode(0o555).create(&proc_dir)?;
-        mount("proc", &proc_dir, "proc", MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC, c"").context("mount /proc")?;
+        mount(
+            "proc",
+            &proc_dir,
+            "proc",
+            MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC,
+            c"",
+        )
+        .context("mount /proc")?;
         let old = root.join(".old");
         fs::DirBuilder::new().mode(0o700).create(&old)?;
         pivot_root(root, &old).context("pivot_root")?;
         std::env::set_current_dir("/").context("chdir /")?;
         unmount("/.old", UnmountFlags::DETACH).context("unmount the old root")?;
         fs::remove_dir("/.old").context("remove /.old")?;
-        fs::set_permissions("/", fs::Permissions::from_mode(0o555)).map_err(|e| anyhow!("chmod /: {e}"))?;
+        fs::set_permissions("/", fs::Permissions::from_mode(0o555))
+            .map_err(|e| anyhow!("chmod /: {e}"))?;
         Ok(())
     }
 }

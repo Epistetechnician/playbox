@@ -26,7 +26,11 @@ fn random_bytes<const N: usize>() -> [u8; N] {
     let mut i = 0;
     while i < N {
         let mut h = RandomState::new().build_hasher();
-        h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+        h.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos()),
+        );
         for b in h.finish().to_le_bytes() {
             if i < N {
                 out[i] = b;
@@ -40,9 +44,13 @@ fn random_bytes<const N: usize>() -> [u8; N] {
 /// `ws://host:port/path` split into its parts.
 pub fn parse_ws_url(url: &str) -> Result<(String, u16, String)> {
     let rest = url.strip_prefix("ws://").ok_or_else(|| anyhow!("the browser endpoint must be ws://host:port/... or http://host:port (it runs beside the host)"))?;
-    let (hostport, path) = rest.split_once('/').map_or((rest, "/".to_string()), |(a, b)| (a, format!("/{b}")));
+    let (hostport, path) = rest
+        .split_once('/')
+        .map_or((rest, "/".to_string()), |(a, b)| (a, format!("/{b}")));
     let (host, port) = match hostport.rsplit_once(':') {
-        Some((h, p)) if !h.ends_with(']') || h.starts_with('[') => (h.to_string(), p.parse::<u16>().context("endpoint port")?),
+        Some((h, p)) if !h.ends_with(']') || h.starts_with('[') => {
+            (h.to_string(), p.parse::<u16>().context("endpoint port")?)
+        }
         _ => (hostport.to_string(), 80),
     };
     if host.is_empty() || host.contains(|c: char| c.is_whitespace() || c == '/') {
@@ -57,7 +65,9 @@ impl WebSocket {
     /// Returns an error if the connection or the handshake fails.
     pub async fn connect(url: &str) -> Result<Self> {
         let (host, port, path) = parse_ws_url(url)?;
-        let mut stream = TcpStream::connect((host.trim_matches(|c| c == '[' || c == ']'), port)).await.context("connect to the browser")?;
+        let mut stream = TcpStream::connect((host.trim_matches(|c| c == '[' || c == ']'), port))
+            .await
+            .context("connect to the browser")?;
         stream.set_nodelay(true).ok();
         let key = base64::engine::general_purpose::STANDARD.encode(random_bytes::<16>());
         // No Origin header: a browser started without --remote-allow-origins refuses one it does not know.
@@ -78,14 +88,26 @@ impl WebSocket {
         let mut lines = text.split("\r\n");
         let status = lines.next().unwrap_or("");
         if !status.contains(" 101 ") {
-            bail!("the browser refused the WebSocket handshake: {}", status.trim());
+            bail!(
+                "the browser refused the WebSocket handshake: {}",
+                status.trim()
+            );
         }
-        let want = base64::engine::general_purpose::STANDARD.encode(Sha1::digest(format!("{key}{GUID}").as_bytes()));
-        let got = lines.find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("sec-websocket-accept")).map(|(_, v)| v.trim().to_string()));
+        let want = base64::engine::general_purpose::STANDARD
+            .encode(Sha1::digest(format!("{key}{GUID}").as_bytes()));
+        let got = lines.find_map(|l| {
+            l.split_once(':')
+                .filter(|(k, _)| k.eq_ignore_ascii_case("sec-websocket-accept"))
+                .map(|(_, v)| v.trim().to_string())
+        });
         if got.as_deref() != Some(want.as_str()) {
             bail!("the browser's WebSocket handshake answer is wrong");
         }
-        Ok(Self { stream, buf: Vec::new(), closed: false })
+        Ok(Self {
+            stream,
+            buf: Vec::new(),
+            closed: false,
+        })
     }
 
     /// Send one text message.
@@ -155,7 +177,10 @@ impl WebSocket {
                 }
                 127 => {
                     self.fill(10).await?;
-                    (10, u64::from_be_bytes(self.buf[2..10].try_into().expect("eight bytes")))
+                    (
+                        10,
+                        u64::from_be_bytes(self.buf[2..10].try_into().expect("eight bytes")),
+                    )
                 }
                 n => (2, u64::from(n)),
             };
@@ -174,12 +199,16 @@ impl WebSocket {
                     started = true;
                     message.extend_from_slice(&payload);
                     if fin {
-                        return Ok(Some(String::from_utf8(message).map_err(|_| anyhow!("the browser sent text that is not UTF-8"))?));
+                        return Ok(Some(String::from_utf8(message).map_err(|_| {
+                            anyhow!("the browser sent text that is not UTF-8")
+                        })?));
                     }
                 }
                 0x2 => bail!("the browser sent a binary message"),
                 0x8 => {
-                    self.write_frame(0x8, payload.get(..2).unwrap_or(&[])).await.ok();
+                    self.write_frame(0x8, payload.get(..2).unwrap_or(&[]))
+                        .await
+                        .ok();
                     self.closed = true;
                     return Ok(None);
                 }
@@ -216,10 +245,21 @@ pub mod server {
             head.push(b[0]);
         }
         let text = String::from_utf8_lossy(&head).to_string();
-        let key = text.lines().find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("sec-websocket-key")).map(|(_, v)| v.trim().to_string())).unwrap();
-        let acc = base64::engine::general_purpose::STANDARD.encode(Sha1::digest(format!("{key}{GUID}").as_bytes()));
+        let key = text
+            .lines()
+            .find_map(|l| {
+                l.split_once(':')
+                    .filter(|(k, _)| k.eq_ignore_ascii_case("sec-websocket-key"))
+                    .map(|(_, v)| v.trim().to_string())
+            })
+            .unwrap();
+        let acc = base64::engine::general_purpose::STANDARD
+            .encode(Sha1::digest(format!("{key}{GUID}").as_bytes()));
         s.write_all(format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {acc}\r\n\r\n").as_bytes()).await.unwrap();
-        Peer { stream: s, buf: Vec::new() }
+        Peer {
+            stream: s,
+            buf: Vec::new(),
+        }
     }
 
     impl Peer {
@@ -236,7 +276,10 @@ pub mod server {
                 let opcode = self.buf[0] & 0x0F;
                 let (hdr, len) = match self.buf[1] & 0x7F {
                     126 => (4, u16::from_be_bytes([self.buf[2], self.buf[3]]) as usize),
-                    127 => (10, u64::from_be_bytes(self.buf[2..10].try_into().unwrap()) as usize),
+                    127 => (
+                        10,
+                        u64::from_be_bytes(self.buf[2..10].try_into().unwrap()) as usize,
+                    ),
                     n => (2, n as usize),
                 };
                 while self.buf.len() < hdr + 4 + len {
@@ -248,7 +291,11 @@ pub mod server {
                     self.buf.extend_from_slice(&c[..n]);
                 }
                 let mask: [u8; 4] = self.buf[hdr..hdr + 4].try_into().unwrap();
-                let payload: Vec<u8> = self.buf[hdr + 4..hdr + 4 + len].iter().enumerate().map(|(i, b)| b ^ mask[i % 4]).collect();
+                let payload: Vec<u8> = self.buf[hdr + 4..hdr + 4 + len]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| b ^ mask[i % 4])
+                    .collect();
                 self.buf.drain(..hdr + 4 + len);
                 match opcode {
                     0x1 => return Some(String::from_utf8(payload).unwrap()),
@@ -287,8 +334,14 @@ mod tests {
 
     #[test]
     fn urls() {
-        assert_eq!(parse_ws_url("ws://127.0.0.1:9222/devtools/browser/abc").unwrap(), ("127.0.0.1".into(), 9222, "/devtools/browser/abc".into()));
-        assert_eq!(parse_ws_url("ws://localhost").unwrap(), ("localhost".into(), 80, "/".into()));
+        assert_eq!(
+            parse_ws_url("ws://127.0.0.1:9222/devtools/browser/abc").unwrap(),
+            ("127.0.0.1".into(), 9222, "/devtools/browser/abc".into())
+        );
+        assert_eq!(
+            parse_ws_url("ws://localhost").unwrap(),
+            ("localhost".into(), 80, "/".into())
+        );
         assert!(parse_ws_url("wss://x/").is_err());
         assert!(parse_ws_url("http://x/").is_err());
         assert!(parse_ws_url("ws://:1/").is_err());
@@ -309,7 +362,9 @@ mod tests {
             p.send(&"y".repeat(70_000)).await;
             p.send_frame(true, 0x8, &1000u16.to_be_bytes()).await;
         });
-        let mut ws = WebSocket::connect(&format!("ws://127.0.0.1:{port}/")).await.unwrap();
+        let mut ws = WebSocket::connect(&format!("ws://127.0.0.1:{port}/"))
+            .await
+            .unwrap();
         ws.send("hello").await.unwrap();
         ws.send(&"x".repeat(200_000)).await.unwrap();
         assert_eq!(ws.recv().await.unwrap().as_deref(), Some("fragments"));
@@ -327,9 +382,13 @@ mod tests {
             let (mut s, _) = l.accept().await.unwrap();
             let mut b = [0u8; 1024];
             let _ = s.read(&mut b).await;
-            s.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await.unwrap();
+            s.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .await
+                .unwrap();
         });
-        assert!(WebSocket::connect(&format!("ws://127.0.0.1:{port}/")).await.is_err());
+        assert!(WebSocket::connect(&format!("ws://127.0.0.1:{port}/"))
+            .await
+            .is_err());
         // A server that answers 101 with a bad accept value.
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
@@ -337,9 +396,13 @@ mod tests {
             let (mut s, _) = l.accept().await.unwrap();
             let mut b = [0u8; 1024];
             let _ = s.read(&mut b).await;
-            s.write_all(b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: nope\r\n\r\n").await.unwrap();
+            s.write_all(b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: nope\r\n\r\n")
+                .await
+                .unwrap();
         });
-        assert!(WebSocket::connect(&format!("ws://127.0.0.1:{port}/")).await.is_err());
+        assert!(WebSocket::connect(&format!("ws://127.0.0.1:{port}/"))
+            .await
+            .is_err());
         // Binary frames and unknown opcodes are refused; an ordinary text frame is fine.
         for (opcode, bad) in [(0x2u8, true), (0x3, true), (0x1, false)] {
             let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -349,7 +412,9 @@ mod tests {
                 p.send_frame(true, opcode, b"abc").await;
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             });
-            let mut ws = WebSocket::connect(&format!("ws://127.0.0.1:{port}/")).await.unwrap();
+            let mut ws = WebSocket::connect(&format!("ws://127.0.0.1:{port}/"))
+                .await
+                .unwrap();
             assert_eq!(ws.recv().await.is_err(), bad, "opcode {opcode}");
             srv.await.unwrap();
         }

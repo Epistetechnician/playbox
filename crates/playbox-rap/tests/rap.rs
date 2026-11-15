@@ -189,7 +189,10 @@ async fn refuses_missing_token_and_foreign_callback_hosts() {
 
 fn unique_room() -> String {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    format!("rap-test-{}", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    format!(
+        "rap-test-{}",
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )
 }
 
 async fn next(rx: &mut mpsc::UnboundedReceiver<Value>) -> Value {
@@ -287,8 +290,10 @@ async fn call(base: &str, cb: &str, id: &str, op: &str, args: Value) {
     let r = reqwest::Client::new()
         .post(format!("{base}/invoke"))
         .bearer_auth(TOKEN)
-        .json(&json!({"operation": op, "arguments": args, "id": id, "call_id": null,
-                      "callback_url": cb, "group_id": "thread-1"}))
+        .json(
+            &json!({"operation": op, "arguments": args, "id": id, "call_id": null,
+                      "callback_url": cb, "group_id": "thread-1"}),
+        )
         .send()
         .await
         .unwrap();
@@ -296,7 +301,11 @@ async fn call(base: &str, cb: &str, id: &str, op: &str, args: Value) {
 }
 
 /// The first message of `kind` for call `id`, skipping anything else.
-async fn wait_for(rx: &mut mpsc::UnboundedReceiver<Value>, kind: &str, pred: impl Fn(&Value) -> bool) -> Value {
+async fn wait_for(
+    rx: &mut mpsc::UnboundedReceiver<Value>,
+    kind: &str,
+    pred: impl Fn(&Value) -> bool,
+) -> Value {
     loop {
         let m = next(rx).await;
         if m["type"] == kind && pred(&m) {
@@ -313,11 +322,21 @@ fn git_repo(home: &tempfile_dir::Dir) -> std::path::PathBuf {
         &["config", "user.email", "h@example.com"],
         &["config", "user.name", "h"],
     ] {
-        assert!(std::process::Command::new("git").args(args).current_dir(&repo).status().unwrap().success());
+        assert!(std::process::Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
     }
     std::fs::write(repo.join("README.md"), "hello\n").unwrap();
     for args in [&["add", "-A"][..], &["commit", "-q", "-m", "init"]] {
-        assert!(std::process::Command::new("git").args(args).current_dir(&repo).status().unwrap().success());
+        assert!(std::process::Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
     }
     repo
 }
@@ -327,24 +346,58 @@ async fn subscription_streams_new_room_items_only_and_ends_on_cancel() {
     let (base, h) = start().await;
     let (cb, mut rx) = receiver().await;
     let repo = git_repo(&h);
-    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
+    call(
+        &base,
+        &cb,
+        "create",
+        "playbox_create",
+        json!({"repo": repo, "local": true, "name": unique_room()}),
+    )
+    .await;
     let made = wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
-    assert!(!made["text"].as_str().unwrap().starts_with("error:"), "{made}");
-    call(&base, &cb, "before", "playbox_say", json!({"text": "old news"})).await;
+    assert!(
+        !made["text"].as_str().unwrap().starts_with("error:"),
+        "{made}"
+    );
+    call(
+        &base,
+        &cb,
+        "before",
+        "playbox_say",
+        json!({"text": "old news"}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "before").await;
 
-    call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
+    call(
+        &base,
+        &cb,
+        "sub",
+        "playbox_subscribe",
+        json!({"interval_ms": 500}),
+    )
+    .await;
     let ok = wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
     assert_eq!(ok["subscription"], true);
 
-    call(&base, &cb, "after", "playbox_say", json!({"text": "hello room"})).await;
+    call(
+        &base,
+        &cb,
+        "after",
+        "playbox_say",
+        json!({"text": "hello room"}),
+    )
+    .await;
     let ev = wait_for(&mut rx, "subscription_event", |_| true).await;
     assert_eq!(ev["tool_call_id"], "sub");
     // Inline in the subscribing thread; a non-associative event would start a child thread per item.
     assert_eq!(ev["associative"], true);
     assert_eq!(ev["group_id"], "thread-1");
     let item: Value = serde_json::from_str(ev["text"].as_str().unwrap()).unwrap();
-    assert_eq!(item["text"], "hello room", "the backlog must not be replayed: {item}");
+    assert_eq!(
+        item["text"], "hello room",
+        "the backlog must not be replayed: {item}"
+    );
     assert_eq!(item["untrusted"], true);
 
     let r = reqwest::Client::new()
@@ -357,7 +410,14 @@ async fn subscription_streams_new_room_items_only_and_ends_on_cancel() {
     assert_eq!(r.status(), 200);
     let end = wait_for(&mut rx, "subscription_event", |m| m["final"] == true).await;
     assert!(end["text"].as_str().unwrap().contains("cancelled"));
-    call(&base, &cb, "later", "playbox_say", json!({"text": "nobody hears this"})).await;
+    call(
+        &base,
+        &cb,
+        "later",
+        "playbox_say",
+        json!({"text": "nobody hears this"}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "later").await;
     tokio::time::sleep(Duration::from_millis(1200)).await;
     while let Ok(m) = rx.try_recv() {
@@ -370,14 +430,45 @@ async fn closing_a_thread_ends_its_subscriptions() {
     let (base, h) = start().await;
     let (cb, mut rx) = receiver().await;
     let repo = git_repo(&h);
-    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
+    call(
+        &base,
+        &cb,
+        "create",
+        "playbox_create",
+        json!({"repo": repo, "local": true, "name": unique_room()}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
-    call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
+    call(
+        &base,
+        &cb,
+        "sub",
+        "playbox_subscribe",
+        json!({"interval_ms": 500}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
     let c = reqwest::Client::new();
     let url = format!("{base}/close_thread");
-    assert_eq!(c.post(&url).json(&json!({"thread_id": "thread-1"})).send().await.unwrap().status(), 401);
-    assert_eq!(c.post(&url).bearer_auth(TOKEN).json(&json!({"thread_id": "thread-1"})).send().await.unwrap().status(), 200);
+    assert_eq!(
+        c.post(&url)
+            .json(&json!({"thread_id": "thread-1"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        c.post(&url)
+            .bearer_auth(TOKEN)
+            .json(&json!({"thread_id": "thread-1"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
     let end = wait_for(&mut rx, "subscription_event", |m| m["final"] == true).await;
     assert!(end["text"].as_str().unwrap().contains("thread closed"));
 }
@@ -387,14 +478,29 @@ async fn room_events_flow_while_a_long_call_holds_the_server() {
     let (base, h, rap) = start_rap().await;
     let (cb, mut rx) = receiver().await;
     let repo = git_repo(&h);
-    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
+    call(
+        &base,
+        &cb,
+        "create",
+        "playbox_create",
+        json!({"repo": repo, "local": true, "name": unique_room()}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
-    call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
+    call(
+        &base,
+        &cb,
+        "sub",
+        "playbox_subscribe",
+        json!({"interval_ms": 500}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
 
     // A delegated task would hold the server like this for as long as it runs.
     let mut busy = rap.lock_server().await;
-    busy.call("playbox_say", &json!({"text": "said during a long call"})).await;
+    busy.call("playbox_say", &json!({"text": "said during a long call"}))
+        .await;
     let ev = wait_for(&mut rx, "subscription_event", |_| true).await;
     let item: Value = serde_json::from_str(ev["text"].as_str().unwrap()).unwrap();
     assert_eq!(item["text"], "said during a long call");
@@ -406,10 +512,24 @@ async fn another_members_words_wait_for_the_server_so_they_are_marked_first() {
     let (base, h, rap) = start_rap().await;
     let (cb, mut rx) = receiver().await;
     let repo = git_repo(&h);
-    call(&base, &cb, "create", "playbox_create", json!({"repo": repo, "local": true, "name": unique_room()})).await;
+    call(
+        &base,
+        &cb,
+        "create",
+        "playbox_create",
+        json!({"repo": repo, "local": true, "name": unique_room()}),
+    )
+    .await;
     let made = wait_for(&mut rx, "tool_result", |m| m["id"] == "create").await;
     let made: Value = serde_json::from_str(made["text"].as_str().unwrap()).unwrap();
-    call(&base, &cb, "sub", "playbox_subscribe", json!({"interval_ms": 500})).await;
+    call(
+        &base,
+        &cb,
+        "sub",
+        "playbox_subscribe",
+        json!({"interval_ms": 500}),
+    )
+    .await;
     wait_for(&mut rx, "tool_result", |m| m["id"] == "sub").await;
 
     let guest_home = tempfile_dir::Dir::new();
@@ -420,16 +540,22 @@ async fn another_members_words_wait_for_the_server_so_they_are_marked_first() {
     assert_eq!(joined["isError"], false, "{joined}");
 
     let busy = rap.lock_server().await;
-    guest.call("playbox_say", &json!({"text": "from the guest"})).await;
+    guest
+        .call("playbox_say", &json!({"text": "from the guest"}))
+        .await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
     while let Ok(m) = rx.try_recv() {
         assert!(
-            !(m["type"] == "subscription_event" && m["text"].as_str().unwrap_or("").contains("from the guest")),
+            !(m["type"] == "subscription_event"
+                && m["text"].as_str().unwrap_or("").contains("from the guest")),
             "sent before the server could mark it untrusted: {m}"
         );
     }
     drop(busy);
-    let ev = wait_for(&mut rx, "subscription_event", |m| m["text"].as_str().unwrap_or("").contains("from the guest")).await;
+    let ev = wait_for(&mut rx, "subscription_event", |m| {
+        m["text"].as_str().unwrap_or("").contains("from the guest")
+    })
+    .await;
     let item: Value = serde_json::from_str(ev["text"].as_str().unwrap()).unwrap();
     assert_eq!(item["untrusted"], true);
 }

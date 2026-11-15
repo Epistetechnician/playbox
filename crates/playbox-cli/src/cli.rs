@@ -187,7 +187,12 @@ pub struct UpArgs {
     #[arg(long)]
     pub confine: bool,
     /// With --confine: the most network a task may have: none (default), internet, internet+lan
-    #[arg(long, value_name = "LEVEL", default_value = "none", requires = "confine")]
+    #[arg(
+        long,
+        value_name = "LEVEL",
+        default_value = "none",
+        requires = "confine"
+    )]
     pub confine_net: String,
     /// With --confine: skip the syscall filter (for debugging a guest that needs a denied call)
     #[arg(long, requires = "confine")]
@@ -305,6 +310,8 @@ pub struct KeyArg {
     pub key: Option<String>,
 }
 
+// One value of this enum is built per process, so the size of the largest variant costs nothing worth boxing the arguments for.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 pub enum Cmd {
     /// Start a room and print a join link
@@ -678,10 +685,48 @@ mod tests {
     #[test]
     fn random_argument_lists_never_panic() {
         let words = [
-            "up", "join", "shell", "call", "memory", "remember", "recall", "pin", "add", "list", "experiment", "world",
-            "doctor", "--json", "--home", "--task", "--state", "--local", "--tui", "--console", "-", "--", "", "e6",
-            "fact", "x", "--tail", "-1", "99999999999999999999", "playbox://l", "--latent-hub", "--allow-host", "\u{0}",
-            "é", "--key", "--ttl", "approve", "--arg", "completions", "zsh", "--min-host-tier", "t9",
+            "up",
+            "join",
+            "shell",
+            "call",
+            "memory",
+            "remember",
+            "recall",
+            "pin",
+            "add",
+            "list",
+            "experiment",
+            "world",
+            "doctor",
+            "--json",
+            "--home",
+            "--task",
+            "--state",
+            "--local",
+            "--tui",
+            "--console",
+            "-",
+            "--",
+            "",
+            "e6",
+            "fact",
+            "x",
+            "--tail",
+            "-1",
+            "99999999999999999999",
+            "playbox://l",
+            "--latent-hub",
+            "--allow-host",
+            "\u{0}",
+            "é",
+            "--key",
+            "--ttl",
+            "approve",
+            "--arg",
+            "completions",
+            "zsh",
+            "--min-host-tier",
+            "t9",
         ];
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
         let mut next = || {

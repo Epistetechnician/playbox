@@ -147,11 +147,16 @@ impl Chat {
     /// Append one line to the store, and compact it when it has grown. A failure is reported on stderr and the feed carries
     /// on in memory, the way a failed audit write does.
     fn persist(inner: &mut Inner, line: &Value) {
-        let Some(store) = inner.store.as_mut() else { return };
+        let Some(store) = inner.store.as_mut() else {
+            return;
+        };
         let mut text = line.to_string();
         text.push('\n');
         if let Err(e) = store.file.write_all(text.as_bytes()) {
-            eprintln!("playbox: cannot write the chat log {}: {e}", store.path.display());
+            eprintln!(
+                "playbox: cannot write the chat log {}: {e}",
+                store.path.display()
+            );
             return;
         }
         store.lines += 1;
@@ -161,7 +166,9 @@ impl Chat {
     }
 
     fn compact(inner: &mut Inner) {
-        let Some(store) = inner.store.as_ref() else { return };
+        let Some(store) = inner.store.as_ref() else {
+            return;
+        };
         let path = store.path.clone();
         let mut body = String::new();
         let mut lines = 0;
@@ -189,7 +196,10 @@ impl Chat {
             .and_then(|()| std::fs::OpenOptions::new().append(true).open(&path));
         match written {
             Ok(file) => inner.store = Some(Store { path, file, lines }),
-            Err(e) => eprintln!("playbox: cannot compact the chat log {}: {e}", path.display()),
+            Err(e) => eprintln!(
+                "playbox: cannot compact the chat log {}: {e}",
+                path.display()
+            ),
         }
     }
 
@@ -219,7 +229,9 @@ impl Chat {
                 let now = now_ms();
                 for l in data.lines() {
                     lines += 1;
-                    let Ok(v) = serde_json::from_str::<Value>(l) else { continue };
+                    let Ok(v) = serde_json::from_str::<Value>(l) else {
+                        continue;
+                    };
                     match v["t"].as_str() {
                         Some("item") => {
                             if let Ok(item) = serde_json::from_value::<Item>(v["item"].clone()) {
@@ -243,7 +255,17 @@ impl Chat {
                             };
                             if now.saturating_sub(at_ms) <= REQUEST_TTL_MS {
                                 let key = (from.to_string(), id.to_string());
-                                if g.requests.insert(key.clone(), Request { seq, hash: hash.to_string(), at_ms }).is_none() {
+                                if g.requests
+                                    .insert(
+                                        key.clone(),
+                                        Request {
+                                            seq,
+                                            hash: hash.to_string(),
+                                            at_ms,
+                                        },
+                                    )
+                                    .is_none()
+                                {
                                     g.request_order.push_back(key);
                                 }
                             }
@@ -252,9 +274,18 @@ impl Chat {
                     }
                 }
             }
-            match File::options().create(true).append(true).mode(0o600).open(path) {
+            match File::options()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(path)
+            {
                 Ok(file) => {
-                    g.store = Some(Store { path: path.to_path_buf(), file, lines });
+                    g.store = Some(Store {
+                        path: path.to_path_buf(),
+                        file,
+                        lines,
+                    });
                     if lines > COMPACT_AT {
                         Self::compact(&mut g);
                     }
@@ -281,10 +312,23 @@ impl Chat {
     /// # Errors
     ///
     /// Returns a message describing why the operation failed.
-    pub fn say_once(&self, from: &str, name: Option<&str>, text: &str, request_id: Option<&str>) -> Result<u64, String> {
+    pub fn say_once(
+        &self,
+        from: &str,
+        name: Option<&str>,
+        text: &str,
+        request_id: Option<&str>,
+    ) -> Result<u64, String> {
         if let Some(id) = request_id {
-            if id.is_empty() || id.len() > MAX_REQUEST_ID || !id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')) {
-                return Err(format!("a request id is 1 to {MAX_REQUEST_ID} letters, digits, - _ or ."));
+            if id.is_empty()
+                || id.len() > MAX_REQUEST_ID
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+            {
+                return Err(format!(
+                    "a request id is 1 to {MAX_REQUEST_ID} letters, digits, - _ or ."
+                ));
             }
         }
         let text = clean(text, MAX_TEXT);
@@ -295,9 +339,15 @@ impl Chat {
         let mut g = self.inner.lock().expect("chat lock");
         let now = now_ms();
         let key = request_id.map(|id| (from.to_string(), id.to_string()));
-        let hash = blake3::hash(format!("{}\n{text}", name.as_deref().unwrap_or("")).as_bytes()).to_hex()[..32].to_string();
+        let hash = blake3::hash(format!("{}\n{text}", name.as_deref().unwrap_or("")).as_bytes())
+            .to_hex()[..32]
+            .to_string();
         if let Some(key) = &key {
-            while g.request_order.front().is_some_and(|k| g.requests.get(k).is_none_or(|r| now.saturating_sub(r.at_ms) > REQUEST_TTL_MS)) {
+            while g.request_order.front().is_some_and(|k| {
+                g.requests
+                    .get(k)
+                    .is_none_or(|r| now.saturating_sub(r.at_ms) > REQUEST_TTL_MS)
+            }) {
                 if let Some(old) = g.request_order.pop_front() {
                     g.requests.remove(&old);
                 }
@@ -331,7 +381,11 @@ impl Chat {
         let name = name.or_else(|| g.names.get(from).cloned());
         let seq = Self::push(&mut g, "say", from, name, text);
         if let Some(key) = key {
-            let r = Request { seq, hash, at_ms: now };
+            let r = Request {
+                seq,
+                hash,
+                at_ms: now,
+            };
             let line = Self::request_line(&key, &r);
             g.request_order.push_back(key.clone());
             g.requests.insert(key, r);
@@ -369,7 +423,12 @@ impl Chat {
     /// can use any number of keys, so the table is capped: when it is full the longest-silent entry makes room.
     fn mark_seen(g: &mut Inner, who: &str, now: u64) {
         if g.seen.len() >= MAX_SEEN && !g.seen.contains_key(who) {
-            if let Some(oldest) = g.seen.iter().min_by_key(|(_, t)| **t).map(|(k, _)| k.clone()) {
+            if let Some(oldest) = g
+                .seen
+                .iter()
+                .min_by_key(|(_, t)| **t)
+                .map(|(k, _)| k.clone())
+            {
                 g.seen.remove(&oldest);
             }
         }
@@ -378,7 +437,14 @@ impl Chat {
 
     /// [`Chat::since`], but when nothing is new yet wait up to `wait` (at most [`MAX_FEED_WAIT`]) for something to arrive and return as
     /// soon as it does. `who` is marked present while waiting, so a patient reader does not look gone. A zero `wait` is a plain read.
-    pub async fn wait_since(&self, who: &str, since: u64, limit: usize, members: &[String], wait: std::time::Duration) -> Feed {
+    pub async fn wait_since(
+        &self,
+        who: &str,
+        since: u64,
+        limit: usize,
+        members: &[String],
+        wait: std::time::Duration,
+    ) -> Feed {
         let deadline = std::time::Instant::now() + wait.min(MAX_FEED_WAIT);
         loop {
             // Register for wake-ups before looking, so a message that lands in between is not missed.
@@ -392,7 +458,8 @@ impl Chat {
                 return feed;
             }
             // Wake now and then even without news, to keep `who` present across a long wait.
-            let _ = tokio::time::timeout(left.min(std::time::Duration::from_secs(4)), notified).await;
+            let _ =
+                tokio::time::timeout(left.min(std::time::Duration::from_secs(4)), notified).await;
         }
     }
 
@@ -435,7 +502,11 @@ impl Chat {
 fn trim(items: &mut VecDeque<Item>) {
     while items.len() > KEPT {
         let events = items.iter().filter(|i| i.kind == "event").count();
-        let at = if events > KEPT / 2 { items.iter().position(|i| i.kind == "event") } else { None };
+        let at = if events > KEPT / 2 {
+            items.iter().position(|i| i.kind == "event")
+        } else {
+            None
+        };
         match at {
             Some(i) => {
                 items.remove(i);
@@ -507,7 +578,11 @@ mod tests {
             c.say("a", None, &format!("hello {i}")).unwrap();
         }
         for i in 0..(KEPT * 3) {
-            c.event("refused", Some("a"), &json!({ "reason": format!("not authorized {i}") }));
+            c.event(
+                "refused",
+                Some("a"),
+                &json!({ "reason": format!("not authorized {i}") }),
+            );
         }
         let f = c.since(0, 500, &[]);
         let said = f.items.iter().filter(|i| i.kind == "say").count();
@@ -566,7 +641,8 @@ mod tests {
 
     #[test]
     fn a_log_cut_inside_a_multibyte_character_keeps_the_history() {
-        let p = std::env::temp_dir().join(format!("playbox-chat-torn-{}.jsonl", std::process::id()));
+        let p =
+            std::env::temp_dir().join(format!("playbox-chat-torn-{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&p);
         let c = Chat::open(&p);
         c.say("m", Some("n"), "before").unwrap();
@@ -581,8 +657,17 @@ mod tests {
         assert_eq!(items[0].text, "before");
         c.say("m", Some("n"), "after").unwrap();
         drop(c);
-        let texts: Vec<String> = Chat::open(&p).since(0, 10, &[]).items.into_iter().map(|i| i.text).collect();
-        assert_eq!(texts, ["before", "after"], "a line written after the torn one is not glued to it");
+        let texts: Vec<String> = Chat::open(&p)
+            .since(0, 10, &[])
+            .items
+            .into_iter()
+            .map(|i| i.text)
+            .collect();
+        assert_eq!(
+            texts,
+            ["before", "after"],
+            "a line written after the torn one is not glued to it"
+        );
         let _ = std::fs::remove_file(&p);
     }
 
@@ -618,17 +703,39 @@ mod tests {
     fn a_request_id_posts_once_and_the_same_id_with_other_text_is_refused() {
         let c = Chat::new();
         let first = c.say_once("alice", None, "hello", Some("r1")).unwrap();
-        assert_eq!(c.say_once("alice", None, "hello", Some("r1")).unwrap(), first);
-        assert_eq!(c.since(0, 100, &[]).items.iter().filter(|i| i.kind == "say").count(), 1);
-        assert!(c.say_once("alice", None, "something else", Some("r1")).unwrap_err().contains("different message"));
+        assert_eq!(
+            c.say_once("alice", None, "hello", Some("r1")).unwrap(),
+            first
+        );
+        assert_eq!(
+            c.since(0, 100, &[])
+                .items
+                .iter()
+                .filter(|i| i.kind == "say")
+                .count(),
+            1
+        );
+        assert!(c
+            .say_once("alice", None, "something else", Some("r1"))
+            .unwrap_err()
+            .contains("different message"));
         // Another member may use the same id, and a message without an id is never deduplicated.
         let other = c.say_once("bob", None, "hello", Some("r1")).unwrap();
         assert_ne!(other, first);
         let a = c.say_once("alice", None, "hello", None).unwrap();
         let b = c.say_once("alice", None, "hello", None).unwrap();
         assert_ne!(a, b);
-        for bad in ["", "has space", "new\nline", &"x".repeat(MAX_REQUEST_ID + 1), "é"] {
-            assert!(c.say_once("alice", None, "hi", Some(bad)).is_err(), "{bad:?}");
+        for bad in [
+            "",
+            "has space",
+            "new\nline",
+            &"x".repeat(MAX_REQUEST_ID + 1),
+            "é",
+        ] {
+            assert!(
+                c.say_once("alice", None, "hi", Some(bad)).is_err(),
+                "{bad:?}"
+            );
         }
     }
 
@@ -636,11 +743,19 @@ mod tests {
     fn a_retry_does_not_use_up_the_rate_limit() {
         let c = Chat::new();
         for i in 0..POSTS_PER_WINDOW {
-            c.say_once("alice", None, &format!("m{i}"), Some(&format!("r{i}"))).unwrap();
+            c.say_once("alice", None, &format!("m{i}"), Some(&format!("r{i}")))
+                .unwrap();
         }
-        assert!(c.say_once("alice", None, "over", Some("new")).is_err(), "the window is full");
+        assert!(
+            c.say_once("alice", None, "over", Some("new")).is_err(),
+            "the window is full"
+        );
         for i in 0..POSTS_PER_WINDOW {
-            assert!(c.say_once("alice", None, &format!("m{i}"), Some(&format!("r{i}"))).is_ok(), "a retry of r{i} is answered");
+            assert!(
+                c.say_once("alice", None, &format!("m{i}"), Some(&format!("r{i}")))
+                    .is_ok(),
+                "a retry of r{i} is answered"
+            );
         }
     }
 
@@ -648,7 +763,9 @@ mod tests {
     fn the_feed_and_request_ids_survive_a_restart() {
         let path = temp("restart");
         let c = Chat::open(&path);
-        let seq = c.say_once("alice", Some("Alice"), "hello", Some("r1")).unwrap();
+        let seq = c
+            .say_once("alice", Some("Alice"), "hello", Some("r1"))
+            .unwrap();
         c.event("join", Some("bob"), &json!({}));
         drop(c);
         let c = Chat::open(&path);
@@ -657,13 +774,27 @@ mod tests {
         assert_eq!(f.items[0].text, "hello");
         assert_eq!(f.items[0].name.as_deref(), Some("Alice"));
         // The retry after the restart is recognised, and new posts continue the numbering.
-        assert_eq!(c.say_once("alice", Some("Alice"), "hello", Some("r1")).unwrap(), seq);
+        assert_eq!(
+            c.say_once("alice", Some("Alice"), "hello", Some("r1"))
+                .unwrap(),
+            seq
+        );
         let next = c.say_once("alice", None, "again", Some("r2")).unwrap();
         assert!(next > f.items[1].seq);
-        assert_eq!(c.since(0, 100, &[]).items.iter().filter(|i| i.kind == "say").count(), 2);
+        assert_eq!(
+            c.since(0, 100, &[])
+                .items
+                .iter()
+                .filter(|i| i.kind == "say")
+                .count(),
+            2
+        );
         // A display name set earlier is remembered for later posts without one.
         c.say("alice", None, "no name given").unwrap();
-        assert_eq!(c.since(0, 100, &[]).items.last().unwrap().name.as_deref(), Some("Alice"));
+        assert_eq!(
+            c.since(0, 100, &[]).items.last().unwrap().name.as_deref(),
+            Some("Alice")
+        );
     }
 
     #[test]
@@ -690,7 +821,13 @@ mod tests {
         let n = COMPACT_AT + 50;
         for i in 0..n {
             // The rate limit is per window, so post as many different members as needed.
-            c.say_once(&format!("m{}", i % 1000), None, &format!("message {i}"), Some(&format!("r{i}"))).unwrap();
+            c.say_once(
+                &format!("m{}", i % 1000),
+                None,
+                &format!("message {i}"),
+                Some(&format!("r{i}")),
+            )
+            .unwrap();
         }
         let lines = std::fs::read_to_string(&path).unwrap().lines().count();
         assert!(lines < COMPACT_AT + 60, "{lines} lines");
@@ -707,10 +844,23 @@ mod tests {
         }
         assert_eq!(all.len(), KEPT);
         let last = all.last().unwrap();
-        assert!(last.text.ends_with(&format!("message {}", n - 1)), "{}", last.text);
+        assert!(
+            last.text.ends_with(&format!("message {}", n - 1)),
+            "{}",
+            last.text
+        );
         // A recent id still deduplicates after compaction and reload.
         let who = format!("m{}", (n - 1) % 1000);
-        assert_eq!(c.say_once(&who, None, &format!("message {}", n - 1), Some(&format!("r{}", n - 1))).unwrap(), last.seq);
+        assert_eq!(
+            c.say_once(
+                &who,
+                None,
+                &format!("message {}", n - 1),
+                Some(&format!("r{}", n - 1))
+            )
+            .unwrap(),
+            last.seq
+        );
     }
     #[tokio::test]
     async fn a_waiting_read_returns_when_something_arrives() {
@@ -721,23 +871,38 @@ mod tests {
         // Something already there: no waiting.
         c.say("m1", None, "first").unwrap();
         let t = Instant::now();
-        let f = c.wait_since("m2", 0, 50, &ids, Duration::from_secs(5)).await;
+        let f = c
+            .wait_since("m2", 0, 50, &ids, Duration::from_secs(5))
+            .await;
         assert_eq!(f.items.len(), 1);
-        assert!(t.elapsed() < Duration::from_millis(500), "an available item must not wait");
+        assert!(
+            t.elapsed() < Duration::from_millis(500),
+            "an available item must not wait"
+        );
         // Nothing new: it waits for the next say and returns at once when it lands.
         let c2 = Arc::clone(&c);
         let ids2 = ids.clone();
         let t = Instant::now();
-        let waiter = tokio::spawn(async move { c2.wait_since("m2", 1, 50, &ids2, Duration::from_secs(10)).await });
+        let waiter = tokio::spawn(async move {
+            c2.wait_since("m2", 1, 50, &ids2, Duration::from_secs(10))
+                .await
+        });
         tokio::time::sleep(Duration::from_millis(300)).await;
         c.say("m1", None, "second").unwrap();
         let f = waiter.await.unwrap();
         assert_eq!(f.items.len(), 1);
         assert_eq!(f.items[0].text, "second");
-        assert!(t.elapsed() >= Duration::from_millis(250) && t.elapsed() < Duration::from_secs(3), "returned on the message, not on the timeout: {:?}", t.elapsed());
+        assert!(
+            t.elapsed() >= Duration::from_millis(250) && t.elapsed() < Duration::from_secs(3),
+            "returned on the message, not on the timeout: {:?}",
+            t.elapsed()
+        );
         // An event wakes a waiter too (a join, a push).
         let c3 = Arc::clone(&c);
-        let waiter = tokio::spawn(async move { c3.wait_since("m2", 2, 50, &["host".to_string()], Duration::from_secs(10)).await });
+        let waiter = tokio::spawn(async move {
+            c3.wait_since("m2", 2, 50, &["host".to_string()], Duration::from_secs(10))
+                .await
+        });
         tokio::time::sleep(Duration::from_millis(200)).await;
         c.event("join_ok", Some("m3"), &serde_json::json!({}));
         assert_eq!(waiter.await.unwrap().items.len(), 1);
@@ -749,12 +914,18 @@ mod tests {
         let c = Chat::new();
         let ids = vec!["host".to_string()];
         let t = Instant::now();
-        let f = c.wait_since("m1", 0, 50, &ids, Duration::from_millis(400)).await;
+        let f = c
+            .wait_since("m1", 0, 50, &ids, Duration::from_millis(400))
+            .await;
         assert!(f.items.is_empty());
         assert!(t.elapsed() >= Duration::from_millis(350) && t.elapsed() < Duration::from_secs(2));
         // Zero is a plain read.
         let t = Instant::now();
-        assert!(c.wait_since("m1", 0, 50, &ids, Duration::ZERO).await.items.is_empty());
+        assert!(c
+            .wait_since("m1", 0, 50, &ids, Duration::ZERO)
+            .await
+            .items
+            .is_empty());
         assert!(t.elapsed() < Duration::from_millis(200));
         // The reader counts as present while it waits.
         assert!(c.since(0, 10, &["m1".to_string()]).members[0].present);

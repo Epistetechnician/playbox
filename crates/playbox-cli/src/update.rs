@@ -25,7 +25,12 @@ const PINNED_KEYS: &str = match option_env!("PLAYBOX_RELEASE_PUBKEY") {
 };
 
 fn pinned_keys() -> Vec<String> {
-    PINNED_KEYS.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(String::from).collect()
+    PINNED_KEYS
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(String::from)
+        .collect()
 }
 /// Exit status of `--check` when a newer release exists, so scripts can branch on it.
 pub const EXIT_UPDATE_AVAILABLE: u8 = 10;
@@ -71,7 +76,11 @@ impl Version {
         let mut it = core.split('.');
         let mut nums = [0u64; 3];
         for n in &mut nums {
-            *n = it.next().ok_or_else(|| anyhow!("{s:?} is not MAJOR.MINOR.PATCH"))?.parse().map_err(|_| anyhow!("{s:?} is not MAJOR.MINOR.PATCH"))?;
+            *n = it
+                .next()
+                .ok_or_else(|| anyhow!("{s:?} is not MAJOR.MINOR.PATCH"))?
+                .parse()
+                .map_err(|_| anyhow!("{s:?} is not MAJOR.MINOR.PATCH"))?;
         }
         if it.next().is_some() {
             bail!("{s:?} is not MAJOR.MINOR.PATCH");
@@ -92,12 +101,14 @@ impl std::fmt::Display for Version {
 
 impl Ord for Version {
     fn cmp(&self, o: &Self) -> Ordering {
-        self.nums.cmp(&o.nums).then_with(|| match (&self.pre, &o.pre) {
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => Ordering::Greater,
-            (Some(_), None) => Ordering::Less,
-            (Some(a), Some(b)) => a.cmp(b),
-        })
+        self.nums
+            .cmp(&o.nums)
+            .then_with(|| match (&self.pre, &o.pre) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (Some(a), Some(b)) => a.cmp(b),
+            })
     }
 }
 impl PartialOrd for Version {
@@ -130,21 +141,41 @@ fn base_url(version: Option<&str>) -> String {
         return b.trim_end_matches('/').to_string();
     }
     match version {
-        Some(v) => format!("https://github.com/{REPO}/releases/download/v{}", v.trim_start_matches('v')),
+        Some(v) => format!(
+            "https://github.com/{REPO}/releases/download/v{}",
+            v.trim_start_matches('v')
+        ),
         None => format!("https://github.com/{REPO}/releases/latest/download"),
     }
 }
 
 fn fetch(url: &str) -> Result<Vec<u8>> {
     // A mirror set through the environment may be plain http or a local directory; the default is https only.
-    let proto = if std::env::var_os("PLAYBOX_BASE_URL").is_some() { "=https,http,file" } else { "=https" };
+    let proto = if std::env::var_os("PLAYBOX_BASE_URL").is_some() {
+        "=https,http,file"
+    } else {
+        "=https"
+    };
     let out = Command::new("curl")
-        .args(["--proto", proto, "--tlsv1.2", "-fsSL", "--retry", "3", "--max-time", "300", url])
+        .args([
+            "--proto",
+            proto,
+            "--tlsv1.2",
+            "-fsSL",
+            "--retry",
+            "3",
+            "--max-time",
+            "300",
+            url,
+        ])
         .stdin(Stdio::null())
         .output()
         .context("running curl (the updater needs curl, as install.sh does)")?;
     if !out.status.success() {
-        bail!("could not download {url}: {}", String::from_utf8_lossy(&out.stderr).trim());
+        bail!(
+            "could not download {url}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(out.stdout)
 }
@@ -170,7 +201,11 @@ pub fn parse_sums(text: &str) -> BTreeMap<String, String> {
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Result<Self> {
-        let d = std::env::temp_dir().join(format!("playbox-update-{}-{}", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)));
+        let d = std::env::temp_dir().join(format!(
+            "playbox-update-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
         std::fs::create_dir_all(&d)?;
         Ok(Self(d))
     }
@@ -192,14 +227,27 @@ fn target_exe() -> Result<PathBuf> {
     let exe = std::env::current_exe()?.canonicalize()?;
     let s = exe.to_string_lossy();
     if s.contains("/target/debug/") || s.contains("/target/release/") {
-        bail!("{} is a build directory; update by rebuilding (git pull, cargo build --release)", exe.display());
+        bail!(
+            "{} is a build directory; update by rebuilding (git pull, cargo build --release)",
+            exe.display()
+        );
     }
     if s.contains("/Cellar/") || s.contains("/nix/store/") {
-        bail!("{} is managed by a package manager; update it with that tool", exe.display());
+        bail!(
+            "{} is managed by a package manager; update it with that tool",
+            exe.display()
+        );
     }
-    let dir = exe.parent().ok_or_else(|| anyhow!("no directory for {}", exe.display()))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| anyhow!("no directory for {}", exe.display()))?;
     let probe = dir.join(format!(".playbox-write-test-{}", std::process::id()));
-    std::fs::write(&probe, b"").map_err(|e| anyhow!("cannot write to {}: {e}. Reinstall with install.sh into a directory you own", dir.display()))?;
+    std::fs::write(&probe, b"").map_err(|e| {
+        anyhow!(
+            "cannot write to {}: {e}. Reinstall with install.sh into a directory you own",
+            dir.display()
+        )
+    })?;
     let _ = std::fs::remove_file(probe);
     Ok(exe)
 }
@@ -266,9 +314,12 @@ pub fn run(o: &Opts) -> Result<u8> {
     if keys.is_empty() {
         eprintln!("note: this build pins no release key, so the update is checked against SHA256SUMS only");
     } else {
-        let sig = fetch(&format!("{base}/SHA256SUMS.sig")).context("this release is not signed, and this build requires a signature")?;
+        let sig = fetch(&format!("{base}/SHA256SUMS.sig"))
+            .context("this release is not signed, and this build requires a signature")?;
         std::fs::write(tmp.0.join("SHA256SUMS.sig"), sig)?;
-        let ok = keys.iter().any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
+        let ok = keys
+            .iter()
+            .any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
         if !ok {
             bail!("BAD SIGNATURE: SHA256SUMS was not signed by any key this build trusts ({} pinned); not updating", keys.len());
         }
@@ -282,7 +333,9 @@ pub fn run(o: &Opts) -> Result<u8> {
             bail!("release.json does not match SHA256SUMS; not updating");
         }
     }
-    let want_hash = sums.get(&asset).ok_or_else(|| anyhow!("{asset} is not in SHA256SUMS (no prebuilt release for this platform?)"))?;
+    let want_hash = sums.get(&asset).ok_or_else(|| {
+        anyhow!("{asset} is not in SHA256SUMS (no prebuilt release for this platform?)")
+    })?;
     if let Some(mh) = m.assets.get(&asset) {
         if mh != want_hash {
             bail!("release.json and SHA256SUMS disagree about {asset}; not updating");
@@ -298,7 +351,13 @@ pub fn run(o: &Opts) -> Result<u8> {
     // 3. Unpack, smoke-test, swap.
     let ar = tmp.0.join(&asset);
     std::fs::write(&ar, &archive)?;
-    let st = Command::new("tar").arg("-xzf").arg(&ar).arg("-C").arg(&tmp.0).status().context("running tar")?;
+    let st = Command::new("tar")
+        .arg("-xzf")
+        .arg(&ar)
+        .arg("-C")
+        .arg(&tmp.0)
+        .status()
+        .context("running tar")?;
     if !st.success() {
         bail!("could not unpack {asset}");
     }
@@ -307,11 +366,21 @@ pub fn run(o: &Opts) -> Result<u8> {
         bail!("the archive has no playbox binary");
     }
     #[cfg(unix)]
-    std::fs::set_permissions(&new_bin, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
-    let ver = Command::new(&new_bin).arg("--version").stdin(Stdio::null()).output().context("running the downloaded binary")?;
+    std::fs::set_permissions(
+        &new_bin,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )?;
+    let ver = Command::new(&new_bin)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .context("running the downloaded binary")?;
     let ver_text = String::from_utf8_lossy(&ver.stdout);
     if !ver.status.success() || !ver_text.contains(&target.to_string()) {
-        bail!("the downloaded binary does not report version {target} (it said {:?}); not updating", ver_text.trim());
+        bail!(
+            "the downloaded binary does not report version {target} (it said {:?}); not updating",
+            ver_text.trim()
+        );
     }
     let staged = exe.with_file_name(".playbox.new");
     std::fs::copy(&new_bin, &staged).with_context(|| format!("writing {}", staged.display()))?;
@@ -330,7 +399,10 @@ pub fn run(o: &Opts) -> Result<u8> {
     // Every update is followed by a check of the updated install, run by the new binary: a release that moved a file or loosened a
     // permission shows up now rather than at the next audit. The report is the same one `playbox secure` writes for the hub.
     println!("\nchecking the updated install (playbox secure):");
-    let _ = Command::new(&exe).args(["secure", "--no-fuzz"]).stdin(Stdio::null()).status();
+    let _ = Command::new(&exe)
+        .args(["secure", "--no-fuzz"])
+        .stdin(Stdio::null())
+        .status();
     Ok(0)
 }
 
@@ -340,7 +412,11 @@ fn rollback() -> Result<u8> {
     if !prev.is_file() {
         bail!("no previous version kept at {}", prev.display());
     }
-    let ver = Command::new(&prev).arg("--version").stdin(Stdio::null()).output().context("running the kept binary")?;
+    let ver = Command::new(&prev)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .context("running the kept binary")?;
     if !ver.status.success() {
         bail!("the kept binary does not run; not rolling back");
     }
@@ -348,8 +424,82 @@ fn rollback() -> Result<u8> {
     std::fs::copy(&prev, &staged)?;
     std::fs::copy(&exe, &prev)?; // so a second --rollback undoes this one
     std::fs::rename(&staged, &exe)?;
-    println!("rolled back to {}", String::from_utf8_lossy(&ver.stdout).trim());
+    println!(
+        "rolled back to {}",
+        String::from_utf8_lossy(&ver.stdout).trim()
+    );
     Ok(0)
+}
+
+/// On macOS, sign the new binary with this Mac's stable local identity when you have set one up (`sh scripts/dev-sign.sh --setup` records its name in
+/// `~/.playbox/sign-identity`; `PLAYBOX_SIGN_IDENTITY` overrides), under the same identifier the installed one has. The firewall remembers its
+/// answer to "accept incoming connections?" by that signature, so an update then does not ask again. With no identity recorded nothing is touched
+/// (the keychain is not even looked at) and the release's own signature stays. A failure here never blocks the update.
+#[cfg(target_os = "macos")]
+fn keep_local_signature(staged: &Path, installed: &Path) {
+    let name = std::env::var("PLAYBOX_SIGN_IDENTITY")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| {
+            let home = std::env::var_os("HOME")?;
+            std::fs::read_to_string(PathBuf::from(home).join(".playbox").join("sign-identity"))
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        });
+    let Some(name) = name else { return };
+    let file = installed.file_name().map_or_else(
+        || "playbox".to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let id = format!(
+        "com.playbox.{}",
+        file.chars()
+            .map(
+                |c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                    c
+                } else {
+                    '-'
+                }
+            )
+            .collect::<String>()
+    );
+    // codesign waits indefinitely when the login keychain is locked or a dialog is asking whether it may use the key: never let that stall an update.
+    let child = Command::new("codesign")
+        .args([
+            "--force",
+            "--sign",
+            &name,
+            "--identifier",
+            &id,
+            "--timestamp=none",
+        ])
+        .arg(staged)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let ok = child.ok().is_some_and(|mut c| {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            match c.try_wait() {
+                Ok(Some(st)) => break st.success(),
+                Ok(None) if std::time::Instant::now() < end => {
+                    std::thread::sleep(std::time::Duration::from_millis(200))
+                }
+                _ => {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                    break false;
+                }
+            }
+        }
+    });
+    if ok {
+        println!("signed with \"{name}\" so the firewall keeps its answer");
+    } else {
+        eprintln!("note: could not sign with \"{name}\" (is the login keychain locked?); the release's own signature is kept");
+    }
 }
 
 #[cfg(test)]
@@ -379,49 +529,10 @@ mod tests {
 
     #[test]
     fn the_hash_matches_a_known_value() {
-        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    }
-}
-
-/// On macOS, sign the new binary with this Mac's stable local identity when you have set one up (`sh scripts/dev-sign.sh --setup` records its name in
-/// `~/.playbox/sign-identity`; `PLAYBOX_SIGN_IDENTITY` overrides), under the same identifier the installed one has. The firewall remembers its
-/// answer to "accept incoming connections?" by that signature, so an update then does not ask again. With no identity recorded nothing is touched
-/// (the keychain is not even looked at) and the release's own signature stays. A failure here never blocks the update.
-#[cfg(target_os = "macos")]
-fn keep_local_signature(staged: &Path, installed: &Path) {
-    let name = std::env::var("PLAYBOX_SIGN_IDENTITY").ok().filter(|v| !v.trim().is_empty()).or_else(|| {
-        let home = std::env::var_os("HOME")?;
-        std::fs::read_to_string(PathBuf::from(home).join(".playbox").join("sign-identity")).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
-    });
-    let Some(name) = name else { return };
-    let file = installed.file_name().map_or_else(|| "playbox".to_string(), |n| n.to_string_lossy().into_owned());
-    let id = format!("com.playbox.{}", file.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' }).collect::<String>());
-    // codesign waits indefinitely when the login keychain is locked or a dialog is asking whether it may use the key: never let that stall an update.
-    let child = Command::new("codesign")
-        .args(["--force", "--sign", &name, "--identifier", &id, "--timestamp=none"])
-        .arg(staged)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
-    let ok = child.ok().is_some_and(|mut c| {
-        let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        loop {
-            match c.try_wait() {
-                Ok(Some(st)) => break st.success(),
-                Ok(None) if std::time::Instant::now() < end => std::thread::sleep(std::time::Duration::from_millis(200)),
-                _ => {
-                    let _ = c.kill();
-                    let _ = c.wait();
-                    break false;
-                }
-            }
-        }
-    });
-    if ok {
-        println!("signed with \"{name}\" so the firewall keeps its answer");
-    } else {
-        eprintln!("note: could not sign with \"{name}\" (is the login keychain locked?); the release's own signature is kept");
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }
 

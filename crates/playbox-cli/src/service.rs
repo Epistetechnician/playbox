@@ -24,7 +24,11 @@ pub struct Spec {
 pub fn label() -> String {
     std::env::var("PLAYBOX_SERVICE_LABEL")
         .ok()
-        .filter(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_'))
+        .filter(|l| {
+            !l.is_empty()
+                && l.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+        })
         .unwrap_or_else(|| "com.playbox.hub".to_string())
 }
 
@@ -39,18 +43,29 @@ fn macos() -> bool {
 /// The service definition's file.
 pub fn unit_path() -> PathBuf {
     if macos() {
-        home_dir().join("Library/LaunchAgents").join(format!("{}.plist", label()))
+        home_dir()
+            .join("Library/LaunchAgents")
+            .join(format!("{}.plist", label()))
     } else {
-        home_dir().join(".config/systemd/user").join(format!("{}.service", label()))
+        home_dir()
+            .join(".config/systemd/user")
+            .join(format!("{}.service", label()))
     }
 }
 
 fn xml(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 pub fn launchd_plist(label: &str, s: &Spec) -> String {
-    let args: String = s.argv.iter().map(|a| format!("    <string>{}</string>\n", xml(a))).collect();
+    let args: String = s
+        .argv
+        .iter()
+        .map(|a| format!("    <string>{}</string>\n", xml(a)))
+        .collect();
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
@@ -68,7 +83,12 @@ pub fn launchd_plist(label: &str, s: &Spec) -> String {
 
 /// One systemd command-line word: quoted, with `\`, `"` and `%` escaped.
 fn sd_word(a: &str) -> String {
-    format!("\"{}\"", a.replace('\\', "\\\\").replace('"', "\\\"").replace('%', "%%"))
+    format!(
+        "\"{}\"",
+        a.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('%', "%%")
+    )
 }
 
 pub fn systemd_unit(s: &Spec) -> String {
@@ -84,13 +104,24 @@ Restart=on-failure\nRestartSec=10\nStandardOutput=append:{}\nStandardError=appen
 }
 
 fn uid() -> Result<String> {
-    let o = Command::new("id").arg("-u").output().context("could not run `id -u`")?;
+    let o = Command::new("id")
+        .arg("-u")
+        .output()
+        .context("could not run `id -u`")?;
     Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
 fn sh(prog: &str, args: &[&str]) -> Result<String> {
-    let o = Command::new(prog).args(args).stdin(Stdio::null()).output().with_context(|| format!("could not run {prog}"))?;
-    let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    let o = Command::new(prog)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("could not run {prog}"))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
     if !o.status.success() {
         bail!("{prog} {} failed: {}", args.join(" "), text.trim());
     }
@@ -119,11 +150,20 @@ fn load(path: &Path) -> Result<()> {
         let target = format!("gui/{}", uid()?);
         let _ = sh("launchctl", &["bootout", &format!("{target}/{}", label())]); // fine if it wasn't loaded
         std::thread::sleep(Duration::from_secs(2)); // bootstrap right after bootout can fail with an I/O error
-        sh("launchctl", &["bootstrap", &target, &path.to_string_lossy()])?;
+        sh(
+            "launchctl",
+            &["bootstrap", &target, &path.to_string_lossy()],
+        )?;
     } else {
         sh("systemctl", &["--user", "daemon-reload"])?;
-        sh("systemctl", &["--user", "enable", "--now", &format!("{}.service", label())])?;
-        sh("systemctl", &["--user", "restart", &format!("{}.service", label())])?;
+        sh(
+            "systemctl",
+            &["--user", "enable", "--now", &format!("{}.service", label())],
+        )?;
+        sh(
+            "systemctl",
+            &["--user", "restart", &format!("{}.service", label())],
+        )?;
     }
     Ok(())
 }
@@ -131,10 +171,27 @@ fn load(path: &Path) -> Result<()> {
 /// Where the service manager has this label loaded from, if it is loaded at all.
 fn loaded_from() -> Option<PathBuf> {
     if macos() {
-        let t = sh("launchctl", &["print", &format!("gui/{}/{}", uid().ok()?, label())]).ok()?;
-        t.lines().find_map(|l| l.trim().strip_prefix("path = ")).map(PathBuf::from)
+        let t = sh(
+            "launchctl",
+            &["print", &format!("gui/{}/{}", uid().ok()?, label())],
+        )
+        .ok()?;
+        t.lines()
+            .find_map(|l| l.trim().strip_prefix("path = "))
+            .map(PathBuf::from)
     } else {
-        let t = sh("systemctl", &["--user", "show", "-p", "FragmentPath", "--value", &format!("{}.service", label())]).ok()?;
+        let t = sh(
+            "systemctl",
+            &[
+                "--user",
+                "show",
+                "-p",
+                "FragmentPath",
+                "--value",
+                &format!("{}.service", label()),
+            ],
+        )
+        .ok()?;
         let p = t.trim();
         (!p.is_empty()).then(|| PathBuf::from(p))
     }
@@ -146,7 +203,8 @@ pub fn install(s: &Spec) -> Result<PathBuf> {
     let path = unit_path();
     // Never take over a service loaded from somewhere else (another HOME, another install): booting it out by label would stop it.
     if let Some(other) = loaded_from() {
-        let same = std::fs::canonicalize(&other).ok() == std::fs::canonicalize(&path).ok() || other == path;
+        let same = std::fs::canonicalize(&other).ok() == std::fs::canonicalize(&path).ok()
+            || other == path;
         if !same {
             bail!("a service named {} is already loaded from {}; not touching it (set PLAYBOX_SERVICE_LABEL to use another name)", label(), other.display());
         }
@@ -167,13 +225,21 @@ pub fn install(s: &Spec) -> Result<PathBuf> {
         let _ = std::fs::set_permissions(&s.log, std::fs::Permissions::from_mode(0o600));
     }
     if path.is_file() && !up_to_date(s) {
-        let bak = path.with_extension(format!("{}.bak", path.extension().and_then(|e| e.to_str()).unwrap_or("")));
-        std::fs::copy(&path, &bak).with_context(|| format!("could not back up {}", path.display()))?;
+        let bak = path.with_extension(format!(
+            "{}.bak",
+            path.extension().and_then(|e| e.to_str()).unwrap_or("")
+        ));
+        std::fs::copy(&path, &bak)
+            .with_context(|| format!("could not back up {}", path.display()))?;
     }
     std::fs::write(&path, definition(s))?;
     load(&path)?;
     if !wait_healthy(s.port, Duration::from_secs(30)) {
-        bail!("the hub didn't answer on port {} within 30 s; see {}", s.port, s.log.display());
+        bail!(
+            "the hub didn't answer on port {} within 30 s; see {}",
+            s.port,
+            s.log.display()
+        );
     }
     Ok(path)
 }
@@ -184,9 +250,20 @@ pub fn uninstall() -> Result<bool> {
         return Ok(false);
     }
     if macos() {
-        let _ = sh("launchctl", &["bootout", &format!("gui/{}/{}", uid()?, label())]);
+        let _ = sh(
+            "launchctl",
+            &["bootout", &format!("gui/{}/{}", uid()?, label())],
+        );
     } else {
-        let _ = sh("systemctl", &["--user", "disable", "--now", &format!("{}.service", label())]);
+        let _ = sh(
+            "systemctl",
+            &[
+                "--user",
+                "disable",
+                "--now",
+                &format!("{}.service", label()),
+            ],
+        );
     }
     std::fs::remove_file(&path)?;
     if !macos() {
@@ -201,14 +278,30 @@ pub fn status() -> (bool, String) {
         return (false, "not installed".into());
     }
     let out = if macos() {
-        sh("launchctl", &["print", &format!("gui/{}/{}", uid().unwrap_or_default(), label())])
+        sh(
+            "launchctl",
+            &[
+                "print",
+                &format!("gui/{}/{}", uid().unwrap_or_default(), label()),
+            ],
+        )
     } else {
-        sh("systemctl", &["--user", "is-active", &format!("{}.service", label())])
+        sh(
+            "systemctl",
+            &["--user", "is-active", &format!("{}.service", label())],
+        )
     };
     match out {
         Ok(t) if macos() => {
             let running = t.contains("state = running");
-            (running, if running { "running".into() } else { "installed but not running".into() })
+            (
+                running,
+                if running {
+                    "running".into()
+                } else {
+                    "installed but not running".into()
+                },
+            )
         }
         Ok(t) => (t.trim() == "active", t.trim().to_string()),
         Err(_) => (false, "installed but not running".into()),
@@ -229,13 +322,19 @@ pub fn wait_healthy(port: u16, within: Duration) -> bool {
 }
 
 fn healthy(addr: SocketAddr) -> bool {
-    let Ok(mut c) = TcpStream::connect_timeout(&addr, Duration::from_secs(1)) else { return false };
+    let Ok(mut c) = TcpStream::connect_timeout(&addr, Duration::from_secs(1)) else {
+        return false;
+    };
     let _ = c.set_read_timeout(Some(Duration::from_secs(2)));
-    if c.write_all(b"GET /api/auth/state HTTP/1.0\r\nHost: localhost\r\n\r\n").is_err() {
+    if c.write_all(b"GET /api/auth/state HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        .is_err()
+    {
         return false;
     }
     let mut head = [0u8; 16];
-    c.read(&mut head).is_ok_and(|n| head[..n].starts_with(b"HTTP/1.") && head[..n].windows(3).any(|w| w == b"200"))
+    c.read(&mut head).is_ok_and(|n| {
+        head[..n].starts_with(b"HTTP/1.") && head[..n].windows(3).any(|w| w == b"200")
+    })
 }
 
 /// The pairing links the hub printed at its last start, newest last (`/pair#<one-time code>`).
@@ -258,8 +357,16 @@ mod tests {
 
     fn spec() -> Spec {
         Spec {
-            argv: vec!["/usr/bin/python3".into(), "/opt/pb hub/ui/playbox_hub.py".into(), "--cloudflare-hostname".into(), "a&b.example.com".into()],
-            env: vec![("PATH".into(), "/a:/b".into()), ("PLAYBOX_HOME".into(), "/data/pb".into())],
+            argv: vec![
+                "/usr/bin/python3".into(),
+                "/opt/pb hub/ui/playbox_hub.py".into(),
+                "--cloudflare-hostname".into(),
+                "a&b.example.com".into(),
+            ],
+            env: vec![
+                ("PATH".into(), "/a:/b".into()),
+                ("PLAYBOX_HOME".into(), "/data/pb".into()),
+            ],
             log: PathBuf::from("/home/u/.playbox/hub.log"),
             port: 7717,
         }
@@ -271,8 +378,13 @@ mod tests {
         assert!(p.contains("<key>Label</key><string>com.playbox.hub</string>"));
         assert!(p.contains("<string>a&amp;b.example.com</string>"));
         assert!(p.contains("<string>/opt/pb hub/ui/playbox_hub.py</string>"));
-        assert!(p.contains("<key>RunAtLoad</key><true/>") && p.contains("<key>KeepAlive</key><true/>"));
-        assert!(p.contains("<key>PATH</key><string>/a:/b</string>") && p.contains("<key>PLAYBOX_HOME</key><string>/data/pb</string>"));
+        assert!(
+            p.contains("<key>RunAtLoad</key><true/>") && p.contains("<key>KeepAlive</key><true/>")
+        );
+        assert!(
+            p.contains("<key>PATH</key><string>/a:/b</string>")
+                && p.contains("<key>PLAYBOX_HOME</key><string>/data/pb</string>")
+        );
         assert!(p.contains("<key>StandardOutPath</key><string>/home/u/.playbox/hub.log</string>"));
         assert!(!p.contains("a&b"));
     }
@@ -311,14 +423,24 @@ mod tests {
             }
         });
         assert!(wait_healthy(port, Duration::from_secs(3)));
-        let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let free = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         assert!(!wait_healthy(free, Duration::from_millis(600)));
     }
 
     #[test]
     fn pairing_links_are_read_from_the_log() {
         let log = "  Pair this device (valid 10 min, single use):\n    http://localhost:7717/pair#abc123\n    https://x.trycloudflare.com/pair#abc123      <- passkeys, from any device\nnoise\n";
-        assert_eq!(pairing_links(log), ["http://localhost:7717/pair#abc123", "https://x.trycloudflare.com/pair#abc123"]);
+        assert_eq!(
+            pairing_links(log),
+            [
+                "http://localhost:7717/pair#abc123",
+                "https://x.trycloudflare.com/pair#abc123"
+            ]
+        );
         assert!(pairing_links("Sign in with your passkey at http://localhost:7717").is_empty());
     }
 }

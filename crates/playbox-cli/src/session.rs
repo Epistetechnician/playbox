@@ -249,7 +249,8 @@ pub async fn memory(cmd: MemoryCmd) -> Result<()> {
             evidence,
             supersedes,
         } => {
-            let mut a = json!({"kind": kind.as_str(), "topic": topic, "body": body, "evidence": evidence});
+            let mut a =
+                json!({"kind": kind.as_str(), "topic": topic, "body": body, "evidence": evidence});
             if let Some(s) = supersedes {
                 a["supersedes"] = json!(s);
             }

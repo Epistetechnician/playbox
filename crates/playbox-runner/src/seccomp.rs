@@ -13,10 +13,43 @@ use anyhow::{bail, Context, Result};
 
 /// Names of the denied syscalls, for the attestation text and the tests.
 pub const DENIED: &[&str] = &[
-    "ptrace", "process_vm_readv", "process_vm_writev", "mount", "umount2", "pivot_root", "chroot", "setns", "unshare", "kexec_load",
-    "kexec_file_load", "init_module", "finit_module", "delete_module", "bpf", "perf_event_open", "keyctl", "add_key", "request_key",
-    "reboot", "swapon", "swapoff", "open_by_handle_at", "mount_setattr", "move_mount", "fsopen", "fsmount", "fspick", "open_tree",
-    "acct", "iopl", "ioperm", "settimeofday", "clock_settime", "adjtimex", "syslog", "quotactl",
+    "ptrace",
+    "process_vm_readv",
+    "process_vm_writev",
+    "mount",
+    "umount2",
+    "pivot_root",
+    "chroot",
+    "setns",
+    "unshare",
+    "kexec_load",
+    "kexec_file_load",
+    "init_module",
+    "finit_module",
+    "delete_module",
+    "bpf",
+    "perf_event_open",
+    "keyctl",
+    "add_key",
+    "request_key",
+    "reboot",
+    "swapon",
+    "swapoff",
+    "open_by_handle_at",
+    "mount_setattr",
+    "move_mount",
+    "fsopen",
+    "fsmount",
+    "fspick",
+    "open_tree",
+    "acct",
+    "iopl",
+    "ioperm",
+    "settimeofday",
+    "clock_settime",
+    "adjtimex",
+    "syslog",
+    "quotactl",
 ];
 
 #[cfg(target_arch = "x86_64")]
@@ -108,7 +141,12 @@ pub fn program() -> Vec<libc::sock_filter> {
         p.push(insn(BPF_JEQ_K, to_deny, 0, *nr));
     }
     p.push(insn(BPF_RET_K, 0, 0, SECCOMP_RET_ALLOW));
-    p.push(insn(BPF_RET_K, 0, 0, SECCOMP_RET_ERRNO | libc::EPERM as u32));
+    p.push(insn(
+        BPF_RET_K,
+        0,
+        0,
+        SECCOMP_RET_ERRNO | libc::EPERM as u32,
+    ));
     p
 }
 
@@ -122,7 +160,10 @@ pub fn install() -> Result<()> {
     if prog.len() > 4000 {
         bail!("seccomp program too long");
     }
-    let fprog = libc::sock_fprog { len: u16::try_from(prog.len()).context("program length")?, filter: prog.as_ptr().cast_mut() };
+    let fprog = libc::sock_fprog {
+        len: u16::try_from(prog.len()).context("program length")?,
+        filter: prog.as_ptr().cast_mut(),
+    };
     // SAFETY: prctl with a valid sock_fprog that outlives the call; the kernel copies the program.
     let rc = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
     if rc != 0 {
@@ -139,7 +180,13 @@ pub fn install() -> Result<()> {
 /// Text for the host's signed statement: which calls the helper cannot make.
 #[must_use]
 pub fn describe() -> String {
-    format!("seccomp=deny:{}", blake3::hash(DENIED.join(",").as_bytes()).to_hex().get(..16).unwrap_or(""))
+    format!(
+        "seccomp=deny:{}",
+        blake3::hash(DENIED.join(",").as_bytes())
+            .to_hex()
+            .get(..16)
+            .unwrap_or("")
+    )
 }
 
 #[cfg(test)]
@@ -149,8 +196,14 @@ mod tests {
     #[test]
     fn every_denied_call_has_a_number_on_this_machine_or_is_architecture_specific() {
         let missing: Vec<_> = DENIED.iter().filter(|n| number(n).is_none()).collect();
-        assert!(missing.is_empty() || cfg!(not(target_arch = "x86_64")), "{missing:?}");
-        assert!(missing.iter().all(|n| matches!(**n, "iopl" | "ioperm")), "{missing:?}");
+        assert!(
+            missing.is_empty() || cfg!(not(target_arch = "x86_64")),
+            "{missing:?}"
+        );
+        assert!(
+            missing.iter().all(|n| matches!(**n, "iopl" | "ioperm")),
+            "{missing:?}"
+        );
     }
 
     #[test]
@@ -160,9 +213,14 @@ mod tests {
         // Every conditional jump lands inside the program.
         for (i, ins) in p.iter().enumerate() {
             if ins.code == BPF_JEQ_K {
-                assert!(i + 1 + usize::from(ins.jt) < p.len() && i + 1 + usize::from(ins.jf) < p.len());
+                assert!(
+                    i + 1 + usize::from(ins.jt) < p.len() && i + 1 + usize::from(ins.jf) < p.len()
+                );
             }
         }
-        assert_eq!(p.last().map(|i| i.k), Some(SECCOMP_RET_ERRNO | libc::EPERM as u32));
+        assert_eq!(
+            p.last().map(|i| i.k),
+            Some(SECCOMP_RET_ERRNO | libc::EPERM as u32)
+        );
     }
 }

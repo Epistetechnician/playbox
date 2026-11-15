@@ -87,7 +87,9 @@ pub fn display_safe(s: &str) -> String {
 }
 
 fn plain_name(s: &str, max: usize) -> bool {
-    (1..=max).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    (1..=max).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
 }
 
 impl Capability {
@@ -98,10 +100,16 @@ impl Capability {
     /// Describes the first problem found.
     pub fn validate(&self) -> Result<()> {
         if !plain_name(&self.name, 48) {
-            bail!("capability name {:?} must be 1-48 letters, digits, - _ .", self.name);
+            bail!(
+                "capability name {:?} must be 1-48 letters, digits, - _ .",
+                self.name
+            );
         }
         if self.argv.is_empty() || self.argv[0].contains('{') {
-            bail!("capability {}: the program (first argv entry) must be fixed", self.name);
+            bail!(
+                "capability {}: the program (first argv entry) must be fixed",
+                self.name
+            );
         }
         for p in self.params.keys() {
             if !plain_name(p, 32) {
@@ -112,22 +120,33 @@ impl Capability {
         for a in &self.argv {
             let mut rest = a.as_str();
             while let Some(i) = rest.find('{') {
-                let Some(j) = rest[i..].find('}') else { bail!("capability {}: unclosed placeholder in {a:?}", self.name) };
+                let Some(j) = rest[i..].find('}') else {
+                    bail!("capability {}: unclosed placeholder in {a:?}", self.name)
+                };
                 let p = &rest[i + 1..i + j];
                 if !self.params.contains_key(p) {
-                    bail!("capability {}: placeholder {{{p}}} is not a declared parameter", self.name);
+                    bail!(
+                        "capability {}: placeholder {{{p}}} is not a declared parameter",
+                        self.name
+                    );
                 }
                 used.insert(p.to_string());
                 rest = &rest[i + j + 1..];
             }
         }
         if let Some(unused) = self.params.keys().find(|p| !used.contains(*p)) {
-            bail!("capability {}: parameter {unused} is declared but never used", self.name);
+            bail!(
+                "capability {}: parameter {unused} is declared but never used",
+                self.name
+            );
         }
         for (p, r) in &self.params {
             if let Some(list) = &r.allowed {
                 if list.is_empty() {
-                    bail!("capability {}: parameter {p} has an empty allowed list", self.name);
+                    bail!(
+                        "capability {}: parameter {p} has an empty allowed list",
+                        self.name
+                    );
                 }
             }
         }
@@ -149,7 +168,9 @@ impl Capability {
             }
         }
         for (p, rule) in &self.params {
-            let v = args.get(p).with_context(|| format!("missing argument {p:?}"))?;
+            let v = args
+                .get(p)
+                .with_context(|| format!("missing argument {p:?}"))?;
             if v.len() > rule.max_len.unwrap_or(DEFAULT_MAX_LEN) {
                 bail!("argument {p:?} is too long");
             }
@@ -157,8 +178,12 @@ impl Capability {
                 bail!("argument {p:?} contains a control or invisible character");
             }
             match &rule.allowed {
-                Some(list) if !list.contains(v) => bail!("argument {p:?} is not one of the values this capability allows"),
-                None if v.starts_with('-') => bail!("argument {p:?} may not start with '-' (it could be read as an option)"),
+                Some(list) if !list.contains(v) => {
+                    bail!("argument {p:?} is not one of the values this capability allows")
+                }
+                None if v.starts_with('-') => {
+                    bail!("argument {p:?} may not start with '-' (it could be read as an option)")
+                }
                 _ => {}
             }
         }
@@ -231,13 +256,19 @@ impl Call {
     /// The canonical document the result hash covers, rebuilt from the outcome.
     fn result_hash_of(&self, o: &Outcome) -> String {
         let doc = json!({"call_id": self.id, "name": self.name, "args": self.args, "exit_code": o.exit_code, "timed_out": o.timed_out, "stdout": o.stdout, "stderr": o.stderr});
-        blake3::hash(canonical(&doc).as_bytes()).to_hex().to_string()
+        blake3::hash(canonical(&doc).as_bytes())
+            .to_hex()
+            .to_string()
     }
 
     /// What the host signs: who it is, whose call, which capability and arguments, how it ended, and the result hash.
     fn signed_bytes(&self, host: &[u8; 32], o: &Outcome) -> Vec<u8> {
         let host: String = host.iter().map(|b| format!("{b:02x}")).collect();
-        format!("{RESULT_DOMAIN}\n{host}\n{}\n{}\n{}\n{}\n{:?}\n{}", self.member, self.id, self.name, self.request_hash, self.state, o.result_hash).into_bytes()
+        format!(
+            "{RESULT_DOMAIN}\n{host}\n{}\n{}\n{}\n{}\n{:?}\n{}",
+            self.member, self.id, self.name, self.request_hash, self.state, o.result_hash
+        )
+        .into_bytes()
     }
 
     /// This call with the host's signature on its result, for sending to the caller.
@@ -247,7 +278,10 @@ impl Call {
         let mut c = self.clone();
         if let Some(o) = c.outcome.clone() {
             let sig = key.sign(&self.signed_bytes(&key.verifying_key().to_bytes(), &o));
-            c.outcome = Some(Outcome { host_sig: Some(sig.to_bytes().iter().map(|b| format!("{b:02x}")).collect()), ..o });
+            c.outcome = Some(Outcome {
+                host_sig: Some(sig.to_bytes().iter().map(|b| format!("{b:02x}")).collect()),
+                ..o
+            });
         }
         c
     }
@@ -259,13 +293,24 @@ impl Call {
     /// Says what does not match. A call without an outcome has nothing to check and passes.
     pub fn verify_result(&self, host: &[u8; 32]) -> Result<()> {
         use ed25519_dalek::Verifier;
-        let Some(o) = &self.outcome else { return Ok(()) };
+        let Some(o) = &self.outcome else {
+            return Ok(());
+        };
         if self.result_hash_of(o) != o.result_hash {
-            bail!("the result of call {} does not match its hash: it was altered", self.id);
+            bail!(
+                "the result of call {} does not match its hash: it was altered",
+                self.id
+            );
         }
-        let sig = o.host_sig.as_deref().context("the host did not sign this result (hosts before 0.3.0 do not; ask the host to update)")?;
-        let bytes: Vec<u8> = (0..sig.len() / 2).filter_map(|i| u8::from_str_radix(sig.get(2 * i..2 * i + 2)?, 16).ok()).collect();
-        let sig: [u8; 64] = bytes.try_into().map_err(|_| anyhow::anyhow!("the host's signature is malformed"))?;
+        let sig = o.host_sig.as_deref().context(
+            "the host did not sign this result (hosts before 0.3.0 do not; ask the host to update)",
+        )?;
+        let bytes: Vec<u8> = (0..sig.len() / 2)
+            .filter_map(|i| u8::from_str_radix(sig.get(2 * i..2 * i + 2)?, 16).ok())
+            .collect();
+        let sig: [u8; 64] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("the host's signature is malformed"))?;
         ed25519_dalek::VerifyingKey::from_bytes(host)?
             .verify(&self.signed_bytes(host, o), &ed25519_dalek::Signature::from_bytes(&sig))
             .map_err(|_| anyhow::anyhow!("the host's signature on call {} does not verify: this result is not the host's", self.id))
@@ -304,16 +349,24 @@ pub fn canonical(v: &Value) -> String {
         Value::Object(m) => {
             let mut keys: Vec<&String> = m.keys().collect();
             keys.sort();
-            let parts: Vec<String> = keys.into_iter().map(|k| format!("{}:{}", Value::String(k.clone()), canonical(&m[k]))).collect();
+            let parts: Vec<String> = keys
+                .into_iter()
+                .map(|k| format!("{}:{}", Value::String(k.clone()), canonical(&m[k])))
+                .collect();
             format!("{{{}}}", parts.join(","))
         }
-        Value::Array(a) => format!("[{}]", a.iter().map(canonical).collect::<Vec<_>>().join(",")),
+        Value::Array(a) => format!(
+            "[{}]",
+            a.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
         other => other.to_string(),
     }
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 impl Book {
@@ -331,7 +384,8 @@ impl Book {
         let mut table = Table::default();
         if let Some(p) = &store {
             if let Ok(text) = std::fs::read_to_string(p) {
-                let calls: Vec<Call> = serde_json::from_str(&text).with_context(|| format!("reading {}", p.display()))?;
+                let calls: Vec<Call> = serde_json::from_str(&text)
+                    .with_context(|| format!("reading {}", p.display()))?;
                 for mut c in calls {
                     if c.state == State::Running {
                         c.state = State::Abandoned;
@@ -340,7 +394,11 @@ impl Book {
                 }
             }
         }
-        let book = Self { caps: map, table: Mutex::new(table), store };
+        let book = Self {
+            caps: map,
+            table: Mutex::new(table),
+            store,
+        };
         book.save(&book.table.lock().expect("calls lock"));
         Ok(book)
     }
@@ -369,7 +427,10 @@ impl Book {
             let list: Vec<&Call> = t.calls.values().collect();
             if let Ok(text) = serde_json::to_string(&list) {
                 if let Err(e) = crate::write_atomic(p, text.as_bytes()) {
-                    eprintln!("playbox: cannot save the capability calls {}: {e}", p.display());
+                    eprintln!(
+                        "playbox: cannot save the capability calls {}: {e}",
+                        p.display()
+                    );
                 }
             }
         }
@@ -381,13 +442,24 @@ impl Book {
     ///
     /// Refuses an unknown capability, arguments outside the bounds, an id reused with a different request, or a member with too many
     /// open calls.
-    pub fn submit(&self, member: &str, name: &str, args: BTreeMap<String, String>, id: &str) -> Result<(Call, Next)> {
+    pub fn submit(
+        &self,
+        member: &str,
+        name: &str,
+        args: BTreeMap<String, String>,
+        id: &str,
+    ) -> Result<(Call, Next)> {
         if !plain_name(id, 64) {
             bail!("call_id must be 1-64 letters, digits, - _ .");
         }
-        let cap = self.caps.get(name).with_context(|| format!("no capability named {name:?}"))?;
+        let cap = self
+            .caps
+            .get(name)
+            .with_context(|| format!("no capability named {name:?}"))?;
         cap.bind(&args)?;
-        let request_hash = blake3::hash(canonical(&json!({"name": name, "args": args})).as_bytes()).to_hex().to_string();
+        let request_hash = blake3::hash(canonical(&json!({"name": name, "args": args})).as_bytes())
+            .to_hex()
+            .to_string();
         let mut t = self.table.lock().expect("calls lock");
         self.expire(&mut t);
         let k = key(member, id);
@@ -397,31 +469,71 @@ impl Book {
             }
             return Ok((existing.clone(), Next::Nothing));
         }
-        let open = t.calls.values().filter(|c| c.member == member && matches!(c.state, State::AwaitingApproval | State::Running)).count();
+        let open = t
+            .calls
+            .values()
+            .filter(|c| {
+                c.member == member && matches!(c.state, State::AwaitingApproval | State::Running)
+            })
+            .count();
         if open >= MAX_OPEN_PER_MEMBER {
             bail!("too many open calls ({MAX_OPEN_PER_MEMBER})");
         }
-        let mine: Vec<String> = t.calls.iter().filter(|(_, c)| c.member == member).map(|(k, _)| k.clone()).collect();
+        let mine: Vec<String> = t
+            .calls
+            .iter()
+            .filter(|(_, c)| c.member == member)
+            .map(|(k, _)| k.clone())
+            .collect();
         if mine.len() >= MAX_CALLS_PER_MEMBER {
             // Drop the oldest finished one.
-            if let Some(old) = mine.iter().filter(|k| matches!(t.calls[*k].state, State::Done | State::Denied | State::Expired | State::Abandoned)).min_by_key(|k| t.calls[*k].created_ms).cloned() {
+            if let Some(old) = mine
+                .iter()
+                .filter(|k| {
+                    matches!(
+                        t.calls[*k].state,
+                        State::Done | State::Denied | State::Expired | State::Abandoned
+                    )
+                })
+                .min_by_key(|k| t.calls[*k].created_ms)
+                .cloned()
+            {
                 t.calls.remove(&old);
             } else {
                 bail!("too many calls");
             }
         }
-        let state = if cap.approval { State::AwaitingApproval } else { State::Running };
-        let call = Call { id: id.to_string(), member: member.to_string(), name: name.to_string(), args, request_hash, state, created_ms: now_ms(), outcome: None };
+        let state = if cap.approval {
+            State::AwaitingApproval
+        } else {
+            State::Running
+        };
+        let call = Call {
+            id: id.to_string(),
+            member: member.to_string(),
+            name: name.to_string(),
+            args,
+            request_hash,
+            state,
+            created_ms: now_ms(),
+            outcome: None,
+        };
         t.calls.insert(k, call.clone());
         self.save(&t);
-        let next = if state == State::Running { Next::Run } else { Next::Wait };
+        let next = if state == State::Running {
+            Next::Run
+        } else {
+            Next::Wait
+        };
         Ok((call, next))
     }
 
     fn expire(&self, t: &mut Table) {
         let now = now_ms();
         for c in t.calls.values_mut() {
-            if c.state == State::AwaitingApproval && now.saturating_sub(c.created_ms) > APPROVAL_TTL_MS {
+            if c.state == State::AwaitingApproval
+                && now.saturating_sub(c.created_ms) > APPROVAL_TTL_MS
+            {
                 c.state = State::Expired;
             }
         }
@@ -440,7 +552,11 @@ impl Book {
     pub fn pending(&self) -> Vec<Call> {
         let mut t = self.table.lock().expect("calls lock");
         self.expire(&mut t);
-        t.calls.values().filter(|c| c.state == State::AwaitingApproval).cloned().collect()
+        t.calls
+            .values()
+            .filter(|c| c.state == State::AwaitingApproval)
+            .cloned()
+            .collect()
     }
 
     /// The owner's decision on a waiting call, found by `member/id` or, if unambiguous, by id alone.
@@ -454,12 +570,20 @@ impl Book {
         let hits: Vec<String> = t
             .calls
             .iter()
-            .filter(|(k, c)| c.state == State::AwaitingApproval && (k.as_str() == which || c.id == which))
+            .filter(|(k, c)| {
+                c.state == State::AwaitingApproval && (k.as_str() == which || c.id == which)
+            })
             .map(|(k, _)| k.clone())
             .collect();
-        let [k] = hits.as_slice() else { bail!("{} waiting calls match {which:?}", hits.len()) };
+        let [k] = hits.as_slice() else {
+            bail!("{} waiting calls match {which:?}", hits.len())
+        };
         let c = t.calls.get_mut(k).expect("just found");
-        c.state = if approve { State::Running } else { State::Denied };
+        c.state = if approve {
+            State::Running
+        } else {
+            State::Denied
+        };
         let out = c.clone();
         self.save(&t);
         let next = if approve { Next::Run } else { Next::Nothing };
@@ -492,7 +616,15 @@ impl Book {
     }
 
     /// Record how a running call ended. The result hash covers the call id, name, arguments and output.
-    pub fn finish(&self, member: &str, id: &str, exit_code: Option<i32>, timed_out: bool, stdout: &str, stderr: &str) -> Option<Call> {
+    pub fn finish(
+        &self,
+        member: &str,
+        id: &str,
+        exit_code: Option<i32>,
+        timed_out: bool,
+        stdout: &str,
+        stderr: &str,
+    ) -> Option<Call> {
         let mut t = self.table.lock().expect("calls lock");
         let c = t.calls.get_mut(&key(member, id))?;
         if c.state != State::Running {
@@ -501,8 +633,17 @@ impl Book {
         let clip = |s: &str| s.chars().take(MAX_OUTPUT).collect::<String>();
         let (stdout, stderr) = (clip(stdout), clip(stderr));
         let doc = json!({"call_id": c.id, "name": c.name, "args": c.args, "exit_code": exit_code, "timed_out": timed_out, "stdout": stdout, "stderr": stderr});
-        let result_hash = blake3::hash(canonical(&doc).as_bytes()).to_hex().to_string();
-        c.outcome = Some(Outcome { exit_code, timed_out, stdout, stderr, result_hash, host_sig: None });
+        let result_hash = blake3::hash(canonical(&doc).as_bytes())
+            .to_hex()
+            .to_string();
+        c.outcome = Some(Outcome {
+            exit_code,
+            timed_out,
+            stdout,
+            stderr,
+            result_hash,
+            host_sig: None,
+        });
         c.state = State::Done;
         let out = c.clone();
         self.save(&t);
@@ -536,7 +677,15 @@ impl Engine {
         quota: playbox_runner::Quota,
         limits: playbox_runner::Limits,
     ) -> Self {
-        Self { book, runner, audit, quota, limits, permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)), standing: None }
+        Self {
+            book,
+            runner,
+            audit,
+            quota,
+            limits,
+            permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
+            standing: None,
+        }
     }
 
     /// Re-check a member's authority at every step after the call is made (see the `standing` field).
@@ -547,7 +696,9 @@ impl Engine {
     }
 
     fn still_allowed(&self, member: &str, capability: &str) -> Result<(), String> {
-        self.standing.as_ref().map_or(Ok(()), |f| f(member, capability))
+        self.standing
+            .as_ref()
+            .map_or(Ok(()), |f| f(member, capability))
     }
 
     /// Whether this host can run capabilities at all (it has a sandbox).
@@ -561,7 +712,13 @@ impl Engine {
     /// # Errors
     ///
     /// See [`Book::submit`]; also fails when the host has no sandbox to run it in.
-    pub fn submit(self: &std::sync::Arc<Self>, member: &str, name: &str, args: BTreeMap<String, String>, id: &str) -> Result<Call> {
+    pub fn submit(
+        self: &std::sync::Arc<Self>,
+        member: &str,
+        name: &str,
+        args: BTreeMap<String, String>,
+        id: &str,
+    ) -> Result<Call> {
         if self.runner.is_none() {
             bail!("this host has no sandbox to run capabilities in");
         }
@@ -582,11 +739,19 @@ impl Engine {
     /// See [`Book::decide`].
     pub fn decide(self: &std::sync::Arc<Self>, which: &str, approve: bool) -> Result<Call> {
         let (call, next) = self.book.decide(which, approve)?;
-        self.audit.record("capability_decision", Some(&call.member), json!({"call_id": call.id, "name": call.name, "approved": approve}));
+        self.audit.record(
+            "capability_decision",
+            Some(&call.member),
+            json!({"call_id": call.id, "name": call.name, "approved": approve}),
+        );
         if next == Next::Run {
             if let Err(why) = self.still_allowed(&call.member, &call.name) {
                 // The owner said yes to a request from someone who is no longer entitled to make it. Nothing runs.
-                self.audit.record("capability_refused", Some(&call.member), json!({"call_id": call.id, "name": call.name, "reason": why}));
+                self.audit.record(
+                    "capability_refused",
+                    Some(&call.member),
+                    json!({"call_id": call.id, "name": call.name, "reason": why}),
+                );
                 self.book.revoke_call(&call.member, &call.id);
                 bail!("not run: {why}");
             }
@@ -598,25 +763,39 @@ impl Engine {
     fn start(self: &std::sync::Arc<Self>, member: String, id: String) {
         let me = self.clone();
         tokio::spawn(async move {
-            let Some(runner) = me.runner.clone() else { return };
+            let Some(runner) = me.runner.clone() else {
+                return;
+            };
             let _permit = me.permits.acquire().await;
             // Between being made (or approved) and starting there can be a wait for a free slot; ask once more.
-            let Some(capname) = me.book.view(&member, &id).map(|c| c.name) else { return };
+            let Some(capname) = me.book.view(&member, &id).map(|c| c.name) else {
+                return;
+            };
             if let Err(why) = me.still_allowed(&member, &capname) {
-                me.audit.record("capability_refused", Some(&member), json!({"call_id": id, "name": capname, "reason": why}));
+                me.audit.record(
+                    "capability_refused",
+                    Some(&member),
+                    json!({"call_id": id, "name": capname, "reason": why}),
+                );
                 me.book.revoke_call(&member, &id);
                 return;
             }
             let (exit, timed_out, out, err) = match me.book.plan(&member, &id) {
                 Err(e) => (None, false, String::new(), format!("{e:#}")),
                 Ok((argv, cap)) => {
-                    let mut spec = playbox_runner::TaskSpec::new(&argv.iter().map(String::as_str).collect::<Vec<_>>());
+                    let mut spec = playbox_runner::TaskSpec::new(
+                        &argv.iter().map(String::as_str).collect::<Vec<_>>(),
+                    );
                     if let Some(i) = &cap.image {
                         spec.image.clone_from(i);
                     }
                     spec.timeout_secs = cap.timeout_secs.unwrap_or(60).min(me.limits.timeout_secs);
                     spec.mem_mib = cap.mem_mib.unwrap_or(512).min(me.limits.mem_mib);
-                    let dir = std::env::temp_dir().join(format!("playbox-cap-{}-{}", std::process::id(), blake3::hash(format!("{member}/{id}").as_bytes()).to_hex()));
+                    let dir = std::env::temp_dir().join(format!(
+                        "playbox-cap-{}-{}",
+                        std::process::id(),
+                        blake3::hash(format!("{member}/{id}").as_bytes()).to_hex()
+                    ));
                     let ran = async {
                         std::fs::create_dir_all(&dir)?;
                         // The task runs as the directory's owner and may be a different user inside a container.
@@ -667,10 +846,27 @@ mod tests {
     fn cap(approval: bool) -> Capability {
         Capability {
             name: "run-tests".into(),
-            argv: vec!["cargo".into(), "test".into(), "{filter}".into(), "--features={feat}".into()],
+            argv: vec![
+                "cargo".into(),
+                "test".into(),
+                "{filter}".into(),
+                "--features={feat}".into(),
+            ],
             params: BTreeMap::from([
-                ("filter".into(), ParamRule { allowed: None, max_len: Some(16) }),
-                ("feat".into(), ParamRule { allowed: Some(vec!["a".into(), "b".into()]), max_len: None }),
+                (
+                    "filter".into(),
+                    ParamRule {
+                        allowed: None,
+                        max_len: Some(16),
+                    },
+                ),
+                (
+                    "feat".into(),
+                    ParamRule {
+                        allowed: Some(vec!["a".into(), "b".into()]),
+                        max_len: None,
+                    },
+                ),
             ]),
             approval,
             image: None,
@@ -686,7 +882,10 @@ mod tests {
     #[test]
     fn arguments_fill_placeholders_and_stay_separate_words() {
         let c = cap(false);
-        assert_eq!(c.bind(&args("a b; rm -rf", "a")).unwrap(), ["cargo", "test", "a b; rm -rf", "--features=a"]);
+        assert_eq!(
+            c.bind(&args("a b; rm -rf", "a")).unwrap(),
+            ["cargo", "test", "a b; rm -rf", "--features=a"]
+        );
         // A value that looks like a placeholder stays text.
         assert_eq!(c.bind(&args("{feat}", "a")).unwrap()[2], "{feat}");
     }
@@ -695,10 +894,20 @@ mod tests {
     #[test]
     fn arguments_outside_the_bounds_are_refused() {
         let c = cap(false);
-        for bad in [args("-x", "a"), args("ok", "c"), args(&"x".repeat(17), "a"), args("a\nb", "a"), args("a\u{0}", "a")] {
+        for bad in [
+            args("-x", "a"),
+            args("ok", "c"),
+            args(&"x".repeat(17), "a"),
+            args("a\nb", "a"),
+            args("a\u{0}", "a"),
+        ] {
             assert!(c.bind(&bad).is_err(), "{bad:?}");
         }
-        assert!(c.bind(&BTreeMap::from([("filter".into(), "x".into())])).is_err(), "missing");
+        assert!(
+            c.bind(&BTreeMap::from([("filter".into(), "x".into())]))
+                .is_err(),
+            "missing"
+        );
         let mut extra = args("x", "a");
         extra.insert("other".into(), "1".into());
         assert!(c.bind(&extra).is_err(), "unknown");
@@ -731,12 +940,26 @@ mod tests {
         let (c2, n2) = b.submit("m1", "run-tests", args("x", "a"), "id1").unwrap();
         assert_eq!(n2, Next::Nothing, "a retry must not start a second run");
         assert_eq!(c2.created_ms, c1.created_ms);
-        assert!(b.submit("m1", "run-tests", args("y", "a"), "id1").is_err(), "same id, different request");
+        assert!(
+            b.submit("m1", "run-tests", args("y", "a"), "id1").is_err(),
+            "same id, different request"
+        );
         // Another member's id is a different call.
-        assert_eq!(b.submit("m2", "run-tests", args("x", "a"), "id1").unwrap().1, Next::Run);
+        assert_eq!(
+            b.submit("m2", "run-tests", args("x", "a"), "id1")
+                .unwrap()
+                .1,
+            Next::Run
+        );
         let done = b.finish("m1", "id1", Some(0), false, "ok", "").unwrap();
         assert_eq!(done.state, State::Done);
-        assert_eq!(b.submit("m1", "run-tests", args("x", "a"), "id1").unwrap().1, Next::Nothing, "a finished call is not run again");
+        assert_eq!(
+            b.submit("m1", "run-tests", args("x", "a"), "id1")
+                .unwrap()
+                .1,
+            Next::Nothing,
+            "a finished call is not run again"
+        );
     }
 
     // REQ: CAP-4
@@ -745,7 +968,11 @@ mod tests {
         let b = Book::new(vec![cap(true)], None).unwrap();
         let (c, n) = b.submit("m", "run-tests", args("x", "a"), "c1").unwrap();
         assert_eq!((c.state, n), (State::AwaitingApproval, Next::Wait));
-        assert_eq!(b.submit("m", "run-tests", args("x", "a"), "c1").unwrap().1, Next::Nothing, "a retry is not a new request");
+        assert_eq!(
+            b.submit("m", "run-tests", args("x", "a"), "c1").unwrap().1,
+            Next::Nothing,
+            "a retry is not a new request"
+        );
         assert_eq!(b.pending().len(), 1);
         let (c, n) = b.decide("c1", true).unwrap();
         assert_eq!((c.state, n), (State::Running, Next::Run));
@@ -754,7 +981,13 @@ mod tests {
         assert_eq!(b.decide("m/c2", false).unwrap().0.state, State::Denied);
         // Expiry.
         b.submit("m", "run-tests", args("z", "a"), "c3").unwrap();
-        b.table.lock().unwrap().calls.get_mut("m/c3").unwrap().created_ms = 0;
+        b.table
+            .lock()
+            .unwrap()
+            .calls
+            .get_mut("m/c3")
+            .unwrap()
+            .created_ms = 0;
         assert_eq!(b.view("m", "c3").unwrap().state, State::Expired);
         assert!(b.decide("c3", true).is_err());
     }
@@ -775,7 +1008,10 @@ mod tests {
         let b = Book::new(vec![cap(false)], Some(store.clone())).unwrap();
         assert_eq!(b.view("m", "r1").unwrap().state, State::Abandoned);
         assert_eq!(b.view("m", "r2").unwrap().state, State::Done);
-        assert_eq!(b.submit("m", "run-tests", args("x", "a"), "r1").unwrap().1, Next::Nothing);
+        assert_eq!(
+            b.submit("m", "run-tests", args("x", "a"), "r1").unwrap().1,
+            Next::Nothing
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -783,10 +1019,21 @@ mod tests {
     #[test]
     fn invisible_and_bidi_characters_are_refused_and_escaped_on_display() {
         let c = cap(false);
-        for bad in ["a\u{202e}b", "a\u{200b}b", "a\u{2066}b", "a\u{feff}", "a\u{2028}b", "a\u{ad}b", "a\x1b[2Jb"] {
+        for bad in [
+            "a\u{202e}b",
+            "a\u{200b}b",
+            "a\u{2066}b",
+            "a\u{feff}",
+            "a\u{2028}b",
+            "a\u{ad}b",
+            "a\x1b[2Jb",
+        ] {
             assert!(c.bind(&args(bad, "a")).is_err(), "{bad:?}");
         }
-        assert!(c.bind(&args("Grüße 世界", "a")).is_ok(), "ordinary text in any script is fine");
+        assert!(
+            c.bind(&args("Grüße 世界", "a")).is_ok(),
+            "ordinary text in any script is fine"
+        );
         // Whatever reaches an owner's screen shows what is there.
         assert_eq!(display_safe("ok\u{202e}gnp.exe"), "ok\\u{202e}gnp.exe");
         assert_eq!(display_safe("a\x1b[31mb\n"), "a\\u{1b}[31mb\\u{a}");
@@ -800,24 +1047,45 @@ mod tests {
         let host = SigningKey::from_bytes(&[3u8; 32]);
         let hid = host.verifying_key().to_bytes();
         let b = Book::new(vec![cap(false)], None).unwrap();
-        b.submit("alice", "run-tests", args("x", "a"), "s1").unwrap();
+        b.submit("alice", "run-tests", args("x", "a"), "s1")
+            .unwrap();
         let done = b.finish("alice", "s1", Some(0), false, "hi", "").unwrap();
         let signed = done.signed(&host);
-        signed.verify_result(&hid).expect("the host's own result verifies");
+        signed
+            .verify_result(&hid)
+            .expect("the host's own result verifies");
 
         // The output, the member, the call id and the host are all bound.
         let mut t = signed.clone();
         t.outcome.as_mut().unwrap().stdout = "something else".into();
-        assert!(t.verify_result(&hid).unwrap_err().to_string().contains("altered"));
+        assert!(t
+            .verify_result(&hid)
+            .unwrap_err()
+            .to_string()
+            .contains("altered"));
         let mut t = signed.clone();
         t.member = "bob".into();
-        assert!(t.verify_result(&hid).is_err(), "another member cannot present alice's result");
+        assert!(
+            t.verify_result(&hid).is_err(),
+            "another member cannot present alice's result"
+        );
         let mut t = signed.clone();
         t.id = "s2".into();
         assert!(t.verify_result(&hid).is_err());
-        let other = SigningKey::from_bytes(&[4u8; 32]).verifying_key().to_bytes();
-        assert!(signed.verify_result(&other).is_err(), "a result from another host does not verify");
-        assert!(done.verify_result(&hid).unwrap_err().to_string().contains("did not sign"), "an unsigned result is refused");
+        let other = SigningKey::from_bytes(&[4u8; 32])
+            .verifying_key()
+            .to_bytes();
+        assert!(
+            signed.verify_result(&other).is_err(),
+            "a result from another host does not verify"
+        );
+        assert!(
+            done.verify_result(&hid)
+                .unwrap_err()
+                .to_string()
+                .contains("did not sign"),
+            "an unsigned result is refused"
+        );
     }
 
     #[test]
@@ -825,22 +1093,38 @@ mod tests {
         let b = Book::new(vec![cap(false)], None).unwrap();
         b.submit("m", "run-tests", args("x", "a"), "h1").unwrap();
         b.submit("m", "run-tests", args("x", "a"), "h2").unwrap();
-        let h1 = b.finish("m", "h1", Some(0), false, "out", "").unwrap().outcome.unwrap().result_hash;
+        let h1 = b
+            .finish("m", "h1", Some(0), false, "out", "")
+            .unwrap()
+            .outcome
+            .unwrap()
+            .result_hash;
         let h1b = {
             let doc = json!({"stderr": "", "stdout": "out", "timed_out": false, "exit_code": 0, "args": {"feat": "a", "filter": "x"}, "name": "run-tests", "call_id": "h1"});
-            blake3::hash(canonical(&doc).as_bytes()).to_hex().to_string()
+            blake3::hash(canonical(&doc).as_bytes())
+                .to_hex()
+                .to_string()
         };
         assert_eq!(h1, h1b, "key order must not matter");
-        let h2 = b.finish("m", "h2", Some(0), false, "different", "").unwrap().outcome.unwrap().result_hash;
+        let h2 = b
+            .finish("m", "h2", Some(0), false, "different", "")
+            .unwrap()
+            .outcome
+            .unwrap()
+            .result_hash;
         assert_ne!(h1, h2);
-        assert_eq!(canonical(&json!({"b": [1, {"d": 1, "c": "x\"y"}], "a": null})), r#"{"a":null,"b":[1,{"c":"x\"y","d":1}]}"#);
+        assert_eq!(
+            canonical(&json!({"b": [1, {"d": 1, "c": "x\"y"}], "a": null})),
+            r#"{"a":null,"b":[1,{"c":"x\"y","d":1}]}"#
+        );
     }
 
     #[test]
     fn open_calls_per_member_are_bounded() {
         let b = Book::new(vec![cap(true)], None).unwrap();
         for i in 0..MAX_OPEN_PER_MEMBER {
-            b.submit("m", "run-tests", args("x", "a"), &format!("o{i}")).unwrap();
+            b.submit("m", "run-tests", args("x", "a"), &format!("o{i}"))
+                .unwrap();
         }
         assert!(b.submit("m", "run-tests", args("x", "a"), "over").is_err());
         assert!(b.submit("other", "run-tests", args("x", "a"), "o0").is_ok());

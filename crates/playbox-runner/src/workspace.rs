@@ -95,6 +95,7 @@ fn scan(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
 /// # Errors
 ///
 /// Returns an error if the operation fails; the error carries the cause.
+#[allow(clippy::too_many_arguments)] // each argument is a distinct input of one operation; a struct would only rename them
 pub async fn run_in_workspace(
     repo: &mut Repo,
     ws: &mut Workspace,

@@ -8,9 +8,9 @@
 use a2a::{JsonRpcRequest, JsonRpcResponse, SendMessageRequest};
 use iroh::{endpoint::presets, Endpoint};
 use playbox_net::{
-    audit,
+    audit, join_link,
     latent::{commit_of, pack_with},
-    join_link, new_secret_key,
+    new_secret_key,
     wire::{Frame, Op},
     Client, Host, HostConfig, Transport,
 };
@@ -254,7 +254,11 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         capabilities: vec![playbox_net::capabilities::Capability {
             name: "greet".into(),
             argv: vec!["echo".into(), "{who}".into()],
-            params: [("who".to_string(), playbox_net::capabilities::ParamRule::default())].into(),
+            params: [(
+                "who".to_string(),
+                playbox_net::capabilities::ParamRule::default(),
+            )]
+            .into(),
             approval: true,
             image: None,
             timeout_secs: None,
@@ -264,11 +268,18 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         idle_timeout: Duration::from_secs(3),
         // An in-process index with a ledger in the state directory, so the memory operations are mutated too.
         browse: Some(std::sync::Arc::new(
-            playbox_net::browse::Browser::new(playbox_net::browse::BrowseConfig::new("ws://127.0.0.1:9/", vec!["example.com".into()])).unwrap(),
+            playbox_net::browse::Browser::new(playbox_net::browse::BrowseConfig::new(
+                "ws://127.0.0.1:9/",
+                vec!["example.com".into()],
+            ))
+            .unwrap(),
         )),
         memory: Some(std::sync::Arc::new(
             playbox_net::shared_memory::SharedMemory::new({
-                let mut c = playbox_net::shared_memory::MemoryConfig::new(std::sync::Arc::new(playbox_net::shared_memory::InMemory::default()), "fuzz");
+                let mut c = playbox_net::shared_memory::MemoryConfig::new(
+                    std::sync::Arc::new(playbox_net::shared_memory::InMemory::default()),
+                    "fuzz",
+                );
                 c.ledger = Some(base.join("memory.jsonl"));
                 c
             })
@@ -365,7 +376,13 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         ));
         seeds.push(frame(
             "SendMessage",
-            Some(message(Op::Feed { since: 0, wait_secs: 0 }, vec![])),
+            Some(message(
+                Op::Feed {
+                    since: 0,
+                    wait_secs: 0,
+                },
+                vec![],
+            )),
             g,
         ));
         // Capabilities: with no runner on this host a call is refused before anything could run.
@@ -373,35 +390,107 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         seeds.push(frame(
             "SendMessage",
             Some(message(
-                Op::Cap { name: "greet".into(), args: [("who".to_string(), "world".to_string())].into(), call_id: "fuzz-cap".into() },
+                Op::Cap {
+                    name: "greet".into(),
+                    args: [("who".to_string(), "world".to_string())].into(),
+                    call_id: "fuzz-cap".into(),
+                },
                 vec![],
             )),
             g,
         ));
-        seeds.push(frame("SendMessage", Some(message(Op::CapPoll { call_id: "fuzz-cap".into() }, vec![])), g));
-        // Conversations: create (an unknown member is refused), post with a bad signature, read, list.
-        seeds.push(frame("SendMessage", Some(message(Op::ConvNew { title: "t".into(), members: vec!["nobody".into()] }, vec![])), g));
         seeds.push(frame(
             "SendMessage",
-            Some(message(Op::ConvPost { conv: "c-0000000000000000".into(), text: "x".into(), request_id: "r".into(), sig: "00".repeat(64) }, vec![])),
+            Some(message(
+                Op::CapPoll {
+                    call_id: "fuzz-cap".into(),
+                },
+                vec![],
+            )),
             g,
         ));
-        seeds.push(frame("SendMessage", Some(message(Op::ConvRead { conv: "c-0000000000000000".into(), since: 0, mark: true }, vec![])), g));
-        seeds.push(frame("SendMessage", Some(message(Op::ConvInvite { conv: "c-0".into(), members: vec![] }, vec![])), g));
+        // Conversations: create (an unknown member is refused), post with a bad signature, read, list.
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::ConvNew {
+                    title: "t".into(),
+                    members: vec!["nobody".into()],
+                },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::ConvPost {
+                    conv: "c-0000000000000000".into(),
+                    text: "x".into(),
+                    request_id: "r".into(),
+                    sig: "00".repeat(64),
+                },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::ConvRead {
+                    conv: "c-0000000000000000".into(),
+                    since: 0,
+                    mark: true,
+                },
+                vec![],
+            )),
+            g,
+        ));
+        seeds.push(frame(
+            "SendMessage",
+            Some(message(
+                Op::ConvInvite {
+                    conv: "c-0".into(),
+                    members: vec![],
+                },
+                vec![],
+            )),
+            g,
+        ));
         seeds.push(frame("SendMessage", Some(message(Op::ConvList, vec![])), g));
         seeds.push(frame(
             "SendMessage",
-            Some(message(Op::Remember { text: "the staging VPN is needed".into(), key: Some("k".into()) }, vec![])),
+            Some(message(
+                Op::Remember {
+                    text: "the staging VPN is needed".into(),
+                    key: Some("k".into()),
+                },
+                vec![],
+            )),
             g,
         ));
         seeds.push(frame(
             "SendMessage",
-            Some(message(Op::Browse { url: "https://example.com/page".into(), mode: playbox_net::browse::Mode::Text, wait_ms: Some(10) }, vec![])),
+            Some(message(
+                Op::Browse {
+                    url: "https://example.com/page".into(),
+                    mode: playbox_net::browse::Mode::Text,
+                    wait_ms: Some(10),
+                },
+                vec![],
+            )),
             g,
         ));
         seeds.push(frame(
             "SendMessage",
-            Some(message(Op::Recall { query: "staging VPN".into(), max_tokens: Some(500), author: Some("x".into()) }, vec![])),
+            Some(message(
+                Op::Recall {
+                    query: "staging VPN".into(),
+                    max_tokens: Some(500),
+                    author: Some("x".into()),
+                },
+                vec![],
+            )),
             g,
         ));
         seeds.push(frame(
@@ -534,7 +623,10 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
         .unwrap();
     again.set_grant(grant);
     let (kept, _) = again.latent_pull(latent_hub, 0).await.unwrap();
-    eprintln!("fuzz_host: {} latent messages survived the barrage and a restart", kept.len());
+    eprintln!(
+        "fuzz_host: {} latent messages survived the barrage and a restart",
+        kept.len()
+    );
     let fresh = pack_with(&signer, latent_hub, "after", 0.5, &[9u8; 16], None);
     again.latent_send(&fresh).await.unwrap();
     host.shutdown().await.unwrap();
