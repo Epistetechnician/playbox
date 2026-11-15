@@ -115,11 +115,13 @@ jobs:
           (cd "$RUNNER_TEMP/libkrun" && make install PREFIX="$HOME/krun")
       - name: Build the helper
         run: |
-          LIB=$(dirname "$(find "$HOME/krun" -name 'libkrun.so' | head -1)")
+          find "$HOME/krun" -name 'libkrun*'
+          LIB=$(dirname "$(find "$HOME/krun" -name 'libkrun.so*' | head -1)")
           echo "LIB=$LIB" >> "$GITHUB_ENV"
+          echo "LIBKRUN_LIB_DIR=$LIB" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$LIB" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$LIB" >> "$GITHUB_ENV"
-          LIBRARY_PATH=$LIB cargo build -p playbox-runner --features krun --bin playbox-krun-helper
+          LIBRARY_PATH=$LIB LIBKRUN_LIB_DIR=$LIB cargo build -p playbox-runner --features krun --bin playbox-krun-helper
           echo "PLAYBOX_KRUN_HELPER=$PWD/target/debug/playbox-krun-helper" >> "$GITHUB_ENV"
       - run: docker pull alpine:3
       - run: cargo test -p playbox-runner --test krun --test escape
