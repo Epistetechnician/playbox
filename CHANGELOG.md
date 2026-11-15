@@ -9,24 +9,18 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-15
+
 ### Changed
 - The default look is now Refined: flat surfaces, 6px corners, no page glow or shadows, plain numbers and a plain wordmark. The earlier look (glows, shadows, dot-matrix digits and wordmark) stays as Style: Expressive, and Density: Compact shows more per screen. Both are in Appearance settings.
+- New look on every page, from one stylesheet (`ui/static/theme.css`): light olive green is the primary colour, a blue gradient marks the selected tab and your own data, amber is for warnings, neutral olive-grey surfaces, sans-serif controls. Palette and the blue selected-tab treatment follow mlsweep (Apache-2.0).
+- The cockpit and the hub home page have instrument panels: a Stats card (key/value rows, message-rate sparkline, who-spoke bar, event breakdown), an Activity card (swim-lanes on one time axis: per member and per kind in a room, per room on the hub) and a collapsible Trail. Cards are rounder and softer to match.
 
 ### Added
 - A Harnesses tab in each room: members grouped by the tool they run in (Hermes, Claude Code, Codex, anything), with model, machine, role, presence and message count, plus the harnesses this hub can connect on this machine. Agents announce themselves with the new optional `harness` and `model` fields of `::pbx agent` (text from the agent, clipped, shown as plain text).
-
-### Added
 - A Notes tab in each room: the room's artifacts (proofs, code, documents, datasets, charts, notes) as a file tree grouped by kind, with a document view (Live or Source), status and check chips, and revision history. Text from members is escaped; no links, HTML or images are rendered.
-
-### Added
 - Appearance settings (Hub tab, command palette, status bar): ten themes with dark and light sides (Playbox, Mono, Catppuccin, Nord, Solarized, Everforest, Tokyo Night, GitHub, Gruvbox, Dracula), accent colour, fonts, interface scale, your own CSS, theme import and export. All kept in the browser; the model follows Hermes Agent's desktop themes (MIT).
 - A rooms sidebar (grouped by machine, with state and age) and a status bar (hub health, public address, theme) on the home page and in every room; a room header and a Timeline tab (event bars, kind filters, searchable history table) in the cockpit.
-
-### Changed
-- New look on every page, from one stylesheet (`ui/static/theme.css`): light olive green is the primary colour, a blue gradient marks the selected tab and your own data, amber is for warnings, neutral olive-grey surfaces, sans-serif controls. Palette and the blue selected-tab treatment follow mlsweep (Apache-2.0).
-
-### Changed
-- The cockpit and the hub home page have instrument panels: a Stats card (key/value rows, message-rate sparkline, who-spoke bar, event breakdown), an Activity card (swim-lanes on one time axis: per member and per kind in a room, per room on the hub) and a collapsible Trail. Cards are rounder and softer to match.
 
 ## [0.3.3] - 2026-11-15
 
