@@ -6,10 +6,20 @@
 use playbox_runner::{find_helper, KrunRunner, Runner, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, process::Command};
 
+/// A case that cannot run here: a pass with a loud note by default, a failure when `PLAYBOX_CONFINE_REQUIRE_ALL` is set (CI's
+/// `krun` job sets it), so a skipped check can never look like a passed one where the environment is meant to support it.
+fn skip(why: &str) {
+    eprintln!("skipping: {why}");
+    assert!(
+        std::env::var_os("PLAYBOX_CONFINE_REQUIRE_ALL").is_none(),
+        "PLAYBOX_CONFINE_REQUIRE_ALL is set and this could not run: {why}"
+    );
+}
+
 /// A runner, where the helper is installed. Enough for a request that is refused before any image is fetched.
 fn runner() -> Option<KrunRunner> {
     if find_helper().is_err() {
-        eprintln!("skipping: playbox-krun-helper not installed (scripts/install-krun.sh)");
+        skip("playbox-krun-helper not installed (scripts/install-krun.sh)");
         return None;
     }
     KrunRunner::locate(SandboxPolicy::default()).ok()
@@ -23,7 +33,7 @@ fn ready() -> Option<KrunRunner> {
         .output()
         .is_ok_and(|o| o.status.success())
     {
-        eprintln!("skipping: docker is not running");
+        skip("docker is not running");
         return None;
     }
     Some(r)

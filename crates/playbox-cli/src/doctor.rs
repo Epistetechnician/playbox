@@ -118,16 +118,33 @@ fn collect() -> Vec<Check> {
         Some(r) => {
             add("research tooling", "repository", true, r.display().to_string());
             for p in ["steer", "orchestrator", "world", "judge"] {
-                if r.join(p).join(".venv").exists() {
-                    add("research tooling", p, true, "venv ready".into());
-                } else {
-                    add("research tooling", p, false, format!("no venv; `cd {p} && uv sync`"));
+                match venv_problem(&r.join(p).join(".venv")) {
+                    None => add("research tooling", p, true, "venv ready".into()),
+                    Some(why) => add("research tooling", p, false, format!("{why}; `cd {p} && uv sync`")),
                 }
             }
         }
     }
     add("research tooling", "uv", found[4], if found[4] { "found" } else { "not found" }.into());
     out
+}
+
+/// Why a virtual environment cannot run Python, or `None` when it can. A `.venv` directory alone proves nothing: one copied
+/// from another machine, or whose base interpreter was removed, has the folder and a dangling `python`.
+fn venv_problem(venv: &std::path::Path) -> Option<String> {
+    if !venv.is_dir() {
+        return Some("no venv".into());
+    }
+    let python = ["bin/python", "Scripts/python.exe"].iter().map(|p| venv.join(p)).find(|p| p.exists());
+    if python.is_none() {
+        return Some("venv has no working python (a dangling link?)".into());
+    }
+    let cfg = std::fs::read_to_string(venv.join("pyvenv.cfg")).unwrap_or_default();
+    let home = cfg.lines().find_map(|l| l.strip_prefix("home").and_then(|r| r.trim_start().strip_prefix('=')).map(|v| v.trim().to_string()));
+    match home {
+        Some(h) if !std::path::Path::new(&h).is_dir() => Some(format!("venv's base interpreter {h} is missing")),
+        _ => None,
+    }
 }
 
 pub fn run(as_json: bool) -> Result<ExitCode> {
@@ -160,4 +177,50 @@ pub fn run(as_json: bool) -> Result<ExitCode> {
     }
     // Missing optional pieces are normal (docker, libkrun, python tooling); only --json reports them via the status.
     Ok(if as_json && missing > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
+}
+
+#[cfg(test)]
+mod venv_tests {
+    use super::venv_problem;
+    use std::fs;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("playbox-doctor-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("bin")).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_venv_folder_without_a_working_python_is_not_ready() {
+        let d = scratch("empty");
+        assert!(venv_problem(&d).unwrap().contains("no working python"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_dangling_python_link_is_not_ready() {
+        let d = scratch("dangling");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/nonexistent/python3", d.join("bin/python")).unwrap();
+        #[cfg(unix)]
+        assert!(venv_problem(&d).is_some());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_missing_base_interpreter_is_not_ready_and_a_present_one_is() {
+        let d = scratch("home");
+        fs::write(d.join("bin/python"), "").unwrap();
+        fs::write(d.join("pyvenv.cfg"), "home = /nonexistent/base/bin\n").unwrap();
+        assert!(venv_problem(&d).unwrap().contains("missing"));
+        fs::write(d.join("pyvenv.cfg"), format!("home = {}\n", d.join("bin").display())).unwrap();
+        assert_eq!(venv_problem(&d), None);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn no_venv_at_all() {
+        assert_eq!(venv_problem(std::path::Path::new("/nonexistent/.venv")), Some("no venv".into()));
+    }
 }

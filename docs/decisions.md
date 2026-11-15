@@ -103,3 +103,11 @@ Design and evidence: [steering.md](steering.md). Choices that are easy to get wr
 - **Requirements have IDs and every shipped one needs a check that names it.** `docs/requirements.md` is the register; `conformance/trace.py` fails CI on a promise nothing checks, a check for an unknown promise, or a planned promise that already has a check. The register and the tests cannot drift apart without CI saying so.
 - **Upgrades are tested the way people do them.** The `installed_upgrade` scenario installs an older release with `install.sh`, hosts a room with it, upgrades the installed binary, and requires the same member, the history and one unbroken audit chain. The version-skew scenario runs both builds in one room.
 
+## Guest DNS falls back to public resolvers (2026-11-14)
+
+A task with an open network (`internet`) and no host list gets `/etc/resolv.conf` naming the host's own resolvers when the task may reach them. Where none is reachable (a home router's address is private, which `internet` does not allow) it names 1.1.1.1 and 9.9.9.9. Decision: **keep the fallback, and keep it visible and switchable.**
+
+- *Why keep it.* The alternative is no resolver, which makes a name-based network task fail on most home networks, the hosts most likely to run a room. The task can already reach every public address, so a public resolver widens nothing it can reach; it only means the names it looks up go to a third party the owner did not choose.
+- *What the owner can do.* `PLAYBOX_GUEST_DNS=ip[,ip]` chooses the resolvers; an empty value gives the guest none (names then resolve only from a `--allow-host` list). `docs/libkrun.md` and `docs/cli.md` say which names a guest is given.
+- *What this does not cover.* An owner who runs a filtering resolver (a Pi-hole, a corporate one) on a private address gets no filtering for tasks, because the task is not allowed to reach private addresses. They should set `PLAYBOX_GUEST_DNS` to a resolver on a public address, or give no network.
+

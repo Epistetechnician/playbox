@@ -16,10 +16,16 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 - **Behaviour change:** the safety overrides `PLAYBOX_ALLOW_UNSAFE_RUNNER`, `PLAYBOX_ALLOW_MISSING_LIMITS` and the new `PLAYBOX_ALLOW_UNFILTERED_NETWORK` are now on only when set to `1`, `on` or `true`. Before, the first two were on for any value, including `0` and an empty string. A host that set one to anything else must set it to `1`.
 
 ### Added
+- `scripts/demo.sh --live` (`scripts/demo_live.py`): the hill-climb through a live room. Guests pull the frontier, run a proposal as a sandboxed task, and push; the host's gate (`challenge/f3/room_gate.py`) scores each push with the F3 harness against the sealed holdout, signs a receipt, and moves `main` only on a promotion. A push that is not built on `main` or touches any file but `candidate.py` is refused without a receipt. The holdout is then revealed and the receipts verified. See `docs/demo.md`.
 - `scripts/demo.sh` and `docs/demo.md`: one story, each step checked by the script: a guest joins by link and runs a sandboxed task, a spent invite is refused, the audit log is verified and an edited copy rejected, and a recorded hill-climb is re-verified from its receipts with a forged promotion rejected. Run on macOS and from a fresh clone on a new Ubuntu 24.04 machine.
 - `docs/security-roadmap.md`: what is built, what is next and what is not planned, measured against Anthropic's guidance for working with advanced models.
 
+### Fixed
+- `playbox doctor` called a research venv ready if a `.venv` folder existed. It now needs a working `python` and an existing base interpreter, so a folder copied from another machine is reported.
+- `challenge/f3/verify.py` on a climbmix run without its data files ended in a traceback; it now fails the data-manifest check with what is missing.
+
 ### Testing
+- CI: a `krun` job runs the libkrun boot tests, the escape drill and the confined-guest tests on a KVM runner, and fails on any skip (`PLAYBOX_CONFINE_REQUIRE_ALL`); a `lint` job runs `cargo fmt --check` and clippy with warnings as errors; an `f3` job runs the F3 tests and re-derives the recorded run.
 - The Linux confinement around a real libkrun guest (`tests/confine_guest.rs`, root, KVM): boot and run under the jail, cgroup, syscall filter and network filter; no network unless asked; with a network, a public address is reachable and the host's loopback and the metadata address are not, with an unfiltered control that does reach loopback. Passed by hand on nested arm64 KVM (BOX-3).
 - The escape drill (`cargo test -p playbox-runner --test escape`): breakout probes run inside a real libkrun guest and all must fail, with a canary that proves the probes ran. It skips where libkrun, its helper or Docker is missing (BOX-6, decision 43).
 

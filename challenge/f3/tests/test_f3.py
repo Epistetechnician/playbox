@@ -336,3 +336,13 @@ def test_committed_dry_run_verifies():
     rep, s = V.verify(d, (d / "host.pub").read_text().strip(), REPO, "none")
     assert not rep.failed, rep.text()
     assert s["promotions"] >= 3 and s["rejections"] >= 3 and s["caught_false_promotions"] >= 1
+
+
+def test_a_run_whose_data_is_not_on_this_machine_fails_cleanly(tmp_path, monkeypatch):
+    """The climbmix runs need their tokenizer and shards; without them the verifier says so instead of ending in a traceback."""
+    work = REPO / "docs/f3/dry_run_climbmix"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("F3_DATA_DIR", str(tmp_path / "nothing"))
+    rep, _ = V.verify(work, (work / "host.pub").read_text().strip(), REPO, "none", False, False)
+    assert any("data artifacts" in n for n in failed_names(rep))
+    assert any("cannot read them" in str(c) for c in rep.failed)

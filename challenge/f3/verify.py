@@ -298,7 +298,13 @@ def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unre
     sys.path.insert(0, str(repo / "challenge/f3"))
     task = importlib.import_module(sub["task"])
     if "data_manifest" in recs[0]["body"]:
-        local = task.data_manifest(include_holdout=False)
+        try:
+            local = task.data_manifest(include_holdout=False)
+        except OSError as e:
+            rep.add("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", False,
+                    f"cannot read them: {e.filename or e}. This run's substrate needs its data on this machine (see challenge/f3/climbmix_data.py); "
+                    "the receipts cannot be checked without it")
+            return rep, summary
         want = recs[0]["body"]["data_manifest"]
         bad = [k for k in local if local[k] != want.get(k)]
         if not rep.add("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", not bad, ("differs: " + ", ".join(bad)) if bad else ""):
