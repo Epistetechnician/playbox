@@ -609,6 +609,7 @@ def test_http():
         check("research lists the curated runs with headline numbers", st_r == 200 and {r["id"] for r in rj["runs"]} >= {"room-vs-silo", "f3-h100-pilot"} and all(r.get("headline") for r in rj["runs"]))
         st_d, dj, _ = a.req("GET", "/api/research/room-vs-silo")
         check("a research run carries results, usage, config and findings", st_d == 200 and dj["results"]["rows"] and dj["usage"]["items"] and dj["config"] and dj["timeline"])
+        check("research runs carry capped samples, each with a step trail", all(len(x["samples"]) <= 200 and all(sm.get("id") and sm.get("steps") for sm in x["samples"]) for x in (dj, a.req("GET", "/api/research/f3-h100-pilot")[1])) and len(dj["samples"]) > 0)
         check("an unknown or path-like research id is a 404", a.req("GET", "/api/research/nope")[0] == 404 and a.req("GET", "/api/research/..%2Fhub.json")[0] in (404, 400))
         st_i, _, _ = anon.req("GET", "/instruments.js")
         check("the shared instrument panels script is public and served", st_i == 200)

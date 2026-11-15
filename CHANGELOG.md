@@ -10,6 +10,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+
+- Research view is data-driven: `scripts/gen_research.py` generates `ui/research/*.json` from `docs/benchmark.md` and the F3 pilot receipts (CI runs it with `--check`), and each run has a Samples tab (filterable table, then a collapsible step trail per sample).
 - A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
 
 ### Added

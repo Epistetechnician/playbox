@@ -111,6 +111,471 @@
    ]
   ]
  },
+ "samples": [
+  {
+   "id": "row4-room-1",
+   "row": "4",
+   "agent": "room trial 1",
+   "kind": "trial",
+   "score": 7688.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 7,688 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-2",
+   "row": "4",
+   "agent": "room trial 2",
+   "kind": "trial",
+   "score": 10282.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 10,282 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-3",
+   "row": "4",
+   "agent": "room trial 3",
+   "kind": "trial",
+   "score": 23064.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 23,064 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-4",
+   "row": "4",
+   "agent": "room trial 4",
+   "kind": "trial",
+   "score": 40173.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 40,173 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-5",
+   "row": "4",
+   "agent": "room trial 5",
+   "kind": "trial",
+   "score": 48007.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 48,007 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-6",
+   "row": "4",
+   "agent": "room trial 6",
+   "kind": "trial",
+   "score": 53247.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 53,247 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-7",
+   "row": "4",
+   "agent": "room trial 7",
+   "kind": "trial",
+   "score": 70793.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 70,793 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-room-8",
+   "row": "4",
+   "agent": "room trial 8",
+   "kind": "trial",
+   "score": 78143.0,
+   "best": 7688.0,
+   "cond": "room",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 78,143 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-1",
+   "row": "4",
+   "agent": "silo trial 1",
+   "kind": "trial",
+   "score": 0.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 0 after 90 tries (Fable advisor every 15 tries)",
+     "c": "ok"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-2",
+   "row": "4",
+   "agent": "silo trial 2",
+   "kind": "trial",
+   "score": 0.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 0 after 90 tries (Fable advisor every 15 tries)",
+     "c": "ok"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-3",
+   "row": "4",
+   "agent": "silo trial 3",
+   "kind": "trial",
+   "score": 0.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 0 after 90 tries (Fable advisor every 15 tries)",
+     "c": "ok"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-4",
+   "row": "4",
+   "agent": "silo trial 4",
+   "kind": "trial",
+   "score": 0.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 0 after 90 tries (Fable advisor every 15 tries)",
+     "c": "ok"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-5",
+   "row": "4",
+   "agent": "silo trial 5",
+   "kind": "trial",
+   "score": 6776.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 6,776 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-6",
+   "row": "4",
+   "agent": "silo trial 6",
+   "kind": "trial",
+   "score": 37110.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 37,110 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-7",
+   "row": "4",
+   "agent": "silo trial 7",
+   "kind": "trial",
+   "score": 51314.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 51,314 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row4-silo-8",
+   "row": "4",
+   "agent": "silo trial 8",
+   "kind": "trial",
+   "score": 81870.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "result",
+     "text": "assembled score 81,870 after 90 tries (Fable advisor every 15 tries)",
+     "c": "blue"
+    },
+    {
+     "label": "note",
+     "text": "assembled = sum over the 3 slices of the best slice score found; silo agents never combine slices",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "row5-1",
+   "row": "5",
+   "agent": "haiku silos, 90 tries",
+   "kind": "checkpoint",
+   "score": 136624.0,
+   "best": 136624.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "cost",
+     "text": "$0.06 per trial",
+     "c": "warn"
+    },
+    {
+     "label": "result",
+     "text": "mean assembled score of 4 trials: 136,624",
+     "c": "blue"
+    }
+   ]
+  },
+  {
+   "id": "row5-2",
+   "row": "5",
+   "agent": "haiku silos, 300 tries",
+   "kind": "checkpoint",
+   "score": 55970.0,
+   "best": 55970.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "cost",
+     "text": "$0.21 per trial",
+     "c": "warn"
+    },
+    {
+     "label": "result",
+     "text": "mean assembled score of 4 trials: 55,970",
+     "c": "blue"
+    }
+   ]
+  },
+  {
+   "id": "row5-3",
+   "row": "5",
+   "agent": "haiku silos, 600 tries",
+   "kind": "checkpoint",
+   "score": 31918.0,
+   "best": 31918.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "cost",
+     "text": "$0.39 per trial",
+     "c": "warn"
+    },
+    {
+     "label": "result",
+     "text": "mean assembled score of 4 trials: 31,918",
+     "c": "blue"
+    }
+   ]
+  },
+  {
+   "id": "row5-4",
+   "row": "5",
+   "agent": "haiku silos, 900 tries",
+   "kind": "checkpoint",
+   "score": 29466.0,
+   "best": 29466.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "cost",
+     "text": "$0.49 per trial",
+     "c": "warn"
+    },
+    {
+     "label": "result",
+     "text": "mean assembled score of 4 trials: 29,466",
+     "c": "blue"
+    }
+   ]
+  },
+  {
+   "id": "row5-5",
+   "row": "5",
+   "agent": "haiku silos, 1,200 tries",
+   "kind": "checkpoint",
+   "score": 27342.0,
+   "best": 27342.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "cost",
+     "text": "$0.57 per trial",
+     "c": "warn"
+    },
+    {
+     "label": "result",
+     "text": "mean assembled score of 4 trials: 27,342",
+     "c": "blue"
+    }
+   ]
+  },
+  {
+   "id": "row5-6",
+   "row": "5",
+   "agent": "haiku silos, 1,800 tries",
+   "kind": "checkpoint",
+   "score": 0.0,
+   "best": 0.0,
+   "cond": "silo",
+   "steps": [
+    {
+     "label": "cost",
+     "text": "$0.79 per trial",
+     "c": "warn"
+    },
+    {
+     "label": "result",
+     "text": "mean assembled score of 4 trials: 0 (all four trials exactly 0)",
+     "c": "ok"
+    }
+   ]
+  }
+ ],
+ "samples_note": "Per-try scores.tsv files are not committed; samples are per-trial finals (row 4) and per-checkpoint means (row 5) from docs/benchmark.md.",
  "timeline": [
   {
    "kind": "finding",
