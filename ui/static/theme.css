@@ -145,3 +145,11 @@ label{display:block;margin:14px 0 6px;font:600 11px var(--sans)!important;letter
 .kpis span{border-radius:999px;font-family:var(--sans);letter-spacing:.02em;text-transform:none;font-size:11.5px}
 .tile{border-radius:10px}.tile:hover{border-color:var(--blue-edge)}
 .hint{font-family:var(--sans);text-transform:none;letter-spacing:0}
+
+/* Canvas labels: sans, sentence case; mono only for ids, times and numbers */
+.lbl,.mach h4,.col h4,.msg .w{font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:12px;font-weight:600}
+.msg .w{font-size:12.5px;color:var(--ink-2)}.msg.me .w{color:var(--blue)}
+.col h4{font-size:12.5px;background:var(--bg-2);border-radius:10px 10px 0 0}.col{border-radius:10px}
+.ev .tag,.tile .k,.tile .st{font-family:var(--sans);text-transform:none;letter-spacing:0}
+.board .card,.board .item{border-radius:8px}
+.msg.me{background:none}
