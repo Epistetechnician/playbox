@@ -1,0 +1,146 @@
+{
+ "id": "room-vs-silo",
+ "title": "Room vs silos: hill-climbing with three Haiku 5.5 agents",
+ "kind": "benchmark",
+ "status": "complete",
+ "model": "claude-haiku-5-5 (+ Fable 5.2 advisor in row 4)",
+ "completed": "2026-11-15",
+ "source": "docs/benchmark.md",
+ "summary": "Does sharing a Playbox room help small agents find a hidden vector? Same code, prompt, boxes and budget; only what each agent can see differs.",
+ "headline": [
+  {
+   "k": "POSTED VECTOR p",
+   "v": "0.0002"
+  },
+  {
+   "k": "BEST ARM",
+   "v": "Haiku x1800"
+  }
+ ],
+ "config": {
+  "agents": "3 per trial",
+  "task": "hidden integer vector; score = squared distance + 2x sum gap",
+  "lower_is_better": "true",
+  "conditions": "room | silo (alternating trials)",
+  "boxes": "Docker, one per agent",
+  "significance": "permutation test",
+  "trials_per_condition": "3 to 8"
+ },
+ "usage": {
+  "title": "Cost per trial (list prices)",
+  "unit": "USD",
+  "items": [
+   {
+    "label": "Haiku-only, 1800 tries",
+    "value": 0.79,
+    "c": "ok"
+   },
+   {
+    "label": "Fable advisor, silo",
+    "value": 1.18,
+    "c": "warn"
+   },
+   {
+    "label": "Fable advisor, room",
+    "value": 0.94,
+    "c": "blue"
+   },
+   {
+    "label": "Haiku-only, 90 tries",
+    "value": 0.06,
+    "c": "mut"
+   }
+  ]
+ },
+ "results": {
+  "title": "Mean best score after all tries (lower is better)",
+  "columns": [
+   "Row",
+   "Task",
+   "Trials",
+   "Room",
+   "Silo",
+   "Classical",
+   "Room vs silo"
+  ],
+  "rows": [
+   [
+    "1",
+    "16 numbers, all scored by everyone",
+    "3",
+    "51,752",
+    "61,796",
+    "9,083",
+    "16% lower, p = 0.10"
+   ],
+   [
+    "2",
+    "32 numbers, all scored by everyone",
+    "8",
+    "131,847",
+    "136,204",
+    "54,146",
+    "3% lower, p = 0.26"
+   ],
+   [
+    "3",
+    "32 numbers, split in 3 slices",
+    "6",
+    "99,609",
+    "112,941",
+    "-",
+    "12% lower, p = 0.051"
+   ],
+   [
+    "4",
+    "as 3, plus Fable 5.2 advisor",
+    "8",
+    "41,425",
+    "22,134",
+    "-",
+    "silo 47% lower, p = 0.20"
+   ],
+   [
+    "5",
+    "as 3, Haiku only, 18x more tries",
+    "4",
+    "-",
+    "0",
+    "-",
+    "vs row 4 silo: p = 0.31"
+   ]
+  ]
+ },
+ "timeline": [
+  {
+   "kind": "finding",
+   "text": "Sharing helps when the work is split: the room is the only condition that ends with one usable combined answer (posted vector 48.6k vs 108.1k, p = 0.0002).",
+   "by": "row 4"
+  },
+  {
+   "kind": "finding",
+   "text": "Sharing did not clearly help when every agent can score everything; a classical random hill-climber beats the model runs on the plain task.",
+   "by": "rows 1-2"
+  },
+  {
+   "kind": "finding",
+   "text": "Per dollar, many cheap tries beat an expensive advisor: $0.79 of Haiku tries solved every slice in 4 of 4 trials; $1.18 of advisor calls reached 0 in half.",
+   "by": "row 5"
+  },
+  {
+   "kind": "caveat",
+   "text": "Small samples (3 to 8 trials per condition). Read the p-values, not just the means.",
+   "by": "all"
+  },
+  {
+   "kind": "caveat",
+   "text": "No room arm in row 5: whether sharing helps a cheap swarm was not run.",
+   "by": "row 5"
+  },
+  {
+   "kind": "caveat",
+   "text": "Several room trials were stopped by a time limit at 82 to 89 of 90 tries and counted (rule: at least 80 of 90 and no invalid tries).",
+   "by": "rows 3-4"
+  }
+ ]
+}

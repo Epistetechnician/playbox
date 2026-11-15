@@ -251,3 +251,15 @@ html[data-density=compact] .rr a.rrow{padding:3px 8px}
 html:not([data-style=expressive]) .rail .brand:has(.bk)::after,html:not([data-style=expressive]) .top .brand:has(.bk)::after{content:none}
 html:not([data-style=expressive]) .brand .bk{font:700 15px var(--sans);letter-spacing:-.01em;text-transform:none}
 html:not([data-style=expressive]) .brand b{width:10px;height:10px;border-radius:2px}
+
+/* Research */
+.rtab{width:100%;border-collapse:collapse;font:13px var(--sans)}.rtab th{position:sticky;top:0;text-align:left;padding:8px 10px;font:600 10.5px var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line-2);background:var(--panel)}
+.rtab td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}.rtab tbody tr{cursor:default}.rtab tbody tr[data-run]{cursor:pointer}.rtab tbody tr:hover{background:var(--panel-2)}.rtab .lk{color:var(--blue);font-weight:500}
+.rtabs{display:flex;gap:2px;border-bottom:1px solid var(--line-2);margin:14px 0}.rtabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--blue);padding:8px 14px;font:500 12.5px var(--sans);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.rtabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--blue-edge);background:var(--blue-grad)}
+.rback{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.comp{margin:4px 0 14px}.bar2{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--dim)}.bar2 i{display:block;height:100%}.bar2 i+i{margin-left:1px}
+.ldr{display:grid;gap:7px}.ldr>div{display:flex;align-items:baseline;gap:8px;font:13px var(--sans)}.ldr .l{display:inline-flex;align-items:center;gap:8px;flex:none;color:var(--ink-2)}.ldr .l i{width:8px;height:8px;border-radius:2px}
+.ldr .dots{flex:1;border-bottom:1px dotted var(--line-2);transform:translateY(-3px)}
+.kvt{width:100%;border-collapse:collapse;font:13px var(--sans)}.kvt td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}.kvt .k{width:34%;font:12.5px var(--mono);color:var(--mut)}
+.rtl .tlr{grid-template-columns:90px 1fr 100px}

@@ -351,6 +351,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 <link rel="stylesheet" href="/theme.css">
 <script src="/themes.js"></script>
 <script src="/shell.js" onerror="void 0"></script>
+<script src="/research.js" onerror="void 0"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -378,6 +379,7 @@ const ICON = {
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 13.8c2.8-.4 5 1.4 5 4.2"/>',
   shieldx: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M10 10l4 4M14 10l-4 4"/>',
 };
+ICON.research = '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>';
 const svgi = (n, cls = "") => `<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${ICON[n]}</svg>`;
 
 function toast(text, err) {
@@ -613,7 +615,7 @@ addEventListener("load", syncThemeColor);
 matchMedia("(prefers-color-scheme:dark)").addEventListener?.("change", syncThemeColor);
 
 /* ---------- chrome ---------- */
-const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["system", "System", "shield", "03"], ["add", "Add", "add", ""], ["integrations", "Integrations", "plug", "04"], ["hub", "Hub", "hub", "05"]];
+const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["system", "System", "shield", "03"], ["add", "Add", "add", ""], ["research", "Research", "research", "04"], ["integrations", "Integrations", "plug", "05"], ["hub", "Hub", "hub", "06"]];
 function paint() {
   $("#root").innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
@@ -886,7 +888,25 @@ function harness() {
     open: S.ins["h-act"] ?? innerWidth >= 700, meta: `${act.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: act.length ? lanes : []});
   return `<div style="display:grid;gap:14px;margin:18px 0 6px">${st}${al}</div>`;
 }
+async function loadResearch() {
+  try { S.rs = (await api("GET", "/api/research")).runs; } catch { S.rs = S.rs || []; }
+  if (S.rsid && !S.rsrun) { try { S.rsrun = await api("GET", "/api/research/" + encodeURIComponent(S.rsid)); } catch { S.rsid = null; } }
+  if (S.view === "research") paintView(true);
+}
+document.addEventListener("click", async e => {
+  let b;
+  if ((b = e.target.closest("[data-run]"))) { S.rsid = b.dataset.run; S.rstab = "overview"; S.rsf = "all"; S.rsrun = null; try { S.rsrun = await api("GET", "/api/research/" + encodeURIComponent(S.rsid)); } catch { S.rsid = null; } paintView(); }
+  else if (e.target.closest("[data-rback]")) { S.rsid = null; S.rsrun = null; paintView(); }
+  else if ((b = e.target.closest("[data-rtab]"))) { S.rstab = b.dataset.rtab; paintView(); }
+  else if ((b = e.target.closest("[data-rf]"))) { S.rsf = b.dataset.rf; paintView(); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches?.("[data-run]")) e.target.click(); });
 const VIEWS = {
+  research() {
+    if (!window.PBResearch) return `<div class="card empty"><p>Research view unavailable.</p></div>`;
+    if (!S.rs) { loadResearch(); return `<div class="card"><h2>Research</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
+    return S.rsid && S.rsrun ? PBResearch.detail(S.rsrun, S.rstab || "overview", S.rsf || "all") : PBResearch.list(S.rs, S.rsid);
+  },
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
     const f = S.filter || "all";

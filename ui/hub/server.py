@@ -38,7 +38,7 @@ MAX_BODY = 1 << 20
 SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate"}      # playbox_create is sensitive too unless it only replicates (see room_route)
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
+PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/research.js": ("research.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
 
 
 def is_local(peer, headers):
@@ -657,6 +657,20 @@ def make_handler(hub, auth, store, opts):
             if m == "DELETE" and p.startswith("/api/knock/out/"):
                 rid2 = p.rsplit("/", 1)[1]
                 return self.j(200, {"ok": hub.outgoing.dismiss(rid2)})
+            if m == "GET" and (p == "/api/research" or p.startswith("/api/research/")):
+                rdir = STATIC.parent / "research"
+                runs = []
+                for f in sorted(rdir.glob("*.json")):
+                    try:
+                        runs.append(json.loads(f.read_text()))
+                    except (OSError, ValueError):
+                        continue
+                if p == "/api/research":
+                    keys = ("id", "title", "kind", "status", "model", "completed", "summary", "headline", "source")
+                    return self.j(200, {"runs": [{k: r.get(k) for k in keys} for r in runs]})
+                rid2 = p.rsplit("/", 1)[1]
+                hit = next((r for r in runs if r.get("id") == rid2), None)
+                return self.j(200, hit) if hit else self.j(404, {"error": "no such run"})
             if m == "GET" and p == "/api/system":
                 return self.j(200, self.system(rec))
             if m == "POST" and p == "/api/system/machine/fix":

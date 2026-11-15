@@ -604,6 +604,12 @@ def test_http():
         check("on a public address the url is marked reachable" + ("" if st == 200 else f" [{st} {j2}]"), st == 200 and j2["public"] is True and j2["url"].startswith("http://93.184.216.34:80/i/"))
         # ---- the System view: stages, events and posture, with nothing secret in them ----
         check("system needs a session", anon.req("GET", "/api/system")[0] == 401)
+        check("research needs a session", anon.req("GET", "/api/research")[0] == 401)
+        st_r, rj, _ = a.req("GET", "/api/research")
+        check("research lists the curated runs with headline numbers", st_r == 200 and {r["id"] for r in rj["runs"]} >= {"room-vs-silo", "f3-h100-pilot"} and all(r.get("headline") for r in rj["runs"]))
+        st_d, dj, _ = a.req("GET", "/api/research/room-vs-silo")
+        check("a research run carries results, usage, config and findings", st_d == 200 and dj["results"]["rows"] and dj["usage"]["items"] and dj["config"] and dj["timeline"])
+        check("an unknown or path-like research id is a 404", a.req("GET", "/api/research/nope")[0] == 404 and a.req("GET", "/api/research/..%2Fhub.json")[0] in (404, 400))
         st_i, _, _ = anon.req("GET", "/instruments.js")
         check("the shared instrument panels script is public and served", st_i == 200)
         st_t, _, _ = anon.req("GET", "/theme.css")

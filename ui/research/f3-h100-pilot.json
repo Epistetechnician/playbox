@@ -1,0 +1,147 @@
+{
+ "id": "f3-h100-pilot",
+ "title": "F3 verified hill-climb: H100 pilot (8 scripted stand-ins)",
+ "kind": "verified-search",
+ "status": "complete",
+ "model": "autoresearch GPT, depth 8, 1x H100 80GB",
+ "completed": "2026-11-14",
+ "source": "docs/f3/pilot/README.md",
+ "summary": "A promotion rule with a hidden holdout: candidates are accepted only if they gain on dev, clear the threshold and hold up on a holdout. The pilot checks the rule, not a better model.",
+ "headline": [
+  {
+   "k": "PROMOTIONS",
+   "v": "0"
+  },
+  {
+   "k": "CAUGHT",
+   "v": "1"
+  }
+ ],
+ "config": {
+  "node": "f3-pilot-a (new, stopped and verified stopped)",
+  "window": "2026-11-14 15:10Z to 20:04Z",
+  "spec": "task_spec_gpu.json, pilot setting",
+  "tokens_per_step": "2**19",
+  "L*": "1.18 bpb at 240 steps",
+  "T0": "245.7 s (median of 3 seeds)",
+  "theta": "0.06",
+  "eps": "0.0151",
+  "verify": "VERIFIED, all checks pass"
+ },
+ "usage": {
+  "title": "Verdicts (8 decisions)",
+  "unit": "decisions",
+  "items": [
+   {
+    "label": "reject: gain below threshold",
+    "value": 6,
+    "c": "warn"
+   },
+   {
+    "label": "reject: target not reached",
+    "value": 1,
+    "c": "mut"
+   },
+   {
+    "label": "reject: holdout failed (caught)",
+    "value": 1,
+    "c": "bad"
+   },
+   {
+    "label": "promoted",
+    "value": 0,
+    "c": "ok"
+   }
+  ]
+ },
+ "results": {
+  "title": "Decisions",
+  "columns": [
+   "Seq",
+   "Stand-in",
+   "Verdict",
+   "Gain",
+   "Holdout bpb (3 seeds)"
+  ],
+  "rows": [
+   [
+    "1",
+    "matrix lr 0.05",
+    "reject, gain_below_threshold",
+    "0.001",
+    "1.180 to 1.184"
+   ],
+   [
+    "2",
+    "half batch",
+    "reject, target_not_reached",
+    "-",
+    "-"
+   ],
+   [
+    "3",
+    "Muon ns_steps 3",
+    "reject, gain_below_threshold",
+    "-0.081",
+    "1.180 to 1.182"
+   ],
+   [
+    "4",
+    "embedding lr 0.4",
+    "reject, gain_below_threshold",
+    "-0.0001",
+    "1.184 to 1.186"
+   ],
+   [
+    "5",
+    "injected dev memorizer",
+    "reject, holdout_failed (caught)",
+    "0.866 on dev",
+    "2.203 to 2.434 (limit 1.195)"
+   ],
+   [
+    "6",
+    "Muon ns_steps 2",
+    "reject, gain_below_threshold",
+    "-0.158",
+    "1.182 to 1.184"
+   ],
+   [
+    "7",
+    "weight decay 0",
+    "reject, gain_below_threshold",
+    "0.040",
+    "1.180 to 1.184"
+   ],
+   [
+    "8",
+    "grad clip 1.0",
+    "reject, gain_below_threshold",
+    "0.039",
+    "1.183 to 1.186"
+   ]
+  ]
+ },
+ "timeline": [
+  {
+   "kind": "finding",
+   "text": "0 promotions, 7 rejections for gain below threshold or target, 1 caught false promotion; verify.txt: VERIFIED.",
+   "by": "result"
+  },
+  {
+   "kind": "finding",
+   "text": "The injected dev memorizer scored 0.866 gain on dev but 2.203 to 2.434 bpb on the holdout (limit 1.195): the holdout caught it.",
+   "by": "decision 5"
+  },
+  {
+   "kind": "caveat",
+   "text": "Mac-tuned stand-ins (Muon steps, learning rates) do not help on the H100 at this step budget; nothing cleared theta = 0.06 (best 0.040).",
+   "by": "calibration"
+  },
+  {
+   "kind": "caveat",
+   "text": "About 26 to 27 minutes per decision; candidate 6 took 57 minutes wall because the node was stopped and woken in between.",
+   "by": "timing"
+  }
+ ]
+}
