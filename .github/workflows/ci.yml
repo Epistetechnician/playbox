@@ -117,6 +117,10 @@ jobs:
         run: |
           find "$HOME/krun" -name 'libkrun*'
           LIB=$(dirname "$(find "$HOME/krun" -name 'libkrun.so*' | head -1)")
+          # The helper's environment is its own, so find libkrun and libkrunfw through the system's library cache, not LD_LIBRARY_PATH.
+          find "$HOME/krun" -name '*.so*' -printf '%h\n' | sort -u | sudo tee /etc/ld.so.conf.d/krun.conf
+          sudo ldconfig
+          ldconfig -p | grep -E 'libkrun'
           echo "LIB=$LIB" >> "$GITHUB_ENV"
           echo "LIBKRUN_LIB_DIR=$LIB" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$LIB" >> "$GITHUB_ENV"
