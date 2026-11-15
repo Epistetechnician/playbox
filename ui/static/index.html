@@ -487,6 +487,23 @@ document.addEventListener("click", e => {
 document.addEventListener("input", e => { if (e.target.id === "nq") { S.nq = e.target.value; const p = e.target.selectionStart; show("notes"); const n = $("#nq"); if (n) { n.focus(); n.setSelectionRange(p, p); } } });
 setInterval(() => { if (S.tab === "notes" && !document.hidden) loadNotes(); }, 15000);
 
+/* ---------- Work and Proof headers ---------- */
+function stripHtml(title, sub, nums, meta) {
+  return `<div class="rh"><div class="rh1"><div><div class="rt">${esc(title)}</div><div class="rs">${esc(sub)}</div></div><div class="hns">${nums.map(([k, v]) => `<div class="hn"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>
+    <div class="rh2">${meta.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>`;
+}
+function workHeader(w) {
+  const r = w && (w.result || w);
+  const code = r && (r.exit_code ?? r.code), ok = code === 0;
+  return stripHtml("Work", ROOM ? `in ${ROOM}` : "pull code, run tasks in the host's sandbox", [["LAST EXIT", r ? String(code ?? "—") : "—"], ["STATE", S.running ? "running" : r ? (ok ? "passed" : "failed") : "idle"]],
+    [["Role", "guest"], ["Folder", (S.status && (S.status.workspace || (joined() || {}).workspace)) || "—"], ["Recipes", String(RECIPES.length)], ["Sandbox", "host's task image"]]);
+}
+function proofHeader(v, t) {
+  const log = S.status && S.status.history_log;
+  return stripHtml("Proof", "signed, hash-chained history", [["ENTRIES", v ? String(v.entries ?? "—") : "—"], ["STATUS", v ? (v.valid ? "verified" : "FAILED") : "not checked"]],
+    [["Log", log ? log.split("/").slice(-1)[0] : "—"], ["Tamper test", t ? (t.caught || t.valid === false ? "caught" : "ran") : "not run"], ["Witness holds", String((S.hold || []).length)], ["Mode", mode()]]);
+}
+
 /* ---------- views ---------- */
 function rawInvite() {
   return `${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
@@ -567,7 +584,7 @@ const VIEWS = {
       ? "Members run tasks on your machine from their own Playbox. To run one yourself, join a room as a guest."
       : "Join a room to pull code and run sandboxed tasks.");
     const w = S.lastWork;
-    return `<div class="card"><h2>Sync code</h2>
+    return workHeader(w) + `<div class="wk"><div class="card"><h2>Sync code</h2>
         <label for="ref">Branch</label><input type="text" id="ref" value="main" class="mono" autocapitalize="off" spellcheck="false">
         <label class="switch"><input type="checkbox" id="checkout" checked><span>Check it out in my folder</span></label>
         <p class="row" style="margin:14px 0 0"><button class="btn" data-act="pull">Pull</button><button class="btn" data-act="push">Push my branch</button></p>
@@ -582,7 +599,7 @@ const VIEWS = {
         <label class="switch"><input type="checkbox" id="net"><span>Allow network <span class="mut">(if your grant permits)</span></span></label>
         <label class="switch"><input type="checkbox" id="apply" checked><span>Apply the resulting patch to my folder</span></label>
         <p style="margin:14px 0 0"><button class="btn primary block" data-act="run" id="runbtn">Run in sandbox</button></p></div>
-      <div id="result">${w ? renderResult(w) : ""}</div>`;
+      </div><div id="result">${w ? renderResult(w) : ""}</div>`;
   },
 
   people() {
@@ -597,7 +614,7 @@ const VIEWS = {
 
   proof() {
     const v = S.verify, log = S.status && S.status.history_log, t = S.tamper;
-    return `<div class="card"><h2>Your signed history</h2>
+    return proofHeader(v, t) + `<div class="wk"><div class="card"><h2>Your signed history</h2>
         <p class="mut" style="margin-top:0">Every Playbox action on this device is appended to a signed, hash-chained log. Change one byte and verification fails.</p>
         <div class="stat"><span>Log</span><span class="mono">${esc(log || "—")}</span></div>
         <p class="row" style="margin:12px 0 0"><button class="btn gold" data-act="verify" ${log ? "" : "disabled"}>Verify now</button></p>
@@ -610,7 +627,7 @@ const VIEWS = {
       <div class="card"><h2>Check any log</h2>
         <label for="vpath">Path to a history log</label><input type="text" id="vpath" class="mono" placeholder="~/.playbox/history/hermes-session.log" spellcheck="false" autocapitalize="off">
         <p style="margin:12px 0 0"><button class="btn" data-act="verify-path">Verify</button></p>
-        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div>`;
+        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div></div>`;
   },
 };
 
