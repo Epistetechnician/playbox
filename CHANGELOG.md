@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- Notes and Work results render maths (KaTeX), coloured code (Shiki: python, rust, js, ts, shell, json, diff, lean, markdown, yaml, toml) and tables, with links sanitised by DOMPurify. The three libraries are vendored in `ui/static/vendor/` (licences in `LICENSES.md`), served by the hub itself, and load only when a note needs them. A strict markdown module (`markdown.js`) also renders text that is still arriving: an open code fence or `$$` block stays as plain text. Images from other sites are never fetched.
+
+### Added
 - A Research view in the hub: experiments as runs (list, then Overview, Results, Usage, Timeline, Config and JSON tabs, in the style of a log viewer). It ships the room-vs-silos benchmark and the F3 H100 pilot; add a run by dropping a JSON file in `ui/research/`.
 
 ## [0.3.4] - 2026-11-15

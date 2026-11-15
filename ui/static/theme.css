@@ -267,3 +267,18 @@ html:not([data-style=expressive]) .brand b{width:10px;height:10px;border-radius:
 /* Square corners everywhere: no rounded edges, on any page, theme or style. Last rule on purpose. */
 :root,html[data-style]{--r:0}
 *,*::before,*::after{border-radius:0!important}
+
+/* Rendered markdown (Notes, results): maths, code, tables, quotes */
+.doc blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--blue-edge);color:var(--ink-2)}
+.doc hr{border:0;border-top:1px solid var(--line-2);margin:18px 0}
+.doc a{color:var(--blue);text-underline-offset:2px}
+.doc ol{padding-left:22px}
+.pbm-table{overflow:auto;margin:12px 0}.pbm-table table{border-collapse:collapse;font:13.5px var(--sans);min-width:60%}
+.pbm-table th,.pbm-table td{border:1px solid var(--line-2);padding:6px 12px;text-align:left}.pbm-table th{background:var(--panel-2);font-weight:600}
+.pbm-display{overflow-x:auto;margin:12px 0;text-align:center}
+pre.pbm-code,.pbm-code pre{margin:12px 0;padding:12px 14px;background:var(--field);border:1px solid var(--line);font:13px/1.55 var(--mono);overflow:auto;white-space:pre}
+.pbm-code pre.shiki{background:var(--field)!important}
+.pbm-code .shiki span,.pbm-code span{color:var(--shiki-light)}
+html[data-theme=dark] .pbm-code span{color:var(--shiki-dark)}
+@media (prefers-color-scheme:dark){html:not([data-theme=light]) .pbm-code span{color:var(--shiki-dark)}}
+.katex{font-size:1.05em}

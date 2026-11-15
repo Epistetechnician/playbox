@@ -619,6 +619,9 @@ def test_http():
         check("the look has a refined default and an expressive option, plus a compact density, all user-selectable", all(x in open(os.path.join(UI, "static", "themes.js")).read() for x in ("pb.style", "pb.density", "data-style", "data-density")) and "data-style=expressive" in open(os.path.join(UI, "static", "theme.css")).read())
         check("corners are square on every page: theme.css ends with a global zero radius", "*,*::before,*::after{border-radius:0!important}" in open(os.path.join(UI, "static", "theme.css")).read())
         check("themes keep text legible: the palette is nudged until text, status colours and button labels reach WCAG AA", "const ensure" in open(os.path.join(UI, "static", "themes.js")).read() and "ensure(p.ink, p.bg, 7" in open(os.path.join(UI, "static", "themes.js")).read())
+        sv = [anon.req("GET", u)[0] for u in ("/vendor/purify.min.js", "/vendor/katex/katex.min.js", "/vendor/katex/katex.min.css", "/vendor/shiki.bundle.js", "/markdown.js")]
+        check("vendored KaTeX, DOMPurify and Shiki and the markdown module are served by the hub itself", sv == [200] * 5)
+        check("the vendor route refuses traversal and unknown types", all(anon.req("GET", u)[0] in (400, 404) for u in ("/vendor/../hub/server.py", "/vendor/LICENSES.md", "/vendor/nope.js", "/vendor/%2e%2e/hub/server.py")))
         check("the shared theme stylesheet is public, linked by every page and cached by the service worker", st_t == 200 and all("/theme.css" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")))
         check("the pages load it and the service worker caches it", "/instruments.js" in open(os.path.join(UI, "static", "home.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "index.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "sw.js")).read())
         st, sysj, _ = a.req("GET", "/api/system")

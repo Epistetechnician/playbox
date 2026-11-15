@@ -1,7 +1,7 @@
 /* Playbox service worker: offline shell, last-known rooms, and payload-free push.
    A push carries no data. On wake this worker asks the hub (over the signed-in session) what needs attention. */
-const VER = "pb-v10";
-const SHELL = ["/", "/auth.js", "/space.js", "/instruments.js", "/theme.css", "/themes.js", "/shell.js", "/research.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const VER = "pb-v11";
+const SHELL = ["/", "/auth.js", "/space.js", "/instruments.js", "/theme.css", "/themes.js", "/shell.js", "/research.js", "/markdown.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VER).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
