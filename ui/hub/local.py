@@ -46,3 +46,42 @@ def local_hosts():
         except (OSError, ValueError):
             continue
     return out
+
+
+def prune_stale():
+    """Remove the records and sockets of hosts that are gone (killed without a chance to clean up). A record goes only when its process is
+    dead AND its socket does not answer; returns how many were removed."""
+    d, n = hosting_dir(), 0
+    try:
+        files = sorted(d.glob("*.json"))
+    except OSError:
+        return 0
+    for f in files:
+        try:
+            rec = json.loads(f.read_text())
+            hid = str(rec.get("id", ""))
+            if not re.fullmatch(r"[0-9a-f]{16}", hid) or f.stem != hid:
+                continue
+            pid = rec.get("pid")
+            if isinstance(pid, int) and pid > 0:
+                try:
+                    os.kill(pid, 0)
+                    continue                      # still running: leave it, even if it is slow to answer
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    continue
+            try:
+                if ask_host(d / f"{hid}.sock", "ping", 1.0) == "ok":
+                    continue
+            except OSError:
+                pass
+            for x in (f, d / f"{hid}.sock"):
+                try:
+                    x.unlink()
+                except FileNotFoundError:
+                    pass
+            n += 1
+        except (OSError, ValueError):
+            continue
+    return n

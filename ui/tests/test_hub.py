@@ -880,6 +880,57 @@ def test_access():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_housekeeping():
+    """Stale host records are pruned (never a live one), the state is backed up once a day, a long outage turns urgent, an expired guest is told to ask for an invite."""
+    sys.path.insert(0, UI)
+    from hub import local, rooms
+    d = tempfile.mkdtemp()
+    old_env = os.environ.get("PLAYBOX_HOSTING_DIR")
+    os.environ["PLAYBOX_HOSTING_DIR"] = d
+    try:
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        for hid, pid in (("a" * 16, dead.pid), ("b" * 16, os.getpid())):
+            open(os.path.join(d, hid + ".json"), "w").write(json.dumps({"id": hid, "pid": pid}))
+            open(os.path.join(d, hid + ".sock"), "w").close()
+        check("housekeeping: a record whose process is gone and whose socket is silent is removed", local.prune_stale() == 1 and not os.path.exists(os.path.join(d, "a" * 16 + ".json")) and not os.path.exists(os.path.join(d, "a" * 16 + ".sock")))
+        check("housekeeping: a record of a running process is left alone", os.path.exists(os.path.join(d, "b" * 16 + ".json")))
+    finally:
+        if old_env is None:
+            os.environ.pop("PLAYBOX_HOSTING_DIR")
+        else:
+            os.environ["PLAYBOX_HOSTING_DIR"] = old_env
+        shutil.rmtree(d, ignore_errors=True)
+    h = tempfile.mkdtemp()
+    try:
+        st = Store(h)
+        p1 = st.backup()
+        check("backup: first call writes today's copy, private", p1 is not None and p1.exists() and (p1.stat().st_mode & 0o777) == 0o600 and json.loads(p1.read_text()) == st.d)
+        check("backup: a second call the same day does nothing", st.backup() is None)
+        for day in range(20, 30):
+            (st.home / "backups" / f"hub-202001{day}.json").write_text("{}")
+        st.backup()
+        left = sorted(os.listdir(st.home / "backups"))
+        check("backup: only the newest seven days stay, today's among them", len(left) == 7 and p1.name in left)
+    finally:
+        shutil.rmtree(h, ignore_errors=True)
+    hub = object.__new__(rooms.Hub)
+    hub.down_since, hub.extra_attention = {}, []
+    dig = {"id": "r1", "label": "Lab", "holds": [], "state": "down", "err": "host not answering", "unread": 0, "last": None, "mode": "guest", "offline": False}
+    hub.digests = lambda: [dig]
+    first = hub.attention()
+    check("alerts: a room that just went down is a quiet item, not urgent", len(first) == 1 and first[0]["kind"] == "down" and not first[0]["urgent"])
+    hub.down_since["r1"] -= rooms.DOWN_URGENT_S + 1
+    second = hub.attention()
+    check("alerts: after the grace period it turns urgent under a new id so it pushes", second[0]["urgent"] and second[0]["id"] != first[0]["id"])
+    dig.update(state="idle", err=None)
+    hub.attention()
+    check("alerts: when the room recovers the clock resets", "r1" not in hub.down_since)
+    dig.update(err="Your access to this room ran out. Ask the host for a new invite.", needs_invite=True, state="idle")
+    inv = hub.attention()
+    check("alerts: an expired guest room asks for a new invite and is not reported as down", [i["kind"] for i in inv] == ["invite"])
+
+
 def test_tunnel_keeper():
     """The tunnel is retried in the background: a failed start, then a dead tunnel, each ends with a live one again."""
     sys.path.insert(0, UI)
@@ -1249,6 +1300,7 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
+    test_housekeeping()
     test_tunnel_keeper()
     test_adopted_rejoin()
     test_rehost_retry()

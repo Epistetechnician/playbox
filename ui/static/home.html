@@ -587,7 +587,7 @@ function startPolling() {
 }
 function localNotify(a) {
   if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
-  swReady().then(reg => reg.showNotification(a.title, {tag: "pb-" + a.id, body: a.body || "", icon: "/icon-192.png", data: {url: `/r/${a.room}/`}})).catch(() => {});
+  swReady().then(reg => reg.showNotification(a.title, {tag: "pb-" + a.id, body: a.body || "", icon: "/icon-192.png", data: {url: a.room ? `/r/${a.room}/` : "/"}})).catch(() => {});
 }
 function mood() {
   const m = S.attention.some(a => a.urgent) ? "alert" : S.rooms.some(r => r.state === "live") ? "live" : "calm";
@@ -877,7 +877,7 @@ const VIEWS = {
     a.splice(0, a.length, ...a.filter(i => i.kind !== "knock"));
     if (!a.length && S.knocks.length) return head;
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
-    return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="/r/${i.room}/">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
+    return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="${i.room ? `/r/${i.room}/` : "/"}">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
   integrations() {
     const I = S.integ, ags = S.agents;

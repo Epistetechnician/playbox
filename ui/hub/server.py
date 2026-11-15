@@ -1125,6 +1125,19 @@ def main(argv=None):
         cf_proc, cf_url = start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname)
         tunnel_state = {"proc": cf_proc}
         opts["tunnel_state"] = tunnel_state
+        tdown = {"since": None}
+
+        def tunnel_attention():
+            """The public address is down: quiet at first (it retries by itself), urgent after PLAYBOX_DOWN_ALERT_S seconds (default 300)."""
+            pr = tunnel_state.get("proc")
+            if pr is not None and pr.poll() is None:
+                tdown["since"] = None
+                return []
+            tdown["since"] = tdown["since"] or time.time()
+            long = time.time() - tdown["since"] > float(os.environ.get("PLAYBOX_DOWN_ALERT_S", "300"))
+            return [{"id": "tunnel" + (":long" if long else ""), "room": None, "kind": "tunnel", "urgent": long,
+                     "title": "The public address is down", "body": "invite links and remote access do not work; the hub is retrying"}]
+        hub.extra_attention.append(tunnel_attention)
         tunnel_stop = threading.Event()
         threading.Thread(target=keep_tunnel, daemon=True, args=(tunnel_state, opts, lambda: start_cloudflared(port, a.cloudflare_tunnel, a.cloudflare_hostname), tunnel_stop),
                          kwargs={"first": float(os.environ.get("PLAYBOX_TUNNEL_RETRY", "5"))}).start()

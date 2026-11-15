@@ -9,6 +9,15 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- The System view has a Health card (tunnel, each room's host, last error, grant renewal), and `/api/system` carries a `health` section.
+- `ui/service/install-host-macos.sh` runs a room host as a LaunchAgent that restarts and survives logout.
+- The hub service runs a pinned copy of the hub (`~/.playbox/hub-app/current`), so switching branches in a checkout no longer changes what is running; `install-macos.sh --repin` updates it, `--live` keeps the old behaviour.
+- The hub backs up its state once a day (last seven kept) and pushes an alert when the public address or a room's host stays down for five minutes (`PLAYBOX_DOWN_ALERT_S`). A joined room whose grant ran out says it needs a new invite.
+
+### Fixed
+- `playbox up` removes its hosting record and control socket on SIGTERM too, and the hub removes records left by hosts that were killed.
+
 ### Security
 - A libkrun task that asks for a network is refused on a host that cannot filter it (macOS, and Linux without `--confine`). libkrun's TSI gives the guest the host's loopback, LAN and cloud metadata service, so before this such a task could reach them. The host owner can accept that with `PLAYBOX_ALLOW_UNFILTERED_NETWORK=1` (`1`, `on` or `true`); a member or an agent cannot. Tasks without a network are unaffected (BOX-5, decision 42).
 

@@ -18,7 +18,7 @@ HERE = Path(__file__).resolve().parent.parent
 import sys
 sys.path.insert(0, str(HERE))
 from playbox_ui import Sidecar, witness_state  # noqa: E402
-from .local import ask_host, hosting_dir  # noqa: E402
+from .local import ask_host, hosting_dir, prune_stale  # noqa: E402
 from .archive import Archive  # noqa: E402
 
 
@@ -38,6 +38,8 @@ def event_note(text, who):
 
 LIVE_MS = 5 * 60 * 1000
 CHAIN_EVERY = 300
+DOWN_URGENT_S = float(os.environ.get("PLAYBOX_DOWN_ALERT_S", "300"))
+PRUNE_EVERY = 600
 
 
 class Bus:
@@ -275,6 +277,9 @@ class Room:
                         m = says[-1]
                         d["last"] = {"from": (m.get("from") or "")[:12], "text": str(m.get("text", ""))[:160], "ms": m.get("time_ms")}
             feed_failed = bool(ferr)
+            if ferr and isinstance(feed, str) and not self.rec.get("adopted_host") and self.rec.get("host") is None and ("not authorized" in feed or "authorization" in feed or "not in a room" in feed):
+                d["needs_invite"] = True            # a joined room whose grant ran out: the link was single-use, so only the host can let us back in
+                d["err"] = "Your access to this room ran out. Ask the host for a new invite."
             if not ferr:
                 self.primed = True
             if with_chain or time.time() - self.last_chain > CHAIN_EVERY:
@@ -312,6 +317,9 @@ class Hub:
         self.bus = Bus()
         self.rooms = {}
         self.known_attention = set()
+        self.down_since = {}
+        self.last_prune = 0.0
+        self.last_backup = 0.0
         self.activity = deque(maxlen=80)
         self.extra_attention = []     # callables returning more attention items (join requests)
         self.sec = None               # hub.sec.SecLog, set by the server
@@ -393,8 +401,16 @@ class Hub:
             if d["state"] == "bad":
                 items.append({"id": f"chain:{d['id']}", "room": d["id"], "kind": "chain", "urgent": True, "title": f"History check failed in {lab}",
                               "body": "the signed log no longer verifies"})
-            if d["state"] == "down" and d.get("err"):
-                items.append({"id": f"down:{d['id']}", "room": d["id"], "kind": "down", "urgent": False, "title": f"{lab} is unreachable", "body": d["err"][:100]})
+            if d.get("needs_invite"):
+                items.append({"id": f"invite:{d['id']}", "room": d["id"], "kind": "invite", "urgent": False, "title": f"{lab} needs a new invite", "body": "your access ran out; ask the host"})
+            bad = bool(d.get("err")) and not d.get("needs_invite") and (d["state"] == "down" or d.get("offline"))
+            if bad:
+                since = self.down_since.setdefault(d["id"], time.time())
+                long = time.time() - since > DOWN_URGENT_S           # a blip is not worth waking a phone; five minutes is
+                items.append({"id": f"down:{d['id']}" + (":long" if long else ""), "room": d["id"], "kind": "down", "urgent": long,
+                              "title": f"{lab} is unreachable" + (" for a while" if long else ""), "body": d["err"][:100]})
+            else:
+                self.down_since.pop(d["id"], None)
             if d["unread"]:
                 items.append({"id": f"unread:{d['id']}", "room": d["id"], "kind": "unread", "urgent": False, "count": d["unread"],
                               "title": f"{d['unread']} new in {lab}", "body": (d["last"] or {}).get("text", "")[:100]})
@@ -427,6 +443,18 @@ class Hub:
                             self.sec.add(stage, text, level, room.id)
                 except Exception as e:
                     room.digest = {**room.blank(), "err": f"poll failed: {e}"[:200]}
+            if time.time() - self.last_backup > 3600:
+                self.last_backup = time.time()
+                try:
+                    self.store.backup()
+                except OSError:
+                    pass
+            if time.time() - self.last_prune > PRUNE_EVERY:
+                self.last_prune = time.time()
+                try:
+                    prune_stale()
+                except Exception:  # noqa: BLE001
+                    pass
             att = self.attention()
             ids = {a["id"] for a in att}
             fresh = [a for a in att if a["id"] not in self.known_attention]

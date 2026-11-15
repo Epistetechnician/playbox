@@ -41,6 +41,24 @@ class Store:
             os.chmod(tmp, 0o600)
             os.replace(tmp, self.path)
 
+    def backup(self, keep=7):
+        """One copy of the hub's state per day in `backups/` (private, like the state itself); the newest `keep` days stay. Returns the path, or None if today's exists."""
+        d = self.home / "backups"
+        d.mkdir(mode=0o700, exist_ok=True)
+        dest = d / f"hub-{time.strftime('%Y%m%d')}.json"
+        made = None
+        if not dest.exists() and self.path.exists():
+            with self.lock:
+                fd, tmp = tempfile.mkstemp(dir=d, prefix=".b-")
+                with os.fdopen(fd, "w") as f, open(self.path) as src:
+                    f.write(src.read())
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, dest)
+            made = dest
+        for old in sorted(d.glob("hub-*.json"))[:-keep]:
+            old.unlink(missing_ok=True)
+        return made
+
     def gc(self, now=None):
         now = now or time.time()
         with self.lock:
