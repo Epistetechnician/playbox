@@ -26,7 +26,7 @@
   --sig:light-dark(#FF5A1F,#FF6B2C); --sig-ink:light-dark(#B83A0A,#FF8A55); --on-sig:light-dark(#171715,#0F0F0E);
   --ok:light-dark(#17783F,#4CC380); --ok-led:light-dark(#1FA458,#4CC380); --bad:light-dark(#C0143C,#FF4D6D);
   --hard:light-dark(5px 5px 0 #171715,5px 5px 0 #000); --scrim:light-dark(rgba(23,23,21,.5),rgba(0,0,0,.65));
-  --r:2px; --nav-h:58px;
+  --r:8px; --nav-h:58px;
   --mono:ui-monospace,"SF Mono","JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;
   --sans:"Helvetica Neue","Neue Haas Grotesk",Helvetica,Arial,system-ui,sans-serif;
 }
@@ -120,16 +120,16 @@ input[type=text],textarea,select,input[type=number]{width:100%;background:var(--
 textarea{resize:vertical;min-height:84px}
 textarea.mono,input.mono{font-size:14px}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-offset:0;border-color:var(--edge)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
-  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;box-shadow:0 2px 0 var(--edge)}
-.btn:hover{background:var(--panel-2)} .btn:active{transform:translateY(2px);box-shadow:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
+  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;}
+.btn:hover{background:var(--panel-2)} .btn:active{transform:scale(.98)}
 .btn.primary,.btn.gold{background:var(--sig);color:var(--on-sig)}
 .btn.primary:hover,.btn.gold:hover{background:color-mix(in srgb,var(--sig) 88%,var(--ink))}
-.btn.danger{color:var(--bad);border-color:var(--bad);box-shadow:0 2px 0 var(--bad)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
 .btn.block{width:100%}
 .btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none}
 .btn.sm{min-height:32px;padding:0 11px;font-size:10.5px}
-.seg{display:inline-flex;border:1px solid var(--edge);border-radius:var(--r);background:var(--panel)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel);overflow:hidden}
 .seg button{border:0;background:none;padding:0 14px;min-height:36px;cursor:pointer;color:var(--mut);font:600 10.5px var(--mono);letter-spacing:.09em;text-transform:uppercase}
 .seg button+button{border-left:1px solid var(--line-2)}
 .seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
@@ -177,7 +177,7 @@ dialog h2{color:var(--ink)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 /* witness hold */
-.hold{display:none;gap:14px;align-items:flex-start;margin:4px 0 14px;padding:14px 16px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));border:1px solid var(--sig);border-left-width:5px}
+.hold{display:none;gap:14px;align-items:flex-start;margin:4px 0 14px;padding:14px 16px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));border:1px solid var(--sig);border-left-width:5px;border-radius:10px}
 .hold.on{display:flex;animation:in .16s steps(4)}
 .hold svg{width:28px;height:28px;flex:none;stroke:var(--sig-ink);fill:none;stroke-width:1.7;stroke-linecap:square}
 .hold b{font:700 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--sig-ink)}
@@ -356,6 +356,18 @@ function insights() {
   const trail = P.trail({id: "trail", icon: INS_ICON.trail, title: "Trail", open: S.ins.trail === undefined ? false : S.ins.trail, meta: `${steps.length} step${steps.length === 1 ? "" : "s"}`, steps});
   return `<div id="insights" style="display:grid;gap:14px">${stats}${act}${trail}</div>`;
 }
+function peopleInsights(ms) {
+  if (!window.PBI) return "";
+  const P = PBI, now = Date.now(), says = S.feed.filter(i => i.kind === "say" && i.time_ms);
+  if (!ms.length && !says.length) return "";
+  const t0 = Math.min(now - 10 * 60e3, ...says.map(i => i.time_ms)), h = hosting();
+  const lanes = ms.slice(0, 12).map(id => { const at = says.filter(i => i.from === id).map(i => i.time_ms); return {label: short(id), c: "var(--c-peer)", at}; });
+  const quiet = lanes.filter(l => !l.at.length).length;
+  return `<div style="display:grid;gap:14px;margin-bottom:14px">${P.stats({id: "p-stats", title: "Members", meta: `${ms.length} in room`, open: S.ins["p-stats"],
+    kv: [["members", String(ms.length)], ["revoked", String(h ? h.revocations ?? 0 : 0)], ["quiet", String(quiet)], ["messages", String(says.length)]],
+    bar: {label: "who spoke", right: `${says.length} msgs`, parts: ms.slice(0, 8).map((id, i) => ({c: `color-mix(in srgb, var(--c-peer) ${100 - i * 11}%, var(--c-you))`, w: says.filter(x => x.from === id).length, t: short(id)}))}})}
+    ${ms.length ? P.activity({id: "p-act", title: "Who is active", meta: P.span(now - t0), open: S.ins["p-act"], range: [t0, now], lanes})  : ""}</div>`;
+}
 function paintInsights() {
   const el = $("#insights");
   if (!el || document.activeElement?.closest?.("#insights details details")) return;
@@ -464,7 +476,7 @@ const VIEWS = {
   people() {
     if (!hosting()) return emptyCard(joined() ? "Only the host can see and revoke members." : "Host a room to manage who is in it.");
     const ms = members();
-    return `<div class="card"><h2>Members · ${ms.length}</h2>${ms.length ? ms.map(id => `
+    return peopleInsights(ms) + `<div class="card"><h2>Members · ${ms.length}</h2>${ms.length ? ms.map(id => `
       <div class="member">${avatar(id)}<div class="grow"><div class="mono">${esc(short(id))}</div><div class="mut" style="font-size:12.5px">Scoped grant · expires on its own</div></div>
         <button class="btn sm danger" data-act="revoke" data-id="${esc(id)}">Revoke</button></div>`).join("")
       : `<div class="empty">Nobody has joined yet. Create an invite on the Room tab.</div>`}</div>
@@ -684,7 +696,7 @@ function show(tab) {
   const v = $("#view");
   v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
   if (tab === "feed") { paintFeed(); pollFeed(); }
-  if (tab === "room") pollFeed();
+  if (tab === "room" || tab === "people") pollFeed();
   scrollTo({top: 0});
 }
 
@@ -864,7 +876,7 @@ setInterval(() => {
   tick++;
   pollWitness();
   if (tick % 3 === 0) refresh(true);                       // every call is appended to the signed history, so poll gently
-  if (S.tab === "feed" || S.tab === "room" || innerWidth >= 1220) pollFeed();
+  if (S.tab === "feed" || S.tab === "room" || S.tab === "people" || innerWidth >= 1220) pollFeed();
 }, 3500);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(true); pollFeed(); } });
 </script>

@@ -23,7 +23,8 @@
 .ins .kv{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:6px 14px;font:13px var(--mono)}
 .ins .kv span.k{color:var(--mut)}
 .ins .kv span.v{text-align:right;color:var(--ink);overflow-wrap:anywhere}
-@media (max-width:520px){.ins .kv{grid-template-columns:auto 1fr}}
+@media (max-width:520px){.ins .kv{font-size:12px;gap:6px 10px}}
+@media (max-width:350px){.ins .kv{grid-template-columns:auto 1fr}}
 .ins .rate{display:flex;align-items:baseline;gap:8px}
 .ins .rate b{font:600 34px/1 var(--mono);letter-spacing:-.02em;color:var(--ink)}
 .ins .rate span{font:13px var(--mono);color:var(--mut)}

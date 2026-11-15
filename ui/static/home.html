@@ -27,7 +27,7 @@ try { const t = localStorage.getItem("pb.theme"); if (t === "light" || t === "da
   --sig:light-dark(#FF5A1F,#FF6B2C);        --sig-ink:light-dark(#B83A0A,#FF8A55);   --on-sig:light-dark(#171715,#0F0F0E);
   --ok:light-dark(#17783F,#4CC380);         --ok-led:light-dark(#1FA458,#4CC380);    --bad:light-dark(#C0143C,#FF4D6D);
   --hard:light-dark(5px 5px 0 #171715,5px 5px 0 #000);                               --scrim:light-dark(rgba(23,23,21,.5),rgba(0,0,0,.65));
-  --r:2px; --nav-h:58px; --strip:38px;
+  --r:8px; --nav-h:58px; --strip:38px;
   --mono:ui-monospace,"SF Mono","JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;
   --sans:"Helvetica Neue","Neue Haas Grotesk",Helvetica,Arial,system-ui,sans-serif;
 }
@@ -125,11 +125,11 @@ h2.rule{display:flex;align-items:center;gap:12px;flex:1}
 h2.rule::after{content:"";flex:1;height:1px;background:var(--line-2)}
 h2.rule .ix{color:var(--sig-ink)}
 .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
-  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;box-shadow:0 2px 0 var(--edge);transition:none}
-.btn:hover{background:var(--panel-2)} .btn:active{transform:translateY(2px);box-shadow:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
+  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;transition:background .12s,transform .08s}
+.btn:hover{background:var(--panel-2)} .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--sig);color:var(--on-sig)} .btn.primary:hover{background:color-mix(in srgb,var(--sig) 88%,var(--ink))}
-.btn.danger{color:var(--bad);border-color:var(--bad);box-shadow:0 2px 0 var(--bad)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
 .btn.sm{min-height:32px;padding:0 11px;font-size:10.5px}
 a.btn{text-decoration:none} .btn.block{width:100%}
 .btn[disabled]{opacity:.45;cursor:default;box-shadow:none;transform:none}
