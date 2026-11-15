@@ -282,3 +282,20 @@ when the receiver holds the text. What did not: the text-blind version, which is
 nothing about topics. Build further only if (1) the blind Qwen3-to-SmolLM2 NaN is fixed and rerun (about 5 USD, 45 minutes), and
 (2) the blind templated retention clears the same bar, tested before any two-agent run. Until then L2 stays the cross-family
 channel.
+
+## 11. Go/no-go on a real pair at small scale (plan and bar, written before training)
+
+Committed before the run. Question: does a text-blind mapper (the receiver reads nothing but the mapped cache; the mapper sees only the sender's
+cache and the receiver's token count) keep retention on a real pair, Qwen3-4B-Base to Llama-3.2-3B (`unsloth/Llama-3.2-3B`, an ungated mirror of the
+base weights)? Section 10 found the blind mapper learned natural text (86.7%) but not topics (5.1% on templated items, chance on 21-way retrieval),
+on a pair whose sender was 135M parameters. This tests whether a sender of 4B changes that, before anyone pays 60 to 150 USD for a full-size mapper.
+
+Run: `tools/node/gonogo_chain.sh` (our `l4_swat.py`, `--blind`, B = 4 blocks, width 768, 1,500 + 4,000 steps, batch 32, 50,000 items, 15% templated,
+hard cap 75 minutes of training), then `tools/l4_eval_cli.py` (fp32 held-out evaluation, the section 3 protocol: 150 wikitext-2 items, 48 templated
+held-out-topic items, 21-way concept retrieval). One H100 on gman, budget 10 USD for this step, 30 USD for the whole piece of work (the metered
+benchmark included); the node is stopped when it ends.
+
+**Bar (the section 9 bar, applied to the blind mapper).** Go only if all of: (A) wikitext retention at least 75% with the lower bound of its
+95% bootstrap interval above 62.6%; (B) templated mapped retention exceeds the unrelated-real-cache control by at least 20 points; (C) 21-way
+retrieval at least 90%. (A) alone does not count: the blind mapper already passed it in section 10. Anything else is a no-go and the full-size run
+is not started.
