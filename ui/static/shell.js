@@ -8,15 +8,15 @@
 .rr{display:flex;flex-direction:column;gap:2px;min-height:0;overflow:auto;margin:6px -4px 0;padding:0 4px;flex:1}
 .rr h4{display:flex;align-items:center;justify-content:space-between;margin:12px 6px 4px;font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
 .rr h4 a{color:var(--mut);text-decoration:none;font-weight:500;letter-spacing:0;text-transform:none}.rr h4 a:hover{color:var(--ink)}
-.rr .g{margin:8px 6px 2px;font:500 12px var(--sans);color:var(--mut);display:flex;align-items:center;gap:6px}
-.rr a.rrow{display:flex;align-items:center;gap:9px;padding:5px 8px;border:1px solid transparent;border-radius:7px;color:var(--ink-2);text-decoration:none;font:13px var(--sans);min-width:0}
+.rr .rgrp{margin:8px 6px 2px;font:500 12px var(--sans);color:var(--mut);display:flex;align-items:center;gap:6px}
+.rr a.rrow{text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:9px;padding:5px 8px;border:1px solid transparent;border-radius:7px;color:var(--ink-2);text-decoration:none;font:13px var(--sans);min-width:0}
 .rr a.rrow:hover{background:var(--panel-2);color:var(--ink)}
 .rr a.rrow[aria-current=page]{background:var(--blue-grad);border-color:var(--blue-edge);color:var(--blue)}
-.rr .sd{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim);border:1px solid var(--line-2)}
-.rr .sd.live{background:var(--ok-led);border-color:var(--ok-led)}.rr .sd.hold{background:var(--warn);border-color:var(--warn)}.rr .sd.bad,.rr .sd.down{background:var(--bad);border-color:var(--bad)}
-.rr .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rr .ag{font:11.5px var(--mono);color:var(--mut)}.rr .un{font:700 10px/15px var(--mono);min-width:17px;text-align:center;border-radius:8px;background:var(--sig);color:var(--on-sig);padding:0 4px}
-.rr .none{margin:8px 6px;font:12.5px var(--sans);color:var(--mut)}
+.rr .rsd{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim);border:1px solid var(--line-2)}
+.rr .rsd.rs-live{background:var(--ok-led);border-color:var(--ok-led)}.rr .rsd.rs-hold{background:var(--warn);border-color:var(--warn)}.rr .rsd.rs-bad,.rr .rsd.rs-down{background:var(--bad);border-color:var(--bad)}
+.rr .rnm small{color:var(--mut);font:11px var(--mono)}.rr .rnm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rr .rag{font:11.5px var(--mono);color:var(--mut)}.rr .run{font:700 10px/15px var(--mono);min-width:17px;text-align:center;border-radius:8px;background:var(--sig);color:var(--on-sig);padding:0 4px}
+.rr .rnone{margin:8px 6px;font:12.5px var(--sans);color:var(--mut)}
 .pbsb{display:none}
 @media (min-width:900px){
   .pbsb{position:fixed;left:0;right:0;bottom:0;height:26px;z-index:35;display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--bg-2);border-top:1px solid var(--line);font:12px var(--sans);color:var(--mut);white-space:nowrap;overflow:hidden}
@@ -37,10 +37,11 @@
     return [...by.entries()];
   }
   function railRooms(rooms, active) {
-    if (!rooms.length) return `<div class="rr"><h4>Rooms</h4><div class="none">No rooms yet.</div></div>`;
-    const gs = groups(rooms), many = gs.length > 1;
-    return `<div class="rr" role="navigation" aria-label="Rooms"><h4>Rooms <a href="/">All</a></h4>${gs.map(([m, l]) => `${many ? `<div class="g">${esc(m)}</div>` : ""}${l.map(r =>
-      `<a class="rrow" href="/r/${esc(r.id)}/" ${r.id === active ? 'aria-current="page"' : ""} title="${esc(r.label)}"><i class="sd ${esc(r.state)}"></i><span class="nm">${esc(r.label)}</span>${r.unread ? `<span class="un">${r.unread > 99 ? "99+" : r.unread}</span>` : `<span class="ag">${age(r.last && r.last.ms)}</span>`}</a>`).join("")}`).join("")}</div>`;
+    if (!rooms.length) return `<div class="rr"><h4>Rooms</h4><div class="rnone">No rooms yet.</div></div>`;
+    const gs = groups(rooms), many = gs.length > 1, seen = new Set(), dup = new Set();
+    for (const r of rooms) { if (seen.has(r.label)) dup.add(r.label); seen.add(r.label); }
+    return `<div class="rr" role="navigation" aria-label="Rooms"><h4>Rooms <a href="/">All</a></h4>${gs.map(([m, l]) => `${many ? `<div class="rgrp">${esc(m)}</div>` : ""}${l.map(r =>
+      `<a class="rrow" href="/r/${esc(r.id)}/" ${r.id === active ? 'aria-current="page"' : ""} title="${esc(r.label)}"><i class="rsd rs-${esc(r.state)}"></i><span class="rnm">${esc(r.label)}${dup.has(r.label) ? `<small> ${esc(r.id.slice(0, 4))}</small>` : ""}</span>${r.unread ? `<span class="run">${r.unread > 99 ? "99+" : r.unread}</span>` : `<span class="rag">${age(r.last && r.last.ms)}</span>`}</a>`).join("")}`).join("")}</div>`;
   }
 
   function ensure() {
