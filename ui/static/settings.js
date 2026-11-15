@@ -53,7 +53,7 @@
   const IC = {
     appearance: '<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2s0-2 1.5-2h2a3 3 0 0 0 3-3c0-6-4-11-8-11z"/>', interface: '<rect x="3" y="4" width="18" height="16"/><path d="M3 9h18M9 9v11"/>',
     hub: '<rect x="3" y="4" width="18" height="6"/><rect x="3" y="14" width="18" height="6"/><path d="M7 7h.01M7 17h.01"/>', safety: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/>',
-    keys: '<rect x="2" y="6" width="20" height="12"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>', about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.500v.01"/>'};
+    notifications: '<path d="M6 17V11a6 6 0 0 1 12 0v6l1.500 2h-15z"/><path d="M10 21h4"/>', keys: '<rect x="2" y="6" width="20" height="12"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>', about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.500v.01"/>'};
 
   /* ---------- controls ---------- */
   const row = (t, d, c, full) => `<div class="row${full ? " full" : ""}"><div class="t">${t}</div>${d ? `<div class="d">${d}</div>` : ""}<div class="c">${c}</div></div>`;
@@ -63,8 +63,9 @@
 
   /* ---------- hub data ---------- */
   let hub = {me: null, sys: null, err: null};
-  async function call(method, path) {
+  async function call(method, path, body) {
     const init = {method, headers: {"Content-Type": "application/json"}, credentials: "same-origin"};
+    if (body !== undefined) init.body = JSON.stringify(body);
     const r = window.PB && PB.guarded ? await PB.guarded(path, init) : await fetch(path, init);
     let j = null; try { j = await r.json(); } catch {}
     if (!r.ok) throw new Error((j && j.error) || `The hub answered ${r.status}`);
@@ -75,8 +76,33 @@
     hub.at = Date.now();
     try { hub.me = await call("GET", "/api/me"); hub.err = null; } catch (e) { hub.err = e.message; }
     try { hub.sys = await call("GET", "/api/system"); } catch {}
+    if (page().group === "notifications" || cur === "approvals") await loadNotif();
     if (open_ && page().needsHub) paint();
   }
+  let nt = {n: null, ap: null, push: null, err: null};
+  async function loadNotif() {
+    try { nt.n = await call("GET", "/api/settings/notify"); nt.err = null; } catch (e) { nt.err = e.message; }
+    try { nt.ap = (await call("GET", "/api/approvals")).approvals; } catch { nt.ap = nt.ap || []; }
+    await pushProbe();
+  }
+  const pushOk = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && window.isSecureContext;
+  async function pushProbe() {
+    if (!pushOk()) { nt.push = {state: "unsupported"}; return; }
+    try {
+      const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error("no service worker")), 2500))]);
+      nt.reg = reg; const sub = await reg.pushManager.getSubscription();
+      nt.push = {state: Notification.permission === "denied" ? "blocked" : sub ? "on" : "off", sub};
+    } catch { nt.push = {state: "unavailable"}; }
+  }
+  async function togglePush() {
+    await pushProbe();
+    if (!nt.push || !nt.reg) return;
+    if (nt.push.sub) { await call("POST", "/api/push/unsubscribe", {endpoint: nt.push.sub.endpoint}); await nt.push.sub.unsubscribe(); return; }
+    if (await Notification.requestPermission() !== "granted") throw new Error("Permission not granted");
+    const sub = await nt.reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: PB.unb64u(hub.me.push_key)});
+    await call("POST", "/api/push/subscribe", {endpoint: sub.endpoint});
+  }
+  const fmtS = v => v % 3600 === 0 ? `${v / 3600} h` : v % 60 === 0 ? `${v / 60} min` : `${v} s`;
 
   /* ---------- pages ---------- */
   const THEME_PREVIEW = (t, dark) => { const p = dark ? t.dark : t.light; return `<button type="button" class="tc" data-k="skin" data-v="${esc(t.id)}" aria-pressed="${T().state().skin === t.id}"><div class="pv" style="background:${p.bg};color:${p.ink};border:1px solid ${T().mix(p.bg, p.ink, .2)}"><span style="color:${p.mut}">~ playbox up</span><span><span style="color:${p.ok}">●</span> <span style="color:${p.sig}">gpu-lab</span> <span style="color:${p.mut}">3 in room</span></span><span style="color:${p.blue}">&gt; TRY score=6300</span></div><b>${esc(t.label)}</b><span class="d">${esc(t.desc || "Your theme")}</span><span class="sw">${[p.sig, p.blue, p.ok, p.warn, p.bad, p.violet].map(c => `<i style="background:${c}"></i>`).join("")}</span></button>`; };
@@ -139,6 +165,31 @@
       const ok = sys.posture.filter(c => c.level === "ok").length;
       return `<p class="lead">${ok} of ${sys.posture.length} controls hold. The full workflow and live trail are in the System view.</p>` + sys.posture.map(c => `<div class="li"><span class="chip ${c.level === "ok" ? "ok" : c.level === "warn" ? "warn" : "bad"}">${esc(c.level)}</span><div class="snm">${esc(c.label)}<small>${esc(c.detail)}${c.fix ? " · " + esc(c.fix) : ""}</small></div></div>`).join("") + `<p class="note"><a href="/?view=system" style="color:var(--blue)">Open the System view</a></p>`; }},
 
+    push: {label: "Push", group: "notifications", needsHub: true, words: "notifications phone browser subscribe test buzz", render() {
+      const p = nt.push, n = nt.n;
+      if (!p || !n) return `<p class="lead">${esc(nt.err || "Loading…")}</p>`;
+      const label = {unsupported: "Not supported here", unavailable: "Unavailable in this browser", blocked: "Blocked in browser settings", on: "Turn off on this device", off: "Turn on for this device"}[p.state];
+      return `<p class="lead">A push buzzes your phone or computer when the witness pauses a write, a history check fails, a call waits for you or a room needs you. It carries no content: the device wakes, then asks this hub directly.</p>`
+        + row("This device", p.state === "on" ? "Notifications are on here." : p.state === "unsupported" ? "Push needs HTTPS (or localhost) and a browser with service workers." : "Notifications are off here.", `<button class="act" data-pushtog ${["unsupported", "unavailable", "blocked"].includes(p.state) ? "disabled" : ""}>${label}</button>`)
+        + row("Devices subscribed", "Across this hub, every browser and phone that has turned notifications on.", `<span class="chip">${n.push_subs}</span>`)
+        + row("Send a test", "Wakes every subscribed device now. A silent test confirms the path works.", `<button class="act" data-pushtest ${n.push_subs ? "" : "disabled"}>Send test</button>`) + `<p class="note" id="pbs-msg"></p>`; }},
+    alerts: {label: "Alerts", group: "notifications", needsHub: true, words: "down unreachable threshold urgent tunnel public address minutes", render() {
+      const n = nt.n; if (!n) return `<p class="lead">${esc(nt.err || "Loading…")}</p>`;
+      const opts = [60, 120, 300, 600, 900, 1800, 3600].filter(v => v !== n.down_alert_s); opts.push(n.down_alert_s); opts.sort((a, b) => a - b);
+      return `<p class="lead">A room or the public address that is unreachable is shown quietly at first, since it usually retries by itself. After the time below it turns urgent and pushes to your devices.</p>`
+        + row("Urgent after", `How long something may stay down before it wakes you. ${n.custom ? "Set on this hub." : `Using the default (${fmtS(n.default_s)}, or PLAYBOX_DOWN_ALERT_S).`} Changing it needs a fresh passkey touch.`,
+              sel("alert", "down", opts.map(v => [v, fmtS(v)]), n.down_alert_s) + (n.custom ? `<button class="act" data-alertreset>Use default</button>` : "")) + `<p class="note" id="pbs-msg"></p>`; }},
+    mute: {label: "Rooms", group: "notifications", needsHub: true, words: "mute silence room push quiet", render() {
+      const n = nt.n; if (!n) return `<p class="lead">${esc(nt.err || "Loading…")}</p>`;
+      return `<p class="lead">A muted room never sends a push, but its items still show in Attention. That includes pauses and failed history checks, so mute only rooms you watch another way.</p>`
+        + (n.rooms.map(r => row(esc(r.label), r.muted ? "Muted: no push." : "Pushes on.", tog("mute:" + r.id, !r.muted))).join("") || `<p class="note">No rooms yet.</p>`) + `<p class="note" id="pbs-msg"></p>`; }},
+
+    approvals: {label: "Approvals", group: "safety", needsHub: true, words: "approve deny capability call owner PLAYBOX_APPROVERS waiting", render() {
+      const ap = nt.ap; if (!ap) return `<p class="lead">${esc(nt.err || "Loading…")}</p>`;
+      return `<p class="lead">Calls that wait for the room owner, on rooms hosted on this machine. Approving or denying needs a fresh passkey touch and is written to the audit trail.</p>`
+        + (ap.map(c => `<div class="li"><div class="snm"><b>${esc(c.cap)}</b> in ${esc(c.label)}<small>asked by ${esc(c.member)} · ${esc(Object.entries(c.args || {}).map(([k, v]) => k + "=" + v).join(" ").slice(0, 160))}</small></div><button class="act" data-apv="approve" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Approve</button><button class="act danger" data-apv="deny" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Deny</button></div>`).join("") || `<p class="note">Nothing is waiting.</p>`)
+        + `<details style="margin-top:18px"><summary class="note" style="cursor:pointer">How to turn approvals on</summary><p class="note">A capability marked <code>"approval": true</code> in the room's capabilities file waits here for you, and expires after 15 minutes if unanswered. To make an agent's sensitive tools need a human capability, start it with <code>PLAYBOX_APPROVERS</code> set to your approver key (<code>playbox approver-key</code>). Rooms hosted by an older Playbox build only list calls in their own console until that host is updated.</p></details><p class="note" id="pbs-msg"></p>`; }},
+
     keys: {label: "Keyboard shortcuts", group: "keys", words: "shortcut hotkey command palette", render() {
       const K = [["⌘K or /", "Search rooms and commands"], ["⌘,", "Open these settings"], ["J / K", "Move through rooms (home page)"], ["Enter", "Open the selected room"], ["Esc", "Close a dialog, or leave a Canvas panel"]];
       return `<table class="kt">${K.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join("")}</table><p class="note">On Windows and Linux, use Ctrl in place of ⌘.</p>`; }},
@@ -149,7 +200,7 @@
         <p class="lead" style="margin-top:18px">Playbox is the connecting layer for people, agents and tools that already have their own interfaces: it does not replace them, it lets them work in one room under limits the host sets, with a signed record.</p>
         <table class="kt"><tr><td>KaTeX 0.16.11</td><td>maths in notes · MIT</td></tr><tr><td>Shiki 1.29.2</td><td>code colours · MIT</td></tr><tr><td>DOMPurify 3.2.4</td><td>link sanitiser · Apache-2.0 or MPL-2.0</td></tr><tr><td>Hermes Agent desktop</td><td>theme model and settings layout · MIT</td></tr><tr><td>mlsweep, Inspect log viewer</td><td>layout ideas for panels and run views</td></tr></table>`; }},
   };
-  const GROUPS = [["appearance", "Appearance"], ["interface", "Interface"], ["hub", "Hub"], ["safety", "Safety"], ["keys", "Keyboard shortcuts"], ["about", "About"]];
+  const GROUPS = [["appearance", "Appearance"], ["interface", "Interface"], ["hub", "Hub"], ["notifications", "Notifications"], ["safety", "Safety"], ["keys", "Keyboard shortcuts"], ["about", "About"]];
   const ids = Object.keys(PAGES), first = g => ids.find(i => PAGES[i].group === g);
 
   /* ---------- dialog ---------- */
@@ -185,13 +236,18 @@
         if ((b = c("[data-k]"))) { T().set(b.dataset.k, b.dataset.v); return paint(); }
         if ((b = c("[data-set]"))) { T().set(b.dataset.set, b.dataset.v); return paint(); }
         if ((b = c("[data-pref]"))) { T().setPref(b.dataset.pref, b.dataset.v); return paint(); }
-        if ((b = c("[data-tog]"))) { const k = b.dataset.tog, on = b.getAttribute("aria-checked") === "true"; T().setPref(k, k === "clock24" ? (on ? "0" : "1") : (on ? "off" : "on")); return paint(); }
+        if ((b = c("[data-tog]")) && !b.dataset.tog.startsWith("mute:")) { const k = b.dataset.tog, on = b.getAttribute("aria-checked") === "true"; T().setPref(k, k === "clock24" ? (on ? "0" : "1") : (on ? "off" : "on")); return paint(); }
         if (c("[data-custom]")) { T().set("accent", "custom:" + dlg.querySelector("#pbs-color").value); return paint(); }
         if (c("[data-clearcss]")) { T().set("css", ""); return paint(); }
         if (c("[data-export]")) return T().exportLook();
         if (c("[data-import]")) return T().importLook(m => { paint(); say(m); });
         if (c("[data-removeusers]")) { T().removeUsers(); return paint(); }
         if (c("[data-reset]")) { if (confirm("Reset appearance and interface settings to the defaults?")) { T().resetAll(); paint(); } return; }
+        if (c("[data-pushtog]")) { try { await togglePush(); await loadNotif(); await loadHub(true); paint(); say("Done."); } catch (er) { say(er.message); } return; }
+        if (c("[data-pushtest]")) { try { const j = await call("POST", "/api/push/test", {}); say(`Sent to ${j.sent} of ${j.subscriptions} device(s).`); } catch (er) { say(er.message); } return; }
+        if (c("[data-alertreset]")) { try { nt.n = await call("POST", "/api/settings/notify", {down_alert_s: null}); paint(); } catch (er) { say(er.message); } return; }
+        if ((b = c("[data-apv]"))) { try { const j = await call("POST", `/api/approvals/${encodeURIComponent(b.dataset.room)}/${encodeURIComponent(b.dataset.call)}`, {decision: b.dataset.apv}); await loadNotif(); paint(); say(j.message || "Done."); } catch (er) { say(er.message); } return; }
+        if ((b = c("[data-tog^='mute:']"))) { const id = b.dataset.tog.slice(5), on = b.getAttribute("aria-checked") === "true"; try { await call("PATCH", "/api/rooms/" + encodeURIComponent(id), {muted: on}); await loadNotif(); paint(); } catch (er) { say(er.message); } return; }
         if ((b = c("[data-rmdev]"))) { if (!confirm("Remove this device? It will be signed out and its passkey stops working here.")) return; try { await call("DELETE", "/api/devices/" + encodeURIComponent(b.dataset.rmdev)); await loadHub(true); paint(); } catch (er) { say(er.message); } return; }
         if ((b = c("[data-rmses]"))) { try { await call("DELETE", "/api/sessions/" + encodeURIComponent(b.dataset.rmses)); await loadHub(true); paint(); } catch (er) { say(er.message); } return; }
         if (c("[data-pair]")) { dlg.close(); if (window.pairDevice) window.pairDevice(); else location.href = "/?view=hub"; return; }
@@ -204,6 +260,7 @@
       dlg.addEventListener("change", e => {
         const d = e.target.dataset; if (!d) return;
         if (d.setSel) { T().set(d.setSel, e.target.value); paint(); }
+        if (d.alertSel) { call("POST", "/api/settings/notify", {down_alert_s: Number(e.target.value)}).then(j => { nt.n = j; paint(); }).catch(er => { say(er.message); loadNotif().then(paint); }); return; }
         if (d.prefSel) { T().setPref(d.prefSel, e.target.value); paint(); }
       });
       dlg.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); const i = dlg.querySelector("#pbs-q"); i && i.focus(); } });

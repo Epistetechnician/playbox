@@ -751,6 +751,13 @@ function tiles() {
 }
 
 /* ---------- ask-to-join: requests to you, and requests you have sent ---------- */
+function approvalCards(items) {
+  const ap = items.filter(i => i.kind === "approval" && i.approval);
+  return ap.length ? `<div class="card knock"><h2>Waiting for your approval</h2>${ap.map(i => { const c = i.approval; return `<div class="kq"><div class="kqh"><b>${esc(c.cap)}</b> <span class="mut">in</span> <b>${esc(c.label)}</b></div>
+      <p class="mut" style="margin:6px 0 8px;font-size:13px">Asked by <span class="mono">${esc(c.member)}</span></p>
+      <div class="card mono" style="margin:0 0 10px;max-height:8em;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(Object.entries(c.args || {}).map(([k, v]) => k + "=" + v).join("\n") || "(no arguments)")}</div>
+      <div class="row"><button class="btn primary sm" data-act="apv" data-dec="approve" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Approve</button><button class="btn sm danger" data-act="apv" data-dec="deny" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Deny</button></div></div>`; }).join("")}</div>` : "";
+}
 function knockCard() {
   const inc = S.knocks.map(k => `<div class="kq"><div class="kqh"><b>${esc(k.name)}</b> <span class="mut">wants to join</span> <b>${esc(k.label)}</b></div>
       <div class="kcode" aria-label="Verify code ${esc(k.code)}">${dm(k.code)}</div>
@@ -923,9 +930,9 @@ const VIEWS = {
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
-    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}`;
-    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock"));
-    if (!a.length && S.knocks.length) return head;
+    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}${approvalCards(a)}`;
+    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock" && i.kind !== "approval"));
+    if (!a.length && (S.knocks.length || S.attention.some(i => i.kind === "approval"))) return head;
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
     return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="${i.room ? `/r/${i.room}/` : "/"}">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
@@ -1319,6 +1326,7 @@ document.addEventListener("click", async e => {
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();
+  else if (act === "apv") { t.disabled = true; try { const j = await api("POST", `/api/approvals/${encodeURIComponent(t.dataset.room)}/${encodeURIComponent(t.dataset.call)}`, {decision: t.dataset.dec}); toast(j.ok ? (t.dataset.dec === "approve" ? "Approved" : "Denied") : j.message, !j.ok); } catch (er) { toast(er.message, true); } refreshRooms(); }
   else if (act === "push") togglePush();
   else if (act === "install") { installEvt?.prompt(); installEvt = null; t.hidden = true; }
   else if (act === "logout") { await fetch("/api/auth/logout", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); try { await caches.delete("pb-data"); } catch {} location.href = "/"; }

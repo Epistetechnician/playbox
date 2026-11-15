@@ -371,6 +371,8 @@ class Hub:
         if not room:
             return None
         with self.store.lock:
+            if isinstance(kw.get("muted"), bool):
+                room.rec["muted"] = kw["muted"]
             for k in ("label", "machine"):
                 if isinstance(kw.get(k), str):
                     room.rec[k] = kw[k][:60]
@@ -384,12 +386,21 @@ class Hub:
     def get(self, rid):
         return self.rooms.get(rid)
 
+    def down_alert_s(self):
+        """Seconds a room or the public address may stay unreachable before it is urgent: the hub setting, else PLAYBOX_DOWN_ALERT_S (default 300)."""
+        v = (self.store.d.get("notify") or {}).get("down_alert_s")
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else DOWN_URGENT_S
+
+    def muted(self, rid):
+        r = self.rooms.get(rid)
+        return bool(r and r.rec.get("muted"))
+
     def recent(self, n=40):
         return sorted(self.activity, key=lambda a: -a["ms"])[:n]
 
     def digests(self):
         with self.mu:
-            return [r.digest for r in sorted(self.rooms.values(), key=lambda r: r.rec["created"])]
+            return [{**r.digest, "muted": bool(r.rec.get("muted"))} for r in sorted(self.rooms.values(), key=lambda r: r.rec["created"])]
 
     def attention(self):
         items = []
@@ -406,7 +417,7 @@ class Hub:
             bad = bool(d.get("err")) and not d.get("needs_invite") and (d["state"] == "down" or d.get("offline"))
             if bad:
                 since = self.down_since.setdefault(d["id"], time.time())
-                long = time.time() - since > DOWN_URGENT_S           # a blip is not worth waking a phone; five minutes is
+                long = time.time() - since > self.down_alert_s()           # a blip is not worth waking a phone; five minutes is
                 items.append({"id": f"down:{d['id']}" + (":long" if long else ""), "room": d["id"], "kind": "down", "urgent": long,
                               "title": f"{lab} is unreachable" + (" for a while" if long else ""), "body": d["err"][:100]})
             else:
@@ -462,6 +473,7 @@ class Hub:
             if fresh:
                 self.bus.publish("attention", {"items": att})
                 due = [a for a in fresh if a["urgent"] or not watched]   # urgent always pushes: a backgrounded tab can still hold an open stream
+                due = [a for a in due if not self.muted(a.get("room"))]  # a muted room stays in Attention but never wakes a phone
                 if self.push_fn and due:
                     self.push_fn(due)
             self.wake.wait(8 if watched else 45)

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI = os.path.dirname(HERE)
@@ -746,6 +747,67 @@ def test_http():
         check("the hub remembers it hosts the room (so a restart hosts it again)", rec2.get("host") == {"local": True}, str(rec2.get("host")))
         a.req("DELETE", f"/api/rooms/{rid2}")
 
+
+        # ---- notification settings, per-room mute, and approvals from a host on this machine ----
+        check("notify settings need a session", anon.req("GET", "/api/settings/notify")[0] == 401 and anon.req("POST", "/api/settings/notify", {"down_alert_s": 60})[0] == 401)
+        st, nj, _ = a.req("GET", "/api/settings/notify")
+        check("notify: defaults are reported", st == 200 and nj["down_alert_s"] == nj["default_s"] and nj["custom"] is False and "rooms" in nj)
+        check("notify: a bad threshold is refused", all(a.req("POST", "/api/settings/notify", {"down_alert_s": v})[0] == 400 for v in (5, 10**7, "x", True)))
+        st, nj, _ = a.req("POST", "/api/settings/notify", {"down_alert_s": 900})
+        check("notify: a threshold is stored", st == 200 and nj["down_alert_s"] == 900 and nj["custom"] is True and json.load(open(os.path.join(home, "hub.json")))["notify"]["down_alert_s"] == 900)
+        st, nj, _ = a.req("POST", "/api/settings/notify", {"down_alert_s": None})
+        check("notify: null returns to the default", st == 200 and nj["custom"] is False and nj["down_alert_s"] == nj["default_s"])
+        mid = a.req("GET", "/api/rooms")[1]["rooms"][0]["id"] if a.req("GET", "/api/rooms")[1]["rooms"] else None
+        if mid:
+            check("mute: a room can be muted and shows as muted", a.req("PATCH", f"/api/rooms/{mid}", {"muted": True})[0] == 200 and next(r for r in a.req("GET", "/api/settings/notify")[1]["rooms"] if r["id"] == mid)["muted"] is True)
+            check("mute: it can be unmuted", a.req("PATCH", f"/api/rooms/{mid}", {"muted": False})[0] == 200 and not next(r for r in a.req("GET", "/api/settings/notify")[1]["rooms"] if r["id"] == mid)["muted"])
+        check("push test needs a session and reports counts", anon.req("POST", "/api/push/test", {})[0] == 401 and a.req("POST", "/api/push/test", {})[1] == {"sent": 0, "subscriptions": 0})
+        import socket as _sock
+        hdir = os.path.join(home, "hosting")
+        os.makedirs(hdir, exist_ok=True)
+        fid = "ab" * 8
+        fcalls = [{"id": "c1", "member": "m" * 8, "name": "run_tests", "args": {"cmd": "cargo test"}, "created_ms": 1}]
+        fgot = []
+        fsock = _sock.socket(_sock.AF_UNIX, _sock.SOCK_STREAM)
+        fsock.bind(os.path.join(hdir, fid + ".sock"))
+        fsock.listen(5)
+
+        def fake_host():
+            while True:
+                try:
+                    c, _ = fsock.accept()
+                except OSError:
+                    return
+                line = c.makefile().readline().strip()
+                w = line.split()
+                if w[0] == "ping":
+                    out = "ok"
+                elif w[0] == "calls":
+                    out = json.dumps(fcalls)
+                elif w[0] in ("approve", "deny") and len(w) == 2 and w[1] in [f"{x['member']}/{x['id']}" for x in fcalls]:
+                    fgot.append(line)
+                    fcalls.clear()
+                    out = f"ok {w[0]}d c1"
+                else:
+                    out = "error: no such call"
+                c.sendall((out + "\n").encode())
+                c.close()
+        threading.Thread(target=fake_host, daemon=True).start()
+        open(os.path.join(hdir, fid + ".json"), "w").write(json.dumps({"id": fid, "name": "fakeroom", "pid": os.getpid(), "sock": os.path.join(hdir, fid + ".sock")}))
+        check("approvals need a session", anon.req("GET", "/api/approvals")[0] == 401 and anon.req("POST", f"/api/approvals/{fid}/x", {"decision": "approve"})[0] == 401)
+        st, aj2, _ = a.req("GET", "/api/approvals")
+        check("approvals: a waiting call on a local host is listed", st == 200 and len(aj2["approvals"]) == 1 and aj2["approvals"][0]["cap"] == "run_tests" and aj2["approvals"][0]["call"] == "mmmmmmmm/c1" and aj2["approvals"][0]["args"] == {"cmd": "cargo test"})
+        att = a.req("GET", "/api/rooms")[1]["attention"]
+        check("approvals: it shows in Attention as an urgent item", any(i["kind"] == "approval" and i["urgent"] and i["call"] == "mmmmmmmm/c1" for i in att))
+        cid = "mmmmmmmm/c1"
+        check("approvals: a decision must be approve or deny", a.req("POST", f"/api/approvals/{fid}/{cid}", {"decision": "maybe"})[0] == 400)
+        check("approvals: an unknown call is a 404 and reaches no host", a.req("POST", f"/api/approvals/{fid}/mmmmmmmm%2Fnope", {"decision": "approve"})[0] == 404 and not fgot)
+        check("approvals: a path-like or malformed host is a 404", a.req("POST", "/api/approvals/..%2F..%2Fx/c", {"decision": "approve"})[0] == 404)
+        st, dj, _ = a.req("POST", f"/api/approvals/{fid}/mmmmmmmm%2Fc1", {"decision": "deny"})
+        check("approvals: deny reaches the host with the member/id, and the call clears", st == 200 and dj["ok"] is True and fgot == ["deny mmmmmmmm/c1"] and a.req("GET", "/api/approvals")[1]["approvals"] == [])
+        check("approvals: the decision is in the audit trail", any("denied from the hub" in e.get("text", "") for e in a.req("GET", "/api/system")[1]["events"]))
+        fsock.close()
+
         check("room removal works (step-up satisfied locally)", a.req("DELETE", f"/api/rooms/{rid}")[0] == 200 and not any(x["id"] == rid for x in a.req("GET", "/api/rooms")[1]["rooms"]))
         a.req("POST", "/api/auth/logout", {})
         check("logout ends the session", a.req("GET", "/api/rooms")[0] == 401)
@@ -969,6 +1031,7 @@ def test_housekeeping():
         shutil.rmtree(h, ignore_errors=True)
     hub = object.__new__(rooms.Hub)
     hub.down_since, hub.extra_attention = {}, []
+    hub.store = types.SimpleNamespace(d={})
     dig = {"id": "r1", "label": "Lab", "holds": [], "state": "down", "err": "host not answering", "unread": 0, "last": None, "mode": "guest", "offline": False}
     hub.digests = lambda: [dig]
     first = hub.attention()
@@ -979,6 +1042,18 @@ def test_housekeeping():
     dig.update(state="idle", err=None)
     hub.attention()
     check("alerts: when the room recovers the clock resets", "r1" not in hub.down_since)
+    hub.store.d["notify"] = {"down_alert_s": 3600}
+    dig.update(state="down", err="host not answering")
+    hub.down_since["r1"] = time.time() - 600
+    check("alerts: the hub setting overrides the environment default", hub.down_alert_s() == 3600 and not hub.attention()[0]["urgent"])
+    hub.store.d["notify"] = {"down_alert_s": 60}
+    check("alerts: a shorter hub setting makes the same outage urgent", hub.attention()[0]["urgent"])
+    hub.store.d["notify"] = {}
+    check("alerts: no setting falls back to the default", hub.down_alert_s() == rooms.DOWN_URGENT_S)
+    dig.update(state="idle", err=None)
+    hub.attention()
+    hub.rooms = {"r1": types.SimpleNamespace(rec={"muted": True}), "r2": types.SimpleNamespace(rec={})}
+    check("mute: muted() is per room and false for unknown rooms or no room", hub.muted("r1") and not hub.muted("r2") and not hub.muted("zz") and not hub.muted(None))
     dig.update(err="Your access to this room ran out. Ask the host for a new invite.", needs_invite=True, state="idle")
     inv = hub.attention()
     check("alerts: an expired guest room asks for a new invite and is not reported as down", [i["kind"] for i in inv] == ["invite"])

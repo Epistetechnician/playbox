@@ -2,7 +2,8 @@
 //! a record `<hosting dir>/<id>.json` and a private control socket `<hosting dir>/<id>.sock`. The hosting directory is
 //! `$PLAYBOX_HOSTING_DIR`, else `~/.playbox/hosting`, and is created `0700`; only this user can reach the socket.
 //!
-//! The socket speaks one line each way: `ping` answers `ok`; `link [GUEST ID]` answers a fresh single-use join link (or `error: ...`).
+//! The socket speaks one line each way: `ping` answers `ok`; `link [GUEST ID]` answers a fresh single-use join link (or `error: ...`);
+//! `calls` answers a JSON list of calls waiting for owner approval; `approve ID` / `deny ID` (ID is `member/id` or the call id) decide one (`ok ...` or `error: ...`).
 //! The record never holds a link or a key. Both files are removed when the host stops; a record whose socket does not answer is stale.
 
 use anyhow::{Context, Result};
@@ -105,7 +106,34 @@ pub async fn serve(
                 Ok(l) => l.encode(),
                 Err(e) => format!("error: {e:#}").replace('\n', " "),
             },
-            _ => "error: ping | link [GUEST ID]".to_string(),
+            (Some("calls"), _) => {
+                // Same escaping as the console: the arguments read as what will run.
+                let list: Vec<_> = host
+                    .pending_calls()
+                    .into_iter()
+                    .map(|c| {
+                        let args: std::collections::BTreeMap<_, _> = c
+                            .args
+                            .iter()
+                            .map(|(k, v)| {
+                                (
+                                    playbox_net::capabilities::display_safe(k),
+                                    playbox_net::capabilities::display_safe(v),
+                                )
+                            })
+                            .collect();
+                        serde_json::json!({"id": c.id, "member": c.member, "name": c.name, "args": args, "created_ms": c.created_ms})
+                    })
+                    .collect();
+                serde_json::Value::Array(list).to_string()
+            }
+            (Some(verb @ ("approve" | "deny")), Some(id)) => {
+                match host.decide_call(id, verb == "approve") {
+                    Ok(c) => format!("ok {verb}d {}", c.id),
+                    Err(e) => format!("error: {e:#}").replace('\n', " "),
+                }
+            }
+            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID".to_string(),
         };
         let _ = wr.write_all(format!("{reply}\n").as_bytes()).await;
     }

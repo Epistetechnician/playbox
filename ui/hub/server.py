@@ -19,7 +19,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import push as webpush
-from .local import ask_host, hosting_dir, local_hosts
+from .local import ask_host, decide_call, hosting_dir, local_hosts, pending_calls
 from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from . import agents as agentmod
@@ -178,6 +178,12 @@ def make_handler(hub, auth, store, opts):
                     "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
                               "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
                     "rooms": rooms}
+
+        def notify_view(self):
+            from .rooms import DOWN_URGENT_S
+            n = store.d.get("notify") or {}
+            return {"down_alert_s": int(hub.down_alert_s()), "default_s": int(DOWN_URGENT_S), "custom": "down_alert_s" in n, "push_subs": len(store.d["push"]),
+                    "rooms": [{"id": d["id"], "label": d.get("label") or d["id"], "muted": bool(d.get("muted"))} for d in hub.digests()]}
 
         def health(self):
             """What is broken or about to be, in plain fields: the tunnel, and for each room its host, its last error and when its grant was renewed.
@@ -718,7 +724,9 @@ def make_handler(hub, auth, store, opts):
                 rid = p.split("/")[3]
                 if m == "PATCH":
                     b = self.body()
-                    room = hub.update(rid, **{k: b.get(k) for k in ("label", "machine", "kind")})
+                    room = hub.update(rid, **{k: b.get(k) for k in ("label", "machine", "kind", "muted")})
+                    if room and isinstance(b.get("muted"), bool):
+                        hub.sec.add("auth", f"Push notifications for a room were {'muted' if b['muted'] else 'unmuted'}", "info", rid)
                     return self.j(200 if room else 404, {"room": room.digest} if room else {"error": "no such room"})
                 if m == "DELETE":
                     if not self.need_fresh(rec):
@@ -744,6 +752,55 @@ def make_handler(hub, auth, store, opts):
             if m == "DELETE" and p.startswith("/api/sessions/"):
                 ok = auth.revoke_session(p.split("/", 3)[3])
                 return self.j(200 if ok else 404, {"ok": ok})
+            if p == "/api/settings/notify":
+                if m == "GET":
+                    return self.j(200, self.notify_view())
+                if m == "POST":
+                    if not self.need_fresh(rec):
+                        return
+                    v = self.body().get("down_alert_s")
+                    if v is None:                      # back to the default (the environment variable, else five minutes)
+                        new = None
+                    elif isinstance(v, bool) or not isinstance(v, (int, float)) or not 30 <= v <= 86400:
+                        raise AuthError(400, "down_alert_s must be between 30 and 86400 seconds")
+                    else:
+                        new = int(v)
+                    with store.lock:
+                        n = store.d.setdefault("notify", {})
+                        n.pop("down_alert_s", None) if new is None else n.__setitem__("down_alert_s", new)
+                        store.save()
+                    hub.sec.add("auth", "The down-alert threshold was " + (f"set to {new} s" if new else "reset to its default"), "info")
+                    hub.wake.set()
+                    return self.j(200, self.notify_view())
+            if m == "POST" and p == "/api/push/test":
+                v = store.d["vapid"]
+                sent = 0
+                for sub in list(store.d["push"]):
+                    if webpush.send(int(v["d"], 16), v["pub"], sub["endpoint"]) in (200, 201, 202):
+                        sent += 1
+                return self.j(200, {"sent": sent, "subscriptions": len(store.d["push"])})
+            if m == "GET" and p == "/api/approvals":
+                return self.j(200, {"approvals": hub.approvals(True)})
+            if m == "POST" and p.startswith("/api/approvals/"):
+                parts = p.split("/", 4)
+                if len(parts) != 5 or not parts[4]:
+                    raise AuthError(404, "not found")
+                rid, call = urllib.parse.unquote(parts[3]), urllib.parse.unquote(parts[4])
+                dec = self.body().get("decision")
+                if dec not in ("approve", "deny"):
+                    raise AuthError(400, 'decision must be "approve" or "deny"')
+                room = hub.rooms.get(rid)
+                hid = room.rec.get("adopted_host") if room else rid
+                if not hid or not any(a["host"] == hid and a["call"] == call for a in hub.approvals(True)):
+                    raise AuthError(404, "that call is not waiting for approval any more")
+                if not self.need_fresh(rec):
+                    return
+                ok, msg = decide_call(hid, call, dec == "approve")
+                hub.sec.add("approve", f"A capability call was {'approved' if dec == 'approve' else 'denied'} from the hub" if ok else f"A capability call could not be {dec}d: {msg[:80]}",
+                            "ok" if ok else "warn", room.id if room else None)
+                hub.approvals(True)
+                hub.wake.set()
+                return self.j(200 if ok else 409, {"ok": ok, "message": msg})
             if m == "POST" and p == "/api/push/subscribe":
                 ep = str(self.body().get("endpoint", ""))
                 if not webpush.valid_endpoint(ep):
@@ -1117,7 +1174,25 @@ def main(argv=None):
                 store.save()
 
     hub = Hub(store, a.mcp, push_fn)
+    acache = {"at": 0.0, "v": []}
+
+    def approvals(fresh=False):
+        """Calls waiting for the owner on hosts on this machine, labelled with the hub's room for each (cached a few seconds: every attention read comes through here)."""
+        if fresh or time.time() - acache["at"] > 4:
+            names = {r.rec.get("adopted_host"): r for r in list(hub.rooms.values()) if r.rec.get("adopted_host")}
+            out = []
+            for c in pending_calls():
+                r = names.get(c["host"])
+                out.append(dict(c, room=r.id if r else None, label=(r.rec.get("label") if r else None) or c["name"]))
+            acache.update(at=time.time(), v=out)
+        return acache["v"]
+
+    def approval_attention():
+        return [{"id": f"approval:{c['host']}:{c['call']}", "room": c["room"], "kind": "approval", "urgent": True, "host": c["host"], "call": c["call"],
+                 "title": f"Approve {c['cap']} in {c['label']}?", "body": f"asked by {c['member'][:12]} " + json.dumps(c["args"])[:140], "approval": c} for c in approvals()]
     hub.sec = SecLog(hub.bus)
+    hub.approvals = approvals
+    hub.extra_attention.append(approval_attention)
     hub.sec.add("edge", "Hub started" + (" behind Cloudflare Access" if (team and aud) else " (no Cloudflare Access in front)" if cloud else " on this machine only"), "ok" if (team and aud) or not cloud else "bad")
     hub.knocks = Knocks(store)
     hub.outgoing = Outgoing(hub, store)
@@ -1153,13 +1228,13 @@ def main(argv=None):
         tdown = {"since": None}
 
         def tunnel_attention():
-            """The public address is down: quiet at first (it retries by itself), urgent after PLAYBOX_DOWN_ALERT_S seconds (default 300)."""
+            """The public address is down: quiet at first (it retries by itself), urgent after the down-alert threshold (hub setting; PLAYBOX_DOWN_ALERT_S, default 300, is its default)."""
             pr = tunnel_state.get("proc")
             if pr is not None and pr.poll() is None:
                 tdown["since"] = None
                 return []
             tdown["since"] = tdown["since"] or time.time()
-            long = time.time() - tdown["since"] > float(os.environ.get("PLAYBOX_DOWN_ALERT_S", "300"))
+            long = time.time() - tdown["since"] > hub.down_alert_s()
             return [{"id": "tunnel" + (":long" if long else ""), "room": None, "kind": "tunnel", "urgent": long,
                      "title": "The public address is down", "body": "invite links and remote access do not work; the hub is retrying"}]
         hub.extra_attention.append(tunnel_attention)
