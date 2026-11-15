@@ -610,6 +610,7 @@ def test_http():
         st_s, _, _ = anon.req("GET", "/themes.js")
         st_h, _, _ = anon.req("GET", "/shell.js")
         check("the theme and shell scripts are public, loaded by the pages and cached", st_s == 200 and st_h == 200 and all("/themes.js" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")) and "/shell.js" in open(os.path.join(UI, "static", "home.html")).read())
+        check("themes keep text legible: the palette is nudged until text, status colours and button labels reach WCAG AA", "const ensure" in open(os.path.join(UI, "static", "themes.js")).read() and "ensure(p.ink, p.bg, 7" in open(os.path.join(UI, "static", "themes.js")).read())
         check("the shared theme stylesheet is public, linked by every page and cached by the service worker", st_t == 200 and all("/theme.css" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")))
         check("the pages load it and the service worker caches it", "/instruments.js" in open(os.path.join(UI, "static", "home.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "index.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "sw.js")).read())
         st, sysj, _ = a.req("GET", "/api/system")

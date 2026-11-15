@@ -77,18 +77,28 @@
   /* The mode now: the data-theme attribute (set by the page's own toggle), else the system. */
   const mode = () => R.dataset.theme === "light" || R.dataset.theme === "dark" ? R.dataset.theme : (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
 
+  const cr = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+  /* Nudge `c` toward `toward` until it reads at `ratio` against `bg`: a theme's published colours stay as close as possible, but text stays legible. */
+  const ensure = (c, bg, ratio, toward) => { let t = 0, x = c; while (cr(x, bg) < ratio && t < 1) { t += .05; x = mix(c, toward, t); } return x; };
+
   /* Everything the pages' CSS reads, derived from the ten colours. */
-  function tokens(p, dark, accent) {
-    const sig = accent && hex(accent) ? accent : p.sig;
-    const onSig = lum(sig) > .42 ? "#14180C" : "#FFFFFF";
-    const toward = dark ? "#FFFFFF" : "#000000";
+  function tokens(p0, dark, accent) {
+    const body = dark ? "#FFFFFF" : "#000000", p = {...p0};
+    p.ink = ensure(p.ink, p.bg, 7, body);
+    p.mut = ensure(p.mut, p.panel, 4.6, body); p.mut = ensure(p.mut, p.bg, 4.5, body);
+    for (const k of ["blue", "ok", "bad", "warn", "violet"]) p[k] = ensure(p[k], p.panel, 4.5, body);
+    const dk = "#14180C", wh = "#FFFFFF", sig0 = accent && hex(accent) ? accent : p0.sig;
+    let sig = sig0, st = 0;
+    while (Math.max(cr(dk, sig), cr(wh, sig)) < 4.5 && st < 1) { st += .04; sig = mix(sig0, dark ? "#FFFFFF" : "#000000", st); }      // a button label must be readable on the primary colour
+    const onSig = cr(dk, sig) >= cr(wh, sig) ? dk : wh;
+    const sigInk = ensure(sig, p.panel, 4.5, body);
     return {
       "--bg": p.bg, "--bg-2": mix(p.bg, p.panel, .5), "--panel": p.panel, "--panel-2": mix(p.panel, p.ink, .06), "--field": dark ? mix(p.bg, "#000000", .2) : mix(p.panel, p.bg, .25),
       "--ink": p.ink, "--ink-2": mix(p.ink, p.bg, .24), "--mut": p.mut, "--dim": mix(p.bg, p.ink, .13), "--grid": mix(p.bg, p.ink, .06),
       "--line": mix(p.bg, p.ink, .13), "--line-2": mix(p.bg, p.ink, .23), "--edge": mix(p.bg, p.ink, .4),
-      "--sig": sig, "--sig-ink": mix(sig, p.ink, dark ? .2 : .3), "--on-sig": onSig,
-      "--blue": mix(p.blue, toward, dark ? .22 : .18), "--blue-edge": p.blue,
-      "--ok": p.ok, "--ok-led": p.ok, "--warn": p.warn, "--bad": p.bad, "--violet": p.violet,
+      "--sig": sig, "--sig-ink": sigInk, "--on-sig": onSig,
+      "--blue": p.blue, "--blue-edge": p0.blue,
+      "--ok": p.ok, "--ok-led": p0.ok, "--warn": p.warn, "--bad": p.bad, "--violet": p.violet,
       "--scrim": dark ? "rgba(0,0,0,.66)" : "rgba(20,22,18,.45)",
     };
   }
