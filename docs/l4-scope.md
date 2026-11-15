@@ -330,3 +330,22 @@ What it does and does not show:
 
 What would settle (B): more templated items and a second seed on this checkpoint (about 1 USD of evaluation if the checkpoint is kept; it is on the
 stopped node's disk, not in the repository). The full-size mapper (60 to 150 USD) is not started: that spend is the user's call.
+
+## 12. Settling (B): plan and decision rule, written before the run
+
+Section 11 missed (B) by 0.9 points on 48 items (16 topics x 3 draws, one mapper, one seed). Two sources of doubt, both addressed here:
+the item draw (few items, and items of one topic are correlated, so the real sample size is the 16 topics) and the mapper itself (one training run).
+
+**What is run.** (1) The same checkpoint re-evaluated on 720 templated items: 3 draw seeds (5, 6, 7) x 16 held-out topics x 15 draws
+(`playbox_steer/l4_eval_b.py`). (2) A second mapper, identical recipe, training seed 1 (the section 11 run is seed 0), evaluated the same way.
+The difference mapped-minus-unrelated-real-cache retention is computed on the same items for both conditions, and its 95% interval is a
+bootstrap over topics (whole topics resampled), which is the honest interval for 16 topics. Control added: `mapped_wrong`, the mapper fed another
+topic's sender cache and scored on this item's continuation; mapped minus mapped_wrong is topic specificity with the format held fixed.
+
+**Decision rule (fixed now).** (B) is **settled as a pass** if, for each of the two mappers, the pooled point estimate of mapped minus
+unrelated-real-cache retention is at least 20.0 points. It is **settled as a fail** if it is below 20.0 for both. One above and one below is
+"not robust" and counts as a no-go. The intervals and the specificity control are reported, not used to decide. (A) and (C) are re-checked
+only on the existing mapper (they passed with wide margins); no other criterion changes.
+
+**Budget.** About 5 USD of H100 time on gman (two evaluations of about 12 minutes, one 40-minute training run, loads), inside the 30 USD ceiling;
+12.4 USD was spent before this step. The node is stopped at the end.
