@@ -102,13 +102,14 @@ fn a_hub_that_lets_bad_json_crash_a_handler_is_caught() {
         "            except ValueError:\n                raise AuthError(400, \"bad json\")",
         "            except ValueError:\n                raise",
     );
-    let k = kinds(&fuzz(&root, "json"));
+    let f = fuzz(&root, "json");
+    let k = kinds(&f);
     let _ = std::fs::remove_dir_all(&root);
     assert!(
         k.iter().any(|k| k.contains("dropped")
             || k.contains("unhandled")
             || k.contains("server error")),
-        "{k:?}"
+        "{k:?} (the whole report: {f})"
     );
 }
 
