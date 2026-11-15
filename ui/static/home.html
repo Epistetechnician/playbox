@@ -874,7 +874,7 @@ function harness() {
   const members = S.rooms.reduce((a, r) => a + (r.members || 0), 0), hour = act.filter(a => now - a.ms < 3600e3).length;
   const series = P.buckets(act.map(a => a.ms), now, 300e3, 24);
   const st = P.stats({id: "h-stats", title: "Harness", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>',
-    open: S.ins["h-stats"], meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`, who: "hub", name: location.host || "this hub",
+    open: S.ins["h-stats"] ?? innerWidth >= 700, meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`, who: "hub", name: location.host || "this hub",
     bar: {label: "rooms", right: `${by("live")} live`, parts: Object.keys(C).map(k => ({c: C[k], w: by(k), t: k}))},
     kv: [["rooms", String(S.rooms.length)], ["members", String(members)], ["mine", String(S.rooms.filter(r => r.kind === "mine").length)], ["shared", String(S.rooms.filter(r => r.kind === "shared").length)],
          ["attention", String(S.attention.length)], ["asking to join", String((S.knocks || []).length)], ["history", S.rooms.every(r => !r.chain || r.chain.ok) ? "all verified" : "FAILED"], ["offline", String(S.rooms.filter(r => r.offline).length)]],
@@ -883,7 +883,7 @@ function harness() {
   const t0 = Math.min(now - 30 * 60e3, ...act.map(a => a.ms));
   const lanes = [{group: "Rooms"}, ...S.rooms.slice(0, 12).map(r => ({label: r.label, c: r.state === "bad" ? C.bad : "var(--c-peer)", at: act.filter(a => a.room === r.id).map(a => a.ms), bad: r.state === "bad"}))];
   const al = P.activity({id: "h-act", title: "Activity by room", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 7h16M4 12h11M4 17h7"/></svg>',
-    open: S.ins["h-act"], meta: `${act.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: act.length ? lanes : []});
+    open: S.ins["h-act"] ?? innerWidth >= 700, meta: `${act.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: act.length ? lanes : []});
   return `<div style="display:grid;gap:14px;margin:18px 0 6px">${st}${al}</div>`;
 }
 const VIEWS = {
