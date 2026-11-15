@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Changed
+- The cockpit and the hub home page have instrument panels: a Stats card (key/value rows, message-rate sparkline, who-spoke bar, event breakdown), an Activity card (swim-lanes on one time axis: per member and per kind in a room, per room on the hub) and a collapsible Trail. Cards are rounder and softer to match.
+
 ## [0.3.3] - 2026-11-15
 
 ### Added

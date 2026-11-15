@@ -89,7 +89,7 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 .view{display:grid;gap:14px;animation:in .16s steps(4)}
 @keyframes in{from{opacity:.35}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-.card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);padding:16px}
+.card{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;padding:16px;overflow:hidden}
 .card>h2:first-child{margin:-16px -16px 14px;padding:10px 14px;border-bottom:1px solid var(--line-2);background:var(--panel-2)}
 .hero{padding:34px 18px;text-align:center}
 .hero .glyph{display:block;width:28px;height:28px;margin:0 auto 16px;background:var(--sig);font-size:0}
@@ -223,6 +223,7 @@ dialog h2{color:var(--ink)}
 <dialog id="dlg"></dialog>
 
 <script src="/auth.js" onerror="void 0"></script>
+<script src="/instruments.js" onerror="void 0"></script>
 <script src="/space.js" onload="PBSpace.arrive()" onerror="document.documentElement.classList.remove('pb-splat')"></script>
 <script>setTimeout(function(){document.documentElement.classList.remove("pb-splat")},3500)</script>
 <script>
@@ -312,6 +313,58 @@ const PRESETS = [
   {t: "Review room (anywhere, read only)", reach: "iroh", docker: false},
 ];
 
+/* ---------- instrument panels (Stats, Activity, Trail) ---------- */
+const INS_ICON = {
+  stats: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>',
+  activity: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 7h16M4 12h11M4 17h7"/></svg>',
+  trail: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M5 5h14v14H5z"/><path d="M8 10l3 2-3 2M13 14h3"/></svg>'};
+S.ins = S.ins || {};
+function kindOf(it) {
+  if (it.kind === "say") return "say";
+  const t = String(it.text || "").toLowerCase();
+  return t === "join ok" ? "join" : t.startsWith("refused") || t === "join failed" ? "refused" : "event";
+}
+function insights() {
+  if (!window.PBI || mode() === "none") return "";
+  const P = PBI, items = S.feed.filter(i => i.time_ms), now = Date.now();
+  const isMe = it => (it.from && it.from === myId()) || (it.from === "host" && !!hosting());
+  const says = items.filter(i => i.kind === "say"), mine = says.filter(isMe), others = says.filter(i => !isMe(i));
+  const joins = items.filter(i => kindOf(i) === "join"), refused = items.filter(i => kindOf(i) === "refused"), evs = items.filter(i => kindOf(i) === "event");
+  const t0 = Math.min(now - 10 * 60e3, ...items.map(i => i.time_ms)), BUCKET = 300e3, N = 24;
+  const series = P.buckets(says.map(i => i.time_ms), now, BUCKET, N), hour = says.filter(i => now - i.time_ms < 3600e3).length;
+  const C = {you: "var(--c-you)", peer: "var(--c-peer)", join: "var(--c-join)", bad: "var(--c-bad)", ev: "var(--c-ev)"};
+  const h = hosting(), j = joined(), m = mode(), tot = items.length || 1;
+  const pct = n => Math.round(n / tot * 100) + "%";
+  const stats = P.stats({id: "stats", icon: INS_ICON.stats, title: "Stats", open: S.ins.stats, meta: `${members().length + (j && !h ? 1 : 0)} in room`,
+    who: ROOM ? "room" : "", name: ROOM || (h ? "You host this room" : "Joined room"),
+    bar: {label: "who spoke", right: `${items.length} events`, parts: [{c: C.you, w: mine.length, t: "you"}, {c: C.peer, w: others.length, t: "others"}, {c: C.join, w: joins.length, t: "joins"}, {c: C.bad, w: refused.length, t: "refused"}, {c: C.ev, w: evs.length, t: "other"}]},
+    kv: [["mode", {host: "hosting", guest: "guest", both: "host + guest"}[m] || m], ["members", String(members().length)], ["you", short(myId()) || "—"], ["host", h ? "this machine" : short(j && j.active_host) || "—"],
+         ["repo", h && h.repo ? h.repo.split("/").slice(-2).join("/") : "none"], ["history", S.verify ? (S.verify.valid ? "verified " + S.verify.entries : "FAILED") : "not checked"],
+         ["revoked", String(h ? h.revocations ?? 0 : 0)], ["offline", S.offline ? "yes" : "no"]],
+    rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / N).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
+    groups: [{title: "Events", rows: [{c: C.you, l: "you", n: mine.length, pct: pct(mine.length)}, {c: C.peer, l: "others", n: others.length, pct: pct(others.length)}, {c: C.join, l: "joined", n: joins.length, pct: pct(joins.length)},
+      {c: C.bad, l: "refused", n: refused.length, pct: pct(refused.length)}, {c: C.ev, l: "other", n: evs.length, pct: pct(evs.length), o: true}]}]});
+  const byWho = new Map();
+  for (const i of says) { const k = isMe(i) ? "You" : i.name || (i.from === "host" ? "host" : short(i.from)) || "member"; (byWho.get(k) || byWho.set(k, {at: [], me: isMe(i)}).get(k)).at.push(i.time_ms); }
+  const lanes = [{group: "Activity"},
+    {label: "All activity", head: true, tall: true, count: items.length, parts: [{c: C.you, at: mine.map(i => i.time_ms)}, {c: C.peer, at: others.map(i => i.time_ms)}, {c: C.join, at: joins.map(i => i.time_ms)}, {c: C.bad, at: refused.map(i => i.time_ms)}, {c: C.ev, at: evs.map(i => i.time_ms)}]},
+    {group: "People"}, ...[...byWho].slice(0, 8).map(([k, v]) => ({label: k, c: v.me ? C.you : C.peer, at: v.at})),
+    {group: "Room"}, {label: "joined", c: C.join, at: joins.map(i => i.time_ms)}, {label: "refused", c: C.bad, at: refused.map(i => i.time_ms), bad: refused.length > 0}, {label: "other", c: C.ev, at: evs.map(i => i.time_ms)}];
+  const act = P.activity({id: "activity", icon: INS_ICON.activity, title: "Activity", open: S.ins.activity, meta: `${items.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: items.length ? lanes : []});
+  const steps = items.slice(-40).reverse().map(i => { const k = kindOf(i); return {c: C[k === "say" ? (isMe(i) ? "you" : "peer") : k] || C.ev, label: {say: isMe(i) ? "You" : "Say", join: "Join", refused: "Refused", event: "Event"}[k],
+    text: k === "say" ? `${i.name || short(i.from) || "member"}: ${i.text}` : i.text, ms: i.time_ms, detail: k === "say" ? i.text : ""}; });
+  const trail = P.trail({id: "trail", icon: INS_ICON.trail, title: "Trail", open: S.ins.trail === undefined ? false : S.ins.trail, meta: `${steps.length} step${steps.length === 1 ? "" : "s"}`, steps});
+  return `<div id="insights" style="display:grid;gap:14px">${stats}${act}${trail}</div>`;
+}
+function paintInsights() {
+  const el = $("#insights");
+  if (!el || document.activeElement?.closest?.("#insights details details")) return;
+  const open = new Set([...el.querySelectorAll(".steps details[open]")].map(d => d.querySelector("summary .x")?.textContent));
+  el.outerHTML = insights() || '<div id="insights"></div>';
+  if (open.size) document.querySelectorAll("#insights .steps details").forEach(d => { if (open.has(d.querySelector("summary .x")?.textContent)) d.open = true; });
+}
+document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
+
 /* ---------- views ---------- */
 function rawInvite() {
   return `${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
@@ -349,6 +402,7 @@ const VIEWS = {
         </div>
       </div>`);
     }
+    if (m !== "none") parts.push(insights() || '<div id="insights"></div>');
     if (hosting()) {
       const h = hosting();
       parts.push(`<div class="card"><h2>You host ${ROOM ? qn() : "this room"}</h2>
@@ -572,6 +626,7 @@ async function pollFeed() {
   S.feed.push(...fresh);
   if (S.tab !== "feed") { S.unread += fresh.filter(i => i.kind === "say" && i.from !== myId()).length; paintNav(); }
   paintFeed();
+  if (S.tab === "room") paintInsights();
 }
 
 /* ---------- witness ---------- */
@@ -629,6 +684,7 @@ function show(tab) {
   const v = $("#view");
   v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
   if (tab === "feed") { paintFeed(); pollFeed(); }
+  if (tab === "room") pollFeed();
   scrollTo({top: 0});
 }
 
@@ -808,7 +864,7 @@ setInterval(() => {
   tick++;
   pollWitness();
   if (tick % 3 === 0) refresh(true);                       // every call is appended to the signed history, so poll gently
-  if (S.tab === "feed" || innerWidth >= 1220) pollFeed();
+  if (S.tab === "feed" || S.tab === "room" || innerWidth >= 1220) pollFeed();
 }, 3500);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(true); pollFeed(); } });
 </script>

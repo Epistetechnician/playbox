@@ -168,6 +168,8 @@ def make_handler(sidecar, token, page_path, home):
                 return self._send(200, ICON, "image/svg+xml")
             if not self._authed():
                 return self._send(401, LOCKED, "text/html; charset=utf-8")
+            if url.path == "/instruments.js":
+                return self._send(200, (HERE / "static" / "instruments.js").read_bytes(), "text/javascript; charset=utf-8")
             if url.path == "/":
                 return self._send(200, page_path.read_text(), "text/html; charset=utf-8")
             if url.path == "/api/state":

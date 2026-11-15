@@ -116,7 +116,7 @@ main{flex:1;width:100%;max-width:1080px;margin:0 auto;padding:18px 14px calc(var
 /* ---------- surfaces ---------- */
 .view.enter{animation:in .16s steps(4)}
 @keyframes in{from{opacity:.35}}
-.card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);padding:16px}
+.card{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;padding:16px;overflow:hidden}
 .card>h2:first-child{margin:-16px -16px 14px;padding:10px 14px;border-bottom:1px solid var(--line-2);background:var(--panel-2)}
 .sect{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:30px 0 12px}
 .sect:first-child{margin-top:0}
@@ -353,6 +353,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 <div id="root"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <dialog id="sheet"></dialog>
+<script src="/instruments.js" onerror="void 0"></script>
 <script src="/auth.js"></script>
 <script src="/space.js"></script>
 <script>
@@ -857,6 +858,29 @@ function machineCard(y) {
     ${m.error ? `<p class="chip bad" style="white-space:normal">${esc(m.error)}</p>` : ""}<div>${fz}${rows}</div>
     <p class="mut" style="font-size:12.5px;margin:10px 0 0">Run by the <b>playbox secure</b> command on this machine, every few hours and after each update. Fuzzing never touches this hub: it tests a throwaway copy.</p>`);
 }
+/* ---------- harness: the hub-wide Stats and Activity panels (shared look with the room cockpit) ---------- */
+S.ins = S.ins || {};
+document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
+function harness() {
+  if (!window.PBI || !S.rooms.length) return "";
+  const P = PBI, now = Date.now(), act = S.activity || [];
+  const C = {live: "var(--c-join)", idle: "var(--c-idle)", hold: "var(--c-warn)", bad: "var(--c-bad)", down: "var(--c-bad)", empty: "var(--c-ev)"};
+  const by = k => S.rooms.filter(r => r.state === k).length;
+  const members = S.rooms.reduce((a, r) => a + (r.members || 0), 0), hour = act.filter(a => now - a.ms < 3600e3).length;
+  const series = P.buckets(act.map(a => a.ms), now, 300e3, 24);
+  const st = P.stats({id: "h-stats", title: "Harness", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>',
+    open: S.ins["h-stats"], meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`, who: "hub", name: location.host || "this hub",
+    bar: {label: "rooms", right: `${by("live")} live`, parts: Object.keys(C).map(k => ({c: C[k], w: by(k), t: k}))},
+    kv: [["rooms", String(S.rooms.length)], ["members", String(members)], ["mine", String(S.rooms.filter(r => r.kind === "mine").length)], ["shared", String(S.rooms.filter(r => r.kind === "shared").length)],
+         ["attention", String(S.attention.length)], ["asking to join", String((S.knocks || []).length)], ["history", S.rooms.every(r => !r.chain || r.chain.ok) ? "all verified" : "FAILED"], ["offline", String(S.rooms.filter(r => r.offline).length)]],
+    rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / series.length).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
+    groups: [{title: "Rooms", rows: [["live", "live"], ["idle", "idle"], ["hold", "held by witness"], ["bad", "history failed"], ["down", "unreachable"], ["empty", "empty"]].map(([k, l]) => ({c: C[k], l, n: by(k), pct: Math.round(by(k) / S.rooms.length * 100) + "%", o: k === "empty"}))}]});
+  const t0 = Math.min(now - 30 * 60e3, ...act.map(a => a.ms));
+  const lanes = [{group: "Rooms"}, ...S.rooms.slice(0, 12).map(r => ({label: r.label, c: r.state === "bad" ? C.bad : "var(--c-peer)", at: act.filter(a => a.room === r.id).map(a => a.ms), bad: r.state === "bad"}))];
+  const al = P.activity({id: "h-act", title: "Activity by room", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 7h16M4 12h11M4 17h7"/></svg>',
+    open: S.ins["h-act"], meta: `${act.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: act.length ? lanes : []});
+  return `<div style="display:grid;gap:14px;margin:18px 0 6px">${st}${al}</div>`;
+}
 const VIEWS = {
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
@@ -869,7 +893,7 @@ const VIEWS = {
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
       : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="/r/${r.id}/" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
-    return `${knockCard()}<div id="setup"></div>${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
+    return `${knockCard()}<div id="setup"></div>${tiles()}${harness()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));

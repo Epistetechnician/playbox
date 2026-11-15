@@ -604,6 +604,9 @@ def test_http():
         check("on a public address the url is marked reachable" + ("" if st == 200 else f" [{st} {j2}]"), st == 200 and j2["public"] is True and j2["url"].startswith("http://93.184.216.34:80/i/"))
         # ---- the System view: stages, events and posture, with nothing secret in them ----
         check("system needs a session", anon.req("GET", "/api/system")[0] == 401)
+        st_i, _, _ = anon.req("GET", "/instruments.js")
+        check("the shared instrument panels script is public and served", st_i == 200)
+        check("the pages load it and the service worker caches it", "/instruments.js" in open(os.path.join(UI, "static", "home.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "index.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "sw.js")).read())
         st, sysj, _ = a.req("GET", "/api/system")
         check("system lists the eight stages in order", st == 200 and [x["id"] for x in sysj["stages"]] == ["edge", "auth", "invite", "knock", "approve", "join", "feed", "history"])
         check("system counts the invites just made", sysj["live"]["invite"]["count"] >= 2 and any(e["stage"] == "invite" for e in sysj["events"]))
