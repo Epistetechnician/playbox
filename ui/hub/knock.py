@@ -22,6 +22,7 @@ MAX_PENDING_PER_INVITE = 5
 LINK_TTL = 600          # a minted link must be redeemed within ten minutes
 POLL_EVERY = 3
 GIVE_UP = 1800
+REKNOCK_EVERY = 900      # a room that lost its access asks its host again at most this often
 
 
 class KnockError(ValueError):
@@ -65,7 +66,11 @@ class Knocks:
             mine = [r for r in self.store.d["knocks"].values() if r["invite"] == inv["id"]]
             for r in mine:
                 if r["guest"] == guest:
-                    return r                      # asking twice is not asking twice
+                    if r["state"] != "done":
+                        return r                  # asking twice is not asking twice
+                    del self.store.d["knocks"][r["rid"]]      # already let in once and asking again (its access ran out): a fresh request, bound to the same id
+                    mine = [x for x in mine if x is not r]
+                    break
             if len([r for r in mine if r["state"] == "pending"]) >= MAX_PENDING_PER_INVITE:
                 raise KnockError("too many requests waiting on this invite", 429)
             if len([r for r in mine if r["state"] in ("approved", "done")]) >= inv["uses"]:
@@ -161,6 +166,7 @@ class Outgoing:
         self.hub, self.store = hub, store
         store.d.setdefault("knock_out", {})
         self.links = {}              # agent-mode links, in memory only
+        self.last_re = {}            # room id -> when this hub last asked its host to let it back in
         self.mu = threading.Lock()
         for rid, r in list(store.d["knock_out"].items()):
             if r["state"] == "waiting":
@@ -195,12 +201,50 @@ class Outgoing:
             raise KnockError("the host's hub returned a different verify code than this device computed; not continuing", 502)
         rid = resp["rid"]
         rec = {"rid": rid, "base": base, "invite": iid, "k": k, "room": room.id if room else None, "label": label, "guest": guest, "code": resp["code"],
-               "state": "waiting", "agent": bool(agent_guest), "created": time.time(), "note": ""}
+               "state": "waiting", "agent": bool(agent_guest), "name": name, "created": time.time(), "note": ""}
         with self.store.lock:
             self.store.d["knock_out"][rid] = rec
             self.store.save()
         self._spawn(rid)
         return rec
+
+    def reknock(self, room):
+        """A room joined through ask-to-join lost its access (hub or sidecar restart, or the grant ended). The invite link was single-use,
+        so ask the same host again with the stored invite id and key. The host still has to approve; nothing here lets us in by itself."""
+        src = room.rec.get("knock_src")
+        if not src:
+            return None
+        with self.mu:
+            if time.time() - self.last_re.get(room.id, 0) < REKNOCK_EVERY:
+                return None
+            if any(r["state"] == "waiting" and r.get("room") == room.id for r in self.store.d["knock_out"].values()):
+                return None
+            self.last_re[room.id] = time.time()
+        threading.Thread(target=self._reknock, args=(room, src), daemon=True, name="reknock-" + room.id[:4]).start()
+
+    def _reknock(self, room, src):
+        sc = room.ensure()
+        err, st = sc.call("playbox_status", {}) if sc else (True, None)
+        guest = (st or {}).get("guest_id") if isinstance(st, dict) and not err else None
+        if not guest:
+            return
+        code, resp = host_post(src["base"], f"/api/invite/{urllib.parse.quote(src['invite'], safe='')}/knock", {"k": src["k"], "guest": guest, "name": src.get("name") or "Someone"})
+        if code != 200 or not resp.get("rid") or resp.get("code") != verify_code(src["invite"], guest):
+            room.err = ("the host's invite is no longer open: ask them for a new one" if code in (403, 404, 410) else "couldn't reach the host to ask again")
+            return
+        rid = resp["rid"]
+        rec = {"rid": rid, "base": src["base"], "invite": src["invite"], "k": src["k"], "room": room.id, "label": room.rec["label"], "guest": guest, "code": resp["code"],
+               "state": "waiting", "agent": False, "rejoin": True, "created": time.time(), "note": ""}
+        with self.store.lock:
+            self.store.d["knock_out"][rid] = rec
+            self.store.save()
+        self._spawn(rid)
+
+    def waiting_for_all(self):
+        return [r for r in self.store.d["knock_out"].values() if r["state"] == "waiting" and r.get("rejoin")]
+
+    def waiting_for(self, room_id):
+        return [r for r in self.store.d["knock_out"].values() if r["state"] == "waiting" and r.get("rejoin") and r.get("room") == room_id]
 
     def _set(self, rid, **kw):
         with self.store.lock:
@@ -226,6 +270,9 @@ class Outgoing:
                 sc = room.ensure() if room else None
                 err, data = sc.call("playbox_join", {"link": resp["link"]}) if sc else (True, "the room is gone")
                 self.hub.wake.set()
+                if not err and room and not r.get("rejoin"):
+                    room.rec["knock_src"] = {"base": r["base"], "invite": r["invite"], "k": r["k"], "name": r.get("name") or "", "label": r.get("label")}
+                    room.on_change and room.on_change()
                 return self._set(rid, state="failed" if err else "joined", note=(data if isinstance(data, str) else json.dumps(data))[:160] if err else "")
             if code == 200 and st == "denied":
                 self._set(rid, state="denied")
@@ -237,13 +284,14 @@ class Outgoing:
         self._set(rid, state="expired")
 
     def _cleanup(self, r):
-        if r.get("room"):
+        if r.get("room") and not r.get("rejoin"):
             self.hub.remove(r["room"])      # the placeholder room that never got in
 
     def listing(self):
         out = []
         for r in sorted(self.store.d["knock_out"].values(), key=lambda r: -r["created"]):
             row = {k: r[k] for k in ("rid", "label", "code", "state", "agent", "created", "note", "room")}
+            row["rejoin"] = bool(r.get("rejoin"))
             if r["agent"] and r["state"] == "approved":
                 row["link"] = self.links.get(r["rid"])
             out.append(row)

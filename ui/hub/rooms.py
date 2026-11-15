@@ -90,6 +90,7 @@ class Room:
         self.stop = threading.Event()
         self.mu = threading.Lock()
         self.on_change = None      # set by the hub: persist rec changes
+        self.on_needs_invite = None   # set by the hub: called (off the poller's critical path) when this joined room lost its access
         self.tick_mu = threading.RLock()
         self.notes = []            # (stage, text, level) the poller turns into security events
         self.hold_ids = set()
@@ -250,6 +251,9 @@ class Room:
                 self.on_change and self.on_change()
         d["mode"] = "both" if host and joined else "host" if host else "guest" if joined else "none"
         d["members"] = len((host or {}).get("members") or []) + (1 if joined else 0)
+        if d["mode"] == "none" and self.rec.get("knock_src") and self.rec.get("host") is None and not self.rec.get("adopted_host"):
+            d["needs_invite"] = True            # joined through ask-to-join, and the sidecar no longer knows the room (it restarted: joins live in its memory only)
+            d["err"] = "Your access to this room ran out. Ask the host for a new invite."
         d["me"] = (joined or {}).get("member_id") or st.get("guest_id")
         if d["mode"] != "none":
             ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1, timeout=6)
@@ -311,6 +315,11 @@ class Room:
                         self.last_chain = time.time()
                         self.notes.append(("history", f"Signed history verified, {v.get('entries')} entries" if d["chain"]["ok"] else "Signed history FAILED verification",
                                            "ok" if d["chain"]["ok"] else "bad"))
+        if d.get("needs_invite") and self.on_needs_invite:
+            try:
+                self.on_needs_invite(self)
+            except Exception:
+                pass
         nb = int(time.time() / 300)
         self.buckets = {k: v for k, v in self.buckets.items() if k > nb - 30}
         d["pulse"] = [self.buckets.get(nb - 23 + i, 0) for i in range(24)]
@@ -333,6 +342,8 @@ class Room:
 
 
 class Hub:
+    rejoining = staticmethod(lambda room_id: False)      # the server replaces it: True while a new ask-to-join for this room waits on the host
+    reknock = None                                       # the server sets it: called with a room whose access ran out
     def __init__(self, store, binary, push_fn=None):
         self.store, self.binary, self.push_fn = store, binary, push_fn
         self.bus = Bus()
@@ -353,6 +364,7 @@ class Hub:
     def _start(self, rec):
         r = Room(rec, self.binary, self.store.home)
         r.on_change = self.store.save
+        r.on_needs_invite = lambda room: self.reknock and self.reknock(room)
         with self.mu:
             self.rooms[rec["id"]] = r
         return r
@@ -436,7 +448,7 @@ class Hub:
             for al in d.get("identity_alerts") or []:
                 items.append({"id": f"idchg:{d['id']}:{al['key'][:12]}", "room": d["id"], "kind": "identity", "urgent": True, "title": f"{al['name']} changed its identity card in {lab}",
                               "body": "you had endorsed it; review the change and endorse again"})
-            if d.get("needs_invite"):
+            if d.get("needs_invite") and not self.rejoining(d["id"]):
                 items.append({"id": f"invite:{d['id']}", "room": d["id"], "kind": "invite", "urgent": False, "title": f"{lab} needs a new invite", "body": "your access ran out; ask the host"})
             bad = bool(d.get("err")) and not d.get("needs_invite") and (d["state"] == "down" or d.get("offline"))
             if bad:

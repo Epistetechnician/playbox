@@ -1236,6 +1236,11 @@ def main(argv=None):
     hub.knocks = Knocks(store)
     hub.outgoing = Outgoing(hub, store)
     hub.outgoing_busy = lambda: len([r for r in store.d["knock_out"].values() if r["state"] == "waiting"]) >= 3
+    hub.reknock = hub.outgoing.reknock
+    hub.rejoining = lambda rid: bool(hub.outgoing.waiting_for(rid))
+    hub.extra_attention.append(lambda: [{"id": f"knock_wait:{r['rid']}", "room": r["room"], "kind": "knock_wait", "urgent": False, "rid": r["rid"],
+                                         "title": f"{r['label']}: waiting for the host to approve", "body": f"verify code {r['code']}: read it to the host; they approve on their side"}
+                                        for r in hub.outgoing.waiting_for_all()])
     hub.extra_attention.append(lambda: [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
                                          "title": f"{r['name']} wants to join {store.d['invites'].get(r['invite'], {}).get('label', 'a room')}",
                                          "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])

@@ -1411,6 +1411,44 @@ def test_approval():
         st, _, _ = kn({"k": k, "guest": "cd" * 32, "name": "Late"})
         check("an invite that has let in everyone it was for takes no more requests", st == 410)
 
+        # a joined room that loses its access asks the same host again, on its own, and waits for approval
+        st, inv3, _ = host.req("POST", f"/api/rooms/{rid}/invite", {"ttl": 3600, "grant": 86400, "uses": 3, "from": "Shaan"})
+        iid3, k3 = inv3["id"], inv3["k"]
+        st, j3, _ = friend.req("POST", "/api/knock", {"base": base, "id": iid3, "k": k3, "label": "Again", "name": "Maya"})
+        froom3 = j3["room"]
+        r3 = host.req("GET", "/api/knocks")[1]["requests"][0]
+        host.req("POST", f"/api/knocks/{r3['rid']}/approve", {})
+        mode3 = None
+        for _ in range(30):
+            mode3 = next((x["mode"] for x in friend.req("GET", "/api/rooms")[1]["rooms"] if x["id"] == froom3), None)
+            if mode3 == "guest":
+                break
+            time.sleep(1)
+        check("rejoin: the room joined through ask-to-join, ready for the test", mode3 == "guest")
+        friend.req("POST", f"/r/{froom3}/api/tool", {"name": "playbox_leave", "args": {}})       # what a restart does to a join: the sidecar forgets it
+        pend = []
+        for _ in range(30):
+            pend = host.req("GET", "/api/knocks")[1]["requests"]
+            if pend:
+                break
+            time.sleep(1)
+        check("rejoin: the friend's hub asked the host again by itself", len(pend) == 1 and pend[0]["room"] == rid, str(pend))
+        att = friend.req("GET", "/api/attention")[1]
+        att = att.get("items", att) if isinstance(att, dict) else att
+        waiting = [a for a in att if a.get("kind") == "knock_wait" and a.get("room") == froom3]
+        check("rejoin: the Attention tab says it is waiting for the host, with the code", len(waiting) == 1 and "waiting for the host" in waiting[0]["title"] and pend[0]["code"] in waiting[0]["body"], str(att))
+        check("rejoin: the 'needs a new invite' item is replaced by it", not any(a.get("kind") == "invite" and a.get("room") == froom3 for a in att))
+        time.sleep(4)
+        check("rejoin: a second ask is not made while the first waits (rate limit)", len(host.req("GET", "/api/knocks")[1]["requests"]) == 1)
+        host.req("POST", f"/api/knocks/{pend[0]['rid']}/approve", {})
+        mode3 = None
+        for _ in range(30):
+            mode3 = next((x["mode"] for x in friend.req("GET", "/api/rooms")[1]["rooms"] if x["id"] == froom3), None)
+            if mode3 == "guest":
+                break
+            time.sleep(1)
+        check("rejoin: once the host approves, the same room is back in the room as a guest", mode3 == "guest")
+
         # deny
         st, inv2, _ = host.req("POST", f"/api/rooms/{rid}/invite", {"ttl": 3600, "grant": 86400, "uses": 1, "from": "Shaan"})
         iid2, k2 = inv2["id"], inv2["k"]
