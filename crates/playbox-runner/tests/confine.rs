@@ -261,7 +261,7 @@ mod linux {
                     }
                 }
                 // Ordinary work still works: files, threads, sockets.
-                if fs::write(std::env::temp_dir().join("seccomp-probe"), "x").is_err() {
+                if fs::write(std::env::temp_dir().join(format!("playbox-seccomp-probe-{}", std::process::id())), "x").is_err() {
                     bad.push("could not write a file".into());
                 }
                 if std::thread::spawn(|| 1).join().ok() != Some(1) {

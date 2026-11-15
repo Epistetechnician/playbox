@@ -62,9 +62,23 @@ Codex 0.160.1, OpenCode 1.19.4 and Hermes 0.22.5 each called `playbox_status` th
 Claude Code joined a room and ran a task as a second member ([adapters/README.md](../adapters/README.md)). Not tested: a running Claude Code receiving live-delivery
 notifications ([live-delivery.md](live-delivery.md)).
 
+## Escape drill (2026-11-14, macOS arm64, Hypervisor.framework)
+
+`cargo test -p playbox-runner --test escape` against a real libkrun guest with the signed helper: 13 probes (host paths, SSH keys, Docker socket, `/sys` and `/dev/mem`, loopback, metadata service, the internet, secrets, workspace parent) all failed to get out, and the two canaries that must fire did (one proves the probes ran, one that the guest has the `wget` the network probes use). Re-run the same day after the host-home probe was changed to the host user's own `$HOME/.ssh` and the `wget` canary was added: same result. The task is root inside its own guest kernel, so mounting filesystems and writing the guest's `/proc/sys` succeed; those are not host escapes. The model-driven drill ([security-roadmap.md](security-roadmap.md)) has not been run.
+
+**Linux/KVM, the same day.** The same command on nested KVM (Ubuntu 24.04 arm64, kernel 6.8, in a Lima VM on an M4 Max; libkrun 1.19.7, libkrunfw 5.6.2): both tests ran with no skip and passed, and the eight `tests/krun.rs` tests passed too (a real VM boots, no network unless asked, timeout, root quota, workspace share). This is nested, not bare-metal, KVM.
+
+**The confinement around a real guest (BOX-3), same VM, as root.** `tests/confine_guest.rs` with `PLAYBOX_CONFINE_REQUIRE_ALL=1`: with the jail, run cgroup, syscall filter and network filter all on, a guest boots, runs, keeps separate streams and its exit code, and writes its workspace; a task without a network has none; a task with one connects to a public address but not to a listener on the host's loopback or to 169.254.169.254. The control in the same test, the same task on an unfiltered runner, does reach that loopback listener, so the filter is what stops it. The CI `confine` suite (9 cases, as root) also passed on this kernel. Not run: x86-64, bare metal, `internet+lan`.
+
+Three things this run found, all fixed the same day and re-run: (1) the guest's `/etc/resolv.conf` was empty, so a task with a network could not resolve names; it now gets a resolver or, with a host list, the pinned addresses in `/etc/hosts` (BOX-8), and the suite checks that a name resolves, that a listed host is reachable by name and that an unlisted address is not. On macOS `a_guest_with_a_network_can_resolve_names` passed with the owner's opt-in set. (2) `--confine` as root failed on a machine that had not run Playbox since boot, because `/sys/fs/cgroup/playbox` did not exist; the host now creates it. (3) The seccomp case of `tests/confine.rs` wrote a fixed file in `/tmp`, so running the suite as one user and then another failed; the name now carries the process id.
+
+Still open from this run: on Ubuntu 24.04 the rootless jail cases fail (`setgroups: Permission denied`; `kernel.apparmor_restrict_unprivileged_userns=1`). As root everything passes. CI runs them on Ubuntu 22.04, where they pass. None of this runs in CI, which has no libkrun; it skips there.
+
+Re-checked on Ubuntu 24.04.4 (kernel 6.8.0-134, Lima VM): the unshare succeeds, but AppArmor strips the new namespace's capabilities from an unprofiled process, so the `setgroups`/`uid_map` writes get EPERM. The jail code cannot get around that from inside the process. With `kernel.apparmor_restrict_unprivileged_userns=0` the two rootless cases pass (the setting was restored afterwards). The jail now names this cause in its error. To run the rootless cases on 24.04, either set the sysctl to 0 on that host, or give the binary an AppArmor profile that has `userns,`.
+
 ## Not yet tested
 
-- The libkrun runner on Linux/KVM (the Pi has `/dev/kvm`, but libkrun is not packaged for it).
+- The libkrun runner and its confinement on bare-metal or x86-64 Linux/KVM. Both passed on nested arm64 KVM (above). The Pi has `/dev/kvm`, but libkrun is not packaged for it.
 - A network where direct paths are impossible (the India run used a relay-only link, but direct paths were not blocked).
 - A hardware TPM (a software TPM and the Mac's Secure Enclave were used), and a confidential VM other than Google Confidential Space.
 - Cloudflare Access in front of a named tunnel, and Web Push to real Apple, Google or Mozilla services ([ui/README.md](../ui/README.md)).

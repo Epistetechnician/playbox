@@ -800,7 +800,7 @@ impl Server {
             let runner: Option<Arc<dyn Runner>> = if let Some(name) = runtime {
                 let confine = if b(a, "confine") { Some((s(a, "confine_net").unwrap_or("none").parse()?, true)) } else { None };
                 Some(playbox_runner::runner_with(name, policy, &playbox_runner::RunnerOptions { confine })?)
-            } else if b(a, "unsafe_process_runner") && std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() {
+            } else if b(a, "unsafe_process_runner") && playbox_runner::env_opt_in("PLAYBOX_ALLOW_UNSAFE_RUNNER") {
                 Some(Arc::new(ProcessRunner))
             } else {
                 None

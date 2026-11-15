@@ -98,6 +98,12 @@ refused and cannot use it up. A bound link makes the guest join with its stable 
 
 By default the host's UDP socket listens on every interface, so macOS asks to allow incoming connections for each new build and the port is reachable from the whole network. `PLAYBOX_BIND=loopback` listens on 127.0.0.1 only (no prompt; members reach the host through the relay with `iroh` or `relay:`, or from this machine with `local`). `PLAYBOX_BIND=<ip>` listens on that one address. `all` or unset is the default. `scripts/macos-allow.sh` allows the installed binary in the macOS firewall instead.
 
+### Network for libkrun tasks (`PLAYBOX_ALLOW_UNFILTERED_NETWORK`)
+
+A task that asks for a network runs in a libkrun guest whose network is the host's own (TSI): it can reach the host's loopback, LAN and cloud metadata service. Only the Linux confinement (`up --confine`) filters that, so on any other host the runner refuses such a task. The host owner can accept the risk with `PLAYBOX_ALLOW_UNFILTERED_NETWORK=1` (`1`, `on` or `true`; anything else, including `0` or an empty value, leaves the refusal in place). `PLAYBOX_ALLOW_UNSAFE_RUNNER` (the `process` runner, no isolation) and `PLAYBOX_ALLOW_MISSING_LIMITS` (run on a host that cannot enforce a limit) are read the same way. Tasks that ask for no network are not affected. See [libkrun.md](libkrun.md) and [security-roadmap.md](security-roadmap.md).
+
+A guest with a network is given a way to resolve names. With a host list (`--allow-host`), the listed names and the addresses the host pinned for them go into the guest's `/etc/hosts`, and it needs no resolver. Otherwise the guest's `/etc/resolv.conf` names the host's own resolvers that the task may reach; where there is none (a home router's address is private, which the `internet` level does not allow) it names 1.1.1.1 and 9.9.9.9. `PLAYBOX_GUEST_DNS=ip[,ip]` chooses them instead, and an empty value gives the guest no resolver.
+
 ### Guests dial out only
 
 A guest never needs to accept anything, so it does not listen on the network. On `iroh` and `relay:` transports it opens no UDP socket at all and reaches the host through the relay (set `PLAYBOX_GUEST_DIRECT=1` to keep direct paths, which are faster for large pushes and pulls, at the price of a listening socket). On `local`, a host on this machine is dialled over loopback first, with a socket on 127.0.0.1 only; a host on another machine, whose loopback address means nothing here, is then reached over the network as before. `Client::bound_sockets()` shows what a client is bound to.

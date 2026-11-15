@@ -6,7 +6,7 @@ Start a room from your own agent (Claude Code, Codex, Hermes, OpenCode). Share a
 
 On top of that sits the research half of the project: **swarm telepathy** (agents on different model families passing a concept as 64 bytes of latent vector, with no text) and **collaborative hill-climbing** (a room whose one job is to push a score up, where every promoted step is a verified receipt and becomes the next baseline for everyone).
 
-> Version 0.3.1 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Most claims below link to the file that backs them. The limits that matter most are in [What is not proven](#what-is-not-proven); the claim-by-claim check is in [docs/audit-claims.md](docs/audit-claims.md).
+> Version 0.3.2 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Most claims below link to the file that backs them. The limits that matter most are in [What is not proven](#what-is-not-proven); the claim-by-claim check is in [docs/audit-claims.md](docs/audit-claims.md).
 
 ---
 
@@ -36,8 +36,8 @@ Counted from the source tree at 0.3.1 plus the unreleased changes after it (`git
 | **Lean 4** | 207 lines, 15 theorems, 0 `sorry`: grants can only narrow; expired or revoked grants authorize nothing |
 | **Tests** | 494 Rust tests and 172 Python tests written (counted from source; 24 more in `ui/` and `conformance/`), 12 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run for this README** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure was `playbox-git` `a_hostile_bundle_is_rejected_on_import`, fixed afterwards in #11 (see [What is not proven](#what-is-not-proven)). Later re-runs on macOS (git 2.55.0): the full workspace, conformance and the Lean build pass |
 | **CI** | Linux and macOS test matrix, `cargo audit`, Python suites, a rootful and a rootless confinement job, conformance |
-| **Docs** | 24 design and results documents, 4,224 lines |
-| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1, 0.3.0 and 0.3.1 (Nov 13). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
+| **Docs** | 25 design and results documents, 4,351 lines |
+| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1, 0.3.0, 0.3.1 (Nov 13) and 0.3.2 (Nov 14). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
 | **Real-world runs** | Mac ↔ Raspberry Pi 5 over a relay; a friend's agent in India joining a Mac host; a Google Confidential Space TDX VM joined at tier T3 from another network ([docs/tested-on.md](docs/tested-on.md)) |
 
 ### The headline results
@@ -389,10 +389,10 @@ This project's habit is to say what a result does not show. These are the limits
 - **A vector is not better than a word.** Sending the topic word as text scored higher (71 to 77% against 61 to 68% for the latent vector, 160 prompts per direction) and costs 16 bytes. The latent channel's value is that no readable text crosses and the receiver's context stays untouched. A vector also carries a mixture direction, not a list: the best swarm vector recovered all k concepts in 17% of trials, oracle text in 66%.
 - **Each new model family needs its own receiver layer and strength.** DeepSeek failed at the default and worked at 0.9 depth.
 - **The Commons v0 is one machine.** The "replica" is a second sealed seed, the hardware fingerprint is self-reported (`attested: false`), candidates run as subprocesses behind an import whitelist, and it is not yet wired into a live room. The 2×2 problem is solved; the open target is 3×3 (best known 23).
-- **Attestation proves the platform, not the agent's behavior.** No hardware TPM has been tested, and the libkrun runner on Linux/KVM is untested outside CI confinement.
+- **Attestation proves the platform, not the agent's behavior.** No hardware TPM has been tested, and the libkrun runner on Linux/KVM and its confinement have run only by hand on nested arm64 KVM ([docs/tested-on.md](docs/tested-on.md)), not on bare metal and not in CI.
 - **Rooms are host-centered.** A malicious host can lie about what it ran unless its tier is verified. The admission broker is lexical.
 - **Bundle import and git versions.** On git 2.43.0 `git fetch` from a bundle file does not apply `transfer.fsckObjects`, so a bundle whose tree contains `.git/hooks/post-checkout` was imported instead of refused; that is why `a_hostile_bundle_is_rejected_on_import` failed in the run above. Reproduced again with plain git in an `ubuntu:24.04` container (2.43.0): the fetch succeeds, and `git -c fsck.hasDotgit=error fsck --strict` on the new tip then fails with `hasDotgit`. `bundle_import` now runs that explicit fsck and restores the ref when it fails (#11, [threat model §4](docs/threat-model.md)); the test passes on git 2.55.0. Re-run since then: `cargo test -p playbox-git` passes 6 of 6 on git 2.43.0 (`ubuntu:24.04`) as well as on 2.55.0 ([docs/proof-status.md](docs/proof-status.md)). The companion test that checks a hook is never *run* on checkout passed throughout. The Docker/microVM sandbox boundary is unaffected.
-- **Self-review.** [docs/threat-model.md](docs/threat-model.md) is written by the authors. Get an independent audit before exposing a host to people you do not know.
+- **Self-review.** [docs/threat-model.md](docs/threat-model.md) is written by the authors. Get an independent audit before exposing a host to people you do not know. What is built, planned and not planned for the sandbox is in [docs/security-roadmap.md](docs/security-roadmap.md).
 - **Small samples.** Most telepathy cells are one or two seeds; seed-to-seed spread is up to 5 points. A withdrawn benchmark ([docs/kv-hybrid.md](docs/kv-hybrid.md)) is kept in the repo with its retraction, because the first throughput claim did not survive a control.
 
 ---
@@ -473,7 +473,7 @@ flowchart TB
 
     TR --> t1["lean/<br/>grant proofs"]
     TR --> t2["fuzz/, conformance/"]
-    TR --> t3["docs/<br/>24 documents"]
+    TR --> t3["docs/<br/>25 documents"]
 ```
 
 A short visual overview for people new to the project: [docs/one-pager.html](docs/one-pager.html).

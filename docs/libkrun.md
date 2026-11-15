@@ -39,7 +39,8 @@ copy (`PLAYBOX_KRUN_HELPER`, `~/.cargo/bin`, PATH) over a freshly built one besi
 | | libkrun runner |
 |---|---|
 | Network | **Off by default and really off**: the VM gets no vsock device, so no network of any kind ("Network unreachable"). |
-| Network on (grant allows it and the task asks) | libkrun's TSI gives the guest the host's network access with **no public-address filtering**: the guest can reach the host's loopback and LAN. Not tested further. Leave network off on hosts that matter. |
+| Network on (grant allows it and the task asks) | libkrun's TSI gives the guest the host's network access with **no public-address filtering**: the guest can reach the host's loopback and LAN. Not tested further. Leave network off on hosts that matter. After 0.3.2 (unreleased) the runner refuses a network request on a host that cannot filter it, unless `PLAYBOX_ALLOW_UNFILTERED_NETWORK` is set (decision 42). |
+| Names | A guest with a network gets `/etc/hosts` (host list: the pinned addresses) or `/etc/resolv.conf` (open network: the host's resolvers it may reach, else 1.1.1.1 and 9.9.9.9; `PLAYBOX_GUEST_DNS` overrides). Decision 44. |
 | CPU / memory | vCPUs = ceil(cpus), 1-8; RAM = `mem_mib`, at least 128. |
 | Disk | The workspace share and a clone of the image; no quota. |
 | Processes | Guest processes live inside the VM; there is no pid limit beyond the guest kernel's. |
@@ -72,7 +73,7 @@ net_max=…;seccomp=deny:<hash>;helper=<hash>`, or `confine=off`, so a guest can
 
 Tested on Linux in CI (job `confine`, as root and rootless): the jail's view, the cgroup limits and cleanup, the filter's effect
 (mount, ptrace, unshare, bpf refused; files, threads, sockets still work), the helper's plan order, and the network rules loaded into a
-real kernel. **Not tested: a real libkrun VM under all of it.** That needs a Linux/KVM host. The most likely failure there is the
+real kernel. A real libkrun VM under all of it has run by hand on nested arm64 KVM (`tests/confine_guest.rs`, [tested-on.md](tested-on.md)), not in CI. If it fails on another host, the most likely cause is the
 jail missing a path libkrun opens, or the filter denying a call it makes; the helper reports the failing step, and
 `PLAYBOX_CONFINE_SECCOMP=off` / `--no-seccomp` separates the two.
 
@@ -90,7 +91,7 @@ in use.
 
 ## What it does not do yet
 
-- Tested on macOS (Apple Silicon, macOS 26, libkrun 1.19.7) only. The code builds for Linux/KVM but has not run there.
+- Tested on macOS (Apple Silicon, macOS 26, libkrun 1.19.7) and, confined and unconfined, on nested arm64 KVM (Ubuntu 24.04, same libkrun; [tested-on.md](tested-on.md)). Not run on bare-metal or x86-64 KVM.
 - Only `linux/arm64` or `linux/amd64` images matching the host architecture.
 - No private registries or pull credentials: images come from the local Docker image store.
 - No snapshot/restore, no GPU, no kernel or image measurement. A microVM here shows isolation, not attestation: the

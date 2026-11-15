@@ -37,6 +37,20 @@ pub struct Jail {
     pub network: bool,
 }
 
+/// Explains a failed map write when Ubuntu's AppArmor restriction is the cause. The namespace is created, but AppArmor strips
+/// its capabilities from a process without a profile that allows `userns`, so the writes fail with EPERM. Only the host's
+/// administrator can lift that; the process cannot.
+fn userns_restriction_hint() -> String {
+    match fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") {
+        Ok(v) if v.trim() == "1" => {
+            " (AppArmor restricts unprivileged user namespaces: either set kernel.apparmor_restrict_unprivileged_userns=0, \
+             or give this binary an AppArmor profile with `userns,`; see docs/tested-on.md)"
+                .to_string()
+        }
+        _ => String::new(),
+    }
+}
+
 fn flags_of(path: &Path) -> Result<MountFlags> {
     let v = statvfs(path).with_context(|| format!("statvfs {}", path.display()))?;
     let mut f = MountFlags::NOSUID | MountFlags::NODEV;
@@ -105,9 +119,10 @@ impl Jail {
         // this replaces.
         unsafe { unshare_unsafe(flags) }.context("unshare (is the kernel allowing user namespaces?)")?;
         if rootless {
-            fs::write("/proc/self/setgroups", "deny").context("setgroups")?;
-            fs::write("/proc/self/uid_map", format!("{0} {0} 1\n", uid.as_raw())).context("uid_map")?;
-            fs::write("/proc/self/gid_map", format!("{0} {0} 1\n", gid.as_raw())).context("gid_map")?;
+            let map = |what: &str, r: std::io::Result<()>| r.with_context(|| format!("{what}{}", userns_restriction_hint()));
+            map("setgroups", fs::write("/proc/self/setgroups", "deny"))?;
+            map("uid_map", fs::write("/proc/self/uid_map", format!("{0} {0} 1\n", uid.as_raw())))?;
+            map("gid_map", fs::write("/proc/self/gid_map", format!("{0} {0} 1\n", gid.as_raw())))?;
         }
         // After the maps: a non-dumpable process's /proc/self files belong to root, which would have refused the writes above.
         set_dumpable_behavior(DumpableBehavior::NotDumpable).context("dumpable")?;

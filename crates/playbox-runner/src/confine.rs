@@ -68,6 +68,15 @@ impl Confinement {
             bail!("confinement needs user namespaces (user.max_user_namespaces is 0)");
         }
         let parent = self.cgroup_root.parent().context("cgroup root needs a parent")?;
+        // On a machine that has not run Playbox since it booted, the parent does not exist yet. Make it where we may
+        // (root, or a delegated subtree), with the controllers a run needs handed down to it.
+        if !parent.exists() {
+            // Not `usable`: the cgroup mount point itself is mode 0555 even for root, who can still create in it.
+            if let Some(above) = parent.parent().filter(|a| a.join("cgroup.controllers").is_file()) {
+                let _ = std::fs::write(above.join("cgroup.subtree_control"), "+cpu +memory +pids");
+                let _ = std::fs::create_dir(parent);
+            }
+        }
         if !cgroup::usable(parent) {
             bail!("{} is not a writable cgroup v2 directory; run as root or with a delegated subtree", parent.display());
         }
