@@ -1,0 +1,117 @@
+train start 13:47:07
+train exit 0 14:23:17
+eval exit 0 14:25:23
+GONOGO_DONE 14:25:23
+30
+ch skipped (11 so far)
+step 1550 stage 2 loss 2.4054 lr 2.55e-05 [607s]
+step 1580 non-finite gradient, batch skipped (12 so far)
+step 1600 stage 2 loss 2.2389 lr 5.00e-05 [628s]
+step 1650 stage 2 loss 2.1803 lr 5.00e-05 [650s]
+step 1700 stage 2 loss 2.2744 lr 4.99e-05 [670s]
+step 1750 stage 2 loss 2.3100 lr 4.98e-05 [691s]
+step 1800 stage 2 loss 1.8687 lr 4.97e-05 [712s]
+step 1837 non-finite gradient, batch skipped (13 so far)
+step 1850 stage 2 loss 2.4072 lr 4.95e-05 [733s]
+step 1900 stage 2 loss 2.1886 lr 4.93e-05 [754s]
+step 1950 stage 2 loss 2.1265 lr 4.91e-05 [774s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.4308, "retention": 0.9035, "step": 2000, "stage": 2, "seconds": 796}
+step 2000 stage 2 loss 2.0960 lr 4.88e-05 [797s]
+step 2012 non-finite gradient, batch skipped (14 so far)
+step 2050 stage 2 loss 2.2226 lr 4.85e-05 [818s]
+step 2100 stage 2 loss 2.0582 lr 4.82e-05 [838s]
+step 2150 stage 2 loss 2.1739 lr 4.78e-05 [858s]
+step 2161 non-finite gradient, batch skipped (15 so far)
+step 2200 stage 2 loss 2.0912 lr 4.74e-05 [877s]
+step 2237 non-finite gradient, batch skipped (16 so far)
+step 2250 stage 2 loss 2.0106 lr 4.70e-05 [897s]
+step 2300 stage 2 loss 1.9045 lr 4.65e-05 [917s]
+step 2350 stage 2 loss 2.1530 lr 4.60e-05 [937s]
+step 2381 non-finite gradient, batch skipped (17 so far)
+step 2400 stage 2 loss 2.1134 lr 4.55e-05 [957s]
+step 2450 stage 2 loss 1.9667 lr 4.49e-05 [977s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.3927, "retention": 0.9325, "step": 2500, "stage": 2, "seconds": 998}
+step 2500 stage 2 loss 2.3606 lr 4.43e-05 [999s]
+step 2528 non-finite gradient, batch skipped (18 so far)
+step 2547 non-finite gradient, batch skipped (19 so far)
+step 2550 stage 2 loss 2.2379 lr 4.37e-05 [1019s]
+step 2573 non-finite gradient, batch skipped (20 so far)
+step 2600 stage 2 loss 2.0511 lr 4.31e-05 [1039s]
+step 2650 stage 2 loss 2.1585 lr 4.24e-05 [1059s]
+step 2700 stage 2 loss 1.9945 lr 4.17e-05 [1079s]
+step 2750 stage 2 loss 2.0303 lr 4.10e-05 [1098s]
+step 2800 stage 2 loss 1.7023 lr 4.03e-05 [1117s]
+step 2850 non-finite gradient, batch skipped (21 so far)
+step 2855 non-finite gradient, batch skipped (22 so far)
+step 2886 non-finite gradient, batch skipped (23 so far)
+step 2900 stage 2 loss 2.0010 lr 3.87e-05 [1156s]
+step 2942 non-finite gradient, batch skipped (24 so far)
+step 2950 stage 2 loss 2.1713 lr 3.80e-05 [1177s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.3543, "retention": 0.9618, "step": 3000, "stage": 2, "seconds": 1196}
+step 3000 stage 2 loss 1.9236 lr 3.71e-05 [1198s]
+step 3018 non-finite gradient, batch skipped (25 so far)
+step 3050 stage 2 loss 2.1131 lr 3.63e-05 [1218s]
+step 3090 non-finite gradient, batch skipped (26 so far)
+step 3100 stage 2 loss 2.1634 lr 3.55e-05 [1237s]
+step 3144 non-finite gradient, batch skipped (27 so far)
+step 3150 stage 2 loss 1.8784 lr 3.46e-05 [1256s]
+step 3200 stage 2 loss 1.8587 lr 3.38e-05 [1275s]
+step 3250 stage 2 loss 1.9515 lr 3.29e-05 [1295s]
+step 3300 stage 2 loss 2.0861 lr 3.20e-05 [1314s]
+step 3350 stage 2 loss 1.9733 lr 3.11e-05 [1333s]
+step 3400 non-finite gradient, batch skipped (28 so far)
+step 3450 stage 2 loss 1.8018 lr 2.93e-05 [1373s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.3478, "retention": 0.9668, "step": 3500, "stage": 2, "seconds": 1392}
+step 3500 stage 2 loss 1.9117 lr 2.84e-05 [1394s]
+step 3550 stage 2 loss 2.0534 lr 2.75e-05 [1412s]
+step 3600 stage 2 loss 1.9622 lr 2.66e-05 [1431s]
+step 3650 stage 2 loss 2.0166 lr 2.57e-05 [1451s]
+step 3700 stage 2 loss 2.1740 lr 2.48e-05 [1470s]
+step 3750 stage 2 loss 1.8853 lr 2.39e-05 [1489s]
+step 3800 stage 2 loss 1.9155 lr 2.30e-05 [1508s]
+step 3822 non-finite gradient, batch skipped (29 so far)
+step 3850 stage 2 loss 1.7863 lr 2.21e-05 [1527s]
+step 3900 stage 2 loss 1.7698 lr 2.12e-05 [1546s]
+step 3950 stage 2 loss 1.9656 lr 2.04e-05 [1566s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.3143, "retention": 0.9924, "step": 4000, "stage": 2, "seconds": 1585}
+step 4000 stage 2 loss 2.1052 lr 1.95e-05 [1586s]
+step 4050 stage 2 loss 1.9105 lr 1.87e-05 [1605s]
+step 4100 stage 2 loss 2.0313 lr 1.79e-05 [1624s]
+step 4150 stage 2 loss 1.9896 lr 1.70e-05 [1643s]
+step 4200 stage 2 loss 2.1567 lr 1.63e-05 [1662s]
+step 4250 stage 2 loss 1.7646 lr 1.55e-05 [1683s]
+step 4300 stage 2 loss 2.1076 lr 1.47e-05 [1702s]
+step 4350 stage 2 loss 2.0100 lr 1.40e-05 [1721s]
+step 4400 stage 2 loss 1.6138 lr 1.33e-05 [1739s]
+step 4450 stage 2 loss 2.0683 lr 1.26e-05 [1759s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.2907, "retention": 1.0104, "step": 4500, "stage": 2, "seconds": 1778}
+step 4500 stage 2 loss 2.0133 lr 1.19e-05 [1780s]
+step 4550 stage 2 loss 1.9981 lr 1.13e-05 [1799s]
+step 4600 stage 2 loss 1.7272 lr 1.07e-05 [1817s]
+step 4650 stage 2 loss 1.9474 lr 1.01e-05 [1836s]
+step 4700 stage 2 loss 1.7203 lr 9.51e-06 [1854s]
+step 4750 stage 2 loss 2.0487 lr 8.98e-06 [1873s]
+step 4800 stage 2 loss 1.8908 lr 8.48e-06 [1891s]
+step 4850 stage 2 loss 1.5646 lr 8.01e-06 [1910s]
+step 4859 non-finite gradient, batch skipped (30 so far)
+step 4900 stage 2 loss 1.9603 lr 7.58e-06 [1929s]
+step 4950 stage 2 loss 1.8936 lr 7.17e-06 [1949s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.2999, "retention": 1.0034, "step": 5000, "stage": 2, "seconds": 1968}
+step 5000 stage 2 loss 2.0834 lr 6.80e-06 [1969s]
+step 5050 stage 2 loss 1.8483 lr 6.46e-06 [1988s]
+step 5100 stage 2 loss 1.9245 lr 6.16e-06 [2006s]
+step 5150 stage 2 loss 1.9321 lr 5.89e-06 [2025s]
+step 5200 stage 2 loss 1.9978 lr 5.65e-06 [2044s]
+step 5250 stage 2 loss 1.9929 lr 5.45e-06 [2062s]
+step 5300 stage 2 loss 1.8388 lr 5.29e-06 [2081s]
+step 5350 stage 2 loss 1.8065 lr 5.16e-06 [2099s]
+step 5400 stage 2 loss 2.1160 lr 5.07e-06 [2118s]
+step 5450 stage 2 loss 1.9688 lr 5.02e-06 [2137s]
+eval {"none": 3.6146, "own": 2.3043, "mapped": 2.2903, "retention": 1.0107, "step": 5500, "stage": 2, "seconds": 2157}
+{"none": 3.6146, "own": 2.3043, "mapped": 2.2903, "retention": 1.0107, "step": 5500, "stage": 2, "seconds": 2157}
+��▋   | 2/3 [00:02<00:01,  1.31s/it]Loading checkpoint shards: 100%|██████████| 3/3 [00:02<00:00,  1.10it/s]
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  1.07it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.84it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.66it/s]
+wikitext {"n": 150, "none": {"nll": 3.5222}, "own": {"nll": 2.4624}, "other_own": {"nll": 3.5274, "retention": -0.0049, "ci95": [-0.0592, 0.0494]}, "mean": {"nll": 6.6018, "retention": -2.9058, "ci95": [-3.2077, -2.6402]}, "mapped": {"nll": 2.4877, "retention": 0.9761, "ci95": [0.9435, 1.0087]}} [74s]
+templated {"n": 48, "none": {"nll": 5.1543}, "own": {"nll": 1.301}, "other_own": {"nll": 2.9933, "retention": 0.5608, "ci95": [0.52, 0.6014]}, "mean": {"nll": 6.2818, "retention": -0.2926, "ci95": [-0.3565, -0.2345]}, "mapped": {"nll": 2.2573, "retention": 0.7518, "ci95": [0.7187, 0.7871]}} [90s]
+retrieval {"chance": 0.0476, "own": 1.0, "mapped": 1.0}
+{"wikitext": {"n": 150, "none": {"nll": 3.5222}, "own": {"nll": 2.4624}, "other_own": {"nll": 3.5274, "retention": -0.0049, "ci95": [-0.0592, 0.0494]}, "mean": {"nll": 6.6018, "retention": -2.9058, "ci95": [-3.2077, -2.6402]}, "mapped": {"nll": 2.4877, "retention": 0.9761, "ci95": [0.9435, 1.0087]}}, "concept_retrieval_21way": {"chance": 0.0476, "own": 1.0, "mapped": 1.0}}

@@ -299,3 +299,34 @@ benchmark included); the node is stopped when it ends.
 95% bootstrap interval above 62.6%; (B) templated mapped retention exceeds the unrelated-real-cache control by at least 20 points; (C) 21-way
 retrieval at least 90%. (A) alone does not count: the blind mapper already passed it in section 10. Anything else is a no-go and the full-size run
 is not started.
+
+### Go/no-go result (Qwen3-4B-Base to Llama-3.2-3B, blind mapper, small scale)
+
+Raw files: `steer/results/telepathy/l4_gonogo/` (`eval_q4l3_blind.json`, `logs.txt`; `*_nan_run1*` is the first attempt). 4 blocks, width 768,
+1,500 + 4,000 steps, batch 32, 50,000 items, 36 minutes of training on one H100, then the fp32 held-out evaluation of section 3.
+
+The first attempt was invalid: stage-1 loss went to NaN at about step 700 (the same failure as the blind Qwen3-to-SmolLM2 run in section 10) and
+stayed there, so every evaluation read NaN. The retry skips any batch whose loss or gradient is non-finite and aborts after 200 of them; it skipped
+30 of 5,500 steps and trained normally. The skip guard is the only change to `l4_swat.py` between the attempts.
+
+| test | none | own cache | unrelated real cache | **mapped (blind)** |
+|---|---|---|---|---|
+| (A) wikitext, 150 items, retention (95% CI) | NLL 3.522 | 2.462 | -0.5% (-5.9, 4.9) | **97.6% (94.4, 100.9)** |
+| (B) templated held-out topics, 48 items, retention (95% CI) | NLL 5.154 | 1.301 | 56.1% (52.0, 60.1) | **75.2% (71.9, 78.7)** |
+| (C) 21-way concept retrieval by likelihood gain (chance 4.8%) | | 100% | | **100%** |
+
+**Against the bar written before the run:** (A) passes (97.6%, lower bound 94.4% above 62.6%); (C) passes (100% against the 90% bar, 21 items);
+(B) misses: mapped beats the unrelated-cache control by 19.1 points against a required 20, a shortfall of 0.9 points. The bar says go only if all
+three hold, so by the bar this is a **no-go, by a margin inside the noise** (48 items, one seed, the two intervals nearly touch). I did not move the bar.
+
+What it does and does not show:
+
+- The blind mapper no longer fails on topics: 100% retrieval and 75% templated retention here, against chance (5%) and 5% for the 135M-sender pair in
+  section 10. A 4B sender with a real pair changes the outcome; the small-sender result was a sender-size effect, not a property of the blind design.
+- "Blind" still means the receiver reads no text, but the mapper is told the receiver's token count (length only). The retrieval test is a
+  likelihood comparison over 21 topics, not two agents naming a topic from continuations.
+- Retention on wikitext above 95% means the mapped cache gives the receiver nearly its own cache's gain; it is next-token loss, not task accuracy.
+- Cost of this stage on gman: about 4 USD (training, evaluation and the failed first attempt), against the 10 USD set for it.
+
+What would settle (B): more templated items and a second seed on this checkpoint (about 1 USD of evaluation if the checkpoint is kept; it is on the
+stopped node's disk, not in the repository). The full-size mapper (60 to 150 USD) is not started: that spend is the user's call.
