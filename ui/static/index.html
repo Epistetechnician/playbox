@@ -415,13 +415,14 @@ document.addEventListener("toggle", e => { const d = e.target; if (d && d.datase
 const TL_KINDS = [["all", "All"], ["say", "Messages"], ["join", "Joins"], ["refused", "Refused"], ["event", "Events"]];
 function roomHeader() {
   if (!window.PBI || mode() === "none") return "";
+  if (!S.cm && !S.cmLoading) { S.cmLoading = true; loadNotes().finally(() => { S.cmLoading = false; }); }
   const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms), says = items.filter(i => i.kind === "say");
   const h = hosting(), j = joined(), t0 = items.length ? Math.min(...items.map(i => i.time_ms)) : now;
   const num = (k, v) => `<div class="hn"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
   const meta = [["Role", h && j ? "host + guest" : h ? "host" : "guest"], ["Members", String(members().length)], ["Repository", h && h.repo ? h.repo.split("/").slice(-2).join("/") : "none"],
     ["History", S.verify ? (S.verify.valid ? `verified · ${S.verify.entries}` : "FAILED") : "not checked"], ["Open for", items.length ? P.span(now - t0) : "—"]];
   return `<div class="rh"><div class="rh1"><div><div class="rt">${esc(ROOM || "Playbox room")}</div><div class="rs">${esc(short(myId()) || "")}</div></div>
-    <div class="hns">${num("MESSAGES", says.length)}${num("EVENTS", items.length - says.length)}${num("LAST", says.length ? P.span(now - Math.max(...says.map(i => i.time_ms))) + " ago" : "—")}</div></div>
+    <div class="hns">${num("MESSAGES", says.length)}${num("EVENTS", items.length - says.length)}${num("COMMENTS", S.cm ? S.cm.n : "…")}${num("LAST", says.length ? P.span(now - Math.max(...says.map(i => i.time_ms))) + " ago" : "—")}</div></div>
     <div class="rh2">${meta.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>`;
 }
 function timelineView() {
@@ -435,7 +436,7 @@ function timelineView() {
   return `<div class="card tl"><h2>Timeline</h2><div class="tlbars" aria-label="events per 10 minutes">${bins.map(v => `<i style="height:${Math.max(2, v / mx * 100)}%"></i>`).join("")}</div>
     <div class="tlhead"><span class="tlh">History</span>${TL_KINDS.map(([k, l]) => `<button type="button" class="tlc k-${k} ${f === k ? "on" : ""}" data-tlk="${k}">${l} ${cnt(k)}</button>`).join("")}<input type="text" id="tlq" class="tlq" placeholder="filter by text or author" value="${esc(S.tlq || "")}" aria-label="Filter"></div>
     <div class="tlbar"><button type="button" class="tbtn" data-tlx="raw" aria-pressed="${!!S.tlraw}">Raw</button><button type="button" class="tbtn" data-tlx="copy">Copy</button><button type="button" class="tbtn" data-tlx="export">Export .jsonl</button><button type="button" class="tbtn" data-tlx="print">Print</button><span class="mut tlcount">${rows.length} of ${items.length}</span></div>
-    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(i.text)}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
+    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(i.text)}${i.seq != null ? ` <button type="button" class="tbtn cmx-b" data-cmev="${i.seq}" title="Comment on this event">${(S.cm?.ev?.[i.seq] || []).length ? "Comments " + S.cm.ev[i.seq].length : "Comment"}</button>` : ""}${cmtHtml(S.cm?.ev?.[i.seq])}${S.cmopen === String(i.seq) ? cmtForm("event:" + i.seq, "Comment on this event") : ""}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
 }
 function tlRows() {
   const cat = i => i.kind === "say" ? "say" : kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
@@ -457,9 +458,27 @@ document.addEventListener("input", e => { if (e.target.id === "tlq") { S.tlq = e
 const NK = {proof: "Proofs", code: "Code", doc: "Documents", dataset: "Datasets", chart: "Charts", note: "Notes"};
 const NEXT = {proof: ".lean", code: ".code", doc: ".md", dataset: ".csv", chart: ".chart", note: ".md"};
 const NSTAT = {verified: "var(--ok-led)", checking: "var(--warn)", failed: "var(--bad)", draft: "var(--mut)", retired: "var(--dim)"};
+/* Anchored comments: `::pbx comment {"on":"note:<id>|event:<seq>|artifact:<id>","text":"..."}`, parsed by the hub (real sender, clipped); text is shown as plain text only. */
+function cmtHtml(list) { return (list || []).map(c => `<div class="cmx-c"><b>${esc(c.name || short(c.from))}</b> <span class="mono mut">${esc(PBI.clock(c.ms))}</span><div>${esc(c.text)}</div></div>`).join(""); }
+function cmtForm(on, ph) { return `<form class="cmx-f" data-cmon="${esc(on)}"><input type="text" maxlength="600" placeholder="${esc(ph)}" aria-label="Comment" autocomplete="off"><button type="submit" class="tbtn">Comment</button></form>`; }
+document.addEventListener("submit", async e => {
+  const f = e.target.closest?.("[data-cmon]"); if (!f) return;
+  e.preventDefault();
+  const inp = f.querySelector("input"), text = inp.value.trim(); if (!text) return;
+  if (S.offline) return toast("The host is offline, so nothing can be posted.", true);
+  const r = await api("playbox_say", {text: "::pbx comment " + JSON.stringify({on: f.dataset.cmon, text})});
+  if (r.error) return toast(msgOf(r.data), true);
+  S.cmopen = null; await pollFeed(); await loadNotes();
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-cmev]"); if (!b) return;
+  S.cmopen = S.cmopen === b.dataset.cmev ? null : b.dataset.cmev; show("timeline");
+  const i = document.querySelector(".cmx-f input"); if (i) i.focus();
+});
 async function loadNotes() {
-  try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); S.notes = r.ok ? (await r.json()).artifacts || [] : []; } catch { S.notes = S.notes || []; }
+  try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); const m = r.ok ? await r.json() : {}; S.notes = m.artifacts || []; S.cm = {n: (m.comments || []).length, ev: m.event_comments || {}}; } catch { S.notes = S.notes || []; }
   if (S.tab === "notes" && !document.activeElement?.closest?.(".nt")) show("notes");
+  else if (S.tab === "timeline" && !document.activeElement?.closest?.(".cmx-f")) show("timeline");
 }
 /* The open note, rendered with the strict markdown module: maths, code colours and links load on demand from the hub's own files. */
 function paintNoteDoc() {
@@ -488,7 +507,7 @@ function notesView() {
     <section class="ndoc"><header><span class="mut">${esc(NK[cur.kind])}</span><span class="mut">/</span><b>${esc(cur.title)}</b><span class="sp"></span><span class="mono mut">${esc(short(cur.last_by || cur.by))} · ${esc(PBI.clock(cur.updated))}</span>
       <div class="seg2">${[["live", "Live"], ["source", "Source"]].map(([k, l]) => `<button data-nview="${k}" aria-pressed="${view === k}">${l}</button>`).join("")}</div></header>
       <div class="nmeta"><span class="chip ${cur.status === "verified" ? "ok" : cur.status === "failed" ? "bad" : "warn"}">${esc(cur.status)}</span>${checks}${cur.ref ? `<span class="mono mut">${esc(cur.ref)}</span>` : ""}</div>
-      ${body}<h3 class="nrh">Revisions · ${cur.revs.length}</h3><div class="nrv">${revs}</div></section></div>`;
+      ${body}<h3 class="nrh">Comments · ${(cur.comments || []).length}</h3><div class="cmx">${cmtHtml(cur.comments)}${cmtForm("note:" + cur.id, "Comment on this note, the agents see it")}</div><h3 class="nrh">Revisions · ${cur.revs.length}</h3><div class="nrv">${revs}</div></section></div>`;
 }
 document.addEventListener("click", e => {
   let b;

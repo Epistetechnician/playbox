@@ -903,6 +903,23 @@ def test_access():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_board_comments():
+    from hub import board
+    E = board.encode
+    items = [{"seq": 1, "kind": "say", "from": "aa", "name": "Ada", "time_ms": 1, "text": E("artifact", id="n1", title="N", kind="note")},
+             {"seq": 2, "kind": "say", "from": "bb", "time_ms": 2, "text": E("comment", on="note:n1", text="looks <b>wrong</b>", **{"from": "evil"})},
+             {"seq": 3, "kind": "say", "from": "bb", "time_ms": 3, "text": E("comment", on="event:7", text="why?")},
+             {"seq": 4, "kind": "say", "from": "bb", "time_ms": 4, "text": E("comment", on="evil:1", text="x")},
+             {"seq": 5, "kind": "say", "from": "bb", "time_ms": 5, "text": E("comment", on="note:n1", text="")},
+             {"seq": 6, "kind": "say", "from": "bb", "time_ms": 6, "text": E("comment", on="note:n1", text="y" * 900)}]
+    m = board.build(items, [], "aa", 10)
+    n = [a for a in m["artifacts"] if a["id"] == "n1"][0]
+    check("board: a comment attaches to its note with the real sender", len(n["comments"]) == 2 and n["comments"][0]["from"] == "bb" and n["comments"][0]["text"] == "looks <b>wrong</b>")
+    check("board: event comments are keyed by seq", [c["text"] for c in m["event_comments"]["7"]] == ["why?"])
+    check("board: unknown anchors and empty text are dropped, long text clipped", len(m["comments"]) == 3 and len(n["comments"][1]["text"]) == 600)
+    check("board: comments are not plain messages", not m["feed"])
+
+
 def test_board_harness():
     """An agent's announcement carries its harness and model: clipped, plain text, attributed to the real sender."""
     sys.path.insert(0, UI)
@@ -1337,6 +1354,7 @@ if __name__ == "__main__":
     test_cloudflare()
     test_access()
     test_board_harness()
+    test_board_comments()
     test_housekeeping()
     test_tunnel_keeper()
     test_adopted_rejoin()

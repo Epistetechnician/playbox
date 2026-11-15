@@ -12,7 +12,8 @@ import json
 import math
 
 PREFIX = "::pbx "
-KINDS = ("artifact", "card", "metric", "agent")
+KINDS = ("artifact", "card", "metric", "agent", "comment")
+ANCHORS = ("note", "event", "artifact")
 ART_KINDS = ("proof", "code", "doc", "dataset", "chart", "note")
 ART_STATUS = ("draft", "checking", "verified", "failed", "retired")
 COLS = ("todo", "doing", "review", "done")
@@ -53,8 +54,8 @@ def _short(i):
 def build(items, members, me=None, now_ms=0):
     """feed items + member list -> the canvas model."""
     names, machines, roles, harnesses, models = {}, {}, {}, {}, {}
-    arts, cards, series, log = {}, {}, {}, []
-    msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0}
+    arts, cards, series, log, comments = {}, {}, {}, [], []
+    msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0, "comment": 0}
 
     def who(i):
         return names.get(i) or _short(i)
@@ -89,6 +90,11 @@ def build(items, members, me=None, now_ms=0):
             harnesses[frm] = _s(d.get("harness"), 30)      # which tool the agent runs in (Hermes, Claude Code, Codex ...): the agent's own word, shown as text
             models[frm] = _s(d.get("model"), 40)
             log.append({"ms": ms, "type": "agent", "who": frm, "text": f"announced itself{' on ' + machines[frm] if machines[frm] else ''}", "seq": it.get("seq")})
+        elif k == "comment":
+            on, txt = _s(d.get("on"), 60), _s(d.get("text"), 600)
+            ak, _, ref = on.partition(":")
+            if ak in ANCHORS and ref and txt and len(ref) <= 40:
+                comments.append({"on": f"{ak}:{ref}", "kind": ak, "ref": ref, "text": txt, "from": frm, "ms": ms, "seq": it.get("seq")})
         elif k == "artifact":
             aid = _s(d.get("id"), 40) or _s(d.get("title"), 40)
             if not aid:
@@ -145,12 +151,21 @@ def build(items, members, me=None, now_ms=0):
         a["by_name"], a["last_name"] = who(a["by"]), who(a["last_by"])
     for c in cards.values():
         c["by_name"] = who(c["by"])
+    for c in comments:
+        c["name"] = who(c["from"])
+        a = arts.get(c["ref"]) if c["kind"] in ("note", "artifact") else None
+        if a is not None:
+            a.setdefault("comments", []).append(c)
+    ev_comments = {}
+    for c in comments:
+        if c["kind"] == "event":
+            ev_comments.setdefault(c["ref"], []).append(c)
     for m in msgs:
         m["name"] = who(m["from"])
     log.sort(key=lambda e: (e["ms"], e.get("seq") or 0), reverse=True)
     nb = int(now_ms // BUCKET_MS) if now_ms else (max(buckets) if buckets else 0)
     activity = [{"b": b, "n": buckets.get(b, 0)} for b in range(nb - 35, nb + 1)]
     return {"members": sorted(mem.values(), key=lambda m: (not m["present"], -m["msgs"])), "feed": msgs[-200:], "artifacts": sorted(arts.values(), key=lambda a: -a["updated"]),
-            "cards": sorted(cards.values(), key=lambda c: -c["updated"]), "cols": list(COLS), "metrics": list(series.values()), "changelog": log[:200],
+            "cards": sorted(cards.values(), key=lambda c: -c["updated"]), "cols": list(COLS), "metrics": list(series.values()), "changelog": log[:200], "comments": comments[-500:], "event_comments": ev_comments,
             "stats": {"messages": sum(per.values()), "typed": typed, "per_member": per, "activity": activity, "bucket_ms": BUCKET_MS,
                       "artifacts": {s: len([a for a in arts.values() if a["status"] == s]) for s in ART_STATUS}, "cards": {c: len([x for x in cards.values() if x["col"] == c]) for c in COLS}}}
