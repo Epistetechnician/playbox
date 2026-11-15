@@ -24,6 +24,9 @@ from . import telepathy as T
 from . import telepathy_swarm as S
 
 ARMS = S.ARMS
+# two worked examples (topics that are not among the 20 concepts), so the text-swarm baseline is not handicapped by a base model that does not know the format
+_FEWSHOT = ("Passage: The cook folded the dough, set the tray in a hot oven and waited for the crust to turn gold.\nTopic: baking\n\n"
+            "Passage: She pulled the weeds, turned the soil and pressed the tomato seedlings into the bed.\nTopic: gardening\n\n")
 
 
 class _Map:
@@ -116,7 +119,7 @@ def run(models: dict, names: tuple, which: int, trials: int, n_agents: int = 6, 
                 timing["think_ms"].append((_sync() - t) * 1000)
                 if text_agents:  # the text swarm: the same agent writes its topic as words, no oracle and no deduplication
                     t = _sync()
-                    w = T.generate(ma, ta, la, None, " ".join(sents) + "\nIn one or two words, the topic of the passage above is:", 6)
+                    w = T.generate(ma, ta, la, None, _FEWSHOT + "Passage: " + " ".join(sents) + "\nTopic:", 6)
                     written.append(w.strip().split("\n")[0].strip(" .,;:"))
                     timing["write_ms"].append((_sync() - t) * 1000)
             sa = torch.stack(sa)
