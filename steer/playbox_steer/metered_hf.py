@@ -17,8 +17,11 @@ from .telepathy_data import NEUTRAL, PROMPTS
 
 
 class HFIO:
-    def __init__(self, model, tok, layer: int):
-        self.model, self.tok, self.layer = model, tok, layer
+    def __init__(self, model, tok, layer: int, fixed_decode: bool = True):
+        """fixed_decode: every call emits exactly n tokens (EOS suppressed), so GPU-seconds differ between arms only by how the context
+        arrived, not by how early a short answer ends the generation. The first run left it off and the arms that answer briefly
+        looked cheaper than the ones that ramble; results/metered/*_variable_decode.json keep that run."""
+        self.model, self.tok, self.layer, self.fixed = model, tok, layer, fixed_decode
 
     def ids(self, text: str, special: bool = True):
         return self.tok(text, return_tensors="pt", add_special_tokens=special).input_ids.to(self.model.device)
@@ -44,7 +47,8 @@ class HFIO:
         try:
             kw = {"past_key_values": cache} if cache is not None else {}
             out = self.model.generate(full, max_new_tokens=n, do_sample=False, pad_token_id=self.tok.eos_token_id,
-                                      repetition_penalty=1.1 if vec is not None else 1.0, **kw)
+                                      repetition_penalty=1.1 if vec is not None else 1.0,
+                                      **({"min_new_tokens": n} if self.fixed else {}), **kw)
         finally:
             if h:
                 h.remove()

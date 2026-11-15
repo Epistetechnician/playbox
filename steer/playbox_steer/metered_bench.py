@@ -12,6 +12,7 @@ sessions, the same receiver model and the same scoring; what differs is only how
     latent_q     the sender's thought mapped into the receiver and injected at its layer; the receiver answers the question prompt
     latent_free  the same vector, receiver continues an open prompt ("Lately I keep thinking about")   - carries the topic only
     swarm        topic turn by latent_free, fact turns by hybrid: the routed combination
+    text_swarm   the same routing with the topic as a text word instead of a vector: what the latent route has to beat
 
 Meter: every region that touches the model is timed with a synchronised clock (batch size 1, one request at a time, so GPU-seconds equal the
 wall time of the region; a batched server would be cheaper per request for every arm). Phases: `think` (sender forward passes for the vector),
@@ -31,7 +32,7 @@ from contextlib import contextmanager
 
 from .kv_hybrid import ATTRS, BM25, PREAMBLE, gen_corpus
 
-ARMS = ("none", "text_word", "text_rag", "hybrid", "latent_q", "latent_free", "swarm")
+ARMS = ("none", "text_word", "text_rag", "hybrid", "latent_q", "latent_free", "swarm", "text_swarm")
 OVERVIEW_SENTENCES = 4
 FACT_TURNS = 7
 TOPIC_Q = "Which field is Project {p} about? Answer with one word."
@@ -125,7 +126,7 @@ def run_arm(arm: str, model_io, chunks, bm, sessions, concepts, meter: Meter, la
     rows = []
     for si, s in enumerate(sessions):
         cache = pref_ids = vec = None
-        need_hybrid = arm in ("hybrid", "swarm")
+        need_hybrid = arm in ("hybrid", "swarm", "text_swarm")
         if need_hybrid:
             idx = sorted(bm.top(f"Project {s['project']}", hybrid_k))
             pref_ids = model_io.ids(prefix_of(chunks, idx))
@@ -140,12 +141,12 @@ def run_arm(arm: str, model_io, chunks, bm, sessions, concepts, meter: Meter, la
             cache_t, pre = None, None
             if arm == "none":
                 text = f"Question: {q}\nAnswer:"
-            elif arm == "text_word":
+            elif arm == "text_word" or (arm == "text_swarm" and t["kind"] == "topic"):
                 note = f"Topic: {s['concept']}.\n" if t["kind"] == "topic" else ""
                 text = note + f"Question: {q}\nAnswer:"
             elif arm == "text_rag":
                 text = prefix_of(chunks, sorted(bm.top(q, rag_k))) + suffix_of(q)
-            elif arm == "hybrid" or (arm == "swarm" and t["kind"] == "fact"):
+            elif arm == "hybrid" or (arm in ("swarm", "text_swarm") and t["kind"] == "fact"):
                 cache_t, pre = cache, pref_ids
                 text = suffix_of(q)
             elif arm == "latent_q":
