@@ -5,6 +5,15 @@ Code: `steer/playbox_steer/metered_bench.py` (task, arms, meter), `metered_hf.py
 length, is kept as `*_variable_decode.json`. Tests: `steer/tests/test_metered_bench.py` (5 pass, including a check that a cached-prefix answer
 equals the uncached one and that reusing the cache does not drift).
 
+## Bottom line, stated plainly
+
+- **Plain text beats the latent channel.** On every pair and metric here, a topic word in text matches or beats the latent vector on accuracy and costs
+  less (the earlier swarm benchmark, `steering.md`, found the same on concept recall). The vector's advantages (no text in the channel, nothing
+  added to the receiver's context) are real but are not a performance or cost advantage. Nothing in this document supports building on the latent
+  channel for efficiency.
+- **Replication is thin.** The benchmark cells are one seed each (40 sessions); the L4 mapper cells ([l4-scope.md](l4-scope.md) section 12) are two
+  training seeds, and they disagree by 10 points. Differences smaller than the stated intervals should not be read as effects.
+
 ## The task and the arms
 
 Forty sessions per pair. Each session is one project of a shared corpus (360 chunks, 58,656 tokens, 32 facts per project, the
