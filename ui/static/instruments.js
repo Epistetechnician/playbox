@@ -52,6 +52,23 @@
 .ins .lanes .grp{grid-column:1/-1;margin-top:6px;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
 .ins .axis{display:grid;grid-template-columns:minmax(64px,auto) 1fr auto;gap:12px;font:12px var(--mono);color:var(--mut)}
 .ins .axis div{display:flex;justify-content:space-between}
+.ins>summary:focus-visible{outline:2px solid var(--sig);outline-offset:-2px;border-radius:12px}
+.ins>summary:hover .ttl{color:var(--sig-ink)}
+.ins .line{font:13px/1.45 var(--mono);color:var(--ink-2);margin-top:4px}
+.ins .flags{display:flex;flex-wrap:wrap;gap:8px}
+.ins .flag{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:999px;border:1px solid color-mix(in srgb,var(--fc) 55%,transparent);background:color-mix(in srgb,var(--fc) 12%,transparent);color:var(--ink);font:600 12px var(--mono);cursor:pointer}
+.ins .flag i{width:7px;height:7px;border-radius:50%;background:var(--fc)}
+.ins .clk{cursor:pointer;border-radius:4px}
+.ins .clk:hover{color:var(--ink)}
+.ins .clk.on{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.ins .fl{display:inline-flex;align-items:center;gap:6px;font:600 11.5px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-2);cursor:pointer;background:none}
+.since{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;border:1px solid var(--line-2);border-left:3px solid var(--sig);border-radius:12px;background:var(--panel)}
+.since b{font:600 14px var(--sans);color:var(--ink)}
+.since .parts{display:flex;gap:12px;flex-wrap:wrap;font:13px var(--mono);color:var(--ink-2)}
+.since .parts span{display:inline-flex;align-items:center;gap:6px}
+.since .parts i{width:8px;height:8px;border-radius:50%}
+.since button{margin-left:auto;font:600 11.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:6px 12px;border:1px solid var(--line-2);border-radius:8px;background:none;color:var(--ink);cursor:pointer}
+.since button:hover{background:var(--panel-2)}
 .ins .empty{font:13px var(--mono);color:var(--mut);padding:6px 0}
 .ins .steps{display:grid;gap:0;font:13px var(--mono)}
 .ins .steps details{border-top:1px solid var(--line)}
@@ -93,7 +110,9 @@
   /** Stats card. opts: {id, icon, title, meta, who, name, bar:{label, parts:[{c, w, t}], right}, kv:[[k,v],..], rate:{now, unit, avg, max, series}, groups:[{title, rows:[{c,l,n,pct,o}]}], open} */
   function stats(o) {
     const b = [];
-    if (o.who || o.name) b.push(`<div>${o.who ? `<div class="who">${esc(o.who)}</div>` : ""}${o.name ? `<div class="name">${esc(o.name)}</div>` : ""}</div><hr>`);
+    if (o.who || o.name) b.push(`<div>${o.who ? `<div class="who">${esc(o.who)}</div>` : ""}${o.name ? `<div class="name">${esc(o.name)}</div>` : ""}${o.line ? `<div class="line">${esc(o.line)}</div>` : ""}</div>`);
+    if (o.flags && o.flags.length) b.push(`<div class="flags">${o.flags.map(f => `<${f.k ? "button" : "span"} class="flag" ${f.k ? `data-kind="${esc(f.k)}"` : ""} style="--fc:${f.c}"><i></i>${esc(f.t)}</${f.k ? "button" : "span"}>`).join("")}</div>`);
+    b.push("<hr>");
     if (o.bar) {
       const tot = o.bar.parts.reduce((a, p) => a + p.w, 0) || 1;
       b.push(`<div class="barrow"><span>${esc(o.bar.label)}</span><div class="bar" role="img" aria-label="${esc(o.bar.parts.map(p => p.t + " " + p.w).join(", "))}">${o.bar.parts.filter(p => p.w > 0).map(p => `<i style="width:${(p.w / tot * 100).toFixed(2)}%;background:${p.c}"></i>`).join("")}</div><span>${esc(o.bar.right || "")}</span></div>`);
@@ -101,7 +120,7 @@
     if (o.kv && o.kv.length) b.push(`<div class="kv">${o.kv.map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(v)}</span>`).join("")}</div>`);
     if (o.rate) b.push(`<div><div class="rate"><b>${esc(o.rate.now)}</b><span>${esc(o.rate.unit)}</span><span class="avg">avg ${esc(o.rate.avg)} · max ${esc(o.rate.max)}</span></div></div>${spark(o.rate.series || [])}`);
     for (const g of o.groups || []) {
-      b.push(`<div class="sec">${esc(g.title)}</div><div class="brk${g.rows.length > 4 ? " two" : ""}">${g.rows.map(r => `<span class="l"><i class="${r.o ? "o" : ""}" style="background:${r.c};color:${r.c}"></i>${esc(r.l)}</span><span class="n">${esc(r.n)}${r.pct != null ? `<small>${esc(r.pct)}</small>` : ""}</span>`).join("")}</div>`);
+      b.push(`<div class="sec">${esc(g.title)}</div><div class="brk${g.rows.length > 4 ? " two" : ""}">${g.rows.map(r => { const k = r.k ? ` data-kind="${esc(r.k)}" role="button" tabindex="0"` : "", on = r.k && r.k === o.kind ? " on" : ""; return `<span class="l${r.k ? " clk" : ""}${on}"${k}><i class="${r.o ? "o" : ""}" style="background:${r.c};color:${r.c}"></i>${esc(r.l)}</span><span class="n${r.k ? " clk" : ""}${on}"${k}>${esc(r.n)}${r.pct != null ? `<small>${esc(r.pct)}</small>` : ""}</span>`; }).join("")}</div>`);
     }
     return wrap(o.id || "stats", o.icon, o.title || "Stats", o.meta, b.join(""), o.open);
   }
@@ -121,13 +140,18 @@
     }).join("");
     const mid = t0 + w / 2;
     return wrap(o.id || "activity", o.icon, o.title || "Activity", o.meta, o.lanes && o.lanes.length ? `<div class="lanes">${rows}</div>
-      <div class="axis"><span></span><div><span>${esc(clock(t0))}</span><span>${esc(span(w / 2))}</span><span>${esc(clock(t1))}</span></div><span></span></div>` : `<div class="empty">Nothing to show yet.</div>`, o.open);
+      <div class="axis"><span></span><div><span>${esc(clock(t0))}</span><span>${esc(clock(mid))}</span><span>${esc(clock(t1))}</span></div><span></span></div>` : `<div class="empty">Nothing to show yet.</div>`, o.open);
   }
 
   /** Steps log: collapsible rows. steps: [{c, label, text, ms, detail}] newest first. */
   function trail(o) {
     const rows = (o.steps || []).map(s => `<details><summary><i style="background:${s.c}"></i><span>${esc(s.label)}</span><span class="x">${esc(String(s.text || "").slice(0, 90))}</span><span class="t">${s.ms ? esc(clock(s.ms)) : ""}</span></summary>${s.detail ? `<div class="det">${esc(s.detail)}</div>` : ""}</details>`).join("");
     return wrap(o.id || "trail", o.icon, o.title || "Trail", o.meta, rows ? `<div class="steps">${rows}</div>` : `<div class="empty">Nothing yet.</div>`, o.open);
+  }
+
+  /** "Since you last looked": a one-line digest with a Mark read button. parts: [{c, t}] */
+  function since(o) {
+    return `<div class="since" role="status"><b>${esc(o.title)}</b><div class="parts">${o.parts.map(p => `<span><i style="background:${p.c}"></i>${esc(p.t)}</span>`).join("")}</div><button type="button" data-markread="1">${esc(o.btn || "Mark read")}</button></div>`;
   }
 
   /** Bucket message times into `n` buckets of `size` ms ending at `end`. */
@@ -140,5 +164,5 @@
     return out;
   }
 
-  window.PBI = {esc, stats, activity, trail, buckets, span, clock, num, wrap};
+  window.PBI = {esc, stats, activity, trail, since, buckets, span, clock, num, wrap};
 })();
