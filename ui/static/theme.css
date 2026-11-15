@@ -246,3 +246,8 @@ html[data-density=compact] .card{padding:12px}html[data-density=compact] .card>h
 html[data-density=compact] .btn{min-height:28px}html[data-density=compact] .tlr,html[data-density=compact] .hxr,html[data-density=compact] .rv{padding:4px 4px}
 html[data-density=compact] .ins .body{padding:2px 12px 12px;gap:10px}html[data-density=compact] .view,html[data-density=compact] .grid{gap:10px}
 html[data-density=compact] .rr a.rrow{padding:3px 8px}
+
+/* Refined: the cockpit already prints a text brand, so drop the generated duplicate there */
+html:not([data-style=expressive]) .rail .brand:has(.bk)::after,html:not([data-style=expressive]) .top .brand:has(.bk)::after{content:none}
+html:not([data-style=expressive]) .brand .bk{font:700 15px var(--sans);letter-spacing:-.01em;text-transform:none}
+html:not([data-style=expressive]) .brand b{width:10px;height:10px;border-radius:2px}
