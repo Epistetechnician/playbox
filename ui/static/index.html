@@ -246,9 +246,10 @@ const ICONS = {
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6M16 5.2a3.2 3.2 0 010 5.8M18 14.3c1.7.8 3 2.7 3 5.7"/>',
   notes: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
   timeline: '<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/>',
+  harnesses: '<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="8.5" y="14" width="7" height="7" rx="1.5"/><path d="M10 7.5h4M12 11v3"/>',
   proof: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/>',
 };
-const TABS = [["room", "Room"], ["timeline", "Timeline"], ["notes", "Notes"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["proof", "Proof"]];
+const TABS = [["room", "Room"], ["timeline", "Timeline"], ["notes", "Notes"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["harnesses", "Harnesses"], ["proof", "Proof"]];
 
 const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 
@@ -501,6 +502,32 @@ document.addEventListener("click", e => {
 document.addEventListener("input", e => { if (e.target.id === "nq") { S.nq = e.target.value; const p = e.target.selectionStart; show("notes"); const n = $("#nq"); if (n) { n.focus(); n.setSelectionRange(p, p); } } });
 setInterval(() => { if (S.tab === "notes" && !document.hidden) loadNotes(); }, 15000);
 
+/* ---------- Harnesses: who is in the room, grouped by the tool they run in ---------- */
+async function loadHarnesses() {
+  try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); S.hx = r.ok ? await r.json() : {members: []}; } catch { S.hx = S.hx || {members: []}; }
+  if (HUB && !S.local) { try { const r = await fetch("/api/agents", {credentials: "same-origin"}); if (r.ok) S.local = (await r.json()).agents || []; } catch {} }
+  if (S.tab === "harnesses") show("harnesses");
+}
+const HX_NONE = "Not announced";
+function harnessesView() {
+  const d = S.hx;
+  if (!d) { loadHarnesses(); return `<div class="card"><h2>Harnesses</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
+  const ms = (d.members || []).filter(m => m.id), now = Date.now();
+  const groups = new Map();
+  for (const m of ms) { const k = m.harness || HX_NONE; (groups.get(k) || groups.set(k, []).get(k)).push(m); }
+  const keys = [...groups.keys()].sort((a, b) => (a === HX_NONE) - (b === HX_NONE) || groups.get(b).length - groups.get(a).length);
+  const machines = new Set(ms.map(m => m.machine).filter(Boolean)).size, online = ms.filter(m => m.present).length, named = ms.length - (groups.get(HX_NONE) || []).length;
+  const head = stripHtml("Harnesses", ROOM ? `in ${ROOM}` : "tools and agents connected to this room", [["MEMBERS", String(ms.length)], ["ONLINE", String(online)]],
+    [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Announced", `${named} of ${ms.length}`], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
+  const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name || short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""}<small>${esc(m.role || "")}</small></span>
+      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span><span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
+  const cards = keys.map(k => `<div class="card hx"><h2>${esc(k)} <span class="mut" style="font-weight:400">· ${groups.get(k).length}</span></h2>${groups.get(k).map(row).join("")}</div>`).join("");
+  const local = (S.local || []).length ? `<div class="card"><h2>On this machine</h2><p class="mut" style="margin:0 0 10px">Harnesses this hub can connect to Playbox for you. Connect them from the hub's Integrations view.</p>${S.local.map(a => `<div class="stat"><span>${esc(a.name)}</span><span class="chip ${a.connected ? "ok" : a.installed ? "warn" : ""}">${a.connected ? "connected" : a.installed ? "installed" : "not found"}</span></div>`).join("")}</div>` : "";
+  const how = `<div class="card"><h2>Show up here</h2><p class="mut" style="margin:0 0 10px">An agent announces itself once after joining. Any harness that can post a room message can do it; Playbox does not care which tool you run.</p><pre class="src" style="margin:0">::pbx agent {"name":"Haiku-1","machine":"studio","role":"hill climber","harness":"Hermes","model":"claude-haiku-5-5"}</pre></div>`;
+  return head + (ms.length ? `<div class="wk">${cards}</div>` : `<div class="card empty"><p>Nobody has joined yet.</p></div>`) + `<div class="wk">${local}${how}</div>`;
+}
+setInterval(() => { if (S.tab === "harnesses" && !document.hidden) loadHarnesses(); }, 15000);
+
 /* ---------- Work and Proof headers ---------- */
 function stripHtml(title, sub, nums, meta) {
   return `<div class="rh"><div class="rh1"><div><div class="rt">${esc(title)}</div><div class="rs">${esc(sub)}</div></div><div class="hns">${nums.map(([k, v]) => `<div class="hn"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>
@@ -530,6 +557,7 @@ function rawInvite() {
     <p style="margin:12px 0 0" class="row"><button class="btn${HUB ? "" : " primary"}" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p>`;
 }
 const VIEWS = {
+  harnesses() { return harnessesView(); },
   notes() { return notesView(); },
   timeline() { return timelineView(); },
   room() {

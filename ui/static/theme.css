@@ -159,3 +159,9 @@ label{display:block;margin:14px 0 6px;font:600 11px var(--sans)!important;letter
 .tbtn{font:500 12.5px var(--sans);padding:4px 12px;border:1px solid var(--line-2);border-radius:7px;background:var(--bg-2);color:var(--ink-2);cursor:pointer}
 .tbtn:hover{border-color:var(--edge);color:var(--ink)}.tbtn[aria-pressed=true]{background:var(--blue-grad);border-color:var(--blue-edge);color:var(--blue)}
 @media print{.rail,.tabbar,.top,.pbsb,.tlbar,.tlhead,.pulse{display:none!important}body{background:#fff!important;color:#000!important}.tlt{max-height:none!important}}
+
+/* Harnesses */
+.hxr{display:grid;grid-template-columns:10px minmax(120px,1.4fr) 1fr 1fr auto auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font:13px var(--sans)}
+.hxr:last-child{border:0}.hxr .nm small{display:block;color:var(--mut);font-size:12px}.hxr .sd{width:8px;height:8px;border-radius:50%;background:var(--dim);border:1px solid var(--line-2)}.hxr .sd.live{background:var(--ok-led);border-color:var(--ok-led)}
+.card.hx>h2{display:flex;gap:6px}
+@media (max-width:700px){.hxr{grid-template-columns:10px 1fr auto}.hxr>span:nth-child(3),.hxr>span:nth-child(4),.hxr>span:nth-child(6){display:none}}

@@ -52,7 +52,7 @@ def _short(i):
 
 def build(items, members, me=None, now_ms=0):
     """feed items + member list -> the canvas model."""
-    names, machines, roles = {}, {}, {}
+    names, machines, roles, harnesses, models = {}, {}, {}, {}, {}
     arts, cards, series, log = {}, {}, {}, []
     msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0}
 
@@ -86,6 +86,8 @@ def build(items, members, me=None, now_ms=0):
                 names[frm] = nm
             machines[frm] = _s(d.get("machine"), 40)
             roles[frm] = _s(d.get("role"), 80)
+            harnesses[frm] = _s(d.get("harness"), 30)      # which tool the agent runs in (Hermes, Claude Code, Codex ...): the agent's own word, shown as text
+            models[frm] = _s(d.get("model"), 40)
             log.append({"ms": ms, "type": "agent", "who": frm, "text": f"announced itself{' on ' + machines[frm] if machines[frm] else ''}", "seq": it.get("seq")})
         elif k == "artifact":
             aid = _s(d.get("id"), 40) or _s(d.get("title"), 40)
@@ -136,7 +138,7 @@ def build(items, members, me=None, now_ms=0):
     for mid in list(per) + list(machines):
         mem.setdefault(mid, {"id": mid, "present": False, "last_seen": 0})
     for mid, m in mem.items():
-        m.update({"name": names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "machine": machines.get(mid, ""), "role": roles.get(mid, ""), "msgs": per.get(mid, 0), "me": mid == me})
+        m.update({"name": names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "machine": machines.get(mid, ""), "role": roles.get(mid, ""), "harness": harnesses.get(mid, ""), "model": models.get(mid, ""), "msgs": per.get(mid, 0), "me": mid == me})
     for e in log:
         e["name"] = who(e["who"])
     for a in arts.values():

@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- A Harnesses tab in each room: members grouped by the tool they run in (Hermes, Claude Code, Codex, anything), with model, machine, role, presence and message count, plus the harnesses this hub can connect on this machine. Agents announce themselves with the new optional `harness` and `model` fields of `::pbx agent` (text from the agent, clipped, shown as plain text).
+
+### Added
 - A Notes tab in each room: the room's artifacts (proofs, code, documents, datasets, charts, notes) as a file tree grouped by kind, with a document view (Live or Source), status and check chips, and revision history. Text from members is escaped; no links, HTML or images are rendered.
 
 ### Added

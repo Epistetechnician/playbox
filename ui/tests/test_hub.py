@@ -888,6 +888,19 @@ def test_access():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_board_harness():
+    """An agent's announcement carries its harness and model: clipped, plain text, attributed to the real sender."""
+    sys.path.insert(0, UI)
+    from hub import board
+    big = "x" * 200
+    items = [{"seq": 1, "kind": "say", "from": "m1", "time_ms": 1, "text": board.PREFIX + "agent " + json.dumps({"name": "H1", "machine": "studio", "harness": "Hermes", "model": "claude-haiku-5-5"})},
+             {"seq": 2, "kind": "say", "from": "m2", "time_ms": 2, "text": board.PREFIX + "agent " + json.dumps({"name": "H2", "harness": big, "model": ["not", "text"]})}]
+    m = board.build(items, [{"id": "m1", "present": True}, {"id": "m2", "present": True}], "m1", 10)
+    by = {x["id"]: x for x in m["members"]}
+    check("board: an announcement sets harness and model", by["m1"]["harness"] == "Hermes" and by["m1"]["model"] == "claude-haiku-5-5")
+    check("board: harness is clipped and a non-text model is dropped", len(by["m2"]["harness"]) == 30 and by["m2"]["model"] == "")
+
+
 def test_housekeeping():
     """Stale host records are pruned (never a live one), the state is backed up once a day, a long outage turns urgent, an expired guest is told to ask for an invite."""
     sys.path.insert(0, UI)
@@ -1308,6 +1321,7 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
+    test_board_harness()
     test_housekeeping()
     test_tunnel_keeper()
     test_adopted_rejoin()
