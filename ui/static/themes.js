@@ -111,6 +111,7 @@
     for (const k in tk) R.style.setProperty(k, tk[k]);
     R.style.colorScheme = m;
     R.dataset.skin = t.id;
+    R.dataset.style = ls.get("pb.style", "refined"); R.dataset.density = ls.get("pb.density", "comfortable");
     const font = FONTS[ls.get("pb.font", "system")] || FONTS.system, mono = MONOS[ls.get("pb.mono", "system")] || MONOS.system;
     R.style.setProperty("--sans", font[1]); R.style.setProperty("--mono", mono[1]);
     const sc = parseFloat(ls.get("pb.scale", "1")) || 1;
@@ -129,7 +130,7 @@
   }
 
   const state = () => ({skin: ls.get("pb.skin", "playbox"), mode: ls.get("pb.theme", "auto"), accent: ls.get("pb.accent", "theme"), font: ls.get("pb.font", "system"), mono: ls.get("pb.mono", "system"),
-    scale: parseFloat(ls.get("pb.scale", "1")) || 1, css: ls.get("pb.css", "")});
+    scale: parseFloat(ls.get("pb.scale", "1")) || 1, css: ls.get("pb.css", ""), style: ls.get("pb.style", "refined"), density: ls.get("pb.density", "comfortable")});
   function set(k, v) {
     if (k === "mode") {
       ls.set("pb.theme", v);
@@ -204,6 +205,8 @@
       <div class="row"><div class="t">Code and numbers</div><select id="pbs-mono">${Object.entries(MONOS).map(([k, v]) => `<option value="${k}" ${s.mono === k ? "selected" : ""}>${esc(v[0])}</option>`).join("")}</select><div class="d">Used for ids, counts, the activity panels and anything that is code.</div></div>
       <div class="live"><div class="h">Reading sample</div><p>Agents from different owners work in one room. Messages from other members are untrusted text; the witness watches them.</p><p><code>TRY score=6300 vec=[12, 200, 31, 77]</code> 0123456789</p></div>`;
     if (sec === "layout") return `<div class="row"><div class="t">Mode</div><div class="seg2" role="group" aria-label="Mode">${[["auto", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button data-mode="${k}" aria-pressed="${s.mode === k}">${l}</button>`).join("")}</div></div>
+      <div class="row"><div class="t">Style</div><div class="seg2" role="group" aria-label="Style">${[["refined", "Refined"], ["expressive", "Expressive"]].map(([k, l]) => `<button data-style="${k}" aria-pressed="${s.style === k}">${l}</button>`).join("")}</div><div class="d">Refined is flat and plain, like a log viewer. Expressive adds glows, shadows, the dot-matrix wordmark and digits.</div></div>
+      <div class="row"><div class="t">Density</div><div class="seg2" role="group" aria-label="Density">${[["comfortable", "Comfortable"], ["compact", "Compact"]].map(([k, l]) => `<button data-density="${k}" aria-pressed="${s.density === k}">${l}</button>`).join("")}</div><div class="d">Compact tightens rows, buttons and cards to show more at once.</div></div>
       <div class="row"><div class="t">Interface scale</div><div class="seg2" role="group" aria-label="Scale">${SCALES.map(([v, l]) => `<button data-scale="${v}" aria-pressed="${s.scale === v}">${l}</button>`).join("")}</div><div class="d">Scales the whole interface, text and spacing together.</div></div>`;
     if (sec === "css") return `<div class="row"><div class="t">Your own CSS</div><div class="d">Applied on every page of this hub, after the theme. Variables you can override: <code>--bg --panel --ink --mut --sig --blue-edge --ok --warn --bad --line</code>.</div></div>
       <textarea id="pbs-css" spellcheck="false" placeholder=":root { --r: 4px; }">${esc(s.css)}</textarea><div class="row"><span class="note" id="pbs-cssn">${s.css.length} of 20000 characters</span><button class="act" data-clearcss>Clear</button></div>`;
@@ -231,6 +234,8 @@
         if (q("[data-accent-custom]")) { set("accent", "custom:" + dlg.querySelector("#pbs-color").value); return paint(); }
         if ((b = q("[data-mode]"))) { set("mode", b.dataset.mode); return paint(); }
         if ((b = q("[data-scale]"))) { set("scale", b.dataset.scale); return paint(); }
+        if ((b = q("[data-style]"))) { set("style", b.dataset.style); return paint(); }
+        if ((b = q("[data-density]"))) { set("density", b.dataset.density); return paint(); }
         if (q("[data-clearcss]")) { ls.del("pb.css"); apply(); return paint(); }
         if (q("[data-export]")) return exportLook();
         if (q("[data-import]")) return importLook();

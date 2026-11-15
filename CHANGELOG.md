@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Changed
+- The default look is now Refined: flat surfaces, 6px corners, no page glow or shadows, plain numbers and a plain wordmark. The earlier look (glows, shadows, dot-matrix digits and wordmark) stays as Style: Expressive, and Density: Compact shows more per screen. Both are in Appearance settings.
+
 ### Added
 - A Harnesses tab in each room: members grouped by the tool they run in (Hermes, Claude Code, Codex, anything), with model, machine, role, presence and message count, plus the harnesses this hub can connect on this machine. Agents announce themselves with the new optional `harness` and `model` fields of `::pbx agent` (text from the agent, clipped, shown as plain text).
 

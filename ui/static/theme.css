@@ -207,3 +207,42 @@ pre{border-radius:8px}input{border-radius:8px}
 .auth .err{color:var(--bad);font:13px var(--sans);min-height:1em;text-align:center}
 .auth p.mut{line-height:1.55}
 @media (max-width:480px){.auth{padding:24px 18px 18px;border-radius:14px}}
+
+/* ===== Refined style (default): flat, plain, dense. Expressive keeps the glows, shadows and dot-matrix type. ===== */
+html:not([data-style=expressive]){--r:6px}
+html:not([data-style=expressive]) body{background-image:none;font-size:13.5px;line-height:1.5}
+html:not([data-style=expressive]) .card,html:not([data-style=expressive]) .ins,html:not([data-style=expressive]) .rh,html:not([data-style=expressive]) .nt,html:not([data-style=expressive]) .since{border-radius:6px;box-shadow:none}
+html:not([data-style=expressive]) .panel{border-radius:6px}
+html:not([data-style=expressive]) .auth,html:not([data-style=expressive]) dialog,html:not([data-style=expressive]) .pbs{border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+html:not([data-style=expressive]) .center{background:none}
+html:not([data-style=expressive]) .btn,html:not([data-style=expressive]) .tbtn,html:not([data-style=expressive]) input[type=text],html:not([data-style=expressive]) textarea,html:not([data-style=expressive]) select{border-radius:5px}
+html:not([data-style=expressive]) .btn{min-height:32px;padding:0 12px;font-size:13px}
+html:not([data-style=expressive]) .btn.sm{min-height:26px;padding:0 9px;font-size:12px}
+html:not([data-style=expressive]) .auth .btn.primary{min-height:38px;border-radius:6px}
+html:not([data-style=expressive]) .chip,html:not([data-style=expressive]) .kd,html:not([data-style=expressive]) .tlc{border-radius:4px}
+html:not([data-style=expressive]) .readout::before,html:not([data-style=expressive]) .readout::after{display:none}
+html:not([data-style=expressive]) .readout{border-radius:6px;overflow:hidden}
+html:not([data-style=expressive]) .cell .dmv{margin:8px 0 6px;font:600 28px/1 var(--mono);letter-spacing:-.02em}
+html:not([data-style=expressive]) .cell .dmv svg{display:none}
+html:not([data-style=expressive]) .cell .dmv::after{content:attr(data-count)}
+html:not([data-style=expressive]) .cell .lbl{font:500 12px var(--sans);letter-spacing:0;text-transform:none}
+html:not([data-style=expressive]) .cell .sub{font:12px var(--sans);letter-spacing:0}
+html:not([data-style=expressive]) .wordmark .dm,html:not([data-style=expressive]) .strip .brand .dm,html:not([data-style=expressive]) .rail .brand .dm,html:not([data-style=expressive]) #wm .dm{display:none}
+html:not([data-style=expressive]) .wordmark::after,html:not([data-style=expressive]) .strip .brand::after,html:not([data-style=expressive]) .rail .brand::after,html:not([data-style=expressive]) #wm::after{content:"Playbox";font:700 17px var(--sans);letter-spacing:-.01em;color:var(--ink)}
+html:not([data-style=expressive]) .wordmark,html:not([data-style=expressive]) #wm{text-align:center}
+html:not([data-style=expressive]) .rail .brand{padding:6px 8px 14px;line-height:1.2}
+html:not([data-style=expressive]) .strip .brand{line-height:1}
+html:not([data-style=expressive]) .strip .brand::after{font-size:14px}
+html:not([data-style=expressive]) .rail .nav,html:not([data-style=expressive]) .rail .tab{min-height:30px;font-size:13px}
+html:not([data-style=expressive]) .rail .tab .ix{font:11px var(--mono);color:var(--mut)}
+html:not([data-style=expressive]) .rail .btn.primary.block{min-height:32px}
+html:not([data-style=expressive]) .sect{margin:22px 0 10px}
+html:not([data-style=expressive]) .tlr,html:not([data-style=expressive]) .hxr{padding:6px 4px}
+html:not([data-style=expressive]) .rh1{padding:12px 14px}
+html:not([data-style=expressive]) .card>h2:first-child{padding:10px 14px;font-size:14px}
+/* Compact density */
+html[data-density=compact] body{font-size:12.5px;line-height:1.4}
+html[data-density=compact] .card{padding:12px}html[data-density=compact] .card>h2:first-child{margin:-12px -12px 10px;padding:8px 12px}
+html[data-density=compact] .btn{min-height:28px}html[data-density=compact] .tlr,html[data-density=compact] .hxr,html[data-density=compact] .rv{padding:4px 4px}
+html[data-density=compact] .ins .body{padding:2px 12px 12px;gap:10px}html[data-density=compact] .view,html[data-density=compact] .grid{gap:10px}
+html[data-density=compact] .rr a.rrow{padding:3px 8px}
