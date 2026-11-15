@@ -153,3 +153,9 @@ label{display:block;margin:14px 0 6px;font:600 11px var(--sans)!important;letter
 .ev .tag,.tile .k,.tile .st{font-family:var(--sans);text-transform:none;letter-spacing:0}
 .board .card,.board .item{border-radius:8px}
 .msg.me{background:none}
+
+/* toolbar buttons, as in Inspect's sample view */
+.tlbar{display:flex;align-items:center;gap:6px;margin:0 0 10px}.tlcount{margin-left:auto;font:12px var(--mono)}
+.tbtn{font:500 12.5px var(--sans);padding:4px 12px;border:1px solid var(--line-2);border-radius:7px;background:var(--bg-2);color:var(--ink-2);cursor:pointer}
+.tbtn:hover{border-color:var(--edge);color:var(--ink)}.tbtn[aria-pressed=true]{background:var(--blue-grad);border-color:var(--blue-edge);color:var(--blue)}
+@media print{.rail,.tabbar,.top,.pbsb,.tlbar,.tlhead,.pulse{display:none!important}body{background:#fff!important;color:#000!important}.tlt{max-height:none!important}}
