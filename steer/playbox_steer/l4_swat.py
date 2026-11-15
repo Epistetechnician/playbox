@@ -387,7 +387,11 @@ def train(sender_path, receiver_path, out_path, steps1=3000, steps2=8000, bs=48,
         return order[ptr - bs: ptr]
 
     total = steps1 + steps2
+    bad = 0
     for step in range(total):
+        if bad > 200:
+            log(f"stopping at step {step}: {bad} non-finite batches, the run has diverged")
+            break
         if time_budget_s and time.time() - t0 > time_budget_s:
             log(f"time budget reached at step {step}"); break
         stage = 1 if step < steps1 else 2
@@ -404,8 +408,17 @@ def train(sender_path, receiver_path, out_path, steps1=3000, steps2=8000, bs=48,
             cache = rope_cache(su.rm, pk.to(torch.bfloat16), pv.to(torch.bfloat16), su.rd)
             loss = cont_nll(su.rm, cache, bt["r_mask"], bt["c_ids"], bt["c_mask"])
         opt.zero_grad(set_to_none=True)
+        if not torch.isfinite(loss):  # one bad batch must not reach the optimiser: a NaN in AdamW's moments never leaves (blind runs died this way)
+            bad += 1
+            log(f"step {step} non-finite loss, batch skipped ({bad} so far)")
+            continue
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(su.mapper.parameters(), 1.0)
+        gn = torch.nn.utils.clip_grad_norm_(su.mapper.parameters(), 1.0)
+        if not torch.isfinite(gn):
+            bad += 1
+            opt.zero_grad(set_to_none=True)
+            log(f"step {step} non-finite gradient, batch skipped ({bad} so far)")
+            continue
         opt.step()
         if step % 50 == 0:
             log(f"step {step} stage {stage} loss {loss.item():.4f} lr {opt.param_groups[0]['lr']:.2e} [{time.time() - t0:.0f}s]")

@@ -121,9 +121,11 @@ jobs:
           find "$HOME/krun" -name '*.so*' -printf '%h\n' | sort -u | sudo tee /etc/ld.so.conf.d/krun.conf
           sudo ldconfig
           ldconfig -p | grep -E 'libkrun'
-          echo "LIB=$LIB" >> "$GITHUB_ENV"
+          # The jail binds the directories on LD_LIBRARY_PATH that hold libkrunfw, so list every library directory, not only libkrun's.
+          ALL=$(find "$HOME/krun" -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -)
+          echo "LIB=$ALL" >> "$GITHUB_ENV"
           echo "LIBKRUN_LIB_DIR=$LIB" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$LIB" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$ALL" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$LIB" >> "$GITHUB_ENV"
           LIBRARY_PATH=$LIB LIBKRUN_LIB_DIR=$LIB cargo build -p playbox-runner --features krun --bin playbox-krun-helper
           echo "PLAYBOX_KRUN_HELPER=$PWD/target/debug/playbox-krun-helper" >> "$GITHUB_ENV"
