@@ -3,6 +3,7 @@
 //! Each entry commits to the previous entry's id, a payload hash, and the signer.
 //! Payload bodies live elsewhere and may be redacted; the log only commits to hashes.
 
+use crate::framing::be_len32;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use thiserror::Error;
 
@@ -43,11 +44,7 @@ impl Entry {
         b.extend_from_slice(DOMAIN);
         b.extend_from_slice(&self.seq.to_be_bytes());
         b.extend_from_slice(&self.prev);
-        b.extend_from_slice(
-            &u32::try_from(self.kind.len())
-                .expect("length fits in u32")
-                .to_be_bytes(),
-        );
+        b.extend_from_slice(&be_len32(self.kind.len()));
         b.extend_from_slice(self.kind.as_bytes());
         b.extend_from_slice(&self.payload_hash);
         b.extend_from_slice(&self.time_ms.to_be_bytes());

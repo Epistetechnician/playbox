@@ -16,6 +16,7 @@
 //! * Recall never returns derived "observations": they merge several entries and the server records no author for the result.
 //!   Whether consolidation can be kept apart by author is unproven (6o), so the bridge does not rely on it.
 
+use crate::sync::LockExt;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -332,8 +333,7 @@ impl InMemory {
     #[must_use]
     pub fn documents(&self, bank: &str) -> Vec<String> {
         self.banks
-            .lock()
-            .expect("index lock")
+            .lock_recover()
             .get(bank)
             .map(|b| b.keys().cloned().collect())
             .unwrap_or_default()
@@ -351,8 +351,7 @@ fn words(s: &str) -> BTreeSet<String> {
 impl Backend for InMemory {
     async fn retain(&self, bank: &str, item: &Item) -> Result<()> {
         self.banks
-            .lock()
-            .expect("index lock")
+            .lock_recover()
             .entry(bank.to_string())
             .or_default()
             .insert(item.doc.clone(), item.clone());
@@ -361,10 +360,7 @@ impl Backend for InMemory {
 
     async fn recall(&self, bank: &str, req: &RecallRequest) -> Result<Vec<RawHit>> {
         let q = words(&req.query);
-        let g = self
-            .banks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let g = self.banks.lock_recover();
         let mut hits: Vec<(usize, RawHit)> = g
             .get(bank)
             .into_iter()
@@ -390,16 +386,8 @@ impl Backend for InMemory {
     }
 
     async fn delete(&self, bank: &str, doc: &str) -> Result<()> {
-        self.deletes
-            .lock()
-            .expect("index lock")
-            .push(doc.to_string());
-        if let Some(b) = self
-            .banks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_mut(bank)
-        {
+        self.deletes.lock_recover().push(doc.to_string());
+        if let Some(b) = self.banks.lock_recover().get_mut(bank) {
             b.remove(doc);
         }
         Ok(())
@@ -609,10 +597,7 @@ impl SharedMemory {
     }
 
     fn rate_ok(&self, author: &str) -> bool {
-        let mut g = self
-            .posts
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.posts.lock_recover();
         let q = g.entry(author.to_string()).or_default();
         let now = Instant::now();
         while q
@@ -662,10 +647,7 @@ impl SharedMemory {
         };
         let _io = self.io.lock().await;
         let (replaces, same) = {
-            let g = self
-                .ledger
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let g = self.ledger.lock_recover();
             let old = g.get(&doc);
             if old.is_none() {
                 if g.len() >= self.cfg.max_entries {
@@ -716,10 +698,7 @@ impl SharedMemory {
                 return Err(format!("{e:#}"));
             }
         }
-        self.ledger
-            .lock()
-            .expect("ledger lock")
-            .insert(doc.clone(), entry);
+        self.ledger.lock_recover().insert(doc.clone(), entry);
         Ok(Remembered { doc, status })
     }
 
@@ -761,10 +740,7 @@ impl SharedMemory {
             .recall(&self.cfg.room, &req)
             .await
             .map_err(|e| format!("{e:#}"))?;
-        let g = self
-            .ledger
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let g = self.ledger.lock_recover();
         let mut seen = BTreeSet::new();
         let mut out = Vec::new();
         for h in raw {
@@ -806,8 +782,7 @@ impl SharedMemory {
         let _io = self.io.lock().await;
         let docs: Vec<String> = self
             .ledger
-            .lock()
-            .expect("ledger lock")
+            .lock_recover()
             .values()
             .filter(|e| e.author == author)
             .map(|e| e.doc.clone())
@@ -817,10 +792,7 @@ impl SharedMemory {
             if self.cfg.backend.delete(&self.cfg.room, &d).await.is_ok()
                 && self.append(&Line::Del { doc: d.clone() }).is_ok()
             {
-                self.ledger
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .remove(&d);
+                self.ledger.lock_recover().remove(&d);
                 n += 1;
             }
         }
@@ -831,8 +803,7 @@ impl SharedMemory {
     pub async fn sweep(&self, is_member: &(dyn Fn(&str) -> bool + Sync)) -> usize {
         let gone: BTreeSet<String> = self
             .ledger
-            .lock()
-            .expect("ledger lock")
+            .lock_recover()
             .values()
             .filter(|e| !is_member(&e.author))
             .map(|e| e.author.clone())
@@ -853,8 +824,7 @@ impl SharedMemory {
         let _io = self.io.lock().await;
         let mut e = self
             .ledger
-            .lock()
-            .expect("ledger lock")
+            .lock_recover()
             .get(doc)
             .cloned()
             .ok_or_else(|| anyhow!("no such entry"))?;
@@ -877,10 +847,7 @@ impl SharedMemory {
             doc: doc.to_string(),
             status,
         })?;
-        self.ledger
-            .lock()
-            .expect("ledger lock")
-            .insert(doc.to_string(), e);
+        self.ledger.lock_recover().insert(doc.to_string(), e);
         Ok(())
     }
 
@@ -888,8 +855,7 @@ impl SharedMemory {
     #[must_use]
     pub fn pending(&self) -> Vec<Entry> {
         self.ledger
-            .lock()
-            .expect("ledger lock")
+            .lock_recover()
             .values()
             .filter(|e| e.status == Status::Pending)
             .cloned()
@@ -899,12 +865,7 @@ impl SharedMemory {
     /// Every entry the ledger holds, for the host's operator.
     #[must_use]
     pub fn entries(&self) -> Vec<Entry> {
-        self.ledger
-            .lock()
-            .expect("ledger lock")
-            .values()
-            .cloned()
-            .collect()
+        self.ledger.lock_recover().values().cloned().collect()
     }
 
     /// Put every accepted entry back in the index: after the memory server lost its data, or was replaced.
@@ -916,8 +877,7 @@ impl SharedMemory {
         let _io = self.io.lock().await;
         let accepted: Vec<Entry> = self
             .ledger
-            .lock()
-            .expect("ledger lock")
+            .lock_recover()
             .values()
             .filter(|e| e.status == Status::Accepted)
             .cloned()

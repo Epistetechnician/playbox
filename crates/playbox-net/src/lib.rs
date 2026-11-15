@@ -22,6 +22,7 @@ pub mod revoke;
 pub mod shared_memory;
 mod state;
 pub mod steer;
+mod sync;
 pub mod transport;
 pub mod wire;
 pub mod ws;

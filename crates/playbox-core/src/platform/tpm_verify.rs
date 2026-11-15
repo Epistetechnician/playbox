@@ -54,20 +54,17 @@ impl<'a> Reader<'a> {
     fn u8(&mut self) -> Result<u8, AttestError> {
         Ok(self.take(1)?[0])
     }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], AttestError> {
+        <[u8; N]>::try_from(self.take(N)?).map_err(|_| "truncated TPM structure".into())
+    }
     fn u16(&mut self) -> Result<u16, AttestError> {
-        Ok(u16::from_be_bytes(
-            self.take(2)?.try_into().expect("2 bytes"),
-        ))
+        Ok(u16::from_be_bytes(self.array()?))
     }
     fn u32(&mut self) -> Result<u32, AttestError> {
-        Ok(u32::from_be_bytes(
-            self.take(4)?.try_into().expect("4 bytes"),
-        ))
+        Ok(u32::from_be_bytes(self.array()?))
     }
     fn u64(&mut self) -> Result<u64, AttestError> {
-        Ok(u64::from_be_bytes(
-            self.take(8)?.try_into().expect("8 bytes"),
-        ))
+        Ok(u64::from_be_bytes(self.array()?))
     }
     fn tpm2b(&mut self) -> Result<&'a [u8], AttestError> {
         let n = self.u16()? as usize;

@@ -15,6 +15,7 @@
 //! which often contain secrets. Anything the operator needs those for can be re-derived from the hash only
 //! by someone who already has the command.
 
+use crate::sync::LockExt;
 use anyhow::{anyhow, bail, Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde_json::{json, Value};
@@ -172,10 +173,7 @@ impl Audit {
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn record(&self, event: &str, peer: Option<&str>, details: Value) {
         self.chat.event(event, peer, &details);
-        let mut st = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut st = self.state.lock_recover();
         if matches!(st.sink, Sink::Off) {
             return;
         }
@@ -297,7 +295,7 @@ pub fn verify_with(path: &Path, expected_key: Option<&[u8; 32]>) -> Result<Summa
         let hash = blake3::hash(body.as_bytes());
         let sig = unhex::<64>(sig).ok_or_else(|| at("bad signature encoding"))?;
         key.as_ref()
-            .expect("set above")
+            .ok_or_else(|| at("the first entry does not name the host's key"))?
             .verify(hash.as_bytes(), &Signature::from_bytes(&sig))
             .map_err(|_| at("the signature does not verify (forged or edited)"))?;
         prev = hex(hash.as_bytes());

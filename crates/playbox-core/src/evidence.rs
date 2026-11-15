@@ -201,7 +201,13 @@ pub fn verify(
         }
         parsed.push(r);
     }
-    let (weights, image) = (parsed[0].weights, parsed[0].image);
+    let Some(first) = parsed.first() else {
+        return reject("no receipts to check");
+    };
+    let (weights, image) = (first.weights, first.image);
+    let Some(weakest) = parsed.iter().map(|r| r.ceiling).min() else {
+        return reject("no receipts to check");
+    };
     if parsed
         .iter()
         .any(|r| r.weights != weights || r.image != image)
@@ -212,7 +218,7 @@ pub fn verify(
         runs: parsed.len(),
         weights,
         image,
-        weakest: parsed.iter().map(|r| r.ceiling).min().expect("non-empty"),
+        weakest,
         hosts: parsed.iter().map(|r| r.host).collect(),
         outputs: parsed.iter().map(|r| r.output_hash).collect(),
     })

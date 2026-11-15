@@ -6,6 +6,7 @@ use crate::handler::RoomHandler;
 use crate::keys::load_or_create_seed;
 use crate::link::{Link, LinkOpts};
 use crate::state::{Invite, State};
+use crate::sync::LockExt;
 use crate::{
     audit, browse, capabilities, chat, conversations, latent, limits, revoke, shared_memory, steer,
     wire, Transport, ALPN, AUTHENTICATED_PATIENCE, SYNC_ALPN,
@@ -354,9 +355,7 @@ impl Host {
                 let id: EndpointId = member
                     .parse()
                     .map_err(|_| "the member id is not valid".to_string())?;
-                let st = standing_state
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let st = standing_state.lock_recover();
                 if st.banned.contains(&id) {
                     return Err("the member was revoked".into());
                 }
@@ -467,10 +466,7 @@ impl Host {
             .auth
             .mint_invite(ttl.as_secs().try_into().unwrap_or(i64::MAX))?;
         {
-            let mut st = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut st = self.state.lock_recover();
             st.invites.insert(
                 id,
                 Invite {
@@ -544,13 +540,7 @@ impl Host {
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     #[must_use]
     pub fn members(&self) -> Vec<EndpointId> {
-        self.state
-            .lock()
-            .expect("state lock")
-            .members
-            .keys()
-            .copied()
-            .collect()
+        self.state.lock_recover().members.keys().copied().collect()
     }
 
     /// Revoke a member's grant (and every attenuation of it) and bar the key from rejoining.
@@ -563,10 +553,7 @@ impl Host {
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     #[must_use]
     pub fn revoke_member(&self, id: &EndpointId) -> bool {
-        let mut st = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut st = self.state.lock_recover();
         let Some(grant_id) = st.members.get(id).cloned() else {
             return false;
         };
@@ -620,8 +607,7 @@ impl Host {
     #[must_use]
     pub fn revocation_notices(&self) -> Vec<String> {
         self.state
-            .lock()
-            .expect("state lock")
+            .lock_recover()
             .notices
             .values()
             .cloned()

@@ -17,6 +17,7 @@
 //! bug, or that the direction means what its author says. Guards catch directions close to a known
 //! safety direction; a novel one is not recognized.
 
+use crate::sync::LockExt;
 use crate::{
     grants::{Needs, SteerCaps, SteerNeeds},
     wire::{self, Op},
@@ -232,10 +233,7 @@ impl SteerHost {
 
     /// Count a run against `who`'s budget, before it starts so a failing run cannot be repeated for free.
     fn charge(&self, who: EndpointId, tokens: u64) -> Result<()> {
-        let mut u = self
-            .usage
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut u = self.usage.lock_recover();
         let used = u.entry(who).or_default();
         if used.runs >= self.caps.max_runs {
             bail!("steering budget used up: {} runs", self.caps.max_runs);
@@ -263,10 +261,7 @@ fn load_quarantine(path: &Path) -> std::collections::HashSet<EndpointId> {
 
 impl SteerHost {
     fn quarantine(&self, who: EndpointId) {
-        let mut q = self
-            .quarantined
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut q = self.quarantined.lock_recover();
         q.insert(who);
         let ids: Vec<String> = q.iter().map(std::string::ToString::to_string).collect();
         if let Ok(b) = serde_json::to_vec(&ids) {
@@ -501,12 +496,10 @@ impl RoomHandler {
         &self,
         from: EndpointId,
         grant: Option<&str>,
-        op: Op,
+        text: String,
+        probe: bool,
         msg: &Message,
     ) -> Result<Value, a2a::JsonRpcError> {
-        let Op::Steer { spec: text, probe } = op else {
-            unreachable!("steer_message is only called for Op::Steer")
-        };
         let t0 = Instant::now();
         let prepared = match self.steer_prepare(from, grant, &text, probe, msg) {
             Ok(p) => p,
@@ -545,12 +538,9 @@ impl RoomHandler {
     pub(crate) async fn handoff_message(
         &self,
         from: EndpointId,
-        op: Op,
+        weights: String,
         msg: &Message,
     ) -> Result<Value, a2a::JsonRpcError> {
-        let Op::Handoff { weights } = op else {
-            unreachable!("handoff_message is only called for Op::Handoff")
-        };
         let t0 = Instant::now();
         let r = self.handoff_run(from, &weights, msg).await;
         let details = json!({ "weights": crate::audit::clip(&weights) });
@@ -572,12 +562,7 @@ impl RoomHandler {
             .runner
             .clone()
             .ok_or_else(|| crate::refuse("this room runs no tasks"))?;
-        if host
-            .quarantined
-            .lock()
-            .expect("quarantine lock")
-            .contains(&from)
-        {
+        if host.quarantined.lock_recover().contains(&from) {
             return Err(crate::refuse(
                 "you are quarantined: an earlier handoff of yours failed the audit",
             ));
@@ -742,8 +727,10 @@ impl RoomHandler {
             .ok_or_else(|| refuse(format!("this host does not serve model {weights_hex}")))?
             .clone();
 
-        let lo = i64::from(*spec.layers.first().expect("validated non-empty"));
-        let hi = i64::from(*spec.layers.last().expect("validated non-empty"));
+        let (Some(&first), Some(&last)) = (spec.layers.first(), spec.layers.last()) else {
+            return Err(refuse("the steering spec names no layers".to_string()));
+        };
+        let (lo, hi) = (i64::from(first), i64::from(last));
         let op = if probe { "steer_probe" } else { "steer" };
         let tokens = if probe { 0 } else { ps.tokens() };
         let l = &host.limits;
@@ -960,13 +947,7 @@ impl RoomHandler {
     /// Resolves once `who` is banned, here or by a notice that reached this host.
     async fn until_banned(&self, who: EndpointId) {
         loop {
-            if self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .banned
-                .contains(&who)
-            {
+            if self.state.lock_recover().banned.contains(&who) {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;

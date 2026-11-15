@@ -177,10 +177,12 @@ impl WebSocket {
                 }
                 127 => {
                     self.fill(10).await?;
-                    (
-                        10,
-                        u64::from_be_bytes(self.buf[2..10].try_into().expect("eight bytes")),
-                    )
+                    let raw = self
+                        .buf
+                        .get(2..10)
+                        .and_then(|s| <[u8; 8]>::try_from(s).ok())
+                        .ok_or_else(|| anyhow!("short websocket header"))?;
+                    (10, u64::from_be_bytes(raw))
                 }
                 n => (2, u64::from(n)),
             };

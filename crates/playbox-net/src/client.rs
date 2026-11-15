@@ -4,6 +4,7 @@ use crate::bind::{bind, bind_chosen, Bind};
 use crate::grants;
 use crate::keys::random_bytes;
 use crate::link::Link;
+use crate::sync::LockExt;
 use crate::wire::{self, Op};
 use crate::{
     browse, capabilities, chat, conversations, shared_memory, Transport, TransportChoice, ALPN,
@@ -209,20 +210,14 @@ impl Client {
     ///
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn grant(&self) -> Option<String> {
-        self.grant
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.grant.lock_recover().clone()
     }
 
     /// # Panics
     ///
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     pub fn set_grant(&self, grant: String) {
-        *self
-            .grant
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(grant);
+        *self.grant.lock_recover() = Some(grant);
     }
 
     /// Narrow this client's grant with extra Biscuit checks. Works offline and cannot be undone.

@@ -25,6 +25,7 @@
 //!
 //! What comes back is text from a web page: untrusted, like anything another party wrote.
 
+use crate::sync::LockExt;
 use crate::ws::WebSocket;
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
@@ -341,10 +342,7 @@ impl Browser {
     }
 
     fn rate_ok(&self, who: &str) -> bool {
-        let mut g = self
-            .visits
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.visits.lock_recover();
         let q = g.entry(who.to_string()).or_default();
         let now = Instant::now();
         while q

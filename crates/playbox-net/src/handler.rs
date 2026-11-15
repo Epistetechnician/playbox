@@ -4,6 +4,7 @@ use crate::grants::{self, Authority, Caps};
 use crate::host::HostConfig;
 use crate::op_error::OpError;
 use crate::state::State;
+use crate::sync::LockExt;
 use crate::wire::{self, Op};
 use crate::{
     audit, browse, capabilities, conversations, latent, limits, MAX_FRAME,
@@ -134,20 +135,11 @@ impl RoomHandler {
         if !self.auth.can_issue() {
             bail!("this host is a replica and cannot admit members; join through the room's primary host");
         }
-        if self
-            .state
-            .lock()
-            .expect("state lock")
-            .banned
-            .contains(&from)
-        {
+        if self.state.lock_recover().banned.contains(&from) {
             bail!("this key is banned from the room");
         }
         let id = self.auth.verify_invite(&invite)?;
-        let mut st = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut st = self.state.lock_recover();
         if st.members.len() >= self.limiter.max_members() && !st.members.contains_key(&from) {
             bail!("this room is full ({} members)", self.limiter.max_members());
         }
@@ -211,12 +203,7 @@ impl RoomHandler {
         let Some(grant) = grant else {
             return Err(unauthorized(anyhow!("no grant presented")));
         };
-        let revoked = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .revoked
-            .clone();
+        let revoked = self.state.lock_recover().revoked.clone();
         self.auth
             .authorize(grant, &from.to_string(), op, needs, &revoked)
             .map_err(unauthorized)
@@ -370,13 +357,13 @@ impl RoomHandler {
                     None => ("echo", grants::Needs::default()),
                 };
                 self.authorize(frame.grant(), from, name, &needs)?;
-                if matches!(op, Some(Op::Steer { .. })) {
+                if let Some(Op::Steer { spec, probe }) = op {
                     return self
-                        .steer_message(from, frame.grant(), op.expect("matched Some"), &req.message)
+                        .steer_message(from, frame.grant(), spec, probe, &req.message)
                         .await;
                 }
-                if let Some(op @ Op::Handoff { .. }) = op {
-                    return self.handoff_message(from, op, &req.message).await;
+                if let Some(Op::Handoff { weights }) = op {
+                    return self.handoff_message(from, weights, &req.message).await;
                 }
                 let reply = self.send_message(from, op, &req.message).await;
                 serde_json::to_value(reply)
@@ -395,8 +382,7 @@ impl RoomHandler {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
                 let tasks: Vec<Task> = self
                     .done
-                    .lock()
-                    .expect("tasks lock")
+                    .lock_recover()
                     .get(&from)
                     .map(|q| q.iter().cloned().collect())
                     .unwrap_or_default();
@@ -443,8 +429,7 @@ impl RoomHandler {
 
     fn find_task(&self, from: EndpointId, id: &str) -> Option<Task> {
         self.done
-            .lock()
-            .expect("tasks lock")
+            .lock_recover()
             .get(&from)?
             .iter()
             .find(|t| t.id == id)
@@ -452,10 +437,7 @@ impl RoomHandler {
     }
 
     pub(crate) fn remember(&self, from: EndpointId, t: &Task) {
-        let mut done = self
-            .done
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut done = self.done.lock_recover();
         let q = done.entry(from).or_default();
         q.push_back(wire::without_bytes(t.clone()));
         while q.len() > TASKS_KEPT {
@@ -504,7 +486,7 @@ impl RoomHandler {
             Some(Op::Recall { query, max_tokens, author }) => {
                 let t0 = std::time::Instant::now();
                 let Some(mem) = self.cfg.memory.clone() else { return reply(OpError::NoSharedMemory.body()) };
-                let members: std::collections::HashSet<String> = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).members.keys().map(std::string::ToString::to_string).collect();
+                let members: std::collections::HashSet<String> = self.state.lock_recover().members.keys().map(std::string::ToString::to_string).collect();
                 let r = mem.recall(&query, max_tokens, author.as_deref(), &|k: &str| members.contains(k)).await;
                 self.audit.record(
                     "recall",
@@ -574,7 +556,7 @@ impl RoomHandler {
             Some(Op::Feed { since, wait_secs }) => {
                 let me = from.to_string();
                 self.audit.chat.touch(&me);
-                let mut ids: Vec<String> = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).members.keys().map(std::string::ToString::to_string).collect();
+                let mut ids: Vec<String> = self.state.lock_recover().members.keys().map(std::string::ToString::to_string).collect();
                 ids.sort();
                 let wait = Duration::from_secs(wait_secs);
                 return reply(self.audit.chat.wait_since(&me, since, 200, &ids, wait).await.to_json().to_string());
@@ -771,10 +753,7 @@ impl RoomHandler {
         let bundle = bundle
             .ok_or_else(|| refuse("push needs the git bundle as a raw part of the message"))?;
         {
-            let mut pushed = self
-                .pushed
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut pushed = self.pushed.lock_recover();
             let used = pushed.entry(from).or_default();
             if used.saturating_add(bundle.len() as u64) > self.cfg.max_push_bytes {
                 return Err(refuse(format!(
@@ -818,8 +797,7 @@ impl RoomHandler {
     /// Ids of the room's current members, as strings.
     fn member_ids(&self) -> std::collections::HashSet<String> {
         self.state
-            .lock()
-            .expect("state lock")
+            .lock_recover()
             .members
             .keys()
             .map(std::string::ToString::to_string)
@@ -828,13 +806,7 @@ impl RoomHandler {
 
     async fn until_revoked(&self, who: EndpointId) {
         loop {
-            if self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .banned
-                .contains(&who)
-            {
+            if self.state.lock_recover().banned.contains(&who) {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -891,7 +863,10 @@ impl RoomHandler {
                 wt: Some(playbox_git::worktree_add(&repo, &commit).await?),
             };
             let result = async {
-                let wt = guard.wt.as_ref().expect("worktree present");
+                let wt = guard
+                    .wt
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("the worktree was released before the run"))?;
                 let output = playbox_runner::run_with_quota(
                     runner.as_ref(),
                     &spec,
@@ -1001,9 +976,7 @@ impl PeerSlot {
         id: EndpointId,
         max: usize,
     ) -> Option<PeerSlot> {
-        let mut m = map
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut m = map.lock_recover();
         let n = m.entry(id).or_default();
         if *n >= max.max(1) {
             return None;
@@ -1018,10 +991,7 @@ impl PeerSlot {
 
 impl Drop for PeerSlot {
     fn drop(&mut self) {
-        let mut m = self
-            .map
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut m = self.map.lock_recover();
         if let Some(n) = m.get_mut(&self.id) {
             *n -= 1;
             if *n == 0 {

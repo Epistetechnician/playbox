@@ -3,6 +3,7 @@
 //!
 //! Counted on attempt, so a flood of failing or refused tasks cannot be repeated for free.
 
+use crate::sync::LockExt;
 use iroh::EndpointId;
 use std::{
     collections::{HashMap, VecDeque},
@@ -57,10 +58,7 @@ pub struct Admission {
 
 impl Drop for Admission {
     fn drop(&mut self) {
-        let mut g = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.inner.lock_recover();
         if let Some(n) = g.inflight.get_mut(&self.who) {
             *n = n.saturating_sub(1);
             if *n == 0 {
@@ -126,10 +124,7 @@ impl Limiter {
 
     fn admit_at(&self, who: EndpointId, now: Instant) -> Result<Admission, LimitError> {
         let c = &self.cfg;
-        let mut g = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.inner.lock_recover();
         if g.started >= c.task_budget {
             return Err(LimitError::Budget(c.task_budget));
         }

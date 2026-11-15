@@ -17,6 +17,7 @@
 //! * **Verifiable result.** The result is hashed over a canonical encoding (keys sorted, no whitespace) and the hash goes into the
 //!   audit log with the call id, so the output a member received can be checked against the log.
 
+use crate::sync::LockExt;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -399,12 +400,7 @@ impl Book {
             table: Mutex::new(table),
             store,
         };
-        book.save(
-            &book
-                .table
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        book.save(&book.table.lock_recover());
         Ok(book)
     }
 
@@ -465,10 +461,7 @@ impl Book {
         let request_hash = blake3::hash(canonical(&json!({"name": name, "args": args})).as_bytes())
             .to_hex()
             .to_string();
-        let mut t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut t = self.table.lock_recover();
         self.expire(&mut t);
         let k = key(member, id);
         if let Some(existing) = t.calls.get(&k) {
@@ -550,10 +543,7 @@ impl Book {
     /// A member's own call.
     #[must_use]
     pub fn view(&self, member: &str, id: &str) -> Option<Call> {
-        let mut t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut t = self.table.lock_recover();
         self.expire(&mut t);
         t.calls.get(&key(member, id)).cloned()
     }
@@ -561,10 +551,7 @@ impl Book {
     /// Calls waiting for the owner.
     #[must_use]
     pub fn pending(&self) -> Vec<Call> {
-        let mut t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut t = self.table.lock_recover();
         self.expire(&mut t);
         t.calls
             .values()
@@ -579,10 +566,7 @@ impl Book {
     ///
     /// Fails if no waiting call matches, or the id matches several.
     pub fn decide(&self, which: &str, approve: bool) -> Result<(Call, Next)> {
-        let mut t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut t = self.table.lock_recover();
         self.expire(&mut t);
         let hits: Vec<String> = t
             .calls
@@ -595,7 +579,9 @@ impl Book {
         let [k] = hits.as_slice() else {
             bail!("{} waiting calls match {which:?}", hits.len())
         };
-        let c = t.calls.get_mut(k).expect("just found");
+        let Some(c) = t.calls.get_mut(k) else {
+            bail!("waiting call {k:?} vanished")
+        };
         c.state = if approve {
             State::Running
         } else {
@@ -609,10 +595,7 @@ impl Book {
 
     /// Mark a call that has not finished as revoked. Returns it if it changed.
     pub fn revoke_call(&self, member: &str, id: &str) -> Option<Call> {
-        let mut t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut t = self.table.lock_recover();
         let c = t.calls.get_mut(&key(member, id))?;
         if !matches!(c.state, State::AwaitingApproval | State::Running) {
             return None;
@@ -629,10 +612,7 @@ impl Book {
     ///
     /// Fails if the call or its capability no longer exists.
     pub fn plan(&self, member: &str, id: &str) -> Result<(Vec<String>, &Capability)> {
-        let t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let t = self.table.lock_recover();
         let c = t.calls.get(&key(member, id)).context("call vanished")?;
         let cap = self.caps.get(&c.name).context("capability vanished")?;
         Ok((cap.bind(&c.args)?, cap))
@@ -648,10 +628,7 @@ impl Book {
         stdout: &str,
         stderr: &str,
     ) -> Option<Call> {
-        let mut t = self
-            .table
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut t = self.table.lock_recover();
         let c = t.calls.get_mut(&key(member, id))?;
         if c.state != State::Running {
             return Some(c.clone());
@@ -845,13 +822,12 @@ impl Engine {
                     }
                     .await;
                     let _ = std::fs::remove_dir_all(&dir);
-                    if matches!(ran, Ok(None)) {
-                        me.book.revoke_call(&member, &id);
-                        return;
-                    }
                     match ran {
                         Ok(Some(o)) => (o.exit_code, o.timed_out, o.stdout, o.stderr),
-                        Ok(None) => unreachable!("handled above"),
+                        Ok(None) => {
+                            me.book.revoke_call(&member, &id);
+                            return;
+                        }
                         Err(e) => (None, false, String::new(), format!("{e:#}")),
                     }
                 }

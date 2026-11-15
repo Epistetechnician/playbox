@@ -228,7 +228,10 @@ impl Server {
             self.room_name = Some(name.to_string());
             self.runtime_name = runtime.map(str::to_string);
         }
-        let host = self.host.as_ref().expect("host started");
+        let host = self
+            .host
+            .as_ref()
+            .ok_or_else(|| anyhow!("the host did not start"))?;
         let peers: Vec<_> = a
             .get("sync_peers")
             .and_then(Value::as_array)

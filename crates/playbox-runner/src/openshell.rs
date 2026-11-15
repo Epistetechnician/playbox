@@ -170,7 +170,7 @@ impl Runner for OpenShellRunner {
     /// The `OpenShell` version and the digest of the no-network base policy, so the host's signed
     /// statement changes when either changes.
     fn attestation(&self) -> String {
-        let base = policy_yaml(&[]).expect("base policy is valid");
+        let base = policy_yaml(&[]).unwrap_or_else(|e| format!("invalid:{e}"));
         format!(
             "{};base-policy={};{}",
             self.version.get().map_or("unknown", String::as_str),
@@ -257,8 +257,8 @@ async fn piped(
             let _ = stdin.write_all(&data).await;
         });
     }
-    let mut stdout = child.stdout.take().expect("piped");
-    let mut stderr = child.stderr.take().expect("piped");
+    let mut stdout = child.stdout.take().context("child stdout was not piped")?;
+    let mut stderr = child.stderr.take().context("child stderr was not piped")?;
     let run = async {
         let (mut o, mut e) = (Vec::new(), Vec::new());
         let (a, b) = tokio::join!(stdout.read_to_end(&mut o), stderr.read_to_end(&mut e));
@@ -406,7 +406,7 @@ impl OpenShellRunner {
                 .spawn()?;
             {
                 use tokio::io::AsyncWriteExt;
-                let mut stdin = un.stdin.take().expect("piped");
+                let mut stdin = un.stdin.take().context("child stdin was not piped")?;
                 stdin.write_all(&tar).await?;
             }
             let un = un.wait_with_output().await?;

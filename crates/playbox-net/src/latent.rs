@@ -13,6 +13,7 @@
 //! It does not check that the vector is honest (that is the commit-and-challenge audit, which an auditor member runs),
 //! and the receiver applies a decoded vector to its own model under its own strength cap and guards.
 
+use crate::sync::LockExt;
 use crate::{
     steer::{hex, MAX_HUB_K},
     wire::{self, Op},
@@ -220,13 +221,11 @@ pub fn pack_with(
     if let Some(c) = commit {
         h["commit"] = json!(c);
     }
-    let head = serde_json::to_vec(&h).expect("header serializes");
+    // A `json!` object always serializes; a header past `u32::MAX` cannot occur (it is a handful of fields),
+    // and saturating keeps the framing total: a reader then finds a length that does not match the bytes.
+    let head = h.to_string().into_bytes();
     let mut out = MAGIC.to_vec();
-    out.extend_from_slice(
-        &u32::try_from(head.len())
-            .expect("header is small")
-            .to_be_bytes(),
-    );
+    out.extend_from_slice(&u32::try_from(head.len()).unwrap_or(u32::MAX).to_be_bytes());
     out.extend_from_slice(&head);
     out.extend_from_slice(body);
     out
@@ -538,10 +537,7 @@ impl Mailbox {
             }
         }
         let now = now_ms();
-        let mut g = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.inner.lock_recover();
         self.expire(&mut g, now);
         let window = self.policy.window.as_millis() as u64;
         let q = g.posts.entry(from).or_default();
@@ -589,10 +585,7 @@ impl Mailbox {
 
     /// Attach a reveal to message `seq`, if `from` posted it, it carries this commitment and nothing is revealed yet.
     fn reveal(&self, seq: u64, from: EndpointId, commit: &str, bytes: Vec<u8>) -> Result<String> {
-        let mut g = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.inner.lock_recover();
         self.expire(&mut g, now_ms());
         let e = g
             .entries
@@ -617,10 +610,7 @@ impl Mailbox {
     /// Messages for `hub` after `since`, and the cursor for the next call. A cursor ahead of the mailbox (the host
     /// restarted without a store) starts over, so new messages are not skipped.
     fn since(&self, hub: &str, since: u64) -> (Vec<Pulled>, u64) {
-        let mut g = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut g = self.inner.lock_recover();
         self.expire(&mut g, now_ms());
         let since = if since > g.seq { 0 } else { since };
         let items: Vec<_> = g
