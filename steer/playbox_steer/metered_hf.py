@@ -68,7 +68,7 @@ class Latent:
 
 
 def run(sender_path: str, receiver_path: str, n_sessions: int = 40, frac: float = 0.45, coef: float = 0.75, rate_usd_h: float = 1.10,
-        amortise_sessions: int = 1000, arms=ARMS, out: Path | None = None, rag_k: int = 5, hybrid_k: int = 10, fact_turns: int = 7) -> dict:
+        amortise_sessions: int = 1000, arms=ARMS, out: Path | None = None, rag_k: int = 5, hybrid_k: int = 10, fact_turns: int = 7, seed: int = 0) -> dict:
     cuda = torch.cuda.is_available() and T.DEVICE == "cuda"
     sync = torch.cuda.synchronize if cuda else (lambda: None)
     ma, ta = T.load(sender_path)
@@ -83,7 +83,7 @@ def run(sender_path: str, receiver_path: str, n_sessions: int = 40, frac: float 
     norm_b = T.mean_norm(mb, tb, NEUTRAL + PROMPTS, lb)
     latent = Latent(ma, ta, la, ridge, neu_a, norm_b, coef, ALL_CONCEPTS)
     io = HFIO(mb, tb, lb)
-    chunks, sessions = build_world(n_sessions, lambda t: len(tb(t, add_special_tokens=False).input_ids), ALL_CONCEPTS, fact_turns=fact_turns)
+    chunks, sessions = build_world(n_sessions, lambda t: len(tb(t, add_special_tokens=False).input_ids), ALL_CONCEPTS, seed=seed, fact_turns=fact_turns)
     bm = BM25([c["text"] for c in chunks])
     meter = Meter(sync)
     io.generate(io.ids("warm up the kernels"), 4)  # one throwaway call so the first arm does not pay for CUDA start-up
@@ -95,7 +95,7 @@ def run(sender_path: str, receiver_path: str, n_sessions: int = 40, frac: float 
     result = {"sender": sender_path, "receiver": receiver_path, "n_sessions": n_sessions, "fact_turns": len(sessions[0]["turns"]) - 1,
               "corpus_chunks": len(chunks), "corpus_tokens": sum(len(tb(c["text"], add_special_tokens=False).input_ids) for c in chunks),
               "rate_usd_h": rate_usd_h, "amortise_sessions": amortise_sessions, "fit_s": round(fit_s, 2), "map": info, "layer": {"sender": la, "receiver": lb},
-              "coef": coef, "device": torch.cuda.get_device_name(0) if cuda else "cpu", "arms": summ,
+              "coef": coef, "corpus_seed": seed, "device": torch.cuda.get_device_name(0) if cuda else "cpu", "arms": summ,
               "samples": {a: [r["out"] for r in res[a]["rows"][:4]] for a in res}}
     if out:
         Path(out).write_text(json.dumps(result, indent=1))

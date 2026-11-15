@@ -9,6 +9,7 @@ PAIRS = {
 }
 key, out = sys.argv[1], sys.argv[2]
 sessions = int(sys.argv[3]) if len(sys.argv) > 3 else 40
+seed = int(sys.argv[4]) if len(sys.argv) > 4 else 0
 a, b, dt = PAIRS[key]
 os.environ.update(PLAYBOX_DEVICE="cuda", TELEPATHY_FIT="agent", TELEPATHY_DTYPE=dt)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -16,5 +17,5 @@ from huggingface_hub import snapshot_download
 from playbox_steer import metered_hf as M
 pats = ["*.json", "*.safetensors", "*.txt", "*.model", "merges*", "vocab*"]
 pa, pb = (snapshot_download(r, allow_patterns=pats) for r in (a, b))
-M.run(pa, pb, n_sessions=sessions, rate_usd_h=3.765, out=Path(out))
+M.run(pa, pb, n_sessions=sessions, rate_usd_h=3.765, out=Path(out), seed=seed)
 print("METERED_DONE", key, flush=True)
