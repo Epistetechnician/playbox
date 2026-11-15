@@ -1,5 +1,7 @@
 # Threat model and security review
 
+What is planned and why: [security-roadmap.md](security-roadmap.md).
+
 Reviewed 2026-10-28 by reading the code with an attacker's eye and trying the attacks. Each finding below
 was either demonstrated with a failing test before the fix, or checked with a test that now guards it.
 This is a self-review by the authors of the code. It is not an independent audit; get one before exposing a
@@ -113,7 +115,7 @@ entries, and the log records what the host did, not what happened inside a sandb
 ## Known gaps (not fixed)
 
 1. **libkrun network mode.** If a grant allows network, libkrun's TSI gives the guest the host's network access with no
-   public-address filtering: it can reach the host's loopback and LAN. Network is off by default and verified off. On Linux, `up --confine` puts an nftables filter in front (loopback, link-local and, by default, the LAN are refused); that filter has run in CI but not around a real libkrun guest, and macOS has none.
+   public-address filtering: it can reach the host's loopback and LAN. Network is off by default and verified off. A task that asks for one is refused on a host that cannot filter it, unless the owner sets `PLAYBOX_ALLOW_UNFILTERED_NETWORK` (BOX-5, decision 42). On Linux, `up --confine` puts an nftables filter in front (loopback, link-local and, by default, the LAN are refused); that filter has run in CI but not around a real libkrun guest, and macOS has none.
 2. **Disk quota is a watchdog, not a filesystem limit.** It polls every 200 ms, so a task that writes very fast can overshoot
    by what it writes in that interval (a fast disk: hundreds of MiB) before it is stopped. A size-limited filesystem for the
    scratch directory is still the stronger answer on shared hosts. The quota does not cover a container's own layer;

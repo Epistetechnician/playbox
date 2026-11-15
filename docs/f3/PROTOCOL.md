@@ -159,3 +159,8 @@ Amendments are appended here with the date and are committed before the run they
 - *Same-user custody.* The holdout shard sits in a directory outside the candidate's environment, but the candidates and the evaluator run as the same Unix user, so this is not an OS-level seal. The stand-ins are scripted and cannot read files (static check), which is the only protection. The statement "agents never see the holdout" is not supported by this pilot for real agents.
 - *Second host.* Created new, with the same code tree committed with fixed author and date so the genesis commit hash is identical, and with the primary's tokenizer copied in.
 - *Driver.* `pilot.py` submits stand-ins one by one through `harness.submit`; it is not pinned by the genesis because it only calls the pinned harness.
+
+
+**A4, 2026-11-14, after the H100 pilot (found when the synthetic dry run was re-verified from a clean clone).** A verifier fix; no rule in sections 4, 6, 7 or 10 changes.
+- *What happened.* Check 2 of section 10 compared the genesis receipt's protocol hash with this file as it is today. Appending A3 changed the file, so the synthetic dry run, whose genesis pins the version before A3, stopped verifying, although nothing in it had changed. Any amendment would do the same to every earlier run.
+- *Fix.* When the file today does not match, `verify.py` looks through this file's git history and accepts the pinned hash only if it is a committed version whose commit time is not after the genesis receipt. It reports that commit. A hash that was never committed, or was committed after the run began, still fails. In a clone without history the check fails, as it should: the verifier cannot show the version was committed first.

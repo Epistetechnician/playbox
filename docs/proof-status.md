@@ -46,5 +46,5 @@ authors' documents and result files, nothing re-derived), **open**.
 ## Not proven
 
 - Re-running the other GPU experiments (DeepSeek pair, swarm, hub, kv-hybrid); only their stored outputs were recomputed.
-- An independent audit; a hardware TPM; libkrun on Linux/KVM; a real closed-model reader of concept cards.
+- An independent audit; a hardware TPM; libkrun and its confinement on bare-metal Linux/KVM (nested arm64 KVM passed by hand); a real closed-model reader of concept cards.
 - The 3×3 matmul target (best known 23) and a second host for the Commons replica.

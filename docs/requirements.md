@@ -41,8 +41,12 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | **Sandbox** | | |
 | BOX-1 | A task reads its granted secrets and they never reach the workspace or the record. | shipped |
 | BOX-2 | The jail, the run cgroup, the syscall filter and the network filter each hold, rootless where the kernel allows. | shipped |
-| BOX-3 | The whole confinement holds around a real libkrun guest on KVM. | planned |
+| BOX-3 | The whole confinement holds around a real libkrun guest on KVM. | shipped |
 | BOX-4 | The syscall filter is an allow-list measured on a real workload. | planned |
+| BOX-5 | A libkrun task that asks for a network is refused on a host that cannot filter it, unless the owner opts in. | shipped |
+| BOX-6 | A battery of breakout attempts run from inside a real libkrun guest all fail. | shipped |
+| BOX-8 | A libkrun task that has a network can resolve names: a task with a host list gets its pinned addresses by name, any other a resolver it is allowed to reach. | shipped |
+| BOX-7 | A task that has a network can reach only the model API through a host-side proxy, and every outbound request is logged. | planned |
 | **Releases** | | |
 | REL-1 | `playbox update` installs only an archive whose SHA-256 is in `SHA256SUMS`. | shipped |
 | REL-2 | A release without a valid signature from a pinned key is refused by `update` and by `install.sh`. | shipped |
