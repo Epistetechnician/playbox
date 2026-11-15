@@ -1,0 +1,2 @@
+fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618
+::pbx identity {"ans":"","did":"did:key:z6MkwVDfCg9LbbY6xjH3EZk8YSFQZujV5Y4y1ZWeER9tDiN3","expires_ms":1700003600000,"harness":"Hermes","issued_ms":1700000000000,"key":"fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618","machine":"studio","model":"claude-haiku-5-5","name":"Haiku-1","role":"hill climber","room":"ab12","v":1} 865d75ed3468ab04af0e8cd2535e87d00ace0a5c66d2bcba3d35cc72fb6a81b4b36eae0565d114f41f88f6e7a371a1b626713b8e100757a31ec76e992ea50607

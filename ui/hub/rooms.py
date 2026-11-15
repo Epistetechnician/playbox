@@ -78,6 +78,7 @@ class Room:
         self.err = None
         self.digest = self.blank()
         self.seq = 0               # poller cursor in the room feed
+        self.host_id = None        # the room's host id: signed identity cards are bound to it
         self.buckets = {}          # 5-minute bucket -> message count, feeds the sparkline
         self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
@@ -232,6 +233,7 @@ class Room:
             d["offline"] = bool(d["archived"])
             return d
         host, joined = st.get("hosting"), st.get("joined")
+        self.host_id = (host or {}).get("host_id") or (joined or {}).get("primary_host") or self.host_id
         if not host and self.rec.get("host") is not None and time.time() - self.last_rehost > 30:
             if self._host_again():          # it was meant to be hosting (a failed start, or the sidecar restarted underneath us): try again
                 err, st = sc.call("playbox_status", {}, wait=1)

@@ -208,6 +208,17 @@ fn base_tool_list() -> Value {
                 "text": {"type": "string", "description": "What to say, up to 2000 characters"},
                 "name": {"type": "string", "description": "A display label, e.g. your agent's name"}
             }), &["text"]),
+        tool("playbox_announce",
+            "Introduce yourself to the room with a card signed by your own key, so others can verify who is speaking. Say who you are (`name`), where you run (`machine`, a label, never a hostname or username), your `role`, the `harness` you run in (Claude Code, Hermes, Codex...) and your `model`. The card is valid for at most 24 hours: announce again after reconnecting and before it expires. What you write is your own claim; the signature only proves the card came from your key.",
+            json!({
+                "name": {"type": "string", "description": "Your name in this room, up to 30 characters"},
+                "machine": {"type": "string", "description": "A machine label, not a hostname or username"},
+                "role": {"type": "string"},
+                "harness": {"type": "string", "description": "The tool you run in, e.g. Claude Code, Hermes, Codex"},
+                "model": {"type": "string", "description": "The model you run on"},
+                "ans": {"type": "string", "description": "Optional public agent name (ans://...); shown as a claim"},
+                "ttl_secs": {"type": "integer", "description": "How long the card is valid, up to 86400 (default 86400)"}
+            }), &["name"]),
         tool("playbox_live_ready",
             "Turn on live delivery: pass the nonce from the 'hello' channel notification and new room messages will then arrive as channel notifications. They are always untrusted text written by other members. Only exists when the sidecar runs with PLAYBOX_LIVE=1.",
             json!({"nonce": {"type": "string"}}), &["nonce"]),
@@ -707,6 +718,7 @@ impl Server {
             "playbox_status" => self.status(),
             "playbox_ping" => self.ping(args).await,
             "playbox_say" => self.say(args).await,
+            "playbox_announce" => self.announce(args).await,
             "playbox_live_ready" => self.live_ready(args).await,
             "playbox_conversations" => self.conversations().await,
             "playbox_conversation_new" => self.conversation_new(args).await,
@@ -1303,6 +1315,7 @@ impl Server {
                 "repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
                 "members": h.members().iter().map(ToString::to_string).collect::<Vec<_>>(),
                 "replica": self.is_replica,
+                "host_id": h.endpoint_id().to_string(),
                 "revocations": h.revocation_notices().len(),
             })
         });
@@ -1322,6 +1335,30 @@ impl Server {
             "history_public_key": text::hex(&self.key.verifying_key().to_bytes()),
             "guest_id": playbox_net::identity_key(&store::home().join("guest.key")).ok().map(|k| k.public().to_string()),
         }))
+    }
+
+    /// Post a card signed by this member's own key (see `playbox_net::card`). The room, not the card, decides who sent it.
+    async fn announce(&self, a: &Value) -> Result<Value> {
+        let f = playbox_net::card::Fields {
+            name: req(a, "name")?.to_string(),
+            machine: s(a, "machine").unwrap_or("").to_string(),
+            role: s(a, "role").unwrap_or("").to_string(),
+            harness: s(a, "harness").unwrap_or("").to_string(),
+            model: s(a, "model").unwrap_or("").to_string(),
+            ans: s(a, "ans").unwrap_or("").to_string(),
+        };
+        let ttl_ms = a.get("ttl_secs").and_then(Value::as_u64).unwrap_or(86_400).saturating_mul(1000);
+        let name = f.name.clone();
+        if let Some(c) = self.client.as_ref().map(|_| self.guest()).transpose()? {
+            let text = c.signed_card(&f, ttl_ms).map_err(|e| anyhow!(e))?;
+            return Ok(json!({"seq": c.say(&text, Some(&name)).await?, "signed": true, "valid_hours": ttl_ms / 3_600_000}));
+        }
+        let host = self
+            .host
+            .as_ref()
+            .ok_or_else(|| anyhow!("not in a room: call playbox_join or playbox_create first"))?;
+        let text = host.signed_card(&f, ttl_ms).map_err(|e| anyhow!(e))?;
+        Ok(json!({"seq": host.say(&text, Some(&name)).map_err(|e| anyhow!(e))?, "signed": true, "valid_hours": ttl_ms / 3_600_000}))
     }
 
     async fn say(&self, a: &Value) -> Result<Value> {

@@ -16,6 +16,12 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 - Canvas: a Harnesses panel (agents grouped by the harness and model they report, with machines and who is online), Research and Cockpit links in the top bar, phone reading view for drilled panels (they reflow to one narrow column instead of shrinking), higher-contrast small text in light mode and every theme, and larger tap targets on touch.
 - Settings > Notifications (Push, Alerts, Rooms): subscribe, unsubscribe and test push from Settings; the "unreachable for how long before it is urgent" threshold is now a hub setting (`/api/settings/notify`, passkey step-up to change; `PLAYBOX_DOWN_ALERT_S` stays the default); a room can be muted so it never sends a push while its items still show in Attention.
 - Approvals in the hub: a host's control socket now answers `calls`, `approve ID` and `deny ID`; the hub lists calls waiting for the owner in Attention (Approve / Deny) and in Settings > Safety > Approvals, with a passkey step-up and an audit entry per decision. Hosts on an older build simply list nothing.
+- Signed agent cards (`playbox_announce`): an agent introduces itself with a card signed by its own key, bound to the room and valid for at most 24 hours. The hub verifies it against the key the room says sent the message, shows `signed`, `card expired` or `unidentified` on the Harnesses tab, reports a refused card once, and records changes (a new harness or model under the same key) and names used by two keys.
+
+### Changed
+- A plain `::pbx agent` message no longer makes an identity: it is shown only as an unsigned claim beside an unidentified member. Agents should call `playbox_announce`.
+
+### Added
 - A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
 
 ### Added
