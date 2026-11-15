@@ -333,7 +333,7 @@ function kindOf(it) {
   return t === "join ok" ? "join" : t.startsWith("refused") || t === "join failed" ? "refused" : "event";
 }
 function insights() {
-  if (!window.PBI || mode() === "none") return "";
+  if (!window.PBI || !PBI.since || mode() === "none") return "";
   const P = PBI, items = S.feed.filter(i => i.time_ms), now = Date.now();
   const isMe = it => (it.from && it.from === myId()) || (it.from === "host" && !!hosting());
   const cat = it => it.kind === "say" ? (isMe(it) ? "you" : "others") : kindOf(it);

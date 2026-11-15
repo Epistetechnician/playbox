@@ -1,6 +1,6 @@
 /* Playbox service worker: offline shell, last-known rooms, and payload-free push.
    A push carries no data. On wake this worker asks the hub (over the signed-in session) what needs attention. */
-const VER = "pb-v6";
+const VER = "pb-v7";
 const SHELL = ["/", "/auth.js", "/space.js", "/instruments.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VER).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
@@ -19,6 +19,10 @@ self.addEventListener("fetch", e => {
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/r/")) return;
   if (req.mode === "navigate") {                           // the shell holds no data, so it is safe to serve offline
     e.respondWith(fetch(req).catch(() => caches.match("/").then(r => r || new Response("Offline. Reconnect and reload.", {status: 503, headers: {"Content-Type": "text/plain"}}))));
+    return;
+  }
+  if (url.pathname.endsWith(".js")) {                        // our scripts change with the pages that call them: network first, the cache only when offline
+    e.respondWith(fetch(req).then(r => { if (r.ok) caches.open(VER).then(c => c.put(req, r.clone())); return r; }).catch(() => caches.match(req).then(hit => hit || Response.error())));
     return;
   }
   e.respondWith(caches.match(req).then(hit => {
