@@ -1,0 +1,38 @@
+[PASS] chain: hash links, body hashes, Ed25519 signatures under the pinned key, no duplicates, sequence: 6 receipts
+[PASS] genesis: protocol hash equals the committed PROTOCOL.md
+[PASS] genesis: task spec hash: task_spec_gpu_p2.json
+[PASS] genesis: task_climbmix.py hash equals the file in the repo state
+[PASS] genesis: baseline_climbmix.py hash equals the file in the repo state
+[PASS] genesis: harness.py hash equals the file in the repo state
+[PASS] genesis: climbmix_data.py hash equals the file in the repo state
+[PASS] genesis: PROTOCOL.md was committed before the genesis receipt: protocol committed 1794614400, genesis ts 1794704230
+[PASS] genesis: task_climbmix.py at git commit fa3bba87b4 matches
+[PASS] genesis: baseline_climbmix.py at git commit fa3bba87b4 matches
+[PASS] genesis: harness.py at git commit fa3bba87b4 matches
+[PASS] genesis: climbmix_data.py at git commit fa3bba87b4 matches
+[PASS] genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)
+[PASS] lineage: baseline archived and hashed
+[PASS] decision seq 1 (1cf676d369): archived candidate source matches its hash
+[PASS] decision seq 1 (1cf676d369): parent is the frontier at that point: parent b32a304cb3, frontier b32a304cb3
+[PASS] decision seq 1 (1cf676d369): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.3904; re-derived promote/promoted ratio=0.3904
+[PASS] decision seq 2 (28bbf440e3): archived candidate source matches its hash
+[PASS] decision seq 2 (28bbf440e3): parent is the frontier at that point: parent 1cf676d369, frontier 1cf676d369
+[PASS] decision seq 2 (28bbf440e3): verdict re-derived from recorded measurements: recorded reject/gain_below_threshold ratio=0.9629; re-derived reject/gain_below_threshold ratio=0.9629
+[PASS] decision seq 3 (9f9365321d): archived candidate source matches its hash
+[PASS] decision seq 3 (9f9365321d): parent is the frontier at that point: parent 1cf676d369, frontier 1cf676d369
+[PASS] decision seq 3 (9f9365321d): verdict re-derived from recorded measurements: recorded promote/promoted ratio=0.8822; re-derived promote/promoted ratio=0.8822
+[PASS] decision seq 4 (783880e37d): archived candidate source matches its hash
+[PASS] decision seq 4 (783880e37d): parent is the frontier at that point: parent 9f9365321d, frontier 9f9365321d
+[PASS] decision seq 4 (783880e37d): verdict re-derived from recorded measurements: recorded reject/holdout_failed ratio=0.1927; re-derived reject/holdout_failed ratio=0.1927
+[PASS] holdout: exactly one reveal and it is the last receipt: a reveal before the last decision means the holdout leaked mid-round
+[PASS] holdout: revealed seed and salt open the root committed in genesis
+[PASS] holdout: replay seeds match the commitment in genesis
+[PASS] holdout: local holdout shard matches the data manifest
+[PASS] holdout: no archived candidate source contains the holdout
+[PASS] replay seq 1 (1cf676d369): recorded seeds reproduce (batches within 10, holdout loss within 0.02)
+[PASS] replay seq 1 (1cf676d369): fresh replay seeds [1508, 1513, 1852] pass gates and gain >= theta/2: gain 0.615
+[PASS] replay seq 3 (9f9365321d): recorded seeds reproduce (batches within 10, holdout loss within 0.02)
+[PASS] replay seq 3 (9f9365321d): fresh replay seeds [1508, 1513, 1852] pass gates and gain >= theta/2: gain 0.129
+[PASS] replay seq 4 (783880e37d): caught false promotion fails the holdout again: holdout 2.248638402773987, limit 1.2225
+
+RESULT: VERIFIED  {"receipts": 6, "promotions": 2, "rejections": 2, "caught_false_promotions": 1, "reject_reasons": {"gain_below_threshold": 1, "holdout_failed": 1}}
