@@ -39,6 +39,8 @@ For a stable name and live updates use your own named tunnel, `--cloudflare-tunn
 any tunnelled request without a valid RS256 token for that team and AUD tag is refused, including static files, so a second hostname or a misrouted tunnel can't bypass Access.
 Requests straight on loopback from your own machine don't need one. Signing keys come from `https://TEAM.cloudflareaccess.com/cdn-cgi/access/certs`, cached an hour; if they can't be fetched the hub fails closed.
 **Run it as a service (macOS).** `ui/service/install-macos.sh --cloudflare-tunnel ID --cloudflare-hostname HOST --cloudflare-access TEAM --cloudflare-aud AUD` installs a LaunchAgent: starts at login, restarts if it dies, log at `~/Library/Logs/playbox-hub.log`. `--uninstall` removes it. Pair a device by stopping the service and running the hub by hand with `--pair` (the script refuses to bake a pairing link into the log).
+
+**Keep a room host running (macOS).** `ui/service/install-host-macos.sh NAME --state DIR [--repo DIR ...]` runs `playbox up` as a LaunchAgent (`com.playbox.host.NAME`): starts at login, restarts if it dies, log at `~/Library/Logs/playbox-host-NAME.log`. The room keeps its identity in `--state`; the hub adopts it and mints links over the control socket. `--list` and `--uninstall NAME` manage them. The log holds the first join link, so treat it as a secret.
 Verified with locally signed tokens (OpenSSL) and a stand-in tunnel; not yet against a real Access application.
 
 Tested end to end through a real quick tunnel: pairing, session cookie (`Secure`, `HttpOnly`), API, manifest, service worker; named tunnels and Access are untested.
