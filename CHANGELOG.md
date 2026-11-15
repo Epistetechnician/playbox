@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- A Notes tab in each room: the room's artifacts (proofs, code, documents, datasets, charts, notes) as a file tree grouped by kind, with a document view (Live or Source), status and check chips, and revision history. Text from members is escaped; no links, HTML or images are rendered.
+
+### Added
 - Appearance settings (Hub tab, command palette, status bar): ten themes with dark and light sides (Playbox, Mono, Catppuccin, Nord, Solarized, Everforest, Tokyo Night, GitHub, Gruvbox, Dracula), accent colour, fonts, interface scale, your own CSS, theme import and export. All kept in the browser; the model follows Hermes Agent's desktop themes (MIT).
 - A rooms sidebar (grouped by machine, with state and age) and a status bar (hub health, public address, theme) on the home page and in every room; a room header and a Timeline tab (event bars, kind filters, searchable history table) in the cockpit.
 
