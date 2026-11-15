@@ -434,11 +434,21 @@ What to look forward to, if the numbers keep holding:
 
 ## Try it
 
-Needs Rust 1.93.1 (pinned in `rust-toolchain.toml`).
+**The demo, one story in about a minute:** a stranger joins a room by a link and runs a sandboxed task, the host's log is shown to be tamper-evident, and a recorded hill-climb is re-verified from its receipts, including a cheat the gate caught. Every step checks itself ([docs/demo.md](docs/demo.md)).
+
+```sh
+scripts/demo.sh     # needs Docker running, python3 with cryptography and numpy
+```
+
+To install the released binary (no toolchain needed; it registers the MCP server with the agents it finds):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh
+```
 
+To build and test from source you need git, a C compiler and Rust 1.93.1 (pinned in `rust-toolchain.toml`; `rust-version` is 1.91). On Ubuntu: `sudo apt install build-essential`. Tests that need Docker, libkrun, root or a TPM skip with a message where those are missing.
+
+```sh
 cargo test --workspace
 cargo run -p playbox-cli -- up --local          # prints a link
 cargo run -p playbox-cli -- join '<link>' --local
@@ -478,4 +488,4 @@ flowchart TB
 
 A short visual overview for people new to the project: [docs/one-pager.html](docs/one-pager.html).
 
-Start with [PRD.md](PRD.md), then [docs/trust-layers.md](docs/trust-layers.md), [docs/steering.md](docs/steering.md), [docs/latent-channels.md](docs/latent-channels.md) and [docs/challenge.md](docs/challenge.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
+Start with [docs/demo.md](docs/demo.md) and [PRD.md](PRD.md), then [docs/trust-layers.md](docs/trust-layers.md), [docs/steering.md](docs/steering.md), [docs/latent-channels.md](docs/latent-channels.md) and [docs/challenge.md](docs/challenge.md). Release history is in [CHANGELOG.md](CHANGELOG.md).

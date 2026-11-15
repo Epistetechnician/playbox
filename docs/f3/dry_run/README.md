@@ -21,7 +21,7 @@ Calibration (frozen in the genesis receipt): target dev loss L* = 2.486 (oracle 
 
 The stand-ins were chosen after a manual look at nine variants on two seeds; the dry run measures the gate, not the proposals.
 
-`verify.txt`: all checks pass. `verify_replay.txt`: all 4 promotions reproduce on their recorded seeds, and on the revealed fresh seeds pass the gates with gains 0.507, 0.227, 0.248 and 0.101 (floor theta/2 = 0.025); the caught candidate fails the holdout again (4.217 against 2.507).
+`verify.txt`: all checks pass (re-verified 2026-11-14 from a fresh clone on a second machine; since amendment A3 the protocol check reads "a PROTOCOL.md committed before the genesis receipt", see A4). `verify_replay.txt`: all 4 promotions reproduce on their recorded seeds, and on the revealed fresh seeds pass the gates with gains 0.507, 0.227, 0.248 and 0.101 (floor theta/2 = 0.025); the caught candidate fails the holdout again (4.217 against 2.507).
 
 Files: `receipts.jsonl` (signed chain), `candidates/` (sources by sha256), `feed.jsonl` (the redacted feed agents would see), `harness.log`, `verify.txt` (chain, genesis, lineage, rule re-derivation, reveal, leak scan), `verify_replay.txt` (the same plus replay of all 4 promotions on recorded seeds and on the revealed fresh seeds, and re-running the caught candidate). `host.pub` is the pinned public key. The private key and the custodian directory are not committed.
 

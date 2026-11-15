@@ -76,6 +76,10 @@ Still open from this run: on Ubuntu 24.04 the rootless jail cases fail (`setgrou
 
 Re-checked on Ubuntu 24.04.4 (kernel 6.8.0-134, Lima VM): the unshare succeeds, but AppArmor strips the new namespace's capabilities from an unprofiled process, so the `setgroups`/`uid_map` writes get EPERM. The jail code cannot get around that from inside the process. With `kernel.apparmor_restrict_unprivileged_userns=0` the two rootless cases pass (the setting was restored afterwards). The jail now names this cause in its error. To run the rootless cases on 24.04, either set the sysctl to 0 on that host, or give the binary an AppArmor profile that has `userns,`.
 
+## Clean install and demo (2026-11-14, new Ubuntu 24.04 arm64 VM, nothing installed)
+
+Following the README only. `install.sh` installed the signed 0.3.2 release and `playbox up --local` / `join --local` worked with no toolchain. From a fresh clone, `cargo test --workspace` first failed twice: no C compiler (the README did not say one is needed), then the rootless jail cases under AppArmor (above). With both fixed it passes: 62 test binaries, 0 failed. `scripts/demo.sh` passes all six steps there and on macOS ([demo.md](demo.md)). Also found: the F3 dry run no longer verified because the protocol file had been amended after it (fixed, amendment A4); verifying the climbmix runs needs their data files and ends in a Python traceback without them, not a clean failure (open); `playbox doctor` reported the research venvs as ready on a machine that only had the repository mounted (open).
+
 ## Not yet tested
 
 - The libkrun runner and its confinement on bare-metal or x86-64 Linux/KVM. Both passed on nested arm64 KVM (above). The Pi has `/dev/kvm`, but libkrun is not packaged for it.

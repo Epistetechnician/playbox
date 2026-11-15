@@ -109,7 +109,23 @@ def check_genesis(rep: Report, g: dict, repo: Path, strict_git: bool = True) -> 
     b = g["body"]
     ok = True
     proto = repo / "docs/f3/PROTOCOL.md"
-    ok &= rep.add("genesis: protocol hash equals the committed PROTOCOL.md", proto.exists() and sha(proto.read_bytes()) == b["protocol_sha256"])
+    # The run pins the protocol as it stood when the run began. Amendments are appended later (section 15), so the file today
+    # may be newer: then the pinned hash must be a version that was committed, and committed before the genesis receipt.
+    if proto.exists() and sha(proto.read_bytes()) == b["protocol_sha256"]:
+        ok &= rep.add("genesis: protocol hash equals the committed PROTOCOL.md", True)
+    else:
+        found = ""
+        for line in git(repo, "log", "--format=%H %ct", "--", "docs/f3/PROTOCOL.md").splitlines():
+            commit, ts = line.split()
+            blob = subprocess.run(["git", "show", f"{commit}:docs/f3/PROTOCOL.md"], cwd=repo, capture_output=True).stdout
+            if blob and sha(blob) == b["protocol_sha256"] and int(ts) <= b["ts"]:
+                found = commit
+                break
+        ok &= rep.add(
+            "genesis: protocol hash equals a PROTOCOL.md committed before the genesis receipt",
+            bool(found),
+            f"the version at commit {found[:10]}; the file has been amended since" if found else "no committed version has this hash",
+        )
     spec = repo / "challenge/f3" / b.get("substrate", {}).get("spec", "task_spec.json")
     ok &= rep.add("genesis: task spec hash", spec.exists() and sha(spec.read_bytes()) == b["spec_sha256"], spec.name)
     for name, h in b["code_sha256"].items():

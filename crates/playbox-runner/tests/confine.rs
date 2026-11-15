@@ -31,6 +31,12 @@ mod linux {
         std::env::var_os("PLAYBOX_CONFINE_REQUIRE_ALL").is_none()
     }
 
+    /// Whether a jail could not be entered because this machine forbids unprivileged user namespaces: the kernel refused
+    /// `unshare`, or (Ubuntu 23.10 and later) AppArmor let it through and then denied the id maps.
+    fn userns_refused(e: &str) -> bool {
+        e.contains("unshare") || e.contains("AppArmor restricts unprivileged user namespaces")
+    }
+
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("playbox-confine-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
@@ -100,6 +106,12 @@ mod linux {
             "networked",
             &[("PB_SECRET", secret_dir.display().to_string()), ("PB_PORT", port.to_string()), ("PB_ROOT", tmp("root2").display().to_string())],
         );
+        if !out.status.success() || String::from_utf8_lossy(&out.stderr).contains("SKIP:") {
+            // The child never got as far as connecting. Release the accept, or this case waits for it forever.
+            let _ = TcpStream::connect(("127.0.0.1", port));
+            let _ = accept.join();
+            return report(&out);
+        }
         report(&out) && accept.join().unwrap()
     }
 
@@ -177,7 +189,7 @@ mod linux {
         match case {
             "confined" => {
                 if let Err(e) = entered(jail(false, vec![get("PB_RO")], vec![get("PB_RW")])) {
-                    if e.contains("unshare") {
+                    if userns_refused(&e) {
                         eprintln!("SKIP: {e}");
                         return 0;
                     }
@@ -224,7 +236,7 @@ mod linux {
             }
             "networked" => {
                 if let Err(e) = entered(jail(true, vec![], vec![])) {
-                    if e.contains("unshare") {
+                    if userns_refused(&e) {
                         eprintln!("SKIP: {e}");
                         return 0;
                     }
@@ -285,7 +297,7 @@ mod linux {
                 };
                 if let Err(e) = plan.enter() {
                     let e = format!("{e:#}");
-                    if e.contains("unshare") {
+                    if userns_refused(&e) {
                         eprintln!("SKIP: {e}");
                         return 0;
                     }
