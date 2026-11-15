@@ -400,6 +400,8 @@ mod linux {
                 }
             }
             "badpath" => {
+                // Every arm returns, so only the first path is entered: the child that refuses it reports for the process.
+                #[allow(clippy::never_loop)]
                 for p in ["relative/path", "/a/../etc", "/does/not/exist"] {
                     let j = jail(false, vec![PathBuf::from(p)], vec![]);
                     match j.enter() {

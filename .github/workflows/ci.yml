@@ -108,11 +108,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison bc libelf-dev python3-pyelftools patchelf libclang-dev pkg-config
           git clone --depth 1 --branch "$LIBKRUNFW_TAG" https://github.com/containers/libkrunfw "$RUNNER_TEMP/libkrunfw"
-          make -C "$RUNNER_TEMP/libkrunfw" -j"$(nproc)"
-          make -C "$RUNNER_TEMP/libkrunfw" install PREFIX="$HOME/krun"
+          (cd "$RUNNER_TEMP/libkrunfw" && make -j"$(nproc)")
+          (cd "$RUNNER_TEMP/libkrunfw" && make install PREFIX="$HOME/krun")
           git clone --depth 1 --branch "$LIBKRUN_TAG" https://github.com/containers/libkrun "$RUNNER_TEMP/libkrun"
-          PKG_CONFIG_PATH="$HOME/krun/lib64/pkgconfig:$HOME/krun/lib/pkgconfig" make -C "$RUNNER_TEMP/libkrun" -j"$(nproc)"
-          make -C "$RUNNER_TEMP/libkrun" install PREFIX="$HOME/krun"
+          (cd "$RUNNER_TEMP/libkrun" && PKG_CONFIG_PATH="$HOME/krun/lib64/pkgconfig:$HOME/krun/lib/pkgconfig" make -j"$(nproc)")
+          (cd "$RUNNER_TEMP/libkrun" && make install PREFIX="$HOME/krun")
       - name: Build the helper
         run: |
           LIB=$(dirname "$(find "$HOME/krun" -name 'libkrun.so' | head -1)")
@@ -150,7 +150,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install cryptography numpy pytest torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+      - run: pip install cryptography numpy pytest tiktoken pyarrow requests torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
       - run: python -m pytest challenge/f3/tests -q
       - run: python challenge/f3/verify.py --work docs/f3/dry_run --host-pubkey "$(cat docs/f3/dry_run/host.pub)" | tail -3
   conformance:
