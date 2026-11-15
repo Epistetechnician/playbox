@@ -146,131 +146,45 @@
   matchMedia("(prefers-color-scheme:dark)").addEventListener("change", () => { if (!R.dataset.theme) apply(); });
   window.addEventListener("storage", e => { if (e.key && e.key.startsWith("pb.")) apply(); });   // another tab changed it
 
-  /* ---- the settings dialog ---- */
-  const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-  const CSS = `
-.pbs{width:min(940px,calc(100vw - 24px));height:min(640px,calc(100vh - 40px));max-width:none;padding:0;border:1px solid var(--line-2);border-radius:14px;background:var(--panel);color:var(--ink);box-shadow:0 20px 70px rgba(0,0,0,.45);overflow:hidden}
-.pbs::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
-.pbs[open]{display:grid;grid-template-columns:230px 1fr}
-.pbs nav{border-right:1px solid var(--line);padding:14px 10px;overflow:auto;background:var(--bg-2)}
-.pbs nav h3{margin:2px 8px 10px;font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
-.pbs nav button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:7px 10px;border:1px solid transparent;border-radius:7px;background:none;color:var(--ink-2);font:500 13px var(--sans);cursor:pointer}
-.pbs nav button:hover{background:var(--panel-2);color:var(--ink)}
-.pbs nav button[aria-current=page]{background:var(--blue-grad);border-color:var(--blue-edge);color:var(--blue)}
-.pbs nav .sub{margin-left:12px;font-size:12.5px}
-.pbs .main{display:flex;flex-direction:column;min-width:0;min-height:0}
-.pbs header{display:flex;align-items:center;gap:8px;padding:14px 20px;border-bottom:1px solid var(--line);font:13px var(--sans);color:var(--mut)}
-.pbs header b{color:var(--ink);font-weight:600}
-.pbs header .x{margin-left:auto;border:0;background:none;color:var(--mut);font-size:18px;cursor:pointer;border-radius:6px;width:30px;height:30px}
-.pbs header .x:hover{background:var(--panel-2);color:var(--ink)}
-.pbs .body{padding:18px 20px 24px;overflow:auto;display:grid;gap:18px;align-content:start}
-.pbs .row{display:grid;grid-template-columns:1fr auto;gap:6px 18px;align-items:center}
-.pbs .row .t{font:500 14px var(--sans)} .pbs .row .d{grid-column:1;font:12.5px/1.4 var(--sans);color:var(--mut)}
-.pbs .themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
-.pbs .tc{display:grid;gap:8px;padding:10px;border:1px solid var(--line-2);border-radius:10px;background:var(--bg-2);cursor:pointer;text-align:left;color:var(--ink);font:inherit}
-.pbs .tc:hover{border-color:var(--edge)} .pbs .tc[aria-pressed=true]{border-color:var(--blue-edge);box-shadow:0 0 0 1px var(--blue-edge)}
-.pbs .tc .pv{border-radius:7px;padding:9px 10px;font:11.5px/1.5 var(--mono);display:grid;gap:3px}
-.pbs .tc .sw{display:flex;gap:4px;margin-top:3px}.pbs .tc .sw i{width:12px;height:12px;border-radius:50%}
-.pbs .tc b{font:600 13px var(--sans)} .pbs .tc span.d{font:12px/1.35 var(--sans);color:var(--mut)}
-.pbs .seg2{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
-.pbs .seg2 button{border:0;background:none;color:var(--ink-2);padding:6px 13px;font:500 12.5px var(--sans);cursor:pointer}
-.pbs .seg2 button+button{border-left:1px solid var(--line-2)}
-.pbs .seg2 button[aria-pressed=true]{background:var(--blue-grad);color:var(--blue)}
-.pbs .acc{display:flex;flex-wrap:wrap;gap:8px}
-.pbs .acc button{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 6px;border:1px solid var(--line-2);border-radius:999px;background:none;color:var(--ink-2);font:500 12.5px var(--sans);cursor:pointer}
-.pbs .acc button i{width:16px;height:16px;border-radius:50%;border:1px solid var(--line-2)}
-.pbs .acc button[aria-pressed=true]{border-color:var(--blue-edge);color:var(--ink);background:var(--blue-grad)}
-.pbs select,.pbs textarea,.pbs input[type=text]{background:var(--field);color:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:7px 10px;font:13px var(--sans)}
-.pbs textarea{width:100%;min-height:200px;font:12.5px/1.5 var(--mono);resize:vertical}
-.pbs .live{padding:14px;border:1px solid var(--line-2);border-radius:10px;background:var(--bg-2);display:grid;gap:6px}
-.pbs .live .h{font:600 17px var(--sans)} .pbs .live p{margin:0;color:var(--ink-2);font:14px/1.5 var(--sans)} .pbs .live code{font:13px var(--mono);color:var(--sig-ink)}
-.pbs button.act{padding:7px 14px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font:500 13px var(--sans);cursor:pointer}
-.pbs button.act:hover{border-color:var(--edge)}
-.pbs .note{font:12.5px/1.45 var(--sans);color:var(--mut)}
-@media (max-width:700px){.pbs[open]{grid-template-columns:1fr;grid-template-rows:auto 1fr}.pbs nav{display:flex;gap:6px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px}.pbs nav h3{display:none}.pbs nav button{width:auto;white-space:nowrap}.pbs nav .sub{margin:0}}
-`;
-  const SECTIONS = [["theme", "Theme"], ["accent", "Accent"], ["type", "Typography"], ["layout", "Scale and mode"], ["css", "Custom CSS"], ["share", "Import and export"]];
-  let dlg, sec = "theme";
-  const swatches = (p, dark) => `<span class="sw">${[p.sig, p.blue, p.ok, p.warn, p.bad, p.violet].map(c => `<i style="background:${c}"></i>`).join("")}</span>`;
-  function section() {
-    const s = state(), cur = find(s.skin), dark = mode() === "dark";
-    if (sec === "theme") {
-      const card = t => { const p = dark ? t.dark : t.light; return `<button class="tc" data-skin="${esc(t.id)}" aria-pressed="${t.id === s.skin}"><div class="pv" style="background:${p.bg};color:${p.ink};border:1px solid ${mix(p.bg, p.ink, .2)}"><span style="color:${p.mut}">~ playbox up</span><span><span style="color:${p.ok}">●</span> <span style="color:${p.sig}">gpu-lab</span> <span style="color:${p.mut}">3 in room</span></span><span style="color:${p.blue}">&gt; TRY score=6300</span></div><b>${esc(t.label)}</b><span class="d">${esc(t.desc || "Your theme")}</span>${swatches(p, dark)}</button>`; };
-      return `<div class="themes">${all().map(card).join("")}</div><p class="note">Each theme has a dark and a light side. Pick the mode under Scale and mode. Your own themes (Import and export) show up here.</p>`;
-    }
-    if (sec === "accent") return `<div class="row"><div class="t">Primary colour</div><div class="d">Buttons, the brand mark, other members' activity. The theme keeps its own unless you pick one.</div></div>
-      <div class="acc">${ACCENTS.map(([id, name, h]) => `<button data-accent="${id}" aria-pressed="${s.accent === id}"><i style="background:${h || (dark ? cur.dark.sig : cur.light.sig)}"></i>${esc(name)}</button>`).join("")}
-      <label class="acc" style="gap:8px"><button type="button" data-accent-custom aria-pressed="${s.accent.startsWith("custom:")}"><i style="background:${s.accent.startsWith("custom:") ? s.accent.slice(7) : "var(--line-2)"}"></i>Custom</button><input type="color" id="pbs-color" value="${s.accent.startsWith("custom:") ? s.accent.slice(7) : "#cbd8a2"}" aria-label="Custom primary colour"></label></div>`;
-    if (sec === "type") return `<div class="row"><div class="t">Interface font</div><select id="pbs-font">${Object.entries(FONTS).map(([k, v]) => `<option value="${k}" ${s.font === k ? "selected" : ""}>${esc(v[0])}</option>`).join("")}</select><div class="d">Fonts already on this device: nothing is downloaded.</div></div>
-      <div class="row"><div class="t">Code and numbers</div><select id="pbs-mono">${Object.entries(MONOS).map(([k, v]) => `<option value="${k}" ${s.mono === k ? "selected" : ""}>${esc(v[0])}</option>`).join("")}</select><div class="d">Used for ids, counts, the activity panels and anything that is code.</div></div>
-      <div class="live"><div class="h">Reading sample</div><p>Agents from different owners work in one room. Messages from other members are untrusted text; the witness watches them.</p><p><code>TRY score=6300 vec=[12, 200, 31, 77]</code> 0123456789</p></div>`;
-    if (sec === "layout") return `<div class="row"><div class="t">Mode</div><div class="seg2" role="group" aria-label="Mode">${[["auto", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button data-mode="${k}" aria-pressed="${s.mode === k}">${l}</button>`).join("")}</div></div>
-      <div class="row"><div class="t">Style</div><div class="seg2" role="group" aria-label="Style">${[["refined", "Refined"], ["expressive", "Expressive"]].map(([k, l]) => `<button data-style="${k}" aria-pressed="${s.style === k}">${l}</button>`).join("")}</div><div class="d">Refined is flat and plain, like a log viewer. Expressive adds glows, shadows, the dot-matrix wordmark and digits.</div></div>
-      <div class="row"><div class="t">Density</div><div class="seg2" role="group" aria-label="Density">${[["comfortable", "Comfortable"], ["compact", "Compact"]].map(([k, l]) => `<button data-density="${k}" aria-pressed="${s.density === k}">${l}</button>`).join("")}</div><div class="d">Compact tightens rows, buttons and cards to show more at once.</div></div>
-      <div class="row"><div class="t">Interface scale</div><div class="seg2" role="group" aria-label="Scale">${SCALES.map(([v, l]) => `<button data-scale="${v}" aria-pressed="${s.scale === v}">${l}</button>`).join("")}</div><div class="d">Scales the whole interface, text and spacing together.</div></div>`;
-    if (sec === "css") return `<div class="row"><div class="t">Your own CSS</div><div class="d">Applied on every page of this hub, after the theme. Variables you can override: <code>--bg --panel --ink --mut --sig --blue-edge --ok --warn --bad --line</code>.</div></div>
-      <textarea id="pbs-css" spellcheck="false" placeholder=":root { --r: 4px; }">${esc(s.css)}</textarea><div class="row"><span class="note" id="pbs-cssn">${s.css.length} of 20000 characters</span><button class="act" data-clearcss>Clear</button></div>`;
-    return `<div class="row"><div class="t">Export this look</div><div class="d">The current theme, accent, fonts and scale as one JSON file.</div><button class="act" data-export>Download</button></div>
-      <div class="row"><div class="t">Import a theme</div><div class="d">A JSON file with <code>id</code>, <code>label</code> and <code>dark</code> and <code>light</code> palettes (bg, panel, ink, mut, sig, blue, ok, warn, bad, violet as #rrggbb).</div><button class="act" data-import>Choose a file</button></div>
-      ${users().length ? `<div class="row"><div class="t">Your themes</div><div class="d">${users().map(t => esc(t.label)).join(", ")}</div><button class="act" data-removeusers>Remove all</button></div>` : ""}<p class="note" id="pbs-msg"></p>`;
-  }
-  function paint() {
-    const name = SECTIONS.find(x => x[0] === sec)[1];
-    dlg.innerHTML = `<nav aria-label="Appearance settings"><h3>Appearance</h3>${SECTIONS.map(([k, l]) => `<button class="sub" data-sec="${k}" ${k === sec ? 'aria-current="page"' : ""}>${l}</button>`).join("")}</nav>
-      <div class="main"><header>Settings <span>›</span> Appearance <span>›</span> <b>${name}</b><button class="x" data-close aria-label="Close">×</button></header><div class="body">${section()}</div></div>`;
-  }
-  function open(which) {
-    if (!document.getElementById("pbs-css-style")) { const st = document.createElement("style"); st.id = "pbs-css-style"; st.textContent = CSS; document.head.appendChild(st); }
-    if (!dlg) {
-      dlg = document.createElement("dialog"); dlg.className = "pbs"; dlg.setAttribute("aria-label", "Appearance settings");
-      document.body.appendChild(dlg);
-      dlg.addEventListener("click", e => {
-        const q = s => e.target.closest(s);
-        if (e.target === dlg || q("[data-close]")) return dlg.close();
-        let b;
-        if ((b = q("[data-sec]"))) { sec = b.dataset.sec; return paint(); }
-        if ((b = q("[data-skin]"))) { set("skin", b.dataset.skin); return paint(); }
-        if ((b = q("[data-accent]"))) { set("accent", b.dataset.accent); return paint(); }
-        if (q("[data-accent-custom]")) { set("accent", "custom:" + dlg.querySelector("#pbs-color").value); return paint(); }
-        if ((b = q("[data-mode]"))) { set("mode", b.dataset.mode); return paint(); }
-        if ((b = q("[data-scale]"))) { set("scale", b.dataset.scale); return paint(); }
-        if ((b = q("[data-style]"))) { set("style", b.dataset.style); return paint(); }
-        if ((b = q("[data-density]"))) { set("density", b.dataset.density); return paint(); }
-        if (q("[data-clearcss]")) { ls.del("pb.css"); apply(); return paint(); }
-        if (q("[data-export]")) return exportLook();
-        if (q("[data-import]")) return importLook();
-        if (q("[data-removeusers]")) { ls.del("pb.skins"); if (!all().some(t => t.id === state().skin)) set("skin", "playbox"); return paint(); }
-      });
-      dlg.addEventListener("input", e => {
-        if (e.target.id === "pbs-css") { ls.set("pb.css", e.target.value.slice(0, 20000)); apply(); const n = dlg.querySelector("#pbs-cssn"); if (n) n.textContent = `${e.target.value.length} of 20000 characters`; }
-        if (e.target.id === "pbs-color") { set("accent", "custom:" + e.target.value); }
-      });
-      dlg.addEventListener("change", e => { if (e.target.id === "pbs-font") set("font", e.target.value); if (e.target.id === "pbs-mono") set("mono", e.target.value); });
-    }
-    if (which && SECTIONS.some(x => x[0] === which)) sec = which;
-    paint();
-    if (!dlg.open) dlg.showModal();
-  }
-  function say(t) { const m = dlg && dlg.querySelector("#pbs-msg"); if (m) m.textContent = t; }
+  /* ---- preferences (interface behaviour, kept in this browser like the look) ---- */
+  const PREFS = {sidebar: "on", statusbar: "on", motion: "full", clock24: "1", landing: "last", tz: "local"};
+  const pref = k => ls.get("pb.pref." + k, PREFS[k]);
+  function setPref(k, v) { ls.set("pb.pref." + k, String(v)); applyPrefs(); document.dispatchEvent(new CustomEvent("pb:pref", {detail: {k, v}})); }
+  function applyPrefs() { R.dataset.sidebar = pref("sidebar"); R.dataset.statusbar = pref("statusbar"); R.dataset.motion = pref("motion"); }
+  applyPrefs();
+
+  /* ---- export and import of a look ---- */
   function exportLook() {
     const s = state(), t = find(s.skin);
-    const blob = new Blob([JSON.stringify({id: t.id, label: t.label, desc: t.desc || "", dark: t.dark, light: t.light, accent: s.accent, font: s.font, mono: s.mono, scale: s.scale}, null, 2)], {type: "application/json"});
+    const blob = new Blob([JSON.stringify({id: t.id, label: t.label, desc: t.desc || "", dark: t.dark, light: t.light, accent: s.accent, font: s.font, mono: s.mono, scale: s.scale, style: s.style, density: s.density}, null, 2)], {type: "application/json"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `playbox-theme-${t.id}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  function importLook() {
+  /** Ask for a file, then call done(message). */
+  function importLook(done) {
     const f = document.createElement("input"); f.type = "file"; f.accept = "application/json,.json";
     f.onchange = async () => {
       try {
         const j = JSON.parse(await f.files[0].text());
         const t = {id: String(j.id || "").replace(/[^a-z0-9-]/gi, "").slice(0, 40).toLowerCase(), label: String(j.label || j.id || "").slice(0, 40), desc: String(j.desc || "").slice(0, 120), dark: j.dark, light: j.light};
-        if (!t.id || !valid(t)) return say("That file is not a Playbox theme: every colour must be #rrggbb and both dark and light sides are needed.");
+        if (!t.id || !valid(t)) return done("That file is not a Playbox theme: every colour must be #rrggbb and both dark and light sides are needed.");
         if (THEMES.some(x => x.id === t.id)) t.id = "my-" + t.id;
         const list = users().filter(x => x.id !== t.id).concat(t).slice(-12);
-        ls.set("pb.skins", JSON.stringify(list)); set("skin", t.id); paint(); say(`Imported "${t.label}".`);
-      } catch { say("Could not read that file."); }
+        ls.set("pb.skins", JSON.stringify(list)); set("skin", t.id); done(`Imported "${t.label}".`);
+      } catch { done("Could not read that file."); }
     };
     f.click();
   }
+  function removeUsers() { ls.del("pb.skins"); if (!all().some(t => t.id === state().skin)) set("skin", "playbox"); }
+  function resetAll() { for (const k of ["skin", "accent", "font", "mono", "scale", "css", "style", "density", "skins"]) ls.del("pb." + k); for (const k in PREFS) ls.del("pb.pref." + k); apply(); applyPrefs(); }
 
-  window.PBTheme = {apply, state, set, open, themes: () => all().map(t => ({id: t.id, label: t.label})), mode, find};
+  /* The settings screen lives in /settings.js and loads the first time it is asked for. */
+  let loading;
+  function open(path) {
+    if (window.PBSettings) return window.PBSettings.open(path);
+    loading = loading || new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "/settings.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+    return loading.then(() => window.PBSettings.open(path)).catch(() => {});
+  }
+  document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === ",") { e.preventDefault(); open(); } });
+
+  window.PBTheme = {apply, state, set, open, themes: () => all().map(t => ({id: t.id, label: t.label, desc: t.desc || "", dark: t.dark, light: t.light, mine: !THEMES.some(x => x.id === t.id)})), mode, find, pref, setPref, exportLook, importLook, removeUsers, resetAll, mix, ACCENTS, FONTS, MONOS, SCALES, users: () => users()};
 })();

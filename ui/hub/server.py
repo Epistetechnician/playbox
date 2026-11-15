@@ -38,7 +38,7 @@ MAX_BODY = 1 << 20
 SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate"}      # playbox_create is sensitive too unless it only replicates (see room_route)
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/research.js": ("research.js", "text/javascript; charset=utf-8"), "/markdown.js": ("markdown.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
+PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/research.js": ("research.js", "text/javascript; charset=utf-8"), "/markdown.js": ("markdown.js", "text/javascript; charset=utf-8"), "/settings.js": ("settings.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
 
 
 def is_local(peer, headers):

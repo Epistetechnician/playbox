@@ -512,6 +512,7 @@ function paintPair(st, code) {
 /* ---------- app ---------- */
 async function startApp(view, inviteRoom) {
   if (view) S.view = view;
+  else if (window.PBTheme && PBTheme.pref("landing") !== "last" && ["rooms", "attention", "system", "research"].includes(PBTheme.pref("landing"))) S.view = PBTheme.pref("landing");
   try { S.me = await api("GET", "/api/me"); } catch { return; }
   await refreshRooms();
   paint();
@@ -524,7 +525,7 @@ async function startApp(view, inviteRoom) {
   addEventListener("offline", () => { S.live = false; paintStatus(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRooms(); });
   setInterval(() => { if (!document.hidden) tickAgo(); }, 30000);
-  setInterval(() => { const c = $("#clock"); if (c) c.textContent = new Date().toLocaleTimeString([], {hour12: false}); }, 1000);
+  setInterval(() => { const c = $("#clock"); if (c) c.textContent = new Date().toLocaleTimeString([], {hour12: !(window.PBTheme ? PBTheme.pref("clock24") === "1" : true)}); }, 1000);
 }
 async function loadKnocks() { try { S.knocks = (await api("GET", "/api/knocks")).requests; } catch {} if ($("#view") && (S.view === "rooms" || S.view === "attention")) paintView(true); }
 async function loadOut(quiet) {
@@ -625,7 +626,7 @@ function paint() {
       <div class="foot"><div class="keys">⌘K search<br>J K move · ↵ open</div></div></aside>
     <div class="col"><div class="strip"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
         <span class="state" id="linkled"></span><span class="hide-s" id="sthost"></span><span id="strooms"></span><span id="stattn"></span><span class="sp"></span>
-        <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
+        <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><button class="iconbtn" data-act="settings" aria-label="Settings" title="Settings (⌘,)">${svgi("hub")}</button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
       <main><div id="view"></div></main></div>
     <aside class="pane" id="pane" aria-label="Activity"></aside></div>
     <nav class="bottom" id="bottom" aria-label="Sections"></nav>`;
@@ -1018,7 +1019,7 @@ const VIEWS = {
       <div class="card"><h2>Install</h2><p class="mut" style="margin:0 0 14px">Playbox runs as an app: its own window, a badge for what needs you, and the last known state while you're offline.</p>
         <div class="row"><button class="btn" data-act="install" id="installbtn" hidden>Install app</button><span class="mut" style="font-size:13px" id="installhint">On iPhone or iPad: Share, then Add to Home Screen.</span></div></div>
       <div class="card"><h2>Appearance</h2><p class="mut" style="margin:0 0 14px">Theme, accent, fonts and scale. ${window.PBTheme ? `Now: <b>${esc((PBTheme.find(PBTheme.state().skin) || {}).label || "Playbox")}</b>.` : ""}</p>
-        <div class="row"><button class="btn primary sm" data-act="appearance">Open appearance settings</button></div>
+        <div class="row"><button class="btn primary sm" data-act="appearance">Open settings</button></div>
         <p class="mut" style="font-size:13px;margin:14px 0 0">Press <kbd>⌘K</kbd> or <kbd>/</kbd> anywhere to jump to a room.</p></div>
       <div class="card"><h2>Network</h2>
         <div class="stat"><span>Address</span><span class="mono">${esc(location.host)}</span></div>
@@ -1043,7 +1044,7 @@ function openPalette() {
     {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
     {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
     {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"},
-    ...(window.PBTheme ? [{t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open(), ic: "hub"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
+    ...(window.PBTheme ? [{t: "Settings", s: "appearance, interface, hub, safety  ⌘,", act: () => PBTheme.open(), ic: "hub"}, {t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open("appearance"), ic: "hub"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
   const sh = $("#sheet"); let q = "", sel = 0, list = items;
   const draw = () => {
     $("#pal-list").innerHTML = list.length ? list.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ph">${it.sig ? sigil(it.sig, 28) : svgi(it.ic)}</span><span>${esc(it.t)}</span><small>${esc(it.s)}</small></li>`).join("") : `<li class="mut">No match</li>`;
@@ -1281,7 +1282,8 @@ document.addEventListener("click", async e => {
   if (act === "add") openAdd();
   else if (act === "palette") openPalette();
   else if (act === "theme") toggleTheme();
-  else if (act === "appearance") window.PBTheme && PBTheme.open();
+  else if (act === "appearance") window.PBTheme && PBTheme.open("appearance");
+  else if (act === "settings") window.PBTheme && PBTheme.open();
   else if (act === "edit") openEdit(t.dataset.id);
   else if (act === "agent") connectAgent(t.dataset.id, t);
   else if (act === "kapprove") { t.disabled = true; try { await api("POST", `/api/knocks/${t.dataset.id}/approve`, {}); toast("Approved. They're being let in."); } catch (er) { toast(er.message, true); t.disabled = false; } loadKnocks(); }

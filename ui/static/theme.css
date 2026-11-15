@@ -282,3 +282,9 @@ pre.pbm-code,.pbm-code pre{margin:12px 0;padding:12px 14px;background:var(--fiel
 html[data-theme=dark] .pbm-code span{color:var(--shiki-dark)}
 @media (prefers-color-scheme:dark){html:not([data-theme=light]) .pbm-code span{color:var(--shiki-dark)}}
 .katex{font-size:1.05em}
+
+/* Interface preferences (Settings > Interface) */
+html[data-statusbar=off] .pbsb{display:none!important}html[data-statusbar=off] body.has-sb{padding-bottom:0!important}
+html[data-statusbar=off] body.has-sb .rail,html[data-statusbar=off] body.has-sb .pulse,html[data-statusbar=off] body.has-sb .pane{height:100vh!important;max-height:100vh!important}
+html[data-sidebar=off] .rr,html[data-sidebar=off] #railrooms{display:none!important}
+html[data-motion=reduce] *,html[data-motion=reduce] *::before,html[data-motion=reduce] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}

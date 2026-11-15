@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
+
+### Added
 - Notes and Work results render maths (KaTeX), coloured code (Shiki: python, rust, js, ts, shell, json, diff, lean, markdown, yaml, toml) and tables, with links sanitised by DOMPurify. The three libraries are vendored in `ui/static/vendor/` (licences in `LICENSES.md`), served by the hub itself, and load only when a note needs them. A strict markdown module (`markdown.js`) also renders text that is still arriving: an open code fence or `$$` block stays as plain text. Images from other sites are never fetched.
 
 ### Added

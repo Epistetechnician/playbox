@@ -51,7 +51,7 @@
       document.body.appendChild(sb); document.body.classList.add("has-sb");
       sb.addEventListener("click", e => {
         const b = e.target.closest("[data-sb]"); if (!b) return;
-        if (b.dataset.sb === "theme" && window.PBTheme) PBTheme.open();
+        if (b.dataset.sb === "theme" && window.PBTheme) PBTheme.open("appearance");
         if (b.dataset.sb === "health") location.href = "/?view=system";
       });
     }
