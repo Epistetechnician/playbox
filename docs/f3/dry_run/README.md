@@ -21,7 +21,7 @@ Calibration (frozen in the genesis receipt): target dev loss L* = 2.486 (oracle 
 
 The stand-ins were chosen after a manual look at nine variants on two seeds; the dry run measures the gate, not the proposals.
 
-`verify.txt`: all checks pass (re-verified 2026-11-14 from a fresh clone on a second machine; since amendment A3 the protocol check reads "a PROTOCOL.md committed before the genesis receipt", see A4). `verify_replay.txt`: all 4 promotions reproduce on their recorded seeds, and on the revealed fresh seeds pass the gates with gains 0.507, 0.227, 0.248 and 0.101 (floor theta/2 = 0.025); the caught candidate fails the holdout again (4.217 against 2.507).
+`verify.txt`: all checks pass (re-verified 2026-11-14 from a fresh clone on a second machine; since amendment A3 the protocol check reads "a PROTOCOL.md committed before the genesis receipt", see A5). `verify_replay.txt`: all 4 promotions reproduce on their recorded seeds, and on the revealed fresh seeds pass the gates with gains 0.507, 0.227, 0.248 and 0.101 (floor theta/2 = 0.025); the caught candidate fails the holdout again (4.217 against 2.507).
 
 Files: `receipts.jsonl` (signed chain), `candidates/` (sources by sha256), `feed.jsonl` (the redacted feed agents would see), `harness.log`, `verify.txt` (chain, genesis, lineage, rule re-derivation, reveal, leak scan), `verify_replay.txt` (the same plus replay of all 4 promotions on recorded seeds and on the revealed fresh seeds, and re-running the caught candidate). `host.pub` is the pinned public key. The private key and the custodian directory are not committed.
 
@@ -30,4 +30,4 @@ python3 challenge/f3/verify.py --work docs/f3/dry_run --host-pubkey "$(cat docs/
 python3 challenge/f3/verify.py --work docs/f3/dry_run --host-pubkey "$(cat docs/f3/dry_run/host.pub)" --replay all   # about 3 min on CPU
 ```
 
-The genesis binds git commit `9a251e8`; the verifier checks the file hashes in this repo against it. The verifier would fail if `challenge/f3/task.py`, `baseline.py`, `harness.py`, `task_spec.json`, `harness.py` or `docs/f3/PROTOCOL.md` were edited after this run.
+The genesis binds git commit `9a251e8`; the verifier checks the file hashes in this repo against it. The verifier would fail if `challenge/f3/task.py`, `baseline.py`, `harness.py`, `task_spec.json`, `harness.py` were edited after this run, or if the text of `docs/f3/PROTOCOL.md` that was pinned were edited in place (appended amendments are fine).

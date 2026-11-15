@@ -184,3 +184,63 @@ def test_harness_end_to_end_on_the_fixture_substrate(tmp_path):
     assert recs[1]["body"]["verdict"] == "reject"  # an unchanged baseline cannot clear the gain threshold
     rep = V.Report()
     assert V.check_chain(rep, recs, (work / "host.pub").read_text().strip()), rep.text()
+
+
+# ---- second-pilot arms (PROTOCOL A4) ---------------------------------------------------------------------------------------
+def test_h100_standins_and_random_proposals_apply_and_pass_the_static_check():
+    import arms
+    import harness
+    base = BASE.read_text()
+    for proposals in (arms.H100_STAND_INS, arms.random_proposals(5)):
+        stacked = base
+        for author, name, edits in proposals:
+            alone = harness.apply_patch(base, edits)
+            assert alone is not None and alone != base or name == "noop_control", (author, name)
+            assert tc.static_check(alone) is None, (author, name, tc.static_check(alone))
+            stacked = harness.apply_patch(stacked, edits)  # as if every earlier proposal had been promoted
+            assert stacked is not None, (author, name)
+            assert tc.static_check(stacked) is None, (author, name)
+    compiled = harness.apply_patch(base, arms.H100_STAND_INS[0][2])
+    assert "fwd = torch.compile(model)" in compiled and "loss = fwd(x, y)" in compiled and "ctx.eval_dev(model)" in compiled
+
+
+def test_random_arm_is_deterministic_and_inside_its_space():
+    import arms
+    a, b = arms.random_proposals(5), arms.random_proposals(5)
+    assert a == b and a != arms.random_proposals(5, seed=1)
+    assert a[:3] == arms.random_proposals(3)  # the first n do not depend on n
+    for author, name, edits in arms.random_proposals(40):
+        assert 1 <= len(edits) <= 2
+        for old, new in edits:
+            nm = old[len("re:^"):-len(" = .*$")]
+            kind, *rest = arms.RANDOM_SPACE[nm]
+            v = float(new.split("= ")[1])
+            assert (v in rest[0]) if kind == "choice" else rest[0] * 0.995 <= v <= rest[1] * 1.005, (nm, v)
+
+
+@pytest.mark.slow
+def test_forked_arms_share_one_genesis_and_both_verify(tmp_path):
+    """Two proposal arms can run from one calibrated genesis: copy the work directory after init, submit different
+    candidates to each, reveal both. Both chains verify under the same pinned key and share the genesis receipt."""
+    import shutil
+    import subprocess
+    import verify as V
+    env = {**os.environ, "F3_SUBSTRATE": "climbmix"}
+    a, b = tmp_path / "armA", tmp_path / "armB"
+
+    def h(*args):
+        p = subprocess.run([sys.executable, str(HERE / "harness.py"), *args], env=env, capture_output=True, text=True)
+        assert p.returncode == 0, p.stdout[-800:] + p.stderr[-800:]
+
+    h("init", "--work", str(a))
+    shutil.copytree(a, b)
+    for work, tag in ((a, "A"), (b, "B")):
+        c = tmp_path / f"c{tag}.py"
+        c.write_text(f"# arm {tag}\n" + BASE.read_text())
+        h("submit", "--work", str(work), str(c), "--author", f"arm-{tag}")
+        h("reveal", "--work", str(work))
+    ra, rb = (V.read_receipts(w / "receipts.jsonl") for w in (a, b))
+    assert ra[0]["id"] == rb[0]["id"] and ra[1]["id"] != rb[1]["id"]
+    for work in (a, b):
+        rep = V.Report()
+        assert V.check_chain(rep, V.read_receipts(work / "receipts.jsonl"), (work / "host.pub").read_text().strip()), rep.text()
