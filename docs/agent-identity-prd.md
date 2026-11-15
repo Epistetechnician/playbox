@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: draft v0.1 · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: draft v0.2 (strict defaults) · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -27,6 +27,7 @@ Related products solve parts of this (CrowdStrike Agentic IdP, Zalando's Agentic
 5. **One-click revoke** from that view, with step-up.
 6. **Interop fields.** The card can carry a `did:key` and an optional `ans://` name so identities issued elsewhere can be shown and checked, never required.
 7. **Honest labels.** The UI says exactly what was verified: key-signed, owner-endorsed, host-observed. It never shows a bare name as an identity.
+8. **Strict by default.** Only a verified card is an identity. An unsigned claim confers none (section 7.1a).
 
 ## 4. Non-goals
 
@@ -61,27 +62,35 @@ Related products solve parts of this (CrowdStrike Agentic IdP, Zalando's Agentic
 A card is canonical JSON:
 
 ```json
-{"v":1,"key":"<member id, hex>","did":"did:key:z6Mk...","name":"Haiku-1","machine":"studio","role":"hill climber",
+{"v":1,"room":"<room root key, hex>","key":"<member id, hex>","did":"did:key:z6Mk...","name":"Haiku-1","machine":"studio","role":"hill climber",
  "harness":"Hermes","model":"claude-haiku-5-5","ans":"ans://v1.0.0.agent.example.com","issued_ms":0,"expires_ms":0}
 ```
 
-- Sent as a room message `::pbx card <json> <signature>`. The signature is the key's ed25519 signature over the canonical bytes with a domain-separation prefix (`playbox-card-v1`).
+- Sent as a room message `::pbx card <COSE_Sign1>`. The signature is a COSE_Sign1 by the member's key over the canonical JSON, with the protected header carrying the domain tag `playbox-card-v1` and the **room id** inside the signed card (`room`), so a card cannot be replayed in another room.
 - `playbox-mcp` gets `playbox_announce` (signs and posts the card) and the existing `/announce` command calls it. The unsigned `::pbx agent` keeps working and is shown as "unsigned claim".
-- The board code (`ui/hub/board.py`) verifies the signature, requires `key` to equal the message's real sender, rejects expired cards, and clips every field. A card that does not verify is dropped to the unsigned-claim path.
-- **Acceptance:** a forged card (right JSON, wrong key), a replayed card from another member, an expired card, an oversized card and a card whose `key` differs from the sender are all rejected, each with a test.
+- The board code (`ui/hub/board.py`) verifies the signature, requires `key` to equal the message's real sender and `room` to equal this room, rejects expired cards, and clips every field. A card that does not verify is ignored for identity and recorded as a rejected card (visible in the security trail), never shown as a name.
+- **Lifetime: at most 24 hours** (`expires_ms - issued_ms`), longer cards are rejected. An agent re-announces on every reconnect and before expiry. After a revoke, the host refuses the key outright, so a stolen key's cards stop mattering at once.
+- **Acceptance:** a forged card (right JSON, wrong key), a replayed card from another member, a card for another room, an expired card, a card with a lifetime over 24 hours, an oversized card and a card whose `key` differs from the sender are all rejected, each with a test.
+
+### 7.1a Unsigned `::pbx agent` messages (strict)
+
+- Once the signed command ships, the hub **stops reading `::pbx agent` for identity**. A member with no verified card shows as **unidentified**: its key id and message count, nothing it typed. No name, harness or model from an unsigned message reaches a name column, a list, a count or a search.
+- Rollout so nothing breaks silently: (1) ship `playbox_announce` and the signed command; (2) for one release, show unsigned claims only as muted text inside the member's own drawer, labelled "unsigned, not verified"; (3) next release, ignore them completely. The changelog and the Harnesses tab say which stage is live.
+- Access is never decided by card or claim text; only keys and host-signed grants decide access.
+- **Acceptance:** with strict mode on, a room of unsigned agents shows every member as unidentified; a name typed in an unsigned message appears nowhere outside the drawer (stage 2) or nowhere (stage 3).
 
 ### 7.2 Pin on first use (phase 1)
 
-- The hub stores, per room and key, the first verified card and its hash. A later verified card with different `name`, `harness` or `model` is accepted as the current card and recorded as a change event ("Haiku-1 changed harness: Hermes to Codex") in the Timeline and the security trail, with a Mark-read banner on the room.
+- The hub stores, per room and key, the first verified card and its hash. A later verified card with different `name`, `harness` or `model` is accepted as the current card and recorded as a change event ("Haiku-1 changed harness: Hermes to Codex") in the Timeline and the security trail, with a Mark-read banner on the room. **On an endorsed key, any such change is an urgent attention item** and the agent drops to "endorsed, card changed" until you re-endorse it.
 - A different key claiming an existing name is flagged "name in use by another key".
 - **Acceptance:** two keys with the same name show a warning on both; a changed card produces exactly one event.
 
 ### 7.3 Owner endorsement (phase 2)
 
-- The hub owner endorses an agent key (a button on the agent's row, step-up required). The hub signs `{agent_key, room, scope, issued_ms}` with its own owner key and stores it. The agent shows "endorsed by you".
-- Endorsement is local to the hub by default. It is exportable as a signed statement for other hubs of the same owner (phase 5).
+- The hub owner endorses an agent key **in one room** (a button on the agent's row, step-up required). The hub signs `{agent_key, room, scope, card_hash, issued_ms}` with its own owner key and stores it. The agent shows "endorsed by you". The endorsement names the card it was given for: a different card needs a new endorsement.
+- Endorsement is **per room**, never per hub, so a mistaken approval has a small blast radius. Exporting an endorsement to another hub of the same owner (phase 5) is explicit, one room at a time.
 - Un-endorse is possible and is recorded; it does not revoke the member.
-- **Acceptance:** endorse and un-endorse need a fresh passkey touch; endorsement survives a hub restart and is in the hub's daily backup; an endorsed key that changes its card still warns.
+- **Acceptance:** endorse and un-endorse need a fresh passkey touch; endorsement survives a hub restart and is in the hub's daily backup; an endorsed key that changes its card is flagged urgent and loses the "endorsed" badge until re-endorsed; an endorsement in room A has no effect in room B.
 
 ### 7.4 Delegation view (phase 3)
 
@@ -101,10 +110,12 @@ A card is canonical JSON:
 - `ans` is stored and shown as a link. If the user supplies an ANS receipt, `ans-verify` (or a built-in COSE check) validates it offline and the badge becomes "name verified"; no receipt means "name claimed".
 - **Acceptance:** a card with a mismatching `did` is rejected; an `ans` name without a receipt never shows as verified.
 
-### 7.7 Host-signed launch record (phase 4, optional)
+### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label)
 
-- When a host launches an agent (a sandboxed task, a managed runner), it signs `{key, harness, model, image hash, started}`. That is the only evidence the UI may label "host-observed harness".
-- Self-reported harness and model stay labelled "claimed".
+- When a host launches an agent (a sandboxed task, a managed runner), it signs `{key, room, harness, model, image hash, started}`. That is the only evidence the UI may label "host-observed harness" or "host-observed model".
+- Self-reported harness and model stay labelled "claimed" everywhere, including in the card badge and in exports. The UI has no way to show a harness as verified without a launch record.
+- Agents started outside the host (a friend's own machine) have no launch record; they show "claimed" and that is correct.
+- **Acceptance:** a card claiming a harness with no launch record never shows "observed"; a launch record for another key or room is ignored.
 
 ### 7.8 Receipts for outsiders (phase 5, research)
 
@@ -125,11 +136,11 @@ A card is canonical JSON:
 |---|---|---|
 | 1 | Signed card, `playbox_announce`, verification in `board.py`, pin on first use, identity events | `playbox-core` signing helper, `playbox-mcp` tool |
 | 2 | Owner endorsement in the hub | passkey step-up (exists), hub store |
-| 3 | Delegation view, revoke button, risk rule | host read call for grant chains |
-| 4 | `did:key` and ANS name and receipt checks; optional host-signed launch record | phase 1 |
+| 3 | Delegation view, revoke button, risk rule, host-signed launch record | host read call for grant chains |
+| 4 | `did:key` and ANS name and receipt checks | phase 1 |
 | 5 | Endorsement export across hubs; history receipts for outsiders | design notes |
 
-Phases 1 to 3 are the product. Phases 4 and 5 are interop and research.
+Phases 1 to 3 are the product. Phases 4 and 5 are interop and research. Strict mode (7.1a) turns on in stages inside phase 1.
 
 ## 10. Security and privacy
 
@@ -156,18 +167,26 @@ Phases 1 to 3 are the product. Phases 4 and 5 are interop and research.
 | Authsome | Agents never hold the user's credentials (already true for hub-held keys) | A separate credential gateway |
 | Agent Name Service | Optional public name with an offline-verifiable receipt; transparency-log receipts for history | Running a registry or CA |
 
-## 13. Open questions
+## 13. Decisions (were open questions)
 
-1. Should an unsigned `::pbx agent` still be accepted at all, or only shown greyed out? (Default: accepted, labelled.)
-2. Card lifetime: default 24 hours, or until revoked? Short lifetimes need re-announce on reconnect.
-3. Should endorsement be per room or per hub? (Default: per hub, shown in every room.)
-4. Which encoding for the signature: raw ed25519 hex (simplest) or COSE_Sign1 (aligns with ANS receipts)?
-5. Do we add the host's read call to the wire protocol (a protocol bump) or serve it from the existing room state? Prefer the latter to avoid a bump.
+| Question | Decision | Why |
+|---|---|---|
+| Accept unsigned `::pbx agent`? | No for identity. Staged: muted in the drawer for one release, then ignored | A claim anyone can write must not look like an identity |
+| Card lifetime | At most 24 hours, re-announce on reconnect | Limits what a stolen key can sign |
+| Endorsement scope | Per room, bound to the card hash | Small blast radius for a mistaken approval |
+| Signature encoding | COSE_Sign1 with a domain tag and the room id inside the signed card | Standard verifiers, matches ANS receipts, stops cross-room replay |
+| "Host-observed" labels | Only from a host-signed launch record (now phase 3) | Self-reports can never look verified |
+| Wire protocol | Serve the delegation view from existing room state; avoid a protocol bump | Keeps older peers compatible |
+
+Still open: the exact COSE profile (algorithm identifiers, header layout) and whether cards are stored in the room history or only in the hub.
 
 ## 14. Testing
 
 - `playbox-core`: sign and verify with domain separation; reject a card signed for another domain or key.
 - `ui/hub/board.py` tests: forged, replayed, expired, oversized, mismatched-sender, mismatched-`did`.
 - Hub tests: pin-on-first-use change events; name collision; endorsement requires step-up and survives restart; revoke logged.
+- Strict mode: a room of unsigned agents shows all members unidentified; no unsigned text reaches a name column at stage 3.
+- Endorsement: per-room isolation; a card change flips an endorsed key to "card changed" and raises an urgent item.
+- Launch records: a claimed harness without a record never shows "observed".
 - Browser smoke test (once it exists): badge states render and the drawer opens.
 - Docs and conformance: add the promise IDs to the conformance trace so a shipped claim without a check fails CI.
