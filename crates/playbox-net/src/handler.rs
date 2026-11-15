@@ -2,6 +2,7 @@
 
 use crate::grants::{self, Authority, Caps};
 use crate::host::HostConfig;
+use crate::op_error::OpError;
 use crate::state::State;
 use crate::wire::{self, Op};
 use crate::{
@@ -483,12 +484,12 @@ impl RoomHandler {
             Some(Op::Say { text, name, request_id }) => {
                 return match self.audit.chat.say_once(&from.to_string(), name.as_deref(), &text, request_id.as_deref()) {
                     Ok(seq) => reply(json!({ "seq": seq }).to_string()),
-                    Err(e) => reply(json!({ "error": e }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 }
             }
             Some(Op::Remember { text, key }) => {
                 let t0 = std::time::Instant::now();
-                let Some(mem) = self.cfg.memory.clone() else { return reply(json!({ "error": "this room has no shared memory" }).to_string()) };
+                let Some(mem) = self.cfg.memory.clone() else { return reply(OpError::NoSharedMemory.body()) };
                 let r = mem.remember(&from.to_string(), &text, key.as_deref()).await;
                 self.audit.record(
                     "remember",
@@ -497,12 +498,12 @@ impl RoomHandler {
                 );
                 return match r {
                     Ok(x) => reply(json!({ "doc": x.doc, "status": x.status }).to_string()),
-                    Err(e) => reply(json!({ "error": e }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 };
             }
             Some(Op::Recall { query, max_tokens, author }) => {
                 let t0 = std::time::Instant::now();
-                let Some(mem) = self.cfg.memory.clone() else { return reply(json!({ "error": "this room has no shared memory" }).to_string()) };
+                let Some(mem) = self.cfg.memory.clone() else { return reply(OpError::NoSharedMemory.body()) };
                 let members: std::collections::HashSet<String> = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).members.keys().map(std::string::ToString::to_string).collect();
                 let r = mem.recall(&query, max_tokens, author.as_deref(), &|k: &str| members.contains(k)).await;
                 self.audit.record(
@@ -512,7 +513,7 @@ impl RoomHandler {
                 );
                 return match r {
                     Ok(hits) => reply(json!({ "hits": hits }).to_string()),
-                    Err(e) => reply(json!({ "error": e }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 };
             }
             Some(Op::ConvList) => return reply(json!({ "conversations": self.convs.list(&from.to_string()) }).to_string()),
@@ -525,7 +526,7 @@ impl RoomHandler {
                 }
                 return match r {
                     Ok(c) => reply(json!({ "conversation": c }).to_string()),
-                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 };
             }
             Some(Op::ConvInvite { conv, members }) => {
@@ -537,7 +538,7 @@ impl RoomHandler {
                 }
                 return match r {
                     Ok(c) => reply(json!({ "conversation": c }).to_string()),
-                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 };
             }
             Some(Op::ConvPost { conv, text, request_id, sig }) => {
@@ -548,26 +549,26 @@ impl RoomHandler {
                 }
                 return match r {
                     Ok(e) => reply(json!({ "entry": e }).to_string()),
-                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 };
             }
             Some(Op::ConvRead { conv, since, mark }) => {
                 return match self.convs.read(&from.to_string(), &conv, since, mark) {
                     Ok(v) => reply(json!({ "conversation": v }).to_string()),
-                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 };
             }
             Some(Op::CapList) => return reply(json!({ "capabilities": self.caps.book.describe() }).to_string()),
             Some(Op::Cap { name, args, call_id }) => {
                 return match self.caps.submit(&from.to_string(), &name, args, &call_id) {
                     Ok(c) => reply(json!({ "call": c.signed(&self.attest_key) }).to_string()),
-                    Err(e) => reply(json!({ "error": format!("{e:#}") }).to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
                 }
             }
             Some(Op::CapPoll { call_id }) => {
                 return match self.caps.book.view(&from.to_string(), &call_id) {
                     Some(c) => reply(json!({ "call": c.signed(&self.attest_key) }).to_string()),
-                    None => reply(json!({ "error": "no such call" }).to_string()),
+                    None => reply(OpError::NoSuchCall.body()),
                 }
             }
             Some(Op::Feed { since, wait_secs }) => {

@@ -16,6 +16,7 @@ mod keys;
 pub mod latent;
 pub mod limits;
 mod link;
+mod op_error;
 pub mod review;
 pub mod revoke;
 pub mod shared_memory;
