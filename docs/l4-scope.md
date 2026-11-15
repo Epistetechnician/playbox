@@ -349,3 +349,36 @@ only on the existing mapper (they passed with wide margins); no other criterion 
 
 **Budget.** About 5 USD of H100 time on gman (two evaluations of about 12 minutes, one 40-minute training run, loads), inside the 30 USD ceiling;
 12.4 USD was spent before this step. The node is stopped at the end.
+
+### Settling (B): result
+
+Raw files: `steer/results/telepathy/l4_gonogo/settleb_s0.json`, `settleb_s1.json`, `settleb_logs.txt`. 720 templated items per mapper (16 held-out
+topics x 15 draws x draw seeds 5, 6, 7); interval = bootstrap over topics. Mapper s0 is the section 11 checkpoint (training seed 0); s1 is the same recipe,
+training seed 1 (30 and 29 non-finite batches skipped respectively; both trained normally).
+
+| | s0 | s1 |
+|---|---|---|
+| mapped retention | 75.6% | 85.8% |
+| unrelated real cache retention (same items) | 59.6% | 59.6% |
+| **(B) mapped minus unrelated** | **16.0 points** (95% CI 14.0 to 18.0) | **26.2 points** (95% CI 24.2 to 28.1) |
+| across the three draw seeds | 15.3, 16.1, 16.7 | 25.8, 26.3, 26.5 |
+| topics at or above 20 points (of 16) | 5 | 15 |
+| specificity: mapped minus mapped-on-another-topic's-cache | 52.5 points (49.6 to 55.2) | 54.2 points |
+
+**Verdict by the rule fixed before the run: not robust, therefore a no-go.** One mapper clears 20 points (s1, by 6 points) and one does not (s0, by 4);
+the rule counts a split as a no-go, and I kept it.
+
+What the run did settle:
+
+- **The 48-item miss was not item noise.** Item draws move the result by about 1 point (three draw seeds agree within 1.4 points for each mapper) and the
+  topic-cluster intervals are about 4 points wide. What moves it by 10 points is the training seed. The earlier "19.1 against 20" was one draw of a
+  quantity whose real spread between mappers is much larger than that gap.
+- **The channel carries the topic in both mappers.** Feeding a mapper another topic's sender cache drops retention from 76 to 23 (s0) and from 86 to 32
+  (s1), so the 52 to 54 point specificity does not depend on the seed. Only the margin over a real unrelated cache, which is a hard baseline (it has
+  the right format and scores 60% on a wrong topic), is seed-sensitive.
+- **Not tested for s1:** (A) wikitext retention and (C) 21-way retrieval were evaluated only for s0 (97.6% and 100%). I do not claim s1 passes all three.
+
+What follows, not done: the question is now how often a training seed lands above 20, not whether this one does. Two more seeds cost about 5 USD for
+training and evaluation (36 minutes of training each at about 4 USD per hour). Do that before the 60 to 150 USD full-size mapper: if training seed
+decides pass or fail at 4B, it will decide it at full size too, and the larger spend should buy several seeds or a recipe that is less seed-sensitive,
+not one run. Spend on this step: about 5.4 USD on gman (node total 116.54 USD, 17.9 USD of the 30 USD ceiling for the whole piece of work).
