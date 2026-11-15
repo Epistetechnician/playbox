@@ -4,7 +4,6 @@ use super::machine::{home_dir, mode_of, out_of};
 use super::{Check, Level, Opts};
 use crate::{setup, wizard};
 use playbox_core::{attest, platform, store};
-use std::io::{BufRead, Read};
 use std::path::PathBuf;
 use std::time::SystemTime;
 

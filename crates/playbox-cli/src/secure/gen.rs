@@ -1,7 +1,6 @@
 //! Request generators and the oracle that judges hub responses during fuzzing.
 
 use super::http::{h, Resp};
-use std::io::{BufRead, Read};
 
 /// A fixed request, and what a correct hub's answer to it looks like.
 pub(super) type Case = (&'static str, Req, Box<dyn Fn(&Resp) -> bool>);

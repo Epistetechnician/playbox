@@ -1,6 +1,6 @@
 //! A minimal HTTP/1.1 client for probing the hub over raw sockets.
 
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream, UdpSocket};
 use std::time::Duration;
 

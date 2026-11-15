@@ -2,7 +2,6 @@
 
 use super::{Check, Fix, Level};
 use playbox_core::{platform, store};
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
