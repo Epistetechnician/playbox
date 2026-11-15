@@ -1,0 +1,17 @@
+00:58:09
+-- h100-1: compile_model
+seq  1 h100-1     PROMOTE  promoted               gain=0.6096 caught_false=False
+-- h100-2: weight_decay_0_and_clip_1
+RESUME 01:30:24
+-- h100-2: weight_decay_0_and_clip_1
+seq  2 h100-2     REJECT   gain_below_threshold   gain=0.0371 caught_false=False
+-- h100-3: anneal_to_step_240
+RESUME2 02:39:42
+-- h100-3: anneal_to_step_240
+RESUME2 02:50:21
+-- h100-3: anneal_to_step_240
+seq  3 h100-3     PROMOTE  promoted               gain=0.1178 caught_false=False
+-- h100-4: dev_memorizer_INJECTED_BAD
+seq  4 h100-4     REJECT   holdout_failed         gain=0.8073 caught_false=True
+reveal receipt 41861fd0e862
+03:07:07
