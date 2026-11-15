@@ -263,3 +263,7 @@ html:not([data-style=expressive]) .brand b{width:10px;height:10px;border-radius:
 .ldr .dots{flex:1;border-bottom:1px dotted var(--line-2);transform:translateY(-3px)}
 .kvt{width:100%;border-collapse:collapse;font:13px var(--sans)}.kvt td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}.kvt .k{width:34%;font:12.5px var(--mono);color:var(--mut)}
 .rtl .tlr{grid-template-columns:90px 1fr 100px}
+
+/* Square corners everywhere: no rounded edges, on any page, theme or style. Last rule on purpose. */
+:root,html[data-style]{--r:0}
+*,*::before,*::after{border-radius:0!important}
