@@ -1,0 +1,79 @@
+{
+ "sender": "qwen8b",
+ "receiver": "mis (mistralai/Mistral-7B-v0.1)",
+ "note": "transcribed from the run log (the node was recycled before the JSON could be copied); 20 concepts x 4 prompts = 80 per cell",
+ "layers": {
+  "0.45": {
+   "layer": 14,
+   "heldout_cosine": 0.896,
+   "grid": {
+    "0.6": {
+     "mapped": 0.525,
+     "direct": 0.725
+    },
+    "1.0": {
+     "mapped": 0.725,
+     "direct": 0.85
+    },
+    "1.4": {
+     "mapped": 0.6375,
+     "direct": 0.7375
+    }
+   }
+  },
+  "0.6": {
+   "layer": 19,
+   "heldout_cosine": 0.884,
+   "grid": {
+    "0.6": {
+     "mapped": 0.35,
+     "direct": 0.675
+    },
+    "1.0": {
+     "mapped": 0.6375,
+     "direct": 0.8375
+    },
+    "1.4": {
+     "mapped": 0.6375,
+     "direct": 0.775
+    }
+   }
+  },
+  "0.75": {
+   "layer": 24,
+   "heldout_cosine": 0.867,
+   "grid": {
+    "0.6": {
+     "mapped": 0.2125,
+     "direct": 0.375
+    },
+    "1.0": {
+     "mapped": 0.625,
+     "direct": 0.9125
+    },
+    "1.4": {
+     "mapped": 0.7125,
+     "direct": 0.9125
+    }
+   }
+  },
+  "0.9": {
+   "layer": 28,
+   "heldout_cosine": 0.857,
+   "grid": {
+    "0.6": {
+     "mapped": 0.1875,
+     "direct": 0.425
+    },
+    "1.0": {
+     "mapped": 0.7,
+     "direct": 0.9
+    },
+    "1.4": {
+     "mapped": 0.7625,
+     "direct": 0.9375
+    }
+   }
+  }
+ }
+}
