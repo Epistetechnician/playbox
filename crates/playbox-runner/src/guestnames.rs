@@ -38,23 +38,41 @@ pub fn nameservers(resolv_conf: &str) -> Vec<IpAddr> {
 /// # Errors
 ///
 /// Fails if `owner_choice` holds something that is not an address.
-pub fn choose(owner_choice: Option<&str>, host_resolv_conf: &str, may_reach: impl Fn(IpAddr) -> bool) -> Result<Vec<IpAddr>> {
+pub fn choose(
+    owner_choice: Option<&str>,
+    host_resolv_conf: &str,
+    may_reach: impl Fn(IpAddr) -> bool,
+) -> Result<Vec<IpAddr>> {
     let mut picked: Vec<IpAddr> = if let Some(list) = owner_choice {
         list.split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(|s| s.parse().with_context(|| format!("PLAYBOX_GUEST_DNS: {s:?} is not an IP address")))
+            .map(|s| {
+                s.parse()
+                    .with_context(|| format!("PLAYBOX_GUEST_DNS: {s:?} is not an IP address"))
+            })
             .collect::<Result<_>>()?
     } else {
-        let mut own: Vec<IpAddr> = nameservers(host_resolv_conf).into_iter().filter(|ip| may_reach(*ip)).collect();
+        let mut own: Vec<IpAddr> = nameservers(host_resolv_conf)
+            .into_iter()
+            .filter(|ip| may_reach(*ip))
+            .collect();
         if own.is_empty() {
-            own = FALLBACK_RESOLVERS.iter().filter_map(|s| s.parse().ok()).collect();
+            own = FALLBACK_RESOLVERS
+                .iter()
+                .filter_map(|s| s.parse().ok())
+                .collect();
         }
         own
     };
     picked.sort_by_key(IpAddr::is_ipv6); // stable: keeps the given order within each family
     let mut seen = Vec::new();
-    picked.retain(|ip| !seen.contains(ip) && { seen.push(*ip); true });
+    picked.retain(|ip| {
+        !seen.contains(ip) && {
+            seen.push(*ip);
+            true
+        }
+    });
     picked.truncate(MAX_RESOLVERS);
     Ok(picked)
 }
@@ -65,14 +83,21 @@ pub fn choose(owner_choice: Option<&str>, host_resolv_conf: &str, may_reach: imp
 pub fn host_resolv_conf() -> String {
     ["/run/systemd/resolve/resolv.conf", "/etc/resolv.conf"]
         .iter()
-        .find_map(|p| std::fs::read_to_string(p).ok().filter(|s| !nameservers(s).is_empty()))
+        .find_map(|p| {
+            std::fs::read_to_string(p)
+                .ok()
+                .filter(|s| !nameservers(s).is_empty())
+        })
         .unwrap_or_default()
 }
 
 /// The text of a guest's `/etc/resolv.conf`.
 #[must_use]
 pub fn resolv_conf(resolvers: &[IpAddr]) -> String {
-    resolvers.iter().map(|ip| format!("nameserver {ip}\n")).collect()
+    resolvers
+        .iter()
+        .map(|ip| format!("nameserver {ip}\n"))
+        .collect()
 }
 
 /// The text of a guest's `/etc/hosts`: localhost, then each pinned name.
@@ -82,7 +107,10 @@ pub fn hosts_file(pinned: &[(String, IpAddr)]) -> String {
     let mut seen = Vec::new();
     for (name, ip) in pinned {
         // Names come from a grant: anything that is not a plain host name would be a way to add lines to the file.
-        let plain = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+        let plain = !name.is_empty()
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
         if plain && !seen.contains(&(name, ip)) {
             seen.push((name, ip));
             out.push_str(&format!("{ip} {name}\n"));
@@ -101,7 +129,8 @@ pub fn hosts_file(pinned: &[(String, IpAddr)]) -> String {
 /// Fails if `etc` is missing or is a link, or the file cannot be written.
 pub fn write_etc(root: &Path, name: &str, text: &str) -> Result<PathBuf> {
     let etc = root.join("etc");
-    let meta = std::fs::symlink_metadata(&etc).with_context(|| format!("the image has no /etc ({})", etc.display()))?;
+    let meta = std::fs::symlink_metadata(&etc)
+        .with_context(|| format!("the image has no /etc ({})", etc.display()))?;
     if !meta.file_type().is_dir() {
         bail!("the image's /etc is not a directory, so /etc/{name} was not written");
     }
@@ -111,7 +140,10 @@ pub fn write_etc(root: &Path, name: &str, text: &str) -> Result<PathBuf> {
         Ok(_) => std::fs::remove_file(&path)?,
         Err(_) => {}
     }
-    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
     f.write_all(text.as_bytes())?;
     Ok(path)
 }
@@ -131,22 +163,41 @@ mod tests {
         let internet = |a| allowed(Level::Internet, a);
         // A stub on loopback and a home router: neither is reachable at the internet level.
         let home = "# comment\nnameserver 127.0.0.53\nnameserver 192.168.1.1\nsearch lan\n";
-        assert_eq!(choose(None, home, internet).unwrap(), vec![ip("1.1.1.1"), ip("9.9.9.9")]);
+        assert_eq!(
+            choose(None, home, internet).unwrap(),
+            vec![ip("1.1.1.1"), ip("9.9.9.9")]
+        );
         // A public resolver the host uses is kept, IPv4 first, and the unreachable ones dropped.
         let mixed = "nameserver 2606:4700:4700::1111\nnameserver 10.0.0.2\nnameserver 8.8.8.8\nnameserver 8.8.8.8\n";
-        assert_eq!(choose(None, mixed, internet).unwrap(), vec![ip("8.8.8.8"), ip("2606:4700:4700::1111")]);
+        assert_eq!(
+            choose(None, mixed, internet).unwrap(),
+            vec![ip("8.8.8.8"), ip("2606:4700:4700::1111")]
+        );
         // An unfiltered guest shares the host's network, so the host's own resolvers work as they are.
-        assert_eq!(choose(None, home, |_| true).unwrap(), vec![ip("127.0.0.53"), ip("192.168.1.1")]);
+        assert_eq!(
+            choose(None, home, |_| true).unwrap(),
+            vec![ip("127.0.0.53"), ip("192.168.1.1")]
+        );
         assert_eq!(choose(None, "", |_| true).unwrap().len(), 2);
     }
 
     // REQ: BOX-8
     #[test]
     fn the_owner_can_name_the_resolvers_or_none() {
-        assert_eq!(choose(Some("10.0.0.2, 9.9.9.9"), "nameserver 8.8.8.8", |_| false).unwrap(), vec![ip("10.0.0.2"), ip("9.9.9.9")]);
-        assert!(choose(Some(""), "nameserver 8.8.8.8", |_| true).unwrap().is_empty());
+        assert_eq!(
+            choose(Some("10.0.0.2, 9.9.9.9"), "nameserver 8.8.8.8", |_| false).unwrap(),
+            vec![ip("10.0.0.2"), ip("9.9.9.9")]
+        );
+        assert!(choose(Some(""), "nameserver 8.8.8.8", |_| true)
+            .unwrap()
+            .is_empty());
         assert!(choose(Some("dns.example"), "", |_| true).is_err());
-        assert_eq!(choose(Some("1.1.1.1,1.0.0.1,8.8.8.8,9.9.9.9"), "", |_| true).unwrap().len(), 3);
+        assert_eq!(
+            choose(Some("1.1.1.1,1.0.0.1,8.8.8.8,9.9.9.9"), "", |_| true)
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     // REQ: BOX-8
@@ -163,7 +214,10 @@ mod tests {
             text,
             "127.0.0.1 localhost\n::1 localhost\n93.184.216.34 api.example.com\n2606:2800:220:1::1 api.example.com\n"
         );
-        assert_eq!(resolv_conf(&[ip("1.1.1.1"), ip("9.9.9.9")]), "nameserver 1.1.1.1\nnameserver 9.9.9.9\n");
+        assert_eq!(
+            resolv_conf(&[ip("1.1.1.1"), ip("9.9.9.9")]),
+            "nameserver 1.1.1.1\nnameserver 9.9.9.9\n"
+        );
     }
 
     // REQ: BOX-8
@@ -179,9 +233,18 @@ mod tests {
         // The file is a link to something outside the root: the link is replaced, the target untouched.
         std::os::unix::fs::symlink(outside.join("victim"), root.join("etc/resolv.conf")).unwrap();
         let written = write_etc(&root, "resolv.conf", "nameserver 1.1.1.1\n").unwrap();
-        assert_eq!(std::fs::read_to_string(outside.join("victim")).unwrap(), "host file");
-        assert_eq!(std::fs::read_to_string(&written).unwrap(), "nameserver 1.1.1.1\n");
-        assert!(!std::fs::symlink_metadata(&written).unwrap().file_type().is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("victim")).unwrap(),
+            "host file"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&written).unwrap(),
+            "nameserver 1.1.1.1\n"
+        );
+        assert!(!std::fs::symlink_metadata(&written)
+            .unwrap()
+            .file_type()
+            .is_symlink());
 
         // `etc` itself is a link out of the root: nothing is written anywhere.
         let linked = dir.join("linked");

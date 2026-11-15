@@ -136,14 +136,29 @@ pub enum Op {
         since: u64,
     },
     /// Start a conversation with `members` (member ids, all current members of the room). The caller is on the roster and its creator.
-    ConvNew { title: String, #[serde(default)] members: Vec<String> },
+    ConvNew {
+        title: String,
+        #[serde(default)]
+        members: Vec<String>,
+    },
     /// Add members to a conversation (its creator only).
     ConvInvite { conv: String, members: Vec<String> },
     /// Post to a conversation. `sig` is the author's signature (hex) over `conversations::signed_text(conv, request_id, text)`; the
     /// host checks it, stores it with the entry, and a post with the same `request_id` is stored once.
-    ConvPost { conv: String, text: String, request_id: String, sig: String },
+    ConvPost {
+        conv: String,
+        text: String,
+        request_id: String,
+        sig: String,
+    },
     /// Read a conversation after `since`; with `mark`, move the caller's read mark to the last entry returned.
-    ConvRead { conv: String, #[serde(default)] since: u64, #[serde(default)] mark: bool },
+    ConvRead {
+        conv: String,
+        #[serde(default)]
+        since: u64,
+        #[serde(default)]
+        mark: bool,
+    },
     /// The conversations the caller is on, with unread counts.
     ConvList,
     /// List the capabilities the host offers (names, parameters, whether each call needs approval).
@@ -218,7 +233,21 @@ impl Op {
             Op::Handoff { .. } => "handoff",
             Op::Browse { .. } => "browse",
             // Talking in the room needs only membership, like echo.
-            Op::Say { .. } | Op::ConvNew { .. } | Op::ConvInvite { .. } | Op::ConvPost { .. } | Op::ConvRead { .. } | Op::ConvList | Op::CapList | Op::Cap { .. } | Op::CapPoll { .. } | Op::Feed { .. } | Op::Latent | Op::LatentPull { .. } | Op::LatentReveal { .. } | Op::Remember { .. } | Op::Recall { .. } => "echo",
+            Op::Say { .. }
+            | Op::ConvNew { .. }
+            | Op::ConvInvite { .. }
+            | Op::ConvPost { .. }
+            | Op::ConvRead { .. }
+            | Op::ConvList
+            | Op::CapList
+            | Op::Cap { .. }
+            | Op::CapPoll { .. }
+            | Op::Feed { .. }
+            | Op::Latent
+            | Op::LatentPull { .. }
+            | Op::LatentReveal { .. }
+            | Op::Remember { .. }
+            | Op::Recall { .. } => "echo",
         }
     }
 
@@ -235,12 +264,20 @@ impl Op {
                 mem_mib: i64::from(spec.mem_mib),
                 timeout_secs: i64::try_from(spec.timeout_secs).unwrap_or(i64::MAX),
                 net: spec.network && spec.allowed_hosts.is_empty(),
-                hosts: spec.allowed_hosts.iter().cloned().chain(spec.secrets.iter().map(|n| format!("secret/{n}"))).collect(),
+                hosts: spec
+                    .allowed_hosts
+                    .iter()
+                    .cloned()
+                    .chain(spec.secrets.iter().map(|n| format!("secret/{n}")))
+                    .collect(),
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
                 ..Needs::default()
             },
             // A capability is allowed by the grant's `cap/NAME` entry (the same allow-list as hosts and secrets).
-            Op::Cap { name, .. } => Needs { hosts: vec![format!("cap/{name}")], ..Needs::default() },
+            Op::Cap { name, .. } => Needs {
+                hosts: vec![format!("cap/{name}")],
+                ..Needs::default()
+            },
             // Steering is authorized again in full once the host has read the spec and prompt set.
             _ => Needs::default(),
         }
@@ -530,6 +567,11 @@ impl CardExt for AgentCard {
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
 #[cfg(test)]
 mod tests {
     // REQ: REL-8
@@ -611,9 +653,4 @@ mod tests {
             ["echo", "say", "feed", "pull", "push", "run"]
         );
     }
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_zero(n: &u64) -> bool {
-    *n == 0
 }

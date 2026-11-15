@@ -7,6 +7,7 @@ Playbox has many parts. This demo shows one line through them, and every step en
 ```sh
 scripts/demo.sh            # about a minute after the first build
 scripts/demo.sh --replay   # also re-trains the promoted candidates here (needs torch, about 3 min on CPU)
+scripts/demo.sh --live     # the hill-climb through a live room: pull, sandboxed task, push, gate, receipt (needs torch, about 8 min on CPU)
 ```
 
 Needs git, a Rust toolchain and a C compiler (or `PLAYBOX_BIN` pointing at a built `playbox`), Docker running, and python3 with
@@ -29,10 +30,38 @@ Steps 1 to 4 are the product: rooms, grants, the sandbox, the audit log. Steps 5
 many owners' agents push up, where the verifier is a set of receipts instead of a platform you have to trust
 ([f3/PROTOCOL.md](f3/PROTOCOL.md), [challenge.md](challenge.md)).
 
+## The live run (`--live`)
+
+`scripts/demo.sh --live` joins the two halves. It is one run of `scripts/demo_live.py`: a host opens a room on a repository
+whose `candidate.py` is the F3 baseline and starts the gate beside it (`challenge/f3/room_gate.py`, run by the host's owner, outside
+the sandbox, because it holds the sealed holdout). Then five guests, each its own identity and home, take turns. A guest pulls
+`main` (the frontier), runs its proposal as a **sandboxed task on the host** (the proposal is a shell edit of `candidate.py`; the
+patch comes back), commits the patch and pushes. The gate then:
+
+1. refuses without a receipt a push that is not built on `main`'s tip or that changes any file but `candidate.py`;
+2. otherwise scores it with the F3 harness against the frontier on the training seeds, recomputes dev loss from saved weights,
+   checks the sealed holdout, and signs a decision receipt;
+3. fast-forwards `main` with `playbox review accept` on a promotion, and retires the push on anything else.
+
+| Guest | Proposal | What the gate did |
+|---|---|---|
+| 1 | learning rate 3e-3 | promoted; `main` moves |
+| 2 | trains on the dev blocks it can see | beat the threshold on dev, **rejected on the holdout**; `main` does not move |
+| 3 | learning rate 6e-3, from the new frontier | promoted |
+| 4 | learning rate 3e-2 | rejected, below the gain threshold |
+| 5 | the same kind of edit, plus a change to the host's `harness.py` | refused without a receipt; `main` does not move |
+
+The holdout is then revealed and `challenge/f3/verify.py`, which does not import the harness, re-derives every receipt; one
+verdict is flipped in a copy and the copy fails. `--replay` adds the fresh-seed replay.
+
+What this run adds: the receipts come from pushes that really crossed a room, and `main` moves only when a signed promotion says so.
+What it does not: the gate's key is the harness key, not the room's; and the scoring runs on the host's machine, so a second host
+replaying it is still step 7 on the same computer.
+
 ## What it does not show
 
-- **The two halves are not yet one run.** Steps 1 to 4 are live. Steps 5 to 7 verify a run recorded earlier
-  ([f3/dry_run](f3/dry_run/README.md)); the hill-climb harness is not yet driven through a live room's pull, task and push.
+- **The default run is still two halves.** Steps 1 to 4 are live. Steps 5 to 7 verify a run recorded earlier
+  ([f3/dry_run](f3/dry_run/README.md)). `--live` runs the hill-climb through a room; it takes longer and needs torch.
 - **The candidates were scripts, not agents.** Ten scripted changes to a baseline, one of them the injected cheat. The run
   measures the gate, not the quality of proposals.
 - **One machine.** Host and guests are separate keys and homes on the same computer, over loopback. Rooms across real

@@ -55,12 +55,20 @@ pub(crate) fn save(r: &Reach) -> Result<()> {
 /// `ui/playbox_hub.py`, from (in order) --hub-dir / `PLAYBOX_HUB_DIR`, the installer's directory, or a checkout
 /// above the working directory or this binary.
 pub(crate) fn find_hub(explicit: Option<&str>) -> Result<PathBuf> {
-    let has = |d: &Path| d.join("ui/playbox_hub.py").is_file().then(|| d.join("ui/playbox_hub.py"));
+    let has = |d: &Path| {
+        d.join("ui/playbox_hub.py")
+            .is_file()
+            .then(|| d.join("ui/playbox_hub.py"))
+    };
     if let Some(d) = explicit {
         return has(Path::new(d)).with_context(|| format!("{d}/ui/playbox_hub.py is missing"));
     }
-    let installed = PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share/playbox-hub");
-    let roots = [std::env::var_os("PLAYBOX_ROOT").map(PathBuf::from), Some(installed)];
+    let installed = PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+        .join(".local/share/playbox-hub");
+    let roots = [
+        std::env::var_os("PLAYBOX_ROOT").map(PathBuf::from),
+        Some(installed),
+    ];
     let walks = [std::env::current_dir().ok(), std::env::current_exe().ok()];
     roots
         .into_iter()
@@ -74,7 +82,9 @@ pub(crate) fn find_hub(explicit: Option<&str>) -> Result<PathBuf> {
 }
 
 pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
 }
 
 /// A DNS name: letters, digits, dots and hyphens, at least one dot.
@@ -83,16 +93,22 @@ fn valid_hostname(h: &str) -> bool {
         && h.contains('.')
         && !h.starts_with(['.', '-'])
         && !h.ends_with(['.', '-'])
-        && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && h.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 /// A tunnel name or id.
 fn valid_tunnel(t: &str) -> bool {
-    !t.is_empty() && t.len() <= 64 && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    !t.is_empty()
+        && t.len() <= 64
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn looks_like_id(t: &str) -> bool {
-    t.len() == 36 && t.chars().filter(|&c| c == '-').count() == 4 && t.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    t.len() == 36
+        && t.chars().filter(|&c| c == '-').count() == 4
+        && t.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
 pub(crate) fn ask(prompt: &str, default: &str) -> Result<String> {
@@ -106,11 +122,18 @@ pub(crate) fn ask(prompt: &str, default: &str) -> Result<String> {
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
     let line = line.trim();
-    Ok(if line.is_empty() { default.to_string() } else { line.to_string() })
+    Ok(if line.is_empty() {
+        default.to_string()
+    } else {
+        line.to_string()
+    })
 }
 
 pub(crate) fn confirm(prompt: &str) -> Result<bool> {
-    Ok(matches!(ask(&format!("{prompt} (y/N)"), "")?.to_lowercase().as_str(), "y" | "yes"))
+    Ok(matches!(
+        ask(&format!("{prompt} (y/N)"), "")?.to_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }
 
 pub(crate) fn cloudflared() -> Result<PathBuf> {
@@ -118,10 +141,22 @@ pub(crate) fn cloudflared() -> Result<PathBuf> {
 }
 
 fn run_cf(cf: &Path, args: &[&str]) -> Result<String> {
-    let o = Command::new(cf).args(args).stdin(Stdio::null()).output().with_context(|| format!("could not run cloudflared {}", args.join(" ")))?;
-    let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    let o = Command::new(cf)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("could not run cloudflared {}", args.join(" ")))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
     if !o.status.success() {
-        bail!("cloudflared {} failed: {}", args.join(" "), text.trim().lines().last().unwrap_or(""));
+        bail!(
+            "cloudflared {} failed: {}",
+            args.join(" "),
+            text.trim().lines().last().unwrap_or("")
+        );
     }
     Ok(text)
 }
@@ -129,7 +164,10 @@ fn run_cf(cf: &Path, args: &[&str]) -> Result<String> {
 /// The id out of `cloudflared tunnel create`'s "Created tunnel NAME with id UUID".
 fn created_id(text: &str) -> Option<String> {
     let rest = text.split("with id ").nth(1)?;
-    let id: String = rest.chars().take_while(|c| c.is_ascii_hexdigit() || *c == '-').collect();
+    let id: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_hexdigit() || *c == '-')
+        .collect();
     looks_like_id(&id).then_some(id)
 }
 
@@ -156,11 +194,14 @@ fn named_tunnel(name: &str, hostname: &str) -> Result<String> {
         eprintln!("Using your tunnel {name} ({id}).");
         return Ok(id);
     }
-    if !confirm(&format!("No tunnel called {name}. Create it and route {hostname} to it?"))? {
+    if !confirm(&format!(
+        "No tunnel called {name}. Create it and route {hostname} to it?"
+    ))? {
         bail!("not creating the tunnel; run again with a tunnel that exists");
     }
     let made = run_cf(&cf, &["tunnel", "create", name])?;
-    let id = created_id(&made).context("cloudflared created a tunnel but I couldn't read its id from the output")?;
+    let id = created_id(&made)
+        .context("cloudflared created a tunnel but I couldn't read its id from the output")?;
     run_cf(&cf, &["tunnel", "route", "dns", &id, hostname])?;
     eprintln!("Created tunnel {name} ({id}) and routed {hostname} to it.");
     Ok(id)
@@ -183,7 +224,10 @@ pub(crate) fn ask_reach() -> Result<Reach> {
             if !valid_tunnel(&tunnel) || !valid_hostname(&hostname) {
                 bail!("that tunnel name or hostname doesn't look right");
             }
-            Ok(Reach::Named { tunnel: named_tunnel(&tunnel, &hostname)?, hostname })
+            Ok(Reach::Named {
+                tunnel: named_tunnel(&tunnel, &hostname)?,
+                hostname,
+            })
         }
         _ => Ok(Reach::Local),
     }
@@ -195,11 +239,20 @@ pub(crate) fn choose(a: &HubArgs, saved: Option<Reach>, tty: bool) -> Result<(Re
         bail!("--hostname goes with --tunnel");
     }
     if let Some(t) = &a.tunnel {
-        let h = a.hostname.clone().context("--tunnel needs --hostname (the public address routed to it)")?;
+        let h = a
+            .hostname
+            .clone()
+            .context("--tunnel needs --hostname (the public address routed to it)")?;
         if !valid_tunnel(t) || !valid_hostname(&h) {
             bail!("that tunnel name or hostname doesn't look right");
         }
-        return Ok((Reach::Named { tunnel: t.clone(), hostname: h }, false));
+        return Ok((
+            Reach::Named {
+                tunnel: t.clone(),
+                hostname: h,
+            },
+            false,
+        ));
     }
     if a.cloudflare {
         return Ok((Reach::Quick, false));
@@ -229,7 +282,12 @@ pub(crate) fn hub_args(reach: &Reach, a: &HubArgs) -> Vec<String> {
         Reach::Local => {}
         Reach::Quick => v.push("--cloudflare".into()),
         Reach::Named { tunnel, hostname } => {
-            v.extend(["--cloudflare-tunnel".into(), tunnel.clone(), "--cloudflare-hostname".into(), hostname.clone()]);
+            v.extend([
+                "--cloudflare-tunnel".into(),
+                tunnel.clone(),
+                "--cloudflare-hostname".into(),
+                hostname.clone(),
+            ]);
         }
     }
     if !a.no_open {
@@ -245,41 +303,77 @@ pub(crate) fn hub_args(reach: &Reach, a: &HubArgs) -> Vec<String> {
 /// The directory holding this binary first, then the caller's PATH: how the hub finds `playbox`, `playbox-mcp`, `cloudflared`.
 pub(crate) fn hub_path() -> std::ffi::OsString {
     let mut paths = Vec::new();
-    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf))
+    {
         paths.push(dir);
     }
-    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
     std::env::join_paths(paths).unwrap_or_default()
 }
 
 /// What the background service runs: the hub, never opening a browser.
-pub(crate) fn service_spec(python: &Path, script: &Path, reach: &Reach, a: &HubArgs) -> service::Spec {
+pub(crate) fn service_spec(
+    python: &Path,
+    script: &Path,
+    reach: &Reach,
+    a: &HubArgs,
+) -> service::Spec {
     let mut quiet = a.clone();
     quiet.no_open = true;
     quiet.pair = false;
-    let mut argv = vec![python.to_string_lossy().into_owned(), script.to_string_lossy().into_owned()];
+    let mut argv = vec![
+        python.to_string_lossy().into_owned(),
+        script.to_string_lossy().into_owned(),
+    ];
     argv.extend(hub_args(reach, &quiet));
-    let mut env = vec![("PATH".to_string(), hub_path().to_string_lossy().into_owned())];
+    let mut env = vec![(
+        "PATH".to_string(),
+        hub_path().to_string_lossy().into_owned(),
+    )];
     for k in ["PLAYBOX_HOME", "PLAYBOX_HUB_HOME", "PLAYBOX_HUB_PORT"] {
-        if let Some(v) = std::env::var_os(k).and_then(|v| v.into_string().ok()).filter(|v| !v.is_empty()) {
+        if let Some(v) = std::env::var_os(k)
+            .and_then(|v| v.into_string().ok())
+            .filter(|v| !v.is_empty())
+        {
             env.push((k.to_string(), v)); // a custom state directory or port chosen for this run must hold for the service too
         }
     }
-    service::Spec { argv, env, log: home().join("hub.log"), port: a.port.unwrap_or(7717) }
+    service::Spec {
+        argv,
+        env,
+        log: home().join("hub.log"),
+        port: a.port.unwrap_or(7717),
+    }
 }
 
 fn manage_service(a: &HubArgs, action: ServiceAction) -> Result<()> {
     match action {
         ServiceAction::Status => {
             let (running, detail) = service::status();
-            println!("hub service ({}): {detail}\n  definition: {}\n  log: {}", service::label(), service::unit_path().display(), home().join("hub.log").display());
+            println!(
+                "hub service ({}): {detail}\n  definition: {}\n  log: {}",
+                service::label(),
+                service::unit_path().display(),
+                home().join("hub.log").display()
+            );
             if !running {
                 std::process::exit(1);
             }
             Ok(())
         }
         ServiceAction::Uninstall => {
-            println!("{}", if service::uninstall()? { "removed the hub service" } else { "the hub service wasn't installed" });
+            println!(
+                "{}",
+                if service::uninstall()? {
+                    "removed the hub service"
+                } else {
+                    "the hub service wasn't installed"
+                }
+            );
             Ok(())
         }
         ServiceAction::Install => {
@@ -295,7 +389,11 @@ fn manage_service(a: &HubArgs, action: ServiceAction) -> Result<()> {
                 bail!("not replacing the existing service at {}", service::unit_path().display());
             }
             let path = service::install(&spec)?;
-            println!("hub service installed: {}\nit starts at login and restarts if it stops. Log: {}", path.display(), spec.log.display());
+            println!(
+                "hub service installed: {}\nit starts at login and restarts if it stops. Log: {}",
+                path.display(),
+                spec.log.display()
+            );
             Ok(())
         }
     }
@@ -306,7 +404,9 @@ pub fn run(a: &HubArgs) -> Result<()> {
         return manage_service(a, action);
     }
     let script = find_hub(a.hub_dir.as_deref())?;
-    let python = on_path("python3").context("the hub needs python3 (macOS: xcode-select --install; Debian/Ubuntu: apt install python3)")?;
+    let python = on_path("python3").context(
+        "the hub needs python3 (macOS: xcode-select --install; Debian/Ubuntu: apt install python3)",
+    )?;
     let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
     let (reach, remember) = choose(a, load(), tty)?;
     if remember {
@@ -359,7 +459,15 @@ mod tests {
     #[test]
     fn names_are_checked() {
         assert!(valid_hostname("hub.example.com"));
-        for bad in ["localhost", "-a.com", "a b.com", "a.com/x", "a.com.", "", "a;b.com"] {
+        for bad in [
+            "localhost",
+            "-a.com",
+            "a b.com",
+            "a.com/x",
+            "a.com.",
+            "",
+            "a;b.com",
+        ] {
             assert!(!valid_hostname(bad), "{bad}");
         }
         assert!(valid_tunnel("my-hub_1"));
@@ -373,41 +481,68 @@ mod tests {
     #[test]
     fn cloudflared_output_is_read() {
         let out = "Tunnel credentials written to /x.json.\nCreated tunnel playbox with id 97e2e2d7-9cb1-4504-98bb-8e97b5a16531\n";
-        assert_eq!(created_id(out).as_deref(), Some("97e2e2d7-9cb1-4504-98bb-8e97b5a16531"));
+        assert_eq!(
+            created_id(out).as_deref(),
+            Some("97e2e2d7-9cb1-4504-98bb-8e97b5a16531")
+        );
         assert_eq!(created_id("nothing useful"), None);
         let list = r#"[{"id":"aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb","name":"hub"},{"id":"cccccccc-1111-2222-3333-dddddddddddd","name":"other"}]"#;
-        assert_eq!(listed_id(list, "other").as_deref(), Some("cccccccc-1111-2222-3333-dddddddddddd"));
+        assert_eq!(
+            listed_id(list, "other").as_deref(),
+            Some("cccccccc-1111-2222-3333-dddddddddddd")
+        );
         assert_eq!(listed_id(list, "missing"), None);
         assert_eq!(listed_id("not json", "hub"), None);
     }
 
     #[test]
     fn the_choice_follows_flags_then_memory_then_the_terminal() {
-        let named = Reach::Named { tunnel: "t".into(), hostname: "h.example.com".into() };
+        let named = Reach::Named {
+            tunnel: "t".into(),
+            hostname: "h.example.com".into(),
+        };
         // no terminal, nothing saved: local only, never blocks on a prompt
         assert_eq!(choose(&args(), None, false).unwrap(), (Reach::Local, false));
         // remembered
-        assert_eq!(choose(&args(), Some(named.clone()), false).unwrap(), (named.clone(), false));
+        assert_eq!(
+            choose(&args(), Some(named.clone()), false).unwrap(),
+            (named.clone(), false)
+        );
         // flags beat memory, and are not remembered
         let mut a = args();
         a.local = true;
-        assert_eq!(choose(&a, Some(named.clone()), false).unwrap(), (Reach::Local, false));
+        assert_eq!(
+            choose(&a, Some(named.clone()), false).unwrap(),
+            (Reach::Local, false)
+        );
         let mut a = args();
         a.cloudflare = true;
-        assert_eq!(choose(&a, Some(named), false).unwrap(), (Reach::Quick, false));
+        assert_eq!(
+            choose(&a, Some(named), false).unwrap(),
+            (Reach::Quick, false)
+        );
         let mut a = args();
         a.tunnel = Some("my-hub".into());
-        assert!(choose(&a, None, false).is_err(), "a tunnel needs its hostname");
+        assert!(
+            choose(&a, None, false).is_err(),
+            "a tunnel needs its hostname"
+        );
         a.hostname = Some("hub.example.com".into());
         assert_eq!(
             choose(&a, None, false).unwrap().0,
-            Reach::Named { tunnel: "my-hub".into(), hostname: "hub.example.com".into() }
+            Reach::Named {
+                tunnel: "my-hub".into(),
+                hostname: "hub.example.com".into()
+            }
         );
         a.hostname = Some("bad host".into());
         assert!(choose(&a, None, false).is_err());
         let mut a = args();
         a.hostname = Some("hub.example.com".into());
-        assert!(choose(&a, None, false).is_err(), "a hostname alone means nothing");
+        assert!(
+            choose(&a, None, false).is_err(),
+            "a hostname alone means nothing"
+        );
     }
 
     #[test]
@@ -416,14 +551,36 @@ mod tests {
         a.port = Some(8000);
         a.lan = true;
         a.extra = vec!["--no-weak".into()];
-        assert_eq!(hub_args(&Reach::Local, &a), ["--port", "8000", "--lan", "--open", "--no-weak"]);
+        assert_eq!(
+            hub_args(&Reach::Local, &a),
+            ["--port", "8000", "--lan", "--open", "--no-weak"]
+        );
         a.no_open = true;
         a.pair = true;
-        assert_eq!(hub_args(&Reach::Quick, &a), ["--port", "8000", "--lan", "--cloudflare", "--pair", "--no-weak"]);
-        let named = Reach::Named { tunnel: "id".into(), hostname: "h.example.com".into() };
+        assert_eq!(
+            hub_args(&Reach::Quick, &a),
+            [
+                "--port",
+                "8000",
+                "--lan",
+                "--cloudflare",
+                "--pair",
+                "--no-weak"
+            ]
+        );
+        let named = Reach::Named {
+            tunnel: "id".into(),
+            hostname: "h.example.com".into(),
+        };
         assert_eq!(
             hub_args(&named, &args()),
-            ["--cloudflare-tunnel", "id", "--cloudflare-hostname", "h.example.com", "--open"]
+            [
+                "--cloudflare-tunnel",
+                "id",
+                "--cloudflare-hostname",
+                "h.example.com",
+                "--open"
+            ]
         );
     }
 
@@ -433,16 +590,25 @@ mod tests {
         std::fs::create_dir_all(d.join("ui")).unwrap();
         assert!(find_hub(Some(d.to_str().unwrap())).is_err());
         std::fs::write(d.join("ui/playbox_hub.py"), "").unwrap();
-        assert_eq!(find_hub(Some(d.to_str().unwrap())).unwrap(), d.join("ui/playbox_hub.py"));
+        assert_eq!(
+            find_hub(Some(d.to_str().unwrap())).unwrap(),
+            d.join("ui/playbox_hub.py")
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
     fn a_choice_round_trips_through_the_config_file() {
-        let r = Reach::Named { tunnel: "t".into(), hostname: "h.example.com".into() };
+        let r = Reach::Named {
+            tunnel: "t".into(),
+            hostname: "h.example.com".into(),
+        };
         let s = serde_json::to_string(&r).unwrap();
         assert!(s.contains(r#""mode":"named""#));
         assert_eq!(serde_json::from_str::<Reach>(&s).unwrap(), r);
-        assert_eq!(serde_json::from_str::<Reach>(r#"{"mode":"quick"}"#).unwrap(), Reach::Quick);
+        assert_eq!(
+            serde_json::from_str::<Reach>(r#"{"mode":"quick"}"#).unwrap(),
+            Reach::Quick
+        );
     }
 }

@@ -305,11 +305,21 @@ async fn secrets_are_checked_against_the_grant_and_the_runner() {
     };
     // A secret the grant does not list is refused by authorization, even alongside a listed one.
     for names in [&["OTHER"][..], &["API_KEY", "OTHER"]] {
-        assert!(msg(c.run_task("main", ask(names)).await.unwrap_err()).contains("not authorized"), "{names:?}");
+        assert!(
+            msg(c.run_task("main", ask(names)).await.unwrap_err()).contains("not authorized"),
+            "{names:?}"
+        );
     }
     // A listed one passes the grant; the process runner cannot hand secrets over, so it refuses rather than run without them.
-    assert!(msg(c.run_task("main", ask(&["API_KEY"])).await.unwrap_err()).contains("cannot hand secrets"));
+    assert!(
+        msg(c.run_task("main", ask(&["API_KEY"])).await.unwrap_err())
+            .contains("cannot hand secrets")
+    );
     // A host list naming a secret passes no further than the runner, which cannot enforce host lists here and refuses.
-    let spec = TaskSpec { allowed_hosts: vec!["secret/API_KEY".into()], ..TaskSpec::new(&["true"]) };
-    assert!(msg(c.run_task("main", spec).await.unwrap_err()).contains("cannot limit a task to specific hosts"));
+    let spec = TaskSpec {
+        allowed_hosts: vec!["secret/API_KEY".into()],
+        ..TaskSpec::new(&["true"])
+    };
+    assert!(msg(c.run_task("main", spec).await.unwrap_err())
+        .contains("cannot limit a task to specific hosts"));
 }

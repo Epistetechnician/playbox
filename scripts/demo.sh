@@ -3,6 +3,7 @@
 #
 #   scripts/demo.sh            # about a minute after the first build
 #   scripts/demo.sh --replay   # also re-runs the four promoted candidates on this machine (needs torch, about 3 min on CPU)
+#   scripts/demo.sh --live     # instead: the hill-climb through a live room (pull, sandboxed task, push, gate, receipt); needs torch, about 8 min
 #
 # Needs: git, a Rust toolchain (or PLAYBOX_BIN set to a built `playbox`), Docker running, python3 with `cryptography` and `numpy`.
 # Everything it writes goes to a temporary directory that is removed at the end. See docs/demo.md for what each step shows.
@@ -28,6 +29,11 @@ if [ -z "$PB" ]; then
     PB="$here/target/debug/playbox"
 fi
 "$PB" --version
+
+if [ "${1:-}" = "--live" ]; then
+    shift
+    exec python3 "$here/scripts/demo_live.py" --playbox "$PB" "$@"
+fi
 
 work=$(mktemp -d)
 host_pid=""

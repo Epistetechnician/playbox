@@ -270,7 +270,14 @@ impl SteerHost {
 }
 
 /// The text a host signs to say what it decided about one handoff.
-fn decision_body(host: &[u8], signer: &[u8], weights: &str, envelope: &[u8], accepted: bool, audited: bool) -> String {
+fn decision_body(
+    host: &[u8],
+    signer: &[u8],
+    weights: &str,
+    envelope: &[u8],
+    accepted: bool,
+    audited: bool,
+) -> String {
     format!(
         "playbox.handoff-decision.v1\nhost {}\nsigner {}\nweights {weights}\nenvelope {}\naccepted {accepted}\naudited {audited}\n",
         hex(host),
@@ -281,9 +288,17 @@ fn decision_body(host: &[u8], signer: &[u8], weights: &str, envelope: &[u8], acc
 
 /// Check a host's signed statement that it decided this about exactly these handoff bytes.
 /// Returns whether the host accepted.
-pub fn verify_decision(text: &str, host: &[u8; 32], signer: &[u8; 32], weights: &str, envelope: &[u8]) -> Result<bool> {
+pub fn verify_decision(
+    text: &str,
+    host: &[u8; 32],
+    signer: &[u8; 32],
+    weights: &str,
+    envelope: &[u8],
+) -> Result<bool> {
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-    let (body, sig) = text.rsplit_once("sig ").ok_or_else(|| anyhow!("the decision has no signature"))?;
+    let (body, sig) = text
+        .rsplit_once("sig ")
+        .ok_or_else(|| anyhow!("the decision has no signature"))?;
     let sig = hex_to_64(sig.trim())?;
     VerifyingKey::from_bytes(host)
         .map_err(|e| anyhow!("{e}"))?
@@ -1010,7 +1025,13 @@ impl Client {
         let receipt = wire::artifact_text(&t, "receipt")
             .ok_or_else(|| anyhow!("the host sent no signed decision"))?;
         let me = self.endpoint.id();
-        let accepted = verify_decision(&receipt, self.host_id().as_bytes(), me.as_bytes(), weights, envelope)?;
+        let accepted = verify_decision(
+            &receipt,
+            self.host_id().as_bytes(),
+            me.as_bytes(),
+            weights,
+            envelope,
+        )?;
         let v: Value = serde_json::from_str(&d)?;
         if !accepted || v["accepted"] != json!(true) {
             bail!("handoff rejected: {}", v["reasons"]);

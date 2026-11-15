@@ -1206,10 +1206,7 @@ mod tests {
     }
 
     fn point(k: &P256Signing) -> Vec<u8> {
-        k.verifying_key()
-            .to_sec1_point(false)
-            .as_bytes()
-            .to_vec()
+        k.verifying_key().to_sec1_point(false).as_bytes().to_vec()
     }
 
     struct SoftSe(P256Signing);

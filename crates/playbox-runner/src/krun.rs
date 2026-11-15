@@ -14,12 +14,12 @@
 //! gives the guest the host's network access *without* the public-address filtering the PRD wants,
 //! so a guest can reach the host's loopback and LAN. Leave network off on hosts that matter.
 
-use super::{
-    check_spec, guestnames, quota_exceeded, run_child, secrets::SecretStore, Isolation, Quota, Runner, SandboxPolicy,
-    TaskOutput, TaskSpec,
-};
 #[cfg(target_os = "linux")]
 use super::{cgroup::Limits, confine::Confinement, netpolicy::Level};
+use super::{
+    check_spec, guestnames, quota_exceeded, run_child, secrets::SecretStore, Isolation, Quota,
+    Runner, SandboxPolicy, TaskOutput, TaskSpec,
+};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use std::{
@@ -54,7 +54,11 @@ pub struct KrunRunner {
 /// libkrun's TSI hands the guest the host's own network access, so a guest with a network reaches the host's loopback,
 /// LAN and cloud metadata service. Only the Linux confinement filters that. Everywhere else the request is refused unless
 /// the host owner opts in with `PLAYBOX_ALLOW_UNFILTERED_NETWORK`.
-fn unfiltered_network_refusal(wants_network: bool, filtered: bool, owner_opted_in: bool) -> Option<&'static str> {
+fn unfiltered_network_refusal(
+    wants_network: bool,
+    filtered: bool,
+    owner_opted_in: bool,
+) -> Option<&'static str> {
     (wants_network && !filtered && !owner_opted_in).then_some(
         "this libkrun host cannot filter a guest's network (TSI reaches the host's loopback, LAN and metadata service); \
          run tasks without a network, use a confined Linux host, or set PLAYBOX_ALLOW_UNFILTERED_NETWORK=1 on the host",
@@ -280,7 +284,12 @@ impl Runner for KrunRunner {
     fn attestation(&self) -> String {
         #[cfg(target_os = "linux")]
         if let Some(c) = &self.confine {
-            return format!("{};{};helper={}", self.policy.describe(), c.describe(), helper_digest(&self.helper));
+            return format!(
+                "{};{};helper={}",
+                self.policy.describe(),
+                c.describe(),
+                helper_digest(&self.helper)
+            );
         }
         format!("{};confine=off", self.policy.describe())
     }
@@ -392,7 +401,19 @@ impl Runner for KrunRunner {
         // Held until the task ends: dropping it kills the cgroup and removes the network chain.
         #[cfg(target_os = "linux")]
         let _guard = match &self.confine {
-            Some(c) => match self.confine_args(c, spec, &clone, workspace, staged.path(), vcpus, mem, &mut cmd).await {
+            Some(c) => match self
+                .confine_args(
+                    c,
+                    spec,
+                    &clone,
+                    workspace,
+                    staged.path(),
+                    vcpus,
+                    mem,
+                    &mut cmd,
+                )
+                .await
+            {
                 Ok(g) => Some(g),
                 Err(e) => {
                     let _ = tokio::fs::remove_dir_all(&clone).await;
@@ -433,13 +454,19 @@ impl Runner for KrunRunner {
 
 #[cfg(target_os = "linux")]
 fn helper_digest(helper: &Path) -> String {
-    std::fs::read(helper).map_or_else(|_| "unreadable".into(), |b| blake3::hash(&b).to_hex().chars().take(16).collect())
+    std::fs::read(helper).map_or_else(
+        |_| "unreadable".into(),
+        |b| blake3::hash(&b).to_hex().chars().take(16).collect(),
+    )
 }
 
 #[cfg(target_os = "linux")]
 impl KrunRunner {
     /// Create the task's cgroup and network chain and add the helper flags that make it confine itself.
-    #[allow(clippy::too_many_arguments, reason = "one call site; the values are all per-task")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one call site; the values are all per-task"
+    )]
     async fn confine_args(
         &self,
         c: &Confinement,
@@ -456,7 +483,14 @@ impl KrunRunner {
                 // An open network: resolvers the filter lets this task reach.
                 give_resolvers(clone, |ip| super::netpolicy::allowed(Level::Internet, ip));
             }
-            (if spec.network { Level::Internet } else { Level::None }, Vec::new())
+            (
+                if spec.network {
+                    Level::Internet
+                } else {
+                    Level::None
+                },
+                Vec::new(),
+            )
         } else {
             // A host list: the guest gets the pinned addresses by name and needs no resolver.
             let pinned = resolve_hosts(&spec.allowed_hosts).await?;
@@ -464,17 +498,26 @@ impl KrunRunner {
             if let Err(e) = guestnames::write_etc(clone, "hosts", &guestnames::hosts_file(&names)) {
                 eprintln!("playbox: the guest gets no /etc/hosts: {e:#}");
             }
-            (Level::Internet, pinned.into_iter().map(|(_, a)| a).collect())
+            (
+                Level::Internet,
+                pinned.into_iter().map(|(_, a)| a).collect(),
+            )
         };
         let run_id = random_name()?;
-        let limits = Limits { cpus: vcpus as f32, guest_memory_mib: mem };
+        let limits = Limits {
+            cpus: vcpus as f32,
+            guest_memory_mib: mem,
+        };
         let guard = {
             let (c, id, dests) = (c.clone(), run_id.clone(), dests);
             tokio::task::spawn_blocking(move || c.begin(&id, limits, level, &dests)).await??
         };
         let jail_dir = clone.with_extension("jail");
         tokio::fs::create_dir_all(&jail_dir).await?;
-        cmd.arg("--cgroup").arg(c.cgroup_of(&run_id)).arg("--jail-dir").arg(&jail_dir);
+        cmd.arg("--cgroup")
+            .arg(c.cgroup_of(&run_id))
+            .arg("--jail-dir")
+            .arg(&jail_dir);
         cmd.arg("--rw").arg(clone).arg("--rw").arg(workspace);
         if !spec.secrets.is_empty() {
             cmd.arg("--ro").arg(secrets);
@@ -506,10 +549,17 @@ async fn resolve_hosts(hosts: &[String]) -> Result<Vec<(String, std::net::Socket
     let mut out = Vec::new();
     for h in hosts {
         let (name, port) = match h.rsplit_once(':') {
-            Some((n, p)) if !n.contains(':') => (n, p.parse::<u16>().with_context(|| format!("bad port in {h:?}"))?),
+            Some((n, p)) if !n.contains(':') => (
+                n,
+                p.parse::<u16>()
+                    .with_context(|| format!("bad port in {h:?}"))?,
+            ),
             _ => (h.as_str(), 443),
         };
-        let found: Vec<_> = tokio::net::lookup_host((name, port)).await.with_context(|| format!("resolving {name}"))?.collect();
+        let found: Vec<_> = tokio::net::lookup_host((name, port))
+            .await
+            .with_context(|| format!("resolving {name}"))?
+            .collect();
         if found.is_empty() {
             bail!("{name} did not resolve");
         }

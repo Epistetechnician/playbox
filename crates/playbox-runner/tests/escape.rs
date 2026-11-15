@@ -6,10 +6,20 @@
 use playbox_runner::{find_helper, KrunRunner, Runner, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, process::Command};
 
+/// A case that cannot run here: a pass with a loud note by default, a failure when `PLAYBOX_CONFINE_REQUIRE_ALL` is set (CI's
+/// `krun` job sets it), so a skipped check can never look like a passed one where the environment is meant to support it.
+fn skip(why: &str) {
+    eprintln!("skipping: {why}");
+    assert!(
+        std::env::var_os("PLAYBOX_CONFINE_REQUIRE_ALL").is_none(),
+        "PLAYBOX_CONFINE_REQUIRE_ALL is set and this could not run: {why}"
+    );
+}
+
 /// A runner, where the helper is installed. Enough for a request that is refused before any image is fetched.
 fn runner() -> Option<KrunRunner> {
     if find_helper().is_err() {
-        eprintln!("skipping: playbox-krun-helper not installed (scripts/install-krun.sh)");
+        skip("playbox-krun-helper not installed (scripts/install-krun.sh)");
         return None;
     }
     KrunRunner::locate(SandboxPolicy::default()).ok()
@@ -23,7 +33,7 @@ fn ready() -> Option<KrunRunner> {
         .output()
         .is_ok_and(|o| o.status.success())
     {
-        eprintln!("skipping: docker is not running");
+        skip("docker is not running");
         return None;
     }
     Some(r)
@@ -90,13 +100,21 @@ async fn nothing_in_the_escape_drill_gets_out_of_a_libkrun_guest() {
             "the probes did not run ({canary} missing): {out:?}"
         );
     }
+    // On x86-64 the guest kernel exposes `/sys/kernel/uevent_helper` and `/dev/mem` to root. Both are the guest's own
+    // kernel, not the host's, so they are reported but do not fail the drill.
+    let own_kernel = ["ESCAPED:write_sys", "ESCAPED:dev_mem"];
     let real: Vec<_> = out
         .stdout
         .lines()
         .filter(|l| {
-            l.starts_with("ESCAPED:") && !matches!(*l, "ESCAPED:canary" | "ESCAPED:has_wget")
+            l.starts_with("ESCAPED:")
+                && !matches!(*l, "ESCAPED:canary" | "ESCAPED:has_wget")
+                && !own_kernel.contains(l)
         })
         .collect();
+    for l in out.stdout.lines().filter(|l| own_kernel.contains(l)) {
+        eprintln!("note: {l} (inside the guest's own kernel; not a host escape)");
+    }
     assert!(
         real.is_empty(),
         "the guest reached something it must not: {real:?}"

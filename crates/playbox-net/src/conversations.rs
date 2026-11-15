@@ -60,22 +60,40 @@ pub struct Conversation {
 /// What an author signs. A different conversation, request id or text gives a different message.
 #[must_use]
 pub fn signed_text(conv: &str, request_id: &str, text: &str) -> Vec<u8> {
-    format!("playbox.conv-entry.v1\n{conv}\n{request_id}\n{}\n{text}", text.len()).into_bytes()
+    format!(
+        "playbox.conv-entry.v1\n{conv}\n{request_id}\n{}\n{text}",
+        text.len()
+    )
+    .into_bytes()
 }
 
 /// Check `sig` (hex) as `author`'s (a 32-byte public key, hex or the bytes themselves given as `key`).
 fn verify(key: &[u8; 32], conv: &str, request_id: &str, text: &str, sig: &str) -> Result<()> {
-    let raw = (0..sig.len() / 2).map(|i| u8::from_str_radix(sig.get(2 * i..2 * i + 2).unwrap_or("zz"), 16)).collect::<std::result::Result<Vec<u8>, _>>().context("signature is not hex")?;
-    let sig: [u8; 64] = raw.try_into().map_err(|_| anyhow::anyhow!("signature must be 64 bytes"))?;
-    VerifyingKey::from_bytes(key)?.verify(&signed_text(conv, request_id, text), &Signature::from_bytes(&sig)).context("the signature does not match the author")
+    let raw = (0..sig.len() / 2)
+        .map(|i| u8::from_str_radix(sig.get(2 * i..2 * i + 2).unwrap_or("zz"), 16))
+        .collect::<std::result::Result<Vec<u8>, _>>()
+        .context("signature is not hex")?;
+    let sig: [u8; 64] = raw
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("signature must be 64 bytes"))?;
+    VerifyingKey::from_bytes(key)?
+        .verify(
+            &signed_text(conv, request_id, text),
+            &Signature::from_bytes(&sig),
+        )
+        .context("the signature does not match the author")
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 fn valid_id(s: &str) -> bool {
-    (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    (1..=64).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
 }
 
 pub struct Book {
@@ -112,20 +130,27 @@ impl Book {
         let mut inner = Inner::default();
         if let Some(p) = &store {
             if let Ok(text) = std::fs::read_to_string(p) {
-                let list: Vec<Conversation> = serde_json::from_str(&text).with_context(|| format!("reading {}", p.display()))?;
+                let list: Vec<Conversation> = serde_json::from_str(&text)
+                    .with_context(|| format!("reading {}", p.display()))?;
                 for c in list {
                     inner.convs.insert(c.id.clone(), c);
                 }
             }
         }
-        Ok(Self { inner: Mutex::new(inner), store })
+        Ok(Self {
+            inner: Mutex::new(inner),
+            store,
+        })
     }
 
     fn save(&self, i: &Inner) {
         if let Some(p) = &self.store {
             if let Ok(text) = serde_json::to_string(&i.convs.values().collect::<Vec<_>>()) {
                 if let Err(e) = crate::write_atomic(p, text.as_bytes()) {
-                    eprintln!("playbox: cannot save the conversations {}: {e}", p.display());
+                    eprintln!(
+                        "playbox: cannot save the conversations {}: {e}",
+                        p.display()
+                    );
                 }
             }
         }
@@ -136,7 +161,13 @@ impl Book {
     /// # Errors
     ///
     /// Refuses a bad title, a roster that is too small or large, an unknown member, or a creator with too many conversations.
-    pub fn create(&self, creator: &str, title: &str, members: &[String], is_member: &dyn Fn(&str) -> bool) -> Result<Conversation> {
+    pub fn create(
+        &self,
+        creator: &str,
+        title: &str,
+        members: &[String],
+        is_member: &dyn Fn(&str) -> bool,
+    ) -> Result<Conversation> {
         let title = title.trim();
         if title.is_empty() || title.len() > TITLE_MAX || title.chars().any(char::is_control) {
             bail!("a title is 1 to {TITLE_MAX} characters without control characters");
@@ -159,8 +190,21 @@ impl Book {
         }
         let mut rnd = [0u8; 8];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
-        let id = format!("c-{}", rnd.iter().map(|b| format!("{b:02x}")).collect::<String>());
-        let c = Conversation { id: id.clone(), title: title.to_string(), creator: creator.to_string(), roster, roster_version: 1, created_ms: now_ms(), next_seq: 1, entries: VecDeque::new(), marks: BTreeMap::new() };
+        let id = format!(
+            "c-{}",
+            rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        );
+        let c = Conversation {
+            id: id.clone(),
+            title: title.to_string(),
+            creator: creator.to_string(),
+            roster,
+            roster_version: 1,
+            created_ms: now_ms(),
+            next_seq: 1,
+            entries: VecDeque::new(),
+            marks: BTreeMap::new(),
+        };
         i.convs.insert(id, c.clone());
         self.save(&i);
         Ok(c)
@@ -171,9 +215,19 @@ impl Book {
     /// # Errors
     ///
     /// Refuses anyone but the creator, an unknown member, or a roster over the limit.
-    pub fn invite(&self, who: &str, conv: &str, members: &[String], is_member: &dyn Fn(&str) -> bool) -> Result<Conversation> {
+    pub fn invite(
+        &self,
+        who: &str,
+        conv: &str,
+        members: &[String],
+        is_member: &dyn Fn(&str) -> bool,
+    ) -> Result<Conversation> {
         let mut i = self.inner.lock().expect("conversations lock");
-        let c = i.convs.get_mut(conv).filter(|c| c.roster.iter().any(|m| m == who)).context("no such conversation")?;
+        let c = i
+            .convs
+            .get_mut(conv)
+            .filter(|c| c.roster.iter().any(|m| m == who))
+            .context("no such conversation")?;
         if c.creator != who {
             bail!("only the creator can add members");
         }
@@ -204,7 +258,15 @@ impl Book {
     /// # Errors
     ///
     /// Refuses a non-roster author, a bad signature, text that is empty or too long, a rate overrun, or a reused request id with other text.
-    pub fn post(&self, author: &str, author_key: &[u8; 32], conv: &str, text: &str, request_id: &str, sig: &str) -> Result<Entry> {
+    pub fn post(
+        &self,
+        author: &str,
+        author_key: &[u8; 32],
+        conv: &str,
+        text: &str,
+        request_id: &str,
+        sig: &str,
+    ) -> Result<Entry> {
         if text.trim().is_empty() || text.len() > MAX_TEXT {
             bail!("an entry is 1 to {MAX_TEXT} bytes");
         }
@@ -212,8 +274,16 @@ impl Book {
             bail!("request_id must be 1-64 letters, digits, - _ .");
         }
         let mut i = self.inner.lock().expect("conversations lock");
-        let c = i.convs.get(conv).filter(|c| c.roster.iter().any(|m| m == author)).context("no such conversation")?;
-        if let Some(prev) = c.entries.iter().find(|e| e.author == author && e.request_id.as_deref() == Some(request_id)) {
+        let c = i
+            .convs
+            .get(conv)
+            .filter(|c| c.roster.iter().any(|m| m == author))
+            .context("no such conversation")?;
+        if let Some(prev) = c
+            .entries
+            .iter()
+            .find(|e| e.author == author && e.request_id.as_deref() == Some(request_id))
+        {
             if prev.text == text {
                 return Ok(prev.clone());
             }
@@ -230,7 +300,14 @@ impl Book {
         }
         q.push_back(now);
         let c = i.convs.get_mut(conv).expect("checked above");
-        let e = Entry { seq: c.next_seq, author: author.to_string(), ts_ms: now, text: text.to_string(), request_id: Some(request_id.to_string()), sig: sig.to_string() };
+        let e = Entry {
+            seq: c.next_seq,
+            author: author.to_string(),
+            ts_ms: now,
+            text: text.to_string(),
+            request_id: Some(request_id.to_string()),
+            sig: sig.to_string(),
+        };
         c.next_seq += 1;
         c.entries.push_back(e.clone());
         while c.entries.len() > MAX_ENTRIES {
@@ -247,8 +324,18 @@ impl Book {
     /// Refuses a reader who is not on the roster.
     pub fn read(&self, who: &str, conv: &str, since: u64, mark: bool) -> Result<View> {
         let mut i = self.inner.lock().expect("conversations lock");
-        let c = i.convs.get_mut(conv).filter(|c| c.roster.iter().any(|m| m == who)).context("no such conversation")?;
-        let entries: Vec<Entry> = c.entries.iter().filter(|e| e.seq > since).take(200).cloned().collect();
+        let c = i
+            .convs
+            .get_mut(conv)
+            .filter(|c| c.roster.iter().any(|m| m == who))
+            .context("no such conversation")?;
+        let entries: Vec<Entry> = c
+            .entries
+            .iter()
+            .filter(|e| e.seq > since)
+            .take(200)
+            .cloned()
+            .collect();
         let last_seq = c.next_seq - 1;
         if mark {
             if let Some(e) = entries.last() {
@@ -257,7 +344,20 @@ impl Book {
             }
         }
         let mk = c.marks.get(who).copied().unwrap_or(0);
-        let view = View { id: c.id.clone(), title: c.title.clone(), roster: c.roster.clone(), roster_version: c.roster_version, entries, mark: mk, unread: c.entries.iter().filter(|e| e.seq > mk && e.author != who).count() as u64, last_seq };
+        let view = View {
+            id: c.id.clone(),
+            title: c.title.clone(),
+            roster: c.roster.clone(),
+            roster_version: c.roster_version,
+            entries,
+            mark: mk,
+            unread: c
+                .entries
+                .iter()
+                .filter(|e| e.seq > mk && e.author != who)
+                .count() as u64,
+            last_seq,
+        };
         if mark {
             self.save(&i);
         }
@@ -282,12 +382,26 @@ impl Book {
 
     /// Entries after each member's mark across all their conversations, for a live feed: (conversation id, title, entry).
     #[must_use]
-    pub fn unread_for(&self, who: &str, after: &BTreeMap<String, u64>) -> Vec<(String, String, Entry)> {
+    pub fn unread_for(
+        &self,
+        who: &str,
+        after: &BTreeMap<String, u64>,
+    ) -> Vec<(String, String, Entry)> {
         let i = self.inner.lock().expect("conversations lock");
         let mut out = Vec::new();
-        for c in i.convs.values().filter(|c| c.roster.iter().any(|m| m == who)) {
+        for c in i
+            .convs
+            .values()
+            .filter(|c| c.roster.iter().any(|m| m == who))
+        {
             let from = after.get(&c.id).copied().unwrap_or(0);
-            out.extend(c.entries.iter().filter(|e| e.seq > from && e.author != who).take(50).map(|e| (c.id.clone(), c.title.clone(), e.clone())));
+            out.extend(
+                c.entries
+                    .iter()
+                    .filter(|e| e.seq > from && e.author != who)
+                    .take(50)
+                    .map(|e| (c.id.clone(), c.title.clone(), e.clone())),
+            );
         }
         out
     }
@@ -305,7 +419,11 @@ mod tests {
     }
 
     fn sign(k: &SigningKey, conv: &str, rid: &str, text: &str) -> String {
-        k.sign(&signed_text(conv, rid, text)).to_bytes().iter().map(|b| format!("{b:02x}")).collect()
+        k.sign(&signed_text(conv, rid, text))
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
     }
 
     fn members<'a>(ids: &'a [&'a str]) -> impl Fn(&str) -> bool + 'a {
@@ -319,13 +437,45 @@ mod tests {
         let (kb, bb, bpk) = key(2);
         let (_kc, c, _) = key(3);
         let ids = [a.as_str(), bb.as_str(), c.as_str()];
-        let conv = b.create(&a, "plan", &[bb.clone()], &members(&ids)).unwrap();
+        let conv = b
+            .create(&a, "plan", std::slice::from_ref(&bb), &members(&ids))
+            .unwrap();
         assert_eq!((conv.roster.len(), conv.roster_version), (2, 1));
-        let e1 = b.post(&a, &apk, &conv.id, "hello", "r1", &sign(&ka, &conv.id, "r1", "hello")).unwrap();
-        let e2 = b.post(&bb, &bpk, &conv.id, "hi", "r1", &sign(&kb, &conv.id, "r1", "hi")).unwrap();
+        let e1 = b
+            .post(
+                &a,
+                &apk,
+                &conv.id,
+                "hello",
+                "r1",
+                &sign(&ka, &conv.id, "r1", "hello"),
+            )
+            .unwrap();
+        let e2 = b
+            .post(
+                &bb,
+                &bpk,
+                &conv.id,
+                "hi",
+                "r1",
+                &sign(&kb, &conv.id, "r1", "hi"),
+            )
+            .unwrap();
         assert_eq!((e1.seq, e2.seq), (1, 2), "request ids are per author");
-        assert!(b.read(&c, &conv.id, 0, false).is_err(), "a non-member sees nothing");
-        assert!(b.post(&c, &key(3).2, &conv.id, "x", "r", &sign(&key(3).0, &conv.id, "r", "x")).is_err());
+        assert!(
+            b.read(&c, &conv.id, 0, false).is_err(),
+            "a non-member sees nothing"
+        );
+        assert!(b
+            .post(
+                &c,
+                &key(3).2,
+                &conv.id,
+                "x",
+                "r",
+                &sign(&key(3).0, &conv.id, "r", "x")
+            )
+            .is_err());
         let v = b.read(&bb, &conv.id, 0, true).unwrap();
         assert_eq!((v.entries.len(), v.mark, v.unread), (2, 2, 0));
         assert_eq!(b.list(&a)[0]["unread"], 1, "a has not read b's entry");
@@ -339,7 +489,11 @@ mod tests {
         let conv = b.create("m0", "t", &["m1".to_string()], &known).unwrap();
         assert!(b.invite("m0", &conv.id, &everyone, &known).is_err());
         let v = b.read("m0", &conv.id, 0, false).unwrap();
-        assert_eq!((v.roster.len(), v.roster_version), (2, 1), "a refused invite must not leave members behind");
+        assert_eq!(
+            (v.roster.len(), v.roster_version),
+            (2, 1),
+            "a refused invite must not leave members behind"
+        );
     }
 
     #[test]
@@ -348,14 +502,18 @@ mod tests {
         let (ka, a, apk) = key(1);
         let (_kb, bb, bpk) = key(2);
         let ids = [a.as_str(), bb.as_str()];
-        let conv = b.create(&a, "t", &[bb.clone()], &members(&ids)).unwrap();
+        let conv = b
+            .create(&a, "t", std::slice::from_ref(&bb), &members(&ids))
+            .unwrap();
         let good = sign(&ka, &conv.id, "r1", "hello");
         // Someone else's key, altered text, another conversation, another request id.
         assert!(b.post(&bb, &bpk, &conv.id, "hello", "r1", &good).is_err());
         assert!(b.post(&a, &apk, &conv.id, "hello!", "r1", &good).is_err());
         assert!(b.post(&a, &apk, &conv.id, "hello", "r2", &good).is_err());
         assert!(b.post(&a, &apk, &conv.id, "hello", "r1", "00").is_err());
-        assert!(b.post(&a, &apk, &conv.id, "hello", "r1", &"zz".repeat(64)).is_err());
+        assert!(b
+            .post(&a, &apk, &conv.id, "hello", "r1", &"zz".repeat(64))
+            .is_err());
         let e = b.post(&a, &apk, &conv.id, "hello", "r1", &good).unwrap();
         // A reader can verify the stored entry on its own.
         assert!(verify(&apk, &conv.id, "r1", &e.text, &e.sig).is_ok());
@@ -367,14 +525,18 @@ mod tests {
         let (ka, a, apk) = key(1);
         let (_kb, bb, _) = key(2);
         let ids = [a.as_str(), bb.as_str()];
-        let conv = b.create(&a, "t", &[bb.clone()], &members(&ids)).unwrap();
+        let conv = b
+            .create(&a, "t", std::slice::from_ref(&bb), &members(&ids))
+            .unwrap();
         let s = sign(&ka, &conv.id, "r1", "once");
         let first = b.post(&a, &apk, &conv.id, "once", "r1", &s).unwrap();
         let again = b.post(&a, &apk, &conv.id, "once", "r1", &s).unwrap();
         assert_eq!(first, again);
         assert_eq!(b.read(&a, &conv.id, 0, false).unwrap().entries.len(), 1);
         let other = sign(&ka, &conv.id, "r1", "different");
-        assert!(b.post(&a, &apk, &conv.id, "different", "r1", &other).is_err());
+        assert!(b
+            .post(&a, &apk, &conv.id, "different", "r1", &other)
+            .is_err());
     }
 
     #[test]
@@ -383,17 +545,52 @@ mod tests {
         let (ka, a, apk) = key(1);
         let (_kb, bb, _) = key(2);
         let ids = [a.as_str(), bb.as_str()];
-        assert!(b.create(&a, "", &[bb.clone()], &members(&ids)).is_err());
-        assert!(b.create(&a, "solo", &[], &members(&ids)).is_err(), "needs a second member");
-        assert!(b.create(&a, "t", &["stranger".into()], &members(&ids)).is_err());
-        let conv = b.create(&a, "t", &[bb.clone()], &members(&ids)).unwrap();
+        assert!(b
+            .create(&a, "", std::slice::from_ref(&bb), &members(&ids))
+            .is_err());
+        assert!(
+            b.create(&a, "solo", &[], &members(&ids)).is_err(),
+            "needs a second member"
+        );
+        assert!(b
+            .create(&a, "t", &["stranger".into()], &members(&ids))
+            .is_err());
+        let conv = b
+            .create(&a, "t", std::slice::from_ref(&bb), &members(&ids))
+            .unwrap();
         let big = "x".repeat(MAX_TEXT + 1);
-        assert!(b.post(&a, &apk, &conv.id, &big, "r", &sign(&ka, &conv.id, "r", &big)).is_err());
+        assert!(b
+            .post(
+                &a,
+                &apk,
+                &conv.id,
+                &big,
+                "r",
+                &sign(&ka, &conv.id, "r", &big)
+            )
+            .is_err());
         for n in 0..POSTS_PER_MINUTE {
             let rid = format!("p{n}");
-            b.post(&a, &apk, &conv.id, "x", &rid, &sign(&ka, &conv.id, &rid, "x")).unwrap();
+            b.post(
+                &a,
+                &apk,
+                &conv.id,
+                "x",
+                &rid,
+                &sign(&ka, &conv.id, &rid, "x"),
+            )
+            .unwrap();
         }
-        assert!(b.post(&a, &apk, &conv.id, "x", "over", &sign(&ka, &conv.id, "over", "x")).is_err());
+        assert!(b
+            .post(
+                &a,
+                &apk,
+                &conv.id,
+                "x",
+                "over",
+                &sign(&ka, &conv.id, "over", "x")
+            )
+            .is_err());
     }
 
     #[test]
@@ -403,11 +600,23 @@ mod tests {
         let (_kb, bb, _) = key(2);
         let (_kc, c, _) = key(3);
         let ids = [a.as_str(), bb.as_str(), c.as_str()];
-        let conv = b.create(&a, "t", &[bb.clone()], &members(&ids)).unwrap();
-        assert!(b.invite(&bb, &conv.id, &[c.clone()], &members(&ids)).is_err());
-        let v2 = b.invite(&a, &conv.id, &[c.clone()], &members(&ids)).unwrap();
+        let conv = b
+            .create(&a, "t", std::slice::from_ref(&bb), &members(&ids))
+            .unwrap();
+        assert!(b
+            .invite(&bb, &conv.id, std::slice::from_ref(&c), &members(&ids))
+            .is_err());
+        let v2 = b
+            .invite(&a, &conv.id, std::slice::from_ref(&c), &members(&ids))
+            .unwrap();
         assert_eq!((v2.roster.len(), v2.roster_version), (3, 2));
-        assert_eq!(b.invite(&a, &conv.id, &[c.clone()], &members(&ids)).unwrap().roster_version, 2, "adding a present member changes nothing");
+        assert_eq!(
+            b.invite(&a, &conv.id, std::slice::from_ref(&c), &members(&ids))
+                .unwrap()
+                .roster_version,
+            2,
+            "adding a present member changes nothing"
+        );
     }
 
     #[test]
@@ -421,17 +630,31 @@ mod tests {
         let ids = [a.as_str(), bb.as_str()];
         let id = {
             let b = Book::new(Some(store.clone())).unwrap();
-            let conv = b.create(&a, "keep", &[bb.clone()], &members(&ids)).unwrap();
-            b.post(&a, &apk, &conv.id, "kept", "r1", &sign(&ka, &conv.id, "r1", "kept")).unwrap();
+            let conv = b
+                .create(&a, "keep", std::slice::from_ref(&bb), &members(&ids))
+                .unwrap();
+            b.post(
+                &a,
+                &apk,
+                &conv.id,
+                "kept",
+                "r1",
+                &sign(&ka, &conv.id, "r1", "kept"),
+            )
+            .unwrap();
             conv.id
         };
         let b = Book::new(Some(store)).unwrap();
         let v = b.read(&bb, &id, 0, true).unwrap();
         assert_eq!(v.entries[0].text, "kept");
         // The sequence continues and the retry is still recognised after the restart.
-        let again = b.post(&a, &apk, &id, "kept", "r1", &sign(&ka, &id, "r1", "kept")).unwrap();
+        let again = b
+            .post(&a, &apk, &id, "kept", "r1", &sign(&ka, &id, "r1", "kept"))
+            .unwrap();
         assert_eq!(again.seq, 1);
-        let next = b.post(&a, &apk, &id, "more", "r2", &sign(&ka, &id, "r2", "more")).unwrap();
+        let next = b
+            .post(&a, &apk, &id, "more", "r2", &sign(&ka, &id, "r2", "more"))
+            .unwrap();
         assert_eq!(next.seq, 2);
         let _ = std::fs::remove_dir_all(dir);
     }

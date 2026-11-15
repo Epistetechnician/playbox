@@ -249,7 +249,7 @@ fn ek_chain_checks_reject_what_they_should() {
     forged[i] ^= 1;
     assert!(tpm_ek::check_ek_chain(&forged, &chain, &anchors(), now).is_err());
     // An intermediate that is not a CA cannot extend the chain: use the leaf itself as the "intermediate".
-    assert!(tpm_ek::check_ek_chain(&leaf, &[leaf.clone()], &anchors(), now).is_err());
+    assert!(tpm_ek::check_ek_chain(&leaf, std::slice::from_ref(&leaf), &anchors(), now).is_err());
 }
 
 #[test]

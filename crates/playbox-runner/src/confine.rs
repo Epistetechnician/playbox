@@ -37,13 +37,23 @@ impl Confinement {
     /// Settings with the default cgroup root (`/sys/fs/cgroup/playbox/runs`).
     #[must_use]
     pub fn new(max_net: Level) -> Self {
-        Self { cgroup_root: Path::new(CGROUP_MOUNT).join("playbox/runs"), max_net, seccomp: true }
+        Self {
+            cgroup_root: Path::new(CGROUP_MOUNT).join("playbox/runs"),
+            max_net,
+            seccomp: true,
+        }
     }
 
     /// The cgroup path relative to the cgroup mount, as the network rules name it.
     fn relative_root(&self) -> Result<String> {
-        let rel = self.cgroup_root.strip_prefix(CGROUP_MOUNT).context("the cgroup root must be under /sys/fs/cgroup")?;
-        Ok(rel.to_str().context("cgroup root is not utf-8")?.to_string())
+        let rel = self
+            .cgroup_root
+            .strip_prefix(CGROUP_MOUNT)
+            .context("the cgroup root must be under /sys/fs/cgroup")?;
+        Ok(rel
+            .to_str()
+            .context("cgroup root is not utf-8")?
+            .to_string())
     }
 
     /// For the host's signed statement: what a verifier can rely on about every task of this host.
@@ -53,7 +63,11 @@ impl Confinement {
             "jail=userns+pidns+netns+pivot;cgroup=memory+cpu+pids;pids_max={};net_max={};{}",
             cgroup::PIDS_MAX,
             self.max_net,
-            if self.seccomp { seccomp::describe() } else { "seccomp=off".to_string() }
+            if self.seccomp {
+                seccomp::describe()
+            } else {
+                "seccomp=off".to_string()
+            }
         )
     }
 
@@ -63,22 +77,33 @@ impl Confinement {
     ///
     /// Fails if user namespaces, the cgroup hierarchy or (when networking is allowed) nftables are unavailable.
     pub fn preflight(&self) -> Result<()> {
-        let userns = std::fs::read_to_string("/proc/sys/user/max_user_namespaces").map(|s| s.trim() != "0").unwrap_or(true);
+        let userns = std::fs::read_to_string("/proc/sys/user/max_user_namespaces")
+            .map(|s| s.trim() != "0")
+            .unwrap_or(true);
         if !userns {
             bail!("confinement needs user namespaces (user.max_user_namespaces is 0)");
         }
-        let parent = self.cgroup_root.parent().context("cgroup root needs a parent")?;
+        let parent = self
+            .cgroup_root
+            .parent()
+            .context("cgroup root needs a parent")?;
         // On a machine that has not run Playbox since it booted, the parent does not exist yet. Make it where we may
         // (root, or a delegated subtree), with the controllers a run needs handed down to it.
         if !parent.exists() {
             // Not `usable`: the cgroup mount point itself is mode 0555 even for root, who can still create in it.
-            if let Some(above) = parent.parent().filter(|a| a.join("cgroup.controllers").is_file()) {
+            if let Some(above) = parent
+                .parent()
+                .filter(|a| a.join("cgroup.controllers").is_file())
+            {
                 let _ = std::fs::write(above.join("cgroup.subtree_control"), "+cpu +memory +pids");
                 let _ = std::fs::create_dir(parent);
             }
         }
         if !cgroup::usable(parent) {
-            bail!("{} is not a writable cgroup v2 directory; run as root or with a delegated subtree", parent.display());
+            bail!(
+                "{} is not a writable cgroup v2 directory; run as root or with a delegated subtree",
+                parent.display()
+            );
         }
         cgroup::prepare_root(&self.cgroup_root).context("preparing the run cgroup root")?;
         for stale in cgroup::stale(&self.cgroup_root).unwrap_or_default() {
@@ -87,7 +112,9 @@ impl Confinement {
         if self.max_net > Level::None {
             // Start from nothing: chains left by a host that died are gone with the table.
             nft("add table inet playbox_runner\ndelete table inet playbox_runner\n")?;
-            nft(&netpolicy::base_ruleset(&self.relative_root()?)?).context("loading the network base rules (is nftables installed, and are you root?)")?;
+            nft(&netpolicy::base_ruleset(&self.relative_root()?)?).context(
+                "loading the network base rules (is nftables installed, and are you root?)",
+            )?;
         }
         Ok(())
     }
@@ -97,19 +124,36 @@ impl Confinement {
     /// # Errors
     ///
     /// Fails if the task asks for more network than the host allows, or the kernel refuses a limit or a rule. Nothing is left behind.
-    pub fn begin(&self, run_id: &str, limits: Limits, level: Level, dests: &[SocketAddr]) -> Result<RunGuard> {
+    pub fn begin(
+        &self,
+        run_id: &str,
+        limits: Limits,
+        level: Level,
+        dests: &[SocketAddr],
+    ) -> Result<RunGuard> {
         if level > self.max_net {
-            bail!("the task needs network level {level}, above this host's maximum {}", self.max_net);
+            bail!(
+                "the task needs network level {level}, above this host's maximum {}",
+                self.max_net
+            );
         }
         let cg = RunCgroup::create(&self.cgroup_root, run_id, limits)?;
-        let mut guard = RunGuard { cgroup: Some(cg), chain: None };
+        let mut guard = RunGuard {
+            cgroup: Some(cg),
+            chain: None,
+        };
         if level > Level::None {
             let rules = netpolicy::run_chain(&self.relative_root()?, run_id, level, dests)?;
             nft(&rules).context("loading the task's network rules")?;
             guard.chain = Some(run_id.to_string());
         } else if self.max_net > Level::None {
             // A task with no network still gets its chain: an explicit reject, not the base table's default.
-            nft(&netpolicy::run_chain(&self.relative_root()?, run_id, Level::None, &[])?)?;
+            nft(&netpolicy::run_chain(
+                &self.relative_root()?,
+                run_id,
+                Level::None,
+                &[],
+            )?)?;
             guard.chain = Some(run_id.to_string());
         }
         Ok(guard)
@@ -157,7 +201,11 @@ fn nft(script: &str) -> Result<()> {
         .stderr(Stdio::piped())
         .spawn()
         .context("cannot run nft")?;
-    child.stdin.take().context("nft stdin")?.write_all(script.as_bytes())?;
+    child
+        .stdin
+        .take()
+        .context("nft stdin")?
+        .write_all(script.as_bytes())?;
     let out = child.wait_with_output()?;
     if !out.status.success() {
         bail!("nft: {}", String::from_utf8_lossy(&out.stderr).trim());
@@ -168,7 +216,9 @@ fn nft(script: &str) -> Result<()> {
 /// Remove the jump rule (found by its handle), then the chain.
 fn remove_chain(id: &str) -> Result<()> {
     let chain = format!("run_{id}");
-    let listing = std::process::Command::new("nft").args(["-a", "list", "chain", "inet", "playbox_runner", "runs"]).output()?;
+    let listing = std::process::Command::new("nft")
+        .args(["-a", "list", "chain", "inet", "playbox_runner", "runs"])
+        .output()?;
     let text = String::from_utf8_lossy(&listing.stdout);
     let needle = format!("jump {chain}");
     let handle = text
@@ -178,9 +228,13 @@ fn remove_chain(id: &str) -> Result<()> {
         .and_then(|h| h.trim().parse::<u64>().ok());
     let mut script = String::new();
     if let Some(h) = handle {
-        script.push_str(&format!("delete rule inet playbox_runner runs handle {h}\n"));
+        script.push_str(&format!(
+            "delete rule inet playbox_runner runs handle {h}\n"
+        ));
     }
-    script.push_str(&format!("flush chain inet playbox_runner {chain}\ndelete chain inet playbox_runner {chain}\n"));
+    script.push_str(&format!(
+        "flush chain inet playbox_runner {chain}\ndelete chain inet playbox_runner {chain}\n"
+    ));
     nft(&script)
 }
 
@@ -201,7 +255,8 @@ impl Plan {
     /// Any failed step; the caller must exit.
     pub fn enter(&self) -> Result<()> {
         if let Some(cg) = &self.cgroup {
-            std::fs::write(cg.join("cgroup.procs"), std::process::id().to_string()).context("joining the run's cgroup")?;
+            std::fs::write(cg.join("cgroup.procs"), std::process::id().to_string())
+                .context("joining the run's cgroup")?;
         }
         if let Some(j) = &self.jail {
             j.enter()?;
@@ -220,24 +275,50 @@ pub fn library_dirs() -> Vec<PathBuf> {
     let mut dirs = std::collections::BTreeSet::new();
     if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
         for line in maps.lines() {
-            if let Some(path) = line.split_whitespace().nth(5).filter(|p| p.starts_with('/') && p.contains(".so")) {
+            if let Some(path) = line
+                .split_whitespace()
+                .nth(5)
+                .filter(|p| p.starts_with('/') && p.contains(".so"))
+            {
                 if let Some(parent) = Path::new(path).parent() {
                     dirs.insert(parent.to_path_buf());
                 }
             }
         }
     }
-    let mut search: Vec<PathBuf> = std::env::var("LD_LIBRARY_PATH").unwrap_or_default().split(':').filter(|s| !s.is_empty()).map(PathBuf::from).collect();
-    for d in ["/usr/lib", "/usr/lib64", "/usr/local/lib", "/usr/local/lib64", "/lib", "/lib64", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu"] {
+    let mut search: Vec<PathBuf> = std::env::var("LD_LIBRARY_PATH")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    for d in [
+        "/usr/lib",
+        "/usr/lib64",
+        "/usr/local/lib",
+        "/usr/local/lib64",
+        "/lib",
+        "/lib64",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+    ] {
         search.push(PathBuf::from(d));
     }
     for d in search {
-        let has_fw = std::fs::read_dir(&d).map(|rd| rd.flatten().any(|e| e.file_name().to_string_lossy().starts_with("libkrunfw"))).unwrap_or(false);
+        let has_fw = std::fs::read_dir(&d)
+            .map(|rd| {
+                rd.flatten()
+                    .any(|e| e.file_name().to_string_lossy().starts_with("libkrunfw"))
+            })
+            .unwrap_or(false);
         if has_fw {
             dirs.insert(d);
         }
     }
     // A directory under another one in the list is already there.
     let all: Vec<PathBuf> = dirs.into_iter().collect();
-    all.iter().filter(|d| !all.iter().any(|o| o != *d && d.starts_with(o))).cloned().collect()
+    all.iter()
+        .filter(|d| !all.iter().any(|o| o != *d && d.starts_with(o)))
+        .cloned()
+        .collect()
 }

@@ -33,7 +33,11 @@ fn a_host_publishes_itself_and_mints_links_for_the_hub() {
         .unwrap();
     let end = Instant::now() + Duration::from_secs(30);
     let record = loop {
-        let found = std::fs::read_dir(&hosting).ok().and_then(|r| r.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x == "json")));
+        let found = std::fs::read_dir(&hosting).ok().and_then(|r| {
+            r.flatten()
+                .map(|e| e.path())
+                .find(|p| p.extension().is_some_and(|x| x == "json"))
+        });
         if let Some(p) = found {
             break p;
         }
@@ -44,16 +48,36 @@ fn a_host_publishes_itself_and_mints_links_for_the_hub() {
     let sock = std::path::PathBuf::from(rec["sock"].as_str().unwrap());
     assert_eq!(rec["name"], "state");
     assert_eq!(rec["id"].as_str().unwrap().len(), 16);
-    assert!(!std::fs::read_to_string(&record).unwrap().contains("playbox://"), "a record never holds a link");
-    assert_eq!(std::fs::metadata(&hosting).unwrap().permissions().mode() & 0o777, 0o700);
-    assert_eq!(std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777, 0o600);
+    assert!(
+        !std::fs::read_to_string(&record)
+            .unwrap()
+            .contains("playbox://"),
+        "a record never holds a link"
+    );
+    assert_eq!(
+        std::fs::metadata(&hosting).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert_eq!(
+        std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     assert_eq!(ask(&sock, "ping"), "ok");
     let (a, b) = (ask(&sock, "link"), ask(&sock, "link"));
-    assert!(a.starts_with("playbox://") && b.starts_with("playbox://") && a != b, "each ask mints a fresh link");
-    assert!(ask(&sock, "link not-a-guest-id").starts_with("error:"), "a bad guest id is refused");
+    assert!(
+        a.starts_with("playbox://") && b.starts_with("playbox://") && a != b,
+        "each ask mints a fresh link"
+    );
+    assert!(
+        ask(&sock, "link not-a-guest-id").starts_with("error:"),
+        "a bad guest id is refused"
+    );
     assert!(ask(&sock, "rm -rf /").starts_with("error:"));
     writeln!(host.stdin.as_mut().unwrap(), "quit").unwrap();
     let _ = host.wait();
-    assert!(!record.exists() && !sock.exists(), "a host that quits cleans up after itself");
+    assert!(
+        !record.exists() && !sock.exists(),
+        "a host that quits cleans up after itself"
+    );
     let _ = std::fs::remove_dir_all(&d);
 }

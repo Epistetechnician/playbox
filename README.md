@@ -27,16 +27,16 @@ On top of that sits the research half of the project: **swarm telepathy** (agent
 
 ## At a glance
 
-Counted from the source tree at 0.3.1 plus the unreleased changes after it (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)). The test run in the Tests row is older than the counts.
+Counted from the source tree on 2026-11-14, at 0.3.2 plus the unreleased changes after it (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)). The test run in the Tests row is older than the counts.
 
 | | |
 |---|---|
-| **Rust** | 46,348 lines across 8 crates (`playbox-net` 17,958 · `playbox-core` 10,397 · `playbox-cli` 6,777 · `playbox-runner` 4,624 · `playbox-mcp` 4,002 · `playbox-rap` 1,031 · `playbox-git` 916 · `playbox-bridge` 643) |
-| **Python** | 21,604 lines: steering and telepathy research (11,810), hub app (4,705), orchestrator (1,533), judge (1,443), world view (860), challenge (530), conformance (421), witness plugin (302) |
+| **Rust** | 47,499 lines across 8 crates (`playbox-net` 18,369 · `playbox-core` 10,397 · `playbox-cli` 6,899 · `playbox-runner` 5,242 · `playbox-mcp` 4,002 · `playbox-rap` 1,031 · `playbox-git` 916 · `playbox-bridge` 643) |
+| **Python** | 26,152 lines: steering and telepathy research (12,307), hub app (6,024), orchestrator (1,533), judge (1,443), world view (860), challenge and the F3 harness (2,971), conformance (712), witness plugin (302) |
 | **Lean 4** | 207 lines, 15 theorems, 0 `sorry`: grants can only narrow; expired or revoked grants authorize nothing |
-| **Tests** | 494 Rust tests and 172 Python tests written (counted from source; 24 more in `ui/` and `conformance/`), 12 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run for this README** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure was `playbox-git` `a_hostile_bundle_is_rejected_on_import`, fixed afterwards in #11 (see [What is not proven](#what-is-not-proven)). Later re-runs on macOS (git 2.55.0): the full workspace, conformance and the Lean build pass |
-| **CI** | Linux and macOS test matrix, `cargo audit`, Python suites, a rootful and a rootless confinement job, conformance |
-| **Docs** | 25 design and results documents, 4,351 lines |
+| **Tests** | 524 Rust tests and 176 Python tests written (counted from source on 2026-11-14; 18 more in `ui/` and `conformance/`), 12 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run for this README** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure was `playbox-git` `a_hostile_bundle_is_rejected_on_import`, fixed afterwards in #11 (see [What is not proven](#what-is-not-proven)). Later re-runs on macOS (git 2.55.0): the full workspace, conformance and the Lean build pass |
+| **CI** | Linux and macOS test matrix, `cargo audit`, Python suites, a rootful and a rootless confinement job, a libkrun microVM job on `/dev/kvm` (boot tests, the escape drill, the confined guest), `cargo fmt --check`, clippy, conformance |
+| **Docs** | 26 design and results documents, 4,433 lines |
 | **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1, 0.3.0, 0.3.1 (Nov 13) and 0.3.2 (Nov 14). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
 | **Real-world runs** | Mac ↔ Raspberry Pi 5 over a relay; a friend's agent in India joining a Mac host; a Google Confidential Space TDX VM joined at tier T3 from another network ([docs/tested-on.md](docs/tested-on.md)) |
 

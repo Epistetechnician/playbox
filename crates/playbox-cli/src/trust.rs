@@ -179,7 +179,11 @@ pub fn pin_cmd(cmd: PinCmd) -> Result<()> {
         }
         PinCmd::Remove { kind, fingerprint } => println!(
             "{}",
-            if pins.remove(&kind, &fingerprint)? { "removed" } else { "was not pinned" }
+            if pins.remove(&kind, &fingerprint)? {
+                "removed"
+            } else {
+                "was not pinned"
+            }
         ),
     }
     Ok(())

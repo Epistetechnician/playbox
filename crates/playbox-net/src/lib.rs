@@ -5,8 +5,8 @@
 pub mod audit;
 pub mod browse;
 pub mod capabilities;
-pub mod conversations;
 pub mod chat;
+pub mod conversations;
 pub mod grants;
 pub mod latent;
 pub mod limits;
@@ -624,7 +624,18 @@ impl RoomHandler {
             timeout_secs: i64::try_from(l.timeout_secs).unwrap_or(i64::MAX),
             net: l.network,
             // A secret is granted as `secret/NAME` in the same allow-list as hosts: `/` is in no host name or secret name.
-            hosts: l.allowed_hosts.iter().cloned().chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}"))).chain(self.cfg.capabilities.iter().map(|c| format!("cap/{}", c.name))).collect(),
+            hosts: l
+                .allowed_hosts
+                .iter()
+                .cloned()
+                .chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}")))
+                .chain(
+                    self.cfg
+                        .capabilities
+                        .iter()
+                        .map(|c| format!("cap/{}", c.name)),
+                )
+                .collect(),
         };
         let ttl = self
             .cfg
@@ -639,7 +650,9 @@ impl RoomHandler {
         )?;
         st.members.insert(from, grant_id);
         st.save();
-        Ok(json!({ "member": from.to_string(), "grant": grant, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }))
+        Ok(
+            json!({ "member": from.to_string(), "grant": grant, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }),
+        )
     }
 
     fn authorize(
@@ -1130,12 +1143,25 @@ impl RoomHandler {
             .ok_or_else(|| refuse("this room has no git repository"))
     }
 
-    async fn browse(&self, from: EndpointId, url: &str, mode: browse::Mode, wait_ms: Option<u64>) -> Result<Task> {
-        let b = self.cfg.browse.clone().ok_or_else(|| refuse("this room has no browser"))?;
-        let r = b.browse(&from.to_string(), url, mode, wait_ms).await.map_err(|e| match e {
-            browse::BrowseError::Refused(m) => refuse(m),
-            browse::BrowseError::Failed(e) => e,
-        })?;
+    async fn browse(
+        &self,
+        from: EndpointId,
+        url: &str,
+        mode: browse::Mode,
+        wait_ms: Option<u64>,
+    ) -> Result<Task> {
+        let b = self
+            .cfg
+            .browse
+            .clone()
+            .ok_or_else(|| refuse("this room has no browser"))?;
+        let r = b
+            .browse(&from.to_string(), url, mode, wait_ms)
+            .await
+            .map_err(|e| match e {
+                browse::BrowseError::Refused(m) => refuse(m),
+                browse::BrowseError::Failed(e) => e,
+            })?;
         let mut artifacts = Vec::new();
         if let Some(t) = &r.text {
             artifacts.push(wire::text_artifact("text", t.clone()));
@@ -1144,7 +1170,11 @@ impl RoomHandler {
             artifacts.push(wire::text_artifact("html", h.clone()));
         }
         if let Some(png) = &r.screenshot {
-            let (name, media) = if png.starts_with(b"\x89PNG") { ("screenshot.png", "image/png") } else { ("screenshot.jpg", "image/jpeg") };
+            let (name, media) = if png.starts_with(b"\x89PNG") {
+                ("screenshot.png", "image/png")
+            } else {
+                ("screenshot.jpg", "image/jpeg")
+            };
             artifacts.push(wire::raw_artifact("screenshot", name, media, png.clone()));
         }
         Ok(wire::task(
@@ -1230,7 +1260,13 @@ impl RoomHandler {
     /// Resolves once `who` has been revoked (here or by a notice that reached this host).
     /// Ids of the room's current members, as strings.
     fn member_ids(&self) -> std::collections::HashSet<String> {
-        self.state.lock().expect("state lock").members.keys().map(std::string::ToString::to_string).collect()
+        self.state
+            .lock()
+            .expect("state lock")
+            .members
+            .keys()
+            .map(std::string::ToString::to_string)
+            .collect()
     }
 
     async fn until_revoked(&self, who: EndpointId) {
@@ -1526,12 +1562,16 @@ async fn bind(
         Bind::GuestLoopback => {
             b = b
                 .clear_ip_transports()
-                .bind_addr(std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0)))
+                .bind_addr(std::net::SocketAddr::from((
+                    std::net::Ipv4Addr::LOCALHOST,
+                    0,
+                )))
                 .map_err(|e| anyhow!("cannot listen on loopback: {e}"))?;
         }
         Bind::Guest => {
             let direct = std::env::var("PLAYBOX_GUEST_DIRECT").is_ok_and(|v| v == "1");
-            if !chosen && !direct && matches!(transport, Transport::Iroh | Transport::Relay { .. }) {
+            if !chosen && !direct && matches!(transport, Transport::Iroh | Transport::Relay { .. })
+            {
                 b = b.clear_ip_transports();
             }
         }
@@ -1605,9 +1645,13 @@ impl Host {
         let state = State::load(&dir.join("state.json"))?;
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
-        cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
-        cfg.calls_store.get_or_insert_with(|| dir.join("calls.json"));
-        cfg.conversations_store.get_or_insert_with(|| dir.join("conversations.json"));
+        cfg.latent
+            .store
+            .get_or_insert_with(|| dir.join("latent.json"));
+        cfg.calls_store
+            .get_or_insert_with(|| dir.join("calls.json"));
+        cfg.conversations_store
+            .get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
     }
@@ -1631,9 +1675,13 @@ impl Host {
         let state = State::load(&dir.join("state.json"))?;
         let mut cfg = cfg;
         cfg.audit_log.get_or_insert_with(|| dir.join("audit.log"));
-        cfg.latent.store.get_or_insert_with(|| dir.join("latent.json"));
-        cfg.calls_store.get_or_insert_with(|| dir.join("calls.json"));
-        cfg.conversations_store.get_or_insert_with(|| dir.join("conversations.json"));
+        cfg.latent
+            .store
+            .get_or_insert_with(|| dir.join("latent.json"));
+        cfg.calls_store
+            .get_or_insert_with(|| dir.join("calls.json"));
+        cfg.conversations_store
+            .get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
         Self::build(
             secret,
@@ -1678,7 +1726,11 @@ impl Host {
                 Some(p) if p.as_os_str() == "-" => audit::Audit::stderr((*attest_key).clone()),
                 Some(p) => audit::Audit::open(p, (*attest_key).clone())?,
             }
-            .with_chat(cfg.chat_log.as_deref().map_or_else(chat::Chat::new, chat::Chat::open)),
+            .with_chat(
+                cfg.chat_log
+                    .as_deref()
+                    .map_or_else(chat::Chat::new, chat::Chat::open),
+            ),
         );
         audit.record(
             "host_start",
@@ -1767,14 +1819,18 @@ impl Host {
                 cfg.limits.clone(),
             )
             .with_standing(Arc::new(move |member: &str, _capability: &str| {
-                let id: EndpointId = member.parse().map_err(|_| "the member id is not valid".to_string())?;
+                let id: EndpointId = member
+                    .parse()
+                    .map_err(|_| "the member id is not valid".to_string())?;
                 let st = standing_state.lock().expect("state lock");
                 if st.banned.contains(&id) {
                     return Err("the member was revoked".into());
                 }
                 match st.members.get(&id) {
                     None => Err("the member is no longer in the room".into()),
-                    Some(grant) if st.revoked.contains(grant) => Err("the member's grant was revoked".into()),
+                    Some(grant) if st.revoked.contains(grant) => {
+                        Err("the member's grant was revoked".into())
+                    }
                     Some(_) => Ok(()),
                 }
             })),
@@ -1922,10 +1978,17 @@ impl Host {
 
     /// [`Host::feed`], but when nothing is new wait up to `wait` seconds (capped) for something to arrive.
     pub async fn feed_wait(&self, since: u64, wait: Duration) -> chat::Feed {
-        let mut ids: Vec<String> = self.members().iter().map(std::string::ToString::to_string).collect();
+        let mut ids: Vec<String> = self
+            .members()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         ids.sort();
         ids.insert(0, "host".into());
-        self.audit.chat.wait_since("host", since, 200, &ids, wait).await
+        self.audit
+            .chat
+            .wait_since("host", since, 200, &ids, wait)
+            .await
     }
 
     fn feed_ids_since(&self, since: u64) -> chat::Feed {
@@ -2114,19 +2177,50 @@ impl Client {
         // A host on this machine (its link lists a loopback address) is dialled over loopback first, so this process never listens on the
         // network. Reaching a host on another machine, whose loopback address means nothing here, fails fast and falls through.
         if transport == Transport::Local && !bind_chosen() {
-            let local: Vec<_> = addr.ip_addrs().filter(|a| a.ip().is_loopback()).map(|a| iroh::TransportAddr::Ip(*a)).collect();
+            let local: Vec<_> = addr
+                .ip_addrs()
+                .filter(|a| a.ip().is_loopback())
+                .map(|a| iroh::TransportAddr::Ip(*a))
+                .collect();
             if !local.is_empty() {
                 let near = EndpointAddr::from_parts(addr.id, local);
-                if let Ok(c) = Self::dial(near, addr.clone(), secret.clone(), &transport, Bind::GuestLoopback, 1, Duration::from_secs(3)).await {
+                if let Ok(c) = Self::dial(
+                    near,
+                    addr.clone(),
+                    secret.clone(),
+                    &transport,
+                    Bind::GuestLoopback,
+                    1,
+                    Duration::from_secs(3),
+                )
+                .await
+                {
                     return Ok(c);
                 }
             }
         }
-        Self::dial(addr.clone(), addr, secret, &transport, Bind::Guest, CONNECT_ATTEMPTS, CONNECT_ATTEMPT_TIMEOUT).await
+        Self::dial(
+            addr.clone(),
+            addr,
+            secret,
+            &transport,
+            Bind::Guest,
+            CONNECT_ATTEMPTS,
+            CONNECT_ATTEMPT_TIMEOUT,
+        )
+        .await
     }
 
     /// Connect to `target`, remembering `addr` (the host's full address) so a closed connection can be reopened the usual way.
-    async fn dial(target: EndpointAddr, addr: EndpointAddr, secret: SecretKey, transport: &Transport, how: Bind, attempts: u32, timeout: Duration) -> Result<Self> {
+    async fn dial(
+        target: EndpointAddr,
+        addr: EndpointAddr,
+        secret: SecretKey,
+        transport: &Transport,
+        how: Bind,
+        attempts: u32,
+        timeout: Duration,
+    ) -> Result<Self> {
         let (endpoint, _) = bind(secret, transport, how).await?;
         // A handshake that never completes is retried on the same endpoint: in practice a stuck
         // first attempt is far more common than a host that is really unreachable.
@@ -2142,7 +2236,8 @@ impl Client {
                 Err(_) => last = anyhow!("timed out after {}s", timeout.as_secs()),
             }
         }
-        let conn = conn.ok_or_else(|| last.context(format!("could not connect after {attempts} attempts")))?;
+        let conn = conn
+            .ok_or_else(|| last.context(format!("could not connect after {attempts} attempts")))?;
         Ok(Self {
             endpoint,
             addr,
@@ -2347,8 +2442,11 @@ impl Client {
             .call(wire::METHOD_JOIN, json!({ "invite": invite, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }))
             .await
             .map_err(|e| anyhow!("join refused: {e:#}"))?;
-        wire::check_protocol(r.get("protocol").and_then(Value::as_u64), r.get("version").and_then(Value::as_str).unwrap_or("?"))
-            .map_err(|e| anyhow!("{e}"))?;
+        wire::check_protocol(
+            r.get("protocol").and_then(Value::as_u64),
+            r.get("version").and_then(Value::as_str).unwrap_or("?"),
+        )
+        .map_err(|e| anyhow!("{e}"))?;
         let grant = r
             .get("grant")
             .and_then(Value::as_str)
@@ -2409,7 +2507,8 @@ impl Client {
                 Err(SayError::Transport(e)) => last = Some(e),
             }
         }
-        Err(last.unwrap_or_else(|| anyhow!("say failed"))).context("the room did not answer; the message may or may not have been posted")
+        Err(last.unwrap_or_else(|| anyhow!("say failed")))
+            .context("the room did not answer; the message may or may not have been posted")
     }
 
     /// [`Client::say`] with an id the caller chooses (1 to 64 letters, digits, - _ .), sent once on this connection. A caller
@@ -2418,13 +2517,25 @@ impl Client {
     /// # Errors
     ///
     /// Returns an error if the operation fails; the error carries the cause.
-    pub async fn say_with_id_once(&self, request_id: &str, text: &str, name: Option<&str>) -> Result<u64> {
-        self.say_with_id(request_id, text, name).await.map_err(|e| match e {
-            SayError::Refused(e) | SayError::Transport(e) => e,
-        })
+    pub async fn say_with_id_once(
+        &self,
+        request_id: &str,
+        text: &str,
+        name: Option<&str>,
+    ) -> Result<u64> {
+        self.say_with_id(request_id, text, name)
+            .await
+            .map_err(|e| match e {
+                SayError::Refused(e) | SayError::Transport(e) => e,
+            })
     }
 
-    async fn say_with_id(&self, request_id: &str, text: &str, name: Option<&str>) -> std::result::Result<u64, SayError> {
+    async fn say_with_id(
+        &self,
+        request_id: &str,
+        text: &str,
+        name: Option<&str>,
+    ) -> std::result::Result<u64, SayError> {
         let op = Op::Say {
             text: text.to_string(),
             name: name.map(str::to_string),
@@ -2438,15 +2549,27 @@ impl Client {
         };
         let params = serde_json::to_value(req).map_err(|e| SayError::Refused(e.into()))?;
         // Failing to get any answer is a transport problem and may be retried; an answer that says no is final.
-        let resp = self.call_raw(a2a::methods::SEND_MESSAGE, params).await.map_err(SayError::Transport)?;
+        let resp = self
+            .call_raw(a2a::methods::SEND_MESSAGE, params)
+            .await
+            .map_err(SayError::Transport)?;
         if let Some(e) = resp.error {
             return Err(SayError::Refused(anyhow!("say refused: {}", e.message)));
         }
-        let result = resp.result.ok_or_else(|| SayError::Transport(anyhow!("empty response")))?;
-        let reply: SendMessageResponse = serde_json::from_value(result).map_err(|e| SayError::Refused(e.into()))?;
+        let result = resp
+            .result
+            .ok_or_else(|| SayError::Transport(anyhow!("empty response")))?;
+        let reply: SendMessageResponse =
+            serde_json::from_value(result).map_err(|e| SayError::Refused(e.into()))?;
         let v: Value = match reply {
-            SendMessageResponse::Message(m) => serde_json::from_str(m.text().unwrap_or("{}")).map_err(|e| SayError::Refused(e.into()))?,
-            SendMessageResponse::Task(t) => return Err(SayError::Refused(anyhow!("say refused: {}", wire::status_text(&t)))),
+            SendMessageResponse::Message(m) => serde_json::from_str(m.text().unwrap_or("{}"))
+                .map_err(|e| SayError::Refused(e.into()))?,
+            SendMessageResponse::Task(t) => {
+                return Err(SayError::Refused(anyhow!(
+                    "say refused: {}",
+                    wire::status_text(&t)
+                )))
+            }
         };
         if let Some(e) = v.get("error").and_then(Value::as_str) {
             return Err(SayError::Refused(anyhow!("{e}")));
@@ -2460,7 +2583,15 @@ impl Client {
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn feed(&self, since: u64) -> Result<chat::Feed> {
-        let v = self.reply_json(&Op::Feed { since, wait_secs: 0 }, "feed").await?;
+        let v = self
+            .reply_json(
+                &Op::Feed {
+                    since,
+                    wait_secs: 0,
+                },
+                "feed",
+            )
+            .await?;
         Ok(serde_json::from_value(v)?)
     }
 
@@ -2471,7 +2602,9 @@ impl Client {
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn feed_wait(&self, since: u64, wait_secs: u64) -> Result<chat::Feed> {
-        let v = self.reply_json(&Op::Feed { since, wait_secs }, "feed").await?;
+        let v = self
+            .reply_json(&Op::Feed { since, wait_secs }, "feed")
+            .await?;
         Ok(serde_json::from_value(v)?)
     }
 
@@ -2480,8 +2613,15 @@ impl Client {
     /// # Errors
     ///
     /// Returns an error if the room has no shared memory, the entry is refused, or the host cannot be reached.
-    pub async fn remember(&self, text: &str, key: Option<&str>) -> Result<shared_memory::Remembered> {
-        let op = Op::Remember { text: text.to_string(), key: key.map(str::to_string) };
+    pub async fn remember(
+        &self,
+        text: &str,
+        key: Option<&str>,
+    ) -> Result<shared_memory::Remembered> {
+        let op = Op::Remember {
+            text: text.to_string(),
+            key: key.map(str::to_string),
+        };
         let v = self.reply_json(&op, "remember").await?;
         if let Some(e) = v.get("error").and_then(Value::as_str) {
             bail!("remember refused: {e}");
@@ -2494,13 +2634,25 @@ impl Client {
     /// # Errors
     ///
     /// Returns an error if the room has no shared memory, the query is refused, or the host cannot be reached.
-    pub async fn recall(&self, query: &str, max_tokens: Option<u32>, author: Option<&str>) -> Result<Vec<shared_memory::Hit>> {
-        let op = Op::Recall { query: query.to_string(), max_tokens, author: author.map(str::to_string) };
+    pub async fn recall(
+        &self,
+        query: &str,
+        max_tokens: Option<u32>,
+        author: Option<&str>,
+    ) -> Result<Vec<shared_memory::Hit>> {
+        let op = Op::Recall {
+            query: query.to_string(),
+            max_tokens,
+            author: author.map(str::to_string),
+        };
         let v = self.reply_json(&op, "recall").await?;
         if let Some(e) = v.get("error").and_then(Value::as_str) {
             bail!("recall refused: {e}");
         }
-        Ok(serde_json::from_value(v.get("hits").cloned().unwrap_or(Value::Null)).unwrap_or_default())
+        Ok(
+            serde_json::from_value(v.get("hits").cloned().unwrap_or(Value::Null))
+                .unwrap_or_default(),
+        )
     }
 
     /// Start a conversation with `members` (their ids, as `members()` lists them).
@@ -2509,7 +2661,15 @@ impl Client {
     ///
     /// Returns an error if the host refuses: an unknown member, a bad title, too few or too many people.
     pub async fn conv_new(&self, title: &str, members: &[String]) -> Result<Value> {
-        let v = self.reply_json(&Op::ConvNew { title: title.to_string(), members: members.to_vec() }, "conversation").await?;
+        let v = self
+            .reply_json(
+                &Op::ConvNew {
+                    title: title.to_string(),
+                    members: members.to_vec(),
+                },
+                "conversation",
+            )
+            .await?;
         conv_field(&v, "conversation")
     }
 
@@ -2519,7 +2679,15 @@ impl Client {
     ///
     /// Returns an error if the host refuses.
     pub async fn conv_invite(&self, conv: &str, members: &[String]) -> Result<Value> {
-        let v = self.reply_json(&Op::ConvInvite { conv: conv.to_string(), members: members.to_vec() }, "conversation").await?;
+        let v = self
+            .reply_json(
+                &Op::ConvInvite {
+                    conv: conv.to_string(),
+                    members: members.to_vec(),
+                },
+                "conversation",
+            )
+            .await?;
         conv_field(&v, "conversation")
     }
 
@@ -2539,7 +2707,16 @@ impl Client {
     ///
     /// Returns an error if you are not on the roster.
     pub async fn conv_read(&self, conv: &str, since: u64, mark: bool) -> Result<Value> {
-        let v = self.reply_json(&Op::ConvRead { conv: conv.to_string(), since, mark }, "conversation").await?;
+        let v = self
+            .reply_json(
+                &Op::ConvRead {
+                    conv: conv.to_string(),
+                    since,
+                    mark,
+                },
+                "conversation",
+            )
+            .await?;
         conv_field(&v, "conversation")
     }
 
@@ -2551,8 +2728,19 @@ impl Client {
     /// Returns an error if the host refuses or never answers.
     pub async fn conv_say(&self, conv: &str, text: &str) -> Result<Value> {
         let rid = hex_id(&random_bytes()?[..12]);
-        let sig = hex_id(&self.endpoint.secret_key().sign(&conversations::signed_text(conv, &rid, text)).to_bytes());
-        let op = Op::ConvPost { conv: conv.to_string(), text: text.to_string(), request_id: rid, sig };
+        let sig = hex_id(
+            &self
+                .endpoint
+                .secret_key()
+                .sign(&conversations::signed_text(conv, &rid, text))
+                .to_bytes(),
+        );
+        let op = Op::ConvPost {
+            conv: conv.to_string(),
+            text: text.to_string(),
+            request_id: rid,
+            sig,
+        };
         let mut last = None;
         for attempt in 0..3u32 {
             if attempt > 0 {
@@ -2573,7 +2761,8 @@ impl Client {
                 Err(e) => last = Some(e),
             }
         }
-        Err(last.unwrap_or_else(|| anyhow!("post failed"))).context("the room did not answer; the post may or may not have been stored")
+        Err(last.unwrap_or_else(|| anyhow!("post failed")))
+            .context("the room did not answer; the post may or may not have been stored")
     }
 
     /// The capabilities the host offers: names, parameters and whether each call needs the owner's approval.
@@ -2593,8 +2782,17 @@ impl Client {
     ///
     /// Returns an error if the host refuses (no grant for the capability, arguments outside its bounds, an id reused for a
     /// different request).
-    pub async fn call_capability(&self, name: &str, args: std::collections::BTreeMap<String, String>, call_id: &str) -> Result<capabilities::Call> {
-        let op = Op::Cap { name: name.to_string(), args, call_id: call_id.to_string() };
+    pub async fn call_capability(
+        &self,
+        name: &str,
+        args: std::collections::BTreeMap<String, String>,
+        call_id: &str,
+    ) -> Result<capabilities::Call> {
+        let op = Op::Cap {
+            name: name.to_string(),
+            args,
+            call_id: call_id.to_string(),
+        };
         let v = self.reply_json(&op, "capability call").await?;
         call_of(&v, self.host_id())
     }
@@ -2605,7 +2803,14 @@ impl Client {
     ///
     /// Returns an error if there is no such call.
     pub async fn poll_capability(&self, call_id: &str) -> Result<capabilities::Call> {
-        let v = self.reply_json(&Op::CapPoll { call_id: call_id.to_string() }, "capability poll").await?;
+        let v = self
+            .reply_json(
+                &Op::CapPoll {
+                    call_id: call_id.to_string(),
+                },
+                "capability poll",
+            )
+            .await?;
         call_of(&v, self.host_id())
     }
 
@@ -2615,12 +2820,24 @@ impl Client {
     /// # Errors
     ///
     /// As [`Client::call_capability`]; also when `wait` passes with the call still open (the call is not cancelled, poll it later).
-    pub async fn call_capability_wait(&self, name: &str, args: std::collections::BTreeMap<String, String>, call_id: &str, wait: Duration) -> Result<capabilities::Call> {
+    pub async fn call_capability_wait(
+        &self,
+        name: &str,
+        args: std::collections::BTreeMap<String, String>,
+        call_id: &str,
+        wait: Duration,
+    ) -> Result<capabilities::Call> {
         let mut call = self.call_capability(name, args, call_id).await?;
         let until = std::time::Instant::now() + wait;
-        while matches!(call.state, capabilities::State::Running | capabilities::State::AwaitingApproval) {
+        while matches!(
+            call.state,
+            capabilities::State::Running | capabilities::State::AwaitingApproval
+        ) {
             if std::time::Instant::now() > until {
-                bail!("call {call_id} is still {:?}; poll it again later", call.state);
+                bail!(
+                    "call {call_id} is still {:?}; poll it again later",
+                    call.state
+                );
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
             call = self.poll_capability(call_id).await?;
@@ -2749,8 +2966,23 @@ impl Client {
     /// # Errors
     ///
     /// Returns an error if the room has no browser, the URL is not allowed, or the visit fails.
-    pub async fn browse(&self, url: &str, mode: browse::Mode, wait_ms: Option<u64>) -> Result<browse::Browsed> {
-        let t = self.send_task("browse", &Op::Browse { url: url.to_string(), mode, wait_ms }, vec![]).await?;
+    pub async fn browse(
+        &self,
+        url: &str,
+        mode: browse::Mode,
+        wait_ms: Option<u64>,
+    ) -> Result<browse::Browsed> {
+        let t = self
+            .send_task(
+                "browse",
+                &Op::Browse {
+                    url: url.to_string(),
+                    mode,
+                    wait_ms,
+                },
+                vec![],
+            )
+            .await?;
         let m = |k: &str| wire::meta(&t, k).cloned().unwrap_or(Value::Null);
         Ok(browse::Browsed {
             url: m("url").as_str().unwrap_or_default().to_string(),
@@ -2759,7 +2991,14 @@ impl Client {
             text: wire::artifact_text(&t, "text"),
             html: wire::artifact_text(&t, "html"),
             screenshot: wire::artifact_bytes(&t, "screenshot"),
-            blocked: m("blocked").as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+            blocked: m("blocked")
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
             requests: m("requests").as_u64().unwrap_or(0) as usize,
             timed_out: m("timed_out").as_bool().unwrap_or(false),
             truncated: m("truncated").as_bool().unwrap_or(false),
@@ -2919,7 +3158,6 @@ pub async fn join_link(
     Ok(client)
 }
 
-
 fn conv_field(v: &Value, field: &str) -> Result<Value> {
     if let Some(e) = v.get("error").and_then(Value::as_str) {
         bail!("{e}");
@@ -2931,7 +3169,8 @@ fn call_of(v: &Value, host: EndpointId) -> Result<capabilities::Call> {
     if let Some(e) = v.get("error").and_then(Value::as_str) {
         bail!("{e}");
     }
-    let call: capabilities::Call = serde_json::from_value(v.get("call").cloned().unwrap_or(Value::Null))?;
+    let call: capabilities::Call =
+        serde_json::from_value(v.get("call").cloned().unwrap_or(Value::Null))?;
     call.verify_result(host.as_bytes())?;
     Ok(call)
 }
@@ -2946,11 +3185,18 @@ mod write_atomic_tests {
         let dir = std::env::temp_dir().join(format!("pbx-atomic-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("state.json");
-        let st = State { path: Some(p.clone()), ..Default::default() };
+        let st = State {
+            path: Some(p.clone()),
+            ..Default::default()
+        };
         st.save();
         st.save();
         assert!(State::load(&p).is_ok());
-        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600, "the room's state is for the host only");
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "the room's state is for the host only"
+        );
         assert!(!p.with_extension("tmp").exists());
         std::fs::remove_dir_all(dir).ok();
     }
@@ -2965,15 +3211,28 @@ mod say_retry_tests {
         let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
             .await
             .unwrap();
-        let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
-        let a = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
+        let link = host
+            .create_link(Duration::from_secs(60), 1)
+            .unwrap()
+            .encode();
+        let a = join_link(&link, new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
         let before = a.say("one", None).await.unwrap();
         // Kill the connection under the client; the next say must still go through, exactly once.
         a.conn.close(0u32.into(), b"test");
         let after = a.say("two", None).await.unwrap();
         assert!(after > before);
         let b = a.sibling(a.addr.clone()).await.unwrap();
-        let texts: Vec<String> = b.feed(0).await.unwrap().items.into_iter().filter(|i| i.kind == "say").map(|i| i.text).collect();
+        let texts: Vec<String> = b
+            .feed(0)
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .filter(|i| i.kind == "say")
+            .map(|i| i.text)
+            .collect();
         assert_eq!(texts, ["one", "two"]);
         // A refusal from the host is final and not retried: an empty message says nothing and costs no extra posts.
         assert!(b.say("   ", None).await.is_err());
@@ -2986,13 +3245,20 @@ mod say_retry_tests {
 fn refusal_is_new(from: &str, method: &str, reason: &str) -> bool {
     use std::sync::{Mutex, OnceLock};
     use std::time::Instant;
-    static SEEN: OnceLock<Mutex<std::collections::HashMap<(String, String, String), Instant>>> = OnceLock::new();
-    let Ok(mut seen) = SEEN.get_or_init(Default::default).lock() else { return true };
+    type Seen = std::collections::HashMap<(String, String, String), Instant>;
+    static SEEN: OnceLock<Mutex<Seen>> = OnceLock::new();
+    let Ok(mut seen) = SEEN.get_or_init(Default::default).lock() else {
+        return true;
+    };
     let now = Instant::now();
     if seen.len() > 4096 {
         seen.retain(|_, t| now.duration_since(*t) < Duration::from_secs(60));
     }
-    let key = (from.to_string(), method.to_string(), reason.chars().take(80).collect());
+    let key = (
+        from.to_string(),
+        method.to_string(),
+        reason.chars().take(80).collect(),
+    );
     match seen.get(&key) {
         Some(t) if now.duration_since(*t) < Duration::from_secs(60) => false,
         _ => {
@@ -3008,10 +3274,24 @@ mod refusal_tests {
 
     #[test]
     fn the_same_refusal_is_recorded_once_a_minute() {
-        assert!(refusal_is_new("m1", "feed", "authorization failed: expired"));
-        assert!(!refusal_is_new("m1", "feed", "authorization failed: expired"));
-        assert!(refusal_is_new("m2", "feed", "authorization failed: expired"), "another member is its own case");
-        assert!(refusal_is_new("m1", "say", "authorization failed: expired"), "so is another method");
+        assert!(refusal_is_new(
+            "m1",
+            "feed",
+            "authorization failed: expired"
+        ));
+        assert!(!refusal_is_new(
+            "m1",
+            "feed",
+            "authorization failed: expired"
+        ));
+        assert!(
+            refusal_is_new("m2", "feed", "authorization failed: expired"),
+            "another member is its own case"
+        );
+        assert!(
+            refusal_is_new("m1", "say", "authorization failed: expired"),
+            "so is another method"
+        );
         assert!(refusal_is_new("m1", "feed", "a different reason"));
     }
 }

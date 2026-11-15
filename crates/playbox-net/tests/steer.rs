@@ -839,19 +839,32 @@ async fn docker_engine_image() {
 // --- latent handoff ---
 
 fn envelope(py: &Path, e: &Env, seed: [u8; 32], text: &str, cache_from: Option<&str>) -> Vec<u8> {
-    let wdir = std::fs::read_dir(std::env::temp_dir().join(format!("pb-steer-store-{}-{}", e.tag, std::process::id())).join("weights"))
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let wdir = std::fs::read_dir(
+        std::env::temp_dir()
+            .join(format!("pb-steer-store-{}-{}", e.tag, std::process::id()))
+            .join("weights"),
+    )
+    .unwrap()
+    .next()
+    .unwrap()
+    .unwrap()
+    .path();
     let out = std::env::temp_dir().join(format!("pb-handoff-{}-{}.bin", e.tag, hexs(&seed[..4])));
     let mut cmd = Command::new(py);
-    cmd.arg(steer_dir().join("tools/make_handoff.py")).arg(&wdir).arg(hexs(&e.weights)).arg(hexs(&seed)).arg(text).arg(&out);
+    cmd.arg(steer_dir().join("tools/make_handoff.py"))
+        .arg(&wdir)
+        .arg(hexs(&e.weights))
+        .arg(hexs(&seed))
+        .arg(text)
+        .arg(&out);
     if let Some(c) = cache_from {
         cmd.arg(c);
     }
-    let r = cmd.env("PYTHONPATH", steer_dir()).env("HF_HUB_OFFLINE", "1").output().unwrap();
+    let r = cmd
+        .env("PYTHONPATH", steer_dir())
+        .env("HF_HUB_OFFLINE", "1")
+        .output()
+        .unwrap();
     assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
     std::fs::read(out).unwrap()
 }
@@ -863,7 +876,9 @@ async fn an_audited_handoff_passes_when_honest_and_quarantines_a_signer_with_a_b
     e.tag = "handoff";
     // Audit every handoff so the outcome does not depend on a draw.
     let seed = [11u8; 32];
-    let c = join_link(&e.link, iroh::SecretKey::from_bytes(&seed), true).await.unwrap();
+    let c = join_link(&e.link, iroh::SecretKey::from_bytes(&seed), true)
+        .await
+        .unwrap();
     let w = hexs(&e.weights);
 
     let honest = envelope(&py, &e, seed, "The weather today is", None);
@@ -876,7 +891,12 @@ async fn an_audited_handoff_passes_when_honest_and_quarantines_a_signer_with_a_b
     assert!(m.contains("rejected"), "{m}");
 
     // The quarantine is on disk, so a restarted host still has it.
-    let q = std::fs::read_to_string(std::env::temp_dir().join(format!("pb-steer-store-handoff-{}", std::process::id())).join("quarantine.json")).unwrap();
+    let q = std::fs::read_to_string(
+        std::env::temp_dir()
+            .join(format!("pb-steer-store-handoff-{}", std::process::id()))
+            .join("quarantine.json"),
+    )
+    .unwrap();
     assert!(q.contains(&c.id().to_string()), "{q}");
 
     // Caught once: now refused before any work.
@@ -884,7 +904,9 @@ async fn an_audited_handoff_passes_when_honest_and_quarantines_a_signer_with_a_b
     assert!(m.contains("quarantined"), "{m}");
 
     // Another member is unaffected, and another model is refused.
-    let other = join_link(&e.link, iroh::SecretKey::from_bytes(&[12u8; 32]), true).await.unwrap();
+    let other = join_link(&e.link, iroh::SecretKey::from_bytes(&[12u8; 32]), true)
+        .await
+        .unwrap();
     let ok = envelope(&py, &e, [12u8; 32], "I think that", None);
     other.handoff(&w, &ok).await.unwrap();
     let m = err(other.handoff(&"09".repeat(32), &ok).await.unwrap_err());

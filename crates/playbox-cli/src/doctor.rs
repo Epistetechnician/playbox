@@ -31,7 +31,11 @@ const PROBES: &[(&str, &str, &[&str])] = &[
     ("docker", "docker", &["info"]),
     ("libkrun", "playbox-krun-helper", &["--help"]),
     ("openshell", "openshell", &["--help"]),
-    ("steering image", "docker", &["image", "inspect", "playbox-steer:0.1"]),
+    (
+        "steering image",
+        "docker",
+        &["image", "inspect", "playbox-steer:0.1"],
+    ),
     ("uv", "uv", &["--version"]),
 ];
 
@@ -41,32 +45,59 @@ fn probe_all() -> Vec<bool> {
             .iter()
             .map(|(_, prog, args)| s.spawn(move || runs(prog, args)))
             .collect();
-        handles.into_iter().map(|h| h.join().unwrap_or(false)).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or(false))
+            .collect()
     })
 }
 
 fn collect() -> Vec<Check> {
     let mut out = Vec::new();
     let mut add = |section: &'static str, label: &str, ok: bool, detail: String| {
-        out.push(Check { section, label: label.to_string(), ok, detail });
+        out.push(Check {
+            section,
+            label: label.to_string(),
+            ok,
+            detail,
+        });
     };
     let probes = std::thread::spawn(probe_all);
     let home = store::home();
 
-    for (label, file) in [("session key", "session.key"), ("approver key", "approver.key")] {
+    for (label, file) in [
+        ("session key", "session.key"),
+        ("approver key", "approver.key"),
+    ] {
         match store::load_or_create_key(&home.join(file)) {
-            Ok(k) if home.join(file).exists() => {
-                add("identity", label, true, playbox_core::record::hex(&k.verifying_key().to_bytes()))
-            }
+            Ok(k) if home.join(file).exists() => add(
+                "identity",
+                label,
+                true,
+                playbox_core::record::hex(&k.verifying_key().to_bytes()),
+            ),
             _ => add("identity", label, false, "not created yet".into()),
         }
     }
     match platform::PinStore::load(&platform::pins_path(&home)) {
-        Ok(p) => add("identity", "pinned devices", true, p.list().len().to_string()),
+        Ok(p) => add(
+            "identity",
+            "pinned devices",
+            true,
+            p.list().len().to_string(),
+        ),
         Err(e) => add("identity", "pinned devices", false, e.to_string()),
     }
-    if std::env::var("PLAYBOX_APPROVERS").map(|v| !v.is_empty()).unwrap_or(false) {
-        add("identity", "approval enforcement", true, "on (PLAYBOX_APPROVERS set)".into());
+    if std::env::var("PLAYBOX_APPROVERS")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        add(
+            "identity",
+            "approval enforcement",
+            true,
+            "on (PLAYBOX_APPROVERS set)".into(),
+        );
     } else {
         add(
             "identity",
@@ -77,12 +108,28 @@ fn collect() -> Vec<Check> {
     }
 
     match platform::detect(&home) {
-        Ok(Some(p)) => add("hardware evidence", "platform attestation", true, p.kind().to_string()),
-        Ok(None) => add("hardware evidence", "platform attestation", false, "none; self-signed (T0) only".into()),
-        Err(e) => add("hardware evidence", "platform attestation", false, e.to_string()),
+        Ok(Some(p)) => add(
+            "hardware evidence",
+            "platform attestation",
+            true,
+            p.kind().to_string(),
+        ),
+        Ok(None) => add(
+            "hardware evidence",
+            "platform attestation",
+            false,
+            "none; self-signed (T0) only".into(),
+        ),
+        Err(e) => add(
+            "hardware evidence",
+            "platform attestation",
+            false,
+            e.to_string(),
+        ),
     }
 
-    let live = std::env::var("PLAYBOX_LIVE").is_ok_and(|v| matches!(v.as_str(), "1" | "on" | "true"));
+    let live =
+        std::env::var("PLAYBOX_LIVE").is_ok_and(|v| matches!(v.as_str(), "1" | "on" | "true"));
     add(
         "live delivery",
         "channel push",
@@ -114,20 +161,66 @@ fn collect() -> Vec<Check> {
     }
 
     match crate::python::repo_root() {
-        None => add("research tooling", "repository", false, "not found; run inside it or set PLAYBOX_ROOT".into()),
+        None => add(
+            "research tooling",
+            "repository",
+            false,
+            "not found; run inside it or set PLAYBOX_ROOT".into(),
+        ),
         Some(r) => {
-            add("research tooling", "repository", true, r.display().to_string());
+            add(
+                "research tooling",
+                "repository",
+                true,
+                r.display().to_string(),
+            );
             for p in ["steer", "orchestrator", "world", "judge"] {
-                if r.join(p).join(".venv").exists() {
-                    add("research tooling", p, true, "venv ready".into());
-                } else {
-                    add("research tooling", p, false, format!("no venv; `cd {p} && uv sync`"));
+                match venv_problem(&r.join(p).join(".venv")) {
+                    None => add("research tooling", p, true, "venv ready".into()),
+                    Some(why) => add(
+                        "research tooling",
+                        p,
+                        false,
+                        format!("{why}; `cd {p} && uv sync`"),
+                    ),
                 }
             }
         }
     }
-    add("research tooling", "uv", found[4], if found[4] { "found" } else { "not found" }.into());
+    add(
+        "research tooling",
+        "uv",
+        found[4],
+        if found[4] { "found" } else { "not found" }.into(),
+    );
     out
+}
+
+/// Why a virtual environment cannot run Python, or `None` when it can. A `.venv` directory alone proves nothing: one copied
+/// from another machine, or whose base interpreter was removed, has the folder and a dangling `python`.
+fn venv_problem(venv: &std::path::Path) -> Option<String> {
+    if !venv.is_dir() {
+        return Some("no venv".into());
+    }
+    let python = ["bin/python", "Scripts/python.exe"]
+        .iter()
+        .map(|p| venv.join(p))
+        .find(|p| p.exists());
+    if python.is_none() {
+        return Some("venv has no working python (a dangling link?)".into());
+    }
+    let cfg = std::fs::read_to_string(venv.join("pyvenv.cfg")).unwrap_or_default();
+    let home = cfg.lines().find_map(|l| {
+        l.strip_prefix("home")
+            .and_then(|r| r.trim_start().strip_prefix('='))
+            .map(|v| v.trim().to_string())
+    });
+    match home {
+        Some(h) if !std::path::Path::new(&h).is_dir() => {
+            Some(format!("venv's base interpreter {h} is missing"))
+        }
+        _ => None,
+    }
 }
 
 pub fn run(as_json: bool) -> Result<ExitCode> {
@@ -136,7 +229,9 @@ pub fn run(as_json: bool) -> Result<ExitCode> {
     if as_json {
         let items: Vec<_> = checks
             .iter()
-            .map(|c| json!({"section": c.section, "check": c.label, "ok": c.ok, "detail": c.detail}))
+            .map(
+                |c| json!({"section": c.section, "check": c.label, "ok": c.ok, "detail": c.detail}),
+            )
             .collect();
         println!(
             "{}",
@@ -148,16 +243,82 @@ pub fn run(as_json: bool) -> Result<ExitCode> {
             }))?
         );
     } else {
-        println!("playbox {}  home {}", env!("CARGO_PKG_VERSION"), store::home().display());
+        println!(
+            "playbox {}  home {}",
+            env!("CARGO_PKG_VERSION"),
+            store::home().display()
+        );
         let mut section = "";
         for c in &checks {
             if c.section != section {
                 section = c.section;
                 println!("{section}");
             }
-            println!("  {}    {:<22} {}", if c.ok { "ok" } else { "--" }, c.label, c.detail);
+            println!(
+                "  {}    {:<22} {}",
+                if c.ok { "ok" } else { "--" },
+                c.label,
+                c.detail
+            );
         }
     }
     // Missing optional pieces are normal (docker, libkrun, python tooling); only --json reports them via the status.
-    Ok(if as_json && missing > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
+    Ok(if as_json && missing > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+#[cfg(test)]
+mod venv_tests {
+    use super::venv_problem;
+    use std::fs;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("playbox-doctor-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("bin")).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_venv_folder_without_a_working_python_is_not_ready() {
+        let d = scratch("empty");
+        assert!(venv_problem(&d).unwrap().contains("no working python"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_dangling_python_link_is_not_ready() {
+        let d = scratch("dangling");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/nonexistent/python3", d.join("bin/python")).unwrap();
+        #[cfg(unix)]
+        assert!(venv_problem(&d).is_some());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_missing_base_interpreter_is_not_ready_and_a_present_one_is() {
+        let d = scratch("home");
+        fs::write(d.join("bin/python"), "").unwrap();
+        fs::write(d.join("pyvenv.cfg"), "home = /nonexistent/base/bin\n").unwrap();
+        assert!(venv_problem(&d).unwrap().contains("missing"));
+        fs::write(
+            d.join("pyvenv.cfg"),
+            format!("home = {}\n", d.join("bin").display()),
+        )
+        .unwrap();
+        assert_eq!(venv_problem(&d), None);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn no_venv_at_all() {
+        assert_eq!(
+            venv_problem(std::path::Path::new("/nonexistent/.venv")),
+            Some("no venv".into())
+        );
+    }
 }

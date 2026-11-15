@@ -79,8 +79,10 @@ pub async fn up(a: UpArgs) -> Result<()> {
         },
         capabilities: match &a.capabilities {
             None => Vec::new(),
-            Some(file) => serde_json::from_slice(&std::fs::read(file).with_context(|| format!("reading {file}"))?)
-                .with_context(|| format!("{file} must be a JSON array of capabilities"))?,
+            Some(file) => serde_json::from_slice(
+                &std::fs::read(file).with_context(|| format!("reading {file}"))?,
+            )
+            .with_context(|| format!("{file} must be a JSON array of capabilities"))?,
         },
         steer: match a.steer_store.clone() {
             None => None,
@@ -111,7 +113,8 @@ pub async fn up(a: UpArgs) -> Result<()> {
         browse: match &a.browse_endpoint {
             None => None,
             Some(endpoint) => {
-                let mut c = playbox_net::browse::BrowseConfig::new(endpoint, a.browse_allow.clone());
+                let mut c =
+                    playbox_net::browse::BrowseConfig::new(endpoint, a.browse_allow.clone());
                 c.javascript = a.browse_js;
                 c.allow_private = a.browse_allow_private;
                 Some(std::sync::Arc::new(playbox_net::browse::Browser::new(c)?))
@@ -124,11 +127,28 @@ pub async fn up(a: UpArgs) -> Result<()> {
                     state
                         .as_deref()
                         .and_then(|p| std::path::Path::new(p).file_name())
-                        .map(|n| n.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect::<String>())
+                        .map(|n| {
+                            n.to_string_lossy()
+                                .chars()
+                                .map(|c| {
+                                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                                        c
+                                    } else {
+                                        '-'
+                                    }
+                                })
+                                .collect::<String>()
+                        })
                         .filter(|n| !n.is_empty())
                         .unwrap_or_else(|| "room".to_string())
                 });
-                Some(playbox_net::shared_memory::hindsight_memory(url, &bank, a.memory_review, false, state.as_deref().map(std::path::Path::new))?)
+                Some(playbox_net::shared_memory::hindsight_memory(
+                    url,
+                    &bank,
+                    a.memory_review,
+                    false,
+                    state.as_deref().map(std::path::Path::new),
+                )?)
             }
         },
         platform: provider,
@@ -236,7 +256,11 @@ pub async fn up(a: UpArgs) -> Result<()> {
     // Publish this host for the hub to adopt (a room that keeps its identity with --state; the TUI has its own way in).
     #[cfg(unix)]
     let control = match (&state, a.replica_of.is_none()) {
-        (Some(dir), true) => match crate::control::publish(&hex(&host.root_public()), std::path::Path::new(dir), a.repo.as_deref().map(std::path::Path::new)) {
+        (Some(dir), true) => match crate::control::publish(
+            &hex(&host.root_public()),
+            std::path::Path::new(dir),
+            a.repo.as_deref().map(std::path::Path::new),
+        ) {
             Ok(c) => Some(c),
             Err(e) => {
                 eprintln!("not published for the hub to adopt: {e:#}");

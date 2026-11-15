@@ -29,7 +29,9 @@ pub struct SecretUse {
 pub fn valid_name(name: &str) -> bool {
     (1..=64).contains(&name.len())
         && !name.starts_with('.')
-        && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 /// The host's secrets directory.
@@ -68,12 +70,16 @@ impl SecretStore {
     /// `$PLAYBOX_SECRETS_DIR`, else `$PLAYBOX_HOME/secrets`, else `~/.playbox/secrets`.
     #[must_use]
     pub fn from_env() -> Self {
-        let dir = std::env::var_os("PLAYBOX_SECRETS_DIR").map(PathBuf::from).unwrap_or_else(|| {
-            std::env::var_os("PLAYBOX_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox"))
-                .join("secrets")
-        });
+        let dir = std::env::var_os("PLAYBOX_SECRETS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("PLAYBOX_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".playbox")
+                    })
+                    .join("secrets")
+            });
         Self { dir }
     }
 
@@ -103,20 +109,37 @@ impl SecretStore {
             }
         }
         if !names.is_empty() {
-            let mode = std::fs::metadata(&self.dir).with_context(|| format!("secrets directory {}", self.dir.display()))?.permissions().mode();
+            let mode = std::fs::metadata(&self.dir)
+                .with_context(|| format!("secrets directory {}", self.dir.display()))?
+                .permissions()
+                .mode();
             if mode & 0o077 != 0 {
-                bail!("the secrets directory {} is readable by others (mode {:o}); chmod 700 it", self.dir.display(), mode & 0o777);
+                bail!(
+                    "the secrets directory {} is readable by others (mode {:o}); chmod 700 it",
+                    self.dir.display(),
+                    mode & 0o777
+                );
             }
         }
         let mut rnd = [0u8; 8];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
-        let dir = scratch.join(format!("secrets-{}", rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()));
-        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
-        let staged = Staged { dir, used: Vec::new() };
+        let dir = scratch.join(format!(
+            "secrets-{}",
+            rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        ));
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+        let staged = Staged {
+            dir,
+            used: Vec::new(),
+        };
         let mut staged = staged;
         for n in names {
             let src = self.dir.join(n);
-            let meta = std::fs::symlink_metadata(&src).with_context(|| format!("secret {n:?} is not in the host's store"))?;
+            let meta = std::fs::symlink_metadata(&src)
+                .with_context(|| format!("secret {n:?} is not in the host's store"))?;
             if !meta.is_file() {
                 bail!("secret {n:?} is not a regular file");
             }
@@ -124,9 +147,16 @@ impl SecretStore {
                 bail!("secret {n:?} is larger than {MAX_BYTES} bytes");
             }
             let value = std::fs::read(&src)?;
-            let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o444).open(staged.dir.join(n))?;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o444)
+                .open(staged.dir.join(n))?;
             std::io::Write::write_all(&mut f, &value)?;
-            staged.used.push(SecretUse { name: n.clone(), blake3: blake3::hash(&value).to_hex().to_string() });
+            staged.used.push(SecretUse {
+                name: n.clone(),
+                blake3: blake3::hash(&value).to_hex().to_string(),
+            });
         }
         Ok(staged)
     }
@@ -137,7 +167,11 @@ mod tests {
     use super::*;
 
     fn store() -> (PathBuf, SecretStore) {
-        let d = std::env::temp_dir().join(format!("playbox-secrets-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let d = std::env::temp_dir().join(format!(
+            "playbox-secrets-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::DirBuilder::new().mode(0o700).create(&d).unwrap();
         (d.clone(), SecretStore::new(d))
@@ -154,8 +188,14 @@ mod tests {
             let st = s.stage(&["API_KEY".into()], &scratch).unwrap();
             path = st.path().to_path_buf();
             assert_eq!(std::fs::read(path.join("API_KEY")).unwrap(), b"hunter2");
-            assert_eq!(st.used[0].blake3, blake3::hash(b"hunter2").to_hex().to_string());
-            assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(
+                st.used[0].blake3,
+                blake3::hash(b"hunter2").to_hex().to_string()
+            );
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
         }
         assert!(!path.exists());
         std::fs::remove_dir_all(d).unwrap();

@@ -2,18 +2,18 @@ mod cli;
 mod control;
 mod doctor;
 mod hub;
-mod wizard;
 mod latent;
 mod python;
 mod release;
 mod rooms;
 mod secure;
-mod session;
 mod service;
+mod session;
 mod setup;
 mod trust;
 mod tui;
 mod update;
+mod wizard;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
@@ -27,7 +27,10 @@ fn main() -> ExitCode {
     unsafe {
         libc_sigpipe_default();
     }
-    let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
         Ok(rt) => rt,
         Err(e) => {
             eprintln!("error: cannot start the async runtime: {e}");
@@ -79,9 +82,27 @@ async fn run() -> Result<ExitCode> {
         Cmd::Call { tool, args, json } => session::call(&tool, &args, json.as_deref()).await,
         Cmd::Mcp => session::mcp().await,
         Cmd::Id => rooms::guest_id(),
-        Cmd::Latent(LatentCmd::Session { link, transport, key }) => latent::session(&link, &transport, key).await,
-        Cmd::Update { check, version, rollback, force, json, pubkey } => {
-            let code = update::run(&update::Opts { check, version, rollback, force, json, pubkey })?;
+        Cmd::Latent(LatentCmd::Session {
+            link,
+            transport,
+            key,
+        }) => latent::session(&link, &transport, key).await,
+        Cmd::Update {
+            check,
+            version,
+            rollback,
+            force,
+            json,
+            pubkey,
+        } => {
+            let code = update::run(&update::Opts {
+                check,
+                version,
+                rollback,
+                force,
+                json,
+                pubkey,
+            })?;
             if code != 0 {
                 return Ok(std::process::ExitCode::from(code));
             }
@@ -91,9 +112,22 @@ async fn run() -> Result<ExitCode> {
             ReleaseCmd::Keygen { out } => release::keygen(&out),
             ReleaseCmd::Sign { file, key } => release::sign(&file, &key),
             ReleaseCmd::Notes { version, changelog } => release::notes(&version, &changelog),
-            ReleaseCmd::Check { version, changelog, cargo_toml } => release::check(&version, &changelog, &cargo_toml),
-            ReleaseCmd::Prepare { version, changelog, cargo_toml } => release::prepare(&version, &changelog, &cargo_toml),
-            ReleaseCmd::Manifest { version, dir, changelog, out } => release::manifest(&version, &dir, &changelog, &out),
+            ReleaseCmd::Check {
+                version,
+                changelog,
+                cargo_toml,
+            } => release::check(&version, &changelog, &cargo_toml),
+            ReleaseCmd::Prepare {
+                version,
+                changelog,
+                cargo_toml,
+            } => release::prepare(&version, &changelog, &cargo_toml),
+            ReleaseCmd::Manifest {
+                version,
+                dir,
+                changelog,
+                out,
+            } => release::manifest(&version, &dir, &changelog, &out),
             ReleaseCmd::Verify { file, pubkey, sig } => {
                 release::verify(&file, sig.as_deref(), &pubkey)
             }

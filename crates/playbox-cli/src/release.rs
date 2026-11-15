@@ -64,7 +64,6 @@ pub fn verify_quiet(file: &str, sig: Option<&str>, pubkey: &str) -> Result<()> {
     Ok(())
 }
 
-
 // ---- changelog, version bump and manifest -------------------------------------------------------------------------------------
 //
 // CHANGELOG.md follows Keep a Changelog: an `## [Unreleased]` section that people edit as they work, and one `## [X.Y.Z] - DATE`
@@ -121,7 +120,8 @@ fn workspace_version(cargo_toml: &str) -> Option<String> {
 pub fn check(version: &str, changelog: &str, cargo_toml: &str) -> Result<()> {
     let v = Version::parse(version)?.to_string();
     let cargo = std::fs::read_to_string(cargo_toml)?;
-    let have = workspace_version(&cargo).ok_or_else(|| anyhow::anyhow!("{cargo_toml} has no [workspace.package] version"))?;
+    let have = workspace_version(&cargo)
+        .ok_or_else(|| anyhow::anyhow!("{cargo_toml} has no [workspace.package] version"))?;
     if have != v {
         bail!("tag is {v} but {cargo_toml} says {have}: run `playbox release prepare {v}` and commit it before tagging");
     }
@@ -136,9 +136,16 @@ pub fn check(version: &str, changelog: &str, cargo_toml: &str) -> Result<()> {
 }
 
 fn git(args: &[&str]) -> Result<String> {
-    let o = Command::new("git").args(args).output().context("running git")?;
+    let o = Command::new("git")
+        .args(args)
+        .output()
+        .context("running git")?;
     if !o.status.success() {
-        bail!("git {}: {}", args.join(" "), String::from_utf8_lossy(&o.stderr).trim());
+        bail!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&o.stderr).trim()
+        );
     }
     Ok(String::from_utf8_lossy(&o.stdout).to_string())
 }
@@ -147,7 +154,11 @@ fn git(args: &[&str]) -> Result<String> {
 fn draft_from_git() -> Result<String> {
     let last = git(&["describe", "--tags", "--abbrev=0", "--match", "v*"]).unwrap_or_default();
     let last = last.trim();
-    let range = if last.is_empty() { "HEAD".to_string() } else { format!("{last}..HEAD") };
+    let range = if last.is_empty() {
+        "HEAD".to_string()
+    } else {
+        format!("{last}..HEAD")
+    };
     let log = git(&["log", &range, "--no-merges", "--format=%h %s"])?;
     let mut s = String::from("### Changes\n\n");
     for l in log.lines() {
@@ -159,7 +170,12 @@ fn draft_from_git() -> Result<String> {
 }
 
 /// Move `## [Unreleased]` into `## [version] - date`, leaving an empty Unreleased. Pure so it can be tested.
-pub fn roll_changelog(text: &str, version: &str, date: &str, draft: &dyn Fn() -> Result<String>) -> Result<String> {
+pub fn roll_changelog(
+    text: &str,
+    version: &str,
+    date: &str,
+    draft: &dyn Fn() -> Result<String>,
+) -> Result<String> {
     if !text.lines().any(|l| l.starts_with("## [Unreleased]")) {
         bail!("CHANGELOG.md has no `## [Unreleased]` heading");
     }
@@ -169,7 +185,10 @@ pub fn roll_changelog(text: &str, version: &str, date: &str, draft: &dyn Fn() ->
     let mut skipping = false;
     for l in text.lines() {
         if l.starts_with("## [Unreleased]") {
-            out.push_str(&format!("## [Unreleased]\n\n## [{version}] - {date}\n\n{}\n\n", body.trim()));
+            out.push_str(&format!(
+                "## [Unreleased]\n\n## [{version}] - {date}\n\n{}\n\n",
+                body.trim()
+            ));
             skipping = true;
         } else if l.starts_with("## [") {
             skipping = false;
@@ -186,18 +205,26 @@ pub fn roll_changelog(text: &str, version: &str, date: &str, draft: &dyn Fn() ->
 pub fn prepare(version: &str, changelog: &str, cargo_toml: &str) -> Result<()> {
     let new = Version::parse(version)?;
     let cargo = std::fs::read_to_string(cargo_toml)?;
-    let old = Version::parse(&workspace_version(&cargo).ok_or_else(|| anyhow::anyhow!("no workspace version"))?)?;
+    let old = Version::parse(
+        &workspace_version(&cargo).ok_or_else(|| anyhow::anyhow!("no workspace version"))?,
+    )?;
     if new <= old {
         bail!("{new} is not newer than {old}");
     }
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let text = std::fs::read_to_string(changelog)?;
     let rolled = roll_changelog(&text, &new.to_string(), &date, &draft_from_git)?;
-    let bumped = cargo.replacen(&format!("version = \"{old}\""), &format!("version = \"{new}\""), 1);
+    let bumped = cargo.replacen(
+        &format!("version = \"{old}\""),
+        &format!("version = \"{new}\""),
+        1,
+    );
     std::fs::write(cargo_toml, bumped)?;
     std::fs::write(changelog, rolled)?;
     // The lockfile records each workspace crate's version.
-    let st = Command::new("cargo").args(["update", "--workspace", "--offline"]).status();
+    let st = Command::new("cargo")
+        .args(["update", "--workspace", "--offline"])
+        .status();
     if !st.is_ok_and(|s| s.success()) {
         eprintln!("note: could not refresh Cargo.lock; run `cargo update --workspace`");
     }
@@ -213,16 +240,26 @@ pub fn manifest(version: &str, dir: &str, changelog: &str, out: &str) -> Result<
     let mut assets = serde_json::Map::new();
     for e in std::fs::read_dir(dir)? {
         let p = e?.path();
-        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+        let name = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
         if name.starts_with("playbox-") && name.ends_with(".tar.gz") {
             let h = Sha256::digest(std::fs::read(&p)?);
-            assets.insert(name, serde_json::Value::String(h.iter().map(|b| format!("{b:02x}")).collect()));
+            assets.insert(
+                name,
+                serde_json::Value::String(h.iter().map(|b| format!("{b:02x}")).collect()),
+            );
         }
     }
     if assets.is_empty() {
         bail!("no playbox-*.tar.gz archives in {dir}");
     }
-    let notes = std::fs::read_to_string(changelog).ok().and_then(|t| section(&t, &v)).unwrap_or_default();
+    let notes = std::fs::read_to_string(changelog)
+        .ok()
+        .and_then(|t| section(&t, &v))
+        .unwrap_or_default();
     let doc = serde_json::json!({
         "version": v,
         "protocol": playbox_net::wire::PROTOCOL,
@@ -252,7 +289,12 @@ mod changelog_tests {
     #[test]
     fn rolling_moves_unreleased_into_a_dated_section() {
         let out = roll_changelog(LOG, "0.2.0", "2026-02-02", &|| bail!("no draft needed")).unwrap();
-        assert!(out.contains("## [Unreleased]\n\n## [0.2.0] - 2026-02-02\n\n### Added\n- a thing\n\n## [0.1.0]"), "{out}");
+        assert!(
+            out.contains(
+                "## [Unreleased]\n\n## [0.2.0] - 2026-02-02\n\n### Added\n- a thing\n\n## [0.1.0]"
+            ),
+            "{out}"
+        );
         assert_eq!(out.matches("- a thing").count(), 1);
         assert_eq!(section(&out, "0.2.0").unwrap(), "### Added\n- a thing");
         assert_eq!(section(&out, "Unreleased").unwrap_or_default(), "");
@@ -261,7 +303,10 @@ mod changelog_tests {
     #[test]
     fn an_empty_unreleased_falls_back_to_the_draft() {
         let log = "## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\n- first\n";
-        let out = roll_changelog(log, "0.2.0", "2026-02-02", &|| Ok("### Changes\n\n- from git (abc)\n".into())).unwrap();
+        let out = roll_changelog(log, "0.2.0", "2026-02-02", &|| {
+            Ok("### Changes\n\n- from git (abc)\n".into())
+        })
+        .unwrap();
         assert!(out.contains("- from git (abc)"));
     }
 }

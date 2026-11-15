@@ -124,15 +124,20 @@ pub fn allowed(level: Level, ip: IpAddr) -> bool {
 
 const REJECT: &str = "reject with icmpx admin-prohibited";
 const V4_ALWAYS: &str = "{ 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }";
-const V6_ALWAYS: &str = "{ ::/127, fe80::/10, ff00::/8, ::ffff:0:0/96, 64:ff9b::/104, 64:ff9b::7f00:0/104, \
+const V6_ALWAYS: &str =
+    "{ ::/127, fe80::/10, ff00::/8, ::ffff:0:0/96, 64:ff9b::/104, 64:ff9b::7f00:0/104, \
     64:ff9b::a9fe:0/112, 64:ff9b::e000:0/100, 64:ff9b::f000:0/100 }";
 const V4_PRIVATE: &str = "{ 10.0.0.0/8, 100.64.0.0/10, 172.16.0.0/12, 192.168.0.0/16 }";
-const V6_PRIVATE: &str = "{ fc00::/7, 64:ff9b:1::/48, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::ac10:0/108, \
+const V6_PRIVATE: &str =
+    "{ fc00::/7, 64:ff9b:1::/48, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::ac10:0/108, \
     64:ff9b::c0a8:0/112 }";
 
 /// A run id that is safe to put in a rule: lowercase hex, 8 to 64 characters.
 fn valid_id(id: &str) -> bool {
-    (8..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    (8..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// The nftables table every run shares. Loading it is idempotent. Traffic from any cgroup below `cgroup_root` is rejected
@@ -152,9 +157,13 @@ pub fn base_ruleset(cgroup_root: &str) -> Result<String> {
 fn cgroup_depth(path: &str) -> Result<usize> {
     let ok = !path.is_empty()
         && !path.starts_with('/')
-        && path
-            .split('/')
-            .all(|c| !c.is_empty() && c != "." && c != ".." && c.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')));
+        && path.split('/').all(|c| {
+            !c.is_empty()
+                && c != "."
+                && c != ".."
+                && c.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        });
     if !ok {
         bail!("bad cgroup path {path:?}");
     }
@@ -170,7 +179,12 @@ fn cgroup_depth(path: &str) -> Result<usize> {
 /// # Errors
 ///
 /// Returns an error for a bad run id or cgroup path, a destination the level forbids, or `Level::None` with destinations.
-pub fn run_chain(cgroup_root: &str, run_id: &str, level: Level, dests: &[SocketAddr]) -> Result<String> {
+pub fn run_chain(
+    cgroup_root: &str,
+    run_id: &str,
+    level: Level,
+    dests: &[SocketAddr],
+) -> Result<String> {
     if !valid_id(run_id) {
         bail!("bad run id {run_id:?}");
     }
@@ -207,9 +221,19 @@ pub fn run_chain(cgroup_root: &str, run_id: &str, level: Level, dests: &[SocketA
         if !allowed(level, d.ip()) {
             bail!("{} is not reachable at network level {level}", d.ip());
         }
-        let (family, proto) = if d.is_ipv4() { ("ip", "daddr") } else { ("ip6", "daddr") };
-        add(&mut out, &format!("{family} {proto} {} tcp dport {} accept", d.ip(), d.port()));
-        add(&mut out, &format!("{family} {proto} {} udp dport {} accept", d.ip(), d.port()));
+        let (family, proto) = if d.is_ipv4() {
+            ("ip", "daddr")
+        } else {
+            ("ip6", "daddr")
+        };
+        add(
+            &mut out,
+            &format!("{family} {proto} {} tcp dport {} accept", d.ip(), d.port()),
+        );
+        add(
+            &mut out,
+            &format!("{family} {proto} {} udp dport {} accept", d.ip(), d.port()),
+        );
     }
     add(&mut out, REJECT);
     Ok(out)
@@ -226,8 +250,20 @@ mod tests {
     #[test]
     fn the_cloud_metadata_service_loopback_and_link_local_are_never_reachable() {
         for a in [
-            "169.254.169.254", "127.0.0.1", "127.255.255.254", "0.0.0.0", "0.1.2.3", "224.0.0.1", "239.255.255.250",
-            "240.0.0.1", "255.255.255.255", "::", "::1", "fe80::1", "febf::1", "ff02::1",
+            "169.254.169.254",
+            "127.0.0.1",
+            "127.255.255.254",
+            "0.0.0.0",
+            "0.1.2.3",
+            "224.0.0.1",
+            "239.255.255.250",
+            "240.0.0.1",
+            "255.255.255.255",
+            "::",
+            "::1",
+            "fe80::1",
+            "febf::1",
+            "ff02::1",
         ] {
             assert!(always_rejected(ip(a)), "{a}");
             for l in [Level::None, Level::Internet, Level::InternetLan] {
@@ -239,12 +275,23 @@ mod tests {
     #[test]
     fn ipv6_forms_that_reach_ipv4_are_judged_as_that_ipv4_address() {
         for a in [
-            "::ffff:127.0.0.1", "::ffff:169.254.169.254", "::ffff:8.8.8.8", "::ffff:10.0.0.1", "64:ff9b::7f00:1",
-            "64:ff9b::a9fe:a9fe", "64:ff9b::e000:1",
+            "::ffff:127.0.0.1",
+            "::ffff:169.254.169.254",
+            "::ffff:8.8.8.8",
+            "::ffff:10.0.0.1",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a9fe:a9fe",
+            "64:ff9b::e000:1",
         ] {
             assert!(always_rejected(ip(a)), "{a}");
         }
-        for a in ["64:ff9b::a00:1", "64:ff9b::c0a8:1", "64:ff9b:1::1", "fd00::1", "fc00::1"] {
+        for a in [
+            "64:ff9b::a00:1",
+            "64:ff9b::c0a8:1",
+            "64:ff9b:1::1",
+            "fd00::1",
+            "fc00::1",
+        ] {
             assert!(private(ip(a)) && !always_rejected(ip(a)), "{a}");
             assert!(!allowed(Level::Internet, ip(a)), "{a}");
             assert!(allowed(Level::InternetLan, ip(a)), "{a}");
@@ -255,12 +302,27 @@ mod tests {
 
     #[test]
     fn private_ranges_need_the_lan_level_and_public_addresses_need_only_internet() {
-        for a in ["10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "100.64.0.1", "100.127.255.254"] {
+        for a in [
+            "10.1.2.3",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.1.1",
+            "100.64.0.1",
+            "100.127.255.254",
+        ] {
             assert!(private(ip(a)), "{a}");
             assert!(!allowed(Level::Internet, ip(a)), "{a}");
             assert!(allowed(Level::InternetLan, ip(a)), "{a}");
         }
-        for a in ["8.8.8.8", "1.1.1.1", "172.15.255.255", "172.32.0.1", "100.63.255.255", "100.128.0.1", "2606:4700::1111"] {
+        for a in [
+            "8.8.8.8",
+            "1.1.1.1",
+            "172.15.255.255",
+            "172.32.0.1",
+            "100.63.255.255",
+            "100.128.0.1",
+            "2606:4700::1111",
+        ] {
             assert!(!private(ip(a)) && !always_rejected(ip(a)), "{a}");
             assert!(allowed(Level::Internet, ip(a)), "{a}");
         }
@@ -285,14 +347,16 @@ mod tests {
         for a in 0..=255u32 {
             for b in [0u32, 1, 63, 64, 100, 127, 128, 168, 169, 254, 255] {
                 let v4 = Ipv4Addr::new(a as u8, b as u8, 1, 1);
-                let in_rules = [(0, 8), (127, 8), (169, 16), (224, 4), (240, 4)].iter().any(|&(base, bits)| {
-                    let (net, ip) = match (base, bits) {
-                        (169, 16) => (u32::from(Ipv4Addr::new(169, 254, 0, 0)), u32::from(v4)),
-                        _ => (u32::from(Ipv4Addr::new(base as u8, 0, 0, 0)), u32::from(v4)),
-                    };
-                    let mask = u32::MAX << (32 - bits);
-                    ip & mask == net & mask
-                });
+                let in_rules = [(0, 8), (127, 8), (169, 16), (224, 4), (240, 4)]
+                    .iter()
+                    .any(|&(base, bits)| {
+                        let (net, ip) = match (base, bits) {
+                            (169, 16) => (u32::from(Ipv4Addr::new(169, 254, 0, 0)), u32::from(v4)),
+                            _ => (u32::from(Ipv4Addr::new(base as u8, 0, 0, 0)), u32::from(v4)),
+                        };
+                        let mask = u32::MAX << (32 - bits);
+                        ip & mask == net & mask
+                    });
                 assert_eq!(always_rejected(IpAddr::V4(v4)), in_rules, "{v4}");
                 checked += 1;
             }
@@ -308,16 +372,34 @@ mod tests {
         assert!(r.contains("cgroupv2 level 3 \"playbox/runs/0123456789abcdef\""));
         assert!(r.trim_end().ends_with("reject with icmpx admin-prohibited"));
         assert!(!r.contains("accept"));
-        assert!(run_chain("playbox/runs", "0123456789abcdef", Level::None, &["8.8.8.8:443".parse().unwrap()]).is_err());
+        assert!(run_chain(
+            "playbox/runs",
+            "0123456789abcdef",
+            Level::None,
+            &["8.8.8.8:443".parse().unwrap()]
+        )
+        .is_err());
     }
 
     #[test]
     fn the_protections_come_before_any_accept_and_a_destination_list_ends_in_a_reject() {
-        let d: Vec<SocketAddr> = vec!["93.184.216.34:443".parse().unwrap(), "[2606:4700::1111]:443".parse().unwrap()];
+        let d: Vec<SocketAddr> = vec![
+            "93.184.216.34:443".parse().unwrap(),
+            "[2606:4700::1111]:443".parse().unwrap(),
+        ];
         let r = run_chain("playbox/runs", "deadbeef00", Level::Internet, &d).unwrap();
         let first_accept = r.find("accept").unwrap();
-        for needle in ["169.254.0.0/16", "127.0.0.0/8", "10.0.0.0/8", "fc00::/7", "fe80::/10"] {
-            assert!(r.find(needle).unwrap() < first_accept, "{needle} must precede the first accept");
+        for needle in [
+            "169.254.0.0/16",
+            "127.0.0.0/8",
+            "10.0.0.0/8",
+            "fc00::/7",
+            "fe80::/10",
+        ] {
+            assert!(
+                r.find(needle).unwrap() < first_accept,
+                "{needle} must precede the first accept"
+            );
         }
         assert!(r.contains("ip daddr 93.184.216.34 tcp dport 443 accept"));
         assert!(r.contains("ip6 daddr 2606:4700::1111 udp dport 443 accept"));
@@ -337,20 +419,48 @@ mod tests {
             (Level::Internet, "[64:ff9b::a9fe:a9fe]:80"),
         ] {
             let d: SocketAddr = addr.parse().unwrap();
-            assert!(run_chain("playbox/runs", "deadbeef00", level, &[d]).is_err(), "{addr} at {level}");
+            assert!(
+                run_chain("playbox/runs", "deadbeef00", level, &[d]).is_err(),
+                "{addr} at {level}"
+            );
         }
-        assert!(run_chain("playbox/runs", "deadbeef00", Level::InternetLan, &["10.0.0.5:22".parse().unwrap()]).is_ok());
+        assert!(run_chain(
+            "playbox/runs",
+            "deadbeef00",
+            Level::InternetLan,
+            &["10.0.0.5:22".parse().unwrap()]
+        )
+        .is_ok());
     }
 
     #[test]
     fn run_ids_and_cgroup_paths_that_could_break_out_of_a_rule_are_refused() {
-        for id in ["", "short", "XYZ12345", "dead beef00", "dead\"beef00", "deadbeef00; flush ruleset", "../../x1234567"] {
-            assert!(run_chain("playbox/runs", id, Level::Internet, &[]).is_err(), "{id:?}");
+        for id in [
+            "",
+            "short",
+            "XYZ12345",
+            "dead beef00",
+            "dead\"beef00",
+            "deadbeef00; flush ruleset",
+            "../../x1234567",
+        ] {
+            assert!(
+                run_chain("playbox/runs", id, Level::Internet, &[]).is_err(),
+                "{id:?}"
+            );
         }
-        assert!(base_ruleset("user.slice/user-1000.slice/playbox").is_ok(), "systemd slice names contain dots");
-        for path in ["", "/abs", "a//b", "a/../b", "a/./b", "a\"b", "a b", "a;b", "a\nb", "a\\b"] {
+        assert!(
+            base_ruleset("user.slice/user-1000.slice/playbox").is_ok(),
+            "systemd slice names contain dots"
+        );
+        for path in [
+            "", "/abs", "a//b", "a/../b", "a/./b", "a\"b", "a b", "a;b", "a\nb", "a\\b",
+        ] {
             assert!(base_ruleset(path).is_err(), "{path:?}");
-            assert!(run_chain(path, "deadbeef00", Level::Internet, &[]).is_err(), "{path:?}");
+            assert!(
+                run_chain(path, "deadbeef00", Level::Internet, &[]).is_err(),
+                "{path:?}"
+            );
         }
     }
 

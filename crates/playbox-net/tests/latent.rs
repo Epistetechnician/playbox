@@ -170,7 +170,10 @@ fn reveal_json(salt: &str, sentences: &[&str]) -> Vec<u8> {
 }
 
 const SALT: &str = "00112233445566778899aabbccddeeff";
-const SENTENCES: [&str; 2] = ["Waves rolled across the open sea.", "The sailor watched the tide."];
+const SENTENCES: [&str; 2] = [
+    "Waves rolled across the open sea.",
+    "The sailor watched the tide.",
+];
 
 fn committed(key: &SigningKey, body: &[u8]) -> Vec<u8> {
     let sentences: Vec<String> = SENTENCES.iter().map(|s| (*s).to_string()).collect();
@@ -186,30 +189,65 @@ async fn a_sender_reveals_what_it_committed_to_and_only_once() {
     assert!(got[0].reveal.is_none());
     assert!(got[0].envelope.commit.is_some());
     // Another member cannot reveal for it, and a wrong salt or sentence set does not match the commitment.
-    assert!(b.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.is_err());
-    assert!(a.latent_reveal(seq, &reveal_json("ffeeddccbbaa99887766554433221100", &SENTENCES)).await.is_err());
-    assert!(a.latent_reveal(seq, &reveal_json(SALT, &[SENTENCES[0]])).await.is_err());
+    assert!(b
+        .latent_reveal(seq, &reveal_json(SALT, &SENTENCES))
+        .await
+        .is_err());
+    assert!(a
+        .latent_reveal(
+            seq,
+            &reveal_json("ffeeddccbbaa99887766554433221100", &SENTENCES)
+        )
+        .await
+        .is_err());
+    assert!(a
+        .latent_reveal(seq, &reveal_json(SALT, &[SENTENCES[0]]))
+        .await
+        .is_err());
     // Malformed reveals: not JSON, a newline inside a sentence, a short salt.
     assert!(a.latent_reveal(seq, b"nope").await.is_err());
-    assert!(a.latent_reveal(seq, &reveal_json(SALT, &["two\nlines", SENTENCES[1]])).await.is_err());
-    assert!(a.latent_reveal(seq, &reveal_json("abcd", &SENTENCES)).await.is_err());
+    assert!(a
+        .latent_reveal(seq, &reveal_json(SALT, &["two\nlines", SENTENCES[1]]))
+        .await
+        .is_err());
+    assert!(a
+        .latent_reveal(seq, &reveal_json("abcd", &SENTENCES))
+        .await
+        .is_err());
     // The right one is accepted, readers get it with the message, and it cannot be replaced.
-    a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.unwrap();
+    a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES))
+        .await
+        .unwrap();
     let (got, _) = b.latent_pull(HUB, 0).await.unwrap();
     let rev: serde_json::Value = serde_json::from_slice(got[0].reveal.as_ref().unwrap()).unwrap();
     assert_eq!(rev["sentences"][1], SENTENCES[1]);
-    assert!(a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    assert!(a
+        .latent_reveal(seq, &reveal_json(SALT, &SENTENCES))
+        .await
+        .is_err());
     let feed = b.feed(0).await.unwrap();
-    assert!(feed.items.iter().any(|i| i.text.starts_with("[latent-reveal]")));
+    assert!(feed
+        .items
+        .iter()
+        .any(|i| i.text.starts_with("[latent-reveal]")));
     host.shutdown().await.unwrap();
 }
 
 #[tokio::test]
 async fn messages_without_a_commitment_or_unknown_ones_cannot_be_revealed() {
     let (host, (a, ka), _b) = start().await;
-    let plain = a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16])).await.unwrap();
-    assert!(a.latent_reveal(plain, &reveal_json(SALT, &SENTENCES)).await.is_err());
-    assert!(a.latent_reveal(999, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    let plain = a
+        .latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16]))
+        .await
+        .unwrap();
+    assert!(a
+        .latent_reveal(plain, &reveal_json(SALT, &SENTENCES))
+        .await
+        .is_err());
+    assert!(a
+        .latent_reveal(999, &reveal_json(SALT, &SENTENCES))
+        .await
+        .is_err());
     host.shutdown().await.unwrap();
 }
 
@@ -219,9 +257,26 @@ fn the_commitment_is_signed_so_it_cannot_be_swapped_or_stripped() {
     let good = committed(&key, &[5u8; 16]);
     assert!(parse(&good).unwrap().commit.is_some());
     let other: Vec<String> = vec!["a different sentence".to_string()];
-    let swapped = String::from_utf8_lossy(&good).replacen(&commit_of(SALT, &SENTENCES.iter().map(|s| (*s).to_string()).collect::<Vec<_>>()), &commit_of(SALT, &other), 1).into_bytes();
+    let swapped = String::from_utf8_lossy(&good)
+        .replacen(
+            &commit_of(
+                SALT,
+                &SENTENCES
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect::<Vec<_>>(),
+            ),
+            &commit_of(SALT, &other),
+            1,
+        )
+        .into_bytes();
     assert!(parse(&swapped).is_err());
-    let stripped = String::from_utf8_lossy(&good).split("\"commit\":").next().unwrap().trim_end_matches(',').to_string();
+    let stripped = String::from_utf8_lossy(&good)
+        .split("\"commit\":")
+        .next()
+        .unwrap()
+        .trim_end_matches(',')
+        .to_string();
     assert!(!stripped.is_empty());
 }
 
@@ -229,7 +284,10 @@ fn the_commitment_is_signed_so_it_cannot_be_swapped_or_stripped() {
 #[test]
 fn the_python_and_rust_commitments_agree() {
     let sentences: Vec<String> = SENTENCES.iter().map(|s| (*s).to_string()).collect();
-    assert_eq!(commit_of(SALT, &sentences), "4b107569d533fc431314ba2af88419b4884aee50d848dd8435145dc503820b6b");
+    assert_eq!(
+        commit_of(SALT, &sentences),
+        "4b107569d533fc431314ba2af88419b4884aee50d848dd8435145dc503820b6b"
+    );
 }
 
 fn with_policy(p: LatentPolicy) -> HostConfig {
@@ -256,14 +314,18 @@ async fn only_listed_hubs_are_accepted_and_posting_is_rate_limited() {
     assert!(format!("{err:#}").contains("does not accept"), "{err:#}");
     // Three posts fit in the window; the fourth is told to slow down, and another member is not affected.
     for i in 0..3u8 {
-        a.latent_send(&pack(&ka, HUB, "x", 0.5, &[i; 16])).await.unwrap();
+        a.latent_send(&pack(&ka, HUB, "x", 0.5, &[i; 16]))
+            .await
+            .unwrap();
     }
     let err = a
         .latent_send(&pack(&ka, HUB, "x", 0.5, &[9u8; 16]))
         .await
         .unwrap_err();
     assert!(format!("{err:#}").contains("slow down"), "{err:#}");
-    b.latent_send(&pack(&kb, HUB, "y", 0.5, &[1u8; 16])).await.unwrap();
+    b.latent_send(&pack(&kb, HUB, "y", 0.5, &[1u8; 16]))
+        .await
+        .unwrap();
     let (got, _) = b.latent_pull(HUB, 0).await.unwrap();
     assert_eq!(got.len(), 4);
     host.shutdown().await.unwrap();
@@ -291,7 +353,9 @@ async fn the_same_envelope_cannot_be_posted_twice_and_old_ones_expire() {
 #[tokio::test]
 async fn a_reader_whose_cursor_is_ahead_of_a_restarted_host_starts_over() {
     let (host, (a, ka), (b, _)) = start().await;
-    a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16])).await.unwrap();
+    a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16]))
+        .await
+        .unwrap();
     // The reader remembers cursor 50 from a previous host run; this host has only seen one message.
     let (got, next) = b.latent_pull(HUB, 50).await.unwrap();
     assert_eq!((got.len(), next), (1, 1));
@@ -307,17 +371,27 @@ fn store_dir(name: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn the_mailbox_survives_a_host_restart_with_its_sequence_numbers_and_replay_memory() {
     let d = store_dir("restart");
-    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
-    let link = host.create_link(Duration::from_secs(60), 2).unwrap().encode();
+    let host = Host::open(&d, Transport::Local, HostConfig::default())
+        .await
+        .unwrap();
+    let link = host
+        .create_link(Duration::from_secs(60), 2)
+        .unwrap()
+        .encode();
     let (sa, sb) = (new_secret_key().unwrap(), new_secret_key().unwrap());
-    let (ka, _kb) = (SigningKey::from_bytes(&sa.to_bytes()), SigningKey::from_bytes(&sb.to_bytes()));
+    let (ka, _kb) = (
+        SigningKey::from_bytes(&sa.to_bytes()),
+        SigningKey::from_bytes(&sb.to_bytes()),
+    );
     let a = join_link(&link, sa.clone(), true).await.unwrap();
     let b = join_link(&link, sb.clone(), true).await.unwrap();
     let (ga, gb) = (a.grant().unwrap(), b.grant().unwrap());
 
     let first = committed(&ka, &[3u8; 16]);
     let seq = a.latent_send(&first).await.unwrap();
-    a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES)).await.unwrap();
+    a.latent_reveal(seq, &reveal_json(SALT, &SENTENCES))
+        .await
+        .unwrap();
     let second = pack(&ka, HUB, "x", 0.5, &[8u8; 16]);
     assert_eq!(a.latent_send(&second).await.unwrap(), 2);
     a.close().await;
@@ -325,7 +399,9 @@ async fn the_mailbox_survives_a_host_restart_with_its_sequence_numbers_and_repla
     host.shutdown().await.unwrap();
 
     // Same state directory: both messages and the reveal are still there, readable by the other member.
-    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let host = Host::open(&d, Transport::Local, HostConfig::default())
+        .await
+        .unwrap();
     let a = Client::connect(host.addr(), sa, true).await.unwrap();
     a.set_grant(ga);
     let b = Client::connect(host.addr(), sb, true).await.unwrap();
@@ -337,20 +413,35 @@ async fn the_mailbox_survives_a_host_restart_with_its_sequence_numbers_and_repla
     assert_eq!(next, 2);
     // Sequence numbers continue, a replay of an old envelope is still refused, and the reveal cannot be redone.
     assert!(a.latent_send(&first).await.is_err());
-    assert_eq!(a.latent_send(&pack(&ka, HUB, "x", 0.5, &[7u8; 16])).await.unwrap(), 3);
-    assert!(a.latent_reveal(1, &reveal_json(SALT, &SENTENCES)).await.is_err());
+    assert_eq!(
+        a.latent_send(&pack(&ka, HUB, "x", 0.5, &[7u8; 16]))
+            .await
+            .unwrap(),
+        3
+    );
+    assert!(a
+        .latent_reveal(1, &reveal_json(SALT, &SENTENCES))
+        .await
+        .is_err());
     host.shutdown().await.unwrap();
 }
 
 #[tokio::test]
 async fn a_damaged_or_edited_store_is_ignored_not_trusted() {
     let d = store_dir("damaged");
-    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
-    let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
+    let host = Host::open(&d, Transport::Local, HostConfig::default())
+        .await
+        .unwrap();
+    let link = host
+        .create_link(Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
     let sa = new_secret_key().unwrap();
     let ka = SigningKey::from_bytes(&sa.to_bytes());
     let a = join_link(&link, sa, true).await.unwrap();
-    a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16])).await.unwrap();
+    a.latent_send(&pack(&ka, HUB, "x", 0.5, &[1u8; 16]))
+        .await
+        .unwrap();
     a.close().await;
     host.shutdown().await.unwrap();
 
@@ -362,17 +453,28 @@ async fn a_damaged_or_edited_store_is_ignored_not_trusted() {
     let mut raw = base64_decode(&env);
     *raw.last_mut().unwrap() ^= 1;
     std::fs::write(&path, good.replace(&env, &base64_encode(&raw))).unwrap();
-    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
-    let c = join_link(&host.create_link(Duration::from_secs(60), 1).unwrap().encode(), new_secret_key().unwrap(), true)
+    let host = Host::open(&d, Transport::Local, HostConfig::default())
         .await
         .unwrap();
+    let c = join_link(
+        &host
+            .create_link(Duration::from_secs(60), 1)
+            .unwrap()
+            .encode(),
+        new_secret_key().unwrap(),
+        true,
+    )
+    .await
+    .unwrap();
     assert!(c.latent_pull(HUB, 0).await.unwrap().0.is_empty());
     c.close().await;
     host.shutdown().await.unwrap();
 
     // Garbage in the file: the host still starts, with an empty mailbox.
     std::fs::write(&path, b"not json").unwrap();
-    let host = Host::open(&d, Transport::Local, HostConfig::default()).await.unwrap();
+    let host = Host::open(&d, Transport::Local, HostConfig::default())
+        .await
+        .unwrap();
     host.shutdown().await.unwrap();
 }
 

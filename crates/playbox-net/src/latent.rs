@@ -152,7 +152,16 @@ pub fn parse(data: &[u8]) -> Result<Envelope> {
     VerifyingKey::from_bytes(&signer)
         .map_err(|e| anyhow!("{e}"))?
         .verify(
-            signed_text(&hub, &src, k, &scale, &body_hash, &signer_hex, commit.as_deref()).as_bytes(),
+            signed_text(
+                &hub,
+                &src,
+                k,
+                &scale,
+                &body_hash,
+                &signer_hex,
+                commit.as_deref(),
+            )
+            .as_bytes(),
             &Signature::from_bytes(&sig),
         )
         .map_err(|_| anyhow!("the signature is not valid"))?;
@@ -193,7 +202,16 @@ pub fn pack_with(
     let body_hash = hex(blake3::hash(body).as_bytes());
     let signer = hex(key.verifying_key().as_bytes());
     let sig = key.sign(
-        signed_text(hub, src, body.len(), &scale_hex, &body_hash, &signer, commit).as_bytes(),
+        signed_text(
+            hub,
+            src,
+            body.len(),
+            &scale_hex,
+            &body_hash,
+            &signer,
+            commit,
+        )
+        .as_bytes(),
     );
     let mut h = json!({
         "hub": hub, "src": src, "k": body.len(), "scale_f32": scale_hex, "body_blake3": body_hash,
@@ -219,7 +237,11 @@ pub fn pack_with(
 #[must_use]
 pub fn commit_of(salt_hex: &str, sentences: &[String]) -> String {
     hex(blake3::hash(
-        format!("playbox.latent-commit.v1\n{salt_hex}\n{}", sentences.join("\n")).as_bytes(),
+        format!(
+            "playbox.latent-commit.v1\n{salt_hex}\n{}",
+            sentences.join("\n")
+        )
+        .as_bytes(),
     )
     .as_bytes())
 }
@@ -244,18 +266,26 @@ impl Reveal {
         if data.is_empty() || data.len() > MAX_REVEAL_BYTES {
             bail!("the reveal is empty or too large");
         }
-        let v: Value = serde_json::from_slice(data).map_err(|_| anyhow!("the reveal is not JSON"))?;
-        let salt = v["salt"].as_str().ok_or_else(|| anyhow!("the reveal has no salt"))?.to_string();
+        let v: Value =
+            serde_json::from_slice(data).map_err(|_| anyhow!("the reveal is not JSON"))?;
+        let salt = v["salt"]
+            .as_str()
+            .ok_or_else(|| anyhow!("the reveal has no salt"))?
+            .to_string();
         if !(16..=64).contains(&salt.len()) || !salt.bytes().all(|b| b.is_ascii_hexdigit()) {
             bail!("bad salt");
         }
-        let arr = v["sentences"].as_array().ok_or_else(|| anyhow!("the reveal has no sentences"))?;
+        let arr = v["sentences"]
+            .as_array()
+            .ok_or_else(|| anyhow!("the reveal has no sentences"))?;
         if arr.is_empty() || arr.len() > MAX_REVEAL_SENTENCES {
             bail!("wrong number of sentences");
         }
         let mut sentences = Vec::new();
         for x in arr {
-            let t = x.as_str().ok_or_else(|| anyhow!("a sentence is not text"))?;
+            let t = x
+                .as_str()
+                .ok_or_else(|| anyhow!("a sentence is not text"))?;
             if t.len() > MAX_SENTENCE_BYTES || t.contains('\n') {
                 bail!("a sentence is too long or has a newline");
             }
@@ -389,12 +419,18 @@ impl Mailbox {
             match std::fs::read(path) {
                 Ok(data) => {
                     if let Err(e) = Self::load(&mut inner, &data, policy.max_age) {
-                        eprintln!("playbox: ignoring the stored latent mailbox {}: {e:#}", path.display());
+                        eprintln!(
+                            "playbox: ignoring the stored latent mailbox {}: {e:#}",
+                            path.display()
+                        );
                         inner = Inner::default();
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => eprintln!("playbox: cannot read the latent mailbox {}: {e}", path.display()),
+                Err(e) => eprintln!(
+                    "playbox: cannot read the latent mailbox {}: {e}",
+                    path.display()
+                ),
             }
         }
         Self {
@@ -405,9 +441,14 @@ impl Mailbox {
 
     fn load(inner: &mut Inner, data: &[u8], max_age: Duration) -> Result<()> {
         let v: Value = serde_json::from_slice(data)?;
-        inner.seq = v["seq"].as_u64().ok_or_else(|| anyhow!("no sequence number"))?;
+        inner.seq = v["seq"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("no sequence number"))?;
         let now = now_ms();
-        for it in v["entries"].as_array().ok_or_else(|| anyhow!("no entries"))? {
+        for it in v["entries"]
+            .as_array()
+            .ok_or_else(|| anyhow!("no entries"))?
+        {
             let (Some(seq), Some(from), Some(bytes), Some(at_ms)) = (
                 it["seq"].as_u64(),
                 it["from"].as_str(),
@@ -417,8 +458,13 @@ impl Mailbox {
                 continue;
             };
             let Ok(env) = parse(&bytes) else { continue };
-            let Ok(signer) = hex_to_32(from) else { continue };
-            if env.signer != signer || seq > inner.seq || now.saturating_sub(at_ms) > max_age.as_millis() as u64 {
+            let Ok(signer) = hex_to_32(from) else {
+                continue;
+            };
+            if env.signer != signer
+                || seq > inner.seq
+                || now.saturating_sub(at_ms) > max_age.as_millis() as u64
+            {
                 continue;
             }
             let reveal = it["reveal"].as_str().and_then(|r| B64S.decode(r).ok());
@@ -426,8 +472,12 @@ impl Mailbox {
             let reveal = reveal.filter(|r| {
                 Reveal::parse(r).is_ok_and(|rv| env.commit.as_deref() == Some(rv.commit().as_str()))
             });
-            let Ok(from) = EndpointId::from_bytes(&signer) else { continue };
-            inner.digests.push_back((*blake3::hash(&bytes).as_bytes(), at_ms));
+            let Ok(from) = EndpointId::from_bytes(&signer) else {
+                continue;
+            };
+            inner
+                .digests
+                .push_back((*blake3::hash(&bytes).as_bytes(), at_ms));
             inner.entries.push_back(Entry {
                 seq,
                 from,
@@ -443,7 +493,9 @@ impl Mailbox {
 
     /// Write the mailbox to its file (temp file, then rename). A failure is reported and the mailbox stays in memory.
     fn save(&self, g: &Inner) {
-        let Some(path) = &self.policy.store else { return };
+        let Some(path) = &self.policy.store else {
+            return;
+        };
         let entries: Vec<Value> = g
             .entries
             .iter()
@@ -455,7 +507,10 @@ impl Mailbox {
         let body = json!({ "seq": g.seq, "entries": entries }).to_string();
         let res = crate::write_atomic(path, body.as_bytes());
         if let Err(e) = res {
-            eprintln!("playbox: cannot save the latent mailbox {}: {e}", path.display());
+            eprintln!(
+                "playbox: cannot save the latent mailbox {}: {e}",
+                path.display()
+            );
         }
     }
 
@@ -467,10 +522,19 @@ impl Mailbox {
 
     /// File an envelope. Refused when the hub is not on the allowlist, the member is posting too fast, or the same
     /// envelope was already filed within `max_age`.
-    fn put(&self, from: EndpointId, hub: &str, bytes: Vec<u8>, commit: Option<String>) -> Result<u64> {
+    fn put(
+        &self,
+        from: EndpointId,
+        hub: &str,
+        bytes: Vec<u8>,
+        commit: Option<String>,
+    ) -> Result<u64> {
         if let Some(hubs) = &self.policy.hubs {
             if !hubs.iter().any(|h| h == hub) {
-                bail!("this room does not accept latent messages for hub {}", &hub[..hub.len().min(16)]);
+                bail!(
+                    "this room does not accept latent messages for hub {}",
+                    &hub[..hub.len().min(16)]
+                );
             }
         }
         let now = now_ms();
@@ -524,7 +588,11 @@ impl Mailbox {
     fn reveal(&self, seq: u64, from: EndpointId, commit: &str, bytes: Vec<u8>) -> Result<String> {
         let mut g = self.inner.lock().expect("mailbox lock");
         self.expire(&mut g, now_ms());
-        let e = g.entries.iter_mut().find(|e| e.seq == seq).ok_or_else(|| anyhow!("no such message"))?;
+        let e = g
+            .entries
+            .iter_mut()
+            .find(|e| e.seq == seq)
+            .ok_or_else(|| anyhow!("no such message"))?;
         if e.from != from {
             bail!("only the sender can reveal a message");
         }
@@ -546,12 +614,13 @@ impl Mailbox {
         let mut g = self.inner.lock().expect("mailbox lock");
         self.expire(&mut g, now_ms());
         let since = if since > g.seq { 0 } else { since };
-        let items: Vec<_> =
-            g.entries.iter()
-                .filter(|e| e.seq > since && e.hub == hub)
-                .take(PULL_MAX)
-                .map(|e| (e.seq, e.from, e.bytes.clone(), e.reveal.clone()))
-                .collect();
+        let items: Vec<_> = g
+            .entries
+            .iter()
+            .filter(|e| e.seq > since && e.hub == hub)
+            .take(PULL_MAX)
+            .map(|e| (e.seq, e.from, e.bytes.clone(), e.reveal.clone()))
+            .collect();
         let next = items.last().map_or(since, |i| i.0);
         (items, next)
     }
@@ -629,7 +698,11 @@ impl RoomHandler {
         let _ = self.audit.chat.say(
             &from.to_string(),
             None,
-            &format!("[latent-reveal] hub {} seq={seq} sentences={}", &hub[..hub.len().min(16)], rev.sentences.len()),
+            &format!(
+                "[latent-reveal] hub {} seq={seq} sentences={}",
+                &hub[..hub.len().min(16)],
+                rev.sentences.len()
+            ),
         );
         Ok(wire::task(
             TaskState::Completed,
@@ -702,8 +775,12 @@ impl Client {
     /// Returns an error if the host refused: not your message, no commitment, a reveal that does not match it, or one
     /// already made.
     pub async fn latent_reveal(&self, seq: u64, reveal: &[u8]) -> Result<()> {
-        self.send_task("latent reveal", &Op::LatentReveal { seq }, vec![Part::raw(reveal.to_vec())])
-            .await?;
+        self.send_task(
+            "latent reveal",
+            &Op::LatentReveal { seq },
+            vec![Part::raw(reveal.to_vec())],
+        )
+        .await?;
         Ok(())
     }
 

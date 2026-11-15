@@ -14,13 +14,13 @@ use tokio::{io::AsyncReadExt, process::Command};
 pub mod cgroup;
 #[cfg(target_os = "linux")]
 pub mod confine;
+pub mod guestnames;
 #[cfg(target_os = "linux")]
 pub mod jail;
-pub mod guestnames;
 pub mod netpolicy;
-pub mod secrets;
 #[cfg(target_os = "linux")]
 pub mod seccomp;
+pub mod secrets;
 pub mod workspace;
 
 /// How strongly a backend separates a task from the host. Ordered: a host can demand a minimum
@@ -277,10 +277,16 @@ impl RunnerOptions {
     /// `PLAYBOX_CONFINE=on` (or `1`), `PLAYBOX_CONFINE_NET=none|internet|internet+lan` (default none), `PLAYBOX_CONFINE_SECCOMP=off`.
     #[must_use]
     pub fn from_env() -> Self {
-        let on = std::env::var("PLAYBOX_CONFINE").is_ok_and(|v| matches!(v.as_str(), "on" | "1" | "true"));
-        let level = std::env::var("PLAYBOX_CONFINE_NET").ok().and_then(|v| v.parse().ok()).unwrap_or_default();
+        let on = std::env::var("PLAYBOX_CONFINE")
+            .is_ok_and(|v| matches!(v.as_str(), "on" | "1" | "true"));
+        let level = std::env::var("PLAYBOX_CONFINE_NET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_default();
         let seccomp = std::env::var("PLAYBOX_CONFINE_SECCOMP").map_or(true, |v| v != "off");
-        Self { confine: on.then_some((level, seccomp)) }
+        Self {
+            confine: on.then_some((level, seccomp)),
+        }
     }
 }
 
@@ -289,7 +295,11 @@ impl RunnerOptions {
 /// # Errors
 ///
 /// Returns an error for an unknown or unavailable backend, or confinement asked of a backend or platform that cannot provide it.
-pub fn runner_with(name: &str, policy: SandboxPolicy, opts: &RunnerOptions) -> Result<std::sync::Arc<dyn Runner>> {
+pub fn runner_with(
+    name: &str,
+    policy: SandboxPolicy,
+    opts: &RunnerOptions,
+) -> Result<std::sync::Arc<dyn Runner>> {
     if opts.confine.is_some() && !matches!(name, "libkrun" | "krun") {
         bail!("confinement applies to the libkrun runner only (the {name} runner has its own isolation)");
     }
@@ -487,7 +497,10 @@ impl Default for DockerRunner {
 impl DockerRunner {
     #[must_use]
     pub fn new(policy: SandboxPolicy) -> Self {
-        Self { policy, secrets: secrets::SecretStore::from_env() }
+        Self {
+            policy,
+            secrets: secrets::SecretStore::from_env(),
+        }
     }
 
     #[must_use]
@@ -641,8 +654,14 @@ impl Runner for DockerRunner {
             ]);
         }
         if !spec.secrets.is_empty() {
-            let dir = staged.path().to_str().context("secrets path is not utf-8")?;
-            cmd.args(["--mount", &format!("type=bind,source={dir},target=/run/secrets,readonly")]);
+            let dir = staged
+                .path()
+                .to_str()
+                .context("secrets path is not utf-8")?;
+            cmd.args([
+                "--mount",
+                &format!("type=bind,source={dir},target=/run/secrets,readonly"),
+            ]);
         }
         cmd.arg(&spec.image).args(&spec.cmd);
 

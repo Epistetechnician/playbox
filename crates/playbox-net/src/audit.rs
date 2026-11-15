@@ -217,13 +217,21 @@ impl Audit {
 /// middle of an entry (a crash, a full disk). That entry was never acknowledged: cut it off, or the host would refuse
 /// to start on its own log.
 fn drop_torn_tail(path: &Path) -> Result<()> {
-    let Ok(data) = std::fs::read(path) else { return Ok(()) };
+    let Ok(data) = std::fs::read(path) else {
+        return Ok(());
+    };
     if data.is_empty() || data.ends_with(b"\n") {
         return Ok(());
     }
     let keep = data.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-    eprintln!("playbox: dropping a partly written last entry from the audit log {}", path.display());
-    OpenOptions::new().write(true).open(path)?.set_len(keep as u64)?;
+    eprintln!(
+        "playbox: dropping a partly written last entry from the audit log {}",
+        path.display()
+    );
+    OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .set_len(keep as u64)?;
     Ok(())
 }
 

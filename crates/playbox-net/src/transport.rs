@@ -128,13 +128,18 @@ impl Transport {
 /// directly; with `iroh` or `relay:` transports, members still connect through the relay (outbound only), and with
 /// `local` only processes on this machine can. `PLAYBOX_BIND=<ip>` listens on that one address (a LAN or VPN address).
 fn bind_from_env(b: Builder, value: Option<&str>) -> Result<Builder> {
-    let Some(v) = value.map(str::trim).filter(|v| !v.is_empty() && *v != "all") else {
+    let Some(v) = value
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "all")
+    else {
         return Ok(b);
     };
     let ip: std::net::IpAddr = if v == "loopback" {
         std::net::Ipv4Addr::LOCALHOST.into()
     } else {
-        v.parse().with_context(|| format!("PLAYBOX_BIND must be `loopback`, `all` or an IP address, got {v:?}"))?
+        v.parse().with_context(|| {
+            format!("PLAYBOX_BIND must be `loopback`, `all` or an IP address, got {v:?}")
+        })?
     };
     b.clear_ip_transports()
         .bind_addr(std::net::SocketAddr::new(ip, 0))

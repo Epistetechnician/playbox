@@ -73,7 +73,10 @@ pub fn experiment(name: Experiment, args: &[String]) -> Result<()> {
                 Experiment::AuditE6 => "audit_e6",
                 _ => "cache_audit",
             };
-            python("steer", &strings(&["-m", &format!("playbox_steer.{module}")], args))
+            python(
+                "steer",
+                &strings(&["-m", &format!("playbox_steer.{module}")], args),
+            )
         }
     }
 }

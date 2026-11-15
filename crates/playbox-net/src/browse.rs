@@ -105,7 +105,10 @@ pub struct Policy {
 }
 
 fn bare_host(h: &str) -> String {
-    h.trim_start_matches('[').trim_end_matches(']').trim_end_matches('.').to_ascii_lowercase()
+    h.trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim_end_matches('.')
+        .to_ascii_lowercase()
 }
 
 impl Policy {
@@ -122,11 +125,22 @@ impl Policy {
         let mut patterns = Vec::new();
         for raw in allow {
             let p = raw.trim().to_ascii_lowercase();
-            if p.is_empty() || p.contains(|c: char| c.is_whitespace() || c == '/' || c == '@' || c == '?' || c == '#') || p.contains("://") {
+            if p.is_empty()
+                || p.contains(|c: char| {
+                    c.is_whitespace() || c == '/' || c == '@' || c == '?' || c == '#'
+                })
+                || p.contains("://")
+            {
                 bail!("bad allowed host {raw:?}: write a host name, *.domain, or host:port");
             }
             let (hostpart, port) = match p.rsplit_once(':') {
-                Some((h, port)) if !h.is_empty() && (!h.contains(':') || h.ends_with(']')) => (h.to_string(), Some(port.parse::<u16>().map_err(|_| anyhow!("bad port in {raw:?}"))?)),
+                Some((h, port)) if !h.is_empty() && (!h.contains(':') || h.ends_with(']')) => (
+                    h.to_string(),
+                    Some(
+                        port.parse::<u16>()
+                            .map_err(|_| anyhow!("bad port in {raw:?}"))?,
+                    ),
+                ),
                 _ => (p.clone(), None),
             };
             let (suffix, host) = match hostpart.strip_prefix("*.") {
@@ -138,7 +152,10 @@ impl Policy {
             }
             patterns.push(Pattern { suffix, host, port });
         }
-        Ok(Self { patterns, allow_private })
+        Ok(Self {
+            patterns,
+            allow_private,
+        })
     }
 
     /// The first check: scheme, credentials, and the allowlist. No network.
@@ -159,13 +176,21 @@ impl Policy {
             return Err("the host name is malformed".into());
         }
         let ok = self.patterns.iter().any(|p| {
-            let host_ok = if p.suffix { host.len() > p.host.len() && host.ends_with(&p.host) && host.as_bytes()[host.len() - p.host.len() - 1] == b'.' } else { host == p.host };
+            let host_ok = if p.suffix {
+                host.len() > p.host.len()
+                    && host.ends_with(&p.host)
+                    && host.as_bytes()[host.len() - p.host.len() - 1] == b'.'
+            } else {
+                host == p.host
+            };
             host_ok && p.port.map_or(port == 80 || port == 443, |pp| pp == port)
         });
         if ok {
             Ok(())
         } else {
-            Err(format!("{host}:{port} is not on this room's browser allowlist"))
+            Err(format!(
+                "{host}:{port} is not on this room's browser allowlist"
+            ))
         }
     }
 
@@ -184,7 +209,12 @@ impl Policy {
         let addrs: Vec<IpAddr> = if let Ok(ip) = host.parse::<IpAddr>() {
             vec![ip]
         } else {
-            match tokio::time::timeout(Duration::from_secs(5), tokio::net::lookup_host((host.as_str(), port))).await {
+            match tokio::time::timeout(
+                Duration::from_secs(5),
+                tokio::net::lookup_host((host.as_str(), port)),
+            )
+            .await
+            {
                 Ok(Ok(it)) => it.map(|a| a.ip()).collect(),
                 _ => return Err(format!("{host} did not resolve")),
             }
@@ -193,7 +223,9 @@ impl Policy {
             return Err(format!("{host} did not resolve"));
         }
         match addrs.iter().find(|a| !is_public(a)) {
-            Some(a) => Err(format!("{host} resolves to {a}, which is not a public address")),
+            Some(a) => Err(format!(
+                "{host} resolves to {a}, which is not a public address"
+            )),
             None => Ok(()),
         }
     }
@@ -295,7 +327,12 @@ impl Browser {
             bail!("the browser endpoint must be ws://host:port/... or http://host:port");
         }
         let slots = tokio::sync::Semaphore::new(cfg.max_concurrent.max(1));
-        Ok(Self { cfg, policy, slots, visits: Mutex::default() })
+        Ok(Self {
+            cfg,
+            policy,
+            slots,
+            visits: Mutex::default(),
+        })
     }
 
     #[must_use]
@@ -307,7 +344,10 @@ impl Browser {
         let mut g = self.visits.lock().expect("visit lock");
         let q = g.entry(who.to_string()).or_default();
         let now = Instant::now();
-        while q.front().is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60)) {
+        while q
+            .front()
+            .is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60))
+        {
             q.pop_front();
         }
         if q.len() >= self.cfg.visits_per_minute as usize {
@@ -323,19 +363,36 @@ impl Browser {
     ///
     /// [`BrowseError::Refused`] if the URL is not allowed or the member or the browser is busy; [`BrowseError::Failed`]
     /// if the browser could not do it.
-    pub async fn browse(&self, who: &str, url: &str, mode: Mode, wait_ms: Option<u64>) -> std::result::Result<Browsed, BrowseError> {
-        let parsed = Url::parse(url).map_err(|e| BrowseError::Refused(format!("not a URL: {e}")))?;
-        self.policy.check_resolved(&parsed).await.map_err(BrowseError::Refused)?;
+    pub async fn browse(
+        &self,
+        who: &str,
+        url: &str,
+        mode: Mode,
+        wait_ms: Option<u64>,
+    ) -> std::result::Result<Browsed, BrowseError> {
+        let parsed =
+            Url::parse(url).map_err(|e| BrowseError::Refused(format!("not a URL: {e}")))?;
+        self.policy
+            .check_resolved(&parsed)
+            .await
+            .map_err(BrowseError::Refused)?;
         if !self.rate_ok(who) {
-            return Err(BrowseError::Refused("too many page visits this minute".into()));
+            return Err(BrowseError::Refused(
+                "too many page visits this minute".into(),
+            ));
         }
         let Ok(_slot) = self.slots.try_acquire() else {
-            return Err(BrowseError::Refused("the browser is busy; try again shortly".into()));
+            return Err(BrowseError::Refused(
+                "the browser is busy; try again shortly".into(),
+            ));
         };
         let wait = Duration::from_millis(wait_ms.unwrap_or(0).min(5000));
         match tokio::time::timeout(self.cfg.timeout, self.visit(&parsed, mode, wait)).await {
             Ok(r) => r.map_err(BrowseError::Failed),
-            Err(_) => Err(BrowseError::Failed(anyhow!("the visit took longer than {} s", self.cfg.timeout.as_secs()))),
+            Err(_) => Err(BrowseError::Failed(anyhow!(
+                "the visit took longer than {} s",
+                self.cfg.timeout.as_secs()
+            ))),
         }
     }
 
@@ -346,8 +403,16 @@ impl Browser {
         }
         let rest = e.strip_prefix("http://").unwrap_or(e);
         let hostport = rest.split('/').next().unwrap_or(rest);
-        let (host, port) = hostport.rsplit_once(':').map_or((hostport, 80u16), |(h, p)| (h, p.parse().unwrap_or(80)));
-        let mut s = tokio::time::timeout(Duration::from_secs(5), tokio::net::TcpStream::connect((host.trim_matches(|c| c == '[' || c == ']'), port))).await.map_err(|_| anyhow!("the browser did not answer"))?.context("connect to the browser")?;
+        let (host, port) = hostport
+            .rsplit_once(':')
+            .map_or((hostport, 80u16), |(h, p)| (h, p.parse().unwrap_or(80)));
+        let mut s = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::net::TcpStream::connect((host.trim_matches(|c| c == '[' || c == ']'), port)),
+        )
+        .await
+        .map_err(|_| anyhow!("the browser did not answer"))?
+        .context("connect to the browser")?;
         s.write_all(format!("GET /json/version HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\nAccept: application/json\r\n\r\n").as_bytes()).await?;
         // The browser may keep the connection open after answering, so read what Content-Length says and stop.
         let mut buf = Vec::new();
@@ -360,7 +425,10 @@ impl Browser {
             }
             if let Some(at) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
                 let head = String::from_utf8_lossy(&buf[..at]).to_ascii_lowercase();
-                let len = head.lines().find_map(|l| l.strip_prefix("content-length:")).and_then(|v| v.trim().parse::<usize>().ok());
+                let len = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok());
                 if len.is_some_and(|l| buf.len() >= at + 4 + l) {
                     break;
                 }
@@ -371,13 +439,21 @@ impl Browser {
             bail!("the browser's /json/version answered {code}");
         }
         let v: Value = serde_json::from_slice(&body).context("/json/version")?;
-        let ws = v.get("webSocketDebuggerUrl").and_then(Value::as_str).ok_or_else(|| anyhow!("the browser gave no webSocketDebuggerUrl"))?;
+        let ws = v
+            .get("webSocketDebuggerUrl")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("the browser gave no webSocketDebuggerUrl"))?;
         Ok(ws.to_string())
     }
 
     async fn visit(&self, url: &Url, mode: Mode, wait: Duration) -> Result<Browsed> {
         let ws = WebSocket::connect(&self.socket_url().await?).await?;
-        let mut v = Visit::new(ws, &self.policy, &self.cfg, Instant::now() + self.cfg.timeout);
+        let mut v = Visit::new(
+            ws,
+            &self.policy,
+            &self.cfg,
+            Instant::now() + self.cfg.timeout,
+        );
         let r = v.run(url, mode, wait).await;
         // Closing the connection disposes the browser context.
         v.ws.close().await;
@@ -418,10 +494,32 @@ const HARDEN: &str = "for (const k of ['WebSocket','WebTransport','RTCPeerConnec
 
 impl<'a> Visit<'a> {
     fn new(ws: WebSocket, policy: &'a Policy, cfg: &'a BrowseConfig, deadline: Instant) -> Self {
-        Self { ws, next_id: 0, pending: HashMap::new(), answers: HashMap::new(), policy, cfg, deadline, main: None, main_target: None, loaded: false, crashed: false, status: None, blocked: Vec::new(), requests: 0, verdicts: HashMap::new() }
+        Self {
+            ws,
+            next_id: 0,
+            pending: HashMap::new(),
+            answers: HashMap::new(),
+            policy,
+            cfg,
+            deadline,
+            main: None,
+            main_target: None,
+            loaded: false,
+            crashed: false,
+            status: None,
+            blocked: Vec::new(),
+            requests: 0,
+            verdicts: HashMap::new(),
+        }
     }
 
-    async fn send(&mut self, method: &str, params: Value, session: Option<&str>, kind: Pending) -> Result<u64> {
+    async fn send(
+        &mut self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+        kind: Pending,
+    ) -> Result<u64> {
         self.next_id += 1;
         let id = self.next_id;
         let mut m = json!({"id": id, "method": method, "params": params});
@@ -448,14 +546,23 @@ impl<'a> Visit<'a> {
         if self.crashed {
             bail!("the page crashed");
         }
-        let msg = match tokio::time::timeout_at(tokio::time::Instant::from_std(self.deadline), self.ws.recv()).await {
+        let msg = match tokio::time::timeout_at(
+            tokio::time::Instant::from_std(self.deadline),
+            self.ws.recv(),
+        )
+        .await
+        {
             Err(_) => bail!("the visit ran out of time"),
             Ok(r) => r?.ok_or_else(|| anyhow!("the browser closed the connection"))?,
         };
         let v: Value = serde_json::from_str(&msg).context("a message from the browser")?;
         if let Some(id) = v.get("id").and_then(Value::as_u64) {
             let result = match v.get("error") {
-                Some(e) => Err(e.get("message").and_then(Value::as_str).unwrap_or("error").to_string()),
+                Some(e) => Err(e
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("error")
+                    .to_string()),
                 None => Ok(v.get("result").cloned().unwrap_or(Value::Null)),
             };
             match self.pending.remove(&id) {
@@ -464,11 +571,26 @@ impl<'a> Visit<'a> {
                 }
                 Some(Pending::FetchEnable { session, target }) => {
                     if result.is_ok() {
-                        self.send("Runtime.runIfWaitingForDebugger", json!({}), Some(&session), Pending::Ignore).await?;
+                        self.send(
+                            "Runtime.runIfWaitingForDebugger",
+                            json!({}),
+                            Some(&session),
+                            Pending::Ignore,
+                        )
+                        .await?;
                     } else {
                         // The browser cannot intercept this target, so it does not get to run.
-                        self.blocked.push(format!("a target the browser could not intercept (closed): {}", clip(&target, 16)));
-                        self.send("Target.closeTarget", json!({"targetId": target}), None, Pending::Ignore).await?;
+                        self.blocked.push(format!(
+                            "a target the browser could not intercept (closed): {}",
+                            clip(&target, 16)
+                        ));
+                        self.send(
+                            "Target.closeTarget",
+                            json!({"targetId": target}),
+                            None,
+                            Pending::Ignore,
+                        )
+                        .await?;
                     }
                 }
                 Some(Pending::Ignore) | None => {}
@@ -476,7 +598,10 @@ impl<'a> Visit<'a> {
             return Ok(());
         }
         let method = v.get("method").and_then(Value::as_str).unwrap_or("");
-        let session = v.get("sessionId").and_then(Value::as_str).map(str::to_string);
+        let session = v
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let params = v.get("params").cloned().unwrap_or(Value::Null);
         self.on_event(method, &params, session.as_deref()).await
     }
@@ -487,7 +612,12 @@ impl<'a> Visit<'a> {
             return Ok(());
         }
         let url = Url::parse(raw).map_err(|_| "not a URL".to_string())?;
-        let key = format!("{}://{}:{}", url.scheme(), url.host_str().unwrap_or(""), url.port_or_known_default().unwrap_or(0));
+        let key = format!(
+            "{}://{}:{}",
+            url.scheme(),
+            url.host_str().unwrap_or(""),
+            url.port_or_known_default().unwrap_or(0)
+        );
         if let Some(v) = self.verdicts.get(&key) {
             return v.clone();
         }
@@ -499,48 +629,124 @@ impl<'a> Visit<'a> {
     async fn on_event(&mut self, method: &str, p: &Value, session: Option<&str>) -> Result<()> {
         match method {
             "Fetch.requestPaused" => {
-                let (Some(rid), Some(url)) = (p.get("requestId").and_then(Value::as_str), p.pointer("/request/url").and_then(Value::as_str)) else { return Ok(()) };
+                let (Some(rid), Some(url)) = (
+                    p.get("requestId").and_then(Value::as_str),
+                    p.pointer("/request/url").and_then(Value::as_str),
+                ) else {
+                    return Ok(());
+                };
                 let (rid, url) = (rid.to_string(), url.to_string());
                 if p.get("responseStatusCode").is_some() || p.get("responseErrorReason").is_some() {
-                    return self.send("Fetch.continueRequest", json!({"requestId": rid}), session, Pending::Ignore).await.map(drop);
+                    return self
+                        .send(
+                            "Fetch.continueRequest",
+                            json!({"requestId": rid}),
+                            session,
+                            Pending::Ignore,
+                        )
+                        .await
+                        .map(drop);
                 }
                 self.requests += 1;
-                let verdict = if self.requests > self.cfg.max_requests { Err("too many requests for one visit".to_string()) } else { self.vet(&url).await };
+                let verdict = if self.requests > self.cfg.max_requests {
+                    Err("too many requests for one visit".to_string())
+                } else {
+                    self.vet(&url).await
+                };
                 match verdict {
-                    Ok(()) => self.send("Fetch.continueRequest", json!({"requestId": rid}), session, Pending::Ignore).await?,
+                    Ok(()) => {
+                        self.send(
+                            "Fetch.continueRequest",
+                            json!({"requestId": rid}),
+                            session,
+                            Pending::Ignore,
+                        )
+                        .await?
+                    }
                     Err(reason) => {
                         if self.blocked.len() < 50 {
                             self.blocked.push(format!("{} ({reason})", clip_url(&url)));
                         }
-                        self.send("Fetch.failRequest", json!({"requestId": rid, "errorReason": "BlockedByClient"}), session, Pending::Ignore).await?
+                        self.send(
+                            "Fetch.failRequest",
+                            json!({"requestId": rid, "errorReason": "BlockedByClient"}),
+                            session,
+                            Pending::Ignore,
+                        )
+                        .await?
                     }
                 };
             }
             "Target.attachedToTarget" => {
-                let (Some(child), Some(target)) = (p.get("sessionId").and_then(Value::as_str), p.pointer("/targetInfo/targetId").and_then(Value::as_str)) else { return Ok(()) };
+                let (Some(child), Some(target)) = (
+                    p.get("sessionId").and_then(Value::as_str),
+                    p.pointer("/targetInfo/targetId").and_then(Value::as_str),
+                ) else {
+                    return Ok(());
+                };
                 let (child, target) = (child.to_string(), target.to_string());
                 // The page this visit created is set up by `run`, in order.
                 if self.main_target.as_deref() == Some(target.as_str()) {
                     return Ok(());
                 }
-                let kind = p.pointer("/targetInfo/type").and_then(Value::as_str).unwrap_or("").to_string();
-                self.send("Target.setAutoAttach", json!({"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}), Some(&child), Pending::Ignore).await?;
+                let kind = p
+                    .pointer("/targetInfo/type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                self.send(
+                    "Target.setAutoAttach",
+                    json!({"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}),
+                    Some(&child),
+                    Pending::Ignore,
+                )
+                .await?;
                 if !self.cfg.javascript && matches!(kind.as_str(), "page" | "iframe") {
-                    self.send("Emulation.setScriptExecutionDisabled", json!({"value": true}), Some(&child), Pending::Ignore).await?;
+                    self.send(
+                        "Emulation.setScriptExecutionDisabled",
+                        json!({"value": true}),
+                        Some(&child),
+                        Pending::Ignore,
+                    )
+                    .await?;
                 }
                 if self.cfg.javascript && matches!(kind.as_str(), "page" | "iframe") {
-                    self.send("Page.addScriptToEvaluateOnNewDocument", json!({"source": HARDEN}), Some(&child), Pending::Ignore).await?;
+                    self.send(
+                        "Page.addScriptToEvaluateOnNewDocument",
+                        json!({"source": HARDEN}),
+                        Some(&child),
+                        Pending::Ignore,
+                    )
+                    .await?;
                 }
-                self.send("Fetch.enable", json!({"patterns": [{"urlPattern": "*"}]}), Some(&child), Pending::FetchEnable { session: child.clone(), target }).await?;
+                self.send(
+                    "Fetch.enable",
+                    json!({"patterns": [{"urlPattern": "*"}]}),
+                    Some(&child),
+                    Pending::FetchEnable {
+                        session: child.clone(),
+                        target,
+                    },
+                )
+                .await?;
             }
             "Page.loadEventFired" if session == self.main.as_deref() => self.loaded = true,
-            "Network.responseReceived" if session == self.main.as_deref() && p.get("type").and_then(Value::as_str) == Some("Document") => {
+            "Network.responseReceived"
+                if session == self.main.as_deref()
+                    && p.get("type").and_then(Value::as_str) == Some("Document") =>
+            {
                 if let Some(s) = p.pointer("/response/status").and_then(Value::as_u64) {
                     self.status = u16::try_from(s).ok();
                 }
             }
             "Page.javascriptDialogOpening" => {
-                self.send("Page.handleJavaScriptDialog", json!({"accept": false}), session, Pending::Ignore).await?;
+                self.send(
+                    "Page.handleJavaScriptDialog",
+                    json!({"accept": false}),
+                    session,
+                    Pending::Ignore,
+                )
+                .await?;
             }
             "Inspector.targetCrashed" | "Target.targetCrashed" => self.crashed = true,
             _ => {}
@@ -561,44 +767,133 @@ impl<'a> Visit<'a> {
     }
 
     async fn eval(&mut self, session: &str, expr: &str) -> Result<String> {
-        let r = self.call("Runtime.evaluate", json!({"expression": expr, "returnByValue": true}), Some(session)).await?;
+        let r = self
+            .call(
+                "Runtime.evaluate",
+                json!({"expression": expr, "returnByValue": true}),
+                Some(session),
+            )
+            .await?;
         if r.get("exceptionDetails").is_some() {
             bail!("the page could not be read");
         }
-        Ok(r.pointer("/result/value").and_then(Value::as_str).unwrap_or_default().to_string())
+        Ok(r.pointer("/result/value")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string())
     }
 
     async fn run(&mut self, url: &Url, mode: Mode, wait: Duration) -> Result<Browsed> {
-        let ctx = self.call("Target.createBrowserContext", json!({"disposeOnDetach": true}), None).await?;
-        let ctx = ctx.get("browserContextId").and_then(Value::as_str).ok_or_else(|| anyhow!("no browser context"))?.to_string();
+        let ctx = self
+            .call(
+                "Target.createBrowserContext",
+                json!({"disposeOnDetach": true}),
+                None,
+            )
+            .await?;
+        let ctx = ctx
+            .get("browserContextId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("no browser context"))?
+            .to_string();
         // Best effort: a browser that does not know this command still has downloads off in headless mode by default.
-        let _ = self.call("Browser.setDownloadBehavior", json!({"behavior": "deny", "browserContextId": ctx}), None).await;
-        let t = self.call("Target.createTarget", json!({"url": "about:blank", "browserContextId": ctx}), None).await?;
-        let target = t.get("targetId").and_then(Value::as_str).ok_or_else(|| anyhow!("no target"))?.to_string();
+        let _ = self
+            .call(
+                "Browser.setDownloadBehavior",
+                json!({"behavior": "deny", "browserContextId": ctx}),
+                None,
+            )
+            .await;
+        let t = self
+            .call(
+                "Target.createTarget",
+                json!({"url": "about:blank", "browserContextId": ctx}),
+                None,
+            )
+            .await?;
+        let target = t
+            .get("targetId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("no target"))?
+            .to_string();
         self.main_target = Some(target.clone());
-        let a = self.call("Target.attachToTarget", json!({"targetId": target, "flatten": true}), None).await?;
-        let s = a.get("sessionId").and_then(Value::as_str).ok_or_else(|| anyhow!("no session"))?.to_string();
+        let a = self
+            .call(
+                "Target.attachToTarget",
+                json!({"targetId": target, "flatten": true}),
+                None,
+            )
+            .await?;
+        let s = a
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("no session"))?
+            .to_string();
         self.main = Some(s.clone());
 
         self.call("Page.enable", json!({}), Some(&s)).await?;
         self.call("Network.enable", json!({}), Some(&s)).await?;
-        self.call("Network.setBypassServiceWorker", json!({"bypass": true}), Some(&s)).await.ok();
-        self.call("Emulation.setDeviceMetricsOverride", json!({"width": 1024, "height": 768, "deviceScaleFactor": 1, "mobile": false}), Some(&s)).await?;
+        self.call(
+            "Network.setBypassServiceWorker",
+            json!({"bypass": true}),
+            Some(&s),
+        )
+        .await
+        .ok();
+        self.call(
+            "Emulation.setDeviceMetricsOverride",
+            json!({"width": 1024, "height": 768, "deviceScaleFactor": 1, "mobile": false}),
+            Some(&s),
+        )
+        .await?;
         if self.cfg.javascript {
-            self.call("Page.addScriptToEvaluateOnNewDocument", json!({"source": HARDEN}), Some(&s)).await?;
+            self.call(
+                "Page.addScriptToEvaluateOnNewDocument",
+                json!({"source": HARDEN}),
+                Some(&s),
+            )
+            .await?;
         } else {
-            self.call("Emulation.setScriptExecutionDisabled", json!({"value": true}), Some(&s)).await?;
+            self.call(
+                "Emulation.setScriptExecutionDisabled",
+                json!({"value": true}),
+                Some(&s),
+            )
+            .await?;
         }
-        self.call("Target.setAutoAttach", json!({"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}), Some(&s)).await?;
-        self.call("Fetch.enable", json!({"patterns": [{"urlPattern": "*"}]}), Some(&s)).await?;
+        self.call(
+            "Target.setAutoAttach",
+            json!({"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}),
+            Some(&s),
+        )
+        .await?;
+        self.call(
+            "Fetch.enable",
+            json!({"patterns": [{"urlPattern": "*"}]}),
+            Some(&s),
+        )
+        .await?;
 
-        let nav = self.call("Page.navigate", json!({"url": url.as_str()}), Some(&s)).await?;
+        let nav = self
+            .call("Page.navigate", json!({"url": url.as_str()}), Some(&s))
+            .await?;
         if let Some(e) = nav.get("errorText").and_then(Value::as_str) {
             // Let the blocked list explain a failure the allowlist caused.
             self.pump_for(Duration::from_millis(100)).await.ok();
-            bail!("the page did not load: {e}{}", if self.blocked.is_empty() { String::new() } else { format!(" (stopped: {})", self.blocked.join("; ")) });
+            bail!(
+                "the page did not load: {e}{}",
+                if self.blocked.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (stopped: {})", self.blocked.join("; "))
+                }
+            );
         }
-        let stop = (Instant::now() + Duration::from_secs(20)).min(self.deadline.checked_sub(Duration::from_secs(3)).unwrap_or_else(Instant::now));
+        let stop = (Instant::now() + Duration::from_secs(20)).min(
+            self.deadline
+                .checked_sub(Duration::from_secs(3))
+                .unwrap_or_else(Instant::now),
+        );
         let mut timed_out = false;
         while !self.loaded {
             if Instant::now() >= stop {
@@ -614,10 +909,16 @@ impl<'a> Visit<'a> {
             self.pump_for(wait).await?;
         }
 
-        let info = self.eval(&s, "JSON.stringify({u: location.href, t: document.title})").await?;
+        let info = self
+            .eval(&s, "JSON.stringify({u: location.href, t: document.title})")
+            .await?;
         let info: Value = serde_json::from_str(&info).unwrap_or(Value::Null);
         let mut out = Browsed {
-            url: info.get("u").and_then(Value::as_str).unwrap_or(url.as_str()).to_string(),
+            url: info
+                .get("u")
+                .and_then(Value::as_str)
+                .unwrap_or(url.as_str())
+                .to_string(),
             title: clip(info.get("t").and_then(Value::as_str).unwrap_or(""), 300),
             status: self.status,
             blocked: self.blocked.clone(),
@@ -627,7 +928,11 @@ impl<'a> Visit<'a> {
         };
         match mode {
             Mode::Text | Mode::Html => {
-                let expr = if mode == Mode::Text { "document.documentElement ? document.documentElement.innerText : ''" } else { "document.documentElement ? document.documentElement.outerHTML : ''" };
+                let expr = if mode == Mode::Text {
+                    "document.documentElement ? document.documentElement.innerText : ''"
+                } else {
+                    "document.documentElement ? document.documentElement.outerHTML : ''"
+                };
                 let mut text = self.eval(&s, expr).await?;
                 if text.len() > self.cfg.max_text_bytes {
                     let mut cut = self.cfg.max_text_bytes;
@@ -644,13 +949,28 @@ impl<'a> Visit<'a> {
                 }
             }
             Mode::Screenshot => {
-                let mut shot = self.call("Page.captureScreenshot", json!({"format": "png"}), Some(&s)).await?;
-                let mut bytes = base64::engine::general_purpose::STANDARD.decode(shot.get("data").and_then(Value::as_str).unwrap_or("")).context("screenshot")?;
+                let mut shot = self
+                    .call("Page.captureScreenshot", json!({"format": "png"}), Some(&s))
+                    .await?;
+                let mut bytes = base64::engine::general_purpose::STANDARD
+                    .decode(shot.get("data").and_then(Value::as_str).unwrap_or(""))
+                    .context("screenshot")?;
                 if bytes.len() > self.cfg.max_screenshot_bytes {
-                    shot = self.call("Page.captureScreenshot", json!({"format": "jpeg", "quality": 55}), Some(&s)).await?;
-                    bytes = base64::engine::general_purpose::STANDARD.decode(shot.get("data").and_then(Value::as_str).unwrap_or("")).context("screenshot")?;
+                    shot = self
+                        .call(
+                            "Page.captureScreenshot",
+                            json!({"format": "jpeg", "quality": 55}),
+                            Some(&s),
+                        )
+                        .await?;
+                    bytes = base64::engine::general_purpose::STANDARD
+                        .decode(shot.get("data").and_then(Value::as_str).unwrap_or(""))
+                        .context("screenshot")?;
                     if bytes.len() > self.cfg.max_screenshot_bytes {
-                        bail!("the screenshot is larger than the {} KiB limit", self.cfg.max_screenshot_bytes >> 10);
+                        bail!(
+                            "the screenshot is larger than the {} KiB limit",
+                            self.cfg.max_screenshot_bytes >> 10
+                        );
                     }
                 }
                 out.screenshot = Some(bytes);
@@ -691,7 +1011,7 @@ pub fn clip_url(raw: &str) -> String {
 mod tests {
     use super::*;
     use crate::ws::server;
-    
+
     fn pol(a: &[&str]) -> Policy {
         Policy::new(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>(), false).unwrap()
     }
@@ -706,7 +1026,10 @@ mod tests {
         assert!(ok(&p, "https://example.com/x"));
         assert!(ok(&p, "http://EXAMPLE.com./x"));
         assert!(ok(&p, "https://example.com:443/"));
-        assert!(!ok(&p, "https://example.com:8443/"), "a pattern without a port allows 80 and 443 only");
+        assert!(
+            !ok(&p, "https://example.com:8443/"),
+            "a pattern without a port allows 80 and 443 only"
+        );
         assert!(ok(&p, "https://a.docs.rs/"));
         assert!(ok(&p, "https://a.b.docs.rs/"));
         assert!(!ok(&p, "https://docs.rs/"), "*.docs.rs is the subdomains");
@@ -721,13 +1044,31 @@ mod tests {
         assert!(!ok(&p, "https://example.com@evil.com/"));
         assert!(!ok(&p, "https://evil.com#@example.com/"));
         assert!(!ok(&p, "https://evil.com\\@example.com/"));
-        for bad in ["file:///etc/passwd", "ftp://example.com/", "javascript:alert(1)", "data:text/html,hi", "chrome://gpu", "view-source:https://example.com/"] {
-            assert!(!Url::parse(bad).map(|u| p.check(&u).is_ok()).unwrap_or(false), "{bad}");
+        for bad in [
+            "file:///etc/passwd",
+            "ftp://example.com/",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            "chrome://gpu",
+            "view-source:https://example.com/",
+        ] {
+            assert!(
+                !Url::parse(bad)
+                    .map(|u| p.check(&u).is_ok())
+                    .unwrap_or(false),
+                "{bad}"
+            );
         }
         // Unicode and encoded hosts are compared as the browser will see them.
-        assert!(!ok(&p, "https://exаmple.com/"), "a Cyrillic a is another host");
+        assert!(
+            !ok(&p, "https://exаmple.com/"),
+            "a Cyrillic a is another host"
+        );
         assert!(!ok(&p, "https://example.com%2eevil.com/"));
-        assert!(!ok(&p, "https://%2edocs.rs/"), "an empty label is not a subdomain");
+        assert!(
+            !ok(&p, "https://%2edocs.rs/"),
+            "an empty label is not a subdomain"
+        );
         assert!(!ok(&p, "https://a..docs.rs/"));
     }
 
@@ -736,7 +1077,47 @@ mod tests {
     #[test]
     fn nothing_odd_passes_the_check() {
         let p = pol(&["example.com", "*.docs.rs"]);
-        let parts = ["http", "https", "ftp", "file", "javascript", "://", ":", "//", "/", "\\", "@", "#", "?", ".", "..", "%2e", "%2f", "%40", "%00", "example.com", "EXAMPLE.COM", "docs.rs", "a.docs.rs", "evil.com", "127.0.0.1", "[::1]", "0x7f.1", "2130706433", "443", "80", "8080", " ", "\t", "\n", "\u{202e}", "\u{0430}", "xn--", "user", "pw"];
+        let parts = [
+            "http",
+            "https",
+            "ftp",
+            "file",
+            "javascript",
+            "://",
+            ":",
+            "//",
+            "/",
+            "\\",
+            "@",
+            "#",
+            "?",
+            ".",
+            "..",
+            "%2e",
+            "%2f",
+            "%40",
+            "%00",
+            "example.com",
+            "EXAMPLE.COM",
+            "docs.rs",
+            "a.docs.rs",
+            "evil.com",
+            "127.0.0.1",
+            "[::1]",
+            "0x7f.1",
+            "2130706433",
+            "443",
+            "80",
+            "8080",
+            " ",
+            "\t",
+            "\n",
+            "\u{202e}",
+            "\u{0430}",
+            "xn--",
+            "user",
+            "pw",
+        ];
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
         let mut next = move || {
             seed ^= seed << 13;
@@ -747,35 +1128,95 @@ mod tests {
         let mut accepted = 0;
         for _ in 0..200_000 {
             let n = 2 + (next() % 7) as usize;
-            let s: String = (0..n).map(|_| parts[(next() % parts.len() as u64) as usize]).collect();
+            let s: String = (0..n)
+                .map(|_| parts[(next() % parts.len() as u64) as usize])
+                .collect();
             let Ok(u) = Url::parse(&s) else { continue };
             if p.check(&u).is_ok() {
                 accepted += 1;
                 let host = bare_host(u.host_str().unwrap());
                 assert!(matches!(u.scheme(), "http" | "https"), "{s:?}");
                 assert!(u.username().is_empty() && u.password().is_none(), "{s:?}");
-                assert!(host == "example.com" || (host.ends_with(".docs.rs") && host.len() > ".docs.rs".len()), "{s:?} -> {host}");
+                assert!(
+                    host == "example.com"
+                        || (host.ends_with(".docs.rs") && host.len() > ".docs.rs".len()),
+                    "{s:?} -> {host}"
+                );
                 assert!(matches!(u.port_or_known_default(), Some(80 | 443)), "{s:?}");
             }
         }
-        assert!(accepted > 0, "the generator must produce some allowed URLs, or this test proves nothing");
+        assert!(
+            accepted > 0,
+            "the generator must produce some allowed URLs, or this test proves nothing"
+        );
     }
 
     #[test]
     fn bad_patterns_are_refused() {
-        for bad in ["", "*", "*.com", "https://example.com", "example.com/path", "user@example.com", "ex ample.com", "example.com:notaport", "a*b.com", "*.*.com"] {
+        for bad in [
+            "",
+            "*",
+            "*.com",
+            "https://example.com",
+            "example.com/path",
+            "user@example.com",
+            "ex ample.com",
+            "example.com:notaport",
+            "a*b.com",
+            "*.*.com",
+        ] {
             assert!(Policy::new(&[bad.to_string()], false).is_err(), "{bad:?}");
         }
         assert!(Policy::new(&[], false).is_err());
-        assert!(Policy::new(&["127.0.0.1:8080".into(), "[::1]:9".into(), "localhost".into()], true).is_ok());
+        assert!(Policy::new(
+            &[
+                "127.0.0.1:8080".into(),
+                "[::1]:9".into(),
+                "localhost".into()
+            ],
+            true
+        )
+        .is_ok());
     }
 
     #[test]
     fn private_and_special_addresses_are_not_public() {
-        for ip in ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "255.255.255.255", "224.0.0.1", "192.0.2.1", "198.18.0.1", "240.0.0.1", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "64:ff9b::a00:1", "2001:db8::1", "ff02::1"] {
+        for ip in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.0.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "255.255.255.255",
+            "224.0.0.1",
+            "192.0.2.1",
+            "198.18.0.1",
+            "240.0.0.1",
+            "::1",
+            "::",
+            "fe80::1",
+            "fc00::1",
+            "fd12::1",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "64:ff9b::a00:1",
+            "2001:db8::1",
+            "ff02::1",
+        ] {
             assert!(!is_public(&ip.parse().unwrap()), "{ip}");
         }
-        for ip in ["8.8.8.8", "1.1.1.1", "93.184.216.34", "172.32.0.1", "100.63.255.255", "2606:4700:4700::1111", "::ffff:8.8.8.8"] {
+        for ip in [
+            "8.8.8.8",
+            "1.1.1.1",
+            "93.184.216.34",
+            "172.32.0.1",
+            "100.63.255.255",
+            "2606:4700:4700::1111",
+            "::ffff:8.8.8.8",
+        ] {
             assert!(is_public(&ip.parse().unwrap()), "{ip}");
         }
     }
@@ -783,22 +1224,40 @@ mod tests {
     #[tokio::test]
     async fn a_name_that_resolves_to_a_private_address_is_refused() {
         let p = pol(&["localhost", "127.0.0.1", "8.8.8.8"]);
-        assert!(p.check_resolved(&Url::parse("http://localhost/").unwrap()).await.is_err());
-        assert!(p.check_resolved(&Url::parse("http://127.0.0.1/").unwrap()).await.is_err());
-        assert!(p.check_resolved(&Url::parse("http://8.8.8.8/").unwrap()).await.is_ok());
+        assert!(p
+            .check_resolved(&Url::parse("http://localhost/").unwrap())
+            .await
+            .is_err());
+        assert!(p
+            .check_resolved(&Url::parse("http://127.0.0.1/").unwrap())
+            .await
+            .is_err());
+        assert!(p
+            .check_resolved(&Url::parse("http://8.8.8.8/").unwrap())
+            .await
+            .is_ok());
         let open = Policy::new(&["127.0.0.1".into()], true).unwrap();
-        assert!(open.check_resolved(&Url::parse("http://127.0.0.1/").unwrap()).await.is_ok());
+        assert!(open
+            .check_resolved(&Url::parse("http://127.0.0.1/").unwrap())
+            .await
+            .is_ok());
     }
 
     #[test]
     fn urls_in_messages_carry_no_query() {
-        assert_eq!(clip_url("https://a.example/p?token=secret#frag"), "https://a.example/p");
+        assert_eq!(
+            clip_url("https://a.example/p?token=secret#frag"),
+            "https://a.example/p"
+        );
         assert_eq!(clip_url("https://u:p@a.example/p"), "https://a.example/p");
     }
 
     /// A scripted browser: answers the commands a visit sends, pauses two requests (one allowed, one not), and records
     /// what the host did with each.
-    async fn fake_browser(l: tokio::net::TcpListener, page_text: &'static str) -> tokio::task::JoinHandle<Vec<String>> {
+    async fn fake_browser(
+        l: tokio::net::TcpListener,
+        page_text: &'static str,
+    ) -> tokio::task::JoinHandle<Vec<String>> {
         tokio::spawn(async move {
             let mut p = server::accept(&l).await;
             let mut log = Vec::new();
@@ -807,7 +1266,17 @@ mod tests {
                 let id = v["id"].as_u64().unwrap();
                 let method = v["method"].as_str().unwrap().to_string();
                 let sess = v.get("sessionId").cloned();
-                log.push(format!("{method} {}", v["params"].get("requestId").and_then(Value::as_str).unwrap_or("")).trim().to_string());
+                log.push(
+                    format!(
+                        "{method} {}",
+                        v["params"]
+                            .get("requestId")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                    )
+                    .trim()
+                    .to_string(),
+                );
                 let result = match method.as_str() {
                     "Target.createBrowserContext" => json!({"browserContextId": "ctx"}),
                     "Target.createTarget" => json!({"targetId": "T1"}),
@@ -821,7 +1290,9 @@ mod tests {
                             json!({"result": {"type": "string", "value": page_text}})
                         }
                     }
-                    "Page.captureScreenshot" => json!({"data": base64::engine::general_purpose::STANDARD.encode(b"PNGDATA")}),
+                    "Page.captureScreenshot" => {
+                        json!({"data": base64::engine::general_purpose::STANDARD.encode(b"PNGDATA")})
+                    }
                     _ => json!({}),
                 };
                 let mut reply = json!({"id": id, "result": result});
@@ -830,11 +1301,19 @@ mod tests {
                 }
                 p.send(&reply.to_string()).await;
                 if method == "Page.navigate" {
-                    for (rid, url) in [("r1", "https://example.com/style.css"), ("r2", "http://169.254.169.254/latest/meta-data"), ("r3", "https://evil.example/x.js")] {
+                    for (rid, url) in [
+                        ("r1", "https://example.com/style.css"),
+                        ("r2", "http://169.254.169.254/latest/meta-data"),
+                        ("r3", "https://evil.example/x.js"),
+                    ] {
                         p.send(&json!({"method": "Fetch.requestPaused", "sessionId": "S1", "params": {"requestId": rid, "request": {"url": url, "method": "GET"}}}).to_string()).await;
                     }
                     p.send(&json!({"method": "Network.responseReceived", "sessionId": "S1", "params": {"type": "Document", "response": {"status": 200}}}).to_string()).await;
-                    p.send(&json!({"method": "Page.loadEventFired", "sessionId": "S1", "params": {}}).to_string()).await;
+                    p.send(
+                        &json!({"method": "Page.loadEventFired", "sessionId": "S1", "params": {}})
+                            .to_string(),
+                    )
+                    .await;
                 }
             }
             log
@@ -842,7 +1321,10 @@ mod tests {
     }
 
     fn browser_for(port: u16, allow: &[&str]) -> Browser {
-        let mut c = BrowseConfig::new(&format!("ws://127.0.0.1:{port}/devtools/browser/x"), allow.iter().map(|s| s.to_string()).collect());
+        let mut c = BrowseConfig::new(
+            &format!("ws://127.0.0.1:{port}/devtools/browser/x"),
+            allow.iter().map(|s| s.to_string()).collect(),
+        );
         c.timeout = Duration::from_secs(10);
         Browser::new(c).unwrap()
     }
@@ -853,24 +1335,52 @@ mod tests {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
         let srv = fake_browser(l, "Hello from the page").await;
-        let mut c = BrowseConfig::new(&format!("ws://127.0.0.1:{port}/"), vec!["example.com".into()]);
+        let mut c = BrowseConfig::new(
+            &format!("ws://127.0.0.1:{port}/"),
+            vec!["example.com".into()],
+        );
         c.allow_private = true;
         c.timeout = Duration::from_secs(10);
         let b = Browser::new(c).unwrap();
-        let r = b.browse("alice", "https://example.com/start?secret=1", Mode::Text, None).await.unwrap();
+        let r = b
+            .browse(
+                "alice",
+                "https://example.com/start?secret=1",
+                Mode::Text,
+                None,
+            )
+            .await
+            .unwrap();
         assert_eq!(r.text.as_deref(), Some("Hello from the page"));
         assert_eq!(r.title, "A title");
         assert_eq!(r.status, Some(200));
         assert_eq!(r.requests, 3);
         assert_eq!(r.blocked.len(), 2, "{:?}", r.blocked);
-        assert!(r.blocked.iter().any(|x| x.contains("169.254.169.254")) || r.blocked.iter().any(|x| x.contains("not on this room's browser allowlist")), "{:?}", r.blocked);
+        assert!(
+            r.blocked.iter().any(|x| x.contains("169.254.169.254"))
+                || r.blocked
+                    .iter()
+                    .any(|x| x.contains("not on this room's browser allowlist")),
+            "{:?}",
+            r.blocked
+        );
         assert!(r.blocked.iter().any(|x| x.contains("evil.example")));
         let log = srv.await.unwrap();
-        assert!(log.contains(&"Fetch.continueRequest r1".to_string()), "{log:?}");
+        assert!(
+            log.contains(&"Fetch.continueRequest r1".to_string()),
+            "{log:?}"
+        );
         assert!(log.contains(&"Fetch.failRequest r2".to_string()), "{log:?}");
         assert!(log.contains(&"Fetch.failRequest r3".to_string()), "{log:?}");
-        let at = |s: &str| log.iter().position(|x| x.starts_with(s)).unwrap_or_else(|| panic!("{s} not in {log:?}"));
-        assert!(at("Fetch.enable") < at("Page.navigate"), "interception must be on before the page is asked to load");
+        let at = |s: &str| {
+            log.iter()
+                .position(|x| x.starts_with(s))
+                .unwrap_or_else(|| panic!("{s} not in {log:?}"))
+        };
+        assert!(
+            at("Fetch.enable") < at("Page.navigate"),
+            "interception must be on before the page is asked to load"
+        );
         assert!(at("Emulation.setScriptExecutionDisabled") < at("Page.navigate"));
     }
 
@@ -878,7 +1388,14 @@ mod tests {
     async fn the_start_url_is_refused_before_any_browser_is_contacted() {
         // No browser is listening at this port: a refusal must come first.
         let b = browser_for(9, &["example.com"]);
-        for u in ["https://evil.example/", "file:///etc/passwd", "http://169.254.169.254/", "https://user:pw@example.com/", "not a url", "https://example.com:8443/"] {
+        for u in [
+            "https://evil.example/",
+            "file:///etc/passwd",
+            "http://169.254.169.254/",
+            "https://user:pw@example.com/",
+            "not a url",
+            "https://example.com:8443/",
+        ] {
             match b.browse("alice", u, Mode::Text, None).await {
                 Err(BrowseError::Refused(_)) => {}
                 other => panic!("{u}: {other:?}"),
@@ -891,19 +1408,38 @@ mod tests {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
         let _srv = fake_browser(l, "héllo wörld, héllo wörld, héllo wörld").await;
-        let mut c = BrowseConfig::new(&format!("ws://127.0.0.1:{port}/"), vec!["example.com".into()]);
+        let mut c = BrowseConfig::new(
+            &format!("ws://127.0.0.1:{port}/"),
+            vec!["example.com".into()],
+        );
         c.allow_private = true;
         c.max_text_bytes = 9;
         let b = Browser::new(c).unwrap();
-        let r = b.browse("alice", "https://example.com/", Mode::Text, None).await.unwrap();
-        assert!(r.truncated && r.text.as_ref().unwrap().len() <= 9 && r.text.as_ref().unwrap().is_char_boundary(r.text.as_ref().unwrap().len()));
+        let r = b
+            .browse("alice", "https://example.com/", Mode::Text, None)
+            .await
+            .unwrap();
+        assert!(
+            r.truncated
+                && r.text.as_ref().unwrap().len() <= 9
+                && r.text
+                    .as_ref()
+                    .unwrap()
+                    .is_char_boundary(r.text.as_ref().unwrap().len())
+        );
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
         let _srv = fake_browser(l, "x").await;
-        let mut c = BrowseConfig::new(&format!("ws://127.0.0.1:{port}/"), vec!["example.com".into()]);
+        let mut c = BrowseConfig::new(
+            &format!("ws://127.0.0.1:{port}/"),
+            vec!["example.com".into()],
+        );
         c.allow_private = true;
         let b = Browser::new(c).unwrap();
-        let r = b.browse("alice", "https://example.com/", Mode::Screenshot, None).await.unwrap();
+        let r = b
+            .browse("alice", "https://example.com/", Mode::Screenshot, None)
+            .await
+            .unwrap();
         assert_eq!(r.screenshot.as_deref(), Some(&b"PNGDATA"[..]));
     }
 
@@ -916,10 +1452,25 @@ mod tests {
         let b = Browser::new(c).unwrap();
         // Nothing listens at port 9, so each visit fails after passing the limits: two failures, then a refusal.
         for _ in 0..2 {
-            assert!(matches!(b.browse("alice", "https://example.com/", Mode::Text, None).await, Err(BrowseError::Failed(_))));
+            assert!(matches!(
+                b.browse("alice", "https://example.com/", Mode::Text, None)
+                    .await,
+                Err(BrowseError::Failed(_))
+            ));
         }
-        assert!(matches!(b.browse("alice", "https://example.com/", Mode::Text, None).await, Err(BrowseError::Refused(_))));
-        assert!(matches!(b.browse("bob", "https://example.com/", Mode::Text, None).await, Err(BrowseError::Failed(_))), "another member has their own budget");
+        assert!(matches!(
+            b.browse("alice", "https://example.com/", Mode::Text, None)
+                .await,
+            Err(BrowseError::Refused(_))
+        ));
+        assert!(
+            matches!(
+                b.browse("bob", "https://example.com/", Mode::Text, None)
+                    .await,
+                Err(BrowseError::Failed(_))
+            ),
+            "another member has their own budget"
+        );
     }
 
     #[tokio::test]
@@ -931,13 +1482,19 @@ mod tests {
             let _ = p.recv().await; // read one command and never answer
             tokio::time::sleep(Duration::from_secs(30)).await;
         });
-        let mut c = BrowseConfig::new(&format!("ws://127.0.0.1:{port}/"), vec!["example.com".into()]);
+        let mut c = BrowseConfig::new(
+            &format!("ws://127.0.0.1:{port}/"),
+            vec!["example.com".into()],
+        );
         c.allow_private = true;
         c.timeout = Duration::from_millis(800);
         let b = Browser::new(c).unwrap();
         let t0 = Instant::now();
-        assert!(matches!(b.browse("alice", "https://example.com/", Mode::Text, None).await, Err(BrowseError::Failed(_))));
+        assert!(matches!(
+            b.browse("alice", "https://example.com/", Mode::Text, None)
+                .await,
+            Err(BrowseError::Failed(_))
+        ));
         assert!(t0.elapsed() < Duration::from_secs(5));
     }
-
 }

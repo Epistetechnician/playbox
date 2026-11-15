@@ -74,6 +74,95 @@ jobs:
         run: |
           BIN=$(ls -t target/debug/deps/confine-* | grep -v '\.d$' | head -1)
           PLAYBOX_CONFINE_REQUIRE_ALL=1 PLAYBOX_CONFINE_ONLY=jail "$BIN"
+  krun:
+    # The libkrun runner against a real microVM: the boot tests, the escape drill (13 probes that must all fail to get out) and the
+    # confinement around a real guest. They skip where there is no /dev/kvm, libkrun or Docker, so every skip is a failure here.
+    # GitHub's Linux runners expose /dev/kvm once the udev rule below lets everyone use it. libkrun is built once and cached.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      LIBKRUN_TAG: v1.19.7
+      LIBKRUNFW_TAG: v5.6.2
+      PLAYBOX_CONFINE_REQUIRE_ALL: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: libkrun and libkrunfw (cached)
+        id: krun-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/krun
+          key: krun-${{ runner.arch }}-${{ env.LIBKRUN_TAG }}-${{ env.LIBKRUNFW_TAG }}
+      - name: Build libkrun and libkrunfw
+        if: steps.krun-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison bc libelf-dev python3-pyelftools patchelf libclang-dev pkg-config
+          git clone --depth 1 --branch "$LIBKRUNFW_TAG" https://github.com/containers/libkrunfw "$RUNNER_TEMP/libkrunfw"
+          (cd "$RUNNER_TEMP/libkrunfw" && make -j"$(nproc)")
+          (cd "$RUNNER_TEMP/libkrunfw" && make install PREFIX="$HOME/krun")
+          git clone --depth 1 --branch "$LIBKRUN_TAG" https://github.com/containers/libkrun "$RUNNER_TEMP/libkrun"
+          (cd "$RUNNER_TEMP/libkrun" && PKG_CONFIG_PATH="$HOME/krun/lib64/pkgconfig:$HOME/krun/lib/pkgconfig" make -j"$(nproc)")
+          (cd "$RUNNER_TEMP/libkrun" && make install PREFIX="$HOME/krun")
+      - name: Build the helper
+        run: |
+          find "$HOME/krun" -name 'libkrun*'
+          LIB=$(dirname "$(find "$HOME/krun" -name 'libkrun.so*' | head -1)")
+          # The helper's environment is its own, so find libkrun and libkrunfw through the system's library cache, not LD_LIBRARY_PATH.
+          find "$HOME/krun" -name '*.so*' -printf '%h\n' | sort -u | sudo tee /etc/ld.so.conf.d/krun.conf
+          sudo ldconfig
+          ldconfig -p | grep -E 'libkrun'
+          # The jail binds the directories on LD_LIBRARY_PATH that hold libkrunfw, so list every library directory, not only libkrun's.
+          ALL=$(find "$HOME/krun" -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -)
+          echo "LIB=$ALL" >> "$GITHUB_ENV"
+          echo "LIBKRUN_LIB_DIR=$LIB" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$ALL" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$LIB" >> "$GITHUB_ENV"
+          LIBRARY_PATH=$LIB LIBKRUN_LIB_DIR=$LIB cargo build -p playbox-runner --features krun --bin playbox-krun-helper
+          echo "PLAYBOX_KRUN_HELPER=$PWD/target/debug/playbox-krun-helper" >> "$GITHUB_ENV"
+      - run: docker pull alpine:3
+      - run: cargo test -p playbox-runner --test krun --test escape
+      - name: the confinement around a real guest, as root
+        run: |
+          cargo test -p playbox-runner --test confine_guest --no-run
+          BIN=$(ls -t target/debug/deps/confine_guest-* | grep -v '\.d$' | head -1)
+          sudo env PLAYBOX_CONFINE_REQUIRE_ALL=1 PLAYBOX_KRUN_HELPER="$PLAYBOX_KRUN_HELPER" LD_LIBRARY_PATH="$LIB" "$BIN" --test-threads=1
+  lint:
+    # Formatting and clippy over the whole workspace, every target, warnings as errors.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+  f3:
+    # The F3 verified hill-climb: harness, verifier and the live room's gate (challenge/f3/tests), then the recorded run re-derived
+    # from its receipts, which is what scripts/demo.sh shows. The slow tests re-train a candidate on CPU and run here too.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the verifier checks that PROTOCOL.md was committed before each genesis receipt, from history
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install cryptography numpy pytest tiktoken pyarrow requests torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+      - run: python -m pytest challenge/f3/tests -q
+      - run: python challenge/f3/verify.py --work docs/f3/dry_run --host-pubkey "$(cat docs/f3/dry_run/host.pub)" | tail -3
   conformance:
     # Black-box scenarios against the built `playbox` and `playbox-mcp` binaries (conformance/). The fast tier runs on every push;
     # the full tier (docker tasks, secrets) runs locally with `python3 conformance/run.py --tier full`.
