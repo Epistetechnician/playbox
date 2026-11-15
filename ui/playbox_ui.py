@@ -170,6 +170,8 @@ def make_handler(sidecar, token, page_path, home):
                 return self._send(401, LOCKED, "text/html; charset=utf-8")
             if url.path == "/instruments.js":
                 return self._send(200, (HERE / "static" / "instruments.js").read_bytes(), "text/javascript; charset=utf-8")
+            if url.path == "/themes.js":
+                return self._send(200, (HERE / "static" / "themes.js").read_bytes(), "text/javascript; charset=utf-8")
             if url.path == "/theme.css":
                 return self._send(200, (HERE / "static" / "theme.css").read_bytes(), "text/css; charset=utf-8")
             if url.path == "/":

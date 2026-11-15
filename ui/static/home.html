@@ -349,6 +349,8 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 @media(prefers-reduced-motion:reduce){.node.pulse,.node.pulse .pk::before,.ev.fresh{animation:none}}
 </style>
 <link rel="stylesheet" href="/theme.css">
+<script src="/themes.js"></script>
+<script src="/shell.js" onerror="void 0"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -602,7 +604,7 @@ function mood() {
 /* ---------- theme ---------- */
 const THEME_BG = {light: "#F2F3EE", dark: "#151713"};
 const themeNow = () => document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
-function syncThemeColor() { $("#themecolor")?.setAttribute("content", THEME_BG[themeNow()]); }
+function syncThemeColor() { if (window.PBTheme) PBTheme.apply(); else $("#themecolor")?.setAttribute("content", THEME_BG[themeNow()]); }
 function toggleTheme() {
   const t = themeNow() === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = t; store.set("pb.theme", t); syncThemeColor(); paintChrome();
@@ -617,6 +619,7 @@ function paint() {
     <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
       <button class="btn primary block" data-act="add">+ Add room</button>
       <nav id="railnav"></nav>
+      <div id="railrooms" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
       <div class="foot"><div class="keys">⌘K search<br>J K move · ↵ open</div></div></aside>
     <div class="col"><div class="strip"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
         <span class="state" id="linkled"></span><span class="hide-s" id="sthost"></span><span id="strooms"></span><span id="stattn"></span><span class="sp"></span>
@@ -635,6 +638,7 @@ function paintChrome() {
   const r = $("#strooms"); if (r) r.textContent = `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`;
   const a = $("#stattn"); if (a) { a.textContent = n ? `${n} needs you` : ""; a.className = n ? "hot" : ""; }
   const h = $("#sthost"); if (h) h.textContent = location.host;
+  if (window.PBShell) { PBShell.sync(S.rooms, null, $("#railrooms")); PBShell.start(); }
 }
 function paintStatus() {
   const h = `<i class="led ${S.live ? "live" : "hold"}"></i>${S.live ? (S.poll ? "Polling" : "Live") : navigator.onLine ? "Reconnecting" : "Offline"}`;
@@ -993,12 +997,9 @@ const VIEWS = {
         <div class="row"><button class="btn" data-act="push" id="pushbtn">Checking…</button></div></div>
       <div class="card"><h2>Install</h2><p class="mut" style="margin:0 0 14px">Playbox runs as an app: its own window, a badge for what needs you, and the last known state while you're offline.</p>
         <div class="row"><button class="btn" data-act="install" id="installbtn" hidden>Install app</button><span class="mut" style="font-size:13px" id="installhint">On iPhone or iPad: Share, then Add to Home Screen.</span></div></div>
-      <div class="card"><h2>Appearance</h2><p class="mut" style="margin:0 0 14px">Follows your system by default.</p>
-        <div class="seg" role="group" aria-label="Theme">${[["auto", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button data-theme="${k}" aria-pressed="${th === k || (k === "auto" && th !== "dark" && th !== "light")}">${l}</button>`).join("")}</div>
+      <div class="card"><h2>Appearance</h2><p class="mut" style="margin:0 0 14px">Theme, accent, fonts and scale. ${window.PBTheme ? `Now: <b>${esc((PBTheme.find(PBTheme.state().skin) || {}).label || "Playbox")}</b>.` : ""}</p>
+        <div class="row"><button class="btn primary sm" data-act="appearance">Open appearance settings</button></div>
         <p class="mut" style="font-size:13px;margin:14px 0 0">Press <kbd>⌘K</kbd> or <kbd>/</kbd> anywhere to jump to a room.</p></div>
-      <div class="card"><h2>Devices</h2><div>${dev || '<p class="mut" style="margin:0">No passkeys yet.</p>'}</div>
-        <p style="margin:16px 0 0"><button class="btn primary sm" data-act="pairdev">Add a device</button></p></div>
-      <div class="card"><h2>Sessions</h2><div>${ses}</div></div>
       <div class="card"><h2>Network</h2>
         <div class="stat"><span>Address</span><span class="mono">${esc(location.host)}</span></div>
         <div class="stat"><span>Connection</span><span class="chip ${secure ? "ok" : "warn"}">${location.protocol === "https:" ? "HTTPS" : secure ? "local" : "plain HTTP"}</span></div>
@@ -1021,7 +1022,8 @@ function openPalette() {
     ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/canvas`, sig: r.id})),
     {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
     {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
-    {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"}];
+    {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"},
+    ...(window.PBTheme ? [{t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open(), ic: "hub"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
   const sh = $("#sheet"); let q = "", sel = 0, list = items;
   const draw = () => {
     $("#pal-list").innerHTML = list.length ? list.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ph">${it.sig ? sigil(it.sig, 28) : svgi(it.ic)}</span><span>${esc(it.t)}</span><small>${esc(it.s)}</small></li>`).join("") : `<li class="mut">No match</li>`;
@@ -1259,6 +1261,7 @@ document.addEventListener("click", async e => {
   if (act === "add") openAdd();
   else if (act === "palette") openPalette();
   else if (act === "theme") toggleTheme();
+  else if (act === "appearance") window.PBTheme && PBTheme.open();
   else if (act === "edit") openEdit(t.dataset.id);
   else if (act === "agent") connectAgent(t.dataset.id, t);
   else if (act === "kapprove") { t.disabled = true; try { await api("POST", `/api/knocks/${t.dataset.id}/approve`, {}); toast("Approved. They're being let in."); } catch (er) { toast(er.message, true); t.disabled = false; } loadKnocks(); }

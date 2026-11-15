@@ -38,7 +38,7 @@ MAX_BODY = 1 << 20
 SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate"}      # playbox_create is sensitive too unless it only replicates (see room_route)
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
+PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
 
 
 def is_local(peer, headers):
@@ -193,7 +193,11 @@ def make_handler(hub, auth, store, opts):
                               "host_gone": r.host_gone(), "renewed_ms": int(r.last_renew * 1000) or None, "rehosted_ms": int(r.last_rehost * 1000) or None})
             problems = ([] if tunnel["up"] or not tunnel["configured"] else ["The Cloudflare tunnel is down: the public address does not work. The hub is retrying."]) \
                 + [f'{x["label"] or x["id"]}: {x["err"]}' for x in rooms if x["err"]]
-            return {"tunnel": tunnel, "rooms": rooms, "problems": problems, "ok": not problems, "started_ms": int(STARTED * 1000)}
+            try:
+                build = (STATIC.parent / "BUILD").read_text().strip().rsplit("-", 1)[-1][:12]
+            except OSError:
+                build = "dev"
+            return {"tunnel": tunnel, "rooms": rooms, "problems": problems, "ok": not problems, "started_ms": int(STARTED * 1000), "build": build}
 
         def need_fresh(self, rec):
             if auth.is_fresh(rec, is_local(self.peer, self.hdrs())):

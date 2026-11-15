@@ -58,7 +58,7 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 .dot.host{background:var(--sig);border-color:var(--sig)}
 @keyframes blink{50%{opacity:.3}}
 
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:env(safe-area-inset-bottom);background:var(--bg);border-top:1px solid var(--edge)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding-bottom:env(safe-area-inset-bottom);background:var(--bg);border-top:1px solid var(--edge)}
 .nav{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:var(--nav-h);background:none;border:0;border-right:1px solid var(--line);
   color:var(--mut);font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
 .nav:last-child{border-right:0}
@@ -199,12 +199,15 @@ dialog h2{color:var(--ink)}
 .evt time{color:var(--mut);font:12px var(--mono);min-width:48px}
 </style>
 <link rel="stylesheet" href="/theme.css">
+<script src="/themes.js"></script>
+<script src="/shell.js" onerror="void 0"></script>
 </head>
 <body>
 <div class="app">
   <aside class="rail" aria-label="Primary">
     <div class="brand"><b></b> <span class="bk">Playbox</span></div>
     <div id="railnav"></div>
+    <div id="railrooms" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
     <div class="foot" id="railfoot"></div>
   </aside>
 
@@ -241,9 +244,10 @@ const ICONS = {
   feed: '<path d="M4 5h16v11H9l-5 4z"/>',
   work: '<path d="M7 7l-4 5 4 5M17 7l4 5-4 5M14 5l-4 14"/>',
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6M16 5.2a3.2 3.2 0 010 5.8M18 14.3c1.7.8 3 2.7 3 5.7"/>',
+  timeline: '<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/>',
   proof: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/>',
 };
-const TABS = [["room", "Room"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["proof", "Proof"]];
+const TABS = [["room", "Room"], ["timeline", "Timeline"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["proof", "Proof"]];
 
 const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 
@@ -313,6 +317,13 @@ const PRESETS = [
   {t: "Open lab (anywhere + tasks)", reach: "iroh", docker: true},
   {t: "Review room (anywhere, read only)", reach: "iroh", docker: false},
 ];
+
+/* ---------- rooms sidebar and status bar (hub only) ---------- */
+async function loadRailRooms() {
+  if (!HUB || !window.PBShell) return;
+  try { const d = await (await fetch("/api/rooms", {credentials: "same-origin"})).json(); PBShell.sync(d.rooms || [], BASE.split("/")[2], $("#railrooms")); PBShell.start(); } catch {}
+}
+if (HUB) { loadRailRooms(); setInterval(() => { if (!document.hidden) loadRailRooms(); }, 30000); }
 
 /* ---------- instrument panels (Stats, Activity, Trail) ---------- */
 const INS_ICON = {
@@ -397,6 +408,34 @@ function paintInsights() {
 }
 document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
 
+/* ---------- room header (Inspect-style: title, headline numbers, metadata strip) and the Timeline tab ---------- */
+const TL_KINDS = [["all", "All"], ["say", "Messages"], ["join", "Joins"], ["refused", "Refused"], ["event", "Events"]];
+function roomHeader() {
+  if (!window.PBI || mode() === "none") return "";
+  const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms), says = items.filter(i => i.kind === "say");
+  const h = hosting(), j = joined(), t0 = items.length ? Math.min(...items.map(i => i.time_ms)) : now;
+  const num = (k, v) => `<div class="hn"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+  const meta = [["Role", h && j ? "host + guest" : h ? "host" : "guest"], ["Members", String(members().length)], ["Repository", h && h.repo ? h.repo.split("/").slice(-2).join("/") : "none"],
+    ["History", S.verify ? (S.verify.valid ? `verified · ${S.verify.entries}` : "FAILED") : "not checked"], ["Open for", items.length ? P.span(now - t0) : "—"]];
+  return `<div class="rh"><div class="rh1"><div><div class="rt">${esc(ROOM || "Playbox room")}</div><div class="rs">${esc(short(myId()) || "")}</div></div>
+    <div class="hns">${num("MESSAGES", says.length)}${num("EVENTS", items.length - says.length)}${num("LAST", says.length ? P.span(now - Math.max(...says.map(i => i.time_ms))) + " ago" : "—")}</div></div>
+    <div class="rh2">${meta.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>`;
+}
+function timelineView() {
+  if (mode() === "none") return emptyCard("Join or host a room to see its timeline.");
+  const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms);
+  const cat = i => i.kind === "say" ? "say" : kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
+  const cnt = k => k === "all" ? items.length : items.filter(i => cat(i) === k).length;
+  const rows = items.filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q))).slice(0, 300);
+  const by = i => i.kind === "say" ? ((i.from === myId() || (i.from === "host" && hosting())) ? "you" : i.name || short(i.from) || "member") : "system";
+  const bins = P.buckets(items.map(i => i.time_ms), now, 600e3, 48), mx = Math.max(1, ...bins);
+  return `<div class="card tl"><h2>Timeline</h2><div class="tlbars" aria-label="events per 10 minutes">${bins.map(v => `<i style="height:${Math.max(2, v / mx * 100)}%"></i>`).join("")}</div>
+    <div class="tlhead"><span class="tlh">History</span>${TL_KINDS.map(([k, l]) => `<button type="button" class="tlc k-${k} ${f === k ? "on" : ""}" data-tlk="${k}">${l} ${cnt(k)}</button>`).join("")}<input type="text" id="tlq" class="tlq" placeholder="filter by text or author" value="${esc(S.tlq || "")}" aria-label="Filter"></div>
+    <div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(i.text)}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div></div>`;
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-tlk]"); if (b) { S.tlk = b.dataset.tlk; show("timeline"); } });
+document.addEventListener("input", e => { if (e.target.id === "tlq") { S.tlq = e.target.value; const p = e.target.selectionStart; show("timeline"); const n = $("#tlq"); if (n) { n.focus(); n.setSelectionRange(p, p); } } });
+
 /* ---------- views ---------- */
 function rawInvite() {
   return `${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
@@ -409,9 +448,10 @@ function rawInvite() {
     <p style="margin:12px 0 0" class="row"><button class="btn${HUB ? "" : " primary"}" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p>`;
 }
 const VIEWS = {
+  timeline() { return timelineView(); },
   room() {
     const m = mode();
-    const parts = [];
+    const parts = [roomHeader()];
     if (m === "none") {
       parts.push(`<div class="card hero"><span class="glyph"></span><h1>${ROOM ? esc(ROOM) : "Playbox"}</h1>
         <p>A private room where your agent and other people's agents build together, under limits you set, with a record nobody can quietly edit.</p></div>
@@ -659,6 +699,7 @@ async function pollFeed() {
   if (S.tab !== "feed") { S.unread += fresh.filter(i => i.kind === "say" && i.from !== myId()).length; paintNav(); }
   paintFeed();
   if (S.tab === "room") paintInsights();
+  if (S.tab === "timeline" && !document.activeElement?.closest?.("#view")) show("timeline");
 }
 
 /* ---------- witness ---------- */
@@ -716,7 +757,7 @@ function show(tab) {
   const v = $("#view");
   v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
   if (tab === "feed") { paintFeed(); pollFeed(); }
-  if (tab === "room" || tab === "people") pollFeed();
+  if (tab === "room" || tab === "people" || tab === "timeline") pollFeed();
   scrollTo({top: 0});
 }
 
@@ -896,7 +937,7 @@ setInterval(() => {
   tick++;
   pollWitness();
   if (tick % 3 === 0) refresh(true);                       // every call is appended to the signed history, so poll gently
-  if (S.tab === "feed" || S.tab === "room" || S.tab === "people" || innerWidth >= 1220) pollFeed();
+  if (S.tab === "feed" || S.tab === "room" || S.tab === "timeline" || S.tab === "people" || innerWidth >= 1220) pollFeed();
 }, 3500);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(true); pollFeed(); } });
 </script>

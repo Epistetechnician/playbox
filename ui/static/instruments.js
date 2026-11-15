@@ -4,7 +4,7 @@
 (function () {
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const css = `
-:root{--c-you:light-dark(#2563EB,#4DA3FF);--c-peer:var(--sig);--c-join:light-dark(#0E9F6E,#34D399);--c-bad:var(--bad);--c-ev:light-dark(#7C3AED,#A78BFA);--c-idle:light-dark(#8F8C80,#6C6A5F);--c-gen:light-dark(#0E9F6E,#34D399);--c-warn:light-dark(#D97706,#FBBF24)}
+:root{--c-you:var(--blue-edge);--c-peer:var(--sig);--c-join:var(--ok-led);--c-bad:var(--bad);--c-ev:var(--violet,#A78BFA);--c-idle:var(--mut);--c-gen:var(--ok-led);--c-warn:var(--warn,#E5A33D)}
 .ins{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;overflow:hidden}
 .ins>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none}
 .ins>summary::-webkit-details-marker{display:none}

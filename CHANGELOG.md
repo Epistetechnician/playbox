@@ -9,6 +9,10 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- Appearance settings (Hub tab, command palette, status bar): ten themes with dark and light sides (Playbox, Mono, Catppuccin, Nord, Solarized, Everforest, Tokyo Night, GitHub, Gruvbox, Dracula), accent colour, fonts, interface scale, your own CSS, theme import and export. All kept in the browser; the model follows Hermes Agent's desktop themes (MIT).
+- A rooms sidebar (grouped by machine, with state and age) and a status bar (hub health, public address, theme) on the home page and in every room; a room header and a Timeline tab (event bars, kind filters, searchable history table) in the cockpit.
+
 ### Changed
 - New look on every page, from one stylesheet (`ui/static/theme.css`): light olive green is the primary colour, a blue gradient marks the selected tab and your own data, amber is for warnings, neutral olive-grey surfaces, sans-serif controls. Palette and the blue selected-tab treatment follow mlsweep (Apache-2.0).
 

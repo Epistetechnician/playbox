@@ -20,6 +20,7 @@ APP="$HOME/.playbox/hub-app"
 pin() {     # copy this checkout's hub into a new snapshot directory and point `current` at it; keep the last three
   stamp="$(date +%Y%m%d-%H%M%S)-$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo nogit)"
   mkdir -p "$APP/$stamp"
+  echo "$stamp" > "$APP/$stamp/BUILD"
   (cd "$HERE" && tar -cf - --exclude=__pycache__ --exclude='*.pyc' --exclude=tests --exclude=e2e.py --exclude=service .) | (cd "$APP/$stamp" && tar -xf -)
   ln -sfn "$APP/$stamp" "$APP/current.new" && mv -fh "$APP/current.new" "$APP/current" 2>/dev/null || { rm -f "$APP/current"; ln -s "$APP/$stamp" "$APP/current"; }
   ls -1dt "$APP"/2* 2>/dev/null | tail -n +4 | while read -r old; do rm -rf "$old"; done
