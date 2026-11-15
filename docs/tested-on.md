@@ -86,3 +86,5 @@ Following the README only. `install.sh` installed the signed 0.3.2 release and `
 - A network where direct paths are impossible (the India run used a relay-only link, but direct paths were not blocked).
 - A hardware TPM (a software TPM and the Mac's Secure Enclave were used), and a confidential VM other than Google Confidential Space.
 - Cloudflare Access in front of a named tunnel, and Web Push to real Apple, Google or Mozilla services ([ui/README.md](../ui/README.md)).
+
+On x86-64 CI the escape drill reports `write_sys` and `dev_mem` as reachable; both are the guest's own kernel and are printed as notes, not failures.

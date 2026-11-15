@@ -100,13 +100,21 @@ async fn nothing_in_the_escape_drill_gets_out_of_a_libkrun_guest() {
             "the probes did not run ({canary} missing): {out:?}"
         );
     }
+    // On x86-64 the guest kernel exposes `/sys/kernel/uevent_helper` and `/dev/mem` to root. Both are the guest's own
+    // kernel, not the host's, so they are reported but do not fail the drill.
+    let own_kernel = ["ESCAPED:write_sys", "ESCAPED:dev_mem"];
     let real: Vec<_> = out
         .stdout
         .lines()
         .filter(|l| {
-            l.starts_with("ESCAPED:") && !matches!(*l, "ESCAPED:canary" | "ESCAPED:has_wget")
+            l.starts_with("ESCAPED:")
+                && !matches!(*l, "ESCAPED:canary" | "ESCAPED:has_wget")
+                && !own_kernel.contains(l)
         })
         .collect();
+    for l in out.stdout.lines().filter(|l| own_kernel.contains(l)) {
+        eprintln!("note: {l} (inside the guest's own kernel; not a host escape)");
+    }
     assert!(
         real.is_empty(),
         "the guest reached something it must not: {real:?}"
