@@ -1089,6 +1089,21 @@ Qwen3-8B to DeepSeek went from 8/80 to 63/80. Both directions together: 139/160 
 
 Caveats: the layer and strength were chosen from a sweep whose concepts include the evaluation's topic names (different sentences, written by the brain agent, not by me), so the 78.8% is slightly optimistic; the best layer found (0.9) was near the top of the first grid (0.2 to 0.9), so a follow-up sweep tried layers 28 and 29 of 30 (fractions 0.95 and 0.99, `dsk_layer_sweep/sweep_3.json`, 80 trials per cell): mapped accuracy is 96.3% at layer 28 (strength 1.0) against 93.8 to 95.0% at layer 27, a difference of one or two trials, and it falls at the last layer (86.3% at strength 1.0, 71% at 1.5). So 0.9 sits on a plateau, not at the edge, and the receiver setting stays; (that sweep's JSON was transcribed from the run log, as the node stopped before the file was copied); a new family needs its own receiver layer and strength, the 0.45 / 0.75 default cannot be assumed to work; two seeds, with up to 1 trial of spread between seeds in the weaker direction. Cost: about 23 USD of H100 time in total for the family, of which roughly a third went on setup mistakes of mine (a stale code archive, a wrong Hermes key setting, a node left idle).
 
+### Fourth family, partial: Mistral-7B as receiver (layer sweep only)
+
+Qwen3-8B to Mistral-7B-v0.1 (4096 wide, 32 layers; `tools/node/mis_pipeline.sh`, `results/telepathy/mis_layer_sweep/sweep_1.json`). The receiver layer sweep finished; the end-to-end gated eval did not (see below). 20 concepts x 4 prompts = 80 trials per cell, lexicon decoder, mapped vector from Qwen's layer 0.45, strength relative to Mistral's mean token norm at the layer:
+
+| Receiver layer (fraction) | Held-out cosine | Mapped, best strength | Mistral's own direction, best |
+|---|---|---|---|
+| 14 (0.45) | 0.896 | 72.5% (1.0) | 85.0% |
+| 19 (0.6) | 0.884 | 63.8% (1.0 and 1.4) | 83.8% |
+| 24 (0.75) | 0.867 | 71.3% (1.4) | 91.3% |
+| 28 (0.9) | 0.857 | 76.3% (1.4) | 93.8% |
+
+What it shows: unlike DeepSeek, Mistral responds at the middle layers (its own direction reaches 85% at 0.45), but it too does best late (0.9), where the script picked layer 28 at strength 1.4. The cross-family map costs more here: 76% mapped against 94% for Mistral's own direction, a gap of about 17 points, where DeepSeek's gap was about 4. Held-out map cosine falls with depth (0.90 to 0.86), the reverse of how steering accuracy moves. Strength 1.4 is the top of the grid tried, so a higher one may help; the differences between layers 14, 24 and 28 are 4 to 5 points on 80 trials each, close to noise.
+
+What is missing: the end-to-end gated eval (live Agent A thoughts, probe gate, 20 topics plus controls, two seeds). The pipeline died when the service started and the node was recycled by the platform, twice (the first time the pipeline never ran past its first minute, the second time after the sweep). No number for the full channel with Mistral exists. The sweep JSON is transcribed from the run log. Spend on the failed attempts was about 68 USD of H100 time, mostly idle billing after the pipeline had already died, because my watcher's "is it still running" check matched its own command line and never noticed.
+
 #### End-to-end efficiency benchmark on Modal
 
 `steer/tools/telepathy_bench_modal.py` (`modal run`, one container per pair and direction; small pair on an A10G, larger pair on an H100): 20 concepts x 8 prompts per direction, greedy, 24 new tokens, lexicon-scored, no probe gate. Results: `steer/results/telepathy/bench_modal.json`.

@@ -24,6 +24,9 @@ from . import telepathy as T
 from . import telepathy_swarm as S
 
 ARMS = S.ARMS
+# two worked examples (topics that are not among the 20 concepts), so the text-swarm baseline is not handicapped by a base model that does not know the format
+_FEWSHOT = ("Passage: The cook folded the dough, set the tray in a hot oven and waited for the crust to turn gold.\nTopic: baking\n\n"
+            "Passage: She pulled the weeds, turned the soil and pressed the tomato seedlings into the bed.\nTopic: gardening\n\n")
 
 
 class _Map:
@@ -62,7 +65,7 @@ def gen_batch(model, tok, layer: int, vec, prompts: list[str], n: int) -> list[s
 
 
 def run(models: dict, names: tuple, which: int, trials: int, n_agents: int = 6, ks: tuple = (2, 3), maps_dir: Path | None = None,
-        fit: str = "agent", seed: int = 0, gen: int = 24, coef: float = 0.75, frac: float = 0.45, log=print) -> dict:
+        fit: str = "agent", seed: int = 0, gen: int = 24, coef: float = 0.75, frac: float = 0.45, log=print, text_agents: bool = False) -> dict:
     from .concepts_natural import ALL_CONCEPTS
     from .telepathy_data import NEUTRAL, PROMPTS
     if fit == "small":
@@ -100,17 +103,25 @@ def run(models: dict, names: tuple, which: int, trials: int, n_agents: int = 6, 
         nulls.append(S.aggregate(ridge.direction(r / r.norm() * ref_norm).unsqueeze(0), coef, norm_b))
     ntok = lambda s: len(tb(s, add_special_tokens=False).input_ids) if s else 0
     out_trials, timing = [], {"think_ms": [], "select_ms": [], "gen_ms": {a: [] for a in ARMS}}
+    arms_run = ARMS + (("text_agents",) if text_agents else ())
+    if text_agents:
+        timing["gen_ms"]["text_agents"], timing["write_ms"] = [], []
     ti = 0
     for k in ks:
         for j in range(trials):
             rng = random.Random(seed * 1_000_003 + k * 10_007 + j)
             true, agents = S.assign_agents(concepts, k, n_agents, rng)
-            sa = []
+            sa, written = [], []
             for c in agents:  # each agent reads its own 4 of the concept's 8 sentences
                 sents = [ALL_CONCEPTS[c]["sentences"][i] for i in sorted(rng.sample(range(8), 4))]
                 t = _sync()
                 sa.append(T.thought(ma, ta, la, sents, neu_a))
                 timing["think_ms"].append((_sync() - t) * 1000)
+                if text_agents:  # the text swarm: the same agent writes its topic as words, no oracle and no deduplication
+                    t = _sync()
+                    w = T.generate(ma, ta, la, None, _FEWSHOT + "Passage: " + " ".join(sents) + "\nTopic:", 6)
+                    written.append(w.strip().split("\n")[0].strip(" .,;:"))
+                    timing["write_ms"].append((_sync() - t) * 1000)
             sa = torch.stack(sa)
             mapped = torch.stack([ridge.direction(x) for x in sa])
             t = _sync()
@@ -129,11 +140,14 @@ def run(models: dict, names: tuple, which: int, trials: int, n_agents: int = 6, 
                 "direct": S.aggregate(torch.stack([direct_dir[c] for c in true]), coef, norm_b),
                 "null": nulls[ti],
             }
-            prefix = {a: "" for a in ARMS}
+            prefix = {a: "" for a in arms_run}
             prefix["text_words"] = f"Topics: {', '.join(true)}. "
-            rec = {"k": k, "true": true, "agents": agents, "chosen": chosen, "random": rand_k,
+            if text_agents:
+                prefix["text_agents"] = f"Topics: {', '.join(written)}. "
+                vecs["text_agents"] = None
+            rec = {"k": k, "true": true, "agents": agents, "written": written, "chosen": chosen, "random": rand_k,
                    "novelty_cover": len({agents[i] for i in chosen}) == k, "arms": {}}
-            for arm in ARMS:
+            for arm in arms_run:
                 t = _sync()
                 texts = gen_batch(mb, tb, lb, vecs[arm], [prefix[arm] + p for p in PROMPTS], gen)
                 timing["gen_ms"][arm].append((_sync() - t) * 1000)

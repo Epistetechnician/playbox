@@ -15,7 +15,7 @@
 //! so a guest can reach the host's loopback and LAN. Leave network off on hosts that matter.
 
 use super::{
-    check_spec, quota_exceeded, run_child, secrets::SecretStore, Isolation, Quota, Runner, SandboxPolicy,
+    check_spec, guestnames, quota_exceeded, run_child, secrets::SecretStore, Isolation, Quota, Runner, SandboxPolicy,
     TaskOutput, TaskSpec,
 };
 #[cfg(target_os = "linux")]
@@ -47,6 +47,18 @@ pub struct KrunRunner {
     /// Linux confinement of the helper and the task's network; `None` runs the helper as before.
     #[cfg(target_os = "linux")]
     confine: Option<Confinement>,
+}
+
+/// Why a task's network request must be refused, if it must.
+///
+/// libkrun's TSI hands the guest the host's own network access, so a guest with a network reaches the host's loopback,
+/// LAN and cloud metadata service. Only the Linux confinement filters that. Everywhere else the request is refused unless
+/// the host owner opts in with `PLAYBOX_ALLOW_UNFILTERED_NETWORK`.
+fn unfiltered_network_refusal(wants_network: bool, filtered: bool, owner_opted_in: bool) -> Option<&'static str> {
+    (wants_network && !filtered && !owner_opted_in).then_some(
+        "this libkrun host cannot filter a guest's network (TSI reaches the host's loopback, LAN and metadata service); \
+         run tasks without a network, use a confined Linux host, or set PLAYBOX_ALLOW_UNFILTERED_NETWORK=1 on the host",
+    )
 }
 
 fn playbox_home() -> PathBuf {
@@ -344,6 +356,17 @@ impl Runner for KrunRunner {
         }
         check_spec(&plain)?;
         self.policy.check(spec)?;
+        #[cfg(target_os = "linux")]
+        let filtered = self.confine.is_some();
+        #[cfg(not(target_os = "linux"))]
+        let filtered = false;
+        if let Some(why) = unfiltered_network_refusal(
+            spec.network,
+            filtered,
+            crate::env_opt_in("PLAYBOX_ALLOW_UNFILTERED_NETWORK"),
+        ) {
+            bail!(why);
+        }
         let rootfs = self.rootfs(&spec.image).await?;
         let clone = self.clone_rootfs(&rootfs).await?;
         let staged = self.secrets.stage(&spec.secrets, &self.root.join("run"));
@@ -379,6 +402,8 @@ impl Runner for KrunRunner {
             None => {
                 if spec.network {
                     cmd.arg("--network");
+                    // Unfiltered (the owner opted in above): the guest shares the host's network, so its resolvers work as they are.
+                    give_resolvers(&clone, |_| true);
                 }
                 None
             }
@@ -386,6 +411,7 @@ impl Runner for KrunRunner {
         #[cfg(not(target_os = "linux"))]
         if spec.network {
             cmd.arg("--network");
+            give_resolvers(&clone, |_| true);
         }
         cmd.arg("--").args(&spec.cmd);
 
@@ -426,9 +452,19 @@ impl KrunRunner {
         cmd: &mut Command,
     ) -> Result<super::confine::RunGuard> {
         let (level, dests) = if spec.allowed_hosts.is_empty() {
+            if spec.network {
+                // An open network: resolvers the filter lets this task reach.
+                give_resolvers(clone, |ip| super::netpolicy::allowed(Level::Internet, ip));
+            }
             (if spec.network { Level::Internet } else { Level::None }, Vec::new())
         } else {
-            (Level::Internet, resolve_hosts(&spec.allowed_hosts).await?)
+            // A host list: the guest gets the pinned addresses by name and needs no resolver.
+            let pinned = resolve_hosts(&spec.allowed_hosts).await?;
+            let names: Vec<_> = pinned.iter().map(|(n, a)| (n.clone(), a.ip())).collect();
+            if let Err(e) = guestnames::write_etc(clone, "hosts", &guestnames::hosts_file(&names)) {
+                eprintln!("playbox: the guest gets no /etc/hosts: {e:#}");
+            }
+            (Level::Internet, pinned.into_iter().map(|(_, a)| a).collect())
         };
         let run_id = random_name()?;
         let limits = Limits { cpus: vcpus as f32, guest_memory_mib: mem };
@@ -453,9 +489,20 @@ impl KrunRunner {
     }
 }
 
+/// Write the guest's `/etc/resolv.conf` (see [`guestnames`]). A guest without it still runs and reaches addresses, so a
+/// failure here is reported and the task goes on.
+fn give_resolvers(clone: &Path, may_reach: impl Fn(std::net::IpAddr) -> bool) {
+    let owner = std::env::var("PLAYBOX_GUEST_DNS").ok();
+    let written = guestnames::choose(owner.as_deref(), &guestnames::host_resolv_conf(), may_reach)
+        .and_then(|r| guestnames::write_etc(clone, "resolv.conf", &guestnames::resolv_conf(&r)));
+    if let Err(e) = written {
+        eprintln!("playbox: the guest gets no resolver: {e:#}");
+    }
+}
+
 /// Resolve `host` or `host:port` (port 443 by default) once, so the filter pins addresses and a later DNS answer cannot move them.
 #[cfg(target_os = "linux")]
-async fn resolve_hosts(hosts: &[String]) -> Result<Vec<std::net::SocketAddr>> {
+async fn resolve_hosts(hosts: &[String]) -> Result<Vec<(String, std::net::SocketAddr)>> {
     let mut out = Vec::new();
     for h in hosts {
         let (name, port) = match h.rsplit_once(':') {
@@ -466,7 +513,21 @@ async fn resolve_hosts(hosts: &[String]) -> Result<Vec<std::net::SocketAddr>> {
         if found.is_empty() {
             bail!("{name} did not resolve");
         }
-        out.extend(found);
+        out.extend(found.into_iter().map(|a| (name.to_string(), a)));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unfiltered_network_refusal as refusal;
+
+    // REQ: BOX-5
+    #[test]
+    fn an_unfiltered_network_is_refused_unless_the_owner_opts_in() {
+        assert!(refusal(true, false, false).is_some());
+        assert!(refusal(true, false, true).is_none());
+        assert!(refusal(true, true, false).is_none());
+        assert!(refusal(false, false, false).is_none());
+    }
 }

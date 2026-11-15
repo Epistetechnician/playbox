@@ -16,6 +16,7 @@ pub mod cgroup;
 pub mod confine;
 #[cfg(target_os = "linux")]
 pub mod jail;
+pub mod guestnames;
 pub mod netpolicy;
 pub mod secrets;
 #[cfg(target_os = "linux")]
@@ -74,6 +75,19 @@ impl SandboxPolicy {
         }
         Ok(())
     }
+}
+
+/// Whether an owner's safety opt-in is a yes: `1`, `on` or `true`. Anything else, including `0` and an empty value, is a no.
+#[must_use]
+pub fn opt_in_value(value: Option<&str>) -> bool {
+    value.is_some_and(|v| matches!(v, "1" | "on" | "true"))
+}
+
+/// Whether the environment variable `name` is a yes (see [`opt_in_value`]). Used for `PLAYBOX_ALLOW_UNSAFE_RUNNER`,
+/// `PLAYBOX_ALLOW_MISSING_LIMITS` and `PLAYBOX_ALLOW_UNFILTERED_NETWORK`.
+#[must_use]
+pub fn env_opt_in(name: &str) -> bool {
+    opt_in_value(std::env::var(name).ok().as_deref())
 }
 
 mod krun;
@@ -297,7 +311,7 @@ pub fn runner_with(name: &str, policy: SandboxPolicy, opts: &RunnerOptions) -> R
             Ok(std::sync::Arc::new(r))
         }
         "openshell" => Ok(std::sync::Arc::new(OpenShellRunner::new(policy))),
-        "process" if std::env::var_os("PLAYBOX_ALLOW_UNSAFE_RUNNER").is_some() => {
+        "process" if env_opt_in("PLAYBOX_ALLOW_UNSAFE_RUNNER") => {
             Ok(std::sync::Arc::new(ProcessRunner))
         }
         "process" => {
@@ -524,7 +538,7 @@ impl Runner for DockerRunner {
             .await
             .context("docker info")?;
         let missing = missing_limits(&String::from_utf8_lossy(&info.stdout));
-        if !missing.is_empty() && std::env::var_os("PLAYBOX_ALLOW_MISSING_LIMITS").is_none() {
+        if !missing.is_empty() && !env_opt_in("PLAYBOX_ALLOW_MISSING_LIMITS") {
             bail!(
                 "docker cannot enforce {} on this host, so a task could exceed what its grant allows. \
                  On a Raspberry Pi add `cgroup_enable=memory cgroup_memory=1` to /boot/firmware/cmdline.txt and reboot; \
@@ -801,6 +815,18 @@ mod tests {
         ] {
             assert!(parse_image_id(bad).is_err(), "{bad}");
         }
+    }
+
+    // REQ: BOX-5
+    #[test]
+    fn only_a_yes_opts_in_to_a_safety_override() {
+        for yes in ["1", "on", "true"] {
+            assert!(opt_in_value(Some(yes)), "{yes}");
+        }
+        for no in ["", "0", "off", "false", "yes please"] {
+            assert!(!opt_in_value(Some(no)), "{no}");
+        }
+        assert!(!opt_in_value(None));
     }
 
     #[test]

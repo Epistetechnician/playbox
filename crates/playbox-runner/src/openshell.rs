@@ -189,7 +189,7 @@ impl Runner for OpenShellRunner {
         if out.exit_code != Some(0) {
             bail!("openshell gateway is not reachable: {}", out.stderr.trim());
         }
-        if std::env::var_os("PLAYBOX_ALLOW_MISSING_LIMITS").is_none() {
+        if !crate::env_opt_in("PLAYBOX_ALLOW_MISSING_LIMITS") {
             bail!(
                 "OpenShell policies have no CPU, memory or timeout limits and its VM driver ignores --cpu/--memory, \
                  so a task could exceed what its grant allows. Use a gateway driver that enforces them (e.g. Kubernetes) \

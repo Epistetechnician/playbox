@@ -1,0 +1,6 @@
+chain start 05:26:12
+pair small start 05:26:12
+pair small exit 0 05:41:46
+pair big start 05:41:46
+pair big exit 0 06:03:23
+CHAIN_DONE 06:03:23

@@ -215,3 +215,18 @@ async fn a_guest_filling_its_own_root_is_stopped() {
         started.elapsed()
     );
 }
+
+// REQ: BOX-8
+#[tokio::test]
+async fn a_guest_with_a_network_can_resolve_names() {
+    // An unfiltered network needs the owner's opt-in (BOX-5); this test does not give it on the owner's behalf.
+    if !playbox_runner::env_opt_in("PLAYBOX_ALLOW_UNFILTERED_NETWORK") {
+        eprintln!("skipping: needs PLAYBOX_ALLOW_UNFILTERED_NETWORK=1 (the task asks for a network on an unfiltered host)");
+        return;
+    }
+    let Some(r) = ready() else { return };
+    let w = ws("dns");
+    let spec = TaskSpec { network: true, ..sh("grep -c nameserver /etc/resolv.conf; nslookup example.com >/dev/null 2>&1 && echo DNS; true") };
+    let out = r.run(&spec, &w).await.unwrap();
+    assert!(out.stdout.contains("DNS"), "{out:?}");
+}

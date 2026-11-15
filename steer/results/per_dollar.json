@@ -1,0 +1,105 @@
+{
+ "rate_usd_per_h": 3.765,
+ "qa": {
+  "full": {
+   "n": 352,
+   "acc": 0.73295,
+   "turns_per_min": 196.02243753187147,
+   "usd_per_1000_questions": 0.32011641519250783,
+   "correct_per_usd": 2289.6357862786485
+  },
+  "rag5": {
+   "n": 352,
+   "acc": 0.7386499999999999,
+   "turns_per_min": 2589.4181611059626,
+   "usd_per_1000_questions": 0.024233243182784713,
+   "correct_per_usd": 30480.856170532577
+  },
+  "rag48": {
+   "n": 352,
+   "acc": 0.8011499999999999,
+   "turns_per_min": 257.6429264506113,
+   "usd_per_1000_questions": 0.24355413464855524,
+   "correct_per_usd": 3289.412438659876
+  },
+  "hybrid48": {
+   "n": 352,
+   "acc": 0.7556999999999999,
+   "turns_per_min": 1241.4911199710039,
+   "usd_per_1000_questions": 0.05054405866508782,
+   "correct_per_usd": 14951.312181069125
+  },
+  "doc": {
+   "n": 352,
+   "acc": 0.8806999999999999,
+   "turns_per_min": 2186.6363786008233,
+   "usd_per_1000_questions": 0.02869704383138098,
+   "correct_per_usd": 30689.572249143344
+  }
+ },
+ "swarm": {
+  "none": {
+   "recall": 0.07791666666666666,
+   "all_k_found": 0.0025,
+   "ms_per_trial": 735.9,
+   "usd_per_1000_trials": 0.76962875,
+   "concepts_recovered_per_usd": 253.098219975107
+  },
+  "text_words": {
+   "recall": 0.8591666666666667,
+   "all_k_found": 0.66,
+   "ms_per_trial": 734.6,
+   "usd_per_1000_trials": 0.7682691666666667,
+   "concepts_recovered_per_usd": 2795.786632940061
+  },
+  "latent_one": {
+   "recall": 0.445,
+   "all_k_found": 0.0275,
+   "ms_per_trial": 900.2,
+   "usd_per_1000_trials": 0.9414591666666666,
+   "concepts_recovered_per_usd": 1181.6763162856241
+  },
+  "latent_all": {
+   "recall": 0.4666666666666666,
+   "all_k_found": 0.055,
+   "ms_per_trial": 1646.5,
+   "usd_per_1000_trials": 1.7219645833333332,
+   "concepts_recovered_per_usd": 677.5207097513377
+  },
+  "latent_random": {
+   "recall": 0.49583333333333335,
+   "all_k_found": 0.08,
+   "ms_per_trial": 1645.6,
+   "usd_per_1000_trials": 1.7210233333333331,
+   "concepts_recovered_per_usd": 720.2594580356263
+  },
+  "latent_novelty": {
+   "recall": 0.5570833333333333,
+   "all_k_found": 0.17,
+   "ms_per_trial": 1646.9,
+   "usd_per_1000_trials": 1.7223829166666667,
+   "concepts_recovered_per_usd": 808.5939078103761
+  },
+  "latent_novelty_x": {
+   "recall": 0.43166666666666664,
+   "all_k_found": 0.125,
+   "ms_per_trial": 1647.4,
+   "usd_per_1000_trials": 1.7229058333333334,
+   "concepts_recovered_per_usd": 626.3642770184287
+  },
+  "direct": {
+   "recall": 0.6695833333333333,
+   "all_k_found": 0.32,
+   "ms_per_trial": 751.1,
+   "usd_per_1000_trials": 0.7855254166666666,
+   "concepts_recovered_per_usd": 2131.0046725625784
+  },
+  "null": {
+   "recall": 0.08958333333333333,
+   "all_k_found": 0.005,
+   "ms_per_trial": 750.2,
+   "usd_per_1000_trials": 0.7845841666666666,
+   "concepts_recovered_per_usd": 285.44844880674583
+  }
+ }
+}

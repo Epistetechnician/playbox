@@ -9,7 +9,25 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Security
+- A libkrun task that asks for a network is refused on a host that cannot filter it (macOS, and Linux without `--confine`). libkrun's TSI gives the guest the host's loopback, LAN and cloud metadata service, so before this such a task could reach them. The host owner can accept that with `PLAYBOX_ALLOW_UNFILTERED_NETWORK=1` (`1`, `on` or `true`); a member or an agent cannot. Tasks without a network are unaffected (BOX-5, decision 42).
+
+### Changed
+- **Behaviour change:** the safety overrides `PLAYBOX_ALLOW_UNSAFE_RUNNER`, `PLAYBOX_ALLOW_MISSING_LIMITS` and the new `PLAYBOX_ALLOW_UNFILTERED_NETWORK` are now on only when set to `1`, `on` or `true`. Before, the first two were on for any value, including `0` and an empty string. A host that set one to anything else must set it to `1`.
+
+### Added
+- `scripts/demo.sh` and `docs/demo.md`: one story, each step checked by the script: a guest joins by link and runs a sandboxed task, a spent invite is refused, the audit log is verified and an edited copy rejected, and a recorded hill-climb is re-verified from its receipts with a forged promotion rejected. Run on macOS and from a fresh clone on a new Ubuntu 24.04 machine.
+- `docs/security-roadmap.md`: what is built, what is next and what is not planned, measured against Anthropic's guidance for working with advanced models.
+
+### Testing
+- The Linux confinement around a real libkrun guest (`tests/confine_guest.rs`, root, KVM): boot and run under the jail, cgroup, syscall filter and network filter; no network unless asked; with a network, a public address is reachable and the host's loopback and the metadata address are not, with an unfiltered control that does reach loopback. Passed by hand on nested arm64 KVM (BOX-3).
+- The escape drill (`cargo test -p playbox-runner --test escape`): breakout probes run inside a real libkrun guest and all must fail, with a canary that proves the probes ran. It skips where libkrun, its helper or Docker is missing (BOX-6, decision 43).
+
 ### Fixed
+- `challenge/f3/verify.py` compared a run's pinned protocol hash with `PROTOCOL.md` as it is today, so appending amendment A3 made the earlier dry run stop verifying. It now accepts a pinned version that was committed before the run began and names the commit (amendment A4).
+- `cargo test --workspace` failed on Ubuntu 24.04, where AppArmor forbids unprivileged user namespaces: the rootless jail cases now skip with the reason, as they do when the kernel refuses `unshare`, and the networked case no longer waits forever when it skips.
+- A libkrun task with a network could not resolve names: the guest's `/etc/resolv.conf` was empty. It now gets `/etc/hosts` with its pinned addresses (host list) or a resolver it may reach, 1.1.1.1 and 9.9.9.9 when the host has none; `PLAYBOX_GUEST_DNS` overrides (BOX-8, decision 44).
+- `up --runtime libkrun --confine` as root failed on a machine that had not run Playbox since it booted (`/sys/fs/cgroup/playbox is not a writable cgroup v2 directory`); the host now creates that directory.
 - Hub: a room that should be hosting but is not (the first attempt was refused, for instance because the relay was unreachable at startup) is hosted again on a later tick, and the reason is shown instead of dropped.
 - `playbox --version` named the commit of the last branch switch; it now follows new commits.
 

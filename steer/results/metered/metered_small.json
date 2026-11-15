@@ -1,0 +1,325 @@
+{
+ "sender": "/home/dev/tp/hf/hub/models--HuggingFaceTB--SmolLM2-135M/snapshots/93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+ "receiver": "/home/dev/tp/hf/hub/models--Qwen--Qwen3-1.7B-Base/snapshots/ea980cb0a6c2ae4b936e82123acc929f1cec04c1",
+ "n_sessions": 40,
+ "fact_turns": 7,
+ "corpus_chunks": 360,
+ "corpus_tokens": 58656,
+ "rate_usd_h": 3.765,
+ "amortise_sessions": 1000,
+ "fit_s": 400.5,
+ "map": {
+  "heldout_cosine_by_lambda": {
+   "0.1": 0.8544,
+   "0.3": 0.8553,
+   "1.0": 0.8537,
+   "3.0": 0.8482
+  },
+  "lambda": 0.3,
+  "n_fit": 9360
+ },
+ "layer": {
+  "sender": 13,
+  "receiver": 12
+ },
+ "coef": 0.75,
+ "device": "NVIDIA H100 80GB HBM3",
+ "arms": {
+  "none": {
+   "gpu_s_phases": {
+    "gen": 94.9509
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 94.9509,
+   "gpu_s_per_session": 2.3738,
+   "usd_per_1000_sessions": 2.4826,
+   "ctx_tokens_per_turn": 17.1,
+   "topic": {
+    "n": 40,
+    "correct": 1,
+    "acc": 0.025,
+    "ci95": [
+     0.004,
+     0.129
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 1,
+   "correct_per_usd": 10.1
+  },
+  "text_word": {
+   "gpu_s_phases": {
+    "gen": 94.8306
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 94.8306,
+   "gpu_s_per_session": 2.3708,
+   "usd_per_1000_sessions": 2.4794,
+   "ctx_tokens_per_turn": 17.6,
+   "topic": {
+    "n": 40,
+    "correct": 29,
+    "acc": 0.725,
+    "ci95": [
+     0.572,
+     0.839
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 29,
+   "correct_per_usd": 292.4
+  },
+  "text_rag": {
+   "gpu_s_phases": {
+    "gen": 113.1992
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 113.1992,
+   "gpu_s_per_session": 2.83,
+   "usd_per_1000_sessions": 2.9597,
+   "ctx_tokens_per_turn": 917.1,
+   "topic": {
+    "n": 40,
+    "correct": 2,
+    "acc": 0.05,
+    "ci95": [
+     0.014,
+     0.165
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 231,
+    "acc": 0.825,
+    "ci95": [
+     0.776,
+     0.865
+    ]
+   },
+   "correct_total": 233,
+   "correct_per_usd": 1968.1
+  },
+  "hybrid": {
+   "gpu_s_phases": {
+    "cache_build": 7.0352,
+    "gen": 95.6432
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 102.6784,
+   "gpu_s_per_session": 2.567,
+   "usd_per_1000_sessions": 2.6846,
+   "ctx_tokens_per_turn": 1697.5,
+   "topic": {
+    "n": 40,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.088
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 219,
+    "acc": 0.7821,
+    "ci95": [
+     0.73,
+     0.826
+    ]
+   },
+   "correct_total": 219,
+   "correct_per_usd": 2039.4
+  },
+  "latent_q": {
+   "gpu_s_phases": {
+    "think": 6.3992,
+    "gen": 95.22
+   },
+   "fit_amortised_s": 16.0201,
+   "gpu_s_total": 117.6393,
+   "gpu_s_per_session": 2.941,
+   "usd_per_1000_sessions": 3.0758,
+   "ctx_tokens_per_turn": 17.1,
+   "topic": {
+    "n": 40,
+    "correct": 22,
+    "acc": 0.55,
+    "ci95": [
+     0.398,
+     0.693
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 22,
+   "correct_per_usd": 178.8
+  },
+  "latent_free": {
+   "gpu_s_phases": {
+    "think": 6.4075,
+    "gen": 94.9365
+   },
+   "fit_amortised_s": 16.0201,
+   "gpu_s_total": 117.3641,
+   "gpu_s_per_session": 2.9341,
+   "usd_per_1000_sessions": 3.0686,
+   "ctx_tokens_per_turn": 15.4,
+   "topic": {
+    "n": 40,
+    "correct": 24,
+    "acc": 0.6,
+    "ci95": [
+     0.446,
+     0.737
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 0,
+    "acc": 0.0,
+    "ci95": [
+     0.0,
+     0.014
+    ]
+   },
+   "correct_total": 24,
+   "correct_per_usd": 195.5
+  },
+  "swarm": {
+   "gpu_s_phases": {
+    "cache_build": 7.0264,
+    "think": 6.3673,
+    "gen": 94.3355
+   },
+   "fit_amortised_s": 16.0201,
+   "gpu_s_total": 123.7493,
+   "gpu_s_per_session": 3.0937,
+   "usd_per_1000_sessions": 3.2355,
+   "ctx_tokens_per_turn": 1485.7,
+   "topic": {
+    "n": 40,
+    "correct": 24,
+    "acc": 0.6,
+    "ci95": [
+     0.446,
+     0.737
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 219,
+    "acc": 0.7821,
+    "ci95": [
+     0.73,
+     0.826
+    ]
+   },
+   "correct_total": 243,
+   "correct_per_usd": 1877.6
+  },
+  "text_swarm": {
+   "gpu_s_phases": {
+    "cache_build": 7.0582,
+    "gen": 94.0598
+   },
+   "fit_amortised_s": 0.0,
+   "gpu_s_total": 101.118,
+   "gpu_s_per_session": 2.5279,
+   "usd_per_1000_sessions": 2.6438,
+   "ctx_tokens_per_turn": 1487.9,
+   "topic": {
+    "n": 40,
+    "correct": 29,
+    "acc": 0.725,
+    "ci95": [
+     0.572,
+     0.839
+    ]
+   },
+   "fact": {
+    "n": 280,
+    "correct": 219,
+    "acc": 0.7821,
+    "ci95": [
+     0.73,
+     0.826
+    ]
+   },
+   "correct_total": 248,
+   "correct_per_usd": 2345.1
+  }
+ },
+ "samples": {
+  "none": [
+   " The field is \"Project Lesath-Three\" is about \"Project Lesath",
+   "The safety officer for Project Lesath-Three is a member of the Lesath",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is a 3D laser scanner"
+  ],
+  "text_word": [
+   " Ocean. Explanation: Project Lesath-Three is about the ocean. It is",
+   "The safety officer for Project Lesath-Three is a member of the Lesath",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is a 3D laser scanner"
+  ],
+  "text_rag": [
+   " NOT FOUND. \n\n[Document 0240] Project Lesath-One",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ],
+  "hybrid": [
+   " Project Lesath-Three. \n\n[Document 0000] Project",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ],
+  "latent_q": [
+   " Solution\nSalty seas and the dark waters of the Pacific Ocean. The waves",
+   "The safety officer for Project Lesath-Three is a member of the Lesath",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is a 3D laser scanner"
+  ],
+  "latent_free": [
+   " the Gulf of Mexico. The waves crash against jagged reefs, and their white",
+   "The safety officer for Project Lesath-Three is a member of the Lesath",
+   "The warehouse bay for Project Lesath-Three is located in the basement of the",
+   "The sensor model for Project Lesath-Three is a 3D laser scanner"
+  ],
+  "swarm": [
+   " the Gulf of Mexico. The waves crash against jagged reefs, and their white",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ],
+  "text_swarm": [
+   " Ocean. Explanation: Project Lesath-Three is about the ocean. It is",
+   "PP-1001-A",
+   "PP-6522-F",
+   "KZ-8894-F"
+  ]
+ }
+}
