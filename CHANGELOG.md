@@ -13,6 +13,7 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 - Research view is data-driven: `scripts/gen_research.py` generates `ui/research/*.json` from `docs/benchmark.md` and the F3 pilot receipts (CI runs it with `--check`), and each run has a Samples tab (filterable table, then a collapsible step trail per sample).
 - Anchored comments: `::pbx comment {"on":"note:<id>|artifact:<id>|event:<seq>","text":...}` on the board model, a comment thread per note, a Comment button per timeline event, a Comments count in the room header, and a `/playbox:comment` command.
+- Canvas: a Harnesses panel (agents grouped by the harness and model they report, with machines and who is online), Research and Cockpit links in the top bar, phone reading view for drilled panels (they reflow to one narrow column instead of shrinking), higher-contrast small text in light mode and every theme, and larger tap targets on touch.
 - A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
 
 ### Added
