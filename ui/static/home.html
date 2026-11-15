@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E9E7E0" id="themecolor">
+<meta name="theme-color" content="#F2F3EE" id="themecolor">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -20,11 +20,11 @@ try { const t = localStorage.getItem("pb.theme"); if (t === "light" || t === "da
 /* Playbox: paper, ink, one signal colour. Orange only ever means "look here". Light and dark come from the same tokens. */
 :root{
   color-scheme:light dark;
-  --bg:light-dark(#E9E7E0,#0F0F0E);        --panel:light-dark(#F4F2EC,#171715);      --panel-2:light-dark(#ECEAE2,#1F1F1C);   --field:light-dark(#FBFAF7,#0F0F0E);
+  --bg:light-dark(#F2F3EE,#151713);        --panel:light-dark(#F4F2EC,#171715);      --panel-2:light-dark(#ECEAE2,#1F1F1C);   --field:light-dark(#FBFAF7,#151713);
   --ink:light-dark(#171715,#ECE9E0);        --ink-2:light-dark(#3B3A36,#C6C3B8);     --mut:light-dark(#68665D,#8F8C80);
   --dim:light-dark(#D9D6CB,#2A2A26);        --grid:light-dark(rgba(23,23,21,.07),rgba(236,233,224,.045));
   --line:light-dark(#D5D2C7,#2A2A26);       --line-2:light-dark(#B9B5A8,#3F3E38);    --edge:light-dark(#171715,#6C6A5F);
-  --sig:light-dark(#FF5A1F,#FF6B2C);        --sig-ink:light-dark(#B83A0A,#FF8A55);   --on-sig:light-dark(#171715,#0F0F0E);
+  --sig:light-dark(#FF5A1F,#FF6B2C);        --sig-ink:light-dark(#B83A0A,#FF8A55);   --on-sig:light-dark(#171715,#151713);
   --ok:light-dark(#17783F,#4CC380);         --ok-led:light-dark(#1FA458,#4CC380);    --bad:light-dark(#C0143C,#FF4D6D);
   --hard:light-dark(5px 5px 0 #171715,5px 5px 0 #000);                               --scrim:light-dark(rgba(23,23,21,.5),rgba(0,0,0,.65));
   --r:8px; --nav-h:58px; --strip:38px;
@@ -348,6 +348,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 @media(max-width:700px){.flow{grid-template-columns:repeat(2,minmax(0,1fr))}.node:nth-child(2n){border-right:0}.node:nth-child(4n){border-right:0}.node:nth-child(n){border-bottom:1px solid var(--line-2)}.node:nth-child(2n)::after{display:none}.syscols{grid-template-columns:1fr}.ev{grid-template-columns:54px 1fr}.ev .tag{display:none}}
 @media(prefers-reduced-motion:reduce){.node.pulse,.node.pulse .pk::before,.ev.fresh{animation:none}}
 </style>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body>
 <div id="root"></div>
@@ -599,7 +600,7 @@ function mood() {
 }
 
 /* ---------- theme ---------- */
-const THEME_BG = {light: "#E9E7E0", dark: "#0F0F0E"};
+const THEME_BG = {light: "#F2F3EE", dark: "#151713"};
 const themeNow = () => document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
 function syncThemeColor() { $("#themecolor")?.setAttribute("content", THEME_BG[themeNow()]); }
 function toggleTheme() {

@@ -1,0 +1,91 @@
+/* Playbox theme: one place for the palette and the look of every page. Loaded after each page's own styles, so it wins.
+   Light olive is the primary colour (actions, the brand mark, "others"), blue is the selection and the data colour, amber is a warning.
+   The neutral dark surfaces, the blue selected-tab treatment and the status-badge idea follow mlsweep (github.com/apaz-cli/mlsweep, Apache-2.0). */
+:root{
+  color-scheme:light dark;
+  --bg:light-dark(#F2F3EE,#151713); --bg-2:light-dark(#F9FAF6,#1A1C18); --panel:light-dark(#FFFFFF,#1C1E1A); --panel-2:light-dark(#F1F3EB,#22251F); --field:light-dark(#FFFFFF,#161813);
+  --ink:light-dark(#1D2019,#E5E8DD); --ink-2:light-dark(#3F4338,#C4C9B9); --mut:light-dark(#6B7062,#8B9181);
+  --dim:light-dark(#DADDCF,#2A2D26); --grid:light-dark(rgba(29,32,25,.05),rgba(229,232,221,.03));
+  --line:light-dark(#E0E3D6,#2A2D26); --line-2:light-dark(#CBCFBF,#373B32); --edge:light-dark(#9BA08E,#4B5044);
+  --sig:light-dark(#6F8236,#CBD8A2); --sig-ink:light-dark(#4D5C22,#DCE7BA); --on-sig:light-dark(#FFFFFF,#1B2110);
+  --blue:light-dark(#1A56C4,#86B8F2); --blue-edge:light-dark(#4C8FE0,#4C9BE8);
+  --blue-grad:linear-gradient(135deg,light-dark(rgba(76,155,232,.22),rgba(76,155,232,.32)) 0%,light-dark(rgba(76,155,232,.05),rgba(76,155,232,.07)) 100%);
+  --ok:light-dark(#2E7D32,#5CD65C); --ok-led:light-dark(#2CA02C,#5CD65C); --bad:light-dark(#C62840,#FF6B81); --warn:light-dark(#B25E09,#E5A33D);
+  --hard:0 8px 28px rgba(0,0,0,.28); --scrim:light-dark(rgba(29,32,25,.45),rgba(0,0,0,.66));
+  --r:8px;
+  --sans:"Inter","Noto Sans",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --c-peer:var(--sig);
+}
+html{-webkit-text-size-adjust:100%}
+body{font-family:var(--sans);font-size:14px;line-height:1.5;background-color:var(--bg);
+  background-image:radial-gradient(900px 420px at 92% -8%,color-mix(in srgb,var(--blue-edge) 10%,transparent),transparent 70%),radial-gradient(760px 380px at -6% 108%,color-mix(in srgb,var(--sig) 8%,transparent),transparent 70%);
+  background-size:auto;background-attachment:fixed}
+::selection{background:color-mix(in srgb,var(--blue-edge) 35%,transparent)}
+:focus-visible{outline:2px solid var(--blue-edge);outline-offset:2px}
+h1,h2,h3{font-family:var(--sans)}
+h2{letter-spacing:.08em}
+
+/* brand and marks */
+.brand b,.hero .glyph{background:var(--sig)}
+.dot.host{background:var(--sig);border-color:var(--sig)}
+.dot.on{background:var(--ok-led);border-color:var(--ok-led)}
+
+/* navigation: the selected tab is a blue gradient pill, as in mlsweep */
+.top{border-bottom-color:var(--line-2)}
+.rail{border-right-color:var(--line)}
+.tabbar{border-top-color:var(--line-2)}
+.nav[aria-current=page]{color:var(--blue);background:var(--blue-grad);box-shadow:inset 0 2px 0 var(--blue-edge)}
+@media (min-width:900px){
+  .rail .nav,.rail .tab{border-radius:7px}
+  .rail .nav:hover,.rail .tab:hover{background:var(--panel-2);color:var(--ink)}
+  .rail .nav[aria-current=page],.rail .tab[aria-current=page]{background:var(--blue-grad);color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue-edge)}
+}
+.badge,.nav .badge,.unread{background:var(--sig);color:var(--on-sig);border-radius:9px}
+
+/* surfaces */
+.card,.ins,.since{background:var(--panel);border-color:var(--line-2)}
+.card{border-radius:12px;box-shadow:0 1px 0 color-mix(in srgb,var(--ink) 4%,transparent)}
+.card>h2:first-child{border-bottom-color:var(--line)}
+input[type=text],textarea,select,input[type=number]{background:var(--field);border-color:var(--line-2);border-radius:8px}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--blue-edge);outline-offset:0;border-color:var(--blue-edge)}
+
+/* buttons */
+.btn{background:var(--panel);border-color:var(--line-2);border-radius:8px}
+.btn:hover{background:var(--panel-2);border-color:var(--edge)}
+.btn.primary,.btn.gold{background:var(--sig);color:var(--on-sig);border-color:transparent}
+.btn.primary:hover,.btn.gold:hover{background:color-mix(in srgb,var(--sig) 86%,var(--ink));border-color:transparent}
+.btn.danger{background:transparent}
+.seg button[aria-pressed=true],.filters button[aria-pressed=true],.jump button.on{background:var(--blue-grad);color:var(--blue);border-color:var(--blue-edge)}
+.chip{border-radius:999px;padding:3px 8px}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 10%,transparent)}
+.chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,transparent);background:color-mix(in srgb,var(--bad) 10%,transparent)}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.chip.mine,.chip.host{background:var(--blue-grad);color:var(--blue);border-color:var(--blue-edge)}
+
+/* warnings are amber, never the brand colour */
+.led.warn,.node .led.warn,.chk .led.warn,.led.hold{background:var(--warn);border-color:var(--warn)}
+.hold{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,var(--panel))}
+.hold svg,.hold b{color:var(--warn);stroke:var(--warn)}
+.hold b{stroke:none}
+
+/* conversation */
+.msg.me{background:var(--blue-grad);border-color:var(--blue-edge);color:var(--ink)}
+.msg.me .who,.msg.me .who span{color:var(--ink-2)}
+.avatar{background:var(--blue-grad);color:var(--blue);border:1px solid var(--blue-edge);border-radius:50%}
+.toast{background:var(--panel-2);color:var(--ink);border:1px solid var(--line-2);border-left:4px solid var(--sig);border-radius:10px;box-shadow:var(--hard)}
+
+/* dialogs and the command palette */
+dialog{border-radius:14px;border-color:var(--line-2);box-shadow:var(--hard)}
+.pal li[aria-selected=true],.radio label:has(input:checked){background:var(--blue-grad);color:var(--blue);border-color:var(--blue-edge)}
+
+/* scrollbars: thin and quiet */
+*{scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+
+/* type: sans for controls and navigation, mono only for ids, numbers and code */
+.btn,.btn.sm,.seg button,.filters button{font-family:var(--sans);text-transform:none;letter-spacing:0;font-weight:500;font-size:13px}
+.btn.sm,.seg button,.filters button{font-size:12.5px}
+.tabbar .nav,.tabbar .tab,.rail .nav,.rail .tab{font-family:var(--sans);text-transform:none;letter-spacing:0;font-weight:500;font-size:13px}
+@media (max-width:899px){.tabbar .nav,.tabbar .tab{font-size:11px}}
+.rail .foot{font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:12px}
+.top .pill,.pill{font-family:var(--sans);text-transform:none;letter-spacing:0;font-weight:500;font-size:12.5px}
+label,.lbl{font-family:var(--sans);text-transform:none;letter-spacing:0}

@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Changed
+- New look on every page, from one stylesheet (`ui/static/theme.css`): light olive green is the primary colour, a blue gradient marks the selected tab and your own data, amber is for warnings, neutral olive-grey surfaces, sans-serif controls. Palette and the blue selected-tab treatment follow mlsweep (Apache-2.0).
+
+### Changed
 - The cockpit and the hub home page have instrument panels: a Stats card (key/value rows, message-rate sparkline, who-spoke bar, event breakdown), an Activity card (swim-lanes on one time axis: per member and per kind in a room, per room on the hub) and a collapsible Trail. Cards are rounder and softer to match.
 
 ## [0.3.3] - 2026-11-15

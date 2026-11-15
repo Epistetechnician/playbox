@@ -1,7 +1,7 @@
 /* Playbox service worker: offline shell, last-known rooms, and payload-free push.
    A push carries no data. On wake this worker asks the hub (over the signed-in session) what needs attention. */
-const VER = "pb-v7";
-const SHELL = ["/", "/auth.js", "/space.js", "/instruments.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const VER = "pb-v8";
+const SHELL = ["/", "/auth.js", "/space.js", "/instruments.js", "/theme.css", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VER).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
@@ -21,7 +21,7 @@ self.addEventListener("fetch", e => {
     e.respondWith(fetch(req).catch(() => caches.match("/").then(r => r || new Response("Offline. Reconnect and reload.", {status: 503, headers: {"Content-Type": "text/plain"}}))));
     return;
   }
-  if (url.pathname.endsWith(".js")) {                        // our scripts change with the pages that call them: network first, the cache only when offline
+  if (url.pathname.endsWith(".js") || url.pathname.endsWith(".css")) {                        // our scripts change with the pages that call them: network first, the cache only when offline
     e.respondWith(fetch(req).then(r => { if (r.ok) caches.open(VER).then(c => c.put(req, r.clone())); return r; }).catch(() => caches.match(req).then(hit => hit || Response.error())));
     return;
   }

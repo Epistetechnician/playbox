@@ -606,6 +606,8 @@ def test_http():
         check("system needs a session", anon.req("GET", "/api/system")[0] == 401)
         st_i, _, _ = anon.req("GET", "/instruments.js")
         check("the shared instrument panels script is public and served", st_i == 200)
+        st_t, _, _ = anon.req("GET", "/theme.css")
+        check("the shared theme stylesheet is public, linked by every page and cached by the service worker", st_t == 200 and all("/theme.css" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")))
         check("the pages load it and the service worker caches it", "/instruments.js" in open(os.path.join(UI, "static", "home.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "index.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "sw.js")).read())
         st, sysj, _ = a.req("GET", "/api/system")
         check("system lists the eight stages in order", st == 200 and [x["id"] for x in sysj["stages"]] == ["edge", "auth", "invite", "knock", "approve", "join", "feed", "history"])

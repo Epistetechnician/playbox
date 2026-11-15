@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E9E7E0" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0F0F0E" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151713" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -12,10 +12,10 @@
 <script>try { const t = localStorage.getItem("pb.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
 :root{color-scheme:light dark;
-  --bg:light-dark(#E9E7E0,#0F0F0E);--panel:light-dark(#F4F2EC,#171715);--panel-2:light-dark(#ECEAE2,#1F1F1C);--field:light-dark(#FBFAF7,#121210);
+  --bg:light-dark(#F2F3EE,#151713);--panel:light-dark(#F4F2EC,#171715);--panel-2:light-dark(#ECEAE2,#1F1F1C);--field:light-dark(#FBFAF7,#121210);
   --ink:light-dark(#171715,#ECE9E0);--ink-2:light-dark(#3B3A36,#C6C3B8);--mut:light-dark(#68665D,#8F8C80);--dim:light-dark(#D9D6CB,#2A2A26);
   --grid:light-dark(rgba(23,23,21,.08),rgba(236,233,224,.05));--line-2:light-dark(#B9B5A8,#3F3E38);--edge:light-dark(#171715,#6C6A5F);
-  --sig:light-dark(#FF5A1F,#FF6B2C);--sig-ink:light-dark(#B83A0A,#FF8A55);--on-sig:light-dark(#171715,#0F0F0E);
+  --sig:light-dark(#FF5A1F,#FF6B2C);--sig-ink:light-dark(#B83A0A,#FF8A55);--on-sig:light-dark(#171715,#151713);
   --ok:light-dark(#17783F,#4CC380);--bad:light-dark(#C0143C,#FF4D6D);--blue:light-dark(#2457C5,#7FA6FF);
   --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;--sans:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif}
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
@@ -128,6 +128,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--sig);outline-off
 @media(max-width:700px){.plus{bottom:calc(120px + env(safe-area-inset-bottom))}.zoom{bottom:calc(120px + env(safe-area-inset-bottom))}.kpis{display:none}.hint{display:none}.crumbs{font-size:10px}.top .chip.hide-s{display:none}}
 @media(prefers-reduced-motion:reduce){#world.glide,.insp{transition:none}.msg.new,.item.new,.tile.new,.card.new,.ev.new,.live{animation:none}}
 </style>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body>
 <div id="stage"><div id="world"></div></div>
