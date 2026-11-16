@@ -343,6 +343,7 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches?.("#insights [role=button]")) e.target.click(); });
 function kindOf(it) {
+  if (it.kind === "say" && typeof it.text === "string" && it.text.startsWith("::pbx identity ")) return "identity";
   if (it.kind === "say") return "say";
   const t = String(it.text || "").toLowerCase();
   return t === "join ok" ? "join" : t.startsWith("refused") || t === "join failed" ? "refused" : "event";
@@ -412,7 +413,7 @@ function paintInsights() {
 document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
 
 /* ---------- room header (Inspect-style: title, headline numbers, metadata strip) and the Timeline tab ---------- */
-const TL_KINDS = [["all", "All"], ["say", "Messages"], ["join", "Joins"], ["refused", "Refused"], ["event", "Events"]];
+const TL_KINDS = [["all", "All"], ["say", "Messages"], ["join", "Joins"], ["refused", "Refused"], ["identity", "Identity"], ["event", "Events"]];
 function roomHeader() {
   if (!window.PBI || mode() === "none") return "";
   if (!S.cm && !S.cmLoading) { S.cmLoading = true; loadNotes().finally(() => { S.cmLoading = false; }); }
@@ -425,10 +426,16 @@ function roomHeader() {
     <div class="hns">${num("MESSAGES", says.length)}${num("EVENTS", items.length - says.length)}${num("COMMENTS", S.cm ? S.cm.n : "…")}${num("LAST", says.length ? P.span(now - Math.max(...says.map(i => i.time_ms))) + " ago" : "—")}</div></div>
     <div class="rh2">${meta.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>`;
 }
+function idText(i) {
+  if (kindOf(i) !== "identity") return String(i.text || "");
+  let n = ""; try { n = JSON.parse(i.text.slice(15, i.text.lastIndexOf(" "))).name || ""; } catch {}
+  const ch = (S.hx && S.hx.changelog || []).find(c => c.type === "identity" && c.seq === i.seq);
+  return ch ? ch.text : `identity card posted${n ? ": " + n : ""}`;
+}
 function timelineView() {
   if (mode() === "none") return emptyCard("Join or host a room to see its timeline.");
   const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms);
-  const cat = i => i.kind === "say" ? "say" : kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
+  const cat = i => kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
   const cnt = k => k === "all" ? items.length : items.filter(i => cat(i) === k).length;
   const rows = items.filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q))).slice(0, 300);
   const by = i => i.kind === "say" ? ((i.from === myId() || (i.from === "host" && hosting())) ? "you" : i.name || short(i.from) || "member") : "system";
@@ -436,10 +443,10 @@ function timelineView() {
   return `<div class="card tl"><h2>Timeline</h2><div class="tlbars" aria-label="events per 10 minutes">${bins.map(v => `<i style="height:${Math.max(2, v / mx * 100)}%"></i>`).join("")}</div>
     <div class="tlhead"><span class="tlh">History</span>${TL_KINDS.map(([k, l]) => `<button type="button" class="tlc k-${k} ${f === k ? "on" : ""}" data-tlk="${k}">${l} ${cnt(k)}</button>`).join("")}<input type="text" id="tlq" class="tlq" placeholder="filter by text or author" value="${esc(S.tlq || "")}" aria-label="Filter"></div>
     <div class="tlbar"><button type="button" class="tbtn" data-tlx="raw" aria-pressed="${!!S.tlraw}">Raw</button><button type="button" class="tbtn" data-tlx="copy">Copy</button><button type="button" class="tbtn" data-tlx="export">Export .jsonl</button><button type="button" class="tbtn" data-tlx="print">Print</button><span class="mut tlcount">${rows.length} of ${items.length}</span></div>
-    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(i.text)}${i.seq != null ? ` <button type="button" class="tbtn cmx-b" data-cmev="${i.seq}" title="Comment on this event">${(S.cm?.ev?.[i.seq] || []).length ? "Comments " + S.cm.ev[i.seq].length : "Comment"}</button>` : ""}${cmtHtml(S.cm?.ev?.[i.seq])}${S.cmopen === String(i.seq) ? cmtForm("event:" + i.seq, "Comment on this event") : ""}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
+    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(idText(i))}${i.seq != null ? ` <button type="button" class="tbtn cmx-b" data-cmev="${i.seq}" title="Comment on this event">${(S.cm?.ev?.[i.seq] || []).length ? "Comments " + S.cm.ev[i.seq].length : "Comment"}</button>` : ""}${cmtHtml(S.cm?.ev?.[i.seq])}${S.cmopen === String(i.seq) ? cmtForm("event:" + i.seq, "Comment on this event") : ""}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
 }
 function tlRows() {
-  const cat = i => i.kind === "say" ? "say" : kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
+  const cat = i => kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
   return S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms).filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q)));
 }
 document.addEventListener("click", async e => {
@@ -541,13 +548,19 @@ function harnessesView() {
   const keys = [...groups.keys()].sort((a, b) => (a === HX_NONE) - (b === HX_NONE) || groups.get(b).length - groups.get(a).length);
   const machines = new Set(ms.map(m => m.machine).filter(Boolean)).size, online = ms.filter(m => m.present).length, named = ms.filter(m => m.identity === "signed").length;
   const head = stripHtml("Harnesses", ROOM ? `in ${ROOM}` : "tools and agents connected to this room", [["MEMBERS", String(ms.length)], ["ONLINE", String(online)]],
-    [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Signed cards", `${named} of ${ms.length}`], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
+    [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Signed cards", `${named} of ${ms.length}`], ["Endorsed", String(ms.filter(m => m.endorsement === "endorsed").length)], ["Unsigned", String(ms.length - named)], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
   const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name_verified ? m.name : short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""} ${idBadge(m)}<small>${m.name_verified ? esc(m.role || "") : m.claim && (m.claim.name || m.claim.harness) ? "unsigned claim, not verified: " + esc([m.claim.name, m.claim.harness].filter(Boolean).join(" · ")) : "no signed card"}</small></span>
-      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span>${m.grant ? `<button type="button" class="tbtn" data-grant="${esc(m.id)}" aria-expanded="${S.hxopen === m.id}">Grant</button>` : "<span></span>"}${m.identity === "signed" && !m.me ? (m.endorsement === "endorsed" ? `<button type="button" class="tbtn" data-unendorse="${esc(m.id)}">Remove</button>` : `<button type="button" class="tbtn" data-endorse="${esc(m.id)}">${m.endorsement === "changed" ? "Endorse again" : "Endorse"}</button>`) : ""}<span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
-  const drawer = m => { const g = m.grant; if (!g || S.hxopen !== m.id) return ""; const left = g.expires * 1000 - now;
+      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span><button type="button" class="tbtn" data-grant="${esc(m.id)}" aria-expanded="${S.hxopen === m.id}">Details</button>${m.identity === "signed" && !m.me ? (m.endorsement === "endorsed" ? `<button type="button" class="tbtn" data-unendorse="${esc(m.id)}">Remove</button>` : `<button type="button" class="tbtn" data-endorse="${esc(m.id)}">${m.endorsement === "changed" ? "Endorse again" : "Endorse"}</button>`) : ""}<span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
+  const idBlock = m => { const c = m.card || {}, hist = (d.changelog || []).filter(x => x.type === "identity" && x.who === m.id).slice(0, 8);
+    return `<table class="kvt"><tr><td class="k">key</td><td class="mono" style="word-break:break-all">${esc(m.id)}</td></tr>
+      <tr><td class="k">did:key</td><td class="mono" style="word-break:break-all">${esc(m.did || "none: no verified card")}</td></tr>
+      <tr><td class="k">identity</td><td>${idBadge(m)}${c.expires_ms ? ` valid until ${esc(new Date(c.expires_ms).toLocaleString())}` : ""}</td></tr>
+      ${m.ans ? `<tr><td class="k">ans name</td><td class="mono">${esc(m.ans)} <span class="mut">claimed, not checked</span></td></tr>` : ""}
+      <tr><td class="k">card history</td><td>${hist.length ? hist.map(x => `<div>${esc(new Date(x.ms).toLocaleString())} · ${esc(x.text)}</div>`).join("") : '<span class="mut">no card seen</span>'}</td></tr></table>`; };
+  const drawer = m => { if (S.hxopen !== m.id) return ""; const g = m.grant; if (!g) return `<div class="hxd">${idBlock(m)}</div>`; const left = g.expires * 1000 - now;
     const allowed = (g.allowed || []).filter(x => x); const kinds = {host: [], secret: [], cap: []};
     for (const a of allowed) { const [t, ...r] = a.split("/"); (t === "secret" || t === "cap" ? kinds[t] : kinds.host).push(t === "secret" || t === "cap" ? r.join("/") : a); }
-    return `<div class="hxd"><div class="chain"><span class="mono">host</span><i>→</i><span class="mono">${esc(short(m.id))}</span><span class="mut">via link ${esc(g.invite)}</span></div>
+    return `<div class="hxd">${idBlock(m)}<div class="chain"><span class="mono">host</span><i>→</i><span class="mono">${esc(short(m.id))}</span><span class="mut">via link ${esc(g.invite)}</span></div>
       <table class="kvt"><tr><td class="k">issued</td><td>${esc(new Date(g.issued * 1000).toLocaleString())}</td></tr>
       <tr><td class="k">expires</td><td>${left > 0 ? `in ${esc(PBI.span(left))}` : '<span class="chip warn">expired</span>'} · ${esc(new Date(g.expires * 1000).toLocaleString())}</td></tr>
       <tr><td class="k">limits</td><td>${(g.cpu_milli / 1000).toFixed(1)} cpu · ${g.mem_mib} MiB · ${g.timeout_secs}s per task · network ${g.net ? "on" : "off"}</td></tr>
