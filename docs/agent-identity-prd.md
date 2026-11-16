@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: v0.2 (strict defaults), phase 1 built · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phases 1 and 2 built · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -87,7 +87,7 @@ A card is canonical JSON:
 
 ### 7.3 Owner endorsement (phase 2)
 
-- The hub owner endorses an agent key **in one room** (a button on the agent's row, step-up required). The hub signs `{agent_key, room, scope, card_hash, issued_ms}` with its own owner key and stores it. The agent shows "endorsed by you". The endorsement names the card it was given for: a different card needs a new endorsement.
+- The hub owner endorses an agent key **in one room** (a button on the agent's row, step-up required). The hub stores `{agent_key, room, name, card_hash, at}` in that room's record (hub.json, private and in the daily backup). **As built in phase 2** the record is not signed: a signature only matters when an endorsement leaves the hub (phase 5), and signing it now would add a key to manage for no reader. The hash covers the card's content (key, did, name, machine, role, harness, model, ans) and not its timestamps, so a re-announce of the same card keeps the endorsement. The agent shows "endorsed by you". The endorsement names the card it was given for: a different card needs a new endorsement.
 - Endorsement is **per room**, never per hub, so a mistaken approval has a small blast radius. Exporting an endorsement to another hub of the same owner (phase 5) is explicit, one room at a time.
 - Un-endorse is possible and is recorded; it does not revoke the member.
 - **Acceptance:** endorse and un-endorse need a fresh passkey touch; endorsement survives a hub restart and is in the hub's daily backup; an endorsed key that changes its card is flagged urgent and loses the "endorsed" badge until re-endorsed; an endorsement in room A has no effect in room B.

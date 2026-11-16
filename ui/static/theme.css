@@ -161,7 +161,7 @@ label{display:block;margin:14px 0 6px;font:600 11px var(--sans)!important;letter
 @media print{.rail,.tabbar,.top,.pbsb,.tlbar,.tlhead,.pulse{display:none!important}body{background:#fff!important;color:#000!important}.tlt{max-height:none!important}}
 
 /* Harnesses */
-.hxr{display:grid;grid-template-columns:10px minmax(120px,1.4fr) 1fr 1fr auto auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font:13px var(--sans)}
+.hxr{display:grid;grid-template-columns:10px minmax(120px,1.4fr) 1fr 1fr auto auto 110px;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font:13px var(--sans)}
 .hxr:last-child{border:0}.hxr .nm small{display:block;color:var(--mut);font-size:12px}.hxr .sd{width:8px;height:8px;border-radius:50%;background:var(--dim);border:1px solid var(--line-2)}.hxr .sd.live{background:var(--ok-led);border-color:var(--ok-led)}
 .card.hx>h2{display:flex;gap:6px}
 @media (max-width:700px){.hxr{grid-template-columns:10px 1fr auto}.hxr>span:nth-child(3),.hxr>span:nth-child(4),.hxr>span:nth-child(6){display:none}}
@@ -292,3 +292,7 @@ html[data-motion=reduce] *,html[data-motion=reduce] *::before,html[data-motion=r
 
 /* pages whose brand already carries text must not get the generated one as well */
 html:not([data-style=expressive]) .brand:has(.bk)::after{content:none}
+
+.hxr .tbtn{justify-self:end}
+.hxr .nm .chip{margin-left:4px}
+@media (max-width:700px){.hxr{grid-template-columns:10px 1fr auto}.hxr>.tbtn{display:none}}

@@ -526,6 +526,8 @@ async function loadHarnesses() {
 }
 const HX_NONE = "Unidentified";
 function idBadge(m) {
+  if (m.identity === "signed" && m.endorsement === "changed") return `<span class="chip bad" title="You endorsed an earlier card. This one is different: check it, then endorse again.">endorsed, card changed</span>`;
+  if (m.identity === "signed" && m.endorsement === "endorsed") return `<span class="chip" style="color:var(--blue);border-color:var(--blue-edge)" title="You vouched for this card in this room">endorsed by you</span> <span class="chip ok">signed</span>`;
   if (m.identity === "signed") return `<span class="chip ok" title="A card signed by this member's own key, bound to this room, valid until ${esc(new Date((m.card || {}).expires_ms || 0).toLocaleString())}">signed</span>${m.dup_name ? ' <span class="chip bad" title="Another key in this room uses the same name">name used twice</span>' : ""}`;
   if (m.identity === "expired") return '<span class="chip warn" title="The signed card ran out. The agent should announce again.">card expired</span>';
   return '<span class="chip warn" title="No verified card: nothing this member typed is shown as its identity">unidentified</span>';
@@ -541,12 +543,24 @@ function harnessesView() {
   const head = stripHtml("Harnesses", ROOM ? `in ${ROOM}` : "tools and agents connected to this room", [["MEMBERS", String(ms.length)], ["ONLINE", String(online)]],
     [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Signed cards", `${named} of ${ms.length}`], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
   const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name_verified ? m.name : short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""} ${idBadge(m)}<small>${m.name_verified ? esc(m.role || "") : m.claim && (m.claim.name || m.claim.harness) ? "unsigned claim, not verified: " + esc([m.claim.name, m.claim.harness].filter(Boolean).join(" · ")) : "no signed card"}</small></span>
-      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span><span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
+      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span>${m.identity === "signed" && !m.me ? (m.endorsement === "endorsed" ? `<button type="button" class="tbtn" data-unendorse="${esc(m.id)}">Remove</button>` : `<button type="button" class="tbtn" data-endorse="${esc(m.id)}">${m.endorsement === "changed" ? "Endorse again" : "Endorse"}</button>`) : ""}<span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
   const cards = keys.map(k => `<div class="card hx"><h2>${esc(k)} <span class="mut" style="font-weight:400">· ${groups.get(k).length}</span></h2>${groups.get(k).map(row).join("")}</div>`).join("");
   const local = (S.local || []).length ? `<div class="card"><h2>On this machine</h2><p class="mut" style="margin:0 0 10px">Harnesses this hub can connect to Playbox for you. Connect them from the hub's Integrations view.</p>${S.local.map(a => `<div class="stat"><span>${esc(a.name)}</span><span class="chip ${a.connected ? "ok" : a.installed ? "warn" : ""}">${a.connected ? "connected" : a.installed ? "installed" : "not found"}</span></div>`).join("")}</div>` : "";
   const how = `<div class="card"><h2>Show up here</h2><p class="mut" style="margin:0 0 10px">An agent proves who it is with a card signed by its own key: call <span class="mono">playbox_announce</span> after joining and again after reconnecting (a card lasts at most 24 hours). Names and harness from unsigned messages are never shown as identity. A signed card proves the key said it, not that the harness is real.</p><pre class="src" style="margin:0">playbox_announce {"name":"Haiku-1","machine":"studio","role":"hill climber","harness":"Hermes","model":"claude-haiku-5-5"}</pre></div>`;
   return head + (ms.length ? `<div class="wk">${cards}</div>` : `<div class="card empty"><p>Nobody has joined yet.</p></div>`) + `<div class="wk">${local}${how}</div>`;
 }
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-endorse],[data-unendorse]"); if (!b) return;
+  const add = !!b.dataset.endorse, key = b.dataset.endorse || b.dataset.unendorse;
+  b.disabled = true;
+  try {
+    const r = await gfetch(BASE + (add ? "api/endorse" : "api/endorse/" + key), {method: add ? "POST" : "DELETE", headers: {"Content-Type": "application/json"}, body: add ? JSON.stringify({key}) : undefined});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    toast(add ? "Endorsed in this room" : "Endorsement removed");
+  } catch (er) { toast(String(er.message || er), true); }
+  await loadHarnesses();
+});
 setInterval(() => { if (S.tab === "harnesses" && !document.hidden) loadHarnesses(); }, 15000);
 
 /* ---------- Work and Proof headers ---------- */

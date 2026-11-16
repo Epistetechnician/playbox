@@ -234,7 +234,39 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
     };
     // A fixed battery first: each of these has one right answer.
     let host = format!("127.0.0.1:{port}");
-    let battery: Vec<Case> = vec![
+    // Malformed JSON, first of all: random fuzzing reaches the body parser through exactly one public route (and only while that route is
+    // not yet rate-limited by the failures the other requests cause), so on a busy runner the hole could go unseen. These two always get there.
+    let bad_json = |path: &str, signed: bool| {
+        let mut hs = vec![
+            h("Host", &host),
+            h("Origin", &format!("http://{host}")),
+            h("Content-Type", "application/json"),
+            h("Content-Length", "9"),
+        ];
+        if let (true, Some(c)) = (signed, cookie.as_deref()) {
+            hs.push(h("Cookie", &format!("pbs={c}")));
+        }
+        Req {
+            method: "POST",
+            path: path.into(),
+            headers: hs,
+            body: b"{not json".to_vec(),
+            cookie_valid: signed && cookie.is_some(),
+        }
+    };
+    let mut battery: Vec<Case> = vec![
+        (
+            "malformed JSON on a public route is a 400, not a crash",
+            bad_json("/api/auth/login/begin", false),
+            Box::new(|r| r.status > 0 && r.status < 500),
+        ),
+        (
+            "malformed JSON on a signed-in route is a 400, not a crash",
+            bad_json("/api/rooms", true),
+            Box::new(|r| r.status > 0 && r.status < 500),
+        ),
+    ];
+    battery.extend::<Vec<Case>>(vec![
         (
             "path traversal must not read files",
             Req {
@@ -309,7 +341,7 @@ pub fn fuzz_hub(opts: &Opts) -> Result<Fuzz> {
             },
             Box::new(|r| r.status == 401),
         ),
-    ];
+    ]);
     for (i, (what, req, ok)) in battery.iter().enumerate() {
         let resp = raw(addr, &build(req.method, &req.path, &req.headers, &req.body));
         match &resp {

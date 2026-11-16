@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE))
 from playbox_ui import Sidecar, witness_state  # noqa: E402
 from .local import ask_host, hosting_dir, prune_stale  # noqa: E402
 from .archive import Archive  # noqa: E402
+from . import board, card as idcard  # noqa: E402
 
 
 def event_note(text, who):
@@ -79,6 +80,7 @@ class Room:
         self.digest = self.blank()
         self.seq = 0               # poller cursor in the room feed
         self.host_id = None        # the room's host id: signed identity cards are bound to it
+        self.idalerts = {}         # key -> name: an endorsed agent whose card changed since you endorsed it
         self.buckets = {}          # 5-minute bucket -> message count, feeds the sparkline
         self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
@@ -88,6 +90,7 @@ class Room:
         self.stop = threading.Event()
         self.mu = threading.Lock()
         self.on_change = None      # set by the hub: persist rec changes
+        self.on_needs_invite = None   # set by the hub: called (off the poller's critical path) when this joined room lost its access
         self.tick_mu = threading.RLock()
         self.notes = []            # (stage, text, level) the poller turns into security events
         self.hold_ids = set()
@@ -248,6 +251,9 @@ class Room:
                 self.on_change and self.on_change()
         d["mode"] = "both" if host and joined else "host" if host else "guest" if joined else "none"
         d["members"] = len((host or {}).get("members") or []) + (1 if joined else 0)
+        if d["mode"] == "none" and self.rec.get("knock_src") and self.rec.get("host") is None and not self.rec.get("adopted_host"):
+            d["needs_invite"] = True            # joined through ask-to-join, and the sidecar no longer knows the room (it restarted: joins live in its memory only)
+            d["err"] = "Your access to this room ran out. Ask the host for a new invite."
         d["me"] = (joined or {}).get("member_id") or st.get("guest_id")
         if d["mode"] != "none":
             ferr, feed = sc.call("playbox_feed", {"since": self.seq}, wait=1, timeout=6)
@@ -264,6 +270,22 @@ class Room:
                     for i in items:
                         if i.get("kind") == "event":
                             self.notes.append(event_note(str(i.get("text", "")), str(i.get("from", ""))))
+                for i in items:
+                    t = i.get("text")
+                    if i.get("kind") == "say" and isinstance(t, str) and t.startswith(idcard.PREFIX) and self.rec.get("endorsed"):
+                        snd = self.host_id if i.get("from") == "host" else i.get("from")
+                        try:
+                            c = idcard.verify(t, snd, self.host_id, i.get("time_ms") or 0)
+                        except ValueError:
+                            continue
+                        e = self.rec["endorsed"].get(i.get("from"))
+                        if e:
+                            if board.card_hash(dict(board.clip_card(c), key=i.get("from"))) != e.get("card_hash"):
+                                if i.get("from") not in self.idalerts:
+                                    self.notes.append(("history", f'Endorsed agent "{e.get("name", "")}" changed its card: endorse it again if you expect that', "bad"))
+                                self.idalerts[i.get("from")] = e.get("name", "an agent")
+                            else:
+                                self.idalerts.pop(i.get("from"), None)
                 if items:
                     self.seq = max(i["seq"] for i in items)
                     says = [i for i in items if i.get("kind") == "say"]
@@ -293,6 +315,11 @@ class Room:
                         self.last_chain = time.time()
                         self.notes.append(("history", f"Signed history verified, {v.get('entries')} entries" if d["chain"]["ok"] else "Signed history FAILED verification",
                                            "ok" if d["chain"]["ok"] else "bad"))
+        if d.get("needs_invite") and self.on_needs_invite:
+            try:
+                self.on_needs_invite(self)
+            except Exception:
+                pass
         nb = int(time.time() / 300)
         self.buckets = {k: v for k, v in self.buckets.items() if k > nb - 30}
         d["pulse"] = [self.buckets.get(nb - 23 + i, 0) for i in range(24)]
@@ -303,6 +330,7 @@ class Room:
             self.notes.append(("feed", "Witness paused a write until you decide", "warn"))
         self.hold_ids = ids
         d["archived"] = self.archive.info()["items"]
+        d["identity_alerts"] = [{"key": k, "name": n} for k, n in self.idalerts.items()]
         d["offline"] = bool(d["mode"] != "none" and feed_failed and d["archived"])
         recent = d["last"] and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
         d["state"] = ("hold" if d["holds"] else "empty" if d["mode"] == "none" else "bad" if d["chain"] and not d["chain"]["ok"]
@@ -314,6 +342,8 @@ class Room:
 
 
 class Hub:
+    rejoining = staticmethod(lambda room_id: False)      # the server replaces it: True while a new ask-to-join for this room waits on the host
+    reknock = None                                       # the server sets it: called with a room whose access ran out
     def __init__(self, store, binary, push_fn=None):
         self.store, self.binary, self.push_fn = store, binary, push_fn
         self.bus = Bus()
@@ -334,6 +364,7 @@ class Hub:
     def _start(self, rec):
         r = Room(rec, self.binary, self.store.home)
         r.on_change = self.store.save
+        r.on_needs_invite = lambda room: self.reknock and self.reknock(room)
         with self.mu:
             self.rooms[rec["id"]] = r
         return r
@@ -414,7 +445,10 @@ class Hub:
             if d["state"] == "bad":
                 items.append({"id": f"chain:{d['id']}", "room": d["id"], "kind": "chain", "urgent": True, "title": f"History check failed in {lab}",
                               "body": "the signed log no longer verifies"})
-            if d.get("needs_invite"):
+            for al in d.get("identity_alerts") or []:
+                items.append({"id": f"idchg:{d['id']}:{al['key'][:12]}", "room": d["id"], "kind": "identity", "urgent": True, "title": f"{al['name']} changed its identity card in {lab}",
+                              "body": "you had endorsed it; review the change and endorse again"})
+            if d.get("needs_invite") and not self.rejoining(d["id"]):
                 items.append({"id": f"invite:{d['id']}", "room": d["id"], "kind": "invite", "urgent": False, "title": f"{lab} needs a new invite", "body": "your access ran out; ask the host"})
             bad = bool(d.get("err")) and not d.get("needs_invite") and (d["state"] == "down" or d.get("offline"))
             if bad:

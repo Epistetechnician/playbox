@@ -210,6 +210,8 @@ jobs:
       # The Research view's JSON is generated from docs/benchmark.md and docs/f3/pilot/: fail when it has drifted from its sources.
       - run: python3 scripts/gen_research.py --check
       - run: node ui/tests/session_watch_sim.js
+      # Headless Chrome (already on the runner) through Playwright: sign-in, Settings and a theme, Notes markdown safety, Research list and run.
+      - run: pip install playwright && PLAYBOX_SMOKE_REQUIRE=1 python3 ui/tests/smoke.py
   witness:
     # The Hermes witness plugin has plain unittest tests (pytest cannot collect them: the plugin directory is a package).
     runs-on: ubuntu-22.04
