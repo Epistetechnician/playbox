@@ -142,7 +142,7 @@ impl KrunRunner {
             root: playbox_home().join("krun"),
             quota: Quota::default(),
             export: Arc::default(),
-            secrets: SecretStore::new(playbox_home().join("secrets")),
+            secrets: SecretStore::from_env(),
             #[cfg(target_os = "linux")]
             confine: None,
         }
@@ -570,7 +570,8 @@ async fn resolve_hosts(hosts: &[String]) -> Result<Vec<(String, std::net::Socket
 
 #[cfg(test)]
 mod tests {
-    use super::unfiltered_network_refusal as refusal;
+    use super::{unfiltered_network_refusal as refusal, KrunRunner, SandboxPolicy};
+    use std::path::PathBuf;
 
     // REQ: BOX-5
     #[test]
@@ -579,5 +580,22 @@ mod tests {
         assert!(refusal(true, false, true).is_none());
         assert!(refusal(true, true, false).is_none());
         assert!(refusal(false, false, false).is_none());
+    }
+
+    #[test]
+    fn secrets_store_honours_playbox_secrets_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "playbox-krun-secrets-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("API_KEY"), b"secret").unwrap();
+        std::env::set_var("PLAYBOX_SECRETS_DIR", &dir);
+        let runner = KrunRunner::with_helper(SandboxPolicy::default(), PathBuf::from("/bin/true"));
+        std::env::remove_var("PLAYBOX_SECRETS_DIR");
+        assert!(runner.secrets.has("API_KEY"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
