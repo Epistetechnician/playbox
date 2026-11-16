@@ -153,7 +153,7 @@ class Playbox:
         self.hosting = os.path.join(d, "hosting")
         penv = {**os.environ, "PLAYBOX_HOME": self.home, "PLAYBOX_HOSTING_DIR": self.hosting}
         self.host = subprocess.Popen(["playbox", "up", "--home", self.home, "--local", "--console", "--state", os.path.join(d, "state"), "--repo", os.path.join(d, "repo"),
-                                      "--docker", "--allow-image", IMG, "--grant-ttl", GRANT_TTL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      *(["--docker", "--allow-image", IMG] if os.environ.get("TW_DOCKER", "1") == "1" else []), "--grant-ttl", GRANT_TTL], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.DEVNULL, text=True, env=penv)
         self.links, self.console = [], []
         threading.Thread(target=self._pump, daemon=True).start()
