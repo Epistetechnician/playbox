@@ -891,7 +891,7 @@ def make_handler(hub, auth, store, opts):
                         return None
                     members, me = room.archive.members()
                     d0 = room.digest
-                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000))
+                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000), room=room.host_id)
                     model.update({"now": int(time.time() * 1000), "me": me, "next": info["last_seq"], "offline": True, "archive": info,
                                   "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d0.get("mode"),
                                            "state": "offline", "chain": d0.get("chain"), "holds": [], "created": room.rec.get("created")},
@@ -914,7 +914,7 @@ def make_handler(hub, auth, store, opts):
                 st = st if isinstance(st, dict) else {}
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
-                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000))
+                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id)
                 model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
                               "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},

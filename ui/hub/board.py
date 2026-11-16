@@ -11,6 +11,8 @@ be finite, and attribution always comes from the message's real sender, never fr
 import json
 import math
 
+from . import card as idcard
+
 PREFIX = "::pbx "
 KINDS = ("artifact", "card", "metric", "agent", "comment")
 ANCHORS = ("note", "event", "artifact")
@@ -51,9 +53,10 @@ def _short(i):
     return (i or "")[:6] or "host"
 
 
-def build(items, members, me=None, now_ms=0):
-    """feed items + member list -> the canvas model."""
+def build(items, members, me=None, now_ms=0, room=None):
+    """feed items + member list -> the canvas model. `room` is the room's host id: signed identity cards are bound to it (hub/card.py)."""
     names, machines, roles, harnesses, models = {}, {}, {}, {}, {}
+    idcards, pinned, claims, rejected = {}, {}, {}, set()     # verified cards by key, the first verified card per key, unsigned claims, (key, reason) already reported
     arts, cards, series, log, comments = {}, {}, {}, [], []
     msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0, "comment": 0}
 
@@ -75,6 +78,28 @@ def build(items, members, me=None, now_ms=0):
             continue
         per[frm] = per.get(frm, 0) + 1
         buckets[int(ms // BUCKET_MS)] = buckets.get(int(ms // BUCKET_MS), 0) + 1
+        if isinstance(text, str) and text.startswith(idcard.PREFIX):
+            # A signed identity card. The sender is the key the room says sent it; the host's own messages come from "host", whose key is the room id.
+            sender = room if frm == "host" else frm
+            try:
+                c = idcard.verify(text, sender, room, ms or now_ms)     # valid when it was posted; whether it has run out since is judged below
+            except ValueError as e:
+                if (frm, str(e)) not in rejected:
+                    rejected.add((frm, str(e)))
+                    log.append({"ms": ms, "type": "identity", "who": frm, "text": f"identity card refused: {str(e)[:60]}", "seq": it.get("seq")})
+                continue
+            fields = {k: _s(c.get(k), n) for k, n in (("name", 30), ("machine", 40), ("role", 80), ("harness", 30), ("model", 40), ("ans", 120))}
+            fields.update(did=_s(c.get("did"), 80), expires_ms=c["expires_ms"], issued_ms=c["issued_ms"])
+            old = idcards.get(frm)
+            if frm not in pinned:
+                pinned[frm] = fields
+                log.append({"ms": ms, "type": "identity", "who": frm, "text": f"signed identity card: {fields['name']}", "seq": it.get("seq")})
+            elif old:
+                for k in ("name", "machine", "harness", "model"):
+                    if old[k] != fields[k]:
+                        log.append({"ms": ms, "type": "identity", "who": frm, "text": f"{old['name']} changed {k}: {old[k] or 'none'} to {fields[k] or 'none'}", "seq": it.get("seq")})
+            idcards[frm] = fields
+            continue
         p = parse(text)
         if not p:
             msgs.append({"seq": it.get("seq"), "from": frm, "ms": ms, "text": text[:1500]})
@@ -82,14 +107,9 @@ def build(items, members, me=None, now_ms=0):
         k, d = p
         typed[k] += 1
         if k == "agent":
-            nm = _s(d.get("name"), 30)
-            if nm:
-                names[frm] = nm
-            machines[frm] = _s(d.get("machine"), 40)
-            roles[frm] = _s(d.get("role"), 80)
-            harnesses[frm] = _s(d.get("harness"), 30)      # which tool the agent runs in (Hermes, Claude Code, Codex ...): the agent's own word, shown as text
-            models[frm] = _s(d.get("model"), 40)
-            log.append({"ms": ms, "type": "agent", "who": frm, "text": f"announced itself{' on ' + machines[frm] if machines[frm] else ''}", "seq": it.get("seq")})
+            # An unsigned claim: anyone can write it, so it never becomes an identity. Kept apart, shown only as muted text next to the member.
+            claims[frm] = {k: _s(d.get(k), n) for k, n in (("name", 30), ("machine", 40), ("role", 80), ("harness", 30), ("model", 40))}
+            log.append({"ms": ms, "type": "agent", "who": frm, "text": "posted an unsigned introduction (not verified)", "seq": it.get("seq")})
         elif k == "comment":
             on, txt = _s(d.get("on"), 60), _s(d.get("text"), 600)
             ak, _, ref = on.partition(":")
@@ -141,10 +161,19 @@ def build(items, members, me=None, now_ms=0):
     for m in members or []:
         mid = m.get("id") or ""
         mem[mid] = {"id": mid, "present": bool(m.get("present")), "last_seen": m.get("last_seen_ms") or 0}
-    for mid in list(per) + list(machines):
+    for mid in list(per) + list(idcards) + list(claims):
         mem.setdefault(mid, {"id": mid, "present": False, "last_seen": 0})
+    live = {k: c for k, c in idcards.items() if c["expires_ms"] > (now_ms or 0)}
+    count = {}
+    for c in live.values():
+        count[c["name"]] = count.get(c["name"], 0) + 1
     for mid, m in mem.items():
-        m.update({"name": names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "machine": machines.get(mid, ""), "role": roles.get(mid, ""), "harness": harnesses.get(mid, ""), "model": models.get(mid, ""), "msgs": per.get(mid, 0), "me": mid == me})
+        c = live.get(mid)
+        ident = "signed" if c else ("expired" if mid in idcards else "unidentified")
+        m.update({"name": (c or {}).get("name") or names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "name_verified": bool(c),
+                  "identity": ident, "card": c or idcards.get(mid), "claim": claims.get(mid), "dup_name": bool(c and count.get(c["name"], 0) > 1),
+                  "machine": (c or {}).get("machine", ""), "role": (c or {}).get("role", ""), "harness": (c or {}).get("harness", ""), "model": (c or {}).get("model", ""),
+                  "did": (c or {}).get("did", ""), "ans": (c or {}).get("ans", ""), "msgs": per.get(mid, 0), "me": mid == me})
     for e in log:
         e["name"] = who(e["who"])
     for a in arts.values():

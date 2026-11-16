@@ -984,15 +984,74 @@ def test_board_comments():
 
 def test_board_harness():
     """An agent's announcement carries its harness and model: clipped, plain text, attributed to the real sender."""
+
+
+def _ed_sign(seed, msg):
+    """RFC 8032 signing with the hub's own curve code, to make cards in tests."""
+    import hashlib
+    from hub import card as C
+    h = hashlib.sha512(seed).digest()
+    a = (int.from_bytes(h[:32], "little") & ((1 << 254) - 8)) | (1 << 254)
+    pub = C._enc(C._mul(a, C._B))
+    r = int.from_bytes(hashlib.sha512(h[32:] + msg).digest(), "little") % C._L
+    R = C._enc(C._mul(r, C._B))
+    k = int.from_bytes(hashlib.sha512(R + pub + msg).digest(), "little") % C._L
+    return pub, R + ((r + k * a) % C._L).to_bytes(32, "little")
+
+
+def _make_card(seed, room, name, now, ttl=3_600_000, **kw):
+    import json as _j
+    from hub import card as C
+    pub, _ = _ed_sign(seed, b"")
+    body = {"v": 1, "room": room, "key": pub.hex(), "did": C.did_key(pub), "name": name, "machine": kw.get("machine", ""), "role": "", "harness": kw.get("harness", ""), "model": "", "ans": "", "issued_ms": now, "expires_ms": now + ttl}
+    txt = _j.dumps(body, sort_keys=True, separators=(",", ":"))
+    return pub.hex(), C.PREFIX + txt + " " + _ed_sign(seed, (C.DOMAIN + txt).encode())[1].hex()
+
+
+def test_identity_cards():
+    """Signed agent cards: a card signed by the Rust sidecar verifies here; forged, replayed, cross-room, expired and over-long cards do not;
+    the board shows only verified cards as identity; unsigned claims never do; changes and shared names are visible."""
     sys.path.insert(0, UI)
-    from hub import board
-    big = "x" * 200
-    items = [{"seq": 1, "kind": "say", "from": "m1", "time_ms": 1, "text": board.PREFIX + "agent " + json.dumps({"name": "H1", "machine": "studio", "harness": "Hermes", "model": "claude-haiku-5-5"})},
-             {"seq": 2, "kind": "say", "from": "m2", "time_ms": 2, "text": board.PREFIX + "agent " + json.dumps({"name": "H2", "harness": big, "model": ["not", "text"]})}]
-    m = board.build(items, [{"id": "m1", "present": True}, {"id": "m2", "present": True}], "m1", 10)
+    from hub import board, card as C
+    sender, text = open(os.path.join(UI, "tests", "card_vector.txt")).read().split("\n")[:2]
+    NOW = 1_700_000_001_000
+    check("cards: a card signed by the Rust sidecar verifies in the hub", C.verify(text, sender, "ab12", NOW)["name"] == "Haiku-1")
+    def bad(why, *a):
+        try:
+            C.verify(*a)
+            check("cards: " + why, False)
+        except ValueError:
+            check("cards: " + why, True)
+    bad("a card replayed by another key is refused", text, "00" * 32, "ab12", NOW)
+    bad("a card for another room is refused", text, sender, "other", NOW)
+    bad("an expired card is refused", text, sender, "ab12", 1_700_003_600_001)
+    bad("a changed body fails the signature", text.replace("Haiku-1", "Mallory"), sender, "ab12", NOW)
+    bad("an unsigned claim is not a card", '::pbx agent {"name":"x"}', sender, "ab12", NOW)
+    k1, c1 = _make_card(b"\x01" * 32, "r", "Ada", NOW, harness="Hermes")
+    check("cards: the test signer agrees with the verifier", C.verify(c1, k1, "r", NOW)["harness"] == "Hermes")
+    k2, c_long = _make_card(b"\x02" * 32, "r", "Eve", NOW, ttl=C.MAX_TTL_MS + 1)
+    bad("a lifetime over 24 hours is refused", c_long, k2, "r", NOW)
+    k3, c3 = _make_card(b"\x03" * 32, "r", "Ada", NOW, machine="lab")
+    items = [{"seq": 1, "kind": "say", "from": k1, "time_ms": NOW, "text": c1}, {"seq": 2, "kind": "say", "from": k3, "time_ms": NOW, "text": c3},
+             {"seq": 3, "kind": "say", "from": "mx", "time_ms": NOW, "text": '::pbx agent {"name":"Mallory","harness":"Hermes"}'},
+             {"seq": 4, "kind": "say", "from": k2, "time_ms": NOW, "text": c_long}]
+    m = board.build(items, [{"id": x, "present": True} for x in (k1, k3, "mx", k2)], None, NOW + 1000, room="r")
     by = {x["id"]: x for x in m["members"]}
-    check("board: an announcement sets harness and model", by["m1"]["harness"] == "Hermes" and by["m1"]["model"] == "claude-haiku-5-5")
-    check("board: harness is clipped and a non-text model is dropped", len(by["m2"]["harness"]) == 30 and by["m2"]["model"] == "")
+    check("board: a verified card is the identity", by[k1]["identity"] == "signed" and by[k1]["name_verified"] and by[k1]["harness"] == "Hermes")
+    check("board: an unsigned claim stays a claim", by["mx"]["identity"] == "unidentified" and by["mx"]["harness"] == "" and by["mx"]["claim"]["name"] == "Mallory" and not by["mx"]["name_verified"])
+    check("board: two keys with one verified name are both flagged", by[k1]["dup_name"] and by[k3]["dup_name"])
+    check("board: a refused card is reported once and gives no identity", by[k2]["identity"] == "unidentified" and sum(1 for e in m["changelog"] if "refused" in e["text"]) == 1)
+    _, c1b = _make_card(b"\x01" * 32, "r", "Ada", NOW + 5000, harness="Codex")
+    m2 = board.build(items + [{"seq": 5, "kind": "say", "from": k1, "time_ms": NOW + 5000, "text": c1b}], [{"id": k1, "present": True}], None, NOW + 6000, room="r")
+    check("board: a changed card is an event naming what changed", any("changed harness: Hermes to Codex" in e["text"] for e in m2["changelog"]))
+    m3 = board.build(items, [{"id": k1, "present": True}], None, NOW + 3_600_001, room="r")
+    check("board: a card that ran out no longer counts as identity", {x["id"]: x for x in m3["members"]}[k1]["identity"] == "expired")
+    hk = _ed_sign(b"\x04" * 32, b"")[0].hex()
+    _, hc = _make_card(b"\x04" * 32, hk, "Host", NOW)
+    hostcard = board.build([{"seq": 1, "kind": "say", "from": "host", "time_ms": NOW, "text": hc}], [], None, NOW + 1000, room=hk)
+    check("board: the host's own card is checked against the room id", any(x["id"] == "host" and x["identity"] == "signed" and x["name"] == "Host" for x in hostcard["members"]))
+    nohost = board.build([{"seq": 1, "kind": "say", "from": "host", "time_ms": NOW, "text": hc}], [], None, NOW + 1000, room="someone-else")
+    check("board: a card claiming to be the host's under another room id is refused", not any(x.get("identity") == "signed" for x in nohost["members"]))
 
 
 def test_housekeeping():
@@ -1369,7 +1428,7 @@ def test_board():
     check("board: bad kinds, statuses and columns fall back to safe values", a["q"]["kind"] == "note" and a["q"]["status"] == "draft" and [c["col"] for c in m["cards"] if c["id"] == "z"] == ["todo"])
     check("board: a non-finite metric is dropped", [len(s["pts"]) for s in m["metrics"]] == [1])
     check("board: plain messages stay plain and work messages are not in the message list", [x["text"] for x in m["feed"]] == ["plain <b>text</b>"])
-    check("board: the agent announcement names the sender and machine", [x["name"] for x in m["members"] if x["id"] == "aa"] == ["Ada"] and [x["machine"] for x in m["members"] if x["id"] == "aa"] == ["mac"])
+    check("board: an unsigned announcement is a claim, never an identity", [(x["identity"], x["name"] != "Ada", x["machine"], (x["claim"] or {}).get("name")) for x in m["members"] if x["id"] == "aa"] == [("unidentified", True, "", "Ada")])
     check("board: a claimed owner cannot change who published", a["p"]["by"] == "aa" and a["p"]["last_by"] == "bb")
     check("board: oversized bodies are ignored", board.parse("::pbx card " + "{" + '"x":"' + "a" * 5000 + '"}') is None)
 
@@ -1428,7 +1487,7 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
-    test_board_harness()
+    test_identity_cards()
     test_board_comments()
     test_housekeeping()
     test_tunnel_keeper()

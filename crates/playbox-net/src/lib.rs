@@ -6,6 +6,7 @@ pub mod audit;
 mod bind;
 pub mod browse;
 pub mod capabilities;
+pub mod card;
 pub mod chat;
 mod client;
 pub mod conversations;

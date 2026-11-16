@@ -207,6 +207,7 @@ impl Server {
             "playbox_status" => self.status(),
             "playbox_ping" => self.ping(args).await,
             "playbox_say" => self.say(args).await,
+            "playbox_announce" => self.announce(args).await,
             "playbox_live_ready" => self.live_ready(args).await,
             "playbox_conversations" => self.conversations().await,
             "playbox_conversation_new" => self.conversation_new(args).await,

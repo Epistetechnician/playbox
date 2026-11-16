@@ -493,6 +493,30 @@ impl Host {
         })
     }
 
+    /// This host's endpoint id: the room id agent cards are bound to, and the key behind the host's own messages.
+    #[must_use]
+    pub fn endpoint_id(&self) -> EndpointId {
+        self.router.endpoint().id()
+    }
+
+    /// A signed agent card from the host (see [`crate::card`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns a message if the card is invalid (empty name, bad lifetime).
+    pub fn signed_card(&self, f: &crate::card::Fields, ttl_ms: u64) -> Result<String, String> {
+        let ep = self.router.endpoint();
+        let sk = ep.secret_key().clone();
+        crate::card::build(
+            &ep.id().to_string(),
+            ep.id().as_bytes(),
+            f,
+            crate::chat::now_ms(),
+            ttl_ms,
+            |m| sk.sign(m).to_bytes(),
+        )
+    }
+
     /// The host says something in its own room.
     ///
     /// # Errors

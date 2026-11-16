@@ -448,6 +448,7 @@ impl Server {
                 "repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
                 "members": h.members().iter().map(ToString::to_string).collect::<Vec<_>>(),
                 "replica": self.is_replica,
+                "host_id": h.endpoint_id().to_string(),
                 "revocations": h.revocation_notices().len(),
             })
         });

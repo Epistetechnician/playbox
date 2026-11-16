@@ -10,6 +10,38 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 impl Server {
+    /// Post a card signed by this member's own key (see `playbox_net::card`). The room, not the card, decides who sent it.
+    pub(crate) async fn announce(&self, a: &Value) -> Result<Value> {
+        let f = playbox_net::card::Fields {
+            name: req(a, "name")?.to_string(),
+            machine: s(a, "machine").unwrap_or("").to_string(),
+            role: s(a, "role").unwrap_or("").to_string(),
+            harness: s(a, "harness").unwrap_or("").to_string(),
+            model: s(a, "model").unwrap_or("").to_string(),
+            ans: s(a, "ans").unwrap_or("").to_string(),
+        };
+        let ttl_ms = a
+            .get("ttl_secs")
+            .and_then(Value::as_u64)
+            .unwrap_or(86_400)
+            .saturating_mul(1000);
+        let name = f.name.clone();
+        if let Some(c) = self.client.as_ref().map(|_| self.guest()).transpose()? {
+            let text = c.signed_card(&f, ttl_ms).map_err(|e| anyhow!(e))?;
+            return Ok(
+                json!({"seq": c.say(&text, Some(&name)).await?, "signed": true, "valid_hours": ttl_ms / 3_600_000}),
+            );
+        }
+        let host = self
+            .host
+            .as_ref()
+            .ok_or_else(|| anyhow!("not in a room: call playbox_join or playbox_create first"))?;
+        let text = host.signed_card(&f, ttl_ms).map_err(|e| anyhow!(e))?;
+        Ok(
+            json!({"seq": host.say(&text, Some(&name)).map_err(|e| anyhow!(e))?, "signed": true, "valid_hours": ttl_ms / 3_600_000}),
+        )
+    }
+
     pub(crate) async fn say(&self, a: &Value) -> Result<Value> {
         let (text, name) = (req(a, "text")?, s(a, "name"));
         if let Some(c) = self.client.as_ref().map(|_| self.guest()).transpose()? {

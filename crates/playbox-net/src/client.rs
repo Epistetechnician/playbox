@@ -179,6 +179,23 @@ impl Client {
         self.sibling(self.addr.clone()).await
     }
 
+    /// A signed agent card for this member, bound to the host it is connected to (see [`crate::card`]). `ttl_ms` is at most 24 hours.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message if the card is invalid (empty name, bad lifetime).
+    pub fn signed_card(&self, f: &crate::card::Fields, ttl_ms: u64) -> Result<String, String> {
+        let sk = self.endpoint.secret_key().clone();
+        crate::card::build(
+            &self.conn.remote_id().to_string(),
+            self.endpoint.id().as_bytes(),
+            f,
+            crate::chat::now_ms(),
+            ttl_ms,
+            |m| sk.sign(m).to_bytes(),
+        )
+    }
+
     /// The id of the host this client is connected to.
     pub fn host_id(&self) -> EndpointId {
         self.conn.remote_id()
@@ -1082,7 +1099,7 @@ fn call_of(v: &Value, host: EndpointId) -> Result<capabilities::Call> {
 #[cfg(test)]
 mod say_retry_tests {
     use super::*;
-    use crate::{new_secret_key, Host, HostConfig};
+    use crate::{card, new_secret_key, Host, HostConfig};
 
     #[tokio::test]
     async fn say_survives_a_dropped_connection_by_retrying_once_on_a_new_one() {
@@ -1114,6 +1131,68 @@ mod say_retry_tests {
         assert_eq!(texts, ["one", "two"]);
         // A refusal from the host is final and not retried: an empty message says nothing and costs no extra posts.
         assert!(b.say("   ", None).await.is_err());
+        host.shutdown().await.unwrap();
+    }
+
+    /// End to end: a guest and the host each post a signed card through the real room; a reader checks them against the key the room says
+    /// sent each message and the room id (the host's endpoint id), and a card replayed by another sender is refused.
+    #[tokio::test]
+    async fn signed_cards_from_a_guest_and_the_host_verify_against_the_room() {
+        let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+            .await
+            .unwrap();
+        let link = host
+            .create_link(Duration::from_secs(60), 1)
+            .unwrap()
+            .encode();
+        let guest = join_link(&link, new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
+        let f = card::Fields {
+            name: "Haiku-1".into(),
+            harness: "Hermes".into(),
+            ..Default::default()
+        };
+        let gc = guest.signed_card(&f, 3_600_000).unwrap();
+        let hc = host
+            .signed_card(
+                &card::Fields {
+                    name: "Boss".into(),
+                    ..Default::default()
+                },
+                3_600_000,
+            )
+            .unwrap();
+        guest.say(&gc, Some("Haiku-1")).await.unwrap();
+        host.say(&hc, Some("Boss")).unwrap();
+        let items = guest.feed(0).await.unwrap().items;
+        let said: Vec<_> = items
+            .iter()
+            .filter(|i| i.kind == "say" && i.text.starts_with(card::PREFIX))
+            .collect();
+        assert_eq!(said.len(), 2);
+        let (room, now) = (host.endpoint_id().to_string(), crate::chat::now_ms());
+        let g = said.iter().find(|i| i.from != "host").unwrap();
+        assert_eq!(
+            g.from,
+            guest.id().to_string(),
+            "the room names the guest by its endpoint key"
+        );
+        assert_eq!(
+            card::verify(&g.text, &g.from, &room, now).unwrap()["harness"],
+            "Hermes"
+        );
+        let h = said.iter().find(|i| i.from == "host").unwrap();
+        assert_eq!(
+            card::verify(&h.text, &room, &room, now).unwrap()["name"],
+            "Boss",
+            "the host's messages come from `host`, whose key is the room id"
+        );
+        assert!(
+            card::verify(&g.text, &room, &room, now).is_err(),
+            "the guest's card replayed as the host's"
+        );
+        assert!(card::verify(&g.text, &g.from, "another-room", now).is_err());
         host.shutdown().await.unwrap();
     }
 }

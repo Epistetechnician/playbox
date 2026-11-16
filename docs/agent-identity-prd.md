@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: draft v0.2 (strict defaults) · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phase 1 built · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -66,7 +66,7 @@ A card is canonical JSON:
  "harness":"Hermes","model":"claude-haiku-5-5","ans":"ans://v1.0.0.agent.example.com","issued_ms":0,"expires_ms":0}
 ```
 
-- Sent as a room message `::pbx card <COSE_Sign1>`. The signature is a COSE_Sign1 by the member's key over the canonical JSON, with the protected header carrying the domain tag `playbox-card-v1` and the **room id** inside the signed card (`room`), so a card cannot be replayed in another room.
+- Sent as a room message `::pbx identity <json> <signature hex>` (`::pbx card` already means a task card on the board). **As built in phase 1:** the signature is the member's ed25519 key over `playbox.card.v1\n` + the JSON text exactly as sent, the same signed-text convention as attestations, with the **room id** inside the signed card (`room`), so a card cannot be replayed in another room. The room id is the host's endpoint id. COSE_Sign1 stays the plan for exports to outside verifiers (phase 4).
 - `playbox-mcp` gets `playbox_announce` (signs and posts the card) and the existing `/announce` command calls it. The unsigned `::pbx agent` keeps working and is shown as "unsigned claim".
 - The board code (`ui/hub/board.py`) verifies the signature, requires `key` to equal the message's real sender and `room` to equal this room, rejects expired cards, and clips every field. A card that does not verify is ignored for identity and recorded as a rejected card (visible in the security trail), never shown as a name.
 - **Lifetime: at most 24 hours** (`expires_ms - issued_ms`), longer cards are rejected. An agent re-announces on every reconnect and before expiry. After a revoke, the host refuses the key outright, so a stolen key's cards stop mattering at once.
@@ -174,7 +174,7 @@ Phases 1 to 3 are the product. Phases 4 and 5 are interop and research. Strict m
 | Accept unsigned `::pbx agent`? | No for identity. Staged: muted in the drawer for one release, then ignored | A claim anyone can write must not look like an identity |
 | Card lifetime | At most 24 hours, re-announce on reconnect | Limits what a stolen key can sign |
 | Endorsement scope | Per room, bound to the card hash | Small blast radius for a mistaken approval |
-| Signature encoding | COSE_Sign1 with a domain tag and the room id inside the signed card | Standard verifiers, matches ANS receipts, stops cross-room replay |
+| Signature encoding | Phase 1: ed25519 over a domain tag + the exact JSON text, room id inside the card. COSE_Sign1 for outside exports (phase 4) | Matches the existing signed-text format, verifiable in pure Python in the hub, stops cross-room replay |
 | "Host-observed" labels | Only from a host-signed launch record (now phase 3) | Self-reports can never look verified |
 | Wire protocol | Serve the delegation view from existing room state; avoid a protocol bump | Keeps older peers compatible |
 

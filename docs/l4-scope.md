@@ -382,3 +382,13 @@ What follows, not done: the question is now how often a training seed lands abov
 training and evaluation (36 minutes of training each at about 4 USD per hour). Do that before the 60 to 150 USD full-size mapper: if training seed
 decides pass or fail at 4B, it will decide it at full size too, and the larger spend should buy several seeds or a recipe that is less seed-sensitive,
 not one run. Spend on this step: about 5.4 USD on gman (node total 116.54 USD, 17.9 USD of the 30 USD ceiling for the whole piece of work).
+
+### Seed 1: (A) and (C), measured
+
+`steer/results/telepathy/l4_gonogo/ac_s1.json`. The seed-1 mapper (the one that cleared (B) at 26.2 points) also passes the other two parts of the bar:
+(A) wikitext retention 97.7% (95% CI 94.5 to 100.9); (C) 21-way concept retrieval 95.2% (20 of 21; chance 4.8%; own cache 100%). So for seed 1
+all three criteria hold; for seed 0, (A) and (C) held and (B) was 16.0 against 20. The two-seed (B) split stands as written above.
+
+Two more seeds were started and did not complete: the seed-2 training run (step 1,700 of 5,500, loss finite, 15 batches skipped) was cut short when
+another job started on the same node, so no seed-2 or seed-3 result exists. The benchmark's second corpus seed did not run either. The work is
+therefore still at two training seeds and one corpus seed.
