@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-11-16
+
 ### Fixed
 - `playbox update` refused the `playbox-mcp` it had just downloaded: the version check read stdout, and `playbox-mcp --version` prints on stderr.
 
