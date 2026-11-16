@@ -89,6 +89,26 @@ impl SecretStore {
         valid_name(name) && self.dir.join(name).is_file()
     }
 
+    /// Check that the secrets directory exists and is not readable by other users.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the directory cannot be read or is accessible to group or others (`mode & 0o077 != 0`).
+    pub fn check_dir(&self) -> Result<()> {
+        let mode = std::fs::metadata(&self.dir)
+            .with_context(|| format!("secrets directory {}", self.dir.display()))?
+            .permissions()
+            .mode();
+        if mode & 0o077 != 0 {
+            bail!(
+                "the secrets directory {} is readable by others (mode {:o}); chmod 700 it",
+                self.dir.display(),
+                mode & 0o777
+            );
+        }
+        Ok(())
+    }
+
     /// Copy the named secrets into a fresh private directory under `scratch`.
     ///
     /// # Errors
@@ -109,17 +129,7 @@ impl SecretStore {
             }
         }
         if !names.is_empty() {
-            let mode = std::fs::metadata(&self.dir)
-                .with_context(|| format!("secrets directory {}", self.dir.display()))?
-                .permissions()
-                .mode();
-            if mode & 0o077 != 0 {
-                bail!(
-                    "the secrets directory {} is readable by others (mode {:o}); chmod 700 it",
-                    self.dir.display(),
-                    mode & 0o777
-                );
-            }
+            self.check_dir()?;
         }
         let mut rnd = [0u8; 8];
         std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
@@ -227,6 +237,25 @@ mod tests {
         std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
         let scratch = std::env::temp_dir();
         assert!(s.stage(&["k".into()], &scratch).is_err());
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn check_dir_requires_a_private_directory() {
+        let (d, s) = store();
+        assert!(s.check_dir().is_ok());
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(s.check_dir().is_err());
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn has_reports_missing_and_invalid_names() {
+        let (d, s) = store();
+        std::fs::write(d.join("API_KEY"), b"v").unwrap();
+        assert!(s.has("API_KEY"));
+        assert!(!s.has("MISSING"));
+        assert!(!s.has(".hidden"));
         std::fs::remove_dir_all(d).unwrap();
     }
 }

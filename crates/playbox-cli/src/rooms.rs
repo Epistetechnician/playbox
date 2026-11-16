@@ -43,6 +43,8 @@ pub async fn up(a: UpArgs) -> Result<()> {
     let steer_image = a.steer_image.clone();
     let steer_mem = a.steer_mem_mib;
     let has_steer = a.steer_store.is_some();
+    let secrets = playbox_runner::secrets::SecretStore::from_env();
+    check_allowed_secrets(&secrets, &a.allow_secret)?;
     let mut limits = playbox_runner::Limits {
         allowed_hosts: a.allow_host.clone(),
         allowed_secrets: a.allow_secret.clone(),
@@ -494,4 +496,42 @@ pub fn guest_id() -> Result<()> {
     println!("{}", k.public());
     eprintln!("send this to the host; they run `playbox up --for-guest <id>` so the link works only for you");
     Ok(())
+}
+
+fn check_allowed_secrets(
+    store: &playbox_runner::secrets::SecretStore,
+    names: &[String],
+) -> Result<()> {
+    for n in names {
+        if !store.has(n) {
+            bail!("secret {n:?} is not in the host's store");
+        }
+    }
+    if !names.is_empty() {
+        store.check_dir()?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_allowed_secrets;
+    use playbox_runner::secrets::SecretStore;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    #[test]
+    fn allowed_secrets_must_exist_in_a_private_store() {
+        let d = std::env::temp_dir().join(format!("pbx-up-sec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::DirBuilder::new().mode(0o700).create(&d).unwrap();
+        let store = SecretStore::new(&d);
+        assert!(check_allowed_secrets(&store, &[]).is_ok());
+        let err = check_allowed_secrets(&store, &["MISSING".into()]).unwrap_err();
+        assert!(err.to_string().contains("MISSING"));
+        std::fs::write(d.join("API_KEY"), b"v").unwrap();
+        assert!(check_allowed_secrets(&store, &["API_KEY".into()]).is_ok());
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(check_allowed_secrets(&store, &["API_KEY".into()]).is_err());
+        std::fs::remove_dir_all(d).unwrap();
+    }
 }
