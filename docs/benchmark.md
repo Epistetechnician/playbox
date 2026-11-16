@@ -13,6 +13,7 @@ Trials alternate room, silo, room, silo, so drift in API speed hits both. Each t
 - Sharing a room clearly helps when the work is split between agents and each agent holds one piece: the room is the only condition that ends with one usable combined answer (posted-vector result, p = 0.0002).
 - It does not clearly help when every agent can already score everything.
 - **Per dollar, many cheap tries beat an expensive advisor.** Plain Haiku with about $0.79 of tries solved every slice exactly in all 4 trials. The Fable advisor, at about $1.18 a trial, got 22k on average.
+- **Sharing helps a cheap swarm a lot.** With the same Haiku-only agents and about $0.53 of tries, the room reached a mean of 599 after 870 tries against 29,466 for silos (p = 0.029), and every room ended with a near-perfect combined vector (0 to 1,941), where silo agents' own vectors scored about 108,000.
 - A classical random hill-climber with no model beats the model runs on the plain task.
 - These are small experiments with 3 to 8 trials per condition; read the p-values, not just the means.
 
@@ -25,8 +26,9 @@ Trials alternate room, silo, room, silo, so drift in API speed hits both. Each t
 | 3 | 32 numbers, split in 3 slices (assembled score) | 6 | 99,609 | 112,941 | not run | 12% lower, p = 0.051 |
 | 4 | Same as 3, plus a Fable 5.2 advisor | 8 | 41,425 | 22,134 | not run | silo 47% lower, p = 0.20 |
 | 5 | Same as 3, Haiku only, about 18× more tries (silos only) | 4 | not run | 0 | not run | vs row 4 silo: p = 0.31 |
+| 6 | Same as 5, Haiku only, in a room (about 10× more tries) | 4 | 599 | 29,466 (row 5, same tries) | not run | room 98% lower, p = 0.029 |
 
-Numbers are the mean best score after all tries (row 5: after 1,800 tries). p-values come from a permutation test on the trial results, one-sided for "room is lower" in rows 1 to 3. Rows 4 and 5 are two-sided.
+Numbers are the mean best score after all tries (row 5: after 1,800 tries; row 6: after 870 tries, with row 5 silos cut at the same point). p-values come from a permutation test on the trial results, one-sided for "room is lower" in rows 1 to 3. Rows 4 and 5 are two-sided.
 
 ### 1 and 2: every agent can score the whole vector
 
@@ -77,19 +79,37 @@ Row 4 costs about $1.18 a silo trial, almost all of it the advisor (about $0.17 
 - Costs are what the `claude` CLI reports per call, at list prices; what a subscription plan charges may differ.
 - Like every silo number, the assembled score assumes someone merges the three slices afterwards.
 
+### 6: a room of cheap agents
+
+Row 5 had no room arm, so this adds one: the same three Haiku-only agents sharing a room, no advisor, 300 tries each (900 per trial, about $0.53), 4 trials in parallel. Compared with the row 5 silos at the same number of tries:
+
+| After this many tries | Room (mean of 4) | Silo (mean of 4) | Difference, p |
+|---|---|---|---|
+| 90 | 134,386 | 136,624 | not significant |
+| 300 | 58,308 | 55,970 | not significant |
+| 600 | 6,081 | 31,918 | p = 0.057 |
+| 870 | **599** | 29,466 | p = 0.029 |
+
+- **Sharing pays off late.** The two arms are level for the first 300 tries; then the room pulls away. A room agent reads the others' tries for its own slice's neighbours and, more importantly, ends up posting a combined vector that keeps improving.
+- **The room's posted vector is near-perfect:** per trial 287 · 0 · 1,941 · 171 at 870 tries, against about 108,000 for silo agents, who never see the other slices.
+- **Cost is the same:** about $0.53 for a room trial against $0.48 for the matching silo tries. Sharing adds no model calls.
+- **Against the advisor:** this room beats the advisor room (41,425 at $0.94) at about half the cost. Cheap tries plus sharing was the best per-dollar arm in this benchmark.
+- **Time:** a room trial took 51 to 60 minutes, which is about the same as a silo trial of that many tries.
+
 ## What it shows, and what it does not
 
 - Sharing in a room lets split-up agents hand each other their pieces and end with one working answer. That part is solid in the data (row 4, posted vector).
 - Sharing did not make the agents climb faster on the plain tasks. The gap is small and not significant, and a classical hill-climber beats all of the model runs there.
 - With the advisor, assembly can be done afterwards for silos too. If you can merge the pieces at the end, the room's advantage on the assembled score disappears in this data. What the room provides is the merging as part of the work, and a shared view while it happens.
 - Spending on a stronger model was not the best use of money here. Many cheap tries did better per dollar on this task, which is easy for a cheap model to grind out. A task where each try is expensive, or where cheap tries do not converge, could reverse that.
-- Row 5 has no room arm. A room of Haiku-only agents with the same budget was not run, so this benchmark does not say whether sharing helps a cheap swarm.
+- Putting it together: on this split task, the best result per dollar came from cheap agents in a shared room (row 6). The expensive advisor helped, but less per dollar, and silos need someone to merge their pieces at the end.
 - Task 3 and 4 are built so that information is split. They test the sharing mechanism, not whether Playbox beats silos on ordinary tasks.
 
 ## Caveats
 
-- **Small samples.** 6 trials per condition for row 3, 8 for row 4 and 4 for row 5. Room trials vary widely (8k to 78k in row 4), so a modest real effect would not show.
+- **Small samples.** 6 trials per condition for row 3, 8 for row 4 and 4 for rows 5 and 6. Room trials vary widely (8k to 78k in row 4), so a modest real effect would not show.
 - **Trials that stopped slightly short are counted.** Several room trials in row 4 were stopped by a time limit at 82 to 89 of 90 tries, and one silo trial had agents hit an error at 87. Rule used: a trial counts if it reaches 80 of 90 tries and has no invalid tries. Earlier it was 87; it was loosened mid-run because a stricter rule biases the results toward faster trials. Rows 1 to 3 required all tries. Because the room's scores are still falling at the limit, the short trials slightly understate the room.
+- **Row 6 trials stopped at about 98% of their tries.** All four rooms ended at 876 to 894 of 900 tries, after almost exactly one hour. Each agent's membership grant (the invite link) lasts one hour, and when it ran out the host refused further posts ("not authorized"). Trials were counted under the same proportional rule as row 4 (at least about 89% of tries) and compared at 870 tries, which all four reached. Long-running agents would need a longer grant or a renewal.
 - **Trials that did not count.** Attempts that stalled on the model API's usage limit (the account's 5-hour cap) or timed out far short are not in the tables. The raw attempts are kept next to the results as `failed-*`.
 - **Different accounts and time limits.** The row 4 runs began under a 700-second limit and later used 1,500 s, and part of them ran on a second account. Rows 4 trials 7 and 8, and row 5, ran after a usage-limit reset on that second account.
 - **Row 5 resumed agents.** Three of the four row 5 trials had an agent stop on one malformed model reply. Those agents were resumed from their saved counters (`hc_resume.py`) until they reached 600 tries; nothing was discarded.
@@ -113,6 +133,7 @@ BENCH_DIR=$PWD/bench BENCH_DIM=16 BENCH_TRIALS=3 BENCH_CAP=40 python3 hc_bench.p
 BENCH_DIR=$PWD/bench3 BENCH_TRIALS=6 BENCH_CAP=30 python3 hc_bench_slice.py              # row 3
 BENCH_DIR=$PWD/bench4 BENCH_TRIALS=8 BENCH_CAP=30 HC_ADV_EVERY=15 BENCH_TIMEOUT=1500 python3 hc_bench_adv.py   # row 4
 BENCH_DIR=$PWD/bench5 BENCH_TRIALS=4 BENCH_CAP=600 python3 hc_bench_cost.py              # row 5 (4 trials in parallel, Haiku only)
+BENCH_DIR=$PWD/bench6 BENCH_TRIALS=4 BENCH_CAP=300 BENCH_TIMEOUT=14400 python3 hc_bench_cost_room.py   # row 6 (rooms)
 ```
 
 3. Analyse, and watch live while it runs:
