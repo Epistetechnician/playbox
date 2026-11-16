@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-11-16
+
 ### Added
 - A running host's control socket answers `members` and `revoke MEMBER ID` (the same action as the console's `revoke`; the socket is private to the user), so a host started as a service can have a member removed. In the hub, Revoke on an adopted room goes through it (passkey step-up).
 - `playbox up --grant-ttl SECS`: how long each member's grant lasts (default one hour, at most 30 days). The MCP `playbox_create` tool already had this;
