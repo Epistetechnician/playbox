@@ -90,7 +90,9 @@ pub fn random_bytes() -> Result<[u8; 32]> {
 ///
 /// Returns an error if the operation fails; the error carries the cause.
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 pub fn new_secret_key() -> Result<SecretKey> {
@@ -1984,7 +1986,14 @@ impl Host {
     pub fn signed_card(&self, f: &card::Fields, ttl_ms: u64) -> Result<String, String> {
         let ep = self.router.endpoint();
         let sk = ep.secret_key().clone();
-        card::build(&ep.id().to_string(), ep.id().as_bytes(), f, now_ms(), ttl_ms, |m| sk.sign(m).to_bytes())
+        card::build(
+            &ep.id().to_string(),
+            ep.id().as_bytes(),
+            f,
+            now_ms(),
+            ttl_ms,
+            |m| sk.sign(m).to_bytes(),
+        )
     }
 
     /// # Errors
@@ -2307,7 +2316,14 @@ impl Client {
     /// Returns a message if the card is invalid (empty name, bad lifetime).
     pub fn signed_card(&self, f: &card::Fields, ttl_ms: u64) -> Result<String, String> {
         let sk = self.endpoint.secret_key().clone();
-        card::build(&self.conn.remote_id().to_string(), self.endpoint.id().as_bytes(), f, now_ms(), ttl_ms, |m| sk.sign(m).to_bytes())
+        card::build(
+            &self.conn.remote_id().to_string(),
+            self.endpoint.id().as_bytes(),
+            f,
+            now_ms(),
+            ttl_ms,
+            |m| sk.sign(m).to_bytes(),
+        )
     }
 
     /// The id of the host this client is connected to.
@@ -3281,23 +3297,57 @@ mod say_retry_tests {
         let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
             .await
             .unwrap();
-        let link = host.create_link(Duration::from_secs(60), 1).unwrap().encode();
-        let guest = join_link(&link, new_secret_key().unwrap(), true).await.unwrap();
-        let f = card::Fields { name: "Haiku-1".into(), harness: "Hermes".into(), ..Default::default() };
+        let link = host
+            .create_link(Duration::from_secs(60), 1)
+            .unwrap()
+            .encode();
+        let guest = join_link(&link, new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
+        let f = card::Fields {
+            name: "Haiku-1".into(),
+            harness: "Hermes".into(),
+            ..Default::default()
+        };
         let gc = guest.signed_card(&f, 3_600_000).unwrap();
-        let hc = host.signed_card(&card::Fields { name: "Boss".into(), ..Default::default() }, 3_600_000).unwrap();
+        let hc = host
+            .signed_card(
+                &card::Fields {
+                    name: "Boss".into(),
+                    ..Default::default()
+                },
+                3_600_000,
+            )
+            .unwrap();
         guest.say(&gc, Some("Haiku-1")).await.unwrap();
         host.say(&hc, Some("Boss")).unwrap();
         let items = guest.feed(0).await.unwrap().items;
-        let said: Vec<_> = items.iter().filter(|i| i.kind == "say" && i.text.starts_with(card::PREFIX)).collect();
+        let said: Vec<_> = items
+            .iter()
+            .filter(|i| i.kind == "say" && i.text.starts_with(card::PREFIX))
+            .collect();
         assert_eq!(said.len(), 2);
         let (room, now) = (host.endpoint_id().to_string(), now_ms());
         let g = said.iter().find(|i| i.from != "host").unwrap();
-        assert_eq!(g.from, guest.id().to_string(), "the room names the guest by its endpoint key");
-        assert_eq!(card::verify(&g.text, &g.from, &room, now).unwrap()["harness"], "Hermes");
+        assert_eq!(
+            g.from,
+            guest.id().to_string(),
+            "the room names the guest by its endpoint key"
+        );
+        assert_eq!(
+            card::verify(&g.text, &g.from, &room, now).unwrap()["harness"],
+            "Hermes"
+        );
         let h = said.iter().find(|i| i.from == "host").unwrap();
-        assert_eq!(card::verify(&h.text, &room, &room, now).unwrap()["name"], "Boss", "the host's messages come from `host`, whose key is the room id");
-        assert!(card::verify(&g.text, &room, &room, now).is_err(), "the guest's card replayed as the host's");
+        assert_eq!(
+            card::verify(&h.text, &room, &room, now).unwrap()["name"],
+            "Boss",
+            "the host's messages come from `host`, whose key is the room id"
+        );
+        assert!(
+            card::verify(&g.text, &room, &room, now).is_err(),
+            "the guest's card replayed as the host's"
+        );
         assert!(card::verify(&g.text, &g.from, "another-room", now).is_err());
         host.shutdown().await.unwrap();
     }

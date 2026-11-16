@@ -1347,18 +1347,26 @@ impl Server {
             model: s(a, "model").unwrap_or("").to_string(),
             ans: s(a, "ans").unwrap_or("").to_string(),
         };
-        let ttl_ms = a.get("ttl_secs").and_then(Value::as_u64).unwrap_or(86_400).saturating_mul(1000);
+        let ttl_ms = a
+            .get("ttl_secs")
+            .and_then(Value::as_u64)
+            .unwrap_or(86_400)
+            .saturating_mul(1000);
         let name = f.name.clone();
         if let Some(c) = self.client.as_ref().map(|_| self.guest()).transpose()? {
             let text = c.signed_card(&f, ttl_ms).map_err(|e| anyhow!(e))?;
-            return Ok(json!({"seq": c.say(&text, Some(&name)).await?, "signed": true, "valid_hours": ttl_ms / 3_600_000}));
+            return Ok(
+                json!({"seq": c.say(&text, Some(&name)).await?, "signed": true, "valid_hours": ttl_ms / 3_600_000}),
+            );
         }
         let host = self
             .host
             .as_ref()
             .ok_or_else(|| anyhow!("not in a room: call playbox_join or playbox_create first"))?;
         let text = host.signed_card(&f, ttl_ms).map_err(|e| anyhow!(e))?;
-        Ok(json!({"seq": host.say(&text, Some(&name)).map_err(|e| anyhow!(e))?, "signed": true, "valid_hours": ttl_ms / 3_600_000}))
+        Ok(
+            json!({"seq": host.say(&text, Some(&name)).map_err(|e| anyhow!(e))?, "signed": true, "valid_hours": ttl_ms / 3_600_000}),
+        )
     }
 
     async fn say(&self, a: &Value) -> Result<Value> {
