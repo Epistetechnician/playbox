@@ -141,7 +141,11 @@ impl ConfidentialSpaceVerifier {
         self
     }
 
-    fn check(&self, token: &str, binding_hex: &str) -> Result<PlatformVerdict, AttestError> {
+    pub(crate) fn check(
+        &self,
+        token: &str,
+        binding_hex: &str,
+    ) -> Result<PlatformVerdict, AttestError> {
         let parts: Vec<&str> = token.split('.').collect();
         let [h, p, s] = parts[..] else {
             return Err("token is not a three-part JWT".into());

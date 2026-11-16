@@ -22,6 +22,8 @@ verifier may *believe*:
 kept and reported but not believed. Verifiers exist for the Secure Enclave, TPM 2.0 (below) and Google Confidential Space (Intel TDX, in [trust-layers.md](trust-layers.md)); a
 SEV-SNP verifier is open work.
 
+**GPU evidence (`nvidia-gpu`, and `tdx+gpu` with Confidential Space).** `gpu_cc.rs` checks an NVIDIA attestation token (ES384, overall token plus detached per-GPU tokens, as NRAS returns them) offline against pinned NVIDIA keys: nonce equal to the statement binding, overall result true, measurements match, secure boot on, debug off, H100 CC model, and driver and VBIOS on your allow-lists (T3; unpinned is T1). `tdx+gpu` needs both the Confidential Space token and the GPU tokens under the same nonce and takes the lower tier. Configure with `PLAYBOX_GPU_JWKS`, `PLAYBOX_GPU_DRIVERS`, `PLAYBOX_GPU_VBIOS`, `PLAYBOX_GPU_COUNT`; the host produces evidence with `PLAYBOX_ATTEST=tdx+gpu` and `PLAYBOX_GPU_EVIDENCE_CMD` (a program that prints the `gpu` and `gpu-detail` lines for the nonce in `PLAYBOX_NONCE`). **Tested only with tokens signed by a local key, not with a token from a live H100 in CC mode**; the claim names are from NVIDIA's documentation, and the CPU and GPU are tied only by the shared nonce.
+
 ## Host attestation
 
 Any peer can call `playbox.GetAttestation` with a fresh hex nonce (no invite needed; it is public like

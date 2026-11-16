@@ -190,6 +190,19 @@ pub fn detect_with(
                 crate::confidential::ConfidentialSpaceProvider::new(&audience),
             )))
         }
+        #[cfg(unix)]
+        "tdx+gpu" => {
+            let audience = std::env::var("PLAYBOX_CS_AUDIENCE").map_err(|_| {
+                "PLAYBOX_ATTEST=tdx+gpu needs PLAYBOX_CS_AUDIENCE (the audience your verifiers expect)"
+            })?;
+            let cmd = std::env::var_os("PLAYBOX_GPU_EVIDENCE_CMD").ok_or(
+                "PLAYBOX_ATTEST=tdx+gpu needs PLAYBOX_GPU_EVIDENCE_CMD (a program that prints the gpu and gpu-detail evidence lines for the nonce in PLAYBOX_NONCE)",
+            )?;
+            Ok(Some(Box::new(crate::gpu_cc::CpuGpuProvider {
+                cpu: crate::confidential::ConfidentialSpaceProvider::new(&audience),
+                gpu_command: cmd.into(),
+            })))
+        }
         "auto" => Ok(if cfg!(target_os = "macos") {
             se().ok()
         } else if std::env::var_os("TPM2TOOLS_TCTI").is_some() || Path::new("/dev/tpmrm0").exists()
@@ -198,9 +211,10 @@ pub fn detect_with(
         } else {
             None
         }),
-        other => {
-            Err(format!("PLAYBOX_ATTEST must be none, auto, se, tpm or tdx, not {other:?}").into())
-        }
+        other => Err(format!(
+            "PLAYBOX_ATTEST must be none, auto, se, tpm, tdx or tdx+gpu, not {other:?}"
+        )
+        .into()),
     }
 }
 
@@ -239,10 +253,51 @@ pub fn verifiers(
                 .with_ek_anchors(ek_anchors_from_env()?),
         ),
     ];
+    if let Some(gpu) = nvidia_gpu_from_env()? {
+        if let Some(cs) = confidential_space_from_env()? {
+            v.push(Box::new(crate::gpu_cc::CpuGpuVerifier { cpu: cs, gpu }));
+        }
+        if let Some(gpu) = nvidia_gpu_from_env()? {
+            v.push(Box::new(gpu));
+        }
+    }
     if let Some(cs) = confidential_space_from_env()? {
         v.push(Box::new(cs));
     }
     Ok(v)
+}
+
+/// An NVIDIA GPU (`nvidia-gpu`) verifier from the environment, or `None` if unconfigured: `$PLAYBOX_GPU_JWKS` (file with
+/// NVIDIA's attestation signing keys), `$PLAYBOX_GPU_DRIVERS` and `$PLAYBOX_GPU_VBIOS` (comma-separated allowed versions;
+/// without both, evidence tops out at T1) and `$PLAYBOX_GPU_COUNT` (GPUs that must be attested, default 1). With
+/// `$PLAYBOX_CS_JWKS` and `$PLAYBOX_CS_AUDIENCE` also set, the combined `tdx+gpu` kind is verified too.
+///
+/// # Errors
+///
+/// Returns an [`AttestError`] if the keys file cannot be read or holds no P-384 key.
+pub fn nvidia_gpu_from_env() -> Result<Option<crate::gpu_cc::NvidiaGpuVerifier>, AttestError> {
+    let Some(jwks) = std::env::var_os("PLAYBOX_GPU_JWKS") else {
+        return Ok(None);
+    };
+    let text = fs::read_to_string(&jwks).map_err(|e| format!("reading PLAYBOX_GPU_JWKS: {e}"))?;
+    let mut v = crate::gpu_cc::NvidiaGpuVerifier::new().with_jwks(&text)?;
+    let list = |k: &str| std::env::var(k).unwrap_or_default();
+    for d in list("PLAYBOX_GPU_DRIVERS")
+        .split(',')
+        .filter(|d| !d.is_empty())
+    {
+        v = v.with_driver(d.trim());
+    }
+    for b in list("PLAYBOX_GPU_VBIOS")
+        .split(',')
+        .filter(|b| !b.is_empty())
+    {
+        v = v.with_vbios(b.trim());
+    }
+    if let Ok(n) = list("PLAYBOX_GPU_COUNT").trim().parse::<usize>() {
+        v = v.with_min_gpus(n);
+    }
+    Ok(Some(v))
 }
 
 /// A Confidential Space (`tdx`) verifier from the environment, or `None` if unconfigured:

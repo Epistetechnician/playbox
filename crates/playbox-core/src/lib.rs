@@ -5,6 +5,7 @@ pub mod confidential;
 pub mod evaluator;
 pub mod evidence;
 mod framing;
+pub mod gpu_cc;
 pub mod history;
 pub mod memory;
 pub mod platform;
