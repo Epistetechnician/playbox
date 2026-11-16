@@ -55,6 +55,28 @@ pub async fn up(a: UpArgs) -> Result<()> {
         limits.mem_mib = limits.mem_mib.max(steer_mem);
         limits.timeout_secs = limits.timeout_secs.max(600);
     }
+    let runner = match runtime {
+        Some(name) => {
+            let mut policy = SandboxPolicy::default();
+            if has_steer {
+                policy.allowed_images.push(steer_image.clone());
+            }
+            policy.allowed_images.extend(a.allow_image.iter().cloned());
+            let opts = RunnerOptions {
+                confine: a
+                    .confine
+                    .then(|| a.confine_net.parse().map(|l| (l, !a.no_seccomp)))
+                    .transpose()?,
+            };
+            Some(runner_with(&name, policy, &opts)?)
+        }
+        None => None,
+    };
+    check_flags(
+        &a,
+        runner.as_ref().map(|r| r.name()),
+        runner.as_ref().is_some_and(|r| r.enforces_host_list()),
+    )?;
     let cfg = HostConfig {
         // A host with a state directory logs into it; one without logs to stderr, so activity is never invisible.
         audit_log: a
@@ -63,23 +85,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
             .map(PathBuf::from)
             .or_else(|| state.is_none().then(|| PathBuf::from("-"))),
         repo: repo.map(PathBuf::from),
-        runner: match runtime {
-            Some(name) => {
-                let mut policy = SandboxPolicy::default();
-                if has_steer {
-                    policy.allowed_images.push(steer_image.clone());
-                }
-                policy.allowed_images.extend(a.allow_image.iter().cloned());
-                let opts = RunnerOptions {
-                    confine: a
-                        .confine
-                        .then(|| a.confine_net.parse().map(|l| (l, !a.no_seccomp)))
-                        .transpose()?,
-                };
-                Some(runner_with(&name, policy, &opts)?)
-            }
-            None => None,
-        },
+        runner,
         capabilities: match &a.capabilities {
             None => Vec::new(),
             Some(file) => serde_json::from_slice(
@@ -290,6 +296,28 @@ pub async fn up(a: UpArgs) -> Result<()> {
         tokio::select! { r = stop_signal() => r?, () = serve => {} }
     }
     host.shutdown().await
+}
+
+/// Refuse runtime-only flags that the chosen runner (or lack of one) would silently ignore.
+fn check_flags(a: &UpArgs, runtime: Option<&str>, enforces_host_list: bool) -> Result<()> {
+    if !a.allow_host.is_empty() {
+        match runtime {
+            None => bail!(
+                "--allow-host requires a runtime that enforces host lists; pass --runtime openshell (or --runtime libkrun --confine on Linux)"
+            ),
+            Some(name) if !enforces_host_list => bail!(
+                "--allow-host cannot be enforced by the {name} runner; pass --runtime openshell (or --runtime libkrun --confine on Linux)"
+            ),
+            Some(_) => {}
+        }
+    }
+    if !a.allow_image.is_empty() && runtime.is_none() {
+        bail!("--allow-image requires a runtime; pass --runtime NAME or --docker");
+    }
+    if !a.allow_secret.is_empty() && runtime.is_none() {
+        bail!("--allow-secret requires a runtime; pass --runtime NAME or --docker");
+    }
+    Ok(())
 }
 
 /// Ctrl-C, or SIGTERM (what `kill`, launchd and systemd send): either way the host leaves cleanly and removes its record and control socket.
@@ -515,7 +543,9 @@ fn check_allowed_secrets(
 
 #[cfg(test)]
 mod tests {
-    use super::check_allowed_secrets;
+    use super::{check_allowed_secrets, check_flags};
+    use crate::cli::{Cli, Cmd, UpArgs};
+    use clap::Parser;
     use playbox_runner::secrets::SecretStore;
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
@@ -533,5 +563,98 @@ mod tests {
         std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(check_allowed_secrets(&store, &["API_KEY".into()]).is_err());
         std::fs::remove_dir_all(d).unwrap();
+    }
+
+    fn up_args(extra: &[&str]) -> UpArgs {
+        let cli = Cli::try_parse_from(
+            std::iter::once("playbox")
+                .chain(std::iter::once("up"))
+                .chain(extra.iter().copied()),
+        )
+        .unwrap();
+        let Cmd::Up(a) = cli.command else {
+            unreachable!("expected up")
+        };
+        a
+    }
+
+    #[test]
+    fn check_flags_allows_plain_up_without_runtime() {
+        assert!(check_flags(&up_args(&[]), None, false).is_ok());
+    }
+
+    #[test]
+    fn check_flags_refuses_allow_host_without_runtime() {
+        let err = check_flags(&up_args(&["--allow-host", "api.example.com"]), None, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--allow-host"), "{err}");
+        assert!(err.contains("--runtime openshell"), "{err}");
+    }
+
+    #[test]
+    fn check_flags_refuses_allow_host_on_unenforced_runner() {
+        let err = check_flags(
+            &up_args(&["--allow-host", "api.example.com"]),
+            Some("docker"),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("--allow-host"), "{err}");
+        assert!(err.contains("docker"), "{err}");
+        assert!(err.contains("--runtime openshell"), "{err}");
+    }
+
+    #[test]
+    fn check_flags_allows_allow_host_when_enforced() {
+        assert!(check_flags(
+            &up_args(&["--allow-host", "api.example.com"]),
+            Some("openshell"),
+            true,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn check_flags_refuses_allow_image_without_runtime() {
+        let err = check_flags(
+            &up_args(&["--allow-image", "python:3.12-alpine"]),
+            None,
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("--allow-image"), "{err}");
+        assert!(err.contains("--runtime"), "{err}");
+    }
+
+    #[test]
+    fn check_flags_allows_allow_image_with_runtime() {
+        assert!(check_flags(
+            &up_args(&["--allow-image", "python:3.12-alpine"]),
+            Some("docker"),
+            false,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn check_flags_refuses_allow_secret_without_runtime() {
+        let err = check_flags(&up_args(&["--allow-secret", "api_key"]), None, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--allow-secret"), "{err}");
+        assert!(err.contains("--runtime"), "{err}");
+    }
+
+    #[test]
+    fn check_flags_allows_allow_secret_with_runtime() {
+        assert!(check_flags(
+            &up_args(&["--allow-secret", "api_key"]),
+            Some("docker"),
+            false,
+        )
+        .is_ok());
     }
 }
