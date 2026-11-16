@@ -1,3 +1,4 @@
+#![allow(unsafe_code)] // Linux syscall boundary; each block carries its own justification
 //! Boots one libkrun microVM, runs a command in it, and exits with the command's exit code.
 //!
 //! libkrun's `krun_start_enter` never returns: it takes over the process and calls `exit()` when the

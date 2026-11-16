@@ -1,3 +1,4 @@
+#![allow(unsafe_code)] // Linux syscall boundary; each block carries its own justification
 //! Tests of the Linux confinement: the jail and the run cgroup. They fork and unshare, which needs a single-threaded process,
 //! so this test binary has its own `main` (no libtest). Each case re-runs this binary as a child and reads its exit code.
 //!
