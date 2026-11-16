@@ -231,8 +231,8 @@ pub async fn up(a: UpArgs) -> Result<()> {
         println!("replica up ({}): serves the room's grants, cannot admit members; join through the primary.", transport.label());
     } else {
         let link = host.create_link_with(
-            Duration::from_secs(3600),
-            1,
+            Duration::from_secs(a.link_ttl),
+            a.link_uses,
             link_opts(a.for_guest.as_deref(), a.link_ips)?,
         )?;
         println!(

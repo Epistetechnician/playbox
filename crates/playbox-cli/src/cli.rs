@@ -265,6 +265,12 @@ pub struct UpArgs {
     pub sync_peer: Vec<String>,
     #[arg(long, value_name = "SECS", default_value_t = 15)]
     pub sync_interval: u64,
+    /// How long the first invite link works, in seconds (at most 24 hours)
+    #[arg(long, value_name = "SECS", default_value_t = 3600, value_parser = clap::value_parser!(u64).range(1..=86_400))]
+    pub link_ttl: u64,
+    /// How many members the first invite link admits (at most 100)
+    #[arg(long, value_name = "N", default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=100))]
+    pub link_uses: u32,
     /// Make the link work only for this guest (their `playbox id`); a leaked link is then useless
     #[arg(long, value_name = "GUEST ID")]
     pub for_guest: Option<String>,
@@ -804,5 +810,27 @@ mod tests {
         assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "0"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "2592001"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "6h"]).is_err());
+    }
+
+    #[test]
+    fn the_initial_link_ttl_and_uses_default_and_are_bounded_at_parse_time() {
+        let Cmd::Up(a) = Cli::try_parse_from(["playbox", "up"]).unwrap().command else {
+            panic!("not up")
+        };
+        assert_eq!((a.link_ttl, a.link_uses), (3600, 1));
+
+        let Cmd::Up(a) =
+            Cli::try_parse_from(["playbox", "up", "--link-ttl", "600", "--link-uses", "5"])
+                .unwrap()
+                .command
+        else {
+            panic!("not up")
+        };
+        assert_eq!((a.link_ttl, a.link_uses), (600, 5));
+
+        assert!(Cli::try_parse_from(["playbox", "up", "--link-ttl", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--link-ttl", "86401"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--link-uses", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--link-uses", "101"]).is_err());
     }
 }
