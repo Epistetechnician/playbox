@@ -27,6 +27,8 @@ fn repo(name: &str) -> std::path::PathBuf {
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["config", "user.email", "t@example.com"]);
     git(&dir, &["config", "user.name", "t"]);
+    // A test repository is hermetic: the machine's global commit hooks (size limits, policy checks) must not apply to it.
+    git(&dir, &["config", "core.hooksPath", "/dev/null"]);
     std::fs::write(dir.join("a.txt"), "a\n").unwrap();
     git(&dir, &["add", "-A"]);
     git(&dir, &["commit", "-q", "-m", "init"]);
