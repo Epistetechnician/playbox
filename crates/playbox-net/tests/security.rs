@@ -743,6 +743,12 @@ async fn a_task_that_keeps_writing_is_stopped_at_the_quota_and_its_files_are_rem
         took < Duration::from_secs(15),
         "stopping took {took:?}; the writer would have run for 20 s"
     );
+    // The host removes the files as it stops the task, which can finish a moment after the refusal reaches us (one slow CI run saw the file
+    // still there). Wait a bounded time: a file that is really leaked is still there afterwards and fails the test.
+    let gone = std::time::Instant::now();
+    while !leftover_probe_files().is_empty() && gone.elapsed() < Duration::from_secs(5) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     assert!(
         leftover_probe_files().is_empty(),
         "the oversized file was left on the host: {:?}",
