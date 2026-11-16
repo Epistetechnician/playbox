@@ -128,6 +128,21 @@ enum Root {
     Verifier([u8; 32]),
 }
 
+/// Whether `id` may still run a capability: in the room, not banned, grant not revoked and not past its expiry.
+fn member_standing(st: &State, id: &EndpointId, now: i64) -> Result<(), String> {
+    if st.banned.contains(id) {
+        return Err("the member was revoked".into());
+    }
+    match st.members.get(id) {
+        None => Err("the member is no longer in the room".into()),
+        Some(grant) if st.revoked.contains(grant) => Err("the member's grant was revoked".into()),
+        Some(_) if st.admits.get(id).is_some_and(|a| now >= a.expires) => {
+            Err("the member's grant has expired".into())
+        }
+        Some(_) => Ok(()),
+    }
+}
+
 pub struct Host {
     audit: Arc<audit::Audit>,
     router: Router,
@@ -356,16 +371,7 @@ impl Host {
                     .parse()
                     .map_err(|_| "the member id is not valid".to_string())?;
                 let st = standing_state.lock_recover();
-                if st.banned.contains(&id) {
-                    return Err("the member was revoked".into());
-                }
-                match st.members.get(&id) {
-                    None => Err("the member is no longer in the room".into()),
-                    Some(grant) if st.revoked.contains(grant) => {
-                        Err("the member's grant was revoked".into())
-                    }
-                    Some(_) => Ok(()),
-                }
+                member_standing(&st, &id, crate::grants::now_secs())
             })),
         );
         let handler = RoomHandler {
@@ -705,5 +711,32 @@ impl Host {
     pub async fn shutdown(self) -> Result<()> {
         self.repl.stop();
         self.router.shutdown().await.map_err(|e| anyhow!("{e}"))
+    }
+}
+
+#[cfg(test)]
+mod standing_tests {
+    use super::*;
+
+    #[test]
+    fn an_expired_grant_has_no_standing() {
+        let id = SecretKey::from_bytes(&[7; 32]).public();
+        let mut st = State::default();
+        st.members.insert(id, "g1".into());
+        st.admits.insert(
+            id,
+            Admit {
+                issued: 100,
+                expires: 101,
+                invite: String::new(),
+                cpu_milli: 0,
+                mem_mib: 0,
+                timeout_secs: 0,
+                net: false,
+                allowed: vec![],
+            },
+        );
+        assert!(member_standing(&st, &id, 100).is_ok());
+        assert!(member_standing(&st, &id, 102).is_err());
     }
 }
