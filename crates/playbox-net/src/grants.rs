@@ -483,7 +483,21 @@ impl Authority {
         };
         a.authorize_with_limits(limits)
             .map(|_| ())
-            .map_err(|e| anyhow!("not authorized: {e}"))
+            .map_err(|e| anyhow!("not authorized: {}", readable_refusal(&e.to_string(), now_secs())))
+    }
+}
+
+/// The datalog refusal for a grant past its `exp` reads "check if now($t), $t < 1794798919", which tells a member
+/// nothing. When that failed check names a time already gone, say so and what to do; any other refusal is returned
+/// unchanged.
+fn readable_refusal(raw: &str, now: i64) -> String {
+    let expired = raw.split("$t < ").skip(1).find_map(|rest| {
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        digits.parse::<i64>().ok().filter(|&t| t <= now)
+    });
+    match expired {
+        Some(t) => format!("this grant expired (at unix time {t}); ask the host for a new invite link ({raw})"),
+        None => raw.to_string(),
     }
 }
 
@@ -549,4 +563,23 @@ pub fn attenuate(token: &str, code: &str) -> Result<String> {
     let block = BlockBuilder::new().code(code)?;
     let t = UnverifiedBiscuit::from_base64(token)?.append(block)?;
     Ok(t.to_base64()?)
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::readable_refusal;
+
+    #[test]
+    fn an_expired_grant_says_so() {
+        let raw = "an allow policy matched (policy index: 0), and the following checks failed: Check n°1 in block n°0: check if now($t), $t < 1000";
+        let m = readable_refusal(raw, 2000);
+        assert!(m.contains("expired") && m.contains("new invite link"), "{m}");
+    }
+
+    #[test]
+    fn other_refusals_and_live_grants_pass_through() {
+        let raw = "checks failed: check if now($t), $t < 5000";
+        assert_eq!(readable_refusal(raw, 2000), raw);
+        assert_eq!(readable_refusal("check if req_cpu($c), $c <= 2", 2000), "check if req_cpu($c), $c <= 2");
+    }
 }
