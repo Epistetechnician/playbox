@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-11-16
+
 ### Added
 - `playbox launch --room R --harness H [--model M] [--cwd DIR] -- COMMAND`: starts an agent on the host's machine with a key the owner made for it, a join link only that key can use (`PLAYBOX_JOIN_LINK_FILE`) and its own `PLAYBOX_HOME`; once it joins, the host signs a launch record naming that key and the executable's SHA-256, which the hub shows as "host-observed" (IDENT-9).
 
