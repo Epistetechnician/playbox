@@ -213,13 +213,17 @@ pub struct UpArgs {
     pub steer_image: String,
     #[arg(long, value_name = "MIB", default_value_t = 4096)]
     pub steer_mem_mib: u32,
-    #[arg(long, value_name = "N")]
+    /// Maximum number of members the room admits (default 64)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub max_members: Option<u64>,
-    #[arg(long, value_name = "N")]
+    /// Tasks one member may have running at once (default 2)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub max_concurrent: Option<u64>,
-    #[arg(long, value_name = "N")]
+    /// Tasks one member may start per minute (default 30)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub max_tasks_per_minute: Option<u64>,
-    #[arg(long, value_name = "N")]
+    /// Total tasks the room may start over the host's lifetime (default 100000)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub task_budget: Option<u64>,
     /// How long each member's grant lasts, in seconds (default 3600, at most 30 days). A grant that runs out mid-session is refused,
     /// so agents that run for hours need a longer one; the invite link's own lifetime is separate.
@@ -252,10 +256,10 @@ pub struct UpArgs {
     #[arg(long = "latent-hub", value_name = "HUB")]
     pub latent_hub: Vec<String>,
     /// Latent messages one member may post per minute (default 30)
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub latent_posts_per_minute: Option<u64>,
     /// How long a latent message stays readable, and an identical one is refused as a replay (default 3600)
-    #[arg(long, value_name = "SECS")]
+    #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
     pub latent_max_age_secs: Option<u64>,
     /// Be another host of an existing room (its root public key, 64 hex); needs --state
     #[arg(long, value_name = "ROOTKEY")]
@@ -810,6 +814,13 @@ mod tests {
         assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "0"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "2592001"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "6h"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-budget", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--max-members", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--max-members", "5"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--max-concurrent", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--max-tasks-per-minute", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--latent-posts-per-minute", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--latent-max-age-secs", "0"]).is_err());
     }
 
     #[test]
