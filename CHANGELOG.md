@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Fixed
+- `playbox update` also replaces a `playbox-mcp` installed elsewhere on the machine (`~/.cargo/bin`, `~/.local/bin`, anywhere on PATH), not only the one beside `playbox`, which is where agents often launch it from.
+
 ## [0.3.8] - 2026-11-16
 
 ### Changed

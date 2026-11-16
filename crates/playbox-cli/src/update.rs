@@ -407,14 +407,43 @@ pub fn run(o: &Opts) -> Result<u8> {
     Ok(0)
 }
 
-/// The archive also carries `playbox-mcp`, the server agents launch. It goes next to `playbox`, checked to be the same version, and
-/// keeps the local signature like `playbox` does. A failure here never undoes the update: it is reported and the old file stays.
+/// Where a `playbox-mcp` should be replaced: next to `playbox`, and wherever one is already installed (agents often run the copy in
+/// `~/.cargo/bin` while `playbox` lives in `~/.local/bin`, so "next to it" alone would leave the one agents launch behind).
+fn mcp_homes(exe: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = exe.parent().map(Path::to_path_buf).into_iter().collect();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(home.join(".cargo").join("bin"));
+        dirs.push(home.join(".local").join("bin"));
+    }
+    dirs.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    let mut out: Vec<PathBuf> = Vec::new();
+    for (i, d) in dirs.iter().enumerate() {
+        let f = d.join("playbox-mcp");
+        // The first directory (beside `playbox`) always gets one; the others only if there is already a file to replace.
+        if (i == 0 || f.is_file()) && !out.iter().any(|o| same_file(o, &f)) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
+/// The archive also carries `playbox-mcp`, the server agents launch. It is checked to be the same version, then replaces each copy
+/// from `mcp_homes`, keeping the local signature like `playbox` does. A failure here never undoes the update: it is reported and the
+/// old file stays.
 fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
     let new_mcp = dir.join("playbox-mcp");
     if !new_mcp.is_file() {
         return;
     }
-    let dest = exe.with_file_name("playbox-mcp");
     let result = (|| -> Result<()> {
         #[cfg(unix)]
         std::fs::set_permissions(
@@ -431,17 +460,29 @@ fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
         {
             bail!("it does not report version {target}");
         }
-        let staged = dest.with_file_name(".playbox-mcp.new");
-        std::fs::copy(&new_mcp, &staged)?;
-        #[cfg(unix)]
-        std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
-        keep_local_signature(&staged, &dest);
-        std::fs::rename(&staged, &dest)?;
         Ok(())
     })();
-    match result {
-        Ok(()) => println!("updated playbox-mcp next to it ({})", dest.display()),
-        Err(e) => eprintln!("note: playbox-mcp was not updated ({e:#}); the old one stays"),
+    if let Err(e) = result {
+        eprintln!("note: playbox-mcp was not updated ({e:#}); the old one stays");
+        return;
+    }
+    for dest in mcp_homes(exe) {
+        let one = (|| -> Result<()> {
+            let staged = dest.with_file_name(".playbox-mcp.new");
+            std::fs::copy(&new_mcp, &staged)?;
+            #[cfg(unix)]
+            std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+            keep_local_signature(&staged, &dest);
+            std::fs::rename(&staged, &dest)?;
+            Ok(())
+        })();
+        match one {
+            Ok(()) => println!("updated {}", dest.display()),
+            Err(e) => eprintln!(
+                "note: {} was not updated ({e:#}); the old one stays",
+                dest.display()
+            ),
+        }
     }
 }
 
