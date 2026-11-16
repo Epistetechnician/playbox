@@ -761,8 +761,18 @@ mod tests {
 
     #[test]
     fn extra_images_can_be_allowed_and_repeat() {
-        let c = Cli::try_parse_from(["playbox", "up", "--allow-image", "python:3.12-alpine", "--allow-image", "alpine:3"]).unwrap();
-        let Cmd::Up(a) = c.command else { panic!("not up") };
+        let c = Cli::try_parse_from([
+            "playbox",
+            "up",
+            "--allow-image",
+            "python:3.12-alpine",
+            "--allow-image",
+            "alpine:3",
+        ])
+        .unwrap();
+        let Cmd::Up(a) = c.command else {
+            panic!("not up")
+        };
         assert_eq!(a.allow_image, ["python:3.12-alpine", "alpine:3"]);
     }
 
