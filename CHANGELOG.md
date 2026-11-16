@@ -9,10 +9,13 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
-### Added
-- `PLAYBOX_ATTEST=gpu` (GPU-only evidence from `PLAYBOX_GPU_EVIDENCE_CMD`), a fake NVIDIA attestation service (`playbox-core` example `fake_nras`) and `scripts/gpu-attest-dryrun.sh`, which runs host attest and `playbox verify` end to end with no GPU and checks that every deliberately broken token is rejected.
+## [0.3.12] - 2026-11-16
 
 ### Added
+- Host-signed launch record: `launch MEMBER HARNESS [MODEL [IMAGE]]` on a host's control socket signs, with the host's key, that the host started that member; the hub shows "host-observed" only from a record that verifies under the room key, and flags a card that disagrees with it (IDENT-7). There is still no launcher that starts agents: the operator names what was started.
+- ANS receipt check: in a member's Harnesses drawer the owner pastes an ANS receipt and the log's public key; the hub checks it offline (ES256 COSE_Sign1, the event's `ansName`, inclusion-proof consistency) and shows "registered in the log". It does not prove the agent holds the name (IDENT-8).
+- Identity in the Timeline (its own kind), a Details drawer on every Harnesses row (key, `did:key`, host record, card history), endorsed and unsigned counts in the header, and revokes recorded in the security trail (IDENT-5, IDENT-6).
+- `PLAYBOX_ATTEST=gpu` (GPU-only evidence from `PLAYBOX_GPU_EVIDENCE_CMD`), a fake NVIDIA attestation service (`playbox-core` example `fake_nras`) and `scripts/gpu-attest-dryrun.sh`, which runs host attest and `playbox verify` end to end with no GPU and checks that every deliberately broken token is rejected.
 - GPU attestation verifier (`playbox-core::gpu_cc`): checks an NVIDIA H100 confidential-computing attestation token offline (ES384 against pinned keys, nonce bound to the statement, driver and VBIOS allow-lists), alone as `nvidia-gpu` or with the Confidential Space check as `tdx+gpu` (lower tier of the two). Configure with `PLAYBOX_GPU_JWKS` and friends; `PLAYBOX_ATTEST=tdx+gpu` with `PLAYBOX_GPU_EVIDENCE_CMD` produces the evidence. Tested with locally signed tokens only; not yet run against a live H100 in CC mode. See docs/attestation.md.
 
 ## [0.3.11] - 2026-11-16
