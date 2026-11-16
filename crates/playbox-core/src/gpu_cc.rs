@@ -410,6 +410,41 @@ impl PlatformVerifier for CpuGpuVerifier {
     }
 }
 
+/// Produces `nvidia-gpu` evidence alone: the lines a command prints for the nonce in `PLAYBOX_NONCE`. For machines with no
+/// confidential CPU (or for testing with `examples/fake_nras.rs`); [`CpuGpuProvider`] is the combined form.
+#[cfg(unix)]
+pub struct GpuProvider {
+    pub gpu_command: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+fn run_gpu_command(cmd: &std::path::Path, binding: &[u8; 32]) -> Result<String, AttestError> {
+    let out = std::process::Command::new(cmd)
+        .env("PLAYBOX_NONCE", hex(binding))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("running {}: {e}", cmd.display()))?;
+    if !out.status.success() {
+        return Err(format!("{} failed: {}", cmd.display(), out.status).into());
+    }
+    Ok(String::from_utf8(out.stdout).map_err(|_| "GPU evidence is not utf-8")?)
+}
+
+#[cfg(unix)]
+impl PlatformProvider for GpuProvider {
+    fn kind(&self) -> &str {
+        GPU_KIND
+    }
+
+    fn produce(&self, binding: &[u8; 32], _: &Measurements) -> Result<Produced, AttestError> {
+        let gpu = run_gpu_command(&self.gpu_command, binding)?;
+        Ok(Produced {
+            evidence: format!("{}\n", gpu.trim_end()),
+            claimed: Tier::T3,
+        })
+    }
+}
+
 /// Produces the evidence for [`CpuGpuVerifier`]: the Confidential Space token from the launcher, plus the lines a
 /// command prints for the GPU. The command gets the nonce in `PLAYBOX_NONCE` and must print the `gpu` and
 /// `gpu-detail` lines (a small wrapper around `nvtrust` or NRAS). Only works inside a CC-mode VM with an H100,
@@ -428,15 +463,7 @@ impl PlatformProvider for CpuGpuProvider {
 
     fn produce(&self, binding: &[u8; 32], m: &Measurements) -> Result<Produced, AttestError> {
         let cpu = self.cpu.produce(binding, m)?;
-        let out = std::process::Command::new(&self.gpu_command)
-            .env("PLAYBOX_NONCE", hex(binding))
-            .stdin(std::process::Stdio::null())
-            .output()
-            .map_err(|e| format!("running {}: {e}", self.gpu_command.display()))?;
-        if !out.status.success() {
-            return Err(format!("{} failed: {}", self.gpu_command.display(), out.status).into());
-        }
-        let gpu = String::from_utf8(out.stdout).map_err(|_| "GPU evidence is not utf-8")?;
+        let gpu = run_gpu_command(&self.gpu_command, binding)?;
         Ok(Produced {
             evidence: format!("{}\n{}\n", cpu.evidence.trim_end(), gpu.trim_end()),
             claimed: Tier::T3,

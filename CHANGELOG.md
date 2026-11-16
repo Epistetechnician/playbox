@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- `PLAYBOX_ATTEST=gpu` (GPU-only evidence from `PLAYBOX_GPU_EVIDENCE_CMD`), a fake NVIDIA attestation service (`playbox-core` example `fake_nras`) and `scripts/gpu-attest-dryrun.sh`, which runs host attest and `playbox verify` end to end with no GPU and checks that every deliberately broken token is rejected.
+
+### Added
 - GPU attestation verifier (`playbox-core::gpu_cc`): checks an NVIDIA H100 confidential-computing attestation token offline (ES384 against pinned keys, nonce bound to the statement, driver and VBIOS allow-lists), alone as `nvidia-gpu` or with the Confidential Space check as `tdx+gpu` (lower tier of the two). Configure with `PLAYBOX_GPU_JWKS` and friends; `PLAYBOX_ATTEST=tdx+gpu` with `PLAYBOX_GPU_EVIDENCE_CMD` produces the evidence. Tested with locally signed tokens only; not yet run against a live H100 in CC mode. See docs/attestation.md.
 
 ## [0.3.11] - 2026-11-16

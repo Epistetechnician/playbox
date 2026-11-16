@@ -191,6 +191,15 @@ pub fn detect_with(
             )))
         }
         #[cfg(unix)]
+        "gpu" => {
+            let cmd = std::env::var_os("PLAYBOX_GPU_EVIDENCE_CMD").ok_or(
+                "PLAYBOX_ATTEST=gpu needs PLAYBOX_GPU_EVIDENCE_CMD (a program that prints the gpu and gpu-detail evidence lines for the nonce in PLAYBOX_NONCE)",
+            )?;
+            Ok(Some(Box::new(crate::gpu_cc::GpuProvider {
+                gpu_command: cmd.into(),
+            })))
+        }
+        #[cfg(unix)]
         "tdx+gpu" => {
             let audience = std::env::var("PLAYBOX_CS_AUDIENCE").map_err(|_| {
                 "PLAYBOX_ATTEST=tdx+gpu needs PLAYBOX_CS_AUDIENCE (the audience your verifiers expect)"
@@ -212,7 +221,7 @@ pub fn detect_with(
             None
         }),
         other => Err(format!(
-            "PLAYBOX_ATTEST must be none, auto, se, tpm, tdx or tdx+gpu, not {other:?}"
+            "PLAYBOX_ATTEST must be none, auto, se, tpm, tdx, gpu or tdx+gpu, not {other:?}"
         )
         .into()),
     }
