@@ -150,7 +150,21 @@ pub async fn serve(
                 Ok(_) => "error: not a current member".to_string(),
                 Err(e) => format!("error: not a member id: {e}"),
             },
-            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID | members | revoke MEMBER ID".to_string(),
+            (Some("launch"), Some(id)) => {
+                // `launch MEMBER HARNESS [MODEL [IMAGE]]`: the host records that it started this member, signed, in the room's own history.
+                let (harness, model, image) = (w.next().unwrap_or(""), w.next().unwrap_or(""), w.next().unwrap_or(""));
+                match id.parse::<playbox_net::EndpointId>() {
+                    Ok(id) => match host
+                        .signed_launch(&id, harness, model, image)
+                        .and_then(|t| host.say(&t, None))
+                    {
+                        Ok(_) => format!("ok launch recorded for {id}"),
+                        Err(e) => format!("error: {e}"),
+                    },
+                    Err(e) => format!("error: not a member id: {e}"),
+                }
+            }
+            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID | members | revoke MEMBER ID | launch MEMBER HARNESS [MODEL [IMAGE]]".to_string(),
         };
         let _ = wr.write_all(format!("{reply}\n").as_bytes()).await;
     }

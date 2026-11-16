@@ -175,6 +175,86 @@ pub fn verify(text: &str, sender: &str, room: &str, now_ms: u64) -> Result<Value
     Ok(card)
 }
 
+/// Domain for launch records: a host signature over a launch record can never be mistaken for a card or anything else the host signs.
+pub const LAUNCH_DOMAIN: &str = "playbox.launch.v1\n";
+/// The message prefix of a launch record.
+pub const LAUNCH_PREFIX: &str = "::pbx launch ";
+
+/// Build and sign a launch record: the host says it started `member` with this harness, model and image hash. `host` is the host's public key
+/// (the room id); `sign` signs with the host's secret key. Only the host can make one, because readers check the signature against the room id.
+///
+/// # Errors
+///
+/// Returns a message if the harness is empty or the record is too large.
+pub fn build_launch(
+    host: &[u8; 32],
+    member: &[u8; 32],
+    harness: &str,
+    model: &str,
+    image: &str,
+    now_ms: u64,
+    sign: impl Fn(&[u8]) -> [u8; 64],
+) -> Result<String, String> {
+    let harness = clip(harness.trim(), 30);
+    if harness.is_empty() {
+        return Err("a launch record needs a harness".into());
+    }
+    let mut m = Map::new();
+    for (k, v) in [
+        ("v", json!(1)),
+        ("room", json!(hex(host))),
+        ("key", json!(hex(member))),
+        ("harness", json!(harness)),
+        ("model", json!(clip(model, 40))),
+        ("image", json!(clip(image, 100))),
+        ("started_ms", json!(now_ms)),
+    ] {
+        m.insert(k.to_string(), v);
+    }
+    let body = serde_json::to_string(&Value::Object(m)).map_err(|e| e.to_string())?;
+    let sig = sign(format!("{LAUNCH_DOMAIN}{body}").as_bytes());
+    let text = format!("{LAUNCH_PREFIX}{body} {}", hex(&sig));
+    if text.len() > MAX_LEN {
+        return Err("launch record is too large".into());
+    }
+    Ok(text)
+}
+
+/// Check a launch record. `room` is this room's id, which is the host's key: the signature must verify under it, so only the host could have
+/// written it. The member it is about is in the record (`key`); the reader matches that to a member.
+///
+/// # Errors
+///
+/// Returns why it was rejected: malformed, not signed by the host, or for another room.
+pub fn verify_launch(text: &str, room: &str) -> Result<Value, String> {
+    if text.len() > MAX_LEN {
+        return Err("too large".into());
+    }
+    let rest = text
+        .strip_prefix(LAUNCH_PREFIX)
+        .ok_or("not a launch record")?;
+    let (body, sig_hex) = rest.rsplit_once(' ').ok_or("malformed")?;
+    let sig: [u8; 64] = unhex(sig_hex).ok_or("bad signature encoding")?;
+    let rec: Value = serde_json::from_str(body).map_err(|_| "bad json")?;
+    let host: [u8; 32] = unhex(room).ok_or("room is not a host key")?;
+    VerifyingKey::from_bytes(&host)
+        .map_err(|_| "bad key")?
+        .verify(
+            format!("{LAUNCH_DOMAIN}{body}").as_bytes(),
+            &Signature::from_bytes(&sig),
+        )
+        .map_err(|_| "not signed by this room's host")?;
+    if rec["v"] != 1 || rec["room"].as_str() != Some(room) {
+        return Err("record is for another room".into());
+    }
+    let key = rec["key"].as_str().ok_or("no key")?;
+    if unhex::<32>(key).is_none() {
+        return Err("bad key".into());
+    }
+    rec["started_ms"].as_u64().ok_or("no start time")?;
+    Ok(rec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +401,81 @@ mod tests {
         let n = v["name"].as_str().unwrap();
         assert_eq!(n.chars().count(), 30);
         assert!(!n.contains('\u{0}') && !n.contains('\n'));
+    }
+
+    #[test]
+    // REQ: IDENT-7
+    fn a_launch_record_verifies_only_under_the_hosts_key_and_room() {
+        let (h, m) = (key(7), key(8));
+        let hid = hex(&h.verifying_key().to_bytes());
+        let t = build_launch(
+            &h.verifying_key().to_bytes(),
+            &m.verifying_key().to_bytes(),
+            "Hermes",
+            "m1",
+            "sha256:ab",
+            NOW,
+            sign_with(&h),
+        )
+        .unwrap();
+        let r = verify_launch(&t, &hid).unwrap();
+        assert_eq!(r["key"], hex(&m.verifying_key().to_bytes()));
+        assert!(
+            verify_launch(&t, &hex(&key(9).verifying_key().to_bytes())).is_err(),
+            "another room"
+        );
+        let forged = build_launch(
+            &h.verifying_key().to_bytes(),
+            &m.verifying_key().to_bytes(),
+            "Hermes",
+            "m1",
+            "x",
+            NOW,
+            sign_with(&m),
+        )
+        .unwrap();
+        assert!(
+            verify_launch(&forged, &hid).is_err(),
+            "signed by the member, not the host"
+        );
+        assert!(
+            verify_launch(&t.replace("Hermes", "Codex"), &hid).is_err(),
+            "tampered"
+        );
+        let card = build(
+            &hid,
+            &m.verifying_key().to_bytes(),
+            &fields(),
+            NOW,
+            1000,
+            sign_with(&h),
+        )
+        .unwrap();
+        assert!(
+            verify_launch(&card.replacen(PREFIX, LAUNCH_PREFIX, 1), &hid).is_err(),
+            "a card signature is not a launch signature"
+        );
+    }
+
+    #[test]
+    fn a_fixed_launch_record_matches_the_python_verifier_vector() {
+        let (h, m) = (key(7), key(8));
+        let t = build_launch(
+            &h.verifying_key().to_bytes(),
+            &m.verifying_key().to_bytes(),
+            "Hermes",
+            "m1",
+            "sha256:ab",
+            NOW,
+            sign_with(&h),
+        )
+        .unwrap();
+        let want = include_str!("../../../ui/tests/launch_vector.txt");
+        assert_eq!(
+            format!("{t}\n"),
+            want,
+            "regenerate ui/tests/launch_vector.txt"
+        );
     }
 
     #[test]
