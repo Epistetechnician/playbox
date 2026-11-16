@@ -455,9 +455,13 @@ fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
             .stdin(Stdio::null())
             .output()
             .context("running the downloaded playbox-mcp")?;
-        if !out.status.success()
-            || !String::from_utf8_lossy(&out.stdout).contains(&target.to_string())
-        {
+        // `playbox-mcp --version` says its version on stderr (stdout carries the protocol), so look at both.
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        if !out.status.success() || !said.contains(&target.to_string()) {
             bail!("it does not report version {target}");
         }
         Ok(())
