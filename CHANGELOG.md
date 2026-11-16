@@ -9,6 +9,13 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-11-16
+
+### Changes
+
+- playbox update: read playbox-mcp's version from stderr (4ce6f91)
+- playbox up --allow-image; Tripwire (Playbox vs a naive workspace under attack) and overnight soak scripts (e75b653)
+
 ## [0.3.9] - 2026-11-16
 
 ### Fixed
