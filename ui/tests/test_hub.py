@@ -579,6 +579,7 @@ def test_http():
         check("endorsing needs a session", Client(port).req("POST", f"/r/{rid}/api/endorse", {"key": K})[0] in (401, 303))
         check("endorsing needs a fresh passkey touch", s.req("POST", f"/r/{rid}/api/endorse", {"key": K})[1].get("error") == "stepup")
         check("removing an endorsement needs a fresh passkey touch", s.req("DELETE", f"/r/{rid}/api/endorse/{K}")[1].get("error") == "stepup")
+        check("checking an ANS receipt needs a session and a fresh passkey touch", Client(port).req("POST", f"/r/{rid}/api/ans", {"key": K})[0] in (401, 303) and s.req("POST", f"/r/{rid}/api/ans", {"key": K})[1].get("error") == "stepup")
         check("an endorsement key must look like a key", s.req("POST", f"/r/{rid}/api/endorse", {"key": "nope"})[0] == 400)
         st, sb, _ = s.req("POST", "/api/auth/stepup/begin", {})
         st, _, _ = s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": dev.get(sb["publicKey"], origin, kind="webauthn.get")})
@@ -1013,7 +1014,7 @@ def _make_card(seed, room, name, now, ttl=3_600_000, **kw):
     import json as _j
     from hub import card as C
     pub, _ = _ed_sign(seed, b"")
-    body = {"v": 1, "room": room, "key": pub.hex(), "did": C.did_key(pub), "name": name, "machine": kw.get("machine", ""), "role": "", "harness": kw.get("harness", ""), "model": "", "ans": "", "issued_ms": now, "expires_ms": now + ttl}
+    body = {"v": 1, "room": room, "key": pub.hex(), "did": C.did_key(pub), "name": name, "machine": kw.get("machine", ""), "role": "", "harness": kw.get("harness", ""), "model": "", "ans": kw.get("ans", ""), "issued_ms": now, "expires_ms": now + ttl}
     txt = _j.dumps(body, sort_keys=True, separators=(",", ":"))
     return pub.hex(), C.PREFIX + txt + " " + _ed_sign(seed, (C.DOMAIN + txt).encode())[1].hex()
 
@@ -1107,6 +1108,89 @@ def test_launch_records():
     liar = _make_launch(b"\x04" * 32, hid, k1, "Codex")
     mem, _ = run([{"from": k1, "text": c1}, {"from": "host", "text": liar}])
     check("launch: a card that disagrees with the host's record is flagged", mem["launch"]["harness"] == "Codex" and mem["launch_differs"])
+
+
+def _cbor_enc(x):
+    def head(mt, n):
+        return bytes([mt << 5 | n]) if n < 24 else bytes([mt << 5 | 24, n]) if n < 256 else bytes([mt << 5 | 25]) + n.to_bytes(2, "big") if n < 65536 else bytes([mt << 5 | 26]) + n.to_bytes(4, "big")
+    if isinstance(x, bool) or x is None:
+        raise ValueError
+    if isinstance(x, int):
+        return head(0, x) if x >= 0 else head(1, -1 - x)
+    if isinstance(x, bytes):
+        return head(2, len(x)) + x
+    if isinstance(x, str):
+        return head(3, len(x.encode())) + x.encode()
+    if isinstance(x, list):
+        return head(4, len(x)) + b"".join(_cbor_enc(i) for i in x)
+    if isinstance(x, dict):
+        return head(5, len(x)) + b"".join(_cbor_enc(k) + _cbor_enc(v) for k, v in x.items())
+    if isinstance(x, tuple):
+        return head(6, x[0]) + _cbor_enc(x[1])
+    raise ValueError(type(x))
+
+
+def _ans_receipt(name, tmp, tamper=None):
+    """A receipt signed by a real P-256 key with openssl (an independent signer), with an RFC 9162 proof over a 3-leaf tree."""
+    import hashlib, json as _j, subprocess, base64
+    kp, pp = os.path.join(tmp, "k.pem"), os.path.join(tmp, "p.pem")
+    if not os.path.exists(kp):
+        subprocess.run(["openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", kp], check=True, capture_output=True)
+        subprocess.run(["openssl", "ec", "-in", kp, "-pubout", "-out", pp], check=True, capture_output=True)
+    pem = open(pp).read()
+    spki = base64.b64decode("".join(pem.splitlines()[1:-1]))
+    payload = _j.dumps({"schemaVersion": "V1", "producer": {"event": {"ansName": name, "eventType": "AGENT_REGISTERED"}}}, separators=(",", ":"), sort_keys=True).encode()
+    H = lambda b: hashlib.sha256(b).digest()
+    l0, l2 = H(b"\x00other0"), H(b"\x00other2")
+    leaf = H(b"\x00" + payload)
+    n01 = H(b"\x01" + l0 + leaf)                      # leaf index 1 in a tree of 3: sibling l0, then l2
+    root = H(b"\x01" + n01 + l2)
+    prot = _cbor_enc({1: -7, 4: H(spki)[:4], 15: {1: "ans-tl.test", 6: 1_700_000_000}})
+    sigs = _cbor_enc(["Signature1", prot, b"", payload])
+    open(os.path.join(tmp, "m.bin"), "wb").write(sigs)
+    der = subprocess.run(["openssl", "dgst", "-sha256", "-sign", kp, os.path.join(tmp, "m.bin")], check=True, capture_output=True).stdout
+    # DER ECDSA-Sig-Value -> r || s
+    rl = der[3]; r = der[4:4 + rl]; sl = der[5 + rl]; sv = der[6 + rl:6 + rl + sl]
+    sig = r.lstrip(b"\0").rjust(32, b"\0") + sv.lstrip(b"\0").rjust(32, b"\0")
+    path = [l0, l2]
+    vdp = {-1: 3, -2: 1, -3: path, -4: (b"\x00" * 32 if tamper == "root" else root)}
+    top = (18, [prot, {396: vdp}, payload, sig])
+    return base64.urlsafe_b64encode(_cbor_enc(top)).decode().rstrip("="), pem
+
+
+def test_ans_receipts():
+    # REQ: IDENT-8
+    """An ANS receipt is accepted only for the name it names, under the log key that was pinned, with a consistent inclusion proof."""
+    import tempfile
+    sys.path.insert(0, UI)
+    from hub import ans
+    with tempfile.TemporaryDirectory() as tmp:
+        name = "ans://v1.0.0.agent.example.com"
+        rc, pem = _ans_receipt(name, tmp)
+        r = ans.verify(rc, pem, name)
+        check("ans: a receipt signed by an independent P-256 signer verifies against the pinned key", r["name"] == name and r["tree_size"] == 3 and len(r["leaf_hash"]) == 64)
+        def bad(why, *a):
+            try:
+                ans.verify(*a); check("ans: " + why, False)
+            except ValueError:
+                check("ans: " + why, True)
+        bad("a receipt for another name is refused", rc, pem, "ans://v1.0.0.other.example.com")
+        other = os.path.join(tmp, "other"); os.mkdir(other)
+        _, pem2 = _ans_receipt(name, other)
+        bad("a receipt is refused under a different log key", rc, pem2, name)
+        flipped = rc[:60] + ("A" if rc[60] != "A" else "B") + rc[61:]
+        bad("a corrupted receipt is refused", flipped, pem, name)
+        rt, _ = _ans_receipt(name, tmp, tamper="root")
+        bad("an inclusion proof that does not reach its root is refused", rt, pem, name)
+        bad("a non-receipt is refused", "AAAA", pem, name)
+        bad("a malformed key is refused", rc, "not a key", name)
+        from hub import board
+        k1, c1 = _make_card(b"\x01" * 32, "r", "Ada", 1_700_000_000_000, harness="Hermes", ans=name)
+        it = [{"seq": 1, "kind": "say", "from": k1, "time_ms": 1_700_000_000_000, "text": c1}]
+        mm = lambda ac: {x["id"]: x for x in board.build(it, [{"id": k1, "present": True}], None, 1_700_000_001_000, room="r", ans_checked=ac)["members"]}[k1]
+        check("ans: a name with no checked receipt is not registered", mm(None)["ans_status"] == "" and mm(None)["ans"] == name)
+        check("ans: a checked receipt for the card's name shows registered", mm({k1: {"name": name, "leaf_hash": "ab" * 32, "at": 1}})["ans_status"] == "registered")
+        check("ans: a card that now names something else is not registered", mm({k1: {"name": "ans://other", "leaf_hash": "ab" * 32, "at": 1}})["ans_status"] == "changed" and mm({k1: {"name": "ans://other", "at": 1}})["ans_proof"] is None)
 
 
 def test_endorsement():
@@ -1611,6 +1695,7 @@ if __name__ == "__main__":
     test_identity_cards()
     test_endorsement()
     test_launch_records()
+    test_ans_receipts()
     test_board_comments()
     test_housekeeping()
     test_tunnel_keeper()

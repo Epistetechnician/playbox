@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built (launch record: host command and verification built, no launcher yet); gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built (launch record: host command and verification built, no launcher yet); phase 4 built for ANS receipts (offline check against a pinned log key; proves the name is registered, not that the agent holds it), COSE exports not built; gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -108,6 +108,7 @@ A card is canonical JSON:
 
 - `did` is derived from the key (did:key, ed25519), so any verifier that understands DIDs can resolve it offline. We verify that `did` matches `key` and ignore it otherwise.
 - `ans` is stored and shown as a link. If the user supplies an ANS receipt, `ans-verify` (or a built-in COSE check) validates it offline and the badge becomes "name verified"; no receipt means "name claimed".
+- **As built:** the owner pastes the receipt and the log's key; `ui/hub/ans.py` checks the ES256 COSE_Sign1 signature, the event's `ansName`, and the inclusion proof's consistency, offline and stdlib only. The result is "registered in the log", not "name verified": an ANS receipt carries no member key, so it cannot show that this agent holds the name, and its inclusion proof sits outside the signature. A card that later names a different ANS name loses the badge.
 - **Acceptance:** a card with a mismatching `did` is rejected; an `ans` name without a receipt never shows as verified.
 
 ### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label; BUILT as a record the host signs on request: control socket `launch MEMBER HARNESS [MODEL [IMAGE]]`; there is still no launcher that starts agents, so the operator names what was started. No label says "observed" without a record)

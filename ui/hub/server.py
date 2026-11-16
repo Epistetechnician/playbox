@@ -30,6 +30,7 @@ from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from .sec import SecLog, STAGES, posture
 from . import board
+from . import ans as ans_mod
 from .machine import Machine
 from .store import Store
 
@@ -891,7 +892,7 @@ def make_handler(hub, auth, store, opts):
                         return None
                     members, me = room.archive.members()
                     d0 = room.digest
-                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"))
+                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"), ans_checked=room.rec.get("ans"))
                     model.update({"now": int(time.time() * 1000), "me": me, "next": info["last_seq"], "offline": True, "archive": info,
                                   "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d0.get("mode"),
                                            "state": "offline", "chain": d0.get("chain"), "holds": [], "created": room.rec.get("created")},
@@ -914,7 +915,7 @@ def make_handler(hub, auth, store, opts):
                 st = st if isinstance(st, dict) else {}
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
-                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"))
+                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"), ans_checked=room.rec.get("ans"))
                 gr = {g.get("member"): g for g in ((st.get("hosting") or {}).get("grants") or []) if isinstance(g, dict)}
                 for mm in model["members"]:
                     g = gr.get(mm["id"])
@@ -965,6 +966,45 @@ def make_handler(hub, auth, store, opts):
                     store.save()
                 if gone:
                     hub.sec.add("auth", f'You removed your endorsement of "{gone.get("name", "an agent")}" in this room', "info", room.id)
+                hub.wake.set()
+                return self.j(200, {"ok": True, "removed": bool(gone)})
+            if m == "POST" and rest == "/api/ans":
+                # The owner supplies an ANS receipt and the log key they trust; it is checked here, offline, against the name in the member's signed card.
+                b = self.body()
+                key = str(b.get("key", ""))
+                if not re.fullmatch(r"[0-9a-f]{64}", key):
+                    raise AuthError(400, "that is not an agent key")
+                if not self.need_fresh(rec):
+                    return
+                sc = room.ensure()
+                if not sc:
+                    raise AuthError(502, room.err or "the room's sidecar is unavailable")
+                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3, timeout=8)
+                if ferr or not isinstance(feed, dict):
+                    raise AuthError(502, "the room's feed is not available right now")
+                mod = board.build(feed.get("items", []), feed.get("members", []), None, int(time.time() * 1000), room=room.host_id)
+                mem = next((x for x in mod["members"] if x["id"] == key), None)
+                if not mem or mem.get("identity") != "signed" or not mem.get("ans"):
+                    raise AuthError(409, "that member has no current signed card naming an ANS name")
+                try:
+                    res = ans_mod.verify(str(b.get("receipt", "")), str(b.get("pubkey", "")), mem["ans"])
+                except ValueError as e:
+                    raise AuthError(400, f"the receipt was not accepted: {e}")
+                with store.lock:
+                    room.rec.setdefault("ans", {})[key] = {"name": res["name"], "leaf_hash": res["leaf_hash"], "root_hash": res["root_hash"], "kid": res["kid"], "issuer": res["issuer"], "at": int(time.time())}
+                    store.save()
+                hub.sec.add("auth", f'You checked an ANS receipt for "{res["name"]}" in this room', "ok", room.id)
+                hub.wake.set()
+                return self.j(200, {"ok": True, **res})
+            if m == "DELETE" and rest.startswith("/api/ans/"):
+                key = rest.rsplit("/", 1)[1]
+                if not re.fullmatch(r"[0-9a-f]{64}", key):
+                    raise AuthError(400, "that is not an agent key")
+                if not self.need_fresh(rec):
+                    return
+                with store.lock:
+                    gone = (room.rec.get("ans") or {}).pop(key, None)
+                    store.save()
                 hub.wake.set()
                 return self.j(200, {"ok": True, "removed": bool(gone)})
             if m == "POST" and rest == "/api/tool":

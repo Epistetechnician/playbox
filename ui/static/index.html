@@ -560,7 +560,7 @@ function harnessesView() {
       <tr><td class="k">did:key</td><td class="mono" style="word-break:break-all">${esc(m.did || "none: no verified card")}</td></tr>
       <tr><td class="k">identity</td><td>${idBadge(m)}${c.expires_ms ? ` valid until ${esc(new Date(c.expires_ms).toLocaleString())}` : ""}</td></tr>
       <tr><td class="k">host record</td><td>${m.launch ? `host-observed: ${esc(m.launch.harness)}${m.launch.model ? " · " + esc(m.launch.model) : ""}${m.launch.image ? ` · <span class="mono">${esc(m.launch.image)}</span>` : ""}, started ${esc(new Date(m.launch.started_ms).toLocaleString())}` : '<span class="mut">none: harness and model are claimed by the agent, not observed</span>'}</td></tr>
-      ${m.ans ? `<tr><td class="k">ans name</td><td class="mono">${esc(m.ans)} <span class="mut">claimed, not checked</span></td></tr>` : ""}
+      ${m.ans ? `<tr><td class="k">ans name</td><td class="mono">${esc(m.ans)} ${m.ans_status === "registered" ? `<span class="chip ok" title="A transparency-log receipt for this name was checked offline against the log key you pinned. It does not prove this agent holds the name.">registered in the log</span>${m.ans_proof ? `<div class="mut" style="font-size:12px">leaf ${esc(m.ans_proof.leaf_hash.slice(0, 16))}… · log key ${esc(m.ans_proof.kid)} · checked ${esc(new Date(m.ans_proof.at * 1000).toLocaleString())} <button type="button" class="tbtn" data-ansrm="${esc(m.id)}">Remove</button></div>` : ""}` : `<span class="mut">${m.ans_status === "changed" ? "the card now names a different ANS name than the receipt you checked" : "claimed, not checked"}</span> ${m.identity === "signed" && !m.me ? `<button type="button" class="tbtn" data-ansform="${esc(m.id)}">Check a receipt</button>` : ""}`}${S.ansform === m.id ? `<div class="ansf"><p class="mut" style="margin:6px 0">Paste the receipt (base64, from <span class="mono">/v1/agents/ID/receipt</span>) and the log's public key (PEM, or a line from <span class="mono">/root-keys</span>). It is checked here, offline. A good result means the log you trust recorded this name; it does not prove this agent holds it.</p><textarea id="ansrc" rows="3" class="in" placeholder="receipt (base64)" style="width:100%"></textarea><textarea id="anskey" rows="3" class="in" placeholder="log public key" style="width:100%;margin-top:6px"></textarea><button type="button" class="btn sm" data-anssend="${esc(m.id)}" style="margin-top:6px">Check receipt</button></div>` : ""}</td></tr>` : ""}
       <tr><td class="k">card history</td><td>${hist.length ? hist.map(x => `<div>${esc(new Date(x.ms).toLocaleString())} · ${esc(x.text)}</div>`).join("") : '<span class="mut">no card seen</span>'}</td></tr></table>`; };
   const drawer = m => { if (S.hxopen !== m.id) return ""; const g = m.grant; if (!g) return `<div class="hxd">${idBlock(m)}</div>`; const left = g.expires * 1000 - now;
     const allowed = (g.allowed || []).filter(x => x); const kinds = {host: [], secret: [], cap: []};
@@ -588,6 +588,19 @@ document.addEventListener("click", async e => {
     const r = await api("playbox_revoke", {member: rv.dataset.revoke});
     if (r.error) toast(msgOf(r.data), true); else toast("Member revoked");
     S.hxopen = null; return loadHarnesses();
+  }
+  const af = e.target.closest("[data-ansform]"); if (af) { S.ansform = S.ansform === af.dataset.ansform ? null : af.dataset.ansform; return show("harnesses"); }
+  const as = e.target.closest("[data-anssend],[data-ansrm]");
+  if (as) {
+    as.disabled = true;
+    try {
+      const add = !!as.dataset.anssend, key = as.dataset.anssend || as.dataset.ansrm;
+      const r = await gfetch(BASE + (add ? "api/ans" : "api/ans/" + key), {method: add ? "POST" : "DELETE", headers: {"Content-Type": "application/json"}, body: add ? JSON.stringify({key, receipt: $("#ansrc").value, pubkey: $("#anskey").value}) : undefined});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      toast(add ? "Receipt checked: name registered in the log" : "Receipt removed"); S.ansform = null;
+    } catch (er) { toast(String(er.message || er), true); }
+    return loadHarnesses();
   }
   const b = e.target.closest("[data-endorse],[data-unendorse]"); if (!b) return;
   const add = !!b.dataset.endorse, key = b.dataset.endorse || b.dataset.unendorse;
