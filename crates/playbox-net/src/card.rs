@@ -212,6 +212,7 @@ mod tests {
     }
 
     #[test]
+    // REQ: IDENT-1
     fn a_good_card_verifies_and_carries_its_fields() {
         let k = key(7);
         let id = hex(&k.verifying_key().to_bytes());
@@ -234,6 +235,7 @@ mod tests {
     }
 
     #[test]
+    // REQ: IDENT-1
     fn forgery_replay_wrong_room_expiry_and_oversize_are_rejected() {
         let (a, b) = (key(1), key(2));
         let ida = hex(&a.verifying_key().to_bytes());
@@ -270,6 +272,7 @@ mod tests {
     }
 
     #[test]
+    // REQ: IDENT-1
     fn lifetime_over_24_hours_is_refused_at_signing_and_at_verifying() {
         let k = key(3);
         assert!(build(

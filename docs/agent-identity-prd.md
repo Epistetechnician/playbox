@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built except the launch record · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built except the launch record; gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 

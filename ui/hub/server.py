@@ -1007,6 +1007,9 @@ def make_handler(hub, auth, store, opts):
                     hub.wake.set()
                     return self.j(200 if reply.startswith("ok") else 409, {"error": not reply.startswith("ok"), "data": reply})
                 err, data = sc.call(name, args, wait=3 if (b.get("poll") or name == "playbox_feed") else None, timeout=8 if name == "playbox_feed" else None)
+                if name == "playbox_revoke":
+                    mid = str(args.get("member", ""))
+                    hub.sec.add("auth", f"You revoked member {mid[:6]} in {room.rec.get('label', 'a room')}" if not err else f"Revoke failed: {str(data)[:80]}", "warn" if not err else "info", room.id)
                 if name == "playbox_feed":
                     if not err and isinstance(data, dict):
                         room.keep(data)

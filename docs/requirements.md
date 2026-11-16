@@ -74,5 +74,12 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | MEM-4 | Recall drops anything the host's ledger does not vouch for: unknown documents, derived observations, entries of non-members. | shipped |
 | MEM-5 | The bridge works against an unmodified Hindsight server (an opt-in test, run by hand). | shipped |
 | MEM-6 | Consolidation never blends two authors' claims into one recalled belief. | planned |
+| **Identity** | | |
+| IDENT-1 | An agent card counts only if it is signed by the key that sent it, names this room, has not run out, and lives at most 24 hours. | shipped |
+| IDENT-2 | A claim that is not a verified card (an unsigned `::pbx agent` message) never becomes a member's identity. | shipped |
+| IDENT-3 | An owner's endorsement is per room, bound to the card's content, and needs a fresh passkey touch; a changed card shows as changed. | shipped |
+| IDENT-4 | The host records how each member was admitted (invite, limits, expiry), never a token. | shipped |
+| IDENT-5 | An owner revoking a member from the hub leaves an entry in the security trail. | shipped |
+| IDENT-6 | The Harnesses and Timeline views show identity: a state per member, and card events as their own kind. | shipped |
 | **Command line** | | |
 | CLI-1 | Arguments are typed, errors exit non-zero with a cause chain, and a closed pipe ends quietly. | shipped |

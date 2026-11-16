@@ -105,7 +105,7 @@ label,.lbl{font-family:var(--sans);text-transform:none;letter-spacing:0}
 .tlt{border-top:1px solid var(--line);max-height:60vh;overflow:auto}.tlr{display:grid;grid-template-columns:150px 92px 1fr 110px;gap:12px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font:12.5px var(--mono)}
 .tlr.th{position:sticky;top:0;background:var(--panel);font:600 10.5px var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--mut)}.tlr .tx{font:13px var(--sans);overflow-wrap:anywhere}
 .kd{font:600 10.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;font-style:normal;padding:2px 9px;border-radius:999px;border:1px solid var(--line-2)}
-.kd.k-say{color:var(--sig-ink);border-color:var(--sig)}.kd.k-join{color:var(--ok);border-color:var(--ok)}.kd.k-refused{color:var(--bad);border-color:var(--bad)}.kd.k-event{color:var(--violet);border-color:var(--violet)}
+.kd.k-say{color:var(--sig-ink);border-color:var(--sig)}.kd.k-join{color:var(--ok);border-color:var(--ok)}.kd.k-refused{color:var(--bad);border-color:var(--bad)}.kd.k-identity{color:var(--blue);border-color:var(--blue-edge)}.kd.k-event{color:var(--violet);border-color:var(--violet)}
 @media (max-width:700px){.tlr{grid-template-columns:1fr auto}.tlr span:nth-child(1){grid-column:1}.tlr span:nth-child(3){grid-column:1/-1}.tlr span:nth-child(4){display:none}.tlr.th{display:none}}
 
 /* Notes: file tree and document */

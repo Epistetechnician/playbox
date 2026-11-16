@@ -584,6 +584,8 @@ def test_http():
         st, _, _ = s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": dev.get(sb["publicKey"], origin, kind="webauthn.get")})
         check("step-up ceremony accepted", st == 200)
         check("sensitive tool allowed after step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_revoke", "args": {"member_id": "x"}})[0] == 200)
+        # REQ: IDENT-5
+        check("a revoke leaves an entry in the security trail", any(e["stage"] == "auth" and "evoke" in e["text"] for e in a.req("GET", "/api/system")[1]["events"]))
         st, sb, _ = s.req("POST", "/api/auth/stepup/begin", {})
         other = Authenticator(); other.cid = dev.cid
         check("step-up with a different key refused", s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": other.get(sb["publicKey"], origin)})[0] == 403)
@@ -633,6 +635,9 @@ def test_http():
         check("the vendor route refuses traversal and unknown types", all(anon.req("GET", u)[0] in (400, 404) for u in ("/vendor/../hub/server.py", "/vendor/LICENSES.md", "/vendor/nope.js", "/vendor/%2e%2e/hub/server.py")))
         check("the shared theme stylesheet is public, linked by every page and cached by the service worker", st_t == 200 and all("/theme.css" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")))
         check("the pages load it and the service worker caches it", "/instruments.js" in open(os.path.join(UI, "static", "home.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "index.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "sw.js")).read())
+        # REQ: IDENT-6
+        ix = open(os.path.join(UI, "static", "index.html")).read()
+        check("the Timeline has an Identity kind and the Harnesses drawer shows key, did:key and card history", '["identity", "Identity"]' in ix and "did:key" in ix and "card history" in ix and 'data-grant="${esc(m.id)}"' in ix and '"Endorsed"' in ix)
         st, sysj, _ = a.req("GET", "/api/system")
         check("system lists the eight stages in order", st == 200 and [x["id"] for x in sysj["stages"]] == ["edge", "auth", "invite", "knock", "approve", "join", "feed", "history"])
         check("system counts the invites just made", sysj["live"]["invite"]["count"] >= 2 and any(e["stage"] == "invite" for e in sysj["events"]))
@@ -1014,6 +1019,7 @@ def _make_card(seed, room, name, now, ttl=3_600_000, **kw):
 
 
 def test_identity_cards():
+    # REQ: IDENT-1, IDENT-2
     """Signed agent cards: a card signed by the Rust sidecar verifies here; forged, replayed, cross-room, expired and over-long cards do not;
     the board shows only verified cards as identity; unsigned claims never do; changes and shared names are visible."""
     sys.path.insert(0, UI)
@@ -1060,6 +1066,7 @@ def test_identity_cards():
 
 
 def test_endorsement():
+    # REQ: IDENT-3
     """Owner endorsement is per room and bound to the card content: a re-announce of the same card keeps it, any change of the card breaks it."""
     sys.path.insert(0, UI)
     from hub import board

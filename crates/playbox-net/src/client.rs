@@ -1137,6 +1137,7 @@ mod say_retry_tests {
     /// End to end: a guest and the host each post a signed card through the real room; a reader checks them against the key the room says
     /// sent each message and the room id (the host's endpoint id), and a card replayed by another sender is refused.
     #[tokio::test]
+    // REQ: IDENT-1
     async fn signed_cards_from_a_guest_and_the_host_verify_against_the_room() {
         let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
             .await
@@ -1198,6 +1199,7 @@ mod say_retry_tests {
 
     /// The host records how each member got in (limits and expiry, never a token) so the hub can show the delegation.
     #[tokio::test]
+    // REQ: IDENT-4
     async fn the_host_records_how_each_member_was_admitted() {
         let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
             .await
