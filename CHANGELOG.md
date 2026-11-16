@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-11-16
+
 ### Added
 - The host records how each member was admitted (when the grant was issued and runs out, which link, the limits and the hosts, secrets and capabilities it allows; never a token) and `playbox_status` shows it. The Harnesses tab gets a Grant button per member with the delegation (host to member), expiry and limits, and a Revoke button (passkey step-up). A new member joining a room where you endorse agents raises a quiet attention item.
 
