@@ -200,6 +200,9 @@ pub struct UpArgs {
     /// Let members' tasks read this secret from the host's secrets directory ($PLAYBOX_HOME/secrets) at /run/secrets; repeatable
     #[arg(long = "allow-secret", value_name = "NAME")]
     pub allow_secret: Vec<String>,
+    /// Let members' tasks use this container image, besides the default (alpine:3); repeatable. Members still cannot name any other image.
+    #[arg(long, value_name = "IMAGE")]
+    pub allow_image: Vec<String>,
     /// Audit log file (`-` is stderr); default DIR/audit.log with --state
     #[arg(long, value_name = "FILE")]
     pub audit_log: Option<String>,
@@ -677,7 +680,7 @@ pub enum WorldAction {
 
 #[cfg(test)]
 mod tests {
-    use super::Cli;
+    use super::{Cli, Cmd};
     use clap::{CommandFactory, Parser};
 
     #[test]
@@ -754,6 +757,13 @@ mod tests {
         assert!(Cli::try_parse_from(["playbox", "experiment", "nope"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "pin", "add", "kind"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "memory", "remember", "fact", "t", "b"]).is_ok());
+    }
+
+    #[test]
+    fn extra_images_can_be_allowed_and_repeat() {
+        let c = Cli::try_parse_from(["playbox", "up", "--allow-image", "python:3.12-alpine", "--allow-image", "alpine:3"]).unwrap();
+        let Cmd::Up(a) = c.command else { panic!("not up") };
+        assert_eq!(a.allow_image, ["python:3.12-alpine", "alpine:3"]);
     }
 
     #[test]

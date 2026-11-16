@@ -25,6 +25,7 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 - A running host's control socket answers `members` and `revoke MEMBER ID` (the same action as the console's `revoke`; the socket is private to the user), so a host started as a service can have a member removed. In the hub, Revoke on an adopted room goes through it (passkey step-up).
 - `playbox up --grant-ttl SECS`: how long each member's grant lasts (default one hour, at most 30 days). The MCP `playbox_create` tool already had this;
   the command-line host did not, so agents that ran past an hour were refused ("not authorized") with no way to lengthen the grant.
+- `playbox up --allow-image IMAGE`: let members' tasks use a container image besides the default `alpine:3` (repeatable). Until now a host owner could not choose any other image from the command line.
 
 ### Fixed
 - A host whose state directory is called `state` is named after the folder around it (`~/.playbox-rooms/gpu-lab/state` is `gpu-lab`), not `state`, in the hub's list of hosted rooms.

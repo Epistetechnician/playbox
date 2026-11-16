@@ -67,6 +67,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
                 if has_steer {
                     policy.allowed_images.push(steer_image.clone());
                 }
+                policy.allowed_images.extend(a.allow_image.iter().cloned());
                 let opts = RunnerOptions {
                     confine: a
                         .confine

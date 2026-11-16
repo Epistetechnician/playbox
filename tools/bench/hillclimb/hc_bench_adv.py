@@ -71,7 +71,8 @@ def room(trial):
     os.makedirs(d)
     t0, note = time.time(), ""
     penv = {**os.environ, "PLAYBOX_HOME": os.path.join(d, "home"), "PLAYBOX_HOSTING_DIR": os.path.join(B, "hosting")}
-    host = subprocess.Popen(["playbox", "up", "--home", os.path.join(d, "home"), "--local", "--console", "--state", os.path.join(d, "state")],
+    host = subprocess.Popen(["playbox", "up", "--home", os.path.join(d, "home"), "--local", "--console", "--state", os.path.join(d, "state"),
+                             *(["--grant-ttl", os.environ["BENCH_GRANT_TTL"]] if os.environ.get("BENCH_GRANT_TTL") else [])],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=penv)
     links = []
 
