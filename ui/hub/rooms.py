@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE))
 from playbox_ui import Sidecar, witness_state  # noqa: E402
 from .local import ask_host, hosting_dir, prune_stale  # noqa: E402
 from .archive import Archive  # noqa: E402
+from . import board, card as idcard  # noqa: E402
 
 
 def event_note(text, who):
@@ -79,6 +80,7 @@ class Room:
         self.digest = self.blank()
         self.seq = 0               # poller cursor in the room feed
         self.host_id = None        # the room's host id: signed identity cards are bound to it
+        self.idalerts = {}         # key -> name: an endorsed agent whose card changed since you endorsed it
         self.buckets = {}          # 5-minute bucket -> message count, feeds the sparkline
         self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
@@ -264,6 +266,22 @@ class Room:
                     for i in items:
                         if i.get("kind") == "event":
                             self.notes.append(event_note(str(i.get("text", "")), str(i.get("from", ""))))
+                for i in items:
+                    t = i.get("text")
+                    if i.get("kind") == "say" and isinstance(t, str) and t.startswith(idcard.PREFIX) and self.rec.get("endorsed"):
+                        snd = self.host_id if i.get("from") == "host" else i.get("from")
+                        try:
+                            c = idcard.verify(t, snd, self.host_id, i.get("time_ms") or 0)
+                        except ValueError:
+                            continue
+                        e = self.rec["endorsed"].get(i.get("from"))
+                        if e:
+                            if board.card_hash(dict(board.clip_card(c), key=i.get("from"))) != e.get("card_hash"):
+                                if i.get("from") not in self.idalerts:
+                                    self.notes.append(("history", f'Endorsed agent "{e.get("name", "")}" changed its card: endorse it again if you expect that', "bad"))
+                                self.idalerts[i.get("from")] = e.get("name", "an agent")
+                            else:
+                                self.idalerts.pop(i.get("from"), None)
                 if items:
                     self.seq = max(i["seq"] for i in items)
                     says = [i for i in items if i.get("kind") == "say"]
@@ -303,6 +321,7 @@ class Room:
             self.notes.append(("feed", "Witness paused a write until you decide", "warn"))
         self.hold_ids = ids
         d["archived"] = self.archive.info()["items"]
+        d["identity_alerts"] = [{"key": k, "name": n} for k, n in self.idalerts.items()]
         d["offline"] = bool(d["mode"] != "none" and feed_failed and d["archived"])
         recent = d["last"] and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
         d["state"] = ("hold" if d["holds"] else "empty" if d["mode"] == "none" else "bad" if d["chain"] and not d["chain"]["ok"]
@@ -414,6 +433,9 @@ class Hub:
             if d["state"] == "bad":
                 items.append({"id": f"chain:{d['id']}", "room": d["id"], "kind": "chain", "urgent": True, "title": f"History check failed in {lab}",
                               "body": "the signed log no longer verifies"})
+            for al in d.get("identity_alerts") or []:
+                items.append({"id": f"idchg:{d['id']}:{al['key'][:12]}", "room": d["id"], "kind": "identity", "urgent": True, "title": f"{al['name']} changed its identity card in {lab}",
+                              "body": "you had endorsed it; review the change and endorse again"})
             if d.get("needs_invite"):
                 items.append({"id": f"invite:{d['id']}", "room": d["id"], "kind": "invite", "urgent": False, "title": f"{lab} needs a new invite", "body": "your access ran out; ask the host"})
             bad = bool(d.get("err")) and not d.get("needs_invite") and (d["state"] == "down" or d.get("offline"))

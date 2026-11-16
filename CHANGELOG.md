@@ -10,6 +10,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- Owner endorsement (Harnesses tab): vouch for one agent key in one room with a passkey touch. The endorsement is bound to the card's content, so a routine re-announce keeps it and any change to the name, machine, role, harness, model or public name breaks it: the agent shows "endorsed, card changed" and an urgent item asks you to look. Remove it the same way.
+
+### Added
 
 - Research view is data-driven: `scripts/gen_research.py` generates `ui/research/*.json` from `docs/benchmark.md` and the F3 pilot receipts (CI runs it with `--check`), and each run has a Samples tab (filterable table, then a collapsible step trail per sample).
 - Anchored comments: `::pbx comment {"on":"note:<id>|artifact:<id>|event:<seq>","text":...}` on the board model, a comment thread per note, a Comment button per timeline event, a Comments count in the room header, and a `/playbox:comment` command.

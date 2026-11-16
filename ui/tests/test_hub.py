@@ -575,6 +575,11 @@ def test_http():
         check("playbox_create (mints a join link) needs step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_create", "args": {"local": True}})[1].get("error") == "stepup")
         check("playbox_delegate (runs a command) needs step-up", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_delegate", "args": {"base": "main", "command": "true"}})[1].get("error") == "stepup")
         check("non-sensitive tool does not", s.req("POST", f"/r/{rid}/api/tool", {"name": "playbox_status", "args": {}})[0] == 200)
+        K = "ab" * 32
+        check("endorsing needs a session", Client(port).req("POST", f"/r/{rid}/api/endorse", {"key": K})[0] in (401, 303))
+        check("endorsing needs a fresh passkey touch", s.req("POST", f"/r/{rid}/api/endorse", {"key": K})[1].get("error") == "stepup")
+        check("removing an endorsement needs a fresh passkey touch", s.req("DELETE", f"/r/{rid}/api/endorse/{K}")[1].get("error") == "stepup")
+        check("an endorsement key must look like a key", s.req("POST", f"/r/{rid}/api/endorse", {"key": "nope"})[0] == 400)
         st, sb, _ = s.req("POST", "/api/auth/stepup/begin", {})
         st, _, _ = s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": dev.get(sb["publicKey"], origin, kind="webauthn.get")})
         check("step-up ceremony accepted", st == 200)
@@ -1054,6 +1059,27 @@ def test_identity_cards():
     check("board: a card claiming to be the host's under another room id is refused", not any(x.get("identity") == "signed" for x in nohost["members"]))
 
 
+def test_endorsement():
+    """Owner endorsement is per room and bound to the card content: a re-announce of the same card keeps it, any change of the card breaks it."""
+    sys.path.insert(0, UI)
+    from hub import board
+    NOW = 1_700_000_001_000
+    k1, c1 = _make_card(b"\x11" * 32, "r", "Ada", NOW, harness="Hermes")
+    _, c1b = _make_card(b"\x11" * 32, "r", "Ada", NOW + 60_000, harness="Hermes")         # same content, later timestamps
+    _, c1c = _make_card(b"\x11" * 32, "r", "Ada", NOW + 120_000, harness="Codex")        # different harness
+    def run(texts, endorsed):
+        items = [{"seq": n + 1, "kind": "say", "from": k1, "time_ms": NOW + n * 60_000, "text": t} for n, t in enumerate(texts)]
+        m = board.build(items, [{"id": k1, "present": True}], None, NOW + 200_000, room="r", endorsed=endorsed)
+        return m["members"][0]
+    h = run([c1], None)["card_hash"]
+    check("endorse: a verified card has a content hash", len(h) == 32)
+    check("endorse: with no endorsement the member shows none", run([c1], {})["endorsement"] == "")
+    check("endorse: the endorsed card shows as endorsed", run([c1], {k1: {"card_hash": h}})["endorsement"] == "endorsed")
+    check("endorse: a routine re-announce of the same card keeps the endorsement", run([c1, c1b], {k1: {"card_hash": h}})["endorsement"] == "endorsed")
+    check("endorse: a changed harness breaks it", run([c1, c1c], {k1: {"card_hash": h}})["endorsement"] == "changed")
+    check("endorse: the hash ignores timestamps but not content", board.card_hash({"key": k1, "name": "Ada"}) != board.card_hash({"key": k1, "name": "Ada2"}))
+
+
 def test_housekeeping():
     """Stale host records are pruned (never a live one), the state is backed up once a day, a long outage turns urgent, an expired guest is told to ask for an invite."""
     sys.path.insert(0, UI)
@@ -1116,6 +1142,9 @@ def test_housekeeping():
     dig.update(err="Your access to this room ran out. Ask the host for a new invite.", needs_invite=True, state="idle")
     inv = hub.attention()
     check("alerts: an expired guest room asks for a new invite and is not reported as down", [i["kind"] for i in inv] == ["invite"])
+    dig.update(err=None, needs_invite=False, identity_alerts=[{"key": "ab" * 32, "name": "Ada"}])
+    idc = [x for x in hub.attention() if x["kind"] == "identity"]
+    check("alerts: an endorsed agent that changed its card is an urgent item", len(idc) == 1 and idc[0]["urgent"] and "Ada" in idc[0]["title"])
 
 
 def test_tunnel_keeper():
@@ -1488,6 +1517,7 @@ if __name__ == "__main__":
     test_cloudflare()
     test_access()
     test_identity_cards()
+    test_endorsement()
     test_board_comments()
     test_housekeeping()
     test_tunnel_keeper()

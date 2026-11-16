@@ -53,7 +53,22 @@ def _short(i):
     return (i or "")[:6] or "host"
 
 
-def build(items, members, me=None, now_ms=0, room=None):
+def clip_card(c):
+    """The fields of a verified card, clipped: what the hub keeps, shows and hashes."""
+    f = {k: _s(c.get(k), n) for k, n in (("name", 30), ("machine", 40), ("role", 80), ("harness", 30), ("model", 40), ("ans", 120))}
+    f["did"] = _s(c.get("did"), 80)
+    return f
+
+
+def card_hash(c):
+    """What an endorsement is bound to: the card's content, not its timestamps, so a routine re-announce of the same card keeps the endorsement
+    and any change of name, machine, role, harness, model or public name does not."""
+    import hashlib
+    keys = ("key", "did", "name", "machine", "role", "harness", "model", "ans")
+    return hashlib.sha256(json.dumps({k: c.get(k, "") for k in keys}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
+
+
+def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
     """feed items + member list -> the canvas model. `room` is the room's host id: signed identity cards are bound to it (hub/card.py)."""
     names, machines, roles, harnesses, models = {}, {}, {}, {}, {}
     idcards, pinned, claims, rejected = {}, {}, {}, set()     # verified cards by key, the first verified card per key, unsigned claims, (key, reason) already reported
@@ -88,8 +103,8 @@ def build(items, members, me=None, now_ms=0, room=None):
                     rejected.add((frm, str(e)))
                     log.append({"ms": ms, "type": "identity", "who": frm, "text": f"identity card refused: {str(e)[:60]}", "seq": it.get("seq")})
                 continue
-            fields = {k: _s(c.get(k), n) for k, n in (("name", 30), ("machine", 40), ("role", 80), ("harness", 30), ("model", 40), ("ans", 120))}
-            fields.update(did=_s(c.get("did"), 80), expires_ms=c["expires_ms"], issued_ms=c["issued_ms"])
+            fields = clip_card(c)
+            fields.update(expires_ms=c["expires_ms"], issued_ms=c["issued_ms"])
             old = idcards.get(frm)
             if frm not in pinned:
                 pinned[frm] = fields
@@ -173,7 +188,9 @@ def build(items, members, me=None, now_ms=0, room=None):
         m.update({"name": (c or {}).get("name") or names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "name_verified": bool(c),
                   "identity": ident, "card": c or idcards.get(mid), "claim": claims.get(mid), "dup_name": bool(c and count.get(c["name"], 0) > 1),
                   "machine": (c or {}).get("machine", ""), "role": (c or {}).get("role", ""), "harness": (c or {}).get("harness", ""), "model": (c or {}).get("model", ""),
-                  "did": (c or {}).get("did", ""), "ans": (c or {}).get("ans", ""), "msgs": per.get(mid, 0), "me": mid == me})
+                  "did": (c or {}).get("did", ""), "ans": (c or {}).get("ans", ""), "msgs": per.get(mid, 0), "me": mid == me,
+                  "endorsement": ("" if not endorsed or mid not in endorsed else "endorsed" if c and endorsed[mid].get("card_hash") == card_hash(dict(c, key=mid)) else "changed"),
+                  "card_hash": card_hash(dict(c, key=mid)) if c else ""})
     for e in log:
         e["name"] = who(e["who"])
     for a in arts.values():

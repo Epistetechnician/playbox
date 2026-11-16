@@ -891,7 +891,7 @@ def make_handler(hub, auth, store, opts):
                         return None
                     members, me = room.archive.members()
                     d0 = room.digest
-                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000), room=room.host_id)
+                    model = board.build(room.archive.tail(2000), [{**x, "present": False} for x in members], me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"))
                     model.update({"now": int(time.time() * 1000), "me": me, "next": info["last_seq"], "offline": True, "archive": info,
                                   "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d0.get("mode"),
                                            "state": "offline", "chain": d0.get("chain"), "holds": [], "created": room.rec.get("created")},
@@ -914,7 +914,7 @@ def make_handler(hub, auth, store, opts):
                 st = st if isinstance(st, dict) else {}
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
-                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id)
+                model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"))
                 model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
                               "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},
@@ -923,6 +923,45 @@ def make_handler(hub, auth, store, opts):
             if m == "GET" and rest == "/api/witness":
                 from playbox_ui import witness_state
                 return self.j(200, witness_state(room.home))
+            if m == "POST" and rest == "/api/endorse":
+                # The owner vouches for one agent key in THIS room, bound to the card it is showing now. Needs a fresh passkey touch.
+                b = self.body()
+                key = str(b.get("key", ""))
+                if not re.fullmatch(r"[0-9a-f]{64}", key):
+                    raise AuthError(400, "that is not an agent key")
+                if not self.need_fresh(rec):
+                    return
+                sc = room.ensure()
+                if not sc:
+                    raise AuthError(502, room.err or "the room's sidecar is unavailable")
+                ferr, feed = sc.call("playbox_feed", {"since": 0}, wait=3, timeout=8)
+                if ferr or not isinstance(feed, dict):
+                    raise AuthError(502, "the room's feed is not available right now")
+                mod = board.build(feed.get("items", []), feed.get("members", []), None, int(time.time() * 1000), room=room.host_id)
+                mem = next((x for x in mod["members"] if x["id"] == key), None)
+                if not mem or mem.get("identity") != "signed":
+                    raise AuthError(409, "only a member with a verified, current card can be endorsed")
+                with store.lock:
+                    room.rec.setdefault("endorsed", {})[key] = {"name": mem["name"], "card_hash": mem["card_hash"], "at": int(time.time())}
+                    room.idalerts.pop(key, None)
+                    store.save()
+                hub.sec.add("auth", f'You endorsed "{mem["name"]}" in this room', "ok", room.id)
+                hub.wake.set()
+                return self.j(200, {"ok": True, "key": key, "name": mem["name"], "card_hash": mem["card_hash"]})
+            if m == "DELETE" and rest.startswith("/api/endorse/"):
+                key = rest.rsplit("/", 1)[1]
+                if not re.fullmatch(r"[0-9a-f]{64}", key):
+                    raise AuthError(400, "that is not an agent key")
+                if not self.need_fresh(rec):
+                    return
+                with store.lock:
+                    gone = (room.rec.get("endorsed") or {}).pop(key, None)
+                    room.idalerts.pop(key, None)
+                    store.save()
+                if gone:
+                    hub.sec.add("auth", f'You removed your endorsement of "{gone.get("name", "an agent")}" in this room', "info", room.id)
+                hub.wake.set()
+                return self.j(200, {"ok": True, "removed": bool(gone)})
             if m == "POST" and rest == "/api/tool":
                 b = self.body()
                 name, args = b.get("name"), b.get("args") or {}
