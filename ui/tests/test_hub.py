@@ -1065,6 +1065,50 @@ def test_identity_cards():
     check("board: a card claiming to be the host's under another room id is refused", not any(x.get("identity") == "signed" for x in nohost["members"]))
 
 
+def _make_launch(seed, room, member, harness, model="", image="", now=1_700_000_000_000, sign_seed=None):
+    import json as _j
+    from hub import card as C
+    body = {"v": 1, "room": room, "key": member, "harness": harness, "model": model, "image": image, "started_ms": now}
+    txt = _j.dumps(body, sort_keys=True, separators=(",", ":"))
+    return C.LAUNCH_PREFIX + txt + " " + _ed_sign(sign_seed or seed, (C.LAUNCH_DOMAIN + txt).encode())[1].hex()
+
+
+def test_launch_records():
+    # REQ: IDENT-7
+    """A host-signed launch record is the only thing that shows a harness as observed; a member's own, another room's or a tampered one is ignored."""
+    sys.path.insert(0, UI)
+    from hub import board, card as C
+    NOW = 1_700_000_001_000
+    hk, _ = _ed_sign(b"\x04" * 32, b"")
+    hid = hk.hex()
+    k1, c1 = _make_card(b"\x01" * 32, hid, "Ada", NOW, harness="Hermes")
+    good = _make_launch(b"\x04" * 32, hid, k1, "Hermes", "m1", "sha256:ab")
+    vec = open(os.path.join(UI, "tests", "launch_vector.txt")).read().split("\n")[0]
+    room = __import__("json").loads(vec[len(C.LAUNCH_PREFIX):].rpartition(" ")[0])["room"]
+    check("launch: a record signed by the Rust host verifies in the hub", C.verify_launch(vec, room)["harness"] == "Hermes")
+    check("launch: a record signed by the host verifies", C.verify_launch(good, hid)["key"] == k1)
+    def run(items):
+        items = [dict(seq=i + 1, kind="say", time_ms=NOW, **x) for i, x in enumerate(items)]
+        m = board.build(items, [{"id": k1, "present": True}], None, NOW + 1000, room=hid)
+        return {x["id"]: x for x in m["members"]}[k1], m
+    mem, m = run([{"from": k1, "text": c1}])
+    check("launch: a card claiming a harness with no record is not observed", mem["launch"] is None and mem["harness"] == "Hermes")
+    mem, m = run([{"from": k1, "text": c1}, {"from": "host", "text": good}])
+    check("launch: the host's record is attached to that member", mem["launch"]["harness"] == "Hermes" and mem["launch"]["image"] == "sha256:ab" and not mem["launch_differs"])
+    check("launch: the record is an event and not a chat message", any("recorded a launch" in e["text"] for e in m["changelog"]) and not m["messages"] if "messages" in m else True)
+    own = _make_launch(b"\x01" * 32, hid, k1, "Hermes")
+    mem, m = run([{"from": k1, "text": c1}, {"from": k1, "text": own}])
+    check("launch: a record signed by the member itself is refused", mem["launch"] is None and any("launch record refused" in e["text"] for e in m["changelog"]))
+    other = _make_launch(b"\x04" * 32, "ab" * 32, k1, "Hermes")
+    mem, _ = run([{"from": k1, "text": c1}, {"from": "host", "text": other}])
+    check("launch: a record for another room is ignored", mem["launch"] is None)
+    mem, _ = run([{"from": k1, "text": c1}, {"from": "host", "text": good.replace("Hermes", "Codex")}])
+    check("launch: a tampered record is ignored", mem["launch"] is None)
+    liar = _make_launch(b"\x04" * 32, hid, k1, "Codex")
+    mem, _ = run([{"from": k1, "text": c1}, {"from": "host", "text": liar}])
+    check("launch: a card that disagrees with the host's record is flagged", mem["launch"]["harness"] == "Codex" and mem["launch_differs"])
+
+
 def test_endorsement():
     # REQ: IDENT-3
     """Owner endorsement is per room and bound to the card content: a re-announce of the same card keeps it, any change of the card breaks it."""
@@ -1566,6 +1610,7 @@ if __name__ == "__main__":
     test_access()
     test_identity_cards()
     test_endorsement()
+    test_launch_records()
     test_board_comments()
     test_housekeeping()
     test_tunnel_keeper()

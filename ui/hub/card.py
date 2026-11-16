@@ -139,3 +139,33 @@ def verify(text, sender, room, now_ms):
     if now_ms >= expires:
         raise ValueError("expired")
     return card
+
+
+LAUNCH_DOMAIN = "playbox.launch.v1\n"
+LAUNCH_PREFIX = "::pbx launch "
+
+
+def verify_launch(text, room):
+    """A host-signed launch record, or ValueError. The room id is the host's key: only the host can have signed it."""
+    if not isinstance(text, str) or len(text) > MAX_LEN:
+        raise ValueError("too large")
+    if not text.startswith(LAUNCH_PREFIX):
+        raise ValueError("not a launch record")
+    body, sep, sig_hex = text[len(LAUNCH_PREFIX):].rpartition(" ")
+    if not sep:
+        raise ValueError("malformed")
+    sig = _hex(sig_hex, 64)
+    try:
+        rec = json.loads(body)
+    except ValueError:
+        raise ValueError("bad json")
+    if not isinstance(rec, dict):
+        raise ValueError("bad json")
+    if not ed25519_verify(_hex(room, 32), (LAUNCH_DOMAIN + body).encode(), sig):
+        raise ValueError("not signed by this room's host")
+    if rec.get("v") != 1 or rec.get("room") != room:
+        raise ValueError("record is for another room")
+    _hex(rec.get("key"), 32)
+    if not isinstance(rec.get("started_ms"), int):
+        raise ValueError("no start time")
+    return rec

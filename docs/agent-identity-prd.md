@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built except the launch record; gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built (launch record: host command and verification built, no launcher yet); gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -110,7 +110,7 @@ A card is canonical JSON:
 - `ans` is stored and shown as a link. If the user supplies an ANS receipt, `ans-verify` (or a built-in COSE check) validates it offline and the badge becomes "name verified"; no receipt means "name claimed".
 - **Acceptance:** a card with a mismatching `did` is rejected; an `ans` name without a receipt never shows as verified.
 
-### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label; NOT BUILT: the host has no agent launcher that gives an agent a key, so there is nothing to sign yet. Until then no label says "observed")
+### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label; BUILT as a record the host signs on request: control socket `launch MEMBER HARNESS [MODEL [IMAGE]]`; there is still no launcher that starts agents, so the operator names what was started. No label says "observed" without a record)
 
 - When a host launches an agent (a sandboxed task, a managed runner), it signs `{key, room, harness, model, image hash, started}`. That is the only evidence the UI may label "host-observed harness" or "host-observed model".
 - Self-reported harness and model stay labelled "claimed" everywhere, including in the card badge and in exports. The UI has no way to show a harness as verified without a launch record.

@@ -343,7 +343,7 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches?.("#insights [role=button]")) e.target.click(); });
 function kindOf(it) {
-  if (it.kind === "say" && typeof it.text === "string" && it.text.startsWith("::pbx identity ")) return "identity";
+  if (it.kind === "say" && typeof it.text === "string" && (it.text.startsWith("::pbx identity ") || it.text.startsWith("::pbx launch "))) return "identity";
   if (it.kind === "say") return "say";
   const t = String(it.text || "").toLowerCase();
   return t === "join ok" ? "join" : t.startsWith("refused") || t === "join failed" ? "refused" : "event";
@@ -532,6 +532,10 @@ async function loadHarnesses() {
   if (S.tab === "harnesses") show("harnesses");
 }
 const HX_NONE = "Unidentified";
+function launchChip(m) {
+  const l = m.launch; if (!l) return "";
+  return `<span class="chip ok" title="The host signed that it started this key with ${esc(l.harness)}${l.model ? " " + esc(l.model) : ""}">host-observed ${esc(l.harness)}</span>${m.launch_differs ? ' <span class="chip bad" title="The member\'s card claims a different harness or model than the host recorded">card differs from host record</span>' : ""}`;
+}
 function idBadge(m) {
   if (m.identity === "signed" && m.endorsement === "changed") return `<span class="chip bad" title="You endorsed an earlier card. This one is different: check it, then endorse again.">endorsed, card changed</span>`;
   if (m.identity === "signed" && m.endorsement === "endorsed") return `<span class="chip" style="color:var(--blue);border-color:var(--blue-edge)" title="You vouched for this card in this room">endorsed by you</span> <span class="chip ok">signed</span>`;
@@ -549,12 +553,13 @@ function harnessesView() {
   const machines = new Set(ms.map(m => m.machine).filter(Boolean)).size, online = ms.filter(m => m.present).length, named = ms.filter(m => m.identity === "signed").length;
   const head = stripHtml("Harnesses", ROOM ? `in ${ROOM}` : "tools and agents connected to this room", [["MEMBERS", String(ms.length)], ["ONLINE", String(online)]],
     [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Signed cards", `${named} of ${ms.length}`], ["Endorsed", String(ms.filter(m => m.endorsement === "endorsed").length)], ["Unsigned", String(ms.length - named)], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
-  const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name_verified ? m.name : short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""} ${idBadge(m)}<small>${m.name_verified ? esc(m.role || "") : m.claim && (m.claim.name || m.claim.harness) ? "unsigned claim, not verified: " + esc([m.claim.name, m.claim.harness].filter(Boolean).join(" · ")) : "no signed card"}</small></span>
+  const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name_verified ? m.name : short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""} ${idBadge(m)} ${launchChip(m)}<small>${m.name_verified ? esc(m.role || "") : m.claim && (m.claim.name || m.claim.harness) ? "unsigned claim, not verified: " + esc([m.claim.name, m.claim.harness].filter(Boolean).join(" · ")) : "no signed card"}</small></span>
       <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span><button type="button" class="tbtn" data-grant="${esc(m.id)}" aria-expanded="${S.hxopen === m.id}">Details</button>${m.identity === "signed" && !m.me ? (m.endorsement === "endorsed" ? `<button type="button" class="tbtn" data-unendorse="${esc(m.id)}">Remove</button>` : `<button type="button" class="tbtn" data-endorse="${esc(m.id)}">${m.endorsement === "changed" ? "Endorse again" : "Endorse"}</button>`) : ""}<span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
   const idBlock = m => { const c = m.card || {}, hist = (d.changelog || []).filter(x => x.type === "identity" && x.who === m.id).slice(0, 8);
     return `<table class="kvt"><tr><td class="k">key</td><td class="mono" style="word-break:break-all">${esc(m.id)}</td></tr>
       <tr><td class="k">did:key</td><td class="mono" style="word-break:break-all">${esc(m.did || "none: no verified card")}</td></tr>
       <tr><td class="k">identity</td><td>${idBadge(m)}${c.expires_ms ? ` valid until ${esc(new Date(c.expires_ms).toLocaleString())}` : ""}</td></tr>
+      <tr><td class="k">host record</td><td>${m.launch ? `host-observed: ${esc(m.launch.harness)}${m.launch.model ? " · " + esc(m.launch.model) : ""}${m.launch.image ? ` · <span class="mono">${esc(m.launch.image)}</span>` : ""}, started ${esc(new Date(m.launch.started_ms).toLocaleString())}` : '<span class="mut">none: harness and model are claimed by the agent, not observed</span>'}</td></tr>
       ${m.ans ? `<tr><td class="k">ans name</td><td class="mono">${esc(m.ans)} <span class="mut">claimed, not checked</span></td></tr>` : ""}
       <tr><td class="k">card history</td><td>${hist.length ? hist.map(x => `<div>${esc(new Date(x.ms).toLocaleString())} · ${esc(x.text)}</div>`).join("") : '<span class="mut">no card seen</span>'}</td></tr></table>`; };
   const drawer = m => { if (S.hxopen !== m.id) return ""; const g = m.grant; if (!g) return `<div class="hxd">${idBlock(m)}</div>`; const left = g.expires * 1000 - now;
@@ -822,6 +827,7 @@ function insertTag(tag) {
   const np = b.length + tag.length + 2; inp.focus(); inp.setSelectionRange(np, np); paintTags();
 }
 function feedItemHtml(it) {
+  if (it.kind === "say" && typeof it.text === "string" && it.text.startsWith("::pbx launch ")) return `<div class="sys">the host recorded how a member was launched · ${esc(hhmm(it.time_ms))}</div>`;
   if (it.kind === "say" && typeof it.text === "string" && it.text.startsWith("::pbx identity ")) return `<div class="sys">${esc(it.name || short(it.from) || "member")} posted a signed identity card · ${esc(hhmm(it.time_ms))}</div>`;
   if (it.kind !== "say") return `<div class="sys">${esc(it.text)} · ${esc(hhmm(it.time_ms))}</div>`;
   const fromHost = it.from === "host";                       // the host's own messages carry from:"host"

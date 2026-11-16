@@ -1,0 +1,7 @@
+# Public test vectors (public keys and signatures made from fixed test seeds) look like keys to the generic rules.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "signed-message test vectors"
+paths = ['''ui/tests/launch_vector\.txt''']

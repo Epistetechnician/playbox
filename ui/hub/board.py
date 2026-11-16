@@ -71,6 +71,7 @@ def card_hash(c):
 def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
     """feed items + member list -> the canvas model. `room` is the room's host id: signed identity cards are bound to it (hub/card.py)."""
     names, machines, roles, harnesses, models = {}, {}, {}, {}, {}
+    launches = {}                                              # host-signed launch records by member key
     idcards, pinned, claims, rejected = {}, {}, {}, set()     # verified cards by key, the first verified card per key, unsigned claims, (key, reason) already reported
     arts, cards, series, log, comments = {}, {}, {}, [], []
     msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0, "comment": 0}
@@ -114,6 +115,16 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
                     if old[k] != fields[k]:
                         log.append({"ms": ms, "type": "identity", "who": frm, "text": f"{old['name']} changed {k}: {old[k] or 'none'} to {fields[k] or 'none'}", "seq": it.get("seq")})
             idcards[frm] = fields
+            continue
+        if isinstance(text, str) and text.startswith(idcard.LAUNCH_PREFIX):
+            # The host saying it started a member. Checked against the room id (the host's key), so a member cannot write one.
+            try:
+                lr = idcard.verify_launch(text, room or "")
+            except ValueError as e:
+                log.append({"ms": ms, "type": "identity", "who": frm, "text": f"launch record refused: {str(e)[:60]}", "seq": it.get("seq")})
+                continue
+            launches[lr["key"]] = {k: _s(lr.get(k), n) for k, n in (("harness", 30), ("model", 40), ("image", 100))} | {"started_ms": lr["started_ms"]}
+            log.append({"ms": ms, "type": "identity", "who": lr["key"], "text": f"host recorded a launch: {launches[lr['key']]['harness']}", "seq": it.get("seq")})
             continue
         p = parse(text)
         if not p:
@@ -176,7 +187,7 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
     for m in members or []:
         mid = m.get("id") or ""
         mem[mid] = {"id": mid, "present": bool(m.get("present")), "last_seen": m.get("last_seen_ms") or 0}
-    for mid in list(per) + list(idcards) + list(claims):
+    for mid in list(per) + list(idcards) + list(claims) + list(launches):
         mem.setdefault(mid, {"id": mid, "present": False, "last_seen": 0})
     live = {k: c for k, c in idcards.items() if c["expires_ms"] > (now_ms or 0)}
     count = {}
@@ -188,6 +199,7 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
         m.update({"name": (c or {}).get("name") or names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "name_verified": bool(c),
                   "identity": ident, "card": c or idcards.get(mid), "claim": claims.get(mid), "dup_name": bool(c and count.get(c["name"], 0) > 1),
                   "machine": (c or {}).get("machine", ""), "role": (c or {}).get("role", ""), "harness": (c or {}).get("harness", ""), "model": (c or {}).get("model", ""),
+                  "launch": launches.get(mid), "launch_differs": bool(launches.get(mid) and c and ((c.get("harness") and c["harness"].lower() != launches[mid]["harness"].lower()) or (c.get("model") and launches[mid]["model"] and c["model"].lower() != launches[mid]["model"].lower()))),
                   "did": (c or {}).get("did", ""), "ans": (c or {}).get("ans", ""), "msgs": per.get(mid, 0), "me": mid == me,
                   "endorsement": ("" if not endorsed or mid not in endorsed else "endorsed" if c and endorsed[mid].get("card_hash") == card_hash(dict(c, key=mid)) else "changed"),
                   "card_hash": card_hash(dict(c, key=mid)) if c else ""})

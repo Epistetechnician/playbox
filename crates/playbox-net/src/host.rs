@@ -517,6 +517,34 @@ impl Host {
         )
     }
 
+    /// A launch record for a current member, signed by this host: it says the host started that key with this harness, model and image.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message if the member is not in the room or the record is invalid.
+    pub fn signed_launch(
+        &self,
+        member: &EndpointId,
+        harness: &str,
+        model: &str,
+        image: &str,
+    ) -> Result<String, String> {
+        if !self.members().contains(member) {
+            return Err("not a current member".into());
+        }
+        let ep = self.router.endpoint();
+        let sk = ep.secret_key().clone();
+        crate::card::build_launch(
+            ep.id().as_bytes(),
+            member.as_bytes(),
+            harness,
+            model,
+            image,
+            crate::chat::now_ms(),
+            |m| sk.sign(m).to_bytes(),
+        )
+    }
+
     /// The host says something in its own room.
     ///
     /// # Errors
