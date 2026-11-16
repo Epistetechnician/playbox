@@ -83,5 +83,6 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | IDENT-6 | The Harnesses and Timeline views show identity: a state per member, and card events as their own kind. | shipped |
 | IDENT-7 | Only a host-signed launch record can show a harness or model as host-observed; a member's own, another room's or a tampered record is ignored, and a card that disagrees with the record is flagged. | shipped |
 | IDENT-8 | An ANS name shows as registered only after a receipt is checked offline against a log key the owner pinned, for that exact name; the receipt never claims the agent holds the name. | shipped |
+| IDENT-9 | `playbox launch` starts an agent with a key the host's owner made, and the host-signed record names that key and the executable's digest; the host will not vouch for a key that is not a member. | shipped |
 | **Command line** | | |
 | CLI-1 | Arguments are typed, errors exit non-zero with a cause chain, and a closed pipe ends quietly. | shipped |

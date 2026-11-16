@@ -5,6 +5,7 @@ mod control;
 mod doctor;
 mod hub;
 mod latent;
+mod launch;
 mod python;
 mod release;
 mod rooms;
@@ -69,6 +70,7 @@ async fn run() -> Result<ExitCode> {
     let r: Result<()> = match cli.command {
         Cmd::Up(a) => rooms::up(a).await,
         Cmd::Join(a) => rooms::join(a).await,
+        Cmd::Launch(a) => launch::launch(a).await,
         Cmd::Shell(a) => session::shell(a).await,
         Cmd::Chat {
             link,

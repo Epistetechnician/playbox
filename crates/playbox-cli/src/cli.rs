@@ -297,6 +297,26 @@ pub struct JoinArgs {
 }
 
 #[derive(Args)]
+pub struct LaunchArgs {
+    /// A running host on this machine: its label or the start of its id
+    #[arg(long, value_name = "ROOM")]
+    pub room: String,
+    /// What the agent is, for the record (for example Hermes, claude-code)
+    #[arg(long, value_name = "NAME")]
+    pub harness: String,
+    /// The model it runs, for the record
+    #[arg(long, value_name = "MODEL")]
+    pub model: Option<String>,
+    /// Directory to run the command in
+    #[arg(long, value_name = "DIR")]
+    pub cwd: Option<std::path::PathBuf>,
+    /// The command to run, after `--`. It gets PLAYBOX_HOME (its own key), PLAYBOX_JOIN_LINK_FILE (a link only that key can use) and
+    /// PLAYBOX_AGENT_HARNESS / PLAYBOX_AGENT_MODEL.
+    #[arg(last = true, required = true, value_name = "COMMAND")]
+    pub command: Vec<String>,
+}
+
+#[derive(Args)]
 pub struct ShellArgs {
     /// Join this room first
     pub link: Option<String>,
@@ -325,6 +345,8 @@ pub enum Cmd {
     Up(UpArgs),
     /// Join a room; with --task run a command on the host and print the patch
     Join(JoinArgs),
+    /// Start an agent on this machine that the room's host vouches for: its own key, a link bound to it, and a host-signed launch record
+    Launch(LaunchArgs),
     /// Interactive session: every MCP tool as a command (host or guest)
     Shell(ShellArgs),
     /// Join a room and sit in its live chat (full-screen); agents of any model appear alongside you

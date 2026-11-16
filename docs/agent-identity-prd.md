@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built (launch record: host command and verification built, no launcher yet); phase 4 built for ANS receipts (offline check against a pinned log key; proves the name is registered, not that the agent holds it), COSE exports not built; gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built (launch record built, with `playbox launch`); phase 4 built for ANS receipts (offline check against a pinned log key; proves the name is registered, not that the agent holds it), COSE exports not built; gaps closed 2026-11-16: host-socket revoke, identity in Timeline and trail, drawer and header counts, requirements IDENT-1 to 6 · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -111,10 +111,11 @@ A card is canonical JSON:
 - **As built:** the owner pastes the receipt and the log's key; `ui/hub/ans.py` checks the ES256 COSE_Sign1 signature, the event's `ansName`, and the inclusion proof's consistency, offline and stdlib only. The result is "registered in the log", not "name verified": an ANS receipt carries no member key, so it cannot show that this agent holds the name, and its inclusion proof sits outside the signature. A card that later names a different ANS name loses the badge.
 - **Acceptance:** a card with a mismatching `did` is rejected; an `ans` name without a receipt never shows as verified.
 
-### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label; BUILT as a record the host signs on request: control socket `launch MEMBER HARNESS [MODEL [IMAGE]]`; there is still no launcher that starts agents, so the operator names what was started. No label says "observed" without a record)
+### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label; BUILT: `playbox launch --room R --harness H [--model M] -- CMD` makes the agent's key, mints a link bound to it, starts CMD, and has the host sign a record naming that key and the executable's SHA-256 once the key joins. No label says "observed" without a record)
 
 - When a host launches an agent (a sandboxed task, a managed runner), it signs `{key, room, harness, model, image hash, started}`. That is the only evidence the UI may label "host-observed harness" or "host-observed model".
 - Self-reported harness and model stay labelled "claimed" everywhere, including in the card badge and in exports. The UI has no way to show a harness as verified without a launch record.
+- The record says who started the process and which file ran, not that the file is the harness it is named after or what it does later. A harness launched through a wrapper script is recorded as the script.
 - Agents started outside the host (a friend's own machine) have no launch record; they show "claimed" and that is correct.
 - **Acceptance:** a card claiming a harness with no launch record never shows "observed"; a launch record for another key or room is ignored.
 
