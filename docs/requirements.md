@@ -82,5 +82,6 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | IDENT-5 | An owner revoking a member from the hub leaves an entry in the security trail. | shipped |
 | IDENT-6 | The Harnesses and Timeline views show identity: a state per member, and card events as their own kind. | shipped |
 | IDENT-7 | Only a host-signed launch record can show a harness or model as host-observed; a member's own, another room's or a tampered record is ignored, and a card that disagrees with the record is flagged. | shipped |
+| IDENT-8 | An ANS name shows as registered only after a receipt is checked offline against a log key the owner pinned, for that exact name; the receipt never claims the agent holds the name. | shipped |
 | **Command line** | | |
 | CLI-1 | Arguments are typed, errors exit non-zero with a cause chain, and a closed pipe ends quietly. | shipped |

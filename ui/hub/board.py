@@ -68,7 +68,7 @@ def card_hash(c):
     return hashlib.sha256(json.dumps({k: c.get(k, "") for k in keys}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
 
 
-def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
+def build(items, members, me=None, now_ms=0, room=None, endorsed=None, ans_checked=None):
     """feed items + member list -> the canvas model. `room` is the room's host id: signed identity cards are bound to it (hub/card.py)."""
     names, machines, roles, harnesses, models = {}, {}, {}, {}, {}
     launches = {}                                              # host-signed launch records by member key
@@ -199,6 +199,8 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None):
         m.update({"name": (c or {}).get("name") or names.get(mid) or m.get("name") or ("host" if mid == "host" else ""), "name_verified": bool(c),
                   "identity": ident, "card": c or idcards.get(mid), "claim": claims.get(mid), "dup_name": bool(c and count.get(c["name"], 0) > 1),
                   "machine": (c or {}).get("machine", ""), "role": (c or {}).get("role", ""), "harness": (c or {}).get("harness", ""), "model": (c or {}).get("model", ""),
+                  "ans_status": ("" if not ans_checked or mid not in ans_checked else "registered" if c and c.get("ans") == ans_checked[mid].get("name") else "changed"),
+                  "ans_proof": (ans_checked or {}).get(mid) if (ans_checked or {}).get(mid) and c and c.get("ans") == ans_checked[mid].get("name") else None,
                   "launch": launches.get(mid), "launch_differs": bool(launches.get(mid) and c and ((c.get("harness") and c["harness"].lower() != launches[mid]["harness"].lower()) or (c.get("model") and launches[mid]["model"] and c["model"].lower() != launches[mid]["model"].lower()))),
                   "did": (c or {}).get("did", ""), "ans": (c or {}).get("ans", ""), "msgs": per.get(mid, 0), "me": mid == me,
                   "endorsement": ("" if not endorsed or mid not in endorsed else "endorsed" if c and endorsed[mid].get("card_hash") == card_hash(dict(c, key=mid)) else "changed"),
