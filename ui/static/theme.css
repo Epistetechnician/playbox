@@ -289,3 +289,6 @@ html[data-statusbar=off] body.has-sb .rail,html[data-statusbar=off] body.has-sb 
 html[data-sidebar=off] .rr,html[data-sidebar=off] #railrooms{display:none!important}
 html[data-motion=reduce] *,html[data-motion=reduce] *::before,html[data-motion=reduce] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 .cmx{margin:0 20px}.cmx-c{border-left:2px solid var(--line-2);padding:4px 10px;margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}.cmx-f{display:flex;gap:6px;margin:8px 0}.cmx-f input{flex:1;min-width:0}.cmx-b{margin-left:6px}
+
+/* pages whose brand already carries text must not get the generated one as well */
+html:not([data-style=expressive]) .brand:has(.bk)::after{content:none}
