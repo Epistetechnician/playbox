@@ -389,6 +389,7 @@ pub fn run(o: &Opts) -> Result<u8> {
     keep_local_signature(&staged, &exe);
     std::fs::copy(&exe, prev_path(&exe)).context("keeping the old binary for --rollback")?;
     std::fs::rename(&staged, &exe).context("replacing the binary")?;
+    install_mcp(&tmp.0, &exe, &target);
 
     println!("updated playbox {cur} -> {target}");
     println!("{compat}");
@@ -404,6 +405,44 @@ pub fn run(o: &Opts) -> Result<u8> {
         .stdin(Stdio::null())
         .status();
     Ok(0)
+}
+
+/// The archive also carries `playbox-mcp`, the server agents launch. It goes next to `playbox`, checked to be the same version, and
+/// keeps the local signature like `playbox` does. A failure here never undoes the update: it is reported and the old file stays.
+fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
+    let new_mcp = dir.join("playbox-mcp");
+    if !new_mcp.is_file() {
+        return;
+    }
+    let dest = exe.with_file_name("playbox-mcp");
+    let result = (|| -> Result<()> {
+        #[cfg(unix)]
+        std::fs::set_permissions(
+            &new_mcp,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )?;
+        let out = Command::new(&new_mcp)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .output()
+            .context("running the downloaded playbox-mcp")?;
+        if !out.status.success()
+            || !String::from_utf8_lossy(&out.stdout).contains(&target.to_string())
+        {
+            bail!("it does not report version {target}");
+        }
+        let staged = dest.with_file_name(".playbox-mcp.new");
+        std::fs::copy(&new_mcp, &staged)?;
+        #[cfg(unix)]
+        std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+        keep_local_signature(&staged, &dest);
+        std::fs::rename(&staged, &dest)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => println!("updated playbox-mcp next to it ({})", dest.display()),
+        Err(e) => eprintln!("note: playbox-mcp was not updated ({e:#}); the old one stays"),
+    }
 }
 
 fn rollback() -> Result<u8> {

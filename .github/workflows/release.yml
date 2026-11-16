@@ -40,12 +40,12 @@ jobs:
         env:
           # Pinned into the binary so `playbox update` verifies SHA256SUMS.sig. Set the repository variable to the key's public half.
           PLAYBOX_RELEASE_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PUBKEY }}
-        run: cargo build --release -p playbox-cli --target ${{ matrix.target }}
+        run: cargo build --release -p playbox-cli -p playbox-mcp --target ${{ matrix.target }}
       - name: Package
         run: |
           mkdir out
-          cp target/${{ matrix.target }}/release/playbox out/playbox
-          tar -czf playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C out playbox
+          cp target/${{ matrix.target }}/release/playbox target/${{ matrix.target }}/release/playbox-mcp out/
+          tar -czf playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C out playbox playbox-mcp
       - uses: actions/upload-artifact@v7
         with:
           name: playbox-${{ matrix.os }}-${{ matrix.arch }}
