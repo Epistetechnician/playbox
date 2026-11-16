@@ -21,6 +21,10 @@ def run(ctx):
     talk(host, guest, "new host, old guest")
     assert host.ok("playbox_audit")["entries"] >= 2
 
+    # Both halves use the same state directory, and a host now holds an exclusive lock on it: stop the first host (the OS drops its lock) before the second starts.
+    guest.close()
+    host.close()
+
     # A previous-release host with a current guest: its reply has no protocol field, which counts as protocol 1.
     host2, (guest2,), _ = room(ctx, 1, old_host=True)
     assert guest2.ok("playbox_status")["joined"]["member_id"]
