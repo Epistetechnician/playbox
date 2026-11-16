@@ -19,6 +19,44 @@ use std::{
 };
 
 impl Server {
+    /// Serve JSON-RPC over stdin/stdout until stdin closes. With live delivery on, the hello and new room messages are pushed
+    /// between requests; otherwise the timer never ticks.
+    pub async fn serve_stdio(&mut self) -> Result<()> {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let mut lines = BufReader::new(tokio::io::stdin()).lines();
+        let mut out = tokio::io::stdout();
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            let line = tokio::select! {
+                l = lines.next_line() => match l? { Some(l) => l, None => break },
+                _ = tick.tick(), if self.live_enabled() => {
+                    let mut pushes: Vec<Value> = self.live_hello().into_iter().collect();
+                    pushes.extend(self.live_poll().await);
+                    for n in pushes {
+                        out.write_all(format!("{n}\n").as_bytes()).await?;
+                        out.flush().await?;
+                    }
+                    continue;
+                }
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let reply = match serde_json::from_str::<Value>(&line) {
+                Ok(msg) => self.handle(msg).await,
+                Err(e) => Some(
+                    json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": format!("parse error: {e}")}}),
+                ),
+            };
+            if let Some(r) = reply {
+                out.write_all(format!("{r}\n").as_bytes()).await?;
+                out.flush().await?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(home: &Path) -> Result<Self> {
         let key = store::load_or_create_key(&home.join("session.key"))?;
         let log_path = std::env::var_os("PLAYBOX_LOG")
