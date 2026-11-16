@@ -10,6 +10,16 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- A running host's control socket answers `members` and `revoke MEMBER ID` (the same action as the console's `revoke`; the socket is private to the user), so a host started as a service can have a member removed. In the hub, Revoke on an adopted room goes through it (passkey step-up).
+- `playbox up --grant-ttl SECS`: how long each member's grant lasts (default one hour, at most 30 days). The MCP `playbox_create` tool already had this;
+  the command-line host did not, so agents that ran past an hour were refused ("not authorized") with no way to lengthen the grant.
+
+### Fixed
+- A host whose state directory is called `state` is named after the folder around it (`~/.playbox-rooms/gpu-lab/state` is `gpu-lab`), not `state`, in the hub's list of hosted rooms.
+
+## [0.3.6] - 2026-11-16
+
+### Added
 - The host records how each member was admitted (when the grant was issued and runs out, which link, the limits and the hosts, secrets and capabilities it allows; never a token) and `playbox_status` shows it. The Harnesses tab gets a Grant button per member with the delegation (host to member), expiry and limits, and a Revoke button (passkey step-up). A new member joining a room where you endorse agents raises a quiet attention item.
 
 ## [0.3.5] - 2026-11-16

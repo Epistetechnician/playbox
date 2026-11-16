@@ -26,7 +26,7 @@ Trials alternate room, silo, room, silo, so drift in API speed hits both. Each t
 | 3 | 32 numbers, split in 3 slices (assembled score) | 6 | 99,609 | 112,941 | not run | 12% lower, p = 0.051 |
 | 4 | Same as 3, plus a Fable 5.2 advisor | 8 | 41,425 | 22,134 | not run | silo 47% lower, p = 0.20 |
 | 5 | Same as 3, Haiku only, about 18× more tries (silos only) | 4 | not run | 0 | not run | vs row 4 silo: p = 0.31 |
-| 6 | Same as 5, Haiku only, in a room (about 10× more tries) | 4 | 599 | 29,466 (row 5, same tries) | not run | room 98% lower, p = 0.029 |
+| 6 | Same as 5, Haiku only, in a room (about 10× more tries) | 4 | 599 | 29,466 | not run | room 98% lower, p = 0.029 |
 
 Numbers are the mean best score after all tries (row 5: after 1,800 tries; row 6: after 870 tries, with row 5 silos cut at the same point). p-values come from a permutation test on the trial results, one-sided for "room is lower" in rows 1 to 3. Rows 4 and 5 are two-sided.
 
@@ -109,7 +109,7 @@ Row 5 had no room arm, so this adds one: the same three Haiku-only agents sharin
 
 - **Small samples.** 6 trials per condition for row 3, 8 for row 4 and 4 for rows 5 and 6. Room trials vary widely (8k to 78k in row 4), so a modest real effect would not show.
 - **Trials that stopped slightly short are counted.** Several room trials in row 4 were stopped by a time limit at 82 to 89 of 90 tries, and one silo trial had agents hit an error at 87. Rule used: a trial counts if it reaches 80 of 90 tries and has no invalid tries. Earlier it was 87; it was loosened mid-run because a stricter rule biases the results toward faster trials. Rows 1 to 3 required all tries. Because the room's scores are still falling at the limit, the short trials slightly understate the room.
-- **Row 6 trials stopped at about 98% of their tries.** All four rooms ended at 876 to 894 of 900 tries, after almost exactly one hour. Each agent's membership grant (the invite link) lasts one hour, and when it ran out the host refused further posts ("not authorized"). Trials were counted under the same proportional rule as row 4 (at least about 89% of tries) and compared at 870 tries, which all four reached. Long-running agents would need a longer grant or a renewal.
+- **Row 6 trials stopped at about 98% of their tries.** All four rooms ended at 876 to 894 of 900 tries, after almost exactly one hour. Each agent's membership grant (the invite link) lasts one hour, and when it ran out the host refused further posts ("not authorized"). Trials were counted under the same proportional rule as row 4 (at least about 89% of tries) and compared at 870 tries, which all four reached. Host the room with `playbox up --grant-ttl 21600` (six hours) to avoid it; that flag was added after this run.
 - **Trials that did not count.** Attempts that stalled on the model API's usage limit (the account's 5-hour cap) or timed out far short are not in the tables. The raw attempts are kept next to the results as `failed-*`.
 - **Different accounts and time limits.** The row 4 runs began under a 700-second limit and later used 1,500 s, and part of them ran on a second account. Rows 4 trials 7 and 8, and row 5, ran after a usage-limit reset on that second account.
 - **Row 5 resumed agents.** Three of the four row 5 trials had an agent stop on one malformed model reply. Those agents were resumed from their saved counters (`hc_resume.py`) until they reached 600 tries; nothing was discarded.

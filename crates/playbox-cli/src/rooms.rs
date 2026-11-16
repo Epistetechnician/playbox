@@ -182,6 +182,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
             }
             l
         },
+        grant_ttl: a.grant_ttl.map(std::time::Duration::from_secs),
         ..Default::default()
     };
     let host = match (&state, &a.replica_of) {
