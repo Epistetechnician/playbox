@@ -130,7 +130,12 @@ impl Book {
     pub fn new(store: Option<PathBuf>) -> Result<Self> {
         let mut inner = Inner::default();
         if let Some(p) = &store {
-            if let Ok(text) = std::fs::read_to_string(p) {
+            let text = match std::fs::read_to_string(p) {
+                Ok(t) => Some(t),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e).with_context(|| format!("reading {}", p.display())),
+            };
+            if let Some(text) = text {
                 let list: Vec<Conversation> = serde_json::from_str(&text)
                     .with_context(|| format!("reading {}", p.display()))?;
                 for c in list {
@@ -621,6 +626,17 @@ mod tests {
             2,
             "adding a present member changes nothing"
         );
+    }
+
+    #[test]
+    fn an_unreadable_store_is_an_error() {
+        let dir = std::env::temp_dir().join(format!("playbox-conv-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("conversations.json");
+        std::fs::write(&store, [0xff, 0xfe, 0xfd]).unwrap();
+        assert!(Book::new(Some(store.clone())).is_err());
+        assert_eq!(std::fs::read(&store).unwrap(), vec![0xff, 0xfe, 0xfd]);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
