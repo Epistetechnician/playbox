@@ -2079,17 +2079,21 @@ impl Host {
         self.audit.chat.since(since, 200, &ids)
     }
 
+    /// How each member was admitted: who holds which grant, with what limits, until when. No tokens.
+    ///
     /// # Panics
     ///
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
-    #[must_use]
-    /// How each member was admitted: who holds which grant, with what limits, until when. No tokens.
     #[must_use]
     pub fn admissions(&self) -> Vec<(EndpointId, Admit)> {
         let st = self.state.lock().expect("state lock");
         st.admits.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
+    #[must_use]
     pub fn members(&self) -> Vec<EndpointId> {
         self.state
             .lock()
