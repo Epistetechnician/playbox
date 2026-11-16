@@ -1,0 +1,105 @@
+{
+ "ckpt_hist": [
+  {
+   "none": 3.6146,
+   "own": 2.3043,
+   "mapped": 2.2749,
+   "retention": 1.0224,
+   "step": 4500,
+   "stage": 2,
+   "seconds": 1913
+  },
+  {
+   "none": 3.6146,
+   "own": 2.3043,
+   "mapped": 2.2782,
+   "retention": 1.0199,
+   "step": 5000,
+   "stage": 2,
+   "seconds": 2124
+  },
+  {
+   "none": 3.6146,
+   "own": 2.3043,
+   "mapped": 2.2675,
+   "retention": 1.0281,
+   "step": 5500,
+   "stage": 2,
+   "seconds": 2318
+  }
+ ],
+ "sender": "Qwen/Qwen3-4B-Base",
+ "receiver": "unsloth/Llama-3.2-3B",
+ "wikitext": {
+  "n": 150,
+  "none": {
+   "nll": 3.5222
+  },
+  "own": {
+   "nll": 2.4624
+  },
+  "other_own": {
+   "nll": 3.5274,
+   "retention": -0.0049,
+   "ci95": [
+    -0.0592,
+    0.0494
+   ]
+  },
+  "mean": {
+   "nll": 6.6018,
+   "retention": -2.9058,
+   "ci95": [
+    -3.2077,
+    -2.6402
+   ]
+  },
+  "mapped": {
+   "nll": 2.4871,
+   "retention": 0.9767,
+   "ci95": [
+    0.945,
+    1.0092
+   ]
+  }
+ },
+ "templated_heldout": {
+  "n": 48,
+  "none": {
+   "nll": 5.1543
+  },
+  "own": {
+   "nll": 1.301
+  },
+  "other_own": {
+   "nll": 2.9933,
+   "retention": 0.5608,
+   "ci95": [
+    0.52,
+    0.6014
+   ]
+  },
+  "mean": {
+   "nll": 6.2818,
+   "retention": -0.2926,
+   "ci95": [
+    -0.3565,
+    -0.2345
+   ]
+  },
+  "mapped": {
+   "nll": 1.905,
+   "retention": 0.8432,
+   "ci95": [
+    0.8069,
+    0.8807
+   ]
+  }
+ },
+ "concept_retrieval_21way": {
+  "chance": 0.0476,
+  "own": 1.0,
+  "mapped": 0.9524
+ },
+ "seconds": 138
+}
