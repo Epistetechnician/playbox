@@ -22,6 +22,11 @@ fn git(dir: &Path, args: &[&str]) {
 static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 async fn start(token: Option<&str>) -> (Host, String) {
+    start_patient(token, None).await
+}
+
+/// `patience` is how long the host lets an authenticated connection sit silent before closing it.
+async fn start_patient(token: Option<&str>, patience: Option<Duration>) -> (Host, String) {
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("playbox-bridge-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -44,6 +49,7 @@ async fn start(token: Option<&str>) -> (Host, String) {
             allowed_hosts: vec![],
             allowed_secrets: vec![],
         },
+        authenticated_patience: patience.unwrap_or(HostConfig::default().authenticated_patience),
         ..Default::default()
     };
     let host = Host::start_with(new_secret_key().unwrap(), true, cfg)
@@ -364,6 +370,27 @@ async fn ordinary_clients_still_work() {
     )
     .await;
     assert!(r.status().is_success(), "{}", r.status());
+}
+
+#[tokio::test]
+async fn the_bridge_reconnects_after_the_host_closes_an_idle_connection() {
+    let (_host, url) = start_patient(None, Some(Duration::from_millis(600))).await;
+    let http = reqwest::Client::new();
+    let list = || async {
+        http.post(format!("{url}/jsonrpc"))
+            .json(&rpc(json!(1), "ListTasks", json!({})))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()
+    };
+    assert!(list().await["result"].is_object());
+    // Longer than the host's patience, so it closes the bridge's connection.
+    tokio::time::sleep(Duration::from_millis(1800)).await;
+    let r = list().await;
+    assert!(r["result"].is_object(), "{r}");
 }
 
 #[tokio::test]

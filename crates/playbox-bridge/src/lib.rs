@@ -20,14 +20,30 @@ use axum::{
 use playbox_net::Client;
 use serde_json::{json, Value};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 
 const BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 struct Bridge {
-    client: Client,
+    client: RwLock<Arc<Client>>,
     token: Option<String>,
     base_url: String,
+}
+
+impl Bridge {
+    /// The room connection, reopened first if the host closed it (it does after 15 idle minutes).
+    async fn client(&self) -> Result<Arc<Client>> {
+        let c = self.client.read().await.clone();
+        if !c.is_closed() {
+            return Ok(c);
+        }
+        let mut w = self.client.write().await;
+        // Another request may have reconnected while this one waited for the lock.
+        if w.is_closed() {
+            *w = Arc::new(w.reconnect().await?);
+        }
+        Ok(w.clone())
+    }
 }
 
 /// Methods HTTP callers may use.
@@ -139,7 +155,11 @@ async fn card(State(b): State<Arc<Bridge>>, headers: HeaderMap) -> Response {
         return refusal;
     }
     // The card is public like any A2A card: it reveals what the room offers, not who is in it.
-    let mut card = match b.client.agent_card().await {
+    let card = match b.client().await {
+        Ok(c) => c.agent_card().await,
+        Err(e) => Err(e),
+    };
+    let mut card = match card {
         Ok(c) => c,
         Err(e) => {
             return (
@@ -203,11 +223,14 @@ async fn rpc(
         };
         return Json(JsonRpcResponse::error(id, e.to_jsonrpc_error())).into_response();
     }
-    match b
-        .client
-        .call_raw(&req.method, req.params.unwrap_or(Value::Null))
-        .await
-    {
+    let sent = match b.client().await {
+        Ok(c) => {
+            c.call_raw(&req.method, req.params.unwrap_or(Value::Null))
+                .await
+        }
+        Err(e) => Err(e),
+    };
+    match sent {
         Ok(mut resp) => {
             resp.id = id;
             Json(resp).into_response()
@@ -237,7 +260,7 @@ pub async fn serve(
         bail!("refusing to listen on {addr} without a bearer token: anyone who can reach it would act as the bridge's room member");
     }
     let state = Arc::new(Bridge {
-        client,
+        client: RwLock::new(Arc::new(client)),
         token,
         base_url: public_url.trim_end_matches('/').to_string(),
     });
