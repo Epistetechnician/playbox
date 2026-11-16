@@ -218,6 +218,10 @@ pub struct UpArgs {
     pub max_tasks_per_minute: Option<u64>,
     #[arg(long, value_name = "N")]
     pub task_budget: Option<u64>,
+    /// How long each member's grant lasts, in seconds (default 3600, at most 30 days). A grant that runs out mid-session is refused,
+    /// so agents that run for hours need a longer one; the invite link's own lifetime is separate.
+    #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=2_592_000))]
+    pub grant_ttl: Option<u64>,
     /// Give the room a shared memory kept by a Hindsight server running beside this host (docs/latent-channels.md 6o),
     /// e.g. http://127.0.0.1:8888/v1/default. Members use `remember` and `recall`.
     #[arg(long = "memory-url", value_name = "URL")]
@@ -750,5 +754,13 @@ mod tests {
         assert!(Cli::try_parse_from(["playbox", "experiment", "nope"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "pin", "add", "kind"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "memory", "remember", "fact", "t", "b"]).is_ok());
+    }
+
+    #[test]
+    fn the_grant_lifetime_is_bounded_at_parse_time() {
+        assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "21600"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "2592001"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--grant-ttl", "6h"]).is_err());
     }
 }
