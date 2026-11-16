@@ -1,3 +1,4 @@
+#![allow(unsafe_code)] // Linux syscall boundary; each block carries its own justification
 //! Confines a helper process before it handles guest input.
 //!
 //! libkrun's devices act with the full authority of the process that runs them, so a bug in the VMM is a bug in a process that

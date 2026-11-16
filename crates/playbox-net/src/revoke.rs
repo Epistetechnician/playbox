@@ -14,6 +14,7 @@
 //! There is no un-revoke. Revocation is eventually consistent: until a notice reaches a replica, that
 //! replica still honours the grant. Short grant lifetimes remain the bound on that window.
 
+use crate::sync::LockExt;
 use crate::{grants::Authority, State};
 use anyhow::{anyhow, bail, Context, Result};
 use iroh::{
@@ -146,7 +147,7 @@ impl State {
 /// Verify `text` and apply it. `Ok(true)` if it changed anything.
 pub(crate) fn apply_text(state: &Mutex<State>, auth: &Authority, text: &str) -> Result<bool> {
     let n = Notice::parse(text, auth)?;
-    let mut st = state.lock().expect("state lock");
+    let mut st = state.lock_recover();
     let new = st.apply(&n, text);
     if new {
         st.save();
@@ -176,12 +177,7 @@ impl std::fmt::Debug for SyncHandler {
 
 impl ProtocolHandler for SyncHandler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
-        if !self
-            .allowed
-            .lock()
-            .expect("allowed lock")
-            .contains(&conn.remote_id())
-        {
+        if !self.allowed.lock_recover().contains(&conn.remote_id()) {
             conn.close(1u32.into(), b"not a sync peer");
             return Ok(());
         }
@@ -191,8 +187,7 @@ impl ProtocolHandler for SyncHandler {
         let _ = recv.read_to_end(1024).await;
         let texts: Vec<String> = self
             .state
-            .lock()
-            .expect("state lock")
+            .lock_recover()
             .notices
             .values()
             .cloned()
@@ -239,7 +234,7 @@ impl Replication {
     }
 
     pub fn stop(&self) {
-        for t in self.tasks.lock().expect("tasks lock").drain(..) {
+        for t in self.tasks.lock_recover().drain(..) {
             t.abort();
         }
     }
@@ -258,17 +253,14 @@ impl Replication {
         for p in peers.iter().filter(|p| !p.addrs.is_empty()) {
             self.memory.add_endpoint_info(p.clone());
         }
-        self.allowed
-            .lock()
-            .expect("allowed lock")
-            .extend(ids.iter().copied());
+        self.allowed.lock_recover().extend(ids.iter().copied());
 
         let mut running = self.running.lock().await;
         if let Some(r) = running.as_ref() {
             // Already running: remember the new peers (replacing any older address for the same host)
             // and ask gossip to dial them.
             {
-                let mut known = r.peers.lock().expect("peers lock");
+                let mut known = r.peers.lock_recover();
                 for p in peers {
                     known.retain(|k| k.id != p.id);
                     known.push(p);
@@ -282,8 +274,7 @@ impl Replication {
         }
         let rx = self
             .rx
-            .lock()
-            .expect("rx lock")
+            .lock_recover()
             .take()
             .ok_or_else(|| anyhow!("revocation sync is already running"))?;
         let (sender, mut receiver) = self
@@ -307,13 +298,7 @@ impl Replication {
 
         // Broadcast ours, including any we already hold.
         {
-            let held: Vec<String> = state
-                .lock()
-                .expect("state lock")
-                .notices
-                .values()
-                .cloned()
-                .collect();
+            let held: Vec<String> = state.lock_recover().notices.values().cloned().collect();
             for t in held {
                 let _ = self.tx.send(t);
             }
@@ -333,8 +318,7 @@ impl Replication {
         let pull = tokio::spawn(async move {
             loop {
                 let current: Vec<EndpointAddr> = visit
-                    .lock()
-                    .expect("peers lock")
+                    .lock_recover()
                     .iter()
                     .filter(|p| !p.addrs.is_empty())
                     .cloned()
@@ -345,10 +329,7 @@ impl Replication {
                 tokio::time::sleep(interval).await;
             }
         });
-        self.tasks
-            .lock()
-            .expect("tasks lock")
-            .extend([hear, say, pull]);
+        self.tasks.lock_recover().extend([hear, say, pull]);
         *running = Some(Running {
             sender,
             peers: shared,

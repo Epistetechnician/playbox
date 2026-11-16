@@ -16,3 +16,6 @@ anyhow = "1"
 [dev-dependencies]
 playbox-runner = { path = "../playbox-runner" }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+[lints]
+workspace = true

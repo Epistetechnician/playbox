@@ -1,3 +1,4 @@
+#![allow(unsafe_code)] // Linux syscall boundary; each block carries its own justification
 //! A syscall filter for the helper process, installed after the jail and before libkrun starts any thread.
 //!
 //! This is a **deny-list**, not Peerspan's allow-list (`crates/runtime/src/seccomp.rs`). An allow-list has to be measured against

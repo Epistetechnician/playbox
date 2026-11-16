@@ -40,7 +40,9 @@ pub fn memory_review(id: &str, accept: bool, reject: bool, key: Option<String>) 
         .map(|e| e.id.clone())
         .find(|e| e.starts_with(id))
         .ok_or_else(|| anyhow::anyhow!("no entry starting with {id}"))?;
-    let e = mem.entry(&full).unwrap();
+    let e = mem
+        .entry(&full)
+        .ok_or_else(|| anyhow::anyhow!("entry {full} disappeared while reading it"))?;
     eprintln!(
         "{} {:?} {}: {}",
         if accept { "accepting" } else { "rejecting" },

@@ -28,7 +28,7 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 
 ## Tools
 
-The server lists 41 tools (`tool_list()` in `crates/playbox-mcp/src/lib.rs`; `playbox shell` then `help` prints them). The table is the
+The server lists 41 tools (`tool_list()` in `crates/playbox-mcp/src/tools.rs`; `playbox shell` then `help` prints them). The table is the
 core room set; the others are:
 
 - **Talk:** `playbox_say`, `playbox_feed`, `playbox_leave`, `playbox_live_ready`, `playbox_conversations`, `playbox_conversation_new`,

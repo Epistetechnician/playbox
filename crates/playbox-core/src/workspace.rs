@@ -5,6 +5,7 @@
 //! Pure Rust, no FUSE and no VM: this is the data model. Mounting a workspace into a microVM
 //! is a separate layer. Commit tree ids are what the history log records as `fs_snapshot`.
 
+use crate::framing::be_len32;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -126,7 +127,9 @@ impl Store {
         match self.path(&id) {
             Some(p) => {
                 if !p.exists() {
-                    fs::create_dir_all(p.parent().expect("has parent"))?;
+                    if let Some(parent) = p.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
                     let tmp = p.with_extension("tmp");
                     fs::write(&tmp, bytes)?;
                     fs::rename(tmp, &p)?;
@@ -180,18 +183,10 @@ pub type Tree = BTreeMap<String, Entry>;
 fn encode_tree(t: &Tree) -> Vec<u8> {
     let mut b = Vec::new();
     for (path, e) in t {
-        b.extend_from_slice(
-            &u32::try_from(path.len())
-                .expect("length fits in u32")
-                .to_be_bytes(),
-        );
+        b.extend_from_slice(&be_len32(path.len()));
         b.extend_from_slice(path.as_bytes());
         b.extend_from_slice(&e.len.to_be_bytes());
-        b.extend_from_slice(
-            &u32::try_from(e.chunks.len())
-                .expect("length fits in u32")
-                .to_be_bytes(),
-        );
+        b.extend_from_slice(&be_len32(e.chunks.len()));
         for c in &e.chunks {
             b.extend_from_slice(c);
         }
@@ -210,18 +205,17 @@ impl<'a> Reader<'a> {
         self.0 = b;
         Ok(a)
     }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
+        <[u8; N]>::try_from(self.take(N)?).map_err(|_| Error::Corrupt)
+    }
     fn u32(&mut self) -> Result<u32, Error> {
-        Ok(u32::from_be_bytes(
-            self.take(4)?.try_into().expect("4 bytes"),
-        ))
+        Ok(u32::from_be_bytes(self.array()?))
     }
     fn u64(&mut self) -> Result<u64, Error> {
-        Ok(u64::from_be_bytes(
-            self.take(8)?.try_into().expect("8 bytes"),
-        ))
+        Ok(u64::from_be_bytes(self.array()?))
     }
     fn id(&mut self) -> Result<Id, Error> {
-        Ok(self.take(32)?.try_into().expect("32 bytes"))
+        self.array()
     }
     fn done(&self) -> bool {
         self.0.is_empty()
@@ -256,21 +250,13 @@ pub struct Commit {
 fn encode_commit(c: &Commit) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&c.tree);
-    b.extend_from_slice(
-        &u32::try_from(c.parents.len())
-            .expect("length fits in u32")
-            .to_be_bytes(),
-    );
+    b.extend_from_slice(&be_len32(c.parents.len()));
     for p in &c.parents {
         b.extend_from_slice(p);
     }
     b.extend_from_slice(&c.time_ms.to_be_bytes());
     for s in [&c.author, &c.message, &c.tool_call] {
-        b.extend_from_slice(
-            &u32::try_from(s.len())
-                .expect("length fits in u32")
-                .to_be_bytes(),
-        );
+        b.extend_from_slice(&be_len32(s.len()));
         b.extend_from_slice(s.as_bytes());
     }
     b

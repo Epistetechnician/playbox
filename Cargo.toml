@@ -22,3 +22,11 @@ opt-level = 3
 # Test and dev builds keep debug info off dependencies: smaller target dir, faster link.
 [profile.dev.package."*"]
 debug = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"

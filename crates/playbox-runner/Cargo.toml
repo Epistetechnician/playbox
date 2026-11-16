@@ -36,3 +36,6 @@ required-features = ["krun"]
 [[test]]
 name = "confine"
 harness = false
+
+[lints]
+workspace = true

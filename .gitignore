@@ -7,3 +7,8 @@ __pycache__/
 world/docs/session_events.jsonl
 world/docs/session.png
 challenge/state/
+
+# Raw experiment artifacts: regenerate via steer/tools; summaries (.json) stay tracked
+steer/results/**/*.prompt
+steer/results/**/*.out
+steer/results/**/*.pt

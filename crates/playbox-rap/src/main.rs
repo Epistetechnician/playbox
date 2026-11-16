@@ -18,8 +18,8 @@ async fn main() -> Result<()> {
     }
     let addr = std::env::var("PLAYBOX_RAP_ADDR").unwrap_or_else(|_| "127.0.0.1:3010".into());
     let listener = TcpListener::bind(&addr).await?;
-    let base = std::env::var("PLAYBOX_RAP_URL")
-        .unwrap_or_else(|_| format!("http://{}", listener.local_addr().unwrap()));
+    let local = listener.local_addr()?;
+    let base = std::env::var("PLAYBOX_RAP_URL").unwrap_or_else(|_| format!("http://{local}"));
     let hosts = std::env::var("PLAYBOX_RAP_CALLBACK_HOSTS")
         .unwrap_or_default()
         .split(',')

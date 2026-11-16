@@ -11,3 +11,6 @@ anyhow = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["time", "macros", "rt"] }
+
+[lints]
+workspace = true

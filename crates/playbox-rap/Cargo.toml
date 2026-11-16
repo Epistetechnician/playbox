@@ -21,3 +21,6 @@ url = "2"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 ed25519-dalek.workspace = true
 rap-client = { path = "../../vendor/infinity/rap-client" }
+
+[lints]
+workspace = true

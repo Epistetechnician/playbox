@@ -16,6 +16,7 @@
 //!   entries per conversation (the oldest are dropped from the front; sequence numbers continue).
 //! * Entries are text from other members. Whatever shows them to an agent must treat them as untrusted (the MCP tools do).
 
+use crate::sync::LockExt;
 use anyhow::{bail, Context, Result};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -184,7 +185,7 @@ impl Book {
         if roster.len() < 2 || roster.len() > MAX_ROSTER {
             bail!("a conversation has 2 to {MAX_ROSTER} members");
         }
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self.inner.lock_recover();
         if i.convs.values().filter(|c| c.creator == creator).count() >= MAX_PER_CREATOR {
             bail!("too many conversations ({MAX_PER_CREATOR})");
         }
@@ -222,7 +223,7 @@ impl Book {
         members: &[String],
         is_member: &dyn Fn(&str) -> bool,
     ) -> Result<Conversation> {
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self.inner.lock_recover();
         let c = i
             .convs
             .get_mut(conv)
@@ -273,7 +274,7 @@ impl Book {
         if !valid_id(request_id) {
             bail!("request_id must be 1-64 letters, digits, - _ .");
         }
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self.inner.lock_recover();
         let c = i
             .convs
             .get(conv)
@@ -299,7 +300,10 @@ impl Book {
             bail!("too many posts: at most {POSTS_PER_MINUTE} a minute");
         }
         q.push_back(now);
-        let c = i.convs.get_mut(conv).expect("checked above");
+        let c = i
+            .convs
+            .get_mut(conv)
+            .ok_or_else(|| anyhow::anyhow!("no such conversation"))?;
         let e = Entry {
             seq: c.next_seq,
             author: author.to_string(),
@@ -323,7 +327,7 @@ impl Book {
     ///
     /// Refuses a reader who is not on the roster.
     pub fn read(&self, who: &str, conv: &str, since: u64, mark: bool) -> Result<View> {
-        let mut i = self.inner.lock().expect("conversations lock");
+        let mut i = self.inner.lock_recover();
         let c = i
             .convs
             .get_mut(conv)
@@ -367,7 +371,7 @@ impl Book {
     /// The conversations `who` is on, with unread counts.
     #[must_use]
     pub fn list(&self, who: &str) -> Value {
-        let i = self.inner.lock().expect("conversations lock");
+        let i = self.inner.lock_recover();
         json!(i
             .convs
             .values()
@@ -387,7 +391,7 @@ impl Book {
         who: &str,
         after: &BTreeMap<String, u64>,
     ) -> Vec<(String, String, Entry)> {
-        let i = self.inner.lock().expect("conversations lock");
+        let i = self.inner.lock_recover();
         let mut out = Vec::new();
         for c in i
             .convs

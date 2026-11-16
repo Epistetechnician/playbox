@@ -452,8 +452,10 @@ async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, b
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     let mut child = cmd.spawn().context("spawn")?;
-    let out = tokio::spawn(read_capped(child.stdout.take().expect("piped")));
-    let err = tokio::spawn(read_capped(child.stderr.take().expect("piped")));
+    let stdout = child.stdout.take().context("child stdout was not piped")?;
+    let stderr = child.stderr.take().context("child stderr was not piped")?;
+    let out = tokio::spawn(read_capped(stdout));
+    let err = tokio::spawn(read_capped(stderr));
     if let Ok(status) = tokio::time::timeout(timeout, child.wait()).await {
         let status = status?;
         Ok((

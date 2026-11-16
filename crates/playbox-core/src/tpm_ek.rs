@@ -13,6 +13,7 @@
 //! `make_credential` is checked against a real TPM's `ActivateCredential` in `tests/tpm_hardware.rs`.
 
 use crate::attest::AttestError;
+use crate::framing::be_len16;
 use aes::Aes128;
 use cfb_mode::cipher::KeyIvInit;
 use hmac::{Hmac, Mac};
@@ -37,6 +38,7 @@ const TPM_ECC_NIST_P256: u16 = 0x0003;
 const FIXED_TPM: u32 = 1 << 1;
 const FIXED_PARENT: u32 = 1 << 4;
 const RESTRICTED: u32 = 1 << 16;
+const INFINITY: &str = "the elliptic-curve point is the point at infinity";
 const DECRYPT: u32 = 1 << 17;
 const SIGN: u32 = 1 << 18;
 
@@ -45,13 +47,7 @@ pub const CREDENTIAL_FILE_MAGIC: u32 = 0xBADC_C0DE;
 
 #[must_use]
 pub fn tpm2b(b: &[u8]) -> Vec<u8> {
-    [
-        &u16::try_from(b.len())
-            .expect("length fits in u16")
-            .to_be_bytes()[..],
-        b,
-    ]
-    .concat()
+    [&be_len16(b.len())[..], b].concat()
 }
 
 struct Reader<'a>(&'a [u8]);
@@ -65,15 +61,14 @@ impl<'a> Reader<'a> {
         self.0 = b;
         Ok(a)
     }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], AttestError> {
+        <[u8; N]>::try_from(self.take(N)?).map_err(|_| "truncated TPM structure".into())
+    }
     fn u16(&mut self) -> Result<u16, AttestError> {
-        Ok(u16::from_be_bytes(
-            self.take(2)?.try_into().expect("2 bytes"),
-        ))
+        Ok(u16::from_be_bytes(self.array()?))
     }
     fn u32(&mut self) -> Result<u32, AttestError> {
-        Ok(u32::from_be_bytes(
-            self.take(4)?.try_into().expect("4 bytes"),
-        ))
+        Ok(u32::from_be_bytes(self.array()?))
     }
     fn tpm2b(&mut self) -> Result<&'a [u8], AttestError> {
         let n = self.u16()? as usize;
@@ -421,13 +416,13 @@ pub fn make_credential(
             );
             let eph_pt = eph.public_key().to_sec1_point(false);
             let ek_pt = k.to_sec1_point(false);
-            let (ex, ey) = (eph_pt.x().expect("x"), eph_pt.y().expect("y"));
+            let (ex, ey) = (eph_pt.x().ok_or(INFINITY)?, eph_pt.y().ok_or(INFINITY)?);
             let z = eph.diffie_hellman(k);
             let seed = kdfe(
                 z.raw_secret_bytes(),
                 "IDENTITY",
                 ex,
-                ek_pt.x().expect("x"),
+                ek_pt.x().ok_or(INFINITY)?,
                 256,
             );
             (seed, tpm2b(&[tpm2b(ex), tpm2b(ey)].concat()))

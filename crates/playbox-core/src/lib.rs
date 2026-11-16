@@ -4,6 +4,7 @@ pub mod attest;
 pub mod confidential;
 pub mod evaluator;
 pub mod evidence;
+mod framing;
 pub mod history;
 pub mod memory;
 pub mod platform;
