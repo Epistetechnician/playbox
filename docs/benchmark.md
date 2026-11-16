@@ -26,7 +26,7 @@ Trials alternate room, silo, room, silo, so drift in API speed hits both. Each t
 | 3 | 32 numbers, split in 3 slices (assembled score) | 6 | 99,609 | 112,941 | not run | 12% lower, p = 0.051 |
 | 4 | Same as 3, plus a Fable 5.2 advisor | 8 | 41,425 | 22,134 | not run | silo 47% lower, p = 0.20 |
 | 5 | Same as 3, Haiku only, about 18× more tries (silos only) | 4 | not run | 0 | not run | vs row 4 silo: p = 0.31 |
-| 6 | Same as 5, Haiku only, in a room (about 10× more tries) | 4 | 599 | 29,466 (row 5, same tries) | not run | room 98% lower, p = 0.029 |
+| 6 | Same as 5, Haiku only, in a room (about 10× more tries) | 4 | 599 | 29,466 | not run | room 98% lower, p = 0.029 |
 
 Numbers are the mean best score after all tries (row 5: after 1,800 tries; row 6: after 870 tries, with row 5 silos cut at the same point). p-values come from a permutation test on the trial results, one-sided for "room is lower" in rows 1 to 3. Rows 4 and 5 are two-sided.
 

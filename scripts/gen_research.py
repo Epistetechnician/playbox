@@ -53,7 +53,7 @@ def benchmark():
     row5 = next(r for r in cost if r[1] == "1,800")
     # Results table: keep the schema (Row, Task, Trials, Room, Silo, Classical, Room vs silo)
     task_short = {"1": "16 numbers, all scored by everyone", "2": "32 numbers, all scored by everyone", "3": "32 numbers, split in 3 slices",
-                  "4": "as 3, plus Fable 5.2 advisor", "5": "as 3, Haiku only, 18x more tries"}
+                  "4": "as 3, plus Fable 5.2 advisor", "5": "as 3, Haiku only, 18x more tries", "6": "as 5, in a room, 10x more tries"}
     rows = []
     for r in main:
         cls = r[5] if re.match(r"^[0-9,]+$", r[5]) else "-"
