@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-11-16
+
 ### Changed
 - The release archives now carry `playbox-mcp` next to `playbox`, and `playbox update` installs it beside the binary (same version check, same local signature). Before, it had to be built from the tag and signed by hand.
 
