@@ -47,6 +47,7 @@ cat > "$PLIST" <<PL
 PL
 chmod 600 "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+for try in 1 2 3 4 5; do launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null && break; sleep 2; done      # the old job needs a moment to unload
+launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || { echo "could not start $LABEL" >&2; exit 1; }
 echo "installed $LABEL (log: $LOG)"
 echo "the log holds the first join link: treat it as a secret, or mint links from the hub instead"

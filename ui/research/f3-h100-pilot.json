@@ -1,0 +1,459 @@
+{
+ "id": "f3-h100-pilot",
+ "title": "F3 verified hill-climb: H100 pilot (8 scripted stand-ins)",
+ "kind": "verified-search",
+ "status": "complete",
+ "model": "autoresearch GPT, depth 8, 1x H100 80GB",
+ "completed": "2026-11-14",
+ "source": "docs/f3/pilot/README.md",
+ "summary": "A promotion rule with a hidden holdout: candidates are accepted only if they gain on dev, clear the threshold and hold up on a holdout. The pilot checks the rule, not a better model.",
+ "headline": [
+  {
+   "k": "PROMOTIONS",
+   "v": "0"
+  },
+  {
+   "k": "CAUGHT",
+   "v": "1"
+  }
+ ],
+ "config": {
+  "node": "f3-pilot-a (new, stopped and verified stopped)",
+  "window": "2026-11-14 15:10Z to 20:04Z",
+  "spec": "task_spec_gpu.json, pilot setting",
+  "tokens_per_step": "2**19",
+  "L*": "1.18 bpb at 240 steps",
+  "T0": "245.7 s (median of 3 seeds)",
+  "theta": "0.06",
+  "eps": "0.0151",
+  "verify": "VERIFIED, all checks pass"
+ },
+ "usage": {
+  "title": "Verdicts (8 decisions)",
+  "unit": "decisions",
+  "items": [
+   {
+    "label": "reject: gain below threshold",
+    "value": 6,
+    "c": "warn"
+   },
+   {
+    "label": "reject: target not reached",
+    "value": 1,
+    "c": "mut"
+   },
+   {
+    "label": "reject: holdout failed (caught)",
+    "value": 1,
+    "c": "bad"
+   },
+   {
+    "label": "promoted",
+    "value": 0,
+    "c": "ok"
+   }
+  ]
+ },
+ "results": {
+  "title": "Decisions",
+  "columns": [
+   "Seq",
+   "Stand-in",
+   "Verdict",
+   "Gain",
+   "Holdout bpb (3 seeds)"
+  ],
+  "rows": [
+   [
+    "1",
+    "matrix lr 0.05",
+    "reject, gain_below_threshold",
+    "0.001",
+    "1.180 to 1.184"
+   ],
+   [
+    "2",
+    "half batch",
+    "reject, target_not_reached",
+    "-",
+    "-"
+   ],
+   [
+    "3",
+    "Muon ns_steps 3",
+    "reject, gain_below_threshold",
+    "-0.081",
+    "1.180 to 1.182"
+   ],
+   [
+    "4",
+    "embedding lr 0.4",
+    "reject, gain_below_threshold",
+    "-0.0001",
+    "1.184 to 1.186"
+   ],
+   [
+    "5",
+    "injected dev memorizer",
+    "reject, holdout_failed (caught)",
+    "0.866 on dev",
+    "2.203 to 2.434 (limit 1.195)"
+   ],
+   [
+    "6",
+    "Muon ns_steps 2",
+    "reject, gain_below_threshold",
+    "-0.158",
+    "1.182 to 1.184"
+   ],
+   [
+    "7",
+    "weight decay 0",
+    "reject, gain_below_threshold",
+    "0.040",
+    "1.180 to 1.184"
+   ],
+   [
+    "8",
+    "grad clip 1.0",
+    "reject, gain_below_threshold",
+    "0.039",
+    "1.183 to 1.186"
+   ]
+  ]
+ },
+ "samples": [
+  {
+   "id": "decision-1",
+   "row": "1",
+   "agent": "scripted-1",
+   "kind": "decision",
+   "candidate": "matrix lr 0.05",
+   "verdict": "reject, gain_below_threshold",
+   "gain": 0.0012,
+   "holdout": "1.180 to 1.184",
+   "receipt": "d88291ddb727",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-1 proposed matrix lr 0.05",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "failed",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: gain_below_threshold",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/a8c77fab8beb116051edd9f5f95b572630a6183d432780a957e1446235a6bdb2.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-2",
+   "row": "2",
+   "agent": "scripted-2",
+   "kind": "decision",
+   "candidate": "half batch",
+   "verdict": "reject, target_not_reached",
+   "gain": null,
+   "holdout": "-",
+   "receipt": "280f87a09e10",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-2 proposed half batch",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "not reached",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "not reached",
+     "c": "bad"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: target_not_reached",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/c38b570872a9028bf84d3d70339dcaa0b5a412b12f40f705aeba83489b5019eb.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-3",
+   "row": "3",
+   "agent": "scripted-3",
+   "kind": "decision",
+   "candidate": "Muon ns_steps 3",
+   "verdict": "reject, gain_below_threshold",
+   "gain": -0.0811,
+   "holdout": "1.180 to 1.182",
+   "receipt": "e3e0f89a0af5",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-3 proposed Muon ns_steps 3",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "failed",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: gain_below_threshold",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/556f1dd615667d7e48839b25832c15362bb876af5a6ba23435741a70d540f7e1.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-4",
+   "row": "4",
+   "agent": "scripted-4",
+   "kind": "decision",
+   "candidate": "embedding lr 0.4",
+   "verdict": "reject, gain_below_threshold",
+   "gain": -0.0001,
+   "holdout": "1.184 to 1.186",
+   "receipt": "1f4109a49c0b",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-4 proposed embedding lr 0.4",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "failed",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: gain_below_threshold",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/314fc7977da064ad4128b4a31a18f8d7e66e055e6c8d1991e2344f80f82db0e6.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-5",
+   "row": "5",
+   "agent": "scripted-5",
+   "kind": "decision",
+   "candidate": "injected dev memorizer",
+   "verdict": "reject, holdout_failed",
+   "gain": 0.8655,
+   "holdout": "2.203 to 2.434 (limit 1.195)",
+   "receipt": "0bf679d59ced",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-5 proposed injected dev memorizer",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "holdout gate",
+     "text": "failed",
+     "c": "bad"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: holdout_failed",
+     "c": "bad"
+    },
+    {
+     "label": "caught",
+     "text": "dev gain did not survive the holdout: a false promotion stopped by the rule",
+     "c": "bad"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/39079932c004f0aa310e9e2942b2532f1550c488d9d9dd8de9dc45747b80dd58.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-6",
+   "row": "6",
+   "agent": "scripted-6",
+   "kind": "decision",
+   "candidate": "Muon ns_steps 2",
+   "verdict": "reject, gain_below_threshold",
+   "gain": -0.1579,
+   "holdout": "1.182 to 1.184",
+   "receipt": "8dc84b7a49d1",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-6 proposed Muon ns_steps 2",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "failed",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: gain_below_threshold",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/1b3df86124b6930b3a09c0cc673ccf5e365e26716b2e767fd75a7b9896f80b2f.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-7",
+   "row": "7",
+   "agent": "scripted-7",
+   "kind": "decision",
+   "candidate": "weight decay 0",
+   "verdict": "reject, gain_below_threshold",
+   "gain": 0.0403,
+   "holdout": "1.180 to 1.184",
+   "receipt": "5256d376528a",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-7 proposed weight decay 0",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "failed",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: gain_below_threshold",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/dcdacc9ecdfeb25e941fc950f260ed70a32f9b9555258db8ef5661c8bfdd4e62.py",
+     "c": "mut"
+    }
+   ]
+  },
+  {
+   "id": "decision-8",
+   "row": "8",
+   "agent": "scripted-8",
+   "kind": "decision",
+   "candidate": "grad clip 1.0",
+   "verdict": "reject, gain_below_threshold",
+   "gain": 0.0389,
+   "holdout": "1.183 to 1.186",
+   "receipt": "8c0f7a4e53c1",
+   "steps": [
+    {
+     "label": "submitted",
+     "text": "scripted-8 proposed grad clip 1.0",
+     "c": "blue"
+    },
+    {
+     "label": "dev gate",
+     "text": "failed",
+     "c": "warn"
+    },
+    {
+     "label": "holdout gate",
+     "text": "passed",
+     "c": "ok"
+    },
+    {
+     "label": "verdict",
+     "text": "reject: gain_below_threshold",
+     "c": "warn"
+    },
+    {
+     "label": "source",
+     "text": "docs/f3/pilot/candidates/6a07d1d15a170cddbc7e913f3ab5d4722e5c7d68ed056a3419745ccd55400b76.py",
+     "c": "mut"
+    }
+   ]
+  }
+ ],
+ "samples_note": "One sample per signed decision in docs/f3/pilot/receipts.jsonl; candidate sources are in docs/f3/pilot/candidates/.",
+ "timeline": [
+  {
+   "kind": "finding",
+   "text": "0 promotions, 7 rejections for gain below threshold or target, 1 caught false promotion; verify.txt: VERIFIED.",
+   "by": "result"
+  },
+  {
+   "kind": "finding",
+   "text": "The injected dev memorizer scored 0.866 gain on dev but 2.203 to 2.434 bpb on the holdout (limit 1.195): the holdout caught it.",
+   "by": "decision 5"
+  },
+  {
+   "kind": "caveat",
+   "text": "Mac-tuned stand-ins (Muon steps, learning rates) do not help on the H100 at this step budget; nothing cleared theta = 0.06 (best 0.040).",
+   "by": "calibration"
+  },
+  {
+   "kind": "caveat",
+   "text": "About 26 to 27 minutes per decision; candidate 6 took 57 minutes wall because the node was stopped and woken in between.",
+   "by": "timing"
+  }
+ ]
+}

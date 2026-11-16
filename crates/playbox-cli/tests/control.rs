@@ -72,6 +72,10 @@ fn a_host_publishes_itself_and_mints_links_for_the_hub() {
         ask(&sock, "link not-a-guest-id").starts_with("error:"),
         "a bad guest id is refused"
     );
+    assert_eq!(ask(&sock, "calls"), "[]", "no call is waiting for approval");
+    assert!(ask(&sock, "approve nope").starts_with("error:"));
+    assert!(ask(&sock, "deny nope").starts_with("error:"));
+    assert!(ask(&sock, "approve").starts_with("error:"));
     assert!(ask(&sock, "rm -rf /").starts_with("error:"));
     writeln!(host.stdin.as_mut().unwrap(), "quit").unwrap();
     let _ = host.wait();

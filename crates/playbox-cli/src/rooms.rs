@@ -283,9 +283,24 @@ pub async fn up(a: UpArgs) -> Result<()> {
         tokio::select! { r = console(&host) => r?, () = serve => {} }
     } else {
         println!("(ctrl-c to stop)");
-        tokio::select! { r = tokio::signal::ctrl_c() => r?, () = serve => {} }
+        tokio::select! { r = stop_signal() => r?, () = serve => {} }
     }
     host.shutdown().await
+}
+
+/// Ctrl-C, or SIGTERM (what `kill`, launchd and systemd send): either way the host leaves cleanly and removes its record and control socket.
+async fn stop_signal() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! { r = tokio::signal::ctrl_c() => r?, _ = term.recv() => {} }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await?;
+        Ok(())
+    }
 }
 
 pub async fn join(a: JoinArgs) -> Result<()> {

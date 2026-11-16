@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI = os.path.dirname(HERE)
@@ -604,10 +605,36 @@ def test_http():
         check("on a public address the url is marked reachable" + ("" if st == 200 else f" [{st} {j2}]"), st == 200 and j2["public"] is True and j2["url"].startswith("http://93.184.216.34:80/i/"))
         # ---- the System view: stages, events and posture, with nothing secret in them ----
         check("system needs a session", anon.req("GET", "/api/system")[0] == 401)
+        check("research needs a session", anon.req("GET", "/api/research")[0] == 401)
+        st_r, rj, _ = a.req("GET", "/api/research")
+        check("research lists the curated runs with headline numbers", st_r == 200 and {r["id"] for r in rj["runs"]} >= {"room-vs-silo", "f3-h100-pilot"} and all(r.get("headline") for r in rj["runs"]))
+        st_d, dj, _ = a.req("GET", "/api/research/room-vs-silo")
+        check("a research run carries results, usage, config and findings", st_d == 200 and dj["results"]["rows"] and dj["usage"]["items"] and dj["config"] and dj["timeline"])
+        check("research runs carry capped samples, each with a step trail", all(len(x["samples"]) <= 200 and all(sm.get("id") and sm.get("steps") for sm in x["samples"]) for x in (dj, a.req("GET", "/api/research/f3-h100-pilot")[1])) and len(dj["samples"]) > 0)
+        check("an unknown or path-like research id is a 404", a.req("GET", "/api/research/nope")[0] == 404 and a.req("GET", "/api/research/..%2Fhub.json")[0] in (404, 400))
+        st_i, _, _ = anon.req("GET", "/instruments.js")
+        check("the shared instrument panels script is public and served", st_i == 200)
+        st_t, _, _ = anon.req("GET", "/theme.css")
+        st_s, _, _ = anon.req("GET", "/themes.js")
+        st_h, _, _ = anon.req("GET", "/shell.js")
+        check("the theme and shell scripts are public, loaded by the pages and cached", st_s == 200 and st_h == 200 and all("/themes.js" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")) and "/shell.js" in open(os.path.join(UI, "static", "home.html")).read())
+        check("the look has a refined default and an expressive option, plus a compact density, all user-selectable", all(x in (open(os.path.join(UI, "static", "themes.js")).read() + open(os.path.join(UI, "static", "settings.js")).read()) for x in ("pb.style", "pb.density", "dataset.style", "dataset.density", "data-set")) and "data-style=expressive" in open(os.path.join(UI, "static", "theme.css")).read())
+        check("corners are square on every page: theme.css ends with a global zero radius", "*,*::before,*::after{border-radius:0!important}" in open(os.path.join(UI, "static", "theme.css")).read())
+        ss = anon.req("GET", "/settings.js")[0]
+        check("the settings screen is served, loaded on demand by PBTheme, and covers appearance, interface, hub, safety, shortcuts and about", ss == 200 and all(x in open(os.path.join(UI, "static", "settings.js")).read() for x in ('group: "appearance"', 'group: "interface"', 'group: "hub"', 'group: "safety"', 'group: "keys"', 'group: "about"')) and "/settings.js" in open(os.path.join(UI, "static", "themes.js")).read())
+        check("themes keep text legible: the palette is nudged until text, status colours and button labels reach WCAG AA", "const ensure" in open(os.path.join(UI, "static", "themes.js")).read() and "ensure(p.ink, p.bg, 7" in open(os.path.join(UI, "static", "themes.js")).read())
+        sv = [anon.req("GET", u)[0] for u in ("/vendor/purify.min.js", "/vendor/katex/katex.min.js", "/vendor/katex/katex.min.css", "/vendor/shiki.bundle.js", "/markdown.js")]
+        check("vendored KaTeX, DOMPurify and Shiki and the markdown module are served by the hub itself", sv == [200] * 5)
+        check("the vendor route refuses traversal and unknown types", all(anon.req("GET", u)[0] in (400, 404) for u in ("/vendor/../hub/server.py", "/vendor/LICENSES.md", "/vendor/nope.js", "/vendor/%2e%2e/hub/server.py")))
+        check("the shared theme stylesheet is public, linked by every page and cached by the service worker", st_t == 200 and all("/theme.css" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")))
+        check("the pages load it and the service worker caches it", "/instruments.js" in open(os.path.join(UI, "static", "home.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "index.html")).read() and "/instruments.js" in open(os.path.join(UI, "static", "sw.js")).read())
         st, sysj, _ = a.req("GET", "/api/system")
         check("system lists the eight stages in order", st == 200 and [x["id"] for x in sysj["stages"]] == ["edge", "auth", "invite", "knock", "approve", "join", "feed", "history"])
         check("system counts the invites just made", sysj["live"]["invite"]["count"] >= 2 and any(e["stage"] == "invite" for e in sysj["events"]))
         check("a key invite is flagged as a warning, an approval invite is not", any(e["stage"] == "invite" and e["level"] == "warn" for e in sysj["events"]))
+        hh = sysj.get("health") or {}
+        check("system carries a health report: tunnel, one entry per room, problems", {"tunnel", "rooms", "problems", "ok"} <= set(hh) and len(hh["rooms"]) == len(sysj["rooms"]) and isinstance(hh["started_ms"], int))
+        check("a hub with no tunnel configured does not call that a problem", not hh["tunnel"]["configured"] and not any("tunnel" in x.lower() for x in hh["problems"]))
         check("posture has the core checks", {"edge", "passkey", "weak", "stepup", "invites", "knocks", "chain", "push"} <= {c["id"] for c in sysj["posture"]})
         blob = json.dumps(sysj)
         check("system never carries a link, a key or a room secret", "playbox://" not in blob and ilink[10:60] not in blob)
@@ -719,6 +746,67 @@ def test_http():
         rec2 = next(x for x in saved["rooms"] if x["id"] == rid2)
         check("the hub remembers it hosts the room (so a restart hosts it again)", rec2.get("host") == {"local": True}, str(rec2.get("host")))
         a.req("DELETE", f"/api/rooms/{rid2}")
+
+
+        # ---- notification settings, per-room mute, and approvals from a host on this machine ----
+        check("notify settings need a session", anon.req("GET", "/api/settings/notify")[0] == 401 and anon.req("POST", "/api/settings/notify", {"down_alert_s": 60})[0] == 401)
+        st, nj, _ = a.req("GET", "/api/settings/notify")
+        check("notify: defaults are reported", st == 200 and nj["down_alert_s"] == nj["default_s"] and nj["custom"] is False and "rooms" in nj)
+        check("notify: a bad threshold is refused", all(a.req("POST", "/api/settings/notify", {"down_alert_s": v})[0] == 400 for v in (5, 10**7, "x", True)))
+        st, nj, _ = a.req("POST", "/api/settings/notify", {"down_alert_s": 900})
+        check("notify: a threshold is stored", st == 200 and nj["down_alert_s"] == 900 and nj["custom"] is True and json.load(open(os.path.join(home, "hub.json")))["notify"]["down_alert_s"] == 900)
+        st, nj, _ = a.req("POST", "/api/settings/notify", {"down_alert_s": None})
+        check("notify: null returns to the default", st == 200 and nj["custom"] is False and nj["down_alert_s"] == nj["default_s"])
+        mid = a.req("GET", "/api/rooms")[1]["rooms"][0]["id"] if a.req("GET", "/api/rooms")[1]["rooms"] else None
+        if mid:
+            check("mute: a room can be muted and shows as muted", a.req("PATCH", f"/api/rooms/{mid}", {"muted": True})[0] == 200 and next(r for r in a.req("GET", "/api/settings/notify")[1]["rooms"] if r["id"] == mid)["muted"] is True)
+            check("mute: it can be unmuted", a.req("PATCH", f"/api/rooms/{mid}", {"muted": False})[0] == 200 and not next(r for r in a.req("GET", "/api/settings/notify")[1]["rooms"] if r["id"] == mid)["muted"])
+        check("push test needs a session and reports counts", anon.req("POST", "/api/push/test", {})[0] == 401 and a.req("POST", "/api/push/test", {})[1] == {"sent": 0, "subscriptions": 0})
+        import socket as _sock
+        hdir = os.path.join(home, "hosting")
+        os.makedirs(hdir, exist_ok=True)
+        fid = "ab" * 8
+        fcalls = [{"id": "c1", "member": "m" * 8, "name": "run_tests", "args": {"cmd": "cargo test"}, "created_ms": 1}]
+        fgot = []
+        fsock = _sock.socket(_sock.AF_UNIX, _sock.SOCK_STREAM)
+        fsock.bind(os.path.join(hdir, fid + ".sock"))
+        fsock.listen(5)
+
+        def fake_host():
+            while True:
+                try:
+                    c, _ = fsock.accept()
+                except OSError:
+                    return
+                line = c.makefile().readline().strip()
+                w = line.split()
+                if w[0] == "ping":
+                    out = "ok"
+                elif w[0] == "calls":
+                    out = json.dumps(fcalls)
+                elif w[0] in ("approve", "deny") and len(w) == 2 and w[1] in [f"{x['member']}/{x['id']}" for x in fcalls]:
+                    fgot.append(line)
+                    fcalls.clear()
+                    out = f"ok {w[0]}d c1"
+                else:
+                    out = "error: no such call"
+                c.sendall((out + "\n").encode())
+                c.close()
+        threading.Thread(target=fake_host, daemon=True).start()
+        open(os.path.join(hdir, fid + ".json"), "w").write(json.dumps({"id": fid, "name": "fakeroom", "pid": os.getpid(), "sock": os.path.join(hdir, fid + ".sock")}))
+        check("approvals need a session", anon.req("GET", "/api/approvals")[0] == 401 and anon.req("POST", f"/api/approvals/{fid}/x", {"decision": "approve"})[0] == 401)
+        st, aj2, _ = a.req("GET", "/api/approvals")
+        check("approvals: a waiting call on a local host is listed", st == 200 and len(aj2["approvals"]) == 1 and aj2["approvals"][0]["cap"] == "run_tests" and aj2["approvals"][0]["call"] == "mmmmmmmm/c1" and aj2["approvals"][0]["args"] == {"cmd": "cargo test"})
+        att = a.req("GET", "/api/rooms")[1]["attention"]
+        check("approvals: it shows in Attention as an urgent item", any(i["kind"] == "approval" and i["urgent"] and i["call"] == "mmmmmmmm/c1" for i in att))
+        cid = "mmmmmmmm/c1"
+        check("approvals: a decision must be approve or deny", a.req("POST", f"/api/approvals/{fid}/{cid}", {"decision": "maybe"})[0] == 400)
+        check("approvals: an unknown call is a 404 and reaches no host", a.req("POST", f"/api/approvals/{fid}/mmmmmmmm%2Fnope", {"decision": "approve"})[0] == 404 and not fgot)
+        check("approvals: a path-like or malformed host is a 404", a.req("POST", "/api/approvals/..%2F..%2Fx/c", {"decision": "approve"})[0] == 404)
+        st, dj, _ = a.req("POST", f"/api/approvals/{fid}/mmmmmmmm%2Fc1", {"decision": "deny"})
+        check("approvals: deny reaches the host with the member/id, and the call clears", st == 200 and dj["ok"] is True and fgot == ["deny mmmmmmmm/c1"] and a.req("GET", "/api/approvals")[1]["approvals"] == [])
+        check("approvals: the decision is in the audit trail", any("denied from the hub" in e.get("text", "") for e in a.req("GET", "/api/system")[1]["events"]))
+        fsock.close()
 
         check("room removal works (step-up satisfied locally)", a.req("DELETE", f"/api/rooms/{rid}")[0] == 200 and not any(x["id"] == rid for x in a.req("GET", "/api/rooms")[1]["rooms"]))
         a.req("POST", "/api/auth/logout", {})
@@ -875,6 +963,100 @@ def test_access():
         except subprocess.TimeoutExpired:
             p.kill()
         shutil.rmtree(d, ignore_errors=True)
+
+
+def test_board_comments():
+    from hub import board
+    E = board.encode
+    items = [{"seq": 1, "kind": "say", "from": "aa", "name": "Ada", "time_ms": 1, "text": E("artifact", id="n1", title="N", kind="note")},
+             {"seq": 2, "kind": "say", "from": "bb", "time_ms": 2, "text": E("comment", on="note:n1", text="looks <b>wrong</b>", **{"from": "evil"})},
+             {"seq": 3, "kind": "say", "from": "bb", "time_ms": 3, "text": E("comment", on="event:7", text="why?")},
+             {"seq": 4, "kind": "say", "from": "bb", "time_ms": 4, "text": E("comment", on="evil:1", text="x")},
+             {"seq": 5, "kind": "say", "from": "bb", "time_ms": 5, "text": E("comment", on="note:n1", text="")},
+             {"seq": 6, "kind": "say", "from": "bb", "time_ms": 6, "text": E("comment", on="note:n1", text="y" * 900)}]
+    m = board.build(items, [], "aa", 10)
+    n = [a for a in m["artifacts"] if a["id"] == "n1"][0]
+    check("board: a comment attaches to its note with the real sender", len(n["comments"]) == 2 and n["comments"][0]["from"] == "bb" and n["comments"][0]["text"] == "looks <b>wrong</b>")
+    check("board: event comments are keyed by seq", [c["text"] for c in m["event_comments"]["7"]] == ["why?"])
+    check("board: unknown anchors and empty text are dropped, long text clipped", len(m["comments"]) == 3 and len(n["comments"][1]["text"]) == 600)
+    check("board: comments are not plain messages", not m["feed"])
+
+
+def test_board_harness():
+    """An agent's announcement carries its harness and model: clipped, plain text, attributed to the real sender."""
+    sys.path.insert(0, UI)
+    from hub import board
+    big = "x" * 200
+    items = [{"seq": 1, "kind": "say", "from": "m1", "time_ms": 1, "text": board.PREFIX + "agent " + json.dumps({"name": "H1", "machine": "studio", "harness": "Hermes", "model": "claude-haiku-5-5"})},
+             {"seq": 2, "kind": "say", "from": "m2", "time_ms": 2, "text": board.PREFIX + "agent " + json.dumps({"name": "H2", "harness": big, "model": ["not", "text"]})}]
+    m = board.build(items, [{"id": "m1", "present": True}, {"id": "m2", "present": True}], "m1", 10)
+    by = {x["id"]: x for x in m["members"]}
+    check("board: an announcement sets harness and model", by["m1"]["harness"] == "Hermes" and by["m1"]["model"] == "claude-haiku-5-5")
+    check("board: harness is clipped and a non-text model is dropped", len(by["m2"]["harness"]) == 30 and by["m2"]["model"] == "")
+
+
+def test_housekeeping():
+    """Stale host records are pruned (never a live one), the state is backed up once a day, a long outage turns urgent, an expired guest is told to ask for an invite."""
+    sys.path.insert(0, UI)
+    from hub import local, rooms
+    d = tempfile.mkdtemp()
+    old_env = os.environ.get("PLAYBOX_HOSTING_DIR")
+    os.environ["PLAYBOX_HOSTING_DIR"] = d
+    try:
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        for hid, pid in (("a" * 16, dead.pid), ("b" * 16, os.getpid())):
+            open(os.path.join(d, hid + ".json"), "w").write(json.dumps({"id": hid, "pid": pid}))
+            open(os.path.join(d, hid + ".sock"), "w").close()
+        check("housekeeping: a record whose process is gone and whose socket is silent is removed", local.prune_stale() == 1 and not os.path.exists(os.path.join(d, "a" * 16 + ".json")) and not os.path.exists(os.path.join(d, "a" * 16 + ".sock")))
+        check("housekeeping: a record of a running process is left alone", os.path.exists(os.path.join(d, "b" * 16 + ".json")))
+    finally:
+        if old_env is None:
+            os.environ.pop("PLAYBOX_HOSTING_DIR")
+        else:
+            os.environ["PLAYBOX_HOSTING_DIR"] = old_env
+        shutil.rmtree(d, ignore_errors=True)
+    h = tempfile.mkdtemp()
+    try:
+        st = Store(h)
+        p1 = st.backup()
+        check("backup: first call writes today's copy, private", p1 is not None and p1.exists() and (p1.stat().st_mode & 0o777) == 0o600 and json.loads(p1.read_text()) == st.d)
+        check("backup: a second call the same day does nothing", st.backup() is None)
+        for day in range(20, 30):
+            (st.home / "backups" / f"hub-202001{day}.json").write_text("{}")
+        st.backup()
+        left = sorted(os.listdir(st.home / "backups"))
+        check("backup: only the newest seven days stay, today's among them", len(left) == 7 and p1.name in left)
+    finally:
+        shutil.rmtree(h, ignore_errors=True)
+    hub = object.__new__(rooms.Hub)
+    hub.down_since, hub.extra_attention = {}, []
+    hub.store = types.SimpleNamespace(d={})
+    dig = {"id": "r1", "label": "Lab", "holds": [], "state": "down", "err": "host not answering", "unread": 0, "last": None, "mode": "guest", "offline": False}
+    hub.digests = lambda: [dig]
+    first = hub.attention()
+    check("alerts: a room that just went down is a quiet item, not urgent", len(first) == 1 and first[0]["kind"] == "down" and not first[0]["urgent"])
+    hub.down_since["r1"] -= rooms.DOWN_URGENT_S + 1
+    second = hub.attention()
+    check("alerts: after the grace period it turns urgent under a new id so it pushes", second[0]["urgent"] and second[0]["id"] != first[0]["id"])
+    dig.update(state="idle", err=None)
+    hub.attention()
+    check("alerts: when the room recovers the clock resets", "r1" not in hub.down_since)
+    hub.store.d["notify"] = {"down_alert_s": 3600}
+    dig.update(state="down", err="host not answering")
+    hub.down_since["r1"] = time.time() - 600
+    check("alerts: the hub setting overrides the environment default", hub.down_alert_s() == 3600 and not hub.attention()[0]["urgent"])
+    hub.store.d["notify"] = {"down_alert_s": 60}
+    check("alerts: a shorter hub setting makes the same outage urgent", hub.attention()[0]["urgent"])
+    hub.store.d["notify"] = {}
+    check("alerts: no setting falls back to the default", hub.down_alert_s() == rooms.DOWN_URGENT_S)
+    dig.update(state="idle", err=None)
+    hub.attention()
+    hub.rooms = {"r1": types.SimpleNamespace(rec={"muted": True}), "r2": types.SimpleNamespace(rec={})}
+    check("mute: muted() is per room and false for unknown rooms or no room", hub.muted("r1") and not hub.muted("r2") and not hub.muted("zz") and not hub.muted(None))
+    dig.update(err="Your access to this room ran out. Ask the host for a new invite.", needs_invite=True, state="idle")
+    inv = hub.attention()
+    check("alerts: an expired guest room asks for a new invite and is not reported as down", [i["kind"] for i in inv] == ["invite"])
 
 
 def test_tunnel_keeper():
@@ -1246,6 +1428,9 @@ if __name__ == "__main__":
     test_http()
     test_cloudflare()
     test_access()
+    test_board_harness()
+    test_board_comments()
+    test_housekeeping()
     test_tunnel_keeper()
     test_adopted_rejoin()
     test_rehost_retry()

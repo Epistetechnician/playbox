@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E9E7E0" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0F0F0E" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F3EE" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#151713" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -19,14 +19,14 @@
 /* Playbox cockpit: same tokens as the hub. Paper, ink, one signal colour (orange = look here). */
 :root{
   color-scheme:light dark;
-  --bg:light-dark(#E9E7E0,#0F0F0E); --bg-2:light-dark(#F4F2EC,#171715); --panel:light-dark(#F4F2EC,#171715); --panel-2:light-dark(#ECEAE2,#1F1F1C); --field:light-dark(#FBFAF7,#0F0F0E);
+  --bg:light-dark(#F2F3EE,#151713); --bg-2:light-dark(#F4F2EC,#171715); --panel:light-dark(#F4F2EC,#171715); --panel-2:light-dark(#ECEAE2,#1F1F1C); --field:light-dark(#FBFAF7,#151713);
   --ink:light-dark(#171715,#ECE9E0); --ink-2:light-dark(#3B3A36,#C6C3B8); --mut:light-dark(#68665D,#8F8C80);
   --dim:light-dark(#D9D6CB,#2A2A26); --grid:light-dark(rgba(23,23,21,.07),rgba(236,233,224,.045));
   --line:light-dark(#D5D2C7,#2A2A26); --line-2:light-dark(#B9B5A8,#3F3E38); --edge:light-dark(#171715,#6C6A5F);
-  --sig:light-dark(#FF5A1F,#FF6B2C); --sig-ink:light-dark(#B83A0A,#FF8A55); --on-sig:light-dark(#171715,#0F0F0E);
+  --sig:light-dark(#FF5A1F,#FF6B2C); --sig-ink:light-dark(#B83A0A,#FF8A55); --on-sig:light-dark(#171715,#151713);
   --ok:light-dark(#17783F,#4CC380); --ok-led:light-dark(#1FA458,#4CC380); --bad:light-dark(#C0143C,#FF4D6D);
   --hard:light-dark(5px 5px 0 #171715,5px 5px 0 #000); --scrim:light-dark(rgba(23,23,21,.5),rgba(0,0,0,.65));
-  --r:2px; --nav-h:58px;
+  --r:8px; --nav-h:58px;
   --mono:ui-monospace,"SF Mono","JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;
   --sans:"Helvetica Neue","Neue Haas Grotesk",Helvetica,Arial,system-ui,sans-serif;
 }
@@ -58,7 +58,7 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 .dot.host{background:var(--sig);border-color:var(--sig)}
 @keyframes blink{50%{opacity:.3}}
 
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:env(safe-area-inset-bottom);background:var(--bg);border-top:1px solid var(--edge)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding-bottom:env(safe-area-inset-bottom);background:var(--bg);border-top:1px solid var(--edge)}
 .nav{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:var(--nav-h);background:none;border:0;border-right:1px solid var(--line);
   color:var(--mut);font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
 .nav:last-child{border-right:0}
@@ -89,8 +89,8 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 .view{display:grid;gap:14px;animation:in .16s steps(4)}
 @keyframes in{from{opacity:.35}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-.card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);padding:16px}
-.card>h2:first-child{margin:-16px -16px 14px;padding:10px 14px;border-bottom:1px solid var(--line-2);background:var(--panel-2)}
+.card{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;padding:16px;overflow:hidden}
+.card>h2:first-child{margin:-16px -16px 14px;padding:13px 16px;border-bottom:1px solid var(--line);background:none;font:500 15px/1.2 var(--sans);letter-spacing:0;text-transform:none;color:var(--ink)}
 .hero{padding:34px 18px;text-align:center}
 .hero .glyph{display:block;width:28px;height:28px;margin:0 auto 16px;background:var(--sig);font-size:0}
 .hero h1{font:600 18px var(--mono);letter-spacing:.24em;text-transform:uppercase}
@@ -120,16 +120,16 @@ input[type=text],textarea,select,input[type=number]{width:100%;background:var(--
 textarea{resize:vertical;min-height:84px}
 textarea.mono,input.mono{font-size:14px}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-offset:0;border-color:var(--edge)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
-  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;box-shadow:0 2px 0 var(--edge)}
-.btn:hover{background:var(--panel-2)} .btn:active{transform:translateY(2px);box-shadow:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
+  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;}
+.btn:hover{background:var(--panel-2)} .btn:active{transform:scale(.98)}
 .btn.primary,.btn.gold{background:var(--sig);color:var(--on-sig)}
 .btn.primary:hover,.btn.gold:hover{background:color-mix(in srgb,var(--sig) 88%,var(--ink))}
-.btn.danger{color:var(--bad);border-color:var(--bad);box-shadow:0 2px 0 var(--bad)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
 .btn.block{width:100%}
 .btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none}
 .btn.sm{min-height:32px;padding:0 11px;font-size:10.5px}
-.seg{display:inline-flex;border:1px solid var(--edge);border-radius:var(--r);background:var(--panel)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel);overflow:hidden}
 .seg button{border:0;background:none;padding:0 14px;min-height:36px;cursor:pointer;color:var(--mut);font:600 10.5px var(--mono);letter-spacing:.09em;text-transform:uppercase}
 .seg button+button{border-left:1px solid var(--line-2)}
 .seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
@@ -177,7 +177,7 @@ dialog h2{color:var(--ink)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 /* witness hold */
-.hold{display:none;gap:14px;align-items:flex-start;margin:4px 0 14px;padding:14px 16px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));border:1px solid var(--sig);border-left-width:5px}
+.hold{display:none;gap:14px;align-items:flex-start;margin:4px 0 14px;padding:14px 16px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));border:1px solid var(--sig);border-left-width:5px;border-radius:10px}
 .hold.on{display:flex;animation:in .16s steps(4)}
 .hold svg{width:28px;height:28px;flex:none;stroke:var(--sig-ink);fill:none;stroke-width:1.7;stroke-linecap:square}
 .hold b{font:700 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--sig-ink)}
@@ -198,12 +198,16 @@ dialog h2{color:var(--ink)}
 .evt:last-child{border:0}
 .evt time{color:var(--mut);font:12px var(--mono);min-width:48px}
 </style>
+<link rel="stylesheet" href="/theme.css">
+<script src="/themes.js"></script>
+<script src="/shell.js" onerror="void 0"></script>
 </head>
 <body>
 <div class="app">
   <aside class="rail" aria-label="Primary">
     <div class="brand"><b></b> <span class="bk">Playbox</span></div>
     <div id="railnav"></div>
+    <div id="railrooms" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
     <div class="foot" id="railfoot"></div>
   </aside>
 
@@ -223,6 +227,8 @@ dialog h2{color:var(--ink)}
 <dialog id="dlg"></dialog>
 
 <script src="/auth.js" onerror="void 0"></script>
+<script src="/instruments.js" onerror="void 0"></script>
+<script src="/markdown.js" onerror="void 0"></script>
 <script src="/space.js" onload="PBSpace.arrive()" onerror="document.documentElement.classList.remove('pb-splat')"></script>
 <script>setTimeout(function(){document.documentElement.classList.remove("pb-splat")},3500)</script>
 <script>
@@ -239,9 +245,12 @@ const ICONS = {
   feed: '<path d="M4 5h16v11H9l-5 4z"/>',
   work: '<path d="M7 7l-4 5 4 5M17 7l4 5-4 5M14 5l-4 14"/>',
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6M16 5.2a3.2 3.2 0 010 5.8M18 14.3c1.7.8 3 2.7 3 5.7"/>',
+  notes: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
+  timeline: '<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/>',
+  harnesses: '<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="8.5" y="14" width="7" height="7" rx="1.5"/><path d="M10 7.5h4M12 11v3"/>',
   proof: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/>',
 };
-const TABS = [["room", "Room"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["proof", "Proof"]];
+const TABS = [["room", "Room"], ["timeline", "Timeline"], ["notes", "Notes"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["harnesses", "Harnesses"], ["proof", "Proof"]];
 
 const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 
@@ -312,6 +321,246 @@ const PRESETS = [
   {t: "Review room (anywhere, read only)", reach: "iroh", docker: false},
 ];
 
+/* ---------- rooms sidebar and status bar (hub only) ---------- */
+async function loadRailRooms() {
+  if (!HUB || !window.PBShell) return;
+  try { const d = await (await fetch("/api/rooms", {credentials: "same-origin"})).json(); PBShell.sync(d.rooms || [], BASE.split("/")[2], $("#railrooms")); PBShell.start(); } catch {}
+}
+if (HUB) { loadRailRooms(); setInterval(() => { if (!document.hidden) loadRailRooms(); }, 30000); }
+
+/* ---------- instrument panels (Stats, Activity, Trail) ---------- */
+const INS_ICON = {
+  stats: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>',
+  activity: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 7h16M4 12h11M4 17h7"/></svg>',
+  trail: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M5 5h14v14H5z"/><path d="M8 10l3 2-3 2M13 14h3"/></svg>'};
+S.ins = S.ins || {};
+try { const k = "pb.seen." + BASE, v = +localStorage.getItem(k) || 0; S.since = v; if (!v) localStorage.setItem(k, String(Date.now())); } catch { S.since = 0; }
+function markSeen() { S.since = Date.now(); try { localStorage.setItem("pb.seen." + BASE, String(S.since)); } catch {} }
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-markread]")) { markSeen(); paintInsights(); return; }
+  const k = e.target.closest("#insights [data-kind]");
+  if (k) { e.preventDefault(); S.trailKind = S.trailKind === k.dataset.kind ? null : k.dataset.kind; S.ins.trail = true; paintInsights(); document.querySelector("[data-ins=trail]")?.scrollIntoView({block: "nearest", behavior: "smooth"}); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches?.("#insights [role=button]")) e.target.click(); });
+function kindOf(it) {
+  if (it.kind === "say") return "say";
+  const t = String(it.text || "").toLowerCase();
+  return t === "join ok" ? "join" : t.startsWith("refused") || t === "join failed" ? "refused" : "event";
+}
+function insights() {
+  if (!window.PBI || !PBI.since || mode() === "none") return "";
+  const P = PBI, items = S.feed.filter(i => i.time_ms), now = Date.now();
+  const isMe = it => (it.from && it.from === myId()) || (it.from === "host" && !!hosting());
+  const cat = it => it.kind === "say" ? (isMe(it) ? "you" : "others") : kindOf(it);
+  const says = items.filter(i => i.kind === "say"), mine = says.filter(isMe), others = says.filter(i => !isMe(i));
+  const joins = items.filter(i => kindOf(i) === "join"), refused = items.filter(i => kindOf(i) === "refused"), evs = items.filter(i => kindOf(i) === "event");
+  const t0 = Math.min(now - 10 * 60e3, ...items.map(i => i.time_ms)), BUCKET = 300e3, N = 24;
+  const series = P.buckets(says.map(i => i.time_ms), now, BUCKET, N), hour = says.filter(i => now - i.time_ms < 3600e3).length;
+  const C = {you: "var(--c-you)", peer: "var(--c-peer)", join: "var(--c-join)", bad: "var(--c-bad)", ev: "var(--c-ev)"};
+  const h = hosting(), j = joined(), m = mode(), tot = items.length || 1;
+  const pct = n => Math.round(n / tot * 100) + "%";
+  const last = Math.max(0, ...says.map(i => i.time_ms)), voices = new Set(says.map(i => i.from)).size;
+  const flags = [];
+  if (refused.length) flags.push({k: "refused", c: C.bad, t: `${refused.length} refused`});
+  if ((S.hold || []).length) flags.push({c: "var(--c-warn)", t: "witness hold"});
+  if (S.verify && !S.verify.valid) flags.push({c: C.bad, t: "history failed"});
+  if (S.offline) flags.push({c: "var(--c-warn)", t: "host offline"});
+  const line = `${hour} msg/hour · ${voices} voice${voices === 1 ? "" : "s"}${last ? ` · last message ${P.span(now - last)} ago` : ""}${S.verify && S.verify.valid ? " · history verified" : ""}`;
+  const stats = P.stats({id: "stats", line, flags, kind: S.trailKind, icon: INS_ICON.stats, title: "Stats", open: S.ins.stats, meta: `${members().length + (j && !h ? 1 : 0)} in room`,
+    who: ROOM ? "room" : "", name: ROOM || (h ? "You host this room" : "Joined room"),
+    bar: {label: "who spoke", right: `${items.length} events`, parts: [{c: C.you, w: mine.length, t: "you"}, {c: C.peer, w: others.length, t: "others"}, {c: C.join, w: joins.length, t: "joins"}, {c: C.bad, w: refused.length, t: "refused"}, {c: C.ev, w: evs.length, t: "other"}]},
+    kv: [["mode", {host: "hosting", guest: "guest", both: "host + guest"}[m] || m], ["members", String(members().length)], ["you", short(myId()) || "—"], ["host", h ? "this machine" : short(j && j.active_host) || "—"],
+         ["repo", h && h.repo ? h.repo.split("/").slice(-2).join("/") : "none"], ["history", S.verify ? (S.verify.valid ? "verified " + S.verify.entries : "FAILED") : "not checked"],
+         ["revoked", String(h ? h.revocations ?? 0 : 0)], ["offline", S.offline ? "yes" : "no"]],
+    rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / N).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
+    groups: [{title: "Events", rows: [{c: C.you, l: "you", k: "you", n: mine.length, pct: pct(mine.length)}, {c: C.peer, l: "others", k: "others", n: others.length, pct: pct(others.length)}, {c: C.join, l: "joined", k: "join", n: joins.length, pct: pct(joins.length)},
+      {c: C.bad, l: "refused", k: "refused", n: refused.length, pct: pct(refused.length)}, {c: C.ev, l: "other", k: "event", n: evs.length, pct: pct(evs.length), o: true}]}]});
+  const byWho = new Map();
+  for (const i of says) { const k = isMe(i) ? "You" : i.name || (i.from === "host" ? "host" : short(i.from)) || "member"; (byWho.get(k) || byWho.set(k, {at: [], me: isMe(i)}).get(k)).at.push(i.time_ms); }
+  const lanes = [{group: "Activity"},
+    {label: "All activity", head: true, tall: true, count: items.length, parts: [{c: C.you, at: mine.map(i => i.time_ms)}, {c: C.peer, at: others.map(i => i.time_ms)}, {c: C.join, at: joins.map(i => i.time_ms)}, {c: C.bad, at: refused.map(i => i.time_ms)}, {c: C.ev, at: evs.map(i => i.time_ms)}]},
+    {group: "People"}, ...[...byWho].slice(0, 8).map(([k, v]) => ({label: k, c: v.me ? C.you : C.peer, at: v.at})),
+    {group: "Room"}, {label: "joined", c: C.join, at: joins.map(i => i.time_ms)}, {label: "refused", c: C.bad, at: refused.map(i => i.time_ms), bad: refused.length > 0}, {label: "other", c: C.ev, at: evs.map(i => i.time_ms)}];
+  const act = P.activity({id: "activity", icon: INS_ICON.activity, title: "Activity", open: S.ins.activity, meta: `${items.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: items.length ? lanes : []});
+  const steps = items.filter(i => !S.trailKind || cat(i) === S.trailKind).slice(-40).reverse().map(i => { const k = kindOf(i); return {c: k === "say" ? (isMe(i) ? C.you : C.peer) : {join: C.join, refused: C.bad}[k] || C.ev, label: {say: isMe(i) ? "You" : "Say", join: "Join", refused: "Refused", event: "Event"}[k],
+    text: k === "say" ? `${i.name || short(i.from) || "member"}: ${i.text}` : i.text, ms: i.time_ms, detail: k === "say" ? i.text : ""}; });
+  const trail = P.trail({id: "trail", icon: INS_ICON.trail, title: "Trail", open: S.ins.trail === undefined ? false : S.ins.trail, meta: `${steps.length} step${steps.length === 1 ? "" : "s"}${S.trailKind ? ` <button type="button" class="fl" data-kind="${S.trailKind}">${S.trailKind} ✕</button>` : ""}`, steps});
+  const fresh = S.since ? items.filter(i => i.time_ms > S.since) : [];
+  const nOth = fresh.filter(i => i.kind === "say" && !isMe(i)).length, nJoin = fresh.filter(i => kindOf(i) === "join").length, nRef = fresh.filter(i => kindOf(i) === "refused").length, nEv = fresh.filter(i => kindOf(i) === "event").length;
+  const banner = fresh.length && (nOth || nJoin || nRef || nEv) ? P.since({title: `Since ${P.clock(S.since)}`, parts: [nOth && {c: C.peer, t: `${nOth} message${nOth === 1 ? "" : "s"}`}, nJoin && {c: C.join, t: `${nJoin} joined`}, nRef && {c: C.bad, t: `${nRef} refused`}, nEv && {c: C.ev, t: `${nEv} event${nEv === 1 ? "" : "s"}`}].filter(Boolean)}) : "";
+  return `<div id="insights" style="display:grid;gap:14px">${banner}${stats}${act}${trail}</div>`;
+}
+function peopleInsights(ms) {
+  if (!window.PBI) return "";
+  const P = PBI, now = Date.now(), says = S.feed.filter(i => i.kind === "say" && i.time_ms);
+  if (!ms.length && !says.length) return "";
+  const t0 = Math.min(now - 10 * 60e3, ...says.map(i => i.time_ms)), h = hosting();
+  const lanes = ms.slice(0, 12).map(id => { const at = says.filter(i => i.from === id).map(i => i.time_ms); return {label: short(id), c: "var(--c-peer)", at}; });
+  const quiet = lanes.filter(l => !l.at.length).length;
+  return `<div style="display:grid;gap:14px;margin-bottom:14px">${P.stats({id: "p-stats", title: "Members", meta: `${ms.length} in room`, open: S.ins["p-stats"],
+    kv: [["members", String(ms.length)], ["revoked", String(h ? h.revocations ?? 0 : 0)], ["quiet", String(quiet)], ["messages", String(says.length)]],
+    bar: {label: "who spoke", right: `${says.length} msgs`, parts: ms.slice(0, 8).map((id, i) => ({c: `color-mix(in srgb, var(--c-peer) ${100 - i * 11}%, var(--c-you))`, w: says.filter(x => x.from === id).length, t: short(id)}))}})}
+    ${ms.length ? P.activity({id: "p-act", title: "Who is active", meta: P.span(now - t0), open: S.ins["p-act"], range: [t0, now], lanes})  : ""}</div>`;
+}
+function paintInsights() {
+  const el = $("#insights");
+  if (!el || document.activeElement?.closest?.("#insights details details")) return;
+  const open = new Set([...el.querySelectorAll(".steps details[open]")].map(d => d.querySelector("summary .x")?.textContent));
+  el.outerHTML = insights() || '<div id="insights"></div>';
+  if (open.size) document.querySelectorAll("#insights .steps details").forEach(d => { if (open.has(d.querySelector("summary .x")?.textContent)) d.open = true; });
+}
+document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
+
+/* ---------- room header (Inspect-style: title, headline numbers, metadata strip) and the Timeline tab ---------- */
+const TL_KINDS = [["all", "All"], ["say", "Messages"], ["join", "Joins"], ["refused", "Refused"], ["event", "Events"]];
+function roomHeader() {
+  if (!window.PBI || mode() === "none") return "";
+  if (!S.cm && !S.cmLoading) { S.cmLoading = true; loadNotes().finally(() => { S.cmLoading = false; }); }
+  const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms), says = items.filter(i => i.kind === "say");
+  const h = hosting(), j = joined(), t0 = items.length ? Math.min(...items.map(i => i.time_ms)) : now;
+  const num = (k, v) => `<div class="hn"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+  const meta = [["Role", h && j ? "host + guest" : h ? "host" : "guest"], ["Members", String(members().length)], ["Repository", h && h.repo ? h.repo.split("/").slice(-2).join("/") : "none"],
+    ["History", S.verify ? (S.verify.valid ? `verified · ${S.verify.entries}` : "FAILED") : "not checked"], ["Open for", items.length ? P.span(now - t0) : "—"]];
+  return `<div class="rh"><div class="rh1"><div><div class="rt">${esc(ROOM || "Playbox room")}</div><div class="rs">${esc(short(myId()) || "")}</div></div>
+    <div class="hns">${num("MESSAGES", says.length)}${num("EVENTS", items.length - says.length)}${num("COMMENTS", S.cm ? S.cm.n : "…")}${num("LAST", says.length ? P.span(now - Math.max(...says.map(i => i.time_ms))) + " ago" : "—")}</div></div>
+    <div class="rh2">${meta.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>`;
+}
+function timelineView() {
+  if (mode() === "none") return emptyCard("Join or host a room to see its timeline.");
+  const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms);
+  const cat = i => i.kind === "say" ? "say" : kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
+  const cnt = k => k === "all" ? items.length : items.filter(i => cat(i) === k).length;
+  const rows = items.filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q))).slice(0, 300);
+  const by = i => i.kind === "say" ? ((i.from === myId() || (i.from === "host" && hosting())) ? "you" : i.name || short(i.from) || "member") : "system";
+  const bins = P.buckets(items.map(i => i.time_ms), now, 600e3, 48), mx = Math.max(1, ...bins);
+  return `<div class="card tl"><h2>Timeline</h2><div class="tlbars" aria-label="events per 10 minutes">${bins.map(v => `<i style="height:${Math.max(2, v / mx * 100)}%"></i>`).join("")}</div>
+    <div class="tlhead"><span class="tlh">History</span>${TL_KINDS.map(([k, l]) => `<button type="button" class="tlc k-${k} ${f === k ? "on" : ""}" data-tlk="${k}">${l} ${cnt(k)}</button>`).join("")}<input type="text" id="tlq" class="tlq" placeholder="filter by text or author" value="${esc(S.tlq || "")}" aria-label="Filter"></div>
+    <div class="tlbar"><button type="button" class="tbtn" data-tlx="raw" aria-pressed="${!!S.tlraw}">Raw</button><button type="button" class="tbtn" data-tlx="copy">Copy</button><button type="button" class="tbtn" data-tlx="export">Export .jsonl</button><button type="button" class="tbtn" data-tlx="print">Print</button><span class="mut tlcount">${rows.length} of ${items.length}</span></div>
+    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(i.text)}${i.seq != null ? ` <button type="button" class="tbtn cmx-b" data-cmev="${i.seq}" title="Comment on this event">${(S.cm?.ev?.[i.seq] || []).length ? "Comments " + S.cm.ev[i.seq].length : "Comment"}</button>` : ""}${cmtHtml(S.cm?.ev?.[i.seq])}${S.cmopen === String(i.seq) ? cmtForm("event:" + i.seq, "Comment on this event") : ""}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
+}
+function tlRows() {
+  const cat = i => i.kind === "say" ? "say" : kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
+  return S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms).filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q)));
+}
+document.addEventListener("click", async e => {
+  let b = e.target.closest("[data-tlk]"); if (b) { S.tlk = b.dataset.tlk; return show("timeline"); }
+  b = e.target.closest("[data-tlx]"); if (!b) return;
+  const x = b.dataset.tlx;
+  if (x === "raw") { S.tlraw = !S.tlraw; return show("timeline"); }
+  if (x === "print") return window.print();
+  const lines = tlRows().map(i => JSON.stringify({seq: i.seq, time_ms: i.time_ms, kind: i.kind, from: i.from, name: i.name, text: i.text}));
+  if (x === "copy") { try { await navigator.clipboard.writeText(lines.join("\n")); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1500); } catch { b.textContent = "Blocked"; } return; }
+  if (x === "export") { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], {type: "application/x-ndjson"})); a.download = `${(ROOM || "room").replace(/[^A-Za-z0-9._-]+/g, "-")}-timeline.jsonl`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+});
+document.addEventListener("input", e => { if (e.target.id === "tlq") { S.tlq = e.target.value; const p = e.target.selectionStart; show("timeline"); const n = $("#tlq"); if (n) { n.focus(); n.setSelectionRange(p, p); } } });
+
+/* ---------- Notes: the room's artifacts as a file tree and a document view ---------- */
+const NK = {proof: "Proofs", code: "Code", doc: "Documents", dataset: "Datasets", chart: "Charts", note: "Notes"};
+const NEXT = {proof: ".lean", code: ".code", doc: ".md", dataset: ".csv", chart: ".chart", note: ".md"};
+const NSTAT = {verified: "var(--ok-led)", checking: "var(--warn)", failed: "var(--bad)", draft: "var(--mut)", retired: "var(--dim)"};
+/* Anchored comments: `::pbx comment {"on":"note:<id>|event:<seq>|artifact:<id>","text":"..."}`, parsed by the hub (real sender, clipped); text is shown as plain text only. */
+function cmtHtml(list) { return (list || []).map(c => `<div class="cmx-c"><b>${esc(c.name || short(c.from))}</b> <span class="mono mut">${esc(PBI.clock(c.ms))}</span><div>${esc(c.text)}</div></div>`).join(""); }
+function cmtForm(on, ph) { return `<form class="cmx-f" data-cmon="${esc(on)}"><input type="text" maxlength="600" placeholder="${esc(ph)}" aria-label="Comment" autocomplete="off"><button type="submit" class="tbtn">Comment</button></form>`; }
+document.addEventListener("submit", async e => {
+  const f = e.target.closest?.("[data-cmon]"); if (!f) return;
+  e.preventDefault();
+  const inp = f.querySelector("input"), text = inp.value.trim(); if (!text) return;
+  if (S.offline) return toast("The host is offline, so nothing can be posted.", true);
+  const r = await api("playbox_say", {text: "::pbx comment " + JSON.stringify({on: f.dataset.cmon, text})});
+  if (r.error) return toast(msgOf(r.data), true);
+  S.cmopen = null; await pollFeed(); await loadNotes();
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-cmev]"); if (!b) return;
+  S.cmopen = S.cmopen === b.dataset.cmev ? null : b.dataset.cmev; show("timeline");
+  const i = document.querySelector(".cmx-f input"); if (i) i.focus();
+});
+async function loadNotes() {
+  try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); const m = r.ok ? await r.json() : {}; S.notes = m.artifacts || []; S.cm = {n: (m.comments || []).length, ev: m.event_comments || {}}; } catch { S.notes = S.notes || []; }
+  if (S.tab === "notes" && !document.activeElement?.closest?.(".nt")) show("notes");
+  else if (S.tab === "timeline" && !document.activeElement?.closest?.(".cmx-f")) show("timeline");
+}
+/* The open note, rendered with the strict markdown module: maths, code colours and links load on demand from the hub's own files. */
+function paintNoteDoc() {
+  const el = $("#ndoc"); if (!el) return;
+  const cur = (S.notes || []).find(a => a.id === S.nsel) || (S.notes || [])[0]; if (!cur) return;
+  const src = cur.body || cur.summary || "";
+  if (window.PBMd) PBMd.into(el, src); else el.textContent = src;
+}
+function hlPatch() {
+  const pre = $("#patchpre"); if (!pre || !window.PBMd || pre.dataset.hl) return;
+  pre.dataset.hl = "1";
+  PBMd.highlight(pre.textContent, "diff").then(h => { if (pre.isConnected && h && h.includes("shiki")) { pre.outerHTML = h.replace("<pre ", '<pre id="patchpre-hl" '); } });
+}
+function notesView() {
+  const arts = S.notes;
+  if (!arts) { loadNotes(); return `<div class="card"><h2>Notes</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
+  if (!arts.length) return `<div class="card empty"><h2>Notes</h2><p>No notes yet. Agents publish proofs, code and documents to the room with <span class="mono">::pbx artifact</span>, and they appear here as files.</p></div>`;
+  const q = (S.nq || "").toLowerCase(), view = S.nview || "live", cur = arts.find(a => a.id === S.nsel) || arts[0];
+  const vis = arts.filter(a => !q || (a.title + " " + a.summary + " " + a.body).toLowerCase().includes(q)), kinds = Object.keys(NK).filter(k => vis.some(a => a.kind === k));
+  const tree = kinds.map(k => { const open = S.nopen?.[k] !== false, fs = vis.filter(a => a.kind === k).sort((x, y) => x.title.localeCompare(y.title));
+    return `<div class="nf"><button class="nfh" data-nfold="${k}" aria-expanded="${open}"><span class="ch">${open ? "▾" : "▸"}</span>${NK[k]}<span class="ct">${fs.length}</span></button>${open ? fs.map(a => `<button class="nfi ${a.id === cur.id ? "on" : ""}" data-nsel="${esc(a.id)}"><i style="background:${NSTAT[a.status] || "var(--mut)"}"></i><span class="nm">${esc(a.title)}<small>${NEXT[a.kind]}</small></span></button>`).join("") : ""}</div>`; }).join("");
+  const body = view === "source" ? `<pre class="src">${esc(cur.body || cur.summary || "")}</pre>` : `<div class="doc" id="ndoc"></div>`;
+  const checks = (cur.checks || []).map(c => `<span class="chip ${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✕"} ${esc(c.name)}</span>`).join(" ");
+  const revs = cur.revs.slice().reverse().map(r => `<div class="rv"><i style="background:${NSTAT[r.status] || "var(--mut)"}"></i><span>${esc(r.status)}</span><span class="tx">${esc(r.summary || "revised")}</span><span class="mono">${esc(PBI.clock(r.ms))}</span></div>`).join("");
+  return `<div class="nt"><aside class="ntree"><div class="nth"><b>notes</b><span class="mono">${arts.length}</span></div><input type="text" id="nq" class="tlq" placeholder="Search notes" value="${esc(S.nq || "")}" aria-label="Search notes"><div class="nfs">${tree || '<p class="mut" style="padding:8px">No match.</p>'}</div></aside>
+    <section class="ndoc"><header><span class="mut">${esc(NK[cur.kind])}</span><span class="mut">/</span><b>${esc(cur.title)}</b><span class="sp"></span><span class="mono mut">${esc(short(cur.last_by || cur.by))} · ${esc(PBI.clock(cur.updated))}</span>
+      <div class="seg2">${[["live", "Live"], ["source", "Source"]].map(([k, l]) => `<button data-nview="${k}" aria-pressed="${view === k}">${l}</button>`).join("")}</div></header>
+      <div class="nmeta"><span class="chip ${cur.status === "verified" ? "ok" : cur.status === "failed" ? "bad" : "warn"}">${esc(cur.status)}</span>${checks}${cur.ref ? `<span class="mono mut">${esc(cur.ref)}</span>` : ""}</div>
+      ${body}<h3 class="nrh">Comments · ${(cur.comments || []).length}</h3><div class="cmx">${cmtHtml(cur.comments)}${cmtForm("note:" + cur.id, "Comment on this note, the agents see it")}</div><h3 class="nrh">Revisions · ${cur.revs.length}</h3><div class="nrv">${revs}</div></section></div>`;
+}
+document.addEventListener("click", e => {
+  let b;
+  if ((b = e.target.closest("[data-nsel]"))) { S.nsel = b.dataset.nsel; show("notes"); }
+  else if ((b = e.target.closest("[data-nfold]"))) { S.nopen = S.nopen || {}; S.nopen[b.dataset.nfold] = S.nopen[b.dataset.nfold] === false; show("notes"); }
+  else if ((b = e.target.closest("[data-nview]"))) { S.nview = b.dataset.nview; show("notes"); }
+});
+document.addEventListener("input", e => { if (e.target.id === "nq") { S.nq = e.target.value; const p = e.target.selectionStart; show("notes"); const n = $("#nq"); if (n) { n.focus(); n.setSelectionRange(p, p); } } });
+setInterval(() => { if (S.tab === "notes" && !document.hidden) loadNotes(); }, 15000);
+
+/* ---------- Harnesses: who is in the room, grouped by the tool they run in ---------- */
+async function loadHarnesses() {
+  try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); S.hx = r.ok ? await r.json() : {members: []}; } catch { S.hx = S.hx || {members: []}; }
+  if (HUB && !S.local) { try { const r = await fetch("/api/agents", {credentials: "same-origin"}); if (r.ok) S.local = (await r.json()).agents || []; } catch {} }
+  if (S.tab === "harnesses") show("harnesses");
+}
+const HX_NONE = "Not announced";
+function harnessesView() {
+  const d = S.hx;
+  if (!d) { loadHarnesses(); return `<div class="card"><h2>Harnesses</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
+  const ms = (d.members || []).filter(m => m.id), now = Date.now();
+  const groups = new Map();
+  for (const m of ms) { const k = m.harness || HX_NONE; (groups.get(k) || groups.set(k, []).get(k)).push(m); }
+  const keys = [...groups.keys()].sort((a, b) => (a === HX_NONE) - (b === HX_NONE) || groups.get(b).length - groups.get(a).length);
+  const machines = new Set(ms.map(m => m.machine).filter(Boolean)).size, online = ms.filter(m => m.present).length, named = ms.length - (groups.get(HX_NONE) || []).length;
+  const head = stripHtml("Harnesses", ROOM ? `in ${ROOM}` : "tools and agents connected to this room", [["MEMBERS", String(ms.length)], ["ONLINE", String(online)]],
+    [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Announced", `${named} of ${ms.length}`], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
+  const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name || short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""}<small>${esc(m.role || "")}</small></span>
+      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span><span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
+  const cards = keys.map(k => `<div class="card hx"><h2>${esc(k)} <span class="mut" style="font-weight:400">· ${groups.get(k).length}</span></h2>${groups.get(k).map(row).join("")}</div>`).join("");
+  const local = (S.local || []).length ? `<div class="card"><h2>On this machine</h2><p class="mut" style="margin:0 0 10px">Harnesses this hub can connect to Playbox for you. Connect them from the hub's Integrations view.</p>${S.local.map(a => `<div class="stat"><span>${esc(a.name)}</span><span class="chip ${a.connected ? "ok" : a.installed ? "warn" : ""}">${a.connected ? "connected" : a.installed ? "installed" : "not found"}</span></div>`).join("")}</div>` : "";
+  const how = `<div class="card"><h2>Show up here</h2><p class="mut" style="margin:0 0 10px">An agent announces itself once after joining. Any harness that can post a room message can do it; Playbox does not care which tool you run.</p><pre class="src" style="margin:0">::pbx agent {"name":"Haiku-1","machine":"studio","role":"hill climber","harness":"Hermes","model":"claude-haiku-5-5"}</pre></div>`;
+  return head + (ms.length ? `<div class="wk">${cards}</div>` : `<div class="card empty"><p>Nobody has joined yet.</p></div>`) + `<div class="wk">${local}${how}</div>`;
+}
+setInterval(() => { if (S.tab === "harnesses" && !document.hidden) loadHarnesses(); }, 15000);
+
+/* ---------- Work and Proof headers ---------- */
+function stripHtml(title, sub, nums, meta) {
+  return `<div class="rh"><div class="rh1"><div><div class="rt">${esc(title)}</div><div class="rs">${esc(sub)}</div></div><div class="hns">${nums.map(([k, v]) => `<div class="hn"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>
+    <div class="rh2">${meta.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>`;
+}
+function workHeader(w) {
+  const r = w && (w.result || w);
+  const code = r && (r.exit_code ?? r.code), ok = code === 0;
+  return stripHtml("Work", ROOM ? `in ${ROOM}` : "pull code, run tasks in the host's sandbox", [["LAST EXIT", r ? String(code ?? "—") : "—"], ["STATE", S.running ? "running" : r ? (ok ? "passed" : "failed") : "idle"]],
+    [["Role", "guest"], ["Folder", (S.status && (S.status.workspace || (joined() || {}).workspace)) || "—"], ["Recipes", String(RECIPES.length)], ["Sandbox", "host's task image"]]);
+}
+function proofHeader(v, t) {
+  const log = S.status && S.status.history_log;
+  return stripHtml("Proof", "signed, hash-chained history", [["ENTRIES", v ? String(v.entries ?? "—") : "—"], ["STATUS", v ? (v.valid ? "verified" : "FAILED") : "not checked"]],
+    [["Log", log ? log.split("/").slice(-1)[0] : "—"], ["Tamper test", t ? (t.caught || t.valid === false ? "caught" : "ran") : "not run"], ["Witness holds", String((S.hold || []).length)], ["Mode", mode()]]);
+}
+
 /* ---------- views ---------- */
 function rawInvite() {
   return `${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
@@ -324,9 +573,12 @@ function rawInvite() {
     <p style="margin:12px 0 0" class="row"><button class="btn${HUB ? "" : " primary"}" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p>`;
 }
 const VIEWS = {
+  harnesses() { return harnessesView(); },
+  notes() { return notesView(); },
+  timeline() { return timelineView(); },
   room() {
     const m = mode();
-    const parts = [];
+    const parts = [roomHeader()];
     if (m === "none") {
       parts.push(`<div class="card hero"><span class="glyph"></span><h1>${ROOM ? esc(ROOM) : "Playbox"}</h1>
         <p>A private room where your agent and other people's agents build together, under limits you set, with a record nobody can quietly edit.</p></div>
@@ -349,6 +601,7 @@ const VIEWS = {
         </div>
       </div>`);
     }
+    if (m !== "none") parts.push(insights() || '<div id="insights"></div>');
     if (hosting()) {
       const h = hosting();
       parts.push(`<div class="card"><h2>You host ${ROOM ? qn() : "this room"}</h2>
@@ -389,7 +642,7 @@ const VIEWS = {
       ? "Members run tasks on your machine from their own Playbox. To run one yourself, join a room as a guest."
       : "Join a room to pull code and run sandboxed tasks.");
     const w = S.lastWork;
-    return `<div class="card"><h2>Sync code</h2>
+    return workHeader(w) + `<div class="wk"><div class="card"><h2>Sync code</h2>
         <label for="ref">Branch</label><input type="text" id="ref" value="main" class="mono" autocapitalize="off" spellcheck="false">
         <label class="switch"><input type="checkbox" id="checkout" checked><span>Check it out in my folder</span></label>
         <p class="row" style="margin:14px 0 0"><button class="btn" data-act="pull">Pull</button><button class="btn" data-act="push">Push my branch</button></p>
@@ -404,13 +657,13 @@ const VIEWS = {
         <label class="switch"><input type="checkbox" id="net"><span>Allow network <span class="mut">(if your grant permits)</span></span></label>
         <label class="switch"><input type="checkbox" id="apply" checked><span>Apply the resulting patch to my folder</span></label>
         <p style="margin:14px 0 0"><button class="btn primary block" data-act="run" id="runbtn">Run in sandbox</button></p></div>
-      <div id="result">${w ? renderResult(w) : ""}</div>`;
+      </div><div id="result">${w ? renderResult(w) : ""}</div>`;
   },
 
   people() {
     if (!hosting()) return emptyCard(joined() ? "Only the host can see and revoke members." : "Host a room to manage who is in it.");
     const ms = members();
-    return `<div class="card"><h2>Members · ${ms.length}</h2>${ms.length ? ms.map(id => `
+    return peopleInsights(ms) + `<div class="card"><h2>Members · ${ms.length}</h2>${ms.length ? ms.map(id => `
       <div class="member">${avatar(id)}<div class="grow"><div class="mono">${esc(short(id))}</div><div class="mut" style="font-size:12.5px">Scoped grant · expires on its own</div></div>
         <button class="btn sm danger" data-act="revoke" data-id="${esc(id)}">Revoke</button></div>`).join("")
       : `<div class="empty">Nobody has joined yet. Create an invite on the Room tab.</div>`}</div>
@@ -419,7 +672,7 @@ const VIEWS = {
 
   proof() {
     const v = S.verify, log = S.status && S.status.history_log, t = S.tamper;
-    return `<div class="card"><h2>Your signed history</h2>
+    return proofHeader(v, t) + `<div class="wk"><div class="card"><h2>Your signed history</h2>
         <p class="mut" style="margin-top:0">Every Playbox action on this device is appended to a signed, hash-chained log. Change one byte and verification fails.</p>
         <div class="stat"><span>Log</span><span class="mono">${esc(log || "—")}</span></div>
         <p class="row" style="margin:12px 0 0"><button class="btn gold" data-act="verify" ${log ? "" : "disabled"}>Verify now</button></p>
@@ -432,7 +685,7 @@ const VIEWS = {
       <div class="card"><h2>Check any log</h2>
         <label for="vpath">Path to a history log</label><input type="text" id="vpath" class="mono" placeholder="~/.playbox/history/hermes-session.log" spellcheck="false" autocapitalize="off">
         <p style="margin:12px 0 0"><button class="btn" data-act="verify-path">Verify</button></p>
-        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div>`;
+        <p class="mut" style="font-size:13px;margin:12px 0 0">The Hermes witness plugin writes <span class="mono">hermes-session.log</span> here: every tool call your Hermes agent made in a room.</p></div></div>`;
   },
 };
 
@@ -489,7 +742,7 @@ function renderResult(w) {
       ${w.runner ? `<span class="chip">${esc(w.runner)}</span>` : ""}${w.patch_applied ? '<span class="chip ok">patch applied</span>' : ""}</div>
     ${w.stdout ? `<label>Output</label><pre>${esc(w.stdout)}</pre>` : ""}
     ${w.stderr ? `<label>Errors</label><pre>${esc(w.stderr)}</pre>` : ""}
-    ${w.patch ? `<label>Patch · ${w.patch_bytes ?? w.patch.length} bytes${w.patch_truncated ? " (truncated)" : ""}</label><pre>${lines}</pre>` : ""}</div>`;
+    ${w.patch ? `<label>Patch · ${w.patch_bytes ?? w.patch.length} bytes${w.patch_truncated ? " (truncated)" : ""}</label><pre id="patchpre">${lines}</pre>` : ""}</div>`;
 }
 
 /* ---------- feed ---------- */
@@ -549,7 +802,7 @@ function setOffline(d) {
   if (!d) { if (bar) bar.remove(); return; }
   if (!bar) {
     bar = document.createElement("div"); bar.id = "offbar"; bar.setAttribute("role", "status");
-    bar.style.cssText = "padding:8px 16px;background:#2A2113;color:#F2D9A6;border-bottom:1px solid #FF5A1F;font:600 12px/1.4 ui-monospace,Menlo,monospace;display:flex;gap:14px;flex-wrap:wrap;align-items:center";
+    bar.style.cssText = "padding:8px 16px;background:var(--panel-2);color:var(--ink);border-bottom:1px solid var(--warn);font:600 12px/1.4 ui-monospace,Menlo,monospace;display:flex;gap:14px;flex-wrap:wrap;align-items:center";
     const top = document.querySelector("header.top"); (top || document.body).after(bar);
   }
   const t = d.saved_until_ms ? new Date(d.saved_until_ms).toLocaleString() : "earlier";
@@ -572,6 +825,8 @@ async function pollFeed() {
   S.feed.push(...fresh);
   if (S.tab !== "feed") { S.unread += fresh.filter(i => i.kind === "say" && i.from !== myId()).length; paintNav(); }
   paintFeed();
+  if (S.tab === "room") paintInsights();
+  if (S.tab === "timeline" && !document.activeElement?.closest?.("#view")) show("timeline");
 }
 
 /* ---------- witness ---------- */
@@ -624,11 +879,14 @@ async function refresh(poll) {
 }
 function show(tab) {
   S.tab = tab;
-  if (tab === "feed") S.unread = 0;
+  if (tab === "feed") { S.unread = 0; markSeen(); }
   paintNav();
   const v = $("#view");
   v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
   if (tab === "feed") { paintFeed(); pollFeed(); }
+  if (tab === "notes") paintNoteDoc();
+  if (tab === "work") hlPatch();
+  if (tab === "room" || tab === "people" || tab === "timeline") pollFeed();
   scrollTo({top: 0});
 }
 
@@ -693,7 +951,7 @@ async function act(name, btn) {
         box.innerHTML = `<div class="card"><h2>Task did not finish cleanly</h2><p style="margin:0 0 12px">${esc(m)}</p>
           ${/applying patch/.test(m) ? `<p class="mut" style="font-size:13px;margin:0 0 12px">The task ran on the host, but its patch doesn't fit your folder (for example a file it creates is already there). Run it again without applying to read the output and patch.</p>
           <button class="btn" data-act="run-noapply">Run again without applying</button>` : ""}</div>`;
-      } else { S.lastWork = r.data; box.innerHTML = renderResult(r.data); }
+      } else { S.lastWork = r.data; box.innerHTML = renderResult(r.data); hlPatch(); }
       box.scrollIntoView({behavior: "smooth", block: "nearest"});
       break;
     }
@@ -808,7 +1066,7 @@ setInterval(() => {
   tick++;
   pollWitness();
   if (tick % 3 === 0) refresh(true);                       // every call is appended to the signed history, so poll gently
-  if (S.tab === "feed" || innerWidth >= 1220) pollFeed();
+  if (S.tab === "feed" || S.tab === "room" || S.tab === "timeline" || S.tab === "people" || innerWidth >= 1220) pollFeed();
 }, 3500);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(true); pollFeed(); } });
 </script>

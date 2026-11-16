@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E9E7E0" id="themecolor">
+<meta name="theme-color" content="#F2F3EE" id="themecolor">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -20,14 +20,14 @@ try { const t = localStorage.getItem("pb.theme"); if (t === "light" || t === "da
 /* Playbox: paper, ink, one signal colour. Orange only ever means "look here". Light and dark come from the same tokens. */
 :root{
   color-scheme:light dark;
-  --bg:light-dark(#E9E7E0,#0F0F0E);        --panel:light-dark(#F4F2EC,#171715);      --panel-2:light-dark(#ECEAE2,#1F1F1C);   --field:light-dark(#FBFAF7,#0F0F0E);
+  --bg:light-dark(#F2F3EE,#151713);        --panel:light-dark(#F4F2EC,#171715);      --panel-2:light-dark(#ECEAE2,#1F1F1C);   --field:light-dark(#FBFAF7,#151713);
   --ink:light-dark(#171715,#ECE9E0);        --ink-2:light-dark(#3B3A36,#C6C3B8);     --mut:light-dark(#68665D,#8F8C80);
   --dim:light-dark(#D9D6CB,#2A2A26);        --grid:light-dark(rgba(23,23,21,.07),rgba(236,233,224,.045));
   --line:light-dark(#D5D2C7,#2A2A26);       --line-2:light-dark(#B9B5A8,#3F3E38);    --edge:light-dark(#171715,#6C6A5F);
-  --sig:light-dark(#FF5A1F,#FF6B2C);        --sig-ink:light-dark(#B83A0A,#FF8A55);   --on-sig:light-dark(#171715,#0F0F0E);
+  --sig:light-dark(#FF5A1F,#FF6B2C);        --sig-ink:light-dark(#B83A0A,#FF8A55);   --on-sig:light-dark(#171715,#151713);
   --ok:light-dark(#17783F,#4CC380);         --ok-led:light-dark(#1FA458,#4CC380);    --bad:light-dark(#C0143C,#FF4D6D);
   --hard:light-dark(5px 5px 0 #171715,5px 5px 0 #000);                               --scrim:light-dark(rgba(23,23,21,.5),rgba(0,0,0,.65));
-  --r:2px; --nav-h:58px; --strip:38px;
+  --r:8px; --nav-h:58px; --strip:38px;
   --mono:ui-monospace,"SF Mono","JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;
   --sans:"Helvetica Neue","Neue Haas Grotesk",Helvetica,Arial,system-ui,sans-serif;
 }
@@ -116,8 +116,8 @@ main{flex:1;width:100%;max-width:1080px;margin:0 auto;padding:18px 14px calc(var
 /* ---------- surfaces ---------- */
 .view.enter{animation:in .16s steps(4)}
 @keyframes in{from{opacity:.35}}
-.card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);padding:16px}
-.card>h2:first-child{margin:-16px -16px 14px;padding:10px 14px;border-bottom:1px solid var(--line-2);background:var(--panel-2)}
+.card{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;padding:16px;overflow:hidden}
+.card>h2:first-child{margin:-16px -16px 14px;padding:13px 16px;border-bottom:1px solid var(--line);background:none;font:500 15px/1.2 var(--sans);letter-spacing:0;text-transform:none;color:var(--ink)}
 .sect{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:30px 0 12px}
 .sect:first-child{margin-top:0}
 .sect.tools{flex-wrap:wrap;margin:22px 0 12px}
@@ -125,11 +125,11 @@ h2.rule{display:flex;align-items:center;gap:12px;flex:1}
 h2.rule::after{content:"";flex:1;height:1px;background:var(--line-2)}
 h2.rule .ix{color:var(--sig-ink)}
 .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
-  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;box-shadow:0 2px 0 var(--edge);transition:none}
-.btn:hover{background:var(--panel-2)} .btn:active{transform:translateY(2px);box-shadow:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:var(--r);
+  font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;transition:background .12s,transform .08s}
+.btn:hover{background:var(--panel-2)} .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--sig);color:var(--on-sig)} .btn.primary:hover{background:color-mix(in srgb,var(--sig) 88%,var(--ink))}
-.btn.danger{color:var(--bad);border-color:var(--bad);box-shadow:0 2px 0 var(--bad)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
 .btn.sm{min-height:32px;padding:0 11px;font-size:10.5px}
 a.btn{text-decoration:none} .btn.block{width:100%}
 .btn[disabled]{opacity:.45;cursor:default;box-shadow:none;transform:none}
@@ -348,11 +348,16 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 @media(max-width:700px){.flow{grid-template-columns:repeat(2,minmax(0,1fr))}.node:nth-child(2n){border-right:0}.node:nth-child(4n){border-right:0}.node:nth-child(n){border-bottom:1px solid var(--line-2)}.node:nth-child(2n)::after{display:none}.syscols{grid-template-columns:1fr}.ev{grid-template-columns:54px 1fr}.ev .tag{display:none}}
 @media(prefers-reduced-motion:reduce){.node.pulse,.node.pulse .pk::before,.ev.fresh{animation:none}}
 </style>
+<link rel="stylesheet" href="/theme.css">
+<script src="/themes.js"></script>
+<script src="/shell.js" onerror="void 0"></script>
+<script src="/research.js" onerror="void 0"></script>
 </head>
 <body>
 <div id="root"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <dialog id="sheet"></dialog>
+<script src="/instruments.js" onerror="void 0"></script>
 <script src="/auth.js"></script>
 <script src="/space.js"></script>
 <script>
@@ -374,6 +379,7 @@ const ICON = {
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 13.8c2.8-.4 5 1.4 5 4.2"/>',
   shieldx: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M10 10l4 4M14 10l-4 4"/>',
 };
+ICON.research = '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>';
 const svgi = (n, cls = "") => `<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${ICON[n]}</svg>`;
 
 function toast(text, err) {
@@ -506,6 +512,7 @@ function paintPair(st, code) {
 /* ---------- app ---------- */
 async function startApp(view, inviteRoom) {
   if (view) S.view = view;
+  else if (window.PBTheme && PBTheme.pref("landing") !== "last" && ["rooms", "attention", "system", "research"].includes(PBTheme.pref("landing"))) S.view = PBTheme.pref("landing");
   try { S.me = await api("GET", "/api/me"); } catch { return; }
   await refreshRooms();
   paint();
@@ -518,7 +525,7 @@ async function startApp(view, inviteRoom) {
   addEventListener("offline", () => { S.live = false; paintStatus(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRooms(); });
   setInterval(() => { if (!document.hidden) tickAgo(); }, 30000);
-  setInterval(() => { const c = $("#clock"); if (c) c.textContent = new Date().toLocaleTimeString([], {hour12: false}); }, 1000);
+  setInterval(() => { const c = $("#clock"); if (c) c.textContent = new Date().toLocaleTimeString([], {hour12: !(window.PBTheme ? PBTheme.pref("clock24") === "1" : true)}); }, 1000);
 }
 async function loadKnocks() { try { S.knocks = (await api("GET", "/api/knocks")).requests; } catch {} if ($("#view") && (S.view === "rooms" || S.view === "attention")) paintView(true); }
 async function loadOut(quiet) {
@@ -587,7 +594,7 @@ function startPolling() {
 }
 function localNotify(a) {
   if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
-  swReady().then(reg => reg.showNotification(a.title, {tag: "pb-" + a.id, body: a.body || "", icon: "/icon-192.png", data: {url: `/r/${a.room}/`}})).catch(() => {});
+  swReady().then(reg => reg.showNotification(a.title, {tag: "pb-" + a.id, body: a.body || "", icon: "/icon-192.png", data: {url: a.room ? `/r/${a.room}/` : "/"}})).catch(() => {});
 }
 function mood() {
   const m = S.attention.some(a => a.urgent) ? "alert" : S.rooms.some(r => r.state === "live") ? "live" : "calm";
@@ -598,9 +605,9 @@ function mood() {
 }
 
 /* ---------- theme ---------- */
-const THEME_BG = {light: "#E9E7E0", dark: "#0F0F0E"};
+const THEME_BG = {light: "#F2F3EE", dark: "#151713"};
 const themeNow = () => document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
-function syncThemeColor() { $("#themecolor")?.setAttribute("content", THEME_BG[themeNow()]); }
+function syncThemeColor() { if (window.PBTheme) PBTheme.apply(); else $("#themecolor")?.setAttribute("content", THEME_BG[themeNow()]); }
 function toggleTheme() {
   const t = themeNow() === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = t; store.set("pb.theme", t); syncThemeColor(); paintChrome();
@@ -609,16 +616,17 @@ addEventListener("load", syncThemeColor);
 matchMedia("(prefers-color-scheme:dark)").addEventListener?.("change", syncThemeColor);
 
 /* ---------- chrome ---------- */
-const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["system", "System", "shield", "03"], ["add", "Add", "add", ""], ["integrations", "Integrations", "plug", "04"], ["hub", "Hub", "hub", "05"]];
+const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["system", "System", "shield", "03"], ["add", "Add", "add", ""], ["research", "Research", "research", "04"], ["integrations", "Integrations", "plug", "05"], ["hub", "Hub", "hub", "06"]];
 function paint() {
   $("#root").innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
       <button class="btn primary block" data-act="add">+ Add room</button>
       <nav id="railnav"></nav>
+      <div id="railrooms" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
       <div class="foot"><div class="keys">⌘K search<br>J K move · ↵ open</div></div></aside>
     <div class="col"><div class="strip"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
         <span class="state" id="linkled"></span><span class="hide-s" id="sthost"></span><span id="strooms"></span><span id="stattn"></span><span class="sp"></span>
-        <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
+        <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><button class="iconbtn" data-act="settings" aria-label="Settings" title="Settings (⌘,)">${svgi("hub")}</button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
       <main><div id="view"></div></main></div>
     <aside class="pane" id="pane" aria-label="Activity"></aside></div>
     <nav class="bottom" id="bottom" aria-label="Sections"></nav>`;
@@ -633,6 +641,7 @@ function paintChrome() {
   const r = $("#strooms"); if (r) r.textContent = `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`;
   const a = $("#stattn"); if (a) { a.textContent = n ? `${n} needs you` : ""; a.className = n ? "hot" : ""; }
   const h = $("#sthost"); if (h) h.textContent = location.host;
+  if (window.PBShell) { PBShell.sync(S.rooms, null, $("#railrooms")); PBShell.start(); }
 }
 function paintStatus() {
   const h = `<i class="led ${S.live ? "live" : "hold"}"></i>${S.live ? (S.poll ? "Polling" : "Live") : navigator.onLine ? "Reconnecting" : "Offline"}`;
@@ -742,6 +751,13 @@ function tiles() {
 }
 
 /* ---------- ask-to-join: requests to you, and requests you have sent ---------- */
+function approvalCards(items) {
+  const ap = items.filter(i => i.kind === "approval" && i.approval);
+  return ap.length ? `<div class="card knock"><h2>Waiting for your approval</h2>${ap.map(i => { const c = i.approval; return `<div class="kq"><div class="kqh"><b>${esc(c.cap)}</b> <span class="mut">in</span> <b>${esc(c.label)}</b></div>
+      <p class="mut" style="margin:6px 0 8px;font-size:13px">Asked by <span class="mono">${esc(c.member)}</span></p>
+      <div class="card mono" style="margin:0 0 10px;max-height:8em;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(Object.entries(c.args || {}).map(([k, v]) => k + "=" + v).join("\n") || "(no arguments)")}</div>
+      <div class="row"><button class="btn primary sm" data-act="apv" data-dec="approve" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Approve</button><button class="btn sm danger" data-act="apv" data-dec="deny" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Deny</button></div></div>`; }).join("")}</div>` : "";
+}
 function knockCard() {
   const inc = S.knocks.map(k => `<div class="kq"><div class="kqh"><b>${esc(k.name)}</b> <span class="mut">wants to join</span> <b>${esc(k.label)}</b></div>
       <div class="kcode" aria-label="Verify code ${esc(k.code)}">${dm(k.code)}</div>
@@ -857,7 +873,48 @@ function machineCard(y) {
     ${m.error ? `<p class="chip bad" style="white-space:normal">${esc(m.error)}</p>` : ""}<div>${fz}${rows}</div>
     <p class="mut" style="font-size:12.5px;margin:10px 0 0">Run by the <b>playbox secure</b> command on this machine, every few hours and after each update. Fuzzing never touches this hub: it tests a throwaway copy.</p>`);
 }
+/* ---------- harness: the hub-wide Stats and Activity panels (shared look with the room cockpit) ---------- */
+S.ins = S.ins || {};
+document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
+function harness() {
+  if (!window.PBI || !S.rooms.length) return "";
+  const P = PBI, now = Date.now(), act = S.activity || [];
+  const C = {live: "var(--c-join)", idle: "var(--c-idle)", hold: "var(--c-warn)", bad: "var(--c-bad)", down: "var(--c-bad)", empty: "var(--c-ev)"};
+  const by = k => S.rooms.filter(r => r.state === k).length;
+  const members = S.rooms.reduce((a, r) => a + (r.members || 0), 0), hour = act.filter(a => now - a.ms < 3600e3).length;
+  const series = P.buckets(act.map(a => a.ms), now, 300e3, 24);
+  const st = P.stats({id: "h-stats", title: "Harness", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>',
+    open: S.ins["h-stats"] ?? innerWidth >= 700, meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`, who: "hub", name: location.host || "this hub",
+    bar: {label: "rooms", right: `${by("live")} live`, parts: Object.keys(C).map(k => ({c: C[k], w: by(k), t: k}))},
+    kv: [["rooms", String(S.rooms.length)], ["members", String(members)], ["mine", String(S.rooms.filter(r => r.kind === "mine").length)], ["shared", String(S.rooms.filter(r => r.kind === "shared").length)],
+         ["attention", String(S.attention.length)], ["asking to join", String((S.knocks || []).length)], ["history", S.rooms.every(r => !r.chain || r.chain.ok) ? "all verified" : "FAILED"], ["offline", String(S.rooms.filter(r => r.offline).length)]],
+    rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / series.length).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
+    groups: [{title: "Rooms", rows: [["live", "live"], ["idle", "idle"], ["hold", "held by witness"], ["bad", "history failed"], ["down", "unreachable"], ["empty", "empty"]].map(([k, l]) => ({c: C[k], l, n: by(k), pct: Math.round(by(k) / S.rooms.length * 100) + "%", o: k === "empty"}))}]});
+  const t0 = Math.min(now - 30 * 60e3, ...act.map(a => a.ms));
+  const lanes = [{group: "Rooms"}, ...S.rooms.slice(0, 12).map(r => ({label: r.label, c: r.state === "bad" ? C.bad : "var(--c-peer)", at: act.filter(a => a.room === r.id).map(a => a.ms), bad: r.state === "bad"}))];
+  const al = P.activity({id: "h-act", title: "Activity by room", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 7h16M4 12h11M4 17h7"/></svg>',
+    open: S.ins["h-act"] ?? innerWidth >= 700, meta: `${act.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: act.length ? lanes : []});
+  return `<div style="display:grid;gap:14px;margin:18px 0 6px">${st}${al}</div>`;
+}
+async function loadResearch() {
+  try { S.rs = (await api("GET", "/api/research")).runs; } catch { S.rs = S.rs || []; }
+  if (S.rsid && !S.rsrun) { try { S.rsrun = await api("GET", "/api/research/" + encodeURIComponent(S.rsid)); } catch { S.rsid = null; } }
+  if (S.view === "research") paintView(true);
+}
+document.addEventListener("click", async e => {
+  let b;
+  if ((b = e.target.closest("[data-run]"))) { S.rsid = b.dataset.run; S.rstab = "overview"; S.rsf = "all"; S.rsrun = null; try { S.rsrun = await api("GET", "/api/research/" + encodeURIComponent(S.rsid)); } catch { S.rsid = null; } paintView(); }
+  else if (e.target.closest("[data-rback]")) { S.rsid = null; S.rsrun = null; paintView(); }
+  else if ((b = e.target.closest("[data-rtab]"))) { S.rstab = b.dataset.rtab; paintView(); }
+  else if ((b = e.target.closest("[data-rf]"))) { S.rsf = b.dataset.rf; paintView(); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches?.("[data-run]")) e.target.click(); });
 const VIEWS = {
+  research() {
+    if (!window.PBResearch) return `<div class="card empty"><p>Research view unavailable.</p></div>`;
+    if (!S.rs) { loadResearch(); return `<div class="card"><h2>Research</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
+    return S.rsid && S.rsrun ? PBResearch.detail(S.rsrun, S.rstab || "overview", S.rsf || "all") : PBResearch.list(S.rs, S.rsid);
+  },
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
     const f = S.filter || "all";
@@ -869,15 +926,15 @@ const VIEWS = {
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
       : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="/r/${r.id}/" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
-    return `${knockCard()}<div id="setup"></div>${tiles()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
+    return `${knockCard()}<div id="setup"></div>${tiles()}${harness()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
-    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}`;
-    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock"));
-    if (!a.length && S.knocks.length) return head;
+    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}${approvalCards(a)}`;
+    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock" && i.kind !== "approval"));
+    if (!a.length && (S.knocks.length || S.attention.some(i => i.kind === "approval"))) return head;
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
-    return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="/r/${i.room}/">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
+    return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="${i.room ? `/r/${i.room}/` : "/"}">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
   integrations() {
     const I = S.integ, ags = S.agents;
@@ -911,6 +968,12 @@ const VIEWS = {
       <div class="card"><h2>Apps</h2>${apps}</div></div>`;
   },
   system() {
+    const healthCard = y => {
+      const h = y.health; if (!h) return "";
+      const t = h.tunnel, tun = !t.configured ? "" : `<div class="chk"><i class="led ${t.up ? "ok" : "bad"}"></i><b>Public address</b><span class="dt">${t.up ? esc(t.url || "up") : "down: the hub is retrying"}</span></div>`;
+      const rr = h.rooms.map(r => `<div class="chk"><i class="led ${r.err ? "bad" : r.offline || r.host_gone ? "warn" : "ok"}"></i><b>${esc(r.label || r.id)}</b><span class="dt">${esc(r.err || (r.host_gone ? "its host is not running" : r.offline ? "showing saved history" : r.hosted ? "hosting here" : r.adopted ? "joined from this machine" : "joined"))}${r.renewed_ms ? ` · grant renewed ${esc(ago(r.renewed_ms))}` : ""}</span></div>`).join("");
+      return `<div class="card" style="margin:14px 0"><h2>Health ${h.ok ? '<span class="chip ok">all good</span>' : `<span class="chip warn">${h.problems.length} to look at</span>`}</h2><div>${tun}${rr || '<p class="mut" style="margin:0">No rooms yet.</p>'}</div><p class="mut" style="font-size:12.5px;margin:10px 0 0">Hub up since ${esc(ago(h.started_ms))}.</p></div>`;
+    };
     const y = S.sys, head = `<div class="sect"><h2 class="rule"><span class="ix">03</span>System</h2></div>`;
     if (!y) return head + (S.sysErr ? `<div class="card empty">${esc(S.sysErr)}</div>` : `<div class="boot">Reading the live protocol state</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div>`);
     const bad = y.posture.filter(c => c.level === "bad").length, warn = y.posture.filter(c => c.level === "warn").length, ok = y.posture.length - bad - warn;
@@ -941,6 +1004,7 @@ const VIEWS = {
       <div class="sect tools"><h2 class="rule"><span class="ix">·</span>The workflow, live</h2><span class="mut" style="font-size:12.5px">${sel ? `Filtered to ${esc(names[sel])}. Tap it again to clear.` : "Tap a stage to filter the trail."}</span></div>
       <div class="zones"><span>Internet</span><span>Hub · you hold the keys</span><span>Room · agents</span></div>
       <div class="flow">${nodes}</div>
+      ${healthCard(y)}
       ${machineCard(y)}
       <div class="syscols"><div class="card"><h2>Controls</h2><div>${checks}</div></div>
         <div class="card"><h2>Live trail</h2><div class="trail" id="trail">${rows}</div></div></div>
@@ -961,12 +1025,9 @@ const VIEWS = {
         <div class="row"><button class="btn" data-act="push" id="pushbtn">Checking…</button></div></div>
       <div class="card"><h2>Install</h2><p class="mut" style="margin:0 0 14px">Playbox runs as an app: its own window, a badge for what needs you, and the last known state while you're offline.</p>
         <div class="row"><button class="btn" data-act="install" id="installbtn" hidden>Install app</button><span class="mut" style="font-size:13px" id="installhint">On iPhone or iPad: Share, then Add to Home Screen.</span></div></div>
-      <div class="card"><h2>Appearance</h2><p class="mut" style="margin:0 0 14px">Follows your system by default.</p>
-        <div class="seg" role="group" aria-label="Theme">${[["auto", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button data-theme="${k}" aria-pressed="${th === k || (k === "auto" && th !== "dark" && th !== "light")}">${l}</button>`).join("")}</div>
+      <div class="card"><h2>Appearance</h2><p class="mut" style="margin:0 0 14px">Theme, accent, fonts and scale. ${window.PBTheme ? `Now: <b>${esc((PBTheme.find(PBTheme.state().skin) || {}).label || "Playbox")}</b>.` : ""}</p>
+        <div class="row"><button class="btn primary sm" data-act="appearance">Open settings</button></div>
         <p class="mut" style="font-size:13px;margin:14px 0 0">Press <kbd>⌘K</kbd> or <kbd>/</kbd> anywhere to jump to a room.</p></div>
-      <div class="card"><h2>Devices</h2><div>${dev || '<p class="mut" style="margin:0">No passkeys yet.</p>'}</div>
-        <p style="margin:16px 0 0"><button class="btn primary sm" data-act="pairdev">Add a device</button></p></div>
-      <div class="card"><h2>Sessions</h2><div>${ses}</div></div>
       <div class="card"><h2>Network</h2>
         <div class="stat"><span>Address</span><span class="mono">${esc(location.host)}</span></div>
         <div class="stat"><span>Connection</span><span class="chip ${secure ? "ok" : "warn"}">${location.protocol === "https:" ? "HTTPS" : secure ? "local" : "plain HTTP"}</span></div>
@@ -989,7 +1050,8 @@ function openPalette() {
     ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/canvas`, sig: r.id})),
     {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
     {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
-    {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"}];
+    {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"},
+    ...(window.PBTheme ? [{t: "Settings", s: "appearance, interface, hub, safety  ⌘,", act: () => PBTheme.open(), ic: "hub"}, {t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open("appearance"), ic: "hub"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
   const sh = $("#sheet"); let q = "", sel = 0, list = items;
   const draw = () => {
     $("#pal-list").innerHTML = list.length ? list.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ph">${it.sig ? sigil(it.sig, 28) : svgi(it.ic)}</span><span>${esc(it.t)}</span><small>${esc(it.s)}</small></li>`).join("") : `<li class="mut">No match</li>`;
@@ -1227,6 +1289,8 @@ document.addEventListener("click", async e => {
   if (act === "add") openAdd();
   else if (act === "palette") openPalette();
   else if (act === "theme") toggleTheme();
+  else if (act === "appearance") window.PBTheme && PBTheme.open("appearance");
+  else if (act === "settings") window.PBTheme && PBTheme.open();
   else if (act === "edit") openEdit(t.dataset.id);
   else if (act === "agent") connectAgent(t.dataset.id, t);
   else if (act === "kapprove") { t.disabled = true; try { await api("POST", `/api/knocks/${t.dataset.id}/approve`, {}); toast("Approved. They're being let in."); } catch (er) { toast(er.message, true); t.disabled = false; } loadKnocks(); }
@@ -1262,6 +1326,7 @@ document.addEventListener("click", async e => {
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();
+  else if (act === "apv") { t.disabled = true; try { const j = await api("POST", `/api/approvals/${encodeURIComponent(t.dataset.room)}/${encodeURIComponent(t.dataset.call)}`, {decision: t.dataset.dec}); toast(j.ok ? (t.dataset.dec === "approve" ? "Approved" : "Denied") : j.message, !j.ok); } catch (er) { toast(er.message, true); } refreshRooms(); }
   else if (act === "push") togglePush();
   else if (act === "install") { installEvt?.prompt(); installEvt = null; t.hidden = true; }
   else if (act === "logout") { await fetch("/api/auth/logout", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); try { await caches.delete("pb-data"); } catch {} location.href = "/"; }

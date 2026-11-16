@@ -62,13 +62,13 @@ const PB = (() => {
       if (note || !document.body) return;
       note = document.createElement("div");
       note.setAttribute("role", "alert");
-      note.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483000;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 14px;background:#1F1F1C;color:#E9E7E0;border:1px solid #FF5A1F;font:13px/1.4 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.4)";
+      note.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483000;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 14px;background:#1C1E1A;color:#E5E8DD;border:1px solid #CBD8A2;font:13px/1.4 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.4)";
       const t = document.createElement("span");
       t.textContent = "Your Cloudflare sign-in expired, so this page can no longer reach the hub.";
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = "Sign in again";
-      b.style.cssText = "font:600 12px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.06em;padding:7px 12px;background:#FF5A1F;color:#171715;border:0;cursor:pointer";
+      b.style.cssText = "font:600 12px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.06em;padding:7px 12px;background:#CBD8A2;color:#1B2110;border:0;cursor:pointer";
       b.addEventListener("click", () => location.reload());
       note.append(t, b);
       document.body.append(note);

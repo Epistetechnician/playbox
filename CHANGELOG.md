@@ -9,33 +9,66 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
-### Security
-- A libkrun task that asks for a network is refused on a host that cannot filter it (macOS, and Linux without `--confine`). libkrun's TSI gives the guest the host's loopback, LAN and cloud metadata service, so before this such a task could reach them. The host owner can accept that with `PLAYBOX_ALLOW_UNFILTERED_NETWORK=1` (`1`, `on` or `true`); a member or an agent cannot. Tasks without a network are unaffected (BOX-5, decision 42).
+### Added
 
-### Changed
-- **Behaviour change:** the safety overrides `PLAYBOX_ALLOW_UNSAFE_RUNNER`, `PLAYBOX_ALLOW_MISSING_LIMITS` and the new `PLAYBOX_ALLOW_UNFILTERED_NETWORK` are now on only when set to `1`, `on` or `true`. Before, the first two were on for any value, including `0` and an empty string. A host that set one to anything else must set it to `1`.
+- Research view is data-driven: `scripts/gen_research.py` generates `ui/research/*.json` from `docs/benchmark.md` and the F3 pilot receipts (CI runs it with `--check`), and each run has a Samples tab (filterable table, then a collapsible step trail per sample).
+- Anchored comments: `::pbx comment {"on":"note:<id>|artifact:<id>|event:<seq>","text":...}` on the board model, a comment thread per note, a Comment button per timeline event, a Comments count in the room header, and a `/playbox:comment` command.
+- Canvas: a Harnesses panel (agents grouped by the harness and model they report, with machines and who is online), Research and Cockpit links in the top bar, phone reading view for drilled panels (they reflow to one narrow column instead of shrinking), higher-contrast small text in light mode and every theme, and larger tap targets on touch.
+- Settings > Notifications (Push, Alerts, Rooms): subscribe, unsubscribe and test push from Settings; the "unreachable for how long before it is urgent" threshold is now a hub setting (`/api/settings/notify`, passkey step-up to change; `PLAYBOX_DOWN_ALERT_S` stays the default); a room can be muted so it never sends a push while its items still show in Attention.
+- Approvals in the hub: a host's control socket now answers `calls`, `approve ID` and `deny ID`; the hub lists calls waiting for the owner in Attention (Approve / Deny) and in Settings > Safety > Approvals, with a passkey step-up and an audit entry per decision. Hosts on an older build simply list nothing.
+- A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
 
 ### Added
+- Notes and Work results render maths (KaTeX), coloured code (Shiki: python, rust, js, ts, shell, json, diff, lean, markdown, yaml, toml) and tables, with links sanitised by DOMPurify. The three libraries are vendored in `ui/static/vendor/` (licences in `LICENSES.md`), served by the hub itself, and load only when a note needs them. A strict markdown module (`markdown.js`) also renders text that is still arriving: an open code fence or `$$` block stays as plain text. Images from other sites are never fetched.
+
+### Added
+- A Research view in the hub: experiments as runs (list, then Overview, Results, Usage, Timeline, Config and JSON tabs, in the style of a log viewer). It ships the room-vs-silos benchmark and the F3 H100 pilot; add a run by dropping a JSON file in `ui/research/`.
+
+## [0.3.4] - 2026-11-15
+
+### Changed
+- The default look is now Refined: flat surfaces, 6px corners, no page glow or shadows, plain numbers and a plain wordmark. The earlier look (glows, shadows, dot-matrix digits and wordmark) stays as Style: Expressive, and Density: Compact shows more per screen. Both are in Appearance settings.
+- New look on every page, from one stylesheet (`ui/static/theme.css`): light olive green is the primary colour, a blue gradient marks the selected tab and your own data, amber is for warnings, neutral olive-grey surfaces, sans-serif controls. Palette and the blue selected-tab treatment follow mlsweep (Apache-2.0).
+- The cockpit and the hub home page have instrument panels: a Stats card (key/value rows, message-rate sparkline, who-spoke bar, event breakdown), an Activity card (swim-lanes on one time axis: per member and per kind in a room, per room on the hub) and a collapsible Trail. Cards are rounder and softer to match.
+
+### Added
+- A Harnesses tab in each room: members grouped by the tool they run in (Hermes, Claude Code, Codex, anything), with model, machine, role, presence and message count, plus the harnesses this hub can connect on this machine. Agents announce themselves with the new optional `harness` and `model` fields of `::pbx agent` (text from the agent, clipped, shown as plain text).
+- A Notes tab in each room: the room's artifacts (proofs, code, documents, datasets, charts, notes) as a file tree grouped by kind, with a document view (Live or Source), status and check chips, and revision history. Text from members is escaped; no links, HTML or images are rendered.
+- Appearance settings (Hub tab, command palette, status bar): ten themes with dark and light sides (Playbox, Mono, Catppuccin, Nord, Solarized, Everforest, Tokyo Night, GitHub, Gruvbox, Dracula), accent colour, fonts, interface scale, your own CSS, theme import and export. All kept in the browser; the model follows Hermes Agent's desktop themes (MIT).
+- A rooms sidebar (grouped by machine, with state and age) and a status bar (hub health, public address, theme) on the home page and in every room; a room header and a Timeline tab (event bars, kind filters, searchable history table) in the cockpit.
+
+## [0.3.3] - 2026-11-15
+
+### Added
+- The System view has a Health card (tunnel, each room's host, last error, grant renewal), and `/api/system` carries a `health` section.
+- `ui/service/install-host-macos.sh` runs a room host as a LaunchAgent that restarts and survives logout.
+- The hub service runs a pinned copy of the hub (`~/.playbox/hub-app/current`), so switching branches in a checkout no longer changes what is running; `install-macos.sh --repin` updates it, `--live` keeps the old behaviour.
+- The hub backs up its state once a day (last seven kept) and pushes an alert when the public address or a room's host stays down for five minutes (`PLAYBOX_DOWN_ALERT_S`). A joined room whose grant ran out says it needs a new invite.
 - `scripts/demo.sh --live` (`scripts/demo_live.py`): the hill-climb through a live room. Guests pull the frontier, run a proposal as a sandboxed task, and push; the host's gate (`challenge/f3/room_gate.py`) scores each push with the F3 harness against the sealed holdout, signs a receipt, and moves `main` only on a promotion. A push that is not built on `main` or touches any file but `candidate.py` is refused without a receipt. The holdout is then revealed and the receipts verified. See `docs/demo.md`.
 - `scripts/demo.sh` and `docs/demo.md`: one story, each step checked by the script: a guest joins by link and runs a sandboxed task, a spent invite is refused, the audit log is verified and an edited copy rejected, and a recorded hill-climb is re-verified from its receipts with a forged promotion rejected. Run on macOS and from a fresh clone on a new Ubuntu 24.04 machine.
 - `docs/security-roadmap.md`: what is built, what is next and what is not planned, measured against Anthropic's guidance for working with advanced models.
 
 ### Fixed
+- `playbox up` removes its hosting record and control socket on SIGTERM too, and the hub removes records left by hosts that were killed.
 - `playbox doctor` called a research venv ready if a `.venv` folder existed. It now needs a working `python` and an existing base interpreter, so a folder copied from another machine is reported.
 - `challenge/f3/verify.py` on a climbmix run without its data files ended in a traceback; it now fails the data-manifest check with what is missing.
-
-### Testing
-- CI: a `krun` job runs the libkrun boot tests, the escape drill and the confined-guest tests on a KVM runner, and fails on any skip (`PLAYBOX_CONFINE_REQUIRE_ALL`); a `lint` job runs `cargo fmt --check` and clippy with warnings as errors; an `f3` job runs the F3 tests and re-derives the recorded run.
-- The Linux confinement around a real libkrun guest (`tests/confine_guest.rs`, root, KVM): boot and run under the jail, cgroup, syscall filter and network filter; no network unless asked; with a network, a public address is reachable and the host's loopback and the metadata address are not, with an unfiltered control that does reach loopback. Passed by hand on nested arm64 KVM (BOX-3).
-- The escape drill (`cargo test -p playbox-runner --test escape`): breakout probes run inside a real libkrun guest and all must fail, with a canary that proves the probes ran. It skips where libkrun, its helper or Docker is missing (BOX-6, decision 43).
-
-### Fixed
 - `challenge/f3/verify.py` compared a run's pinned protocol hash with `PROTOCOL.md` as it is today, so appending amendment A3 made the earlier dry run stop verifying. It now accepts a pinned version that was committed before the run began and names the commit (amendment A4).
 - `cargo test --workspace` failed on Ubuntu 24.04, where AppArmor forbids unprivileged user namespaces: the rootless jail cases now skip with the reason, as they do when the kernel refuses `unshare`, and the networked case no longer waits forever when it skips.
 - A libkrun task with a network could not resolve names: the guest's `/etc/resolv.conf` was empty. It now gets `/etc/hosts` with its pinned addresses (host list) or a resolver it may reach, 1.1.1.1 and 9.9.9.9 when the host has none; `PLAYBOX_GUEST_DNS` overrides (BOX-8, decision 44).
 - `up --runtime libkrun --confine` as root failed on a machine that had not run Playbox since it booted (`/sys/fs/cgroup/playbox is not a writable cgroup v2 directory`); the host now creates that directory.
 - Hub: a room that should be hosting but is not (the first attempt was refused, for instance because the relay was unreachable at startup) is hosted again on a later tick, and the reason is shown instead of dropped.
 - `playbox --version` named the commit of the last branch switch; it now follows new commits.
+
+### Security
+- A libkrun task that asks for a network is refused on a host that cannot filter it (macOS, and Linux without `--confine`). libkrun's TSI gives the guest the host's loopback, LAN and cloud metadata service, so before this such a task could reach them. The host owner can accept that with `PLAYBOX_ALLOW_UNFILTERED_NETWORK=1` (`1`, `on` or `true`); a member or an agent cannot. Tasks without a network are unaffected (BOX-5, decision 42).
+
+### Changed
+- **Behaviour change:** the safety overrides `PLAYBOX_ALLOW_UNSAFE_RUNNER`, `PLAYBOX_ALLOW_MISSING_LIMITS` and the new `PLAYBOX_ALLOW_UNFILTERED_NETWORK` are now on only when set to `1`, `on` or `true`. Before, the first two were on for any value, including `0` and an empty string. A host that set one to anything else must set it to `1`.
+
+### Testing
+- CI: a `krun` job runs the libkrun boot tests, the escape drill and the confined-guest tests on a KVM runner, and fails on any skip (`PLAYBOX_CONFINE_REQUIRE_ALL`); a `lint` job runs `cargo fmt --check` and clippy with warnings as errors; an `f3` job runs the F3 tests and re-derives the recorded run.
+- The Linux confinement around a real libkrun guest (`tests/confine_guest.rs`, root, KVM): boot and run under the jail, cgroup, syscall filter and network filter; no network unless asked; with a network, a public address is reachable and the host's loopback and the metadata address are not, with an unfiltered control that does reach loopback. Passed by hand on nested arm64 KVM (BOX-3).
+- The escape drill (`cargo test -p playbox-runner --test escape`): breakout probes run inside a real libkrun guest and all must fail, with a canary that proves the probes ran. It skips where libkrun, its helper or Docker is missing (BOX-6, decision 43).
 
 ## [0.3.2] - 2026-11-14
 
