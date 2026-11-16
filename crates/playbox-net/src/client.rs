@@ -1099,7 +1099,7 @@ fn call_of(v: &Value, host: EndpointId) -> Result<capabilities::Call> {
 #[cfg(test)]
 mod say_retry_tests {
     use super::*;
-    use crate::{card, new_secret_key, Host, HostConfig};
+    use crate::{card, grants, new_secret_key, Host, HostConfig};
 
     #[tokio::test]
     async fn say_survives_a_dropped_connection_by_retrying_once_on_a_new_one() {
@@ -1193,6 +1193,39 @@ mod say_retry_tests {
             "the guest's card replayed as the host's"
         );
         assert!(card::verify(&g.text, &g.from, "another-room", now).is_err());
+        host.shutdown().await.unwrap();
+    }
+
+    /// The host records how each member got in (limits and expiry, never a token) so the hub can show the delegation.
+    #[tokio::test]
+    async fn the_host_records_how_each_member_was_admitted() {
+        let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+            .await
+            .unwrap();
+        let link = host
+            .create_link(Duration::from_secs(60), 1)
+            .unwrap()
+            .encode();
+        let guest = join_link(&link, new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
+        let got = host.admissions();
+        assert_eq!(got.len(), 1);
+        let (id, a) = &got[0];
+        assert_eq!(id.to_string(), guest.id().to_string());
+        let now = grants::now_secs();
+        assert!(a.issued <= now && a.issued > now - 30, "issued just now");
+        assert_eq!(
+            a.expires - a.issued,
+            3600,
+            "the default grant lasts an hour"
+        );
+        assert_eq!(a.invite.len(), 8);
+        assert!(!a.net, "no network unless the room allows it");
+        assert!(
+            !link.contains(&a.invite) || a.invite.len() < link.len(),
+            "only a short tag of the invite is kept"
+        );
         host.shutdown().await.unwrap();
     }
 }

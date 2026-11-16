@@ -1,6 +1,6 @@
 # Agent identity: PRD
 
-Status: v0.2 (strict defaults), phases 1 and 2 built · 2026-11-15 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
+Status: v0.2 (strict defaults), phases 1 and 2 built, phase 3 built except the launch record · 2026-11-16 · owner: Playbox · scope: hub, `playbox-core`, `playbox-net`, `playbox-mcp`
 
 ## 1. One line
 
@@ -94,7 +94,7 @@ A card is canonical JSON:
 
 ### 7.4 Delegation view (phase 3)
 
-- Host-side: add a read-only call returning, per member: invited by, the grant id, scope, issued, expires, and the chain of narrowing (parent to child). It uses data in the room state and the history; no new secrets.
+- Host-side: **as built**, the host records at admission `{issued, expires, invite tag, limits, allowed hosts/secrets/capabilities}` per member (persisted with the host state, backward compatible) and `playbox_status` returns it as `hosting.grants`; no tokens. The chain shown is host to member. A member narrowing its own grant for a helper is not visible to the host until that helper presents it, so the view does not claim to show those.
 - Hub: the Harnesses tab gets a column group Identity (verification badge), Delegation (parent, scope, expires) and a row drawer with the full chain.
 - **Acceptance:** an attenuated grant shows its parent and what was removed; expired grants are marked; the view never shows a grant secret.
 
@@ -110,7 +110,7 @@ A card is canonical JSON:
 - `ans` is stored and shown as a link. If the user supplies an ANS receipt, `ans-verify` (or a built-in COSE check) validates it offline and the badge becomes "name verified"; no receipt means "name claimed".
 - **Acceptance:** a card with a mismatching `did` is rejected; an `ans` name without a receipt never shows as verified.
 
-### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label)
+### 7.7 Host-signed launch record (phase 3, required for any "host-observed" label; NOT BUILT: the host has no agent launcher that gives an agent a key, so there is nothing to sign yet. Until then no label says "observed")
 
 - When a host launches an agent (a sandboxed task, a managed runner), it signs `{key, room, harness, model, image hash, started}`. That is the only evidence the UI may label "host-observed harness" or "host-observed model".
 - Self-reported harness and model stay labelled "claimed" everywhere, including in the card badge and in exports. The UI has no way to show a harness as verified without a launch record.

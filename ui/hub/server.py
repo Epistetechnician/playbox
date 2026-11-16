@@ -915,6 +915,11 @@ def make_handler(hub, auth, store, opts):
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
                 model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"))
+                gr = {g.get("member"): g for g in ((st.get("hosting") or {}).get("grants") or []) if isinstance(g, dict)}
+                for mm in model["members"]:
+                    g = gr.get(mm["id"])
+                    if g:       # the delegation, host to member: what the grant allows and until when (no tokens)
+                        mm["grant"] = {k: g.get(k) for k in ("issued", "expires", "invite", "cpu_milli", "mem_mib", "timeout_secs", "net", "allowed")}
                 model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
                               "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},

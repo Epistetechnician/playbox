@@ -3,7 +3,7 @@
 use crate::grants::{self, Authority, Caps};
 use crate::host::HostConfig;
 use crate::op_error::OpError;
-use crate::state::State;
+use crate::state::{Admit, State};
 use crate::sync::LockExt;
 use crate::wire::{self, Op};
 use crate::{
@@ -186,6 +186,20 @@ impl RoomHandler {
             &caps,
             self.cfg.steer.as_ref().map(|h| h.caps()),
         )?;
+        let now = grants::now_secs();
+        st.admits.insert(
+            from,
+            Admit {
+                issued: now,
+                expires: now + ttl,
+                invite: id.chars().take(8).collect(),
+                cpu_milli: caps.cpu_milli,
+                mem_mib: caps.mem_mib,
+                timeout_secs: caps.timeout_secs,
+                net: caps.net,
+                allowed: caps.hosts.clone(),
+            },
+        );
         st.members.insert(from, grant_id);
         st.save();
         Ok(

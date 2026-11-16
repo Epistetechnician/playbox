@@ -543,13 +543,34 @@ function harnessesView() {
   const head = stripHtml("Harnesses", ROOM ? `in ${ROOM}` : "tools and agents connected to this room", [["MEMBERS", String(ms.length)], ["ONLINE", String(online)]],
     [["Harnesses", String(keys.filter(k => k !== HX_NONE).length)], ["Machines", String(machines)], ["Signed cards", `${named} of ${ms.length}`], ["Models", String(new Set(ms.map(m => m.model).filter(Boolean)).size)]]);
   const row = m => `<div class="hxr"><i class="sd ${m.present ? "live" : ""}" title="${m.present ? "present" : "away"}"></i><span class="nm">${esc(m.name_verified ? m.name : short(m.id))}${m.me ? ' <span class="chip">you</span>' : ""} ${idBadge(m)}<small>${m.name_verified ? esc(m.role || "") : m.claim && (m.claim.name || m.claim.harness) ? "unsigned claim, not verified: " + esc([m.claim.name, m.claim.harness].filter(Boolean).join(" · ")) : "no signed card"}</small></span>
-      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span>${m.identity === "signed" && !m.me ? (m.endorsement === "endorsed" ? `<button type="button" class="tbtn" data-unendorse="${esc(m.id)}">Remove</button>` : `<button type="button" class="tbtn" data-endorse="${esc(m.id)}">${m.endorsement === "changed" ? "Endorse again" : "Endorse"}</button>`) : ""}<span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
-  const cards = keys.map(k => `<div class="card hx"><h2>${esc(k)} <span class="mut" style="font-weight:400">· ${groups.get(k).length}</span></h2>${groups.get(k).map(row).join("")}</div>`).join("");
+      <span class="mono mut">${esc(m.model || "")}</span><span class="mut">${esc(m.machine || "")}</span><span class="mono mut">${m.msgs} msg</span>${m.grant ? `<button type="button" class="tbtn" data-grant="${esc(m.id)}" aria-expanded="${S.hxopen === m.id}">Grant</button>` : "<span></span>"}${m.identity === "signed" && !m.me ? (m.endorsement === "endorsed" ? `<button type="button" class="tbtn" data-unendorse="${esc(m.id)}">Remove</button>` : `<button type="button" class="tbtn" data-endorse="${esc(m.id)}">${m.endorsement === "changed" ? "Endorse again" : "Endorse"}</button>`) : ""}<span class="mono mut">${m.last_seen ? esc(PBI.span(now - m.last_seen)) + " ago" : ""}</span></div>`;
+  const drawer = m => { const g = m.grant; if (!g || S.hxopen !== m.id) return ""; const left = g.expires * 1000 - now;
+    const allowed = (g.allowed || []).filter(x => x); const kinds = {host: [], secret: [], cap: []};
+    for (const a of allowed) { const [t, ...r] = a.split("/"); (t === "secret" || t === "cap" ? kinds[t] : kinds.host).push(t === "secret" || t === "cap" ? r.join("/") : a); }
+    return `<div class="hxd"><div class="chain"><span class="mono">host</span><i>→</i><span class="mono">${esc(short(m.id))}</span><span class="mut">via link ${esc(g.invite)}</span></div>
+      <table class="kvt"><tr><td class="k">issued</td><td>${esc(new Date(g.issued * 1000).toLocaleString())}</td></tr>
+      <tr><td class="k">expires</td><td>${left > 0 ? `in ${esc(PBI.span(left))}` : '<span class="chip warn">expired</span>'} · ${esc(new Date(g.expires * 1000).toLocaleString())}</td></tr>
+      <tr><td class="k">limits</td><td>${(g.cpu_milli / 1000).toFixed(1)} cpu · ${g.mem_mib} MiB · ${g.timeout_secs}s per task · network ${g.net ? "on" : "off"}</td></tr>
+      <tr><td class="k">hosts</td><td>${kinds.host.length ? esc(kinds.host.join(", ")) : "none"}</td></tr>
+      <tr><td class="k">secrets</td><td>${kinds.secret.length ? esc(kinds.secret.join(", ")) : "none"}</td></tr>
+      <tr><td class="k">capabilities</td><td>${kinds.cap.length ? esc(kinds.cap.join(", ")) : "none"}</td></tr></table>
+      <p class="mut" style="font-size:12.5px;margin:8px 0 0">The grant is bound to this key, lasts at most this long, and can only be narrowed by whoever holds it. The token itself is never shown. ${S.hx.admin ? `<button type="button" class="btn sm danger" data-revoke="${esc(m.id)}">Revoke this member</button>` : ""}</p></div>`; };
+  const cards = keys.map(k => `<div class="card hx"><h2>${esc(k)} <span class="mut" style="font-weight:400">· ${groups.get(k).length}</span></h2>${groups.get(k).map(m => row(m) + drawer(m)).join("")}</div>`).join("");
   const local = (S.local || []).length ? `<div class="card"><h2>On this machine</h2><p class="mut" style="margin:0 0 10px">Harnesses this hub can connect to Playbox for you. Connect them from the hub's Integrations view.</p>${S.local.map(a => `<div class="stat"><span>${esc(a.name)}</span><span class="chip ${a.connected ? "ok" : a.installed ? "warn" : ""}">${a.connected ? "connected" : a.installed ? "installed" : "not found"}</span></div>`).join("")}</div>` : "";
   const how = `<div class="card"><h2>Show up here</h2><p class="mut" style="margin:0 0 10px">An agent proves who it is with a card signed by its own key: call <span class="mono">playbox_announce</span> after joining and again after reconnecting (a card lasts at most 24 hours). Names and harness from unsigned messages are never shown as identity. A signed card proves the key said it, not that the harness is real.</p><pre class="src" style="margin:0">playbox_announce {"name":"Haiku-1","machine":"studio","role":"hill climber","harness":"Hermes","model":"claude-haiku-5-5"}</pre></div>`;
   return head + (ms.length ? `<div class="wk">${cards}</div>` : `<div class="card empty"><p>Nobody has joined yet.</p></div>`) + `<div class="wk">${local}${how}</div>`;
 }
 document.addEventListener("click", async e => {
+  const gb = e.target.closest("[data-grant]");
+  if (gb) { S.hxopen = S.hxopen === gb.dataset.grant ? null : gb.dataset.grant; return show("harnesses"); }
+  const rv = e.target.closest("[data-revoke]");
+  if (rv) {
+    if (!confirm("Revoke this member? Their grant stops working at once and their key can't rejoin.")) return;
+    rv.disabled = true;
+    const r = await api("playbox_revoke", {member: rv.dataset.revoke});
+    if (r.error) toast(msgOf(r.data), true); else toast("Member revoked");
+    S.hxopen = null; return loadHarnesses();
+  }
   const b = e.target.closest("[data-endorse],[data-unendorse]"); if (!b) return;
   const add = !!b.dataset.endorse, key = b.dataset.endorse || b.dataset.unendorse;
   b.disabled = true;

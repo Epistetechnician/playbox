@@ -9,32 +9,25 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
-- Hub: a room joined through ask-to-join that loses its access (hub or sidecar restart, or the grant ended) now asks its host again by itself, at most once every 15 minutes, using the invite id and key stored with the room. It shows in Attention as "waiting for the host to approve" with the verify code; the host still has to approve, and if the host's invite has expired or been withdrawn the room says so.
-- Tests: `ui/tests/smoke.py` drives a throwaway hub with headless Chrome (sign-in with a virtual passkey, Settings and a theme, Notes markdown safety, Research list and run); run in CI. `playbox secure`'s fixed battery now includes malformed-JSON requests, so the mutant tests no longer rely on one random request reaching the body parser.
+### Added
+- The host records how each member was admitted (when the grant was issued and runs out, which link, the limits and the hosts, secrets and capabilities it allows; never a token) and `playbox_status` shows it. The Harnesses tab gets a Grant button per member with the delegation (host to member), expiry and limits, and a Revoke button (passkey step-up). A new member joining a room where you endorse agents raises a quiet attention item.
+
+## [0.3.5] - 2026-11-16
 
 ### Added
 - Owner endorsement (Harnesses tab): vouch for one agent key in one room with a passkey touch. The endorsement is bound to the card's content, so a routine re-announce keeps it and any change to the name, machine, role, harness, model or public name breaks it: the agent shows "endorsed, card changed" and an urgent item asks you to look. Remove it the same way.
-
-### Added
-
 - Research view is data-driven: `scripts/gen_research.py` generates `ui/research/*.json` from `docs/benchmark.md` and the F3 pilot receipts (CI runs it with `--check`), and each run has a Samples tab (filterable table, then a collapsible step trail per sample).
 - Anchored comments: `::pbx comment {"on":"note:<id>|artifact:<id>|event:<seq>","text":...}` on the board model, a comment thread per note, a Comment button per timeline event, a Comments count in the room header, and a `/playbox:comment` command.
 - Canvas: a Harnesses panel (agents grouped by the harness and model they report, with machines and who is online), Research and Cockpit links in the top bar, phone reading view for drilled panels (they reflow to one narrow column instead of shrinking), higher-contrast small text in light mode and every theme, and larger tap targets on touch.
 - Settings > Notifications (Push, Alerts, Rooms): subscribe, unsubscribe and test push from Settings; the "unreachable for how long before it is urgent" threshold is now a hub setting (`/api/settings/notify`, passkey step-up to change; `PLAYBOX_DOWN_ALERT_S` stays the default); a room can be muted so it never sends a push while its items still show in Attention.
 - Approvals in the hub: a host's control socket now answers `calls`, `approve ID` and `deny ID`; the hub lists calls waiting for the owner in Attention (Approve / Deny) and in Settings > Safety > Approvals, with a passkey step-up and an audit entry per decision. Hosts on an older build simply list nothing.
 - Signed agent cards (`playbox_announce`): an agent introduces itself with a card signed by its own key, bound to the room and valid for at most 24 hours. The hub verifies it against the key the room says sent the message, shows `signed`, `card expired` or `unidentified` on the Harnesses tab, reports a refused card once, and records changes (a new harness or model under the same key) and names used by two keys.
+- A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
+- Notes and Work results render maths (KaTeX), coloured code (Shiki: python, rust, js, ts, shell, json, diff, lean, markdown, yaml, toml) and tables, with links sanitised by DOMPurify. The three libraries are vendored in `ui/static/vendor/` (licences in `LICENSES.md`), served by the hub itself, and load only when a note needs them. A strict markdown module (`markdown.js`) also renders text that is still arriving: an open code fence or `$$` block stays as plain text. Images from other sites are never fetched.
+- A Research view in the hub: experiments as runs (list, then Overview, Results, Usage, Timeline, Config and JSON tabs, in the style of a log viewer). It ships the room-vs-silos benchmark and the F3 H100 pilot; add a run by dropping a JSON file in `ui/research/`.
 
 ### Changed
 - A plain `::pbx agent` message no longer makes an identity: it is shown only as an unsigned claim beside an unidentified member. Agents should call `playbox_announce`.
-
-### Added
-- A full Settings screen (⌘, or Ctrl+,; the gear in the top strip; the Hub tab; the status bar; the command palette): a searchable tree with a breadcrumb. Appearance (theme, accent, typography, layout, custom CSS, import and export, reset), Interface (rooms sidebar, status bar, landing view, 24-hour clock, reduced motion), Hub (devices, sessions, network), Safety (posture), keyboard shortcuts and About. Appearance and Interface settings are kept in the browser; device and session changes go through the hub with the usual passkey step-up.
-
-### Added
-- Notes and Work results render maths (KaTeX), coloured code (Shiki: python, rust, js, ts, shell, json, diff, lean, markdown, yaml, toml) and tables, with links sanitised by DOMPurify. The three libraries are vendored in `ui/static/vendor/` (licences in `LICENSES.md`), served by the hub itself, and load only when a note needs them. A strict markdown module (`markdown.js`) also renders text that is still arriving: an open code fence or `$$` block stays as plain text. Images from other sites are never fetched.
-
-### Added
-- A Research view in the hub: experiments as runs (list, then Overview, Results, Usage, Timeline, Config and JSON tabs, in the style of a log viewer). It ships the room-vs-silos benchmark and the F3 H100 pilot; add a run by dropping a JSON file in `ui/research/`.
 
 ## [0.3.4] - 2026-11-15
 

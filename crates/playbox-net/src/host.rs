@@ -5,7 +5,7 @@ use crate::grants::Authority;
 use crate::handler::RoomHandler;
 use crate::keys::load_or_create_seed;
 use crate::link::{Link, LinkOpts};
-use crate::state::{Invite, State};
+use crate::state::{Admit, Invite, State};
 use crate::sync::LockExt;
 use crate::{
     audit, browse, capabilities, chat, conversations, latent, limits, revoke, shared_memory, steer,
@@ -557,6 +557,13 @@ impl Host {
         ids.sort();
         ids.insert(0, "host".into());
         self.audit.chat.since(since, 200, &ids)
+    }
+
+    /// How each member was admitted: who holds which grant, with what limits, until when. No tokens.
+    #[must_use]
+    pub fn admissions(&self) -> Vec<(EndpointId, Admit)> {
+        let st = self.state.lock_recover();
+        st.admits.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
     /// # Panics

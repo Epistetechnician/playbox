@@ -33,6 +33,7 @@ pub use host::{Host, HostConfig};
 pub use keys::{identity_key, new_secret_key, random_bytes};
 pub use link::{decode_peer, encode_peer, key_for_link, Link, LinkOpts};
 pub use revoke::{Notice, SYNC_ALPN};
+pub use state::Admit;
 pub(crate) use state::{write_atomic, State};
 pub use transport::{Transport, TransportChoice};
 
