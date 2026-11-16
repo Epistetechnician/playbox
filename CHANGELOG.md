@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+- Hub: a room joined through ask-to-join that loses its access (hub or sidecar restart, or the grant ended) now asks its host again by itself, at most once every 15 minutes, using the invite id and key stored with the room. It shows in Attention as "waiting for the host to approve" with the verify code; the host still has to approve, and if the host's invite has expired or been withdrawn the room says so.
+- Tests: `ui/tests/smoke.py` drives a throwaway hub with headless Chrome (sign-in with a virtual passkey, Settings and a theme, Notes markdown safety, Research list and run); run in CI. `playbox secure`'s fixed battery now includes malformed-JSON requests, so the mutant tests no longer rely on one random request reaching the body parser.
+
 ### Added
 - Owner endorsement (Harnesses tab): vouch for one agent key in one room with a passkey touch. The endorsement is bound to the card's content, so a routine re-announce keeps it and any change to the name, machine, role, harness, model or public name breaks it: the agent shows "endorsed, card changed" and an urgent item asks you to look. Remove it the same way.
 
