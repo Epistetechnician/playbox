@@ -621,6 +621,8 @@ def make_handler(hub, auth, store, opts):
                     store.save()
                 hub.wake.set()
                 hub.sec.add("join", f'Adopted the room "{label}" hosted on this machine', "ok", room.id)
+                if hasattr(hub, "local_cache"):
+                    hub.local_cache["at"] = 0.0          # the "new room on this machine" item goes away at once
                 return self.j(200, {"room": room.digest, "id": room.id})
             if m == "POST" and p == "/api/rooms":
                 b = self.body()
@@ -1292,6 +1294,20 @@ def main(argv=None):
     hub.sec = SecLog(hub.bus)
     hub.approvals = approvals
     hub.extra_attention.append(approval_attention)
+    lcache = {"at": 0.0, "v": []}
+
+    def local_room_attention():
+        """Rooms hosted on this machine that the hub has not adopted: offered automatically, never joined without a passkey touch."""
+        if time.time() - lcache["at"] > 2:
+            try:
+                have = {r.rec.get("adopted_host") for r in hub.rooms.values()}
+                lcache.update(at=time.time(), v=[h for h in local_hosts() if h["id"] not in have])
+            except Exception:  # noqa: BLE001  (a listing hiccup must not break the attention feed)
+                lcache.update(at=time.time(), v=[])
+        return [{"id": f"local:{h['id']}", "room": None, "kind": "local_room", "urgent": False, "hid": h["id"], "name": h["name"], "repo": h.get("repo"),
+                 "title": f"New room on this machine: {h['name']}", "body": "Adopt it to watch and join it from here (needs your passkey)."} for h in lcache["v"]]
+    hub.extra_attention.append(local_room_attention)
+    hub.local_cache = lcache
     hub.sec.add("edge", "Hub started" + (" behind Cloudflare Access" if (team and aud) else " (no Cloudflare Access in front)" if cloud else " on this machine only"), "ok" if (team and aud) or not cloud else "bad")
     hub.knocks = Knocks(store)
     hub.outgoing = Outgoing(hub, store)
