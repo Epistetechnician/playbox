@@ -1145,6 +1145,9 @@ def test_housekeeping():
     dig.update(err=None, needs_invite=False, identity_alerts=[{"key": "ab" * 32, "name": "Ada"}])
     idc = [x for x in hub.attention() if x["kind"] == "identity"]
     check("alerts: an endorsed agent that changed its card is an urgent item", len(idc) == 1 and idc[0]["urgent"] and "Ada" in idc[0]["title"])
+    dig.update(identity_alerts=[], newcomers=["cd" * 32])
+    nc = [x for x in hub.attention() if x["kind"] == "newcomer"]
+    check("alerts: a new member in a room with endorsed agents is a quiet item, not an alarm", len(nc) == 1 and not nc[0]["urgent"])
 
 
 def test_tunnel_keeper():

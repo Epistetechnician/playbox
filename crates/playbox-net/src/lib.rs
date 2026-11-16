@@ -249,8 +249,27 @@ struct Invite {
     bound_to: Option<EndpointId>,
 }
 
+/// What the host knows about how a member got in: the delegation, host to member. Not secret (no token), kept so the hub can show who holds
+/// what and until when. A member admitted before this was recorded has none.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Admit {
+    /// When the grant was issued, and when it runs out (seconds since the epoch).
+    pub issued: i64,
+    pub expires: i64,
+    /// The first 8 characters of the invite's id, enough to tell which link was used. Never the invite itself.
+    pub invite: String,
+    pub cpu_milli: i64,
+    pub mem_mib: i64,
+    pub timeout_secs: i64,
+    pub net: bool,
+    /// The hosts, secrets (`secret/NAME`) and capabilities (`cap/NAME`) the grant allows.
+    pub allowed: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 struct State {
+    /// How each member was admitted (see [`Admit`]).
+    admits: HashMap<EndpointId, Admit>,
     /// Unspent invites by id.
     invites: HashMap<String, Invite>,
     /// Members and the id of the grant issued to each.
@@ -279,6 +298,8 @@ struct Saved {
     banned: Vec<String>,
     #[serde(default)]
     notices: Vec<String>,
+    #[serde(default)]
+    admits: HashMap<String, Admit>,
 }
 
 impl State {
@@ -306,6 +327,9 @@ impl State {
                     bound_to,
                 },
             );
+        }
+        for (m, a) in saved.admits {
+            st.admits.insert(id(&m)?, a);
         }
         for (m, g) in saved.members {
             st.members.insert(id(&m)?, g);
@@ -341,6 +365,11 @@ impl State {
             revoked: self.revoked.iter().cloned().collect(),
             banned: self.banned.iter().map(ToString::to_string).collect(),
             notices: self.notices.values().cloned().collect(),
+            admits: self
+                .admits
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
         };
         let result = serde_json::to_vec_pretty(&saved)
             .map_err(anyhow::Error::from)
@@ -655,6 +684,20 @@ impl RoomHandler {
             &caps,
             self.cfg.steer.as_ref().map(|h| h.caps()),
         )?;
+        let now = grants::now_secs();
+        st.admits.insert(
+            from,
+            Admit {
+                issued: now,
+                expires: now + ttl,
+                invite: id.chars().take(8).collect(),
+                cpu_milli: caps.cpu_milli,
+                mem_mib: caps.mem_mib,
+                timeout_secs: caps.timeout_secs,
+                net: caps.net,
+                allowed: caps.hosts.clone(),
+            },
+        );
         st.members.insert(from, grant_id);
         st.save();
         Ok(
@@ -2040,6 +2083,13 @@ impl Host {
     ///
     /// Panics if the internal lock is poisoned, which only happens after another thread panicked while holding it.
     #[must_use]
+    /// How each member was admitted: who holds which grant, with what limits, until when. No tokens.
+    #[must_use]
+    pub fn admissions(&self) -> Vec<(EndpointId, Admit)> {
+        let st = self.state.lock().expect("state lock");
+        st.admits.iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
     pub fn members(&self) -> Vec<EndpointId> {
         self.state
             .lock()
@@ -3287,6 +3337,39 @@ mod say_retry_tests {
         assert_eq!(texts, ["one", "two"]);
         // A refusal from the host is final and not retried: an empty message says nothing and costs no extra posts.
         assert!(b.say("   ", None).await.is_err());
+        host.shutdown().await.unwrap();
+    }
+
+    /// The host records how each member got in (limits and expiry, never a token) so the hub can show the delegation.
+    #[tokio::test]
+    async fn the_host_records_how_each_member_was_admitted() {
+        let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
+            .await
+            .unwrap();
+        let link = host
+            .create_link(Duration::from_secs(60), 1)
+            .unwrap()
+            .encode();
+        let guest = join_link(&link, new_secret_key().unwrap(), true)
+            .await
+            .unwrap();
+        let got = host.admissions();
+        assert_eq!(got.len(), 1);
+        let (id, a) = &got[0];
+        assert_eq!(id.to_string(), guest.id().to_string());
+        let now = grants::now_secs();
+        assert!(a.issued <= now && a.issued > now - 30, "issued just now");
+        assert_eq!(
+            a.expires - a.issued,
+            3600,
+            "the default grant lasts an hour"
+        );
+        assert_eq!(a.invite.len(), 8);
+        assert!(!a.net, "no network unless the room allows it");
+        assert!(
+            !link.contains(&a.invite) || a.invite.len() < link.len(),
+            "only a short tag of the invite is kept"
+        );
         host.shutdown().await.unwrap();
     }
 

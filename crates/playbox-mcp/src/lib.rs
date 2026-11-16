@@ -1314,6 +1314,9 @@ impl Server {
             json!({
                 "repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
                 "members": h.members().iter().map(ToString::to_string).collect::<Vec<_>>(),
+                // The delegation, host to member: what each grant allows and until when. No tokens, no invites.
+                "grants": h.admissions().iter().map(|(k, a)| json!({"member": k.to_string(), "issued": a.issued, "expires": a.expires, "invite": a.invite,
+                    "cpu_milli": a.cpu_milli, "mem_mib": a.mem_mib, "timeout_secs": a.timeout_secs, "net": a.net, "allowed": a.allowed})).collect::<Vec<_>>(),
                 "replica": self.is_replica,
                 "host_id": h.endpoint_id().to_string(),
                 "revocations": h.revocation_notices().len(),

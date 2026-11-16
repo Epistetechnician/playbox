@@ -81,6 +81,7 @@ class Room:
         self.seq = 0               # poller cursor in the room feed
         self.host_id = None        # the room's host id: signed identity cards are bound to it
         self.idalerts = {}         # key -> name: an endorsed agent whose card changed since you endorsed it
+        self.newcomers = {}        # key -> when: joined a room that has endorsed agents
         self.buckets = {}          # 5-minute bucket -> message count, feeds the sparkline
         self.newsays = []          # drained by the hub into the cross-room activity feed
         self.primed = False        # history that predates the hub is not "unread"
@@ -272,6 +273,9 @@ class Room:
                             self.notes.append(event_note(str(i.get("text", "")), str(i.get("from", ""))))
                 for i in items:
                     t = i.get("text")
+                    if self.primed and i.get("kind") == "event" and str(t).lower() == "join ok" and self.rec.get("endorsed") and i.get("from") not in self.rec["endorsed"]:
+                        self.newcomers[i.get("from")] = time.time()          # someone new in a room where you vouch for agents: worth a look, not an alarm
+                        self.notes.append(("join", f'A new member ({str(i.get("from"))[:6]}) joined a room where you endorse agents', "warn"))
                     if i.get("kind") == "say" and isinstance(t, str) and t.startswith(idcard.PREFIX) and self.rec.get("endorsed"):
                         snd = self.host_id if i.get("from") == "host" else i.get("from")
                         try:
@@ -331,6 +335,7 @@ class Room:
         self.hold_ids = ids
         d["archived"] = self.archive.info()["items"]
         d["identity_alerts"] = [{"key": k, "name": n} for k, n in self.idalerts.items()]
+        d["newcomers"] = [k for k, t in self.newcomers.items() if time.time() - t < 3600]
         d["offline"] = bool(d["mode"] != "none" and feed_failed and d["archived"])
         recent = d["last"] and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
         d["state"] = ("hold" if d["holds"] else "empty" if d["mode"] == "none" else "bad" if d["chain"] and not d["chain"]["ok"]
@@ -448,6 +453,9 @@ class Hub:
             for al in d.get("identity_alerts") or []:
                 items.append({"id": f"idchg:{d['id']}:{al['key'][:12]}", "room": d["id"], "kind": "identity", "urgent": True, "title": f"{al['name']} changed its identity card in {lab}",
                               "body": "you had endorsed it; review the change and endorse again"})
+            if d.get("newcomers"):
+                items.append({"id": f"new:{d['id']}:{len(d['newcomers'])}", "room": d["id"], "kind": "newcomer", "urgent": False, "title": f"New member in {lab}",
+                              "body": f"{len(d['newcomers'])} joined recently in a room where you endorse agents"})
             if d.get("needs_invite") and not self.rejoining(d["id"]):
                 items.append({"id": f"invite:{d['id']}", "room": d["id"], "kind": "invite", "urgent": False, "title": f"{lab} needs a new invite", "body": "your access ran out; ask the host"})
             bad = bool(d.get("err")) and not d.get("needs_invite") and (d["state"] == "down" or d.get("offline"))
