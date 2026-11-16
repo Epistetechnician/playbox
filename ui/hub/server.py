@@ -994,6 +994,18 @@ def make_handler(hub, auth, store, opts):
                 # minting a join link (playbox_create) or running a command on the host (playbox_delegate) is as strong as an invite: same passkey touch
                 if (name in SENSITIVE_TOOLS or (name == "playbox_create" and not args.get("replica_of"))) and not self.need_fresh(rec):
                     return
+                if name == "playbox_revoke" and room.rec.get("adopted_host"):
+                    # This hub is a guest of that host, so it cannot revoke itself: ask the host over its private control socket (the same action as the host's console).
+                    mid = str(args.get("member", ""))
+                    if not re.fullmatch(r"[0-9a-f]{64}", mid):
+                        return self.j(400, {"error": True, "data": "that is not a member id"})
+                    try:
+                        reply = ask_host(hosting_dir() / f'{room.rec["adopted_host"]}.sock', f"revoke {mid}")
+                    except OSError as e:
+                        return self.j(502, {"error": True, "data": f"the room's host did not answer: {e}"})
+                    hub.sec.add("auth", f"You revoked member {mid[:6]} in {room.rec.get('label', 'a room')}" if reply.startswith("ok") else f"Revoke refused by the host: {reply[:80]}", "warn" if reply.startswith("ok") else "info", room.id)
+                    hub.wake.set()
+                    return self.j(200 if reply.startswith("ok") else 409, {"error": not reply.startswith("ok"), "data": reply})
                 err, data = sc.call(name, args, wait=3 if (b.get("poll") or name == "playbox_feed") else None, timeout=8 if name == "playbox_feed" else None)
                 if name == "playbox_feed":
                     if not err and isinstance(data, dict):

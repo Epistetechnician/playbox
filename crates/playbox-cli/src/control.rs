@@ -4,6 +4,7 @@
 //!
 //! The socket speaks one line each way: `ping` answers `ok`; `link [GUEST ID]` answers a fresh single-use join link (or `error: ...`);
 //! `calls` answers a JSON list of calls waiting for owner approval; `approve ID` / `deny ID` (ID is `member/id` or the call id) decide one (`ok ...` or `error: ...`).
+//! `members` answers a JSON list of member ids; `revoke MEMBER ID` revokes that member's grant and bars the key, like the console's `revoke`.
 //! The record never holds a link or a key. Both files are removed when the host stops; a record whose socket does not answer is stale.
 
 use anyhow::{Context, Result};
@@ -62,9 +63,14 @@ pub fn publish(
             .to_string_lossy()
             .into_owned()
     };
-    let name = state
-        .file_name()
-        .map_or_else(|| "room".to_string(), |n| n.to_string_lossy().into_owned());
+    // A state directory is usually called `state` inside a folder named after the room (`~/.playbox-rooms/gpu-lab/state`): name the room after the folder.
+    let leaf = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned());
+    let abs_state = std::fs::canonicalize(state).unwrap_or_else(|_| state.to_path_buf());
+    let name = match leaf(&abs_state) {
+        Some(n) if n == "state" => abs_state.parent().and_then(leaf).unwrap_or(n),
+        Some(n) => n,
+        None => "room".to_string(),
+    };
     let started_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64);
@@ -133,7 +139,18 @@ pub async fn serve(
                     Err(e) => format!("error: {e:#}").replace('\n', " "),
                 }
             }
-            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID".to_string(),
+            (Some("members"), _) => {
+                // Who is in the room, as the host sees it: the ids `revoke` takes.
+                let list: Vec<String> = host.members().iter().map(ToString::to_string).collect();
+                serde_json::json!(list).to_string()
+            }
+            (Some("revoke"), Some(id)) => match id.parse::<playbox_net::EndpointId>() {
+                // The same action as `revoke` in the host console: the socket is private to this user, as the console is.
+                Ok(id) if host.revoke_member(&id) => format!("ok revoked {id}"),
+                Ok(_) => "error: not a current member".to_string(),
+                Err(e) => format!("error: not a member id: {e}"),
+            },
+            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID | members | revoke MEMBER ID".to_string(),
         };
         let _ = wr.write_all(format!("{reply}\n").as_bytes()).await;
     }

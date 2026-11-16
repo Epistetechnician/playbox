@@ -9,6 +9,12 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- A running host's control socket answers `members` and `revoke MEMBER ID` (the same action as the console's `revoke`; the socket is private to the user), so a host started as a service can have a member removed. In the hub, Revoke on an adopted room goes through it (passkey step-up).
+
+### Fixed
+- A host whose state directory is called `state` is named after the folder around it (`~/.playbox-rooms/gpu-lab/state` is `gpu-lab`), not `state`, in the hub's list of hosted rooms.
+
 ## [0.3.6] - 2026-11-16
 
 ### Added

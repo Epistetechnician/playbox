@@ -46,7 +46,11 @@ fn a_host_publishes_itself_and_mints_links_for_the_hub() {
     };
     let rec: serde_json::Value = serde_json::from_slice(&std::fs::read(&record).unwrap()).unwrap();
     let sock = std::path::PathBuf::from(rec["sock"].as_str().unwrap());
-    assert_eq!(rec["name"], "state");
+    assert_eq!(
+        rec["name"],
+        d.file_name().unwrap().to_string_lossy().as_ref(),
+        "a state directory called `state` names the room after its folder"
+    );
     assert_eq!(rec["id"].as_str().unwrap().len(), 16);
     assert!(
         !std::fs::read_to_string(&record)
@@ -76,6 +80,17 @@ fn a_host_publishes_itself_and_mints_links_for_the_hub() {
     assert!(ask(&sock, "approve nope").starts_with("error:"));
     assert!(ask(&sock, "deny nope").starts_with("error:"));
     assert!(ask(&sock, "approve").starts_with("error:"));
+    assert_eq!(ask(&sock, "members"), "[]", "nobody has joined");
+    assert!(ask(&sock, "revoke").starts_with("error:"));
+    assert!(ask(&sock, "revoke not-an-id").starts_with("error:"));
+    // A well-formed key that never joined (the public key of the all-zero seed).
+    assert_eq!(
+        ask(
+            &sock,
+            "revoke 3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+        ),
+        "error: not a current member"
+    );
     assert!(ask(&sock, "rm -rf /").starts_with("error:"));
     writeln!(host.stdin.as_mut().unwrap(), "quit").unwrap();
     let _ = host.wait();
