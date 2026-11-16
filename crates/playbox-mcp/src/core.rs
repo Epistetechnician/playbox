@@ -146,6 +146,22 @@ impl Server {
     }
 
     /// Handle one JSON-RPC message. Returns the response, or `None` for notifications.
+    /// Join the room named by the file in `PLAYBOX_JOIN_LINK_FILE`, if that is set (`playbox launch` sets it). A failure is reported on stderr
+    /// and leaves the server not joined, so the agent can still call `playbox_join` itself.
+    pub async fn join_from_env(&mut self) {
+        let Some(path) = std::env::var_os("PLAYBOX_JOIN_LINK_FILE") else {
+            return;
+        };
+        let args = json!({"link_file": path.to_string_lossy()});
+        match tokio::time::timeout(std::time::Duration::from_secs(30), self.join(&args)).await {
+            Ok(Ok(_)) => eprintln!("joined the room from PLAYBOX_JOIN_LINK_FILE"),
+            Ok(Err(e)) => eprintln!("PLAYBOX_JOIN_LINK_FILE: not joined: {e:#}"),
+            Err(_) => eprintln!(
+                "PLAYBOX_JOIN_LINK_FILE: not joined: the host did not answer in 30 seconds"
+            ),
+        }
+    }
+
     pub async fn handle(&mut self, msg: Value) -> Option<Value> {
         let id = msg.get("id").cloned();
         let method = msg

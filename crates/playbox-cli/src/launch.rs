@@ -103,8 +103,12 @@ fn record_when_joined(
     harness: &str,
     model: &str,
     image: &str,
+    stop: &std::sync::atomic::AtomicBool,
 ) -> Result<()> {
     for _ in 0..300 {
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+            bail!("stopped");
+        }
         let members = ask(sock, "members")?;
         if members.contains(id) {
             let line = format!("launch {id} {harness} {model} {image}");
@@ -184,14 +188,19 @@ pub async fn launch(a: LaunchArgs) -> Result<()> {
         model.clone(),
         image.clone(),
     );
-    let rec = tokio::task::spawn_blocking(move || record_when_joined(&s2, &id2, &h2, &m2, &i2));
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop2 = stop.clone();
+    let rec =
+        tokio::task::spawn_blocking(move || record_when_joined(&s2, &id2, &h2, &m2, &i2, &stop2));
     let status = child.wait().await?;
-    if rec.is_finished() {
-        if let Ok(Err(e)) = rec.await {
-            eprintln!("warning: {e:#}");
+    // A short agent can exit before the next poll sees it as a member: give the record a moment.
+    match tokio::time::timeout(Duration::from_secs(5), rec).await {
+        Ok(Ok(Err(e))) => eprintln!("warning: {e:#}"),
+        Ok(_) => {}
+        Err(_) => {
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            eprintln!("the agent exited before it joined, so no launch record was made");
         }
-    } else {
-        eprintln!("the agent exited before it joined, so no launch record was made");
     }
     if !status.success() {
         bail!("{cmd} exited with {status}");

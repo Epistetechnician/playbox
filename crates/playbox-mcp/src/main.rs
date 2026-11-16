@@ -11,6 +11,7 @@ async fn main() -> anyhow::Result<()> {
         env!("CARGO_PKG_VERSION"),
         server.log_path().display()
     );
+    server.join_from_env().await;
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut out = tokio::io::stdout();
     // With live delivery on, new room messages are pushed between requests; otherwise this never ticks.

@@ -9,6 +9,12 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- `playbox-mcp` joins by itself when `PLAYBOX_JOIN_LINK_FILE` names a link file (`playbox launch` sets it), so a launched harness is in the room as soon as its sidecar starts; a failed join is reported on stderr and the agent can still call `playbox_join`.
+
+### Fixed
+- `playbox launch` waits a few seconds for the launch record after a short-lived agent exits instead of giving up on the next poll.
+
 ## [0.3.13] - 2026-11-16
 
 ### Added

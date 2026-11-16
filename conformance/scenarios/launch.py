@@ -1,6 +1,7 @@
 """`playbox launch`: the host's owner starts an agent with a key the host knows in advance; the host signs a record naming that key and file."""
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -27,10 +28,16 @@ def run(ctx):
         rid = recs[0][:-5][:8]
         ghome = ctx.dir("agent-home")
         pb = exe("playbox")
-        child = f'{pb} join "$(cat "$PLAYBOX_JOIN_LINK_FILE")" --local; true'
+        # The agent here is a bare sidecar: it joins by itself from PLAYBOX_JOIN_LINK_FILE and reports its own status.
+        mcp = exe("playbox-mcp")
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}}
+        stat = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "playbox_status", "arguments": {}}}
+        child = "printf '%s\\n' " + shlex.quote(json.dumps(init)) + " " + shlex.quote(json.dumps(stat)) + " | " + shlex.quote(mcp)
         r = subprocess.run([pb, "launch", "--room", rid, "--harness", "Conformance Harness", "--model", "m1", "--", "sh", "-c", child],
                            env={**env, "PLAYBOX_HOME": str(ghome)}, capture_output=True, text=True, timeout=120)
         assert "launch recorded" in r.stderr, (r.stdout, r.stderr)
+        assert "joined the room from PLAYBOX_JOIN_LINK_FILE" in r.stderr, r.stderr
+        assert '\\"member_id\\"' in r.stdout, r.stdout   # the sidecar's own status says it is joined
         homes = list((ghome / "launched").iterdir())
         assert len(homes) == 1, homes
         me = subprocess.run([pb, "id"], env={**env, "PLAYBOX_HOME": str(homes[0])}, capture_output=True, text=True).stdout.strip()

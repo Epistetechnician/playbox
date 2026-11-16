@@ -115,6 +115,7 @@ A card is canonical JSON:
 
 - When a host launches an agent (a sandboxed task, a managed runner), it signs `{key, room, harness, model, image hash, started}`. That is the only evidence the UI may label "host-observed harness" or "host-observed model".
 - Self-reported harness and model stay labelled "claimed" everywhere, including in the card badge and in exports. The UI has no way to show a harness as verified without a launch record.
+- The launched agent's `playbox-mcp` joins on its own from `PLAYBOX_JOIN_LINK_FILE`, so the key the host made is the key that is in the room.
 - The record says who started the process and which file ran, not that the file is the harness it is named after or what it does later. A harness launched through a wrapper script is recorded as the script.
 - Agents started outside the host (a friend's own machine) have no launch record; they show "claimed" and that is correct.
 - **Acceptance:** a card claiming a harness with no launch record never shows "observed"; a launch record for another key or room is ignored.
