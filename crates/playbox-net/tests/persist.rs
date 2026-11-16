@@ -135,3 +135,16 @@ async fn secrets_are_private_and_corrupt_state_is_refused() {
         .expect("corrupt");
     assert!(msg(err).contains("corrupt"));
 }
+
+#[tokio::test]
+async fn a_second_host_on_the_same_directory_is_refused() {
+    let d = dir("lock");
+    let host = open(&d).await;
+    let err = Host::open(&d, Transport::Local, HostConfig::default())
+        .await
+        .err()
+        .expect("locked");
+    assert!(msg(err).contains("in use by another host"));
+    host.shutdown().await.unwrap();
+    open(&d).await.shutdown().await.unwrap();
+}

@@ -152,6 +152,30 @@ pub struct Host {
     repl: Arc<revoke::Replication>,
     memory: Option<Arc<shared_memory::SharedMemory>>,
     caps: Arc<capabilities::Engine>,
+    /// Holds the exclusive lock on `<state dir>/host.lock` for as long as the host lives.
+    _dir_lock: Option<std::fs::File>,
+}
+
+/// Take the state directory's exclusive lock, or say that another host has it. The OS drops the lock
+/// when the process exits, so a crashed host never blocks its restart.
+fn lock_dir(dir: &std::path::Path) -> Result<std::fs::File> {
+    let path = dir.join("host.lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .with_context(|| format!("opening {}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => bail!(
+            "state directory {} is in use by another host",
+            dir.display()
+        ),
+        Err(std::fs::TryLockError::Error(e)) => {
+            Err(e).with_context(|| format!("locking {}", path.display()))
+        }
+    }
 }
 
 impl Host {
@@ -188,6 +212,7 @@ impl Host {
         cfg: HostConfig,
     ) -> Result<Self> {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        let lock = lock_dir(dir)?;
         let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
         let root_seed = load_or_create_seed(&dir.join("root.key"))?;
         let state = State::load(&dir.join("state.json"))?;
@@ -201,7 +226,10 @@ impl Host {
         cfg.conversations_store
             .get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
-        Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await
+        let mut host =
+            Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await?;
+        host._dir_lock = Some(lock);
+        Ok(host)
     }
 
     /// Start a **replica**: another host of an existing room. It knows the room's root *public* key,
@@ -219,6 +247,7 @@ impl Host {
         root_public: [u8; 32],
     ) -> Result<Self> {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        let lock = lock_dir(dir)?;
         let secret = SecretKey::from_bytes(&load_or_create_seed(&dir.join("endpoint.key"))?);
         let state = State::load(&dir.join("state.json"))?;
         let mut cfg = cfg;
@@ -231,14 +260,16 @@ impl Host {
         cfg.conversations_store
             .get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
-        Self::build(
+        let mut host = Self::build(
             secret,
             transport.into(),
             cfg,
             Root::Verifier(root_public),
             state,
         )
-        .await
+        .await?;
+        host._dir_lock = Some(lock);
+        Ok(host)
     }
 
     async fn build(
@@ -412,6 +443,7 @@ impl Host {
             repl,
             memory,
             caps,
+            _dir_lock: None,
         })
     }
 
