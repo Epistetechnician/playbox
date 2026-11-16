@@ -122,3 +122,19 @@ async fn a_loopback_only_host_still_serves_its_room() {
     a.close().await;
     host.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn host_refuses_runner_below_min_isolation() {
+    let cfg = HostConfig {
+        runner: Some(std::sync::Arc::new(playbox_runner::DockerRunner::default())),
+        min_isolation: playbox_runner::Isolation::MicroVm,
+        ..Default::default()
+    };
+    let err = Host::start_with(new_secret_key().unwrap(), true, cfg)
+        .await
+        .err()
+        .expect("container runner must be refused when min_isolation is MicroVm");
+    let msg = err.to_string();
+    assert!(msg.contains("Container"), "unexpected error: {msg}");
+    assert!(msg.contains("MicroVm"), "unexpected error: {msg}");
+}
