@@ -9,6 +9,14 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-11-17
+
+### Added
+- Playbox Desktop (macOS Apple silicon): a menu-bar app that supervises the hub, with a window, a tray status, sign-in without a passkey on this machine only, and "Open in browser" for passkeys. It updates itself from signed releases, checked with the same pinned key as `playbox update`. First launch needs right-click, Open (not notarized yet).
+
+### Fixed
+- Desktop: the app started no hub when its folder was reached through a symlink (for example under `/tmp`), because the toolkit reports no resource folder there. It now finds its own resources, and every hub start, failure and retry is recorded in `desktop.log`.
+
 ## [0.3.15] - 2026-11-17
 
 ### Added
