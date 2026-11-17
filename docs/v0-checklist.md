@@ -14,7 +14,7 @@ Legend: [x] done, [~] partly, [ ] open. Boxes last checked against the code and 
 - [x] Isolation level is part of the host's attested policy measurement.
 - [~] Pin images by digest; reject tags in production mode. The allowlist accepts `name@sha256:...` entries (`SandboxPolicy`), but tags are still accepted and there is no production mode.
 - [~] Rootless Docker / seccomp profile; gVisor (`runsc`) as an `Isolation::Container+` backend. Done for the libkrun helper on Linux only (`up --confine`: rootless jail, cgroup, network filter, syscall deny-list; tested in CI, not around a real guest). Docker has no custom seccomp profile and there is no gVisor backend.
-- [ ] CLI/MCP flags for `--image` allowlist and `--min-isolation`. Neither flag exists; `up` and `playbox_create` take only the runtime, and the image allowlist is the default (`alpine:3`), plus the steering engine image when steering is on.
+- [~] CLI/MCP flags for `--image` allowlist and `--min-isolation`. CLI `up` has `--allow-image` and `--min-isolation container|microvm|confidential`; MCP `playbox_create` still takes only the runtime, with the default image allowlist (`alpine:3`, plus the steering engine image when steering is on) and default `Container` isolation.
 - [x] libkrun microVM backend (`Isolation::MicroVm`): `up --runtime libkrun`, run for real on a Mac ([tested-on.md](tested-on.md)); not on Linux/KVM.
 
 ### Adding a sandbox backend

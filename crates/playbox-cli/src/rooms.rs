@@ -1,8 +1,8 @@
-use crate::cli::{JoinArgs, TransportArgs, UpArgs};
+use crate::cli::{JoinArgs, MinIsolation, TransportArgs, UpArgs};
 use anyhow::{bail, Context, Result};
 use playbox_core::{attest, platform, store};
 use playbox_net::{join_link, new_secret_key, Host, HostConfig, Transport, TransportChoice};
-use playbox_runner::{runner_with, RunnerOptions, SandboxPolicy, TaskSpec};
+use playbox_runner::{runner_with, Isolation, RunnerOptions, SandboxPolicy, TaskSpec};
 use std::{path::PathBuf, time::Duration};
 
 pub fn chosen(t: &TransportArgs) -> Result<Transport> {
@@ -30,6 +30,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
         .runtime
         .clone()
         .or_else(|| a.docker.then(|| "docker".to_string()));
+    let min_isolation = resolve_min_isolation(a.min_isolation, runtime.as_deref())?;
     let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> =
         platform::detect(&store::home())
             .map_err(anyhow::Error::msg)?
@@ -78,6 +79,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
         runner.as_ref().is_some_and(|r| r.enforces_host_list()),
     )?;
     let cfg = HostConfig {
+        min_isolation,
         // A host with a state directory logs into it; one without logs to stderr, so activity is never invisible.
         audit_log: a
             .audit_log
@@ -541,12 +543,30 @@ fn check_allowed_secrets(
     Ok(())
 }
 
+impl From<MinIsolation> for Isolation {
+    fn from(m: MinIsolation) -> Self {
+        match m {
+            MinIsolation::Container => Self::Container,
+            MinIsolation::MicroVm => Self::MicroVm,
+            MinIsolation::Confidential => Self::ConfidentialVm,
+        }
+    }
+}
+
+fn resolve_min_isolation(min: MinIsolation, runtime: Option<&str>) -> Result<Isolation> {
+    let isolation = Isolation::from(min);
+    if isolation > Isolation::Container && runtime.is_none() {
+        bail!("--min-isolation requires --runtime or --docker when set above container");
+    }
+    Ok(isolation)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{check_allowed_secrets, check_flags};
-    use crate::cli::{Cli, Cmd, UpArgs};
+    use super::{check_allowed_secrets, check_flags, resolve_min_isolation};
+    use crate::cli::{Cli, Cmd, MinIsolation, UpArgs};
     use clap::Parser;
-    use playbox_runner::secrets::SecretStore;
+    use playbox_runner::{secrets::SecretStore, Isolation};
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
     #[test]
@@ -656,5 +676,36 @@ mod tests {
             false,
         )
         .is_ok());
+    }
+
+    #[test]
+    fn min_isolation_maps_all_cli_variants() {
+        assert_eq!(
+            Isolation::from(MinIsolation::Container),
+            Isolation::Container
+        );
+        assert_eq!(Isolation::from(MinIsolation::MicroVm), Isolation::MicroVm);
+        assert_eq!(
+            Isolation::from(MinIsolation::Confidential),
+            Isolation::ConfidentialVm
+        );
+    }
+
+    #[test]
+    fn min_isolation_above_container_requires_a_runtime() {
+        assert_eq!(
+            resolve_min_isolation(MinIsolation::Container, None).unwrap(),
+            Isolation::Container
+        );
+        assert_eq!(
+            resolve_min_isolation(MinIsolation::MicroVm, Some("libkrun")).unwrap(),
+            Isolation::MicroVm
+        );
+        assert_eq!(
+            resolve_min_isolation(MinIsolation::Confidential, Some("tdx")).unwrap(),
+            Isolation::ConfidentialVm
+        );
+        assert!(resolve_min_isolation(MinIsolation::MicroVm, None).is_err());
+        assert!(resolve_min_isolation(MinIsolation::Confidential, None).is_err());
     }
 }

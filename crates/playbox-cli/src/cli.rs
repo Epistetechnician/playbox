@@ -175,6 +175,9 @@ pub struct UpArgs {
     /// Shorthand for --runtime docker
     #[arg(long)]
     pub docker: bool,
+    /// Weakest task isolation the host accepts from its runner: container (default), microvm, or confidential. Values above container require --runtime or --docker.
+    #[arg(long, value_enum, default_value = "container", value_name = "LEVEL")]
+    pub min_isolation: MinIsolation,
     /// Let tasks reach this host[:port]; repeatable; only openshell enforces it
     #[arg(long = "allow-host", value_name = "HOST")]
     pub allow_host: Vec<String>,
@@ -710,6 +713,16 @@ pub enum WorldAction {
     Test,
 }
 
+/// Minimum task isolation accepted by `playbox up --min-isolation`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum MinIsolation {
+    #[default]
+    Container,
+    #[value(name = "microvm")]
+    MicroVm,
+    Confidential,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Cli, Cmd};
@@ -843,5 +856,33 @@ mod tests {
         assert!(Cli::try_parse_from(["playbox", "up", "--link-ttl", "86401"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "up", "--link-uses", "0"]).is_err());
         assert!(Cli::try_parse_from(["playbox", "up", "--link-uses", "101"]).is_err());
+    }
+
+    #[test]
+    fn min_isolation_accepts_known_levels_and_refuses_none() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(args).map(|c| match c.command {
+                Cmd::Up(a) => a.min_isolation,
+                _ => panic!("not up"),
+            })
+        };
+        assert_eq!(
+            parse(&["playbox", "up"]).unwrap(),
+            super::MinIsolation::Container
+        );
+        assert_eq!(
+            parse(&["playbox", "up", "--min-isolation", "container"]).unwrap(),
+            super::MinIsolation::Container
+        );
+        assert_eq!(
+            parse(&["playbox", "up", "--min-isolation", "microvm"]).unwrap(),
+            super::MinIsolation::MicroVm
+        );
+        assert_eq!(
+            parse(&["playbox", "up", "--min-isolation", "confidential"]).unwrap(),
+            super::MinIsolation::Confidential
+        );
+        assert!(parse(&["playbox", "up", "--min-isolation", "none"]).is_err());
+        assert!(parse(&["playbox", "up", "--min-isolation", "bogus"]).is_err());
     }
 }
