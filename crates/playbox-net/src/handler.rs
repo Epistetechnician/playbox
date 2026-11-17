@@ -626,7 +626,7 @@ impl RoomHandler {
                 self.audit_op(from, "push", &r, t0, json!({ "branch": audit::clip(&branch), "bytes": bytes }));
                 finish(r)
             }
-            Some(Op::Run { base, spec, warm }) => {
+            Some(Op::Run { base, spec, warm, keep }) => {
                 let t0 = std::time::Instant::now();
                 // Arguments often hold secrets, so the log keeps the program, how many arguments, and a hash.
                 let mut h = blake3::Hasher::new();
@@ -642,9 +642,9 @@ impl RoomHandler {
                     "image": audit::clip(&spec.image),
                     "cpus": spec.cpus, "mem_mib": spec.mem_mib, "timeout_secs": spec.timeout_secs, "network": spec.network,
                     "secrets": spec.secrets,
-                    "warm": warm,
+                    "warm": warm, "keep": warm && keep,
                 });
-                let r = self.run(from, &base, spec, warm).await;
+                let r = self.run(from, &base, spec, warm, keep).await;
                 self.audit_op(from, "task", &r, t0, details);
                 finish(r)
             }
@@ -800,13 +800,20 @@ impl RoomHandler {
 
     /// Run a member's task under the abuse limits, and stop it if the member is revoked while it runs.
     /// Stopping drops the run, which kills its sandbox.
-    async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec, warm: bool) -> Result<Task> {
+    async fn run(
+        &self,
+        from: EndpointId,
+        base: &str,
+        spec: TaskSpec,
+        warm: bool,
+        keep: bool,
+    ) -> Result<Task> {
         let _admission = self
             .limiter
             .admit(from)
             .map_err(|e| refuse(e.to_string()))?;
         tokio::select! {
-            r = self.run_inner(from, base, spec, warm) => r,
+            r = self.run_inner(from, base, spec, warm, keep) => r,
             () = self.until_revoked(from) => {
                 if let Some(r) = &self.cfg.runner {
                     r.end_warm(&from.to_string()).await;
@@ -843,6 +850,7 @@ impl RoomHandler {
         base: &str,
         spec: TaskSpec,
         warm: bool,
+        keep: bool,
     ) -> Result<Task> {
         let runner = self
             .cfg
@@ -904,6 +912,7 @@ impl RoomHandler {
                         &spec,
                         wt.path(),
                         &from.to_string(),
+                        keep,
                         self.cfg.scratch_quota,
                     )
                     .await?

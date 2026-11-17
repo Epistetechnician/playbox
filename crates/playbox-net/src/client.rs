@@ -999,11 +999,12 @@ impl Client {
         reason = "the value is bounded, or truncated on purpose"
     )]
     pub async fn run_task_full(&self, base: &str, spec: TaskSpec) -> Result<TaskRun> {
-        self.run_task_with(base, spec, false).await
+        self.run_task_with(base, spec, false, false).await
     }
 
     /// Like [`Client::run_task_full`]; with `warm`, the host may keep this member's sandbox running between tasks
-    /// (when its runner can), so the next command skips the sandbox start. Each task still gets a fresh checkout.
+    /// (when its runner can), so the next command skips the sandbox start. Each task still gets a fresh checkout, unless
+    /// `keep` is also set: then the files a reused sandbox holds are kept and the checkout is not uploaded again.
     ///
     /// # Errors
     ///
@@ -1012,11 +1013,18 @@ impl Client {
         clippy::cast_possible_truncation,
         reason = "the value is bounded, or truncated on purpose"
     )]
-    pub async fn run_task_with(&self, base: &str, spec: TaskSpec, warm: bool) -> Result<TaskRun> {
+    pub async fn run_task_with(
+        &self,
+        base: &str,
+        spec: TaskSpec,
+        warm: bool,
+        keep: bool,
+    ) -> Result<TaskRun> {
         let op = Op::Run {
             base: base.to_string(),
             spec,
             warm,
+            keep,
         };
         let t = match self
             .send(&op, vec![])

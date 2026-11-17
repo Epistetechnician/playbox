@@ -10,6 +10,7 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- `playbox_delegate` takes `keep: true` with `warm`: a reused warm sandbox keeps the member's files between commands and the checkout is not uploaded again (kept sandboxes idle out after 15 minutes). The Hermes backend uses it, so it no longer replays earlier edits.
 - Project governance files: LICENSE (Apache-2.0), NOTICE, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull request templates, CODEOWNERS.
 - Supply-chain checks in CI: CodeQL, dependency review and workflow linting.
 

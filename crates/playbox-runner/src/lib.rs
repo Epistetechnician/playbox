@@ -237,13 +237,19 @@ pub trait Runner: Send + Sync {
     /// a member's next command skips the sandbox start. The workspace is replaced every call, so file state
     /// is the same as a fresh sandbox; only start-up work is saved. `session` is chosen by the host (the
     /// authenticated member), never by a peer. Runners without warm sandboxes just run the task.
+    ///
+    /// With `keep`, a warm sandbox that is reused is not reset and is not given the workspace again: the files the
+    /// member's earlier commands left are still there, and the workspace handed back is the sandbox's own. A sandbox
+    /// that is gone (idle too long, timed out, runner without warm sandboxes) is replaced by a fresh one with the
+    /// given workspace, so a caller that relies on `keep` must check that its earlier state is still present.
     async fn run_warm(
         &self,
         spec: &TaskSpec,
         workspace: &Path,
         session: &str,
+        keep: bool,
     ) -> Result<TaskOutput> {
-        let _ = session;
+        let _ = (session, keep);
         self.run(spec, workspace).await
     }
     /// Drop the warm sandbox held for `session`, if any (a member was revoked or left).
@@ -449,10 +455,11 @@ pub async fn run_warm_with_quota(
     spec: &TaskSpec,
     dir: &Path,
     session: &str,
+    keep: bool,
     quota: Quota,
 ) -> Result<TaskOutput> {
     tokio::select! {
-        out = runner.run_warm(spec, dir, session) => out,
+        out = runner.run_warm(spec, dir, session, keep) => out,
         why = quota_exceeded(dir, quota) => Err(why),
     }
 }

@@ -13,6 +13,7 @@ Config (environment, set by the harness; none of it is a credential):
   PLAYBOX_BASE       base branch                          (default: main)
   PLAYBOX_STATS      JSON-lines file; one record per delegate (optional)
   PLAYBOX_WARM       "0" turns off the warm sandbox (default: on; needs a host that runs the openshell runtime)
+  PLAYBOX_KEEP       "0" replays edit commands before every command instead of keeping the sandbox's files (default: keep; needs warm)
 """
 from __future__ import annotations
 
@@ -31,6 +32,8 @@ from tools.environments.base import BaseEnvironment
 
 SANDBOX_CWD = "/sandbox"
 RATE_WAIT_STEP = 2.0     # seconds between retries when the host says the member is over its task rate limit
+KEEP = os.environ.get("PLAYBOX_KEEP", "1") != "0" and os.environ.get("PLAYBOX_WARM", "1") != "0"
+ALIVE = "/tmp/.pbx_alive"    # marker in the sandbox: present only while the member's warm sandbox, with its files, is still there
 RATE_WAIT_MAX = 90.0     # give up after this long and show the refusal
 
 
@@ -108,6 +111,7 @@ class _Session:
                 if attempt == 3 or "already used" in str(sys.exc_info()[1]):
                     raise
                 time.sleep(3)
+        self.started = False                       # a command has run in the member's sandbox (so `keep` may expect its files)
         self.edits: list[tuple[str, str]] = []     # (cwd, command) of every command that changed the tree
         self.patch_sig = hashlib.sha256(b"0").hexdigest()   # signature of the empty diff
         self.last_patch = ""                       # full text of the diff after the last edit (the MCP truncates at 20 kB)
@@ -135,47 +139,69 @@ class PlayboxEnvironment(BaseEnvironment):
         return self.s.edits
 
     # -- one delegate -----------------------------------------------------------------------------------------------
-    def _script(self, command, cwd):
+    def _script(self, command, cwd, replay, check):
+        """`replay`: re-run every earlier edit command first (the sandbox starts from a fresh checkout). `check`: the sandbox is
+        supposed to still hold the earlier edits; stop with a marker if it does not, so the caller can replay."""
         mark = uuid.uuid4().hex[:10]
         lines = ["export PYTHONDONTWRITEBYTECODE=1 GIT_PAGER=cat PAGER=cat"]
-        for ecwd, ecmd in self.edits:
-            lines.append(f"( cd {shlex.quote(ecwd)} 2>/tmp/.pbx_err; {{\n{ecmd}\n}} ) >/tmp/.pbx_replay 2>&1 0<&-")
+        if check:
+            lines.append(f"[ -f {ALIVE} ] || {{ echo ___PBX_LOST___; exit 97; }}")
+        if KEEP:
+            lines.append(f"touch {ALIVE}")
+        if replay:
+            for ecwd, ecmd in self.edits:
+                lines.append(f"( cd {shlex.quote(ecwd)} 2>/tmp/.pbx_err; {{\n{ecmd}\n}} ) >/tmp/.pbx_replay 2>&1 0<&-")
         lines.append(f"cd {shlex.quote(cwd)} 2>/tmp/.pbx_err || cd {SANDBOX_CWD}")
         lines.append(f"echo ___PBX_BEGIN_{mark}___")
         lines.append(f"{{\n{command}\n}} 2>&1")
         lines.append(f"__rc=$?; echo; echo ___PBX_END_{mark}___ $__rc \"$PWD\"")
         return "\n".join(lines), mark
 
+    def _call(self, script, timeout, rec, t0):
+        """One delegate, waiting out the host's rate limit. Returns (result, None) or (None, refusal output for the model)."""
+        args = {"base": self.s.base, "command": script, "image": self.s.image,
+                "timeout_secs": int(timeout or self.timeout or 120) + 30, "network": False,
+                "warm": os.environ.get("PLAYBOX_WARM", "1") != "0", "keep": KEEP}
+        waited = 0.0
+        while True:
+            try:
+                r = self.s.mcp.call("playbox_delegate", args)
+                break
+            except Exception as e:  # noqa: BLE001 — a refusal is output the model can read
+                msg = str(e)
+                # With a warm sandbox commands are quick enough to hit the host's per-member task rate limit. That limit is
+                # the host's to set; wait for the window to move on instead of showing the model a refusal it cannot act on.
+                if "rate limit" in msg and waited < RATE_WAIT_MAX:
+                    time.sleep(RATE_WAIT_STEP)
+                    waited += RATE_WAIT_STEP
+                    continue
+                rec.update(refused=True, error=msg[:300], secs=round(time.time() - t0, 2), rate_waited_s=waited)
+                self._log(rec)
+                return None, {"output": f"[playbox refused this command: {msg[:600]}]", "returncode": 1}
+        if waited:
+            rec["rate_waited_s"] = rec.get("rate_waited_s", 0) + waited
+        return r, None
+
     def execute(self, command, cwd="", *, timeout=None, stdin_data=None, **_):
         cwd = cwd or self.cwd or SANDBOX_CWD
         if stdin_data:
             command = f"{command} <<'__PBX_STDIN__'\n{stdin_data}\n__PBX_STDIN__"
-        script, mark = self._script(command, cwd)
         t_req = time.time()
         with self.s.lock:
             t0 = time.time()      # per-command time excludes the wait for another in-flight command
-            rec = {"t": round(t0, 3), "queued_s": round(t0 - t_req, 2), "replayed": len(self.s.edits), "cmd_bytes": len(script)}
-            args = {"base": self.s.base, "command": script, "image": self.s.image,
-                    "timeout_secs": int(timeout or self.timeout or 120) + 30, "network": False,
-                    "warm": os.environ.get("PLAYBOX_WARM", "1") != "0"}
-            waited = 0.0
-            while True:
-                try:
-                    r = self.s.mcp.call("playbox_delegate", args)
-                    break
-                except Exception as e:  # noqa: BLE001 — a refusal is output the model can read
-                    msg = str(e)
-                    # With a warm sandbox commands are quick enough to hit the host's per-member task rate limit. That limit is
-                    # the host's to set; wait for the window to move on instead of showing the model a refusal it cannot act on.
-                    if "rate limit" in msg and waited < RATE_WAIT_MAX:
-                        time.sleep(RATE_WAIT_STEP)
-                        waited += RATE_WAIT_STEP
-                        continue
-                    rec.update(refused=True, error=msg[:300], secs=round(time.time() - t0, 2), rate_waited_s=waited)
-                    self._log(rec)
-                    return {"output": f"[playbox refused this command: {msg[:600]}]", "returncode": 1}
-            if waited:
-                rec["rate_waited_s"] = waited
+            script, mark = self._script(command, cwd, replay=not KEEP, check=KEEP and self.s.started)
+            rec = {"t": round(t0, 3), "queued_s": round(t0 - t_req, 2), "replayed": 0 if KEEP else len(self.s.edits), "cmd_bytes": len(script)}
+            r, refusal = self._call(script, timeout, rec, t0)
+            if refusal:
+                return refusal
+            if KEEP and "___PBX_LOST___" in ((r.get("stdout") or "") + (r.get("stderr") or "")):
+                # The sandbox was dropped (idle too long, a timeout, a restart): start again from a fresh checkout and replay.
+                script, mark = self._script(command, cwd, replay=True, check=False)
+                rec.update(recovered=True, replayed=len(self.s.edits), cmd_bytes=len(script))
+                r, refusal = self._call(script, timeout, rec, t0)
+                if refusal:
+                    return refusal
+            self.s.started = True
             out = (r.get("stdout") or "") + (r.get("stderr") or "")
             rc, newcwd = r.get("exit_code") or 0, cwd
             b, e = f"___PBX_BEGIN_{mark}___\n", f"___PBX_END_{mark}___"

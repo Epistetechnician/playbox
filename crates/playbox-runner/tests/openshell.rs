@@ -129,6 +129,7 @@ async fn warm_session_is_faster_and_leaves_nothing_behind() {
             &spec("hostname; echo secret > /tmp/left; echo s > /sandbox/left; ls /sandbox"),
             &w1,
             "member-a",
+            false,
         )
         .await
         .unwrap();
@@ -139,6 +140,7 @@ async fn warm_session_is_faster_and_leaves_nothing_behind() {
             &spec("hostname; ls /sandbox; ls /tmp; cat a.txt"),
             &w2,
             "member-a",
+            false,
         )
         .await
         .unwrap();
@@ -165,7 +167,7 @@ async fn warm_session_is_faster_and_leaves_nothing_behind() {
     );
 
     let c = r
-        .run_warm(&spec("hostname"), &w3, "member-b")
+        .run_warm(&spec("hostname"), &w3, "member-b", false)
         .await
         .unwrap();
     assert_ne!(
@@ -177,7 +179,7 @@ async fn warm_session_is_faster_and_leaves_nothing_behind() {
     r.end_warm("member-a").await;
     r.end_warm("member-b").await;
     let d = r
-        .run_warm(&spec("hostname"), &w1, "member-a")
+        .run_warm(&spec("hostname"), &w1, "member-a", false)
         .await
         .unwrap();
     assert_ne!(
@@ -186,4 +188,52 @@ async fn warm_session_is_faster_and_leaves_nothing_behind() {
         "a sandbox ended with end_warm must not come back"
     );
     r.end_warm("member-a").await;
+}
+
+/// With `keep`, the sandbox's own files carry from one command to the next and the workspace is not uploaded again;
+/// a command without `keep` resets it, and `end_warm` drops it.
+#[tokio::test]
+async fn kept_session_carries_files_between_commands() {
+    if !enabled() {
+        return;
+    }
+    let mk = |tag: &str| {
+        let ws = std::env::temp_dir().join(format!("pb-osh-keep-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), tag).unwrap();
+        ws
+    };
+    let r = OpenShellRunner::new(SandboxPolicy::default());
+    let spec = |s: &str| TaskSpec::new(&["sh", "-c", s]);
+    let (w1, w2, w3) = (mk("one"), mk("two"), mk("three"));
+
+    let a = r
+        .run_warm(&spec("echo edit > made.txt; cat a.txt"), &w1, "m", true)
+        .await
+        .unwrap();
+    assert!(a.stdout.contains("one"), "{a:?}");
+    // The second workspace holds "two", but a kept sandbox keeps its own files: still "one", plus the earlier edit.
+    let b = r
+        .run_warm(&spec("cat made.txt a.txt"), &w2, "m", true)
+        .await
+        .unwrap();
+    assert!(
+        b.stdout.contains("edit") && b.stdout.contains("one") && !b.stdout.contains("two"),
+        "{b:?}"
+    );
+    // What the sandbox holds is what comes back to the host, so the host's diff sees the earlier edit too.
+    assert_eq!(
+        std::fs::read_to_string(w2.join("made.txt")).unwrap().trim(),
+        "edit"
+    );
+    // Without `keep` the sandbox is reset and gets the workspace it is given.
+    let c = r
+        .run_warm(&spec("ls; cat a.txt"), &w3, "m", false)
+        .await
+        .unwrap();
+    assert!(
+        !c.stdout.contains("made.txt") && c.stdout.contains("three"),
+        "{c:?}"
+    );
+    r.end_warm("m").await;
 }

@@ -43,11 +43,15 @@ struct Warm {
     name: String,
     /// Image, resources and policy digest it was created with; a task that differs gets a new sandbox.
     shape: String,
+    /// The session keeps its files between commands (see [`Runner::run_warm`]); such a sandbox is held longer.
+    keep: bool,
     idle_since: std::time::Instant,
 }
 
-/// A warm sandbox idle this long is deleted, and at most this many are kept (the oldest goes first).
+/// A warm sandbox idle this long is deleted, and at most this many are kept (the oldest goes first). One that holds
+/// a member's files (`keep`) is held longer, because a model can pause for a while between commands.
 const WARM_IDLE: Duration = Duration::from_secs(120);
+const KEEP_IDLE: Duration = Duration::from_secs(900);
 const WARM_MAX: usize = 8;
 const WARM_PREFIX: &str = "pbxw-";
 
@@ -237,7 +241,7 @@ impl Runner for OpenShellRunner {
     }
 
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
-        self.execute(spec, workspace, None).await
+        self.execute(spec, workspace, None, false).await
     }
 
     async fn run_warm(
@@ -245,8 +249,9 @@ impl Runner for OpenShellRunner {
         spec: &TaskSpec,
         workspace: &Path,
         session: &str,
+        keep: bool,
     ) -> Result<TaskOutput> {
-        self.execute(spec, workspace, Some(session)).await
+        self.execute(spec, workspace, Some(session), keep).await
     }
 
     async fn end_warm(&self, session: &str) {
@@ -266,7 +271,9 @@ impl OpenShellRunner {
             let now = std::time::Instant::now();
             let stale: Vec<String> = m
                 .iter()
-                .filter(|(_, w)| now.duration_since(w.idle_since) > WARM_IDLE)
+                .filter(|(_, w)| {
+                    now.duration_since(w.idle_since) > if w.keep { KEEP_IDLE } else { WARM_IDLE }
+                })
                 .map(|(k, _)| k.clone())
                 .collect();
             for k in stale {
@@ -293,6 +300,7 @@ impl OpenShellRunner {
         spec: &TaskSpec,
         workspace: &Path,
         session: Option<&str>,
+        keep: bool,
     ) -> Result<TaskOutput> {
         // This runner is the one that honours a host list, so validate the rest of the spec without it.
         check_spec(&TaskSpec {
@@ -320,11 +328,15 @@ impl OpenShellRunner {
 
         // A warm sandbox is taken out of the map while it runs, so one session never runs two tasks in it at once.
         let mut name = None;
+        let mut resumed = false;
         if let Some(sess) = session {
             self.reap(false).await;
             let held = self.warm.lock().await.remove(sess);
             if let Some(w) = held {
-                if w.shape == shape && self.reset(&w.name).await.is_ok() {
+                // A kept sandbox continues as it is; one reused without `keep` starts from the workspace it is given.
+                let continues = keep && w.keep;
+                if w.shape == shape && (continues || self.reset(&w.name).await.is_ok()) {
+                    resumed = continues;
                     name = Some(w.name);
                 } else {
                     delete_sandbox(&w.name).await;
@@ -348,13 +360,13 @@ impl OpenShellRunner {
             }
         };
 
-        let result = self
-            .exec_in(spec, ws, &name, &dir)
-            .await
-            .map(|(mut o, timed_out)| {
-                o.policy_digest = Some(digest(&policy_text));
-                (o, timed_out)
-            });
+        let result =
+            self.exec_in(spec, ws, &name, &dir, !resumed)
+                .await
+                .map(|(mut o, timed_out)| {
+                    o.policy_digest = Some(digest(&policy_text));
+                    (o, timed_out)
+                });
         // Keep the sandbox only after a clean run in a session; anything else (error, timeout, no session) deletes it,
         // because a leaked sandbox keeps the host's resources and a timed-out one is in an unknown state.
         let keep = session.is_some() && matches!(result, Ok((_, false)));
@@ -366,6 +378,7 @@ impl OpenShellRunner {
                     Warm {
                         name: name.clone(),
                         shape,
+                        keep,
                         idle_since: std::time::Instant::now(),
                     },
                 );
@@ -486,41 +499,44 @@ impl OpenShellRunner {
         ws: &str,
         name: &str,
         tmp: &Path,
+        upload: bool,
     ) -> Result<(TaskOutput, bool)> {
-        // Workspace in: a tar stream on the exec's stdin.
-        let packed = Command::new("tar")
-            .env("COPYFILE_DISABLE", "1")
-            .args(["-cf", "-", "-C", ws, "."])
-            .stdin(Stdio::null())
-            .output()
+        // Workspace in: a tar stream on the exec's stdin. Skipped when the sandbox already holds the member's files.
+        if upload {
+            let packed = Command::new("tar")
+                .env("COPYFILE_DISABLE", "1")
+                .args(["-cf", "-", "-C", ws, "."])
+                .stdin(Stdio::null())
+                .output()
+                .await?;
+            if !packed.status.success() {
+                bail!(
+                    "packing the workspace failed: {}",
+                    String::from_utf8_lossy(&packed.stderr).trim()
+                );
+            }
+            let (code, _, err) = piped(
+                osh(&[
+                    "sandbox",
+                    "exec",
+                    "-n",
+                    name,
+                    "--no-tty",
+                    "--no-login-shell",
+                    "--",
+                    "tar",
+                    "-xf",
+                    "-",
+                    "-C",
+                    GUEST_DIR,
+                ]),
+                Some(packed.stdout),
+                SETUP_TIMEOUT,
+            )
             .await?;
-        if !packed.status.success() {
-            bail!(
-                "packing the workspace failed: {}",
-                String::from_utf8_lossy(&packed.stderr).trim()
-            );
-        }
-        let (code, _, err) = piped(
-            osh(&[
-                "sandbox",
-                "exec",
-                "-n",
-                name,
-                "--no-tty",
-                "--no-login-shell",
-                "--",
-                "tar",
-                "-xf",
-                "-",
-                "-C",
-                GUEST_DIR,
-            ]),
-            Some(packed.stdout),
-            SETUP_TIMEOUT,
-        )
-        .await?;
-        if code != Some(0) {
-            bail!("uploading the workspace failed: {}", err.trim());
+            if code != Some(0) {
+                bail!("uploading the workspace failed: {}", err.trim());
+            }
         }
 
         let secs = spec.timeout_secs.to_string();

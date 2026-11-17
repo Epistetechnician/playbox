@@ -358,6 +358,7 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
                     base: "main".into(),
                     spec: spec.clone(),
                     warm: false,
+                    keep: false,
                 },
                 vec![],
             )),

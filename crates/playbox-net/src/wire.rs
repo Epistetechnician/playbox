@@ -122,6 +122,10 @@ pub enum Op {
         spec: TaskSpec,
         #[serde(default)]
         warm: bool,
+        /// With `warm`: also keep the files between commands (the host skips the reset and the workspace upload
+        /// on a reused sandbox). Ignored without `warm`.
+        #[serde(default)]
+        keep: bool,
     },
     /// Apply a signed steering spec (`playbox.steer-spec.v1`) to a hosted model. The message carries two
     /// raw parts: the direction file, then the prompt set. With `probe`, nothing is edited: the host
@@ -601,6 +605,7 @@ mod tests {
             base: "main".into(),
             spec: TaskSpec::new(&["sh", "-c", "true"]),
             warm: false,
+            keep: false,
         };
         let m = op.message(vec![]);
         let back = Op::from_message(&m).unwrap().unwrap();

@@ -63,7 +63,7 @@ impl Server {
         }
         let run = self
             .guest()?
-            .run_task_with(base, spec, b(a, "warm"))
+            .run_task_with(base, spec, b(a, "warm"), b(a, "keep"))
             .await?;
         let (runner, out, patch) = (run.runner.clone(), run.output.clone(), run.patch.clone());
         // Everything a remote task printed or changed is untrusted text from now on.
