@@ -170,7 +170,7 @@ pub fn collect(opts: &Opts) -> Report {
     binary_checks(opts, &mut checks);
     history_checks(&mut checks);
     agent_checks(&mut checks);
-    let reach = hub::load().unwrap_or(Reach::Local);
+    let reach = hub::load().ok().flatten().unwrap_or(Reach::Local);
     let port = opts
         .port
         .or_else(|| {

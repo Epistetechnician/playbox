@@ -34,8 +34,27 @@ fn config_path() -> PathBuf {
     home().join("hub.json")
 }
 
-pub(crate) fn load() -> Option<Reach> {
-    serde_json::from_str(&std::fs::read_to_string(config_path()).ok()?).ok()
+pub(crate) fn load() -> Result<Option<Reach>> {
+    let p = config_path();
+    let text = match std::fs::read_to_string(&p) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!(
+                    "could not read {}; pass `--reconfigure` to choose again",
+                    p.display()
+                )
+            });
+        }
+    };
+    let reach = serde_json::from_str(&text).with_context(|| {
+        format!(
+            "invalid hub config at {}; pass `--reconfigure` to choose again",
+            p.display()
+        )
+    })?;
+    Ok(Some(reach))
 }
 
 pub(crate) fn save(r: &Reach) -> Result<()> {
@@ -380,7 +399,7 @@ fn manage_service(a: &HubArgs, action: ServiceAction) -> Result<()> {
             let script = find_hub(a.hub_dir.as_deref())?;
             let python = on_path("python3").context("the hub needs python3")?;
             let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
-            let (reach, remember) = choose(a, load(), tty)?;
+            let (reach, remember) = resolve_reach(a, tty)?;
             if remember {
                 save(&reach)?;
             }
@@ -399,6 +418,11 @@ fn manage_service(a: &HubArgs, action: ServiceAction) -> Result<()> {
     }
 }
 
+fn resolve_reach(a: &HubArgs, tty: bool) -> Result<(Reach, bool)> {
+    let saved = if a.reconfigure { None } else { load()? };
+    choose(a, saved, tty)
+}
+
 pub fn run(a: &HubArgs) -> Result<()> {
     if let Some(action) = a.service {
         return manage_service(a, action);
@@ -408,7 +432,7 @@ pub fn run(a: &HubArgs) -> Result<()> {
         "the hub needs python3 (macOS: xcode-select --install; Debian/Ubuntu: apt install python3)",
     )?;
     let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
-    let (reach, remember) = choose(a, load(), tty)?;
+    let (reach, remember) = resolve_reach(a, tty)?;
     if remember {
         save(&reach)?;
         eprintln!("Remembered. Change it later with `playbox hub --reconfigure`.");
@@ -610,5 +634,67 @@ mod tests {
             serde_json::from_str::<Reach>(r#"{"mode":"quick"}"#).unwrap(),
             Reach::Quick
         );
+    }
+
+    #[test]
+    fn load_distinguishes_missing_from_corrupt_and_reconfigure_recovers() {
+        struct RestoreEnv(Option<std::ffi::OsString>, PathBuf);
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => std::env::set_var("PLAYBOX_HOME", v),
+                    None => std::env::remove_var("PLAYBOX_HOME"),
+                }
+                let _ = std::fs::remove_dir_all(&self.1);
+            }
+        }
+
+        let dir = std::env::temp_dir().join(format!("pbhub-load-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _guard = RestoreEnv(std::env::var_os("PLAYBOX_HOME"), dir.clone());
+        std::env::set_var("PLAYBOX_HOME", &dir);
+
+        let path = dir.join("hub.json");
+
+        // Missing file -> Ok(None).
+        assert_eq!(load().unwrap(), None);
+
+        // Garbage in hub.json -> Err naming the path and suggesting --reconfigure.
+        std::fs::write(&path, "not valid json").unwrap();
+        let err = load().unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains(&path.display().to_string()) && msg.contains("--reconfigure"),
+            "unexpected error: {msg}"
+        );
+        assert!(resolve_reach(&args(), false).is_err());
+
+        // Reconfigure ignores the corrupt file and still works.
+        let mut reconf = args();
+        reconf.reconfigure = true;
+        assert_eq!(
+            resolve_reach(&reconf, false).unwrap(),
+            (Reach::Local, false)
+        );
+
+        // Unreadable path (a directory at hub.json) -> Err naming the path and suggesting --reconfigure.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let err = load().unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains(&path.display().to_string()) && msg.contains("--reconfigure"),
+            "unexpected error: {msg}"
+        );
+        std::fs::remove_dir(&path).unwrap();
+
+        // Valid config round-trips cleanly.
+        let named = Reach::Named {
+            tunnel: "t".into(),
+            hostname: "h.example.com".into(),
+        };
+        save(&named).unwrap();
+        assert_eq!(load().unwrap(), Some(named));
     }
 }
