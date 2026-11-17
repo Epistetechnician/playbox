@@ -250,6 +250,7 @@ def make_setup(sender_path, receiver_path, B, D, cfg: V2Config, blind=True, dtyp
     return su
 
 
+@torch.enable_grad()  # other entry points switch autograd off process-wide (engine.load, hub_run); training must not inherit that
 def train(sender_path, receiver_path, out_path, cfg: V2Config, steps1=1500, steps2=4000, bs=32, lr1=3e-4, lr2=5e-5, n_items=50_000, B=4, D=768,
           eval_every=500, time_budget_s=None, log=print, seed=0, blind=True, templ_frac=0.15, items=None, eval_items=None, dtype=torch.bfloat16):
     """Same data and schedule as S.train (so a comparison with the v1 recipe changes only the recipe)."""
