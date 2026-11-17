@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """runhygiene: deterministic checks that make experiment scripts reproducible. Stdlib only, no model.
 
-    python3 tools/runhygiene/runhygiene.py PATH... [--check] [--json] [--exclude GLOB]... [--frozen LIST] [--base REF]
+    python3 tools/runhygiene/runhygiene.py PATH... [--check] [--json] [--exclude GLOB]... [--baseline FILE] [--frozen LIST] [--base REF]
 
 Findings carry kind, line and probability, as codehygiene's do. --check exits 1 when any finding is reported.
 """
@@ -31,6 +31,7 @@ class Finding:
     kind: str
     message: str
     probability: float = 0.9
+    source: str = ""
 
 
 def dotted(node):
@@ -84,7 +85,33 @@ def lint_source(text, path="<stdin>"):
             broad = h.type is None or dotted(h.type) in BROAD_EXCEPT
             if broad and all(isinstance(b, (ast.Pass, ast.Continue)) for b in h.body):
                 out.append(Finding(path, h.lineno, "swallowed_error", "broad except that does nothing hides failed runs", 0.4 if cleanup else 0.85))
+    lines = text.splitlines()
+    for f in out:
+        f.source = lines[f.line - 1].strip() if 0 < f.line <= len(lines) else ""
     return out
+
+
+def load_baseline(path):
+    """Lines `path-glob | kind | source substring  # reason`. Matches by source text, so edits above a line do not break it."""
+    entries = []
+    for raw in Path(path).read_text().splitlines():
+        body = raw.split("  #", 1)[0].strip()
+        if body and not body.startswith("#"):
+            glob, kind, needle = (x.strip() for x in body.split("|", 2))
+            entries.append((glob, kind, needle))
+    return entries
+
+
+def apply_baseline(findings, entries):
+    used, kept = set(), []
+    for f in findings:
+        hit = next((i for i, (g, k, n) in enumerate(entries) if k == f.kind and fnmatch.fnmatch(f.path, g) and n in f.source), None)
+        if hit is None:
+            kept.append(f)
+        else:
+            used.add(hit)
+    stale = [Finding(g, 1, "stale_baseline", f"baseline entry matches nothing: {k} | {n}", 1.0) for i, (g, k, n) in enumerate(entries) if i not in used]
+    return kept + stale
 
 
 def frozen_edits(patterns, base, root):
@@ -118,13 +145,16 @@ def options(args, flag):
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     frozen, base, excludes = option(args, "--frozen"), option(args, "--base") or "HEAD", options(args, "--exclude")
-    paths = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--frozen", "--base", "--exclude"))]
+    baseline = option(args, "--baseline")
+    paths = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--frozen", "--base", "--exclude", "--baseline"))]
     findings = []
     for f in iter_python(paths, excludes):
         findings += lint_source(f.read_text(encoding="utf-8", errors="replace"), str(f))
     if frozen:
         patterns = [ln.strip() for ln in Path(frozen).read_text().splitlines() if ln.strip() and not ln.startswith("#")]
         findings += frozen_edits(patterns, base, Path(frozen).resolve().parent)
+    if baseline:
+        findings = apply_baseline(findings, load_baseline(baseline))
     hits = [f for f in findings if f.probability >= THRESHOLD]
     if "--json" in args:
         print(json.dumps([asdict(f) for f in hits], indent=2))

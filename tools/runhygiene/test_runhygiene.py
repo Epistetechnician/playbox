@@ -91,3 +91,13 @@ def test_exclude_glob(tmp_path):
 def test_best_effort_cleanup_is_not_reported():
     assert kinds("try:\n    proc.kill()\nexcept Exception:\n    pass\n") == []
     assert kinds("try:\n    run_trial()\nexcept Exception:\n    pass\n") == ["swallowed_error"]
+
+
+def test_baseline_suppresses_by_source_text_and_flags_stale(tmp_path):
+    src = tmp_path / "a.py"
+    src.write_text("import random\nrandom.shuffle(order)\n")
+    base = tmp_path / "base.txt"
+    base.write_text("*/a.py | global_rng | random.shuffle(order)  # randomized order on purpose\n")
+    assert rh.main([str(src), "--check", "--baseline", str(base)]) == 0
+    src.write_text("import random\nrandom.Random(1).shuffle(order)\n")
+    assert rh.main([str(src), "--check", "--baseline", str(base)]) == 1

@@ -78,6 +78,18 @@ jobs:
         # judge/tests/test_measures.py and test_fear.py load real Hugging Face classifiers and a language model; on a 2-core runner it
         # was killed after ~20 minutes. It runs locally (`cd judge && uv run --group dev pytest -q`), not here.
         run: uv run --group dev pytest -q ${{ matrix.project == 'judge' && '--ignore=tests/test_measures.py --ignore=tests/test_fear.py' || '' }}
+  runhygiene:
+    # Reproducibility lint for experiment scripts (tools/runhygiene): unseeded or global RNG, swallowed errors. Stdlib only. Triaged
+    # findings live in tools/runhygiene/baseline.txt with a reason each; a baseline entry that no longer matches also fails.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: python -m pytest tools/runhygiene -q
+      - run: python tools/runhygiene/runhygiene.py challenge steer tools judge conformance scripts ui orchestrator --exclude '*/hermes_*/*' --baseline tools/runhygiene/baseline.txt --check
   confine:
     # Linux confinement of the libkrun helper (crates/playbox-runner: jail, cgroup, network filter). It needs what a macOS runner and
     # Docker Desktop's kernel lack: cgroup v2 as root, user namespaces, and nftables with cgroup matching. Skips fail here.
