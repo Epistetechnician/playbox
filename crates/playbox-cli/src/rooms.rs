@@ -533,9 +533,7 @@ fn check_allowed_secrets(
     names: &[String],
 ) -> Result<()> {
     for n in names {
-        if !store.has(n) {
-            bail!("secret {n:?} is not in the host's store");
-        }
+        store.check(n)?;
     }
     if !names.is_empty() {
         store.check_dir()?;
@@ -566,7 +564,10 @@ mod tests {
     use super::{check_allowed_secrets, check_flags, resolve_min_isolation};
     use crate::cli::{Cli, Cmd, MinIsolation, UpArgs};
     use clap::Parser;
-    use playbox_runner::{secrets::SecretStore, Isolation};
+    use playbox_runner::{
+        secrets::{SecretStore, MAX_BYTES},
+        Isolation,
+    };
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
     #[test]
@@ -580,6 +581,12 @@ mod tests {
         assert!(err.to_string().contains("MISSING"));
         std::fs::write(d.join("API_KEY"), b"v").unwrap();
         assert!(check_allowed_secrets(&store, &["API_KEY".into()]).is_ok());
+        std::os::unix::fs::symlink("/etc/passwd", d.join("LINK")).unwrap();
+        let err = check_allowed_secrets(&store, &["LINK".into()]).unwrap_err();
+        assert!(err.to_string().contains("regular file"), "{err:#}");
+        std::fs::write(d.join("BIG"), vec![0u8; MAX_BYTES as usize + 1]).unwrap();
+        let err = check_allowed_secrets(&store, &["BIG".into()]).unwrap_err();
+        assert!(err.to_string().contains("larger"), "{err:#}");
         std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(check_allowed_secrets(&store, &["API_KEY".into()]).is_err());
         std::fs::remove_dir_all(d).unwrap();
