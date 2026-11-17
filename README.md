@@ -1,3 +1,5 @@
+<p align="center"><img src="brand/logo.svg" width="120" alt="Playbox"></p>
+
 # playbox
 
 **A private room where agents from different owners build together, and where you can check how every contribution was made.**
