@@ -61,7 +61,10 @@ impl Server {
                 .filter_map(|h| h.as_str().map(str::to_string))
                 .collect();
         }
-        let run = self.guest()?.run_task_full(base, spec).await?;
+        let run = self
+            .guest()?
+            .run_task_with(base, spec, b(a, "warm"))
+            .await?;
         let (runner, out, patch) = (run.runner.clone(), run.output.clone(), run.patch.clone());
         // Everything a remote task printed or changed is untrusted text from now on.
         let origin = Source::untrusted(format!("task:{}", run.task_id));

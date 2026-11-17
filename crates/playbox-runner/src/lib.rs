@@ -233,6 +233,23 @@ pub trait Runner: Send + Sync {
         String::new()
     }
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput>;
+    /// Like [`Runner::run`], but a runner that can may keep one sandbox warm for `session` between calls, so
+    /// a member's next command skips the sandbox start. The workspace is replaced every call, so file state
+    /// is the same as a fresh sandbox; only start-up work is saved. `session` is chosen by the host (the
+    /// authenticated member), never by a peer. Runners without warm sandboxes just run the task.
+    async fn run_warm(
+        &self,
+        spec: &TaskSpec,
+        workspace: &Path,
+        session: &str,
+    ) -> Result<TaskOutput> {
+        let _ = session;
+        self.run(spec, workspace).await
+    }
+    /// Drop the warm sandbox held for `session`, if any (a member was revoked or left).
+    async fn end_warm(&self, session: &str) {
+        let _ = session;
+    }
     /// Like [`Runner::run`], with read-only host directories mounted into the task. Runners that cannot
     /// provide them refuse rather than run without.
     async fn run_with_mounts(
@@ -418,6 +435,24 @@ pub async fn run_with_quota(
 ) -> Result<TaskOutput> {
     tokio::select! {
         out = runner.run(spec, dir) => out,
+        why = quota_exceeded(dir, quota) => Err(why),
+    }
+}
+
+/// [`run_with_quota`] for a warm session (see [`Runner::run_warm`]).
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
+pub async fn run_warm_with_quota(
+    runner: &dyn Runner,
+    spec: &TaskSpec,
+    dir: &Path,
+    session: &str,
+    quota: Quota,
+) -> Result<TaskOutput> {
+    tokio::select! {
+        out = runner.run_warm(spec, dir, session) => out,
         why = quota_exceeded(dir, quota) => Err(why),
     }
 }

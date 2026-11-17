@@ -67,15 +67,32 @@ each run and removed afterwards.
 9 to 62 delegates per run (309 of 466 in total) carried text the guard traced to an earlier task's output. The backend never
 pastes room text; the cause is the model writing edit commands that quote code it had just read, and every such edit is replayed
 in all later commands, so one copy fires the check again and again. With approvals required, those commands would have been
-refused until a person issued a capability. A real deployment should not replay: it should keep the workspace on the sandbox side
-(a session-scoped sandbox); not tested here.
+refused until a person issued a capability. A real deployment should not replay: it should keep the workspace on the sandbox side;
+the warm sandbox below keeps the sandbox, not the workspace, so replay remains.
 
 **Parity.** Held on this task: mean 24.0 vs 24.0, difference 0 tests, inside a 2-test margin. Confidence is modest: 7/7 in each arm
 (8/8 with the smoke runs) only rules out a per-run failure rate above about 35% at 95% confidence, so this shows no sign of a
 quality loss, not a proof of non-inferiority. What the Playbox layer added: a signed, expiring per-member grant, a host audit log
 that verifies, a microVM boundary around every command (no network, no credentials), at the price of about 13x wall-clock, about
 60% more tokens (more calls because a slow, state-replaying tool changes how the model works, plus longer commands) and +26% cost.
-Per-command microVM start is the dominant cost; a session-scoped sandbox or batching would remove most of it.
+Per-command microVM start was the dominant cost; the warm sandbox below removes most of it.
+
+**Warm sandbox.** `playbox_delegate` takes `warm: true`. On a host running the `openshell` runtime, the host then keeps one sandbox
+per member (keyed by the authenticated sender, never a peer-supplied name) running between that member's commands. Each command
+still gets a fresh checkout of `base` and the workspace is replaced every time (the runner empties `/sandbox` and `/tmp` first), so
+file state matches a fresh sandbox; what is saved is the sandbox start. Limits: a different image, resources or network policy gets a
+new sandbox; one idle 120 s or beyond the 8-sandbox cap is deleted; a member revoked mid-task loses theirs; a timeout or error
+deletes it; stale ones left by a host that died are deleted when the next host starts. Processes a command leaves running survive
+into the member's next command (only the same member's), which a fresh sandbox would not do. The backend asks for it by default
+(`PLAYBOX_WARM=0` turns it off).
+
+Three runs with it (tag `warm`, same task and image): 24/24 each; wall-clock 86, 96 and 85 s against 478 s without it
+(about 5x faster, roughly 2.4x the local arm's 36 s); delegates 69, 43 and 2; audit verified 3/3. Cost per run (Hermes estimate)
+$0.073, $0.077 and $0.055, against $0.054 for the earlier P runs; with so few runs and a model that varies its approach, that
+difference is not meaningful. Commands now run fast enough to hit the host's default limit of 30 tasks per member per minute: runs 1
+and 2 saw 35 and 9 refusals from it (the model retried and still finished). The backend now waits out that refusal (up to 90 s)
+instead of showing it to the model; that change is covered by unit tests but was not re-run live, because the 30-run Hermes budget for
+these experiments was used up. Replaying edit commands is unchanged, so the taint advisories remain (5, 12 and 2 in these runs).
 
 **Caveats.** One smoke run (P-9) reported a post-write verification mismatch that still ended at 24/24; concurrent file-tool
 calls queue behind a single delegate (queue time is logged as `queued_s`, per-command time excludes it). The `hermes` shim at
