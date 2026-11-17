@@ -10,6 +10,9 @@ Env: CLIMB_DIR, VM (gcloud instance), CLIMB_CAP (USD, default 3), CLIMB_WORKERS,
 import json, os, re, shutil, subprocess, sys, time, concurrent.futures as cf
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from sim import Sim
+
 HOME = Path.home()
 BASE = Path(os.environ.get("CLIMB_SRC", HOME / "yukon-work/ecdsafail-challenge"))
 OUT = Path(os.environ.get("CLIMB_DIR", HOME / ".playbox-rust"))
@@ -53,23 +56,35 @@ def claude(prompt, model, cwd, tools, budget, effort="low", allowed=None):
         return r.stdout[-2000:] + r.stderr[-500:]
 
 
-def advise(history):
+def advise(history, sim):
     files = sorted(p.name for p in (BASE / "src/point_add").glob("*.rs"))
     p = (f"Goal: lower the score (Toffoli count x peak qubits, now {BASELINE}: 722696 x 1227) of a reversible "
          f"secp256k1 point-addition circuit. Editable code: src/point_add ({len(files)} modules: {', '.join(files[:60])}). "
-         f"Past attempts this session:\n{history or 'none'}\n"
+         f"Self-improvement memory (every past attempt, grouped by root cause, with predicted vs observed score; "
+         f"build on what worked, do not repeat what failed or mispredicted):\n{sim.render()}\n"
+         f"This session so far:\n{history or 'none'}\n"
          f"Give {N} DISTINCT, concrete, small, low-risk hypotheses (one module or one parameter each) that could "
-         "reduce Toffoli or qubit count while keeping every correctness check. Reply as a JSON list of strings only.")
+         "reduce Toffoli or qubit count while keeping every correctness check. Reply as a JSON list of objects "
+         '{"root_cause": short recurring-problem label (reuse an existing one if it applies), "hypothesis": the edit, '
+         '"predicted_score": integer score you expect}. JSON only.')
     out = claude(p, ADVISOR_MODEL, BASE, "Read,Grep,Glob", 0.5)
     m = re.search(r"\[.*\]", out, re.S)
     try:
-        hyp = json.loads(m.group(0))
-        return [str(h) for h in hyp][:N]
+        out = []
+        for h in json.loads(m.group(0))[:N]:
+            if isinstance(h, dict):
+                out.append({"root_cause": str(h.get("root_cause", "unspecified")), "hypothesis": str(h.get("hypothesis", "")),
+                            "predicted": h.get("predicted_score") if isinstance(h.get("predicted_score"), int) else None})
+            else:
+                out.append({"root_cause": "unspecified", "hypothesis": str(h), "predicted": None})
+        return out
     except Exception:
-        return ["Look for a redundant uncompute or a freeable ancilla in the largest module and remove it."] * N
+        return [{"root_cause": "redundant uncompute", "predicted": None, "hypothesis":
+                 "Look for a redundant uncompute or a freeable ancilla in the largest module and remove it."}] * N
 
 
-def worker(i, rnd, hypothesis, feedback):
+def worker(i, rnd, hyp, feedback):
+    hypothesis, root_cause, predicted = hyp["hypothesis"], hyp["root_cause"], hyp["predicted"]
     w = OUT / f"r{rnd}w{i}"
     if w.exists():
         shutil.rmtree(w)
@@ -100,7 +115,7 @@ $S $H "cd ~/work/cand/$ID && cp -a ~/work/ecdsafail-challenge/target . && timeou
     summary = claude(p, WORKER_MODEL, w, "Read,Grep,Glob,Edit,Write,Bash", WBUDGET, effort="medium", allowed="Bash(./vmscore.sh)")
     diff = sh(["diff", "-ru", "-x", ".claude", str(BASE / "src/point_add"), str(w / "src/point_add")]).stdout
     print(f"  r{rnd}w{i}: diff={diff.count(chr(10))} lines; {summary[-200:]!r}", flush=True)
-    return {"id": f"r{rnd}w{i}", "dir": w, "hyp": hypothesis, "summary": summary[-400:], "diff_lines": diff.count("\n")}
+    return {"id": f"r{rnd}w{i}", "dir": w, "hyp": hypothesis, "root_cause": root_cause, "predicted": predicted, "summary": summary[-400:], "diff_lines": diff.count("\n")}
 
 
 def score(cands):
@@ -137,11 +152,12 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     log = OUT / "climb.jsonl"
     best, history, feedback = BASELINE, "", {}
+    sim = Sim(OUT / "sim.jsonl")
     for rnd in range(1, ROUNDS + 1):
         if spent >= CAP:
             print("cap reached", spent); break
-        hyps = advise(history)
-        print(f"round {rnd}: spent ${spent:.2f}; hypotheses: {hyps}", flush=True)
+        hyps = advise(history, sim)
+        print(f"round {rnd}: spent ${spent:.2f}; hypotheses: {[h['hypothesis'] for h in hyps]}", flush=True)
         with cf.ThreadPoolExecutor(N) as ex:
             cands = list(ex.map(lambda ih: worker(ih[0], rnd, ih[1], feedback.get(ih[0])), enumerate(hyps)))
         cands = [c for c in cands if c["diff_lines"] > 0]
@@ -150,7 +166,9 @@ def main():
         score(cands)
         for i, c in enumerate(cands):
             s = c["result"]["score"]
-            line = f"{c['id']} score={s} exit={c['result']['exit']} hyp={c['hyp'][:90]!r}"
+            a = sim.record(c["root_cause"], c["hyp"], c["summary"], c["predicted"], s, best,
+                           model=WORKER_MODEL, round=rnd, run=c["id"])
+            line = f"{c['id']} [{a['verdict']}] score={s} exit={c['result']['exit']} hyp={c['hyp'][:90]!r}"
             print(line, flush=True)
             history += line + "\n"
             feedback[int(c["id"].split("w")[1])] = (f"scored {s}" if s else "failed: " + c["result"].get("log", "")[-400:])
