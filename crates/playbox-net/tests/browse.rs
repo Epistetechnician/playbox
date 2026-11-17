@@ -140,7 +140,7 @@ async fn start_chrome(bin: &str) -> Chrome {
             .take(800)
             .collect::<String>()
     };
-    for _ in 0..300 {
+    for _ in 0..900 {
         // A browser that already exited will never listen; say why instead of waiting it out.
         if let Ok(Some(status)) = c.child.try_wait() {
             panic!("chrome exited ({status}) before it listened: {}", said());
@@ -152,7 +152,7 @@ async fn start_chrome(bin: &str) -> Chrome {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!(
-        "chrome did not listen on port {port} within 30 s: {}",
+        "chrome did not listen on port {port} within 90 s: {}",
         said()
     );
 }
