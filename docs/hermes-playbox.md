@@ -94,11 +94,12 @@ and 2 saw 35 and 9 refusals from it (the model retried and still finished). The 
 instead of showing it to the model; that change is covered by unit tests but was not re-run live, because the 30-run Hermes budget for
 these experiments was used up. Replaying edit commands is unchanged, so the taint advisories remain (5, 12 and 2 in these runs).
 
-**Keep mode (not yet run live with Hermes).** `warm` plus `keep` leaves the member's files in the sandbox between commands, so the
+**Keep mode.** `warm` plus `keep` leaves the member's files in the sandbox between commands, so the
 backend no longer re-sends earlier edit commands (the cause of the repeated taint advisories). Each command first checks a marker in
 the sandbox; if the sandbox was dropped (idle 15 min, timeout, error), the command stops with a marker and the backend replays its edit
 list once on a fresh checkout. `PLAYBOX_KEEP=0` goes back to replay. Tested: unit tests for the backend and live OpenShell tests for the
-runner. No Hermes benchmark yet, because the 30-run budget for these experiments is spent.
+runner. Three live Hermes runs (tag `keep`): 24/24 each, 126 to 182 s, 57 to 79 delegates, 0 refusals, audit verified 3/3. Taint advisories
+were 11, 10 and 13, so they did not go away: the model itself copies text it read into later commands, replay was not the only cause.
 
 **Caveats.** One smoke run (P-9) reported a post-write verification mismatch that still ended at 24/24; concurrent file-tool
 calls queue behind a single delegate (queue time is logged as `queued_s`, per-command time excludes it). The `hermes` shim at
