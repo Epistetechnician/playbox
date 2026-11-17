@@ -19,7 +19,7 @@ from . import l4_swat as S
 from .l4_eval import caches, nll_with
 from .telepathy_data import FIT_TOPICS
 
-CONDS = ("none", "own", "other_own", "mapped", "mapped_wrong")
+CONDS = ("none", "own", "other_own", "mapped", "mapped_wrong", "mapped_edge")
 
 
 def retention(rows: list[dict], cond: str) -> float:
@@ -55,9 +55,21 @@ def per_topic(rows: list[dict], a: str, b: str) -> dict:
 
 
 @torch.no_grad()
+def mapped_edge_nll(su, bt, pk, pv, rk, rv) -> float:
+    """The v2 deployment path: first token real, last edge_k context tokens read natively by the receiver on top of the mapped cache."""
+    from . import l4_swat_v2 as V
+    ctx, ids, im, sc = V.with_edge(bt, su.v2.edge_k)
+    return float(V.masked_nll(V.logits_with(su.rm, (pk, pv), ctx, ids, im, su.rd, real_first=(rk, rv)), ids, sc))
+
+
+@torch.no_grad()
 def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print) -> dict:
     t0 = time.time()
-    su = S.load_mapper(ckpt, dtype=torch.float32)
+    if "v2" in torch.load(ckpt, map_location="cpu"):
+        from . import l4_swat_v2 as V
+        su = V.load_mapper(ckpt, dtype=torch.float32)
+    else:
+        su = S.load_mapper(ckpt, dtype=torch.float32)
     su.mapper.eval()
     names = list(FIT_TOPICS)
     rows = []
@@ -71,11 +83,17 @@ def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print) -> dict:
                 ctx, cont = " ".join(s[:12]), " " + " ".join(s[12:])
                 bt, own, mapped = caches(su, ctx, cont)
                 _, other, mapped_other = caches(su, other_ctx, cont)
-                rows.append({"seed": seed, "topic": t, "none": nll_with(su, bt, None), "own": nll_with(su, bt, own),
-                             "other_own": nll_with(su, bt, other), "mapped": nll_with(su, bt, mapped), "mapped_wrong": nll_with(su, bt, mapped_other)})
+                row = {"seed": seed, "topic": t, "none": nll_with(su, bt, None), "own": nll_with(su, bt, own),
+                       "other_own": nll_with(su, bt, other), "mapped": nll_with(su, bt, mapped), "mapped_wrong": nll_with(su, bt, mapped_other)}
+                if getattr(su, "v2", None) is not None and su.v2.edge_k:
+                    row["mapped_edge"] = mapped_edge_nll(su, bt, mapped[0], mapped[1], own[0], own[1])
+                rows.append(row)
         log(f"seed {seed}: {len(rows)} items [{time.time() - t0:.0f}s]", flush=True)
     out = {"ckpt": ckpt, "draw_seeds": list(seeds), "draws_per_topic": draws, "topics": len(names), "n_items": len(rows)}
-    out["retention_pooled"] = {c: round(retention(rows, c), 4) for c in CONDS if c not in ("none", "own")}
+    conds = [c for c in CONDS if c in rows[0]]
+    out["retention_pooled"] = {c: round(retention(rows, c), 4) for c in conds if c not in ("none", "own")}
+    if "mapped_edge" in rows[0]:
+        out["B_edge_mapped_minus_unrelated_real"] = cluster_bootstrap(rows, "mapped_edge", "other_own")
     out["B_mapped_minus_unrelated_real"] = cluster_bootstrap(rows, "mapped", "other_own")
     out["specificity_mapped_minus_mapped_wrong"] = cluster_bootstrap(rows, "mapped", "mapped_wrong")
     out["by_draw_seed"] = {str(sd): {"B": round(diff([r for r in rows if r["seed"] == sd], "mapped", "other_own"), 4)} for sd in seeds}
