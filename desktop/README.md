@@ -66,6 +66,8 @@ The Python archive is passed with the hash it must have; the script refuses a mi
 
 The tray also has "Open in browser", because passkeys need a real browser (see above).
 
+The Python runtime is pinned in `python-runtime.json` (hashes from the release's `SHA256SUMS`; `scripts/fetch_python.py <target> <dir>` downloads and verifies it). `.github/workflows/desktop-bundle.yml` builds `Playbox.app`, ad-hoc signs it, smoke-tests that it starts its own hub with the bundled Python, and uploads a zip with its SHA-256. Built and run once locally on macOS arm64 (125 MB).
+
 ## Not built yet (see the plan)
 
-Pinned Python runtime per platform and the CI job that builds and signs the bundle, notarization, updates, secrets in the OS keychain, and Windows (the `playbox` binary's control socket is Unix-only). `cargo tauri build` itself has not been run yet.
+Linux and Windows bundles, notarization (deferred: unsigned by decision), updates, secrets in the OS keychain, and Windows (the `playbox` binary's control socket is Unix-only). 

@@ -1,0 +1,50 @@
+# Build the macOS desktop bundle (Playbox.app: the app, the hub, a pinned Python, the playbox binary), ad-hoc signed.
+# Manual or on a desktop-v* tag. Unsigned by decision (docs/desktop-plan.md): no Developer ID, so no notarization; first launch needs right-click > Open.
+name: desktop-bundle
+on:
+  workflow_dispatch:
+  push:
+    tags: ["desktop-v*"]
+permissions:
+  contents: read
+jobs:
+  macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p playbox-cli -p playbox-mcp
+      - name: Stage the bundle contents
+        run: |
+          read -r ARCHIVE HASH < <(python3 -I desktop/scripts/fetch_python.py aarch64-apple-darwin "$RUNNER_TEMP/py")
+          python3 -I desktop/scripts/stage.py --playbox target/release/playbox --python-archive "$ARCHIVE" --python-sha256 "$HASH"
+      - run: cargo install tauri-cli --version "^2" --locked
+      - name: Build and ad-hoc sign Playbox.app
+        working-directory: desktop
+        run: |
+          cargo tauri build --config tauri.bundle.conf.json --bundles app
+          codesign --force --deep --sign - target/release/bundle/macos/Playbox.app
+          codesign --verify --deep --strict target/release/bundle/macos/Playbox.app
+      - name: Smoke test: the app starts its own hub with the bundled Python
+        working-directory: desktop
+        run: |
+          export PLAYBOX_HUB_HOME="$(mktemp -d)" PLAYBOX_DESKTOP_PORT=7799
+          target/release/bundle/macos/Playbox.app/Contents/MacOS/playbox-desktop &
+          for i in $(seq 1 60); do curl -fs localhost:7799/api/auth/state | grep -q local_signin && break; sleep 1; done
+          curl -fs localhost:7799/api/auth/state | grep -q local_signin
+          ps -axo command | grep -q "Playbox.app/Contents/Resources/python/bin/python3"
+          pkill -TERM -f Playbox.app/Contents/MacOS/playbox-desktop
+      - name: Package
+        working-directory: desktop
+        run: |
+          ditto -c -k --keepParent target/release/bundle/macos/Playbox.app Playbox-macos-arm64.zip
+          shasum -a 256 Playbox-macos-arm64.zip | tee Playbox-macos-arm64.zip.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Playbox-macos-arm64
+          path: |
+            desktop/Playbox-macos-arm64.zip
+            desktop/Playbox-macos-arm64.zip.sha256

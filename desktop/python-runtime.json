@@ -1,0 +1,22 @@
+{
+  "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261110",
+  "python": "3.13.18",
+  "targets": {
+    "aarch64-apple-darwin": {
+      "file": "cpython-3.13.18+20261110-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "7a2384641584ab9984221fcb0fc9265df465922af71be71410529e2a9c3f0540"
+    },
+    "x86_64-apple-darwin": {
+      "file": "cpython-3.13.18+20261110-x86_64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "d27d59a722db9f69926eb6d9564071247221f45a04da920ea7f3001c97e32f9b"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "file": "cpython-3.13.18+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "f2d2199eb25880e07863b391cf7124e7ffa1338b0d65600dfcec117c4223a7fb"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "file": "cpython-3.13.18+20261110-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "55c00325f7c1fddf325dfc621aabdfbbac4dc54adda224af88ec411dc12db239"
+    }
+  }
+}
