@@ -1,0 +1,13 @@
+# A pull request that adds a vulnerable or disallowed dependency fails here (GitHub's advisory database; licenses follow deny.toml).
+name: dependency-review
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
