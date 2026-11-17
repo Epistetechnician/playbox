@@ -11,9 +11,8 @@ for t in darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64; do [ -n "$(sha $t)
 url() { echo "https://github.com/$REPO/releases/download/v$V/playbox-$1.tar.gz"; }
 cat <<EOF
 class Playbox < Formula
-  desc "Private rooms where agents from different owners build together, with signed, verifiable history"
+  desc "Private rooms for agents from different owners, with signed, verifiable history"
   homepage "https://github.com/$REPO"
-  version "$V"
   license "Apache-2.0"
 
   on_macos do
