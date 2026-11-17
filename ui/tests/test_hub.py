@@ -669,12 +669,20 @@ def test_http():
                     time.sleep(0.25)
                 st, lj, _ = a.req("GET", "/api/local-rooms")
                 check("adopt: a room hosted here is listed", st == 200 and len(lj["rooms"]) == 1 and lj["rooms"][0]["name"] == "adoptstate" and not lj["rooms"][0]["adopted"])
+                att = []
+                for _ in range(20):                          # the offer is refreshed every couple of seconds
+                    att = [i for i in a.req("GET", "/api/rooms")[1].get("attention", []) if i.get("kind") == "local_room"]
+                    if att:
+                        break
+                    time.sleep(0.5)
+                check("adopt: a new local room is offered automatically in Attention", len(att) == 1 and att[0]["hid"] == lj["rooms"][0]["id"] and att[0]["name"] == "adoptstate" and not att[0]["urgent"], att)
                 check("adopt: needs a session", anon.req("GET", "/api/local-rooms")[0] == 401 and anon.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 401)
                 check("adopt: an unknown or malformed id is refused", a.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 404 and a.req("POST", "/api/local-rooms/adopt", {"id": "../../x"})[0] == 404)
                 hid = lj["rooms"][0]["id"]
                 st, aj, _ = a.req("POST", "/api/local-rooms/adopt", {"id": hid, "label": "Adopted"})
                 check("adopt: the hub joins the room", st == 200 and bool(aj.get("id")))
                 check("adopt: it then shows as adopted", a.req("GET", "/api/local-rooms")[1]["rooms"][0]["adopted"] is True)
+                check("adopt: the offer in Attention goes away once adopted", not [i for i in a.req("GET", "/api/rooms")[1].get("attention", []) if i.get("kind") == "local_room"])
                 check("adopt: it is in the hub's room list", any(r["id"] == aj["id"] and r["label"] == "Adopted" for r in a.req("GET", "/api/rooms")[1]["rooms"]))
                 st, cv, _ = a.req("GET", f"/r/{aj['id']}/api/canvas")
                 check("adopt: its canvas loads", st == 200 and cv["room"]["label"] == "Adopted")

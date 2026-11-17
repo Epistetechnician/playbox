@@ -758,6 +758,12 @@ function approvalCards(items) {
       <div class="card mono" style="margin:0 0 10px;max-height:8em;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(Object.entries(c.args || {}).map(([k, v]) => k + "=" + v).join("\n") || "(no arguments)")}</div>
       <div class="row"><button class="btn primary sm" data-act="apv" data-dec="approve" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Approve</button><button class="btn sm danger" data-act="apv" data-dec="deny" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Deny</button></div></div>`; }).join("")}</div>` : "";
 }
+function localRoomCards(items) {
+  let gone = []; try { gone = JSON.parse(store.get("pb.localgone", "[]")); } catch {}
+  const lr = items.filter(i => i.kind === "local_room" && !gone.includes(i.hid));
+  return lr.length ? `<div class="card knock"><h2>Rooms on this machine</h2><p class="mut" style="margin:0 0 10px;font-size:13px">Found automatically. Adopting joins the room as a member, so it asks for your passkey.</p>${lr.map(i => `<div class="kq"><div class="kqh"><b>${esc(i.name)}</b> <span class="mut">${esc(i.repo || "no repository")}</span></div>
+      <div class="row"><button class="btn primary sm" data-act="adoptlocal" data-id="${esc(i.hid)}" data-name="${esc(i.name)}">Adopt</button><button class="btn sm" data-act="dismisslocal" data-id="${esc(i.hid)}">Not now</button></div></div>`).join("")}</div>` : "";
+}
 function knockCard() {
   const inc = S.knocks.map(k => `<div class="kq"><div class="kqh"><b>${esc(k.name)}</b> <span class="mut">wants to join</span> <b>${esc(k.label)}</b></div>
       <div class="kcode" aria-label="Verify code ${esc(k.code)}">${dm(k.code)}</div>
@@ -922,7 +928,7 @@ const VIEWS = {
     const flt = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["attn", "Attention"]];
     const bar = `<div class="sect tools"><h2 class="rule"><span class="ix">01</span>Rooms</h2></div><div class="sect tools" style="margin-top:0"><div class="filters" role="group" aria-label="Filter rooms">${flt.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
       <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
-    if (!S.rooms.length) return `${knockCard()}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
+    if (!S.rooms.length) return `${knockCard()}${localRoomCards(S.attention)}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
       : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="/r/${r.id}/" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
@@ -930,9 +936,9 @@ const VIEWS = {
   },
   attention() {
     const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
-    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}${approvalCards(a)}`;
-    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock" && i.kind !== "approval"));
-    if (!a.length && (S.knocks.length || S.attention.some(i => i.kind === "approval"))) return head;
+    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}${localRoomCards(a)}${approvalCards(a)}`;
+    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock" && i.kind !== "approval" && i.kind !== "local_room"));
+    if (!a.length && (S.knocks.length || S.attention.some(i => i.kind === "approval" || i.kind === "local_room"))) return head;
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
     return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="${i.room ? `/r/${i.room}/` : "/"}">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
@@ -1326,6 +1332,8 @@ document.addEventListener("click", async e => {
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();
+  else if (act === "adoptlocal") { t.disabled = true; t.textContent = "Joining…"; try { const j = await api("POST", "/api/local-rooms/adopt", {id: t.dataset.id, label: t.dataset.name}); toast(`"${t.dataset.name}" adopted`); await refreshRooms(); location.href = `/r/${j.id}/canvas`; } catch (er) { toast(er.message, true); t.disabled = false; t.textContent = "Adopt"; } }
+  else if (act === "dismisslocal") { let g = []; try { g = JSON.parse(store.get("pb.localgone", "[]")); } catch {} g.push(t.dataset.id); store.set("pb.localgone", JSON.stringify(g.slice(-50))); paintView(true); }
   else if (act === "apv") { t.disabled = true; try { const j = await api("POST", `/api/approvals/${encodeURIComponent(t.dataset.room)}/${encodeURIComponent(t.dataset.call)}`, {decision: t.dataset.dec}); toast(j.ok ? (t.dataset.dec === "approve" ? "Approved" : "Denied") : j.message, !j.ok); } catch (er) { toast(er.message, true); } refreshRooms(); }
   else if (act === "push") togglePush();
   else if (act === "install") { installEvt?.prompt(); installEvt = null; t.hidden = true; }
