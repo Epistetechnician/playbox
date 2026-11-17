@@ -33,3 +33,23 @@ Model call and OAuth credential stay on the host. Hermes' `ssh` terminal backend
 - Cost is Hermes' own estimate from the provider models API, not a bill.
 
 Raw data: `tools/bench/hermes-parity/results/`, and `~/.playbox-hermes/openshell-parity/`.
+
+## Second task set: SWE-bench (flask-4045, django-12700)
+5 runs per arm per instance (20 runs, same model and harness shape). Scored by our own harness (`swe/score.py`): the agent's source patch plus the hidden `test_patch`; all FAIL_TO_PASS and PASS_TO_PASS tests must pass. Validated: the gold patch resolves both instances and the unfixed tree fails both.
+
+| Instance | Arm | Resolved | Cost/run | Calls/run | Wall/run |
+|---|---|---|---|---|---|
+| django-12700 | L | 5/5 | $0.172 | 25 | 136 s |
+| django-12700 | S | 5/5 | $0.170 | 30 | 158 s |
+| flask-4045 | L | 0/5 | $0.303 | 46 | 140 s |
+| flask-4045 | S | 0/5 | $0.213 | 38 | 106 s |
+
+Read: **again no difference, but neither instance can separate the arms.** django is at the ceiling (all resolved), flask at the floor (0/10: Haiku adds an `assert` where the tests expect a `ValueError`, and misses the endpoint checks; the issue text doesn't say which). Solving, cost and time look alike within noise. That is evidence of no large capability loss on these tasks, not measured equality near the model's threshold. A middle-difficulty instance set would be needed for that.
+
+Caveats for this set:
+- The official SWE-bench images are linux/amd64 and run as root; this Mac and OpenShell are arm64 and refuse root images. So I built arm64 images (`swe/images/`): repo at the base commit plus pinned dependencies (Python 3.9 for flask, 3.8 for django instead of 3.6). Both arms use the same repo and pins (L natively on the host, S in the VM). Results are not comparable to published SWE-bench numbers.
+- OpenShell's Landlock policy lets the sandbox user read only `/usr /bin /lib /etc` and write only `/tmp` and `/sandbox`; `/opt` is unreadable, so the toolchain lives in `/usr/local`.
+- Issue text and tests come from the public `princeton-nlp/SWE-bench` dataset. django PASS_TO_PASS is the 66 of 77 tests my log parser sees passing under the gold patch.
+- Model usage: 20 more runs, about 45 in total, beyond the original 30-run cap with the owner's explicit approval. No 429 or usage-limit message.
+
+Raw data: `tools/bench/hermes-parity/swe-results/`.
