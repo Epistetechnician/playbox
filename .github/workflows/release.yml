@@ -103,3 +103,36 @@ jobs:
           # A tag like v0.3.0-rc.1 is a pre-release: `playbox update` and install.sh follow "latest", which skips it.
           case "${{ github.ref_name }}" in *-*) pre=--prerelease ;; *) pre= ;; esac
           gh release create "${{ github.ref_name }}" dist/* --notes-file notes.md $pre
+  homebrew:
+    # Update the Homebrew tap (Epistetechnician/homebrew-playbox) with the formula for this release. Skipped for pre-releases, and when the
+    # TAP_DEPLOY_KEY secret (an SSH deploy key with write access to the tap repository only) is not set.
+    needs: publish
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Update the tap
+        if: ${{ env.TAP_DEPLOY_KEY != '' }}
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key && chmod 600 ~/.ssh/tap_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tap_key -o IdentitiesOnly=yes"
+          git clone git@github.com:Epistetechnician/homebrew-playbox.git tap
+          sh scripts/brew-formula.sh "$VERSION" > tap/Formula/playbox.rb
+          cd tap
+          git config user.name "playbox release"
+          git config user.email "noreply@github.com"
+          git add Formula/playbox.rb
+          git diff --cached --quiet && { echo "formula already current"; exit 0; }
+          git commit -m "playbox $VERSION"
+          git push origin HEAD:main
+      - name: Skipped
+        if: ${{ env.TAP_DEPLOY_KEY == '' }}
+        run: echo "TAP_DEPLOY_KEY is not set: the Homebrew tap was not updated"

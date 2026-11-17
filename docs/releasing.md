@@ -32,6 +32,14 @@ Updating does not restart agents already running: they keep the old binary until
    `SHA256SUMS` with `PLAYBOX_RELEASE_KEY`, and publishes with the changelog section as the release notes. A tag with a `-` (for
    example `v0.3.0-rc.1`) is a pre-release and is not what `update` or `install.sh` fetch by default.
 
+## Homebrew tap
+
+`brew install Epistetechnician/playbox/playbox` installs the release binary from the tap repository `Epistetechnician/homebrew-playbox`. The
+`homebrew` job at the end of the release workflow regenerates `Formula/playbox.rb` with `scripts/brew-formula.sh VERSION` (checksums come from the
+release's `SHA256SUMS`) and pushes it. It needs the `TAP_DEPLOY_KEY` Actions secret: the private half of an SSH deploy key whose public half is
+added, with write access, to the tap repository only. Without the secret the job says so and does nothing; pre-releases never touch the tap.
+By hand: `sh scripts/brew-formula.sh X.Y.Z > Formula/playbox.rb` in a clone of the tap.
+
 ## Requirements and traceability
 
 `docs/requirements.md` lists what Playbox promises, one ID each. A test or scenario that checks one carries `REQ: ID` in a comment; `python3
