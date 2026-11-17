@@ -245,6 +245,12 @@ impl Authority {
         out
     }
 
+    /// The root signing key, for signing a room's genesis log entry; `None` on a replica.
+    #[must_use]
+    pub fn root_signing_key(&self) -> Option<&ed25519_dalek::SigningKey> {
+        self.notice_key.as_ref()
+    }
+
     /// Sign `data` with the root key; `None` on a replica.
     #[must_use]
     pub fn sign_notice(&self, data: &[u8]) -> Option<[u8; 64]> {
@@ -481,9 +487,12 @@ impl Authority {
             max_time: std::time::Duration::from_millis(250),
             ..Default::default()
         };
-        a.authorize_with_limits(limits)
-            .map(|_| ())
-            .map_err(|e| anyhow!("not authorized: {}", readable_refusal(&e.to_string(), now_secs())))
+        a.authorize_with_limits(limits).map(|_| ()).map_err(|e| {
+            anyhow!(
+                "not authorized: {}",
+                readable_refusal(&e.to_string(), now_secs())
+            )
+        })
     }
 }
 
@@ -496,7 +505,9 @@ fn readable_refusal(raw: &str, now: i64) -> String {
         digits.parse::<i64>().ok().filter(|&t| t <= now)
     });
     match expired {
-        Some(t) => format!("this grant expired (at unix time {t}); ask the host for a new invite link ({raw})"),
+        Some(t) => format!(
+            "this grant expired (at unix time {t}); ask the host for a new invite link ({raw})"
+        ),
         None => raw.to_string(),
     }
 }
@@ -573,13 +584,19 @@ mod refusal_tests {
     fn an_expired_grant_says_so() {
         let raw = "an allow policy matched (policy index: 0), and the following checks failed: Check n°1 in block n°0: check if now($t), $t < 1000";
         let m = readable_refusal(raw, 2000);
-        assert!(m.contains("expired") && m.contains("new invite link"), "{m}");
+        assert!(
+            m.contains("expired") && m.contains("new invite link"),
+            "{m}"
+        );
     }
 
     #[test]
     fn other_refusals_and_live_grants_pass_through() {
         let raw = "checks failed: check if now($t), $t < 5000";
         assert_eq!(readable_refusal(raw, 2000), raw);
-        assert_eq!(readable_refusal("check if req_cpu($c), $c <= 2", 2000), "check if req_cpu($c), $c <= 2");
+        assert_eq!(
+            readable_refusal("check if req_cpu($c), $c <= 2", 2000),
+            "check if req_cpu($c), $c <= 2"
+        );
     }
 }

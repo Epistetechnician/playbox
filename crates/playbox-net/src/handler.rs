@@ -34,6 +34,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub(crate) struct RoomHandler {
+    pub(crate) roomlog: Arc<crate::roomsync::RoomLogNode>,
     pub(crate) state: Arc<Mutex<State>>,
     pub(crate) cfg: HostConfig,
     pub(crate) tasks: Arc<Semaphore>,
@@ -202,6 +203,14 @@ impl RoomHandler {
         );
         st.members.insert(from, grant_id);
         st.save();
+        self.roomlog.record(
+            "member.join",
+            &from.to_string(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+                .unwrap_or(0),
+        );
         Ok(
             json!({ "member": from.to_string(), "grant": grant, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }),
         )
@@ -382,6 +391,10 @@ impl RoomHandler {
                 let reply = self.send_message(from, op, &req.message).await;
                 serde_json::to_value(reply)
                     .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+            }
+            wire::METHOD_HOSTS => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                Ok(self.roomlog.snapshot())
             }
             methods::GET_TASK => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;

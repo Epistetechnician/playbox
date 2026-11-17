@@ -44,6 +44,9 @@ pub const METHOD_ATTESTATION: &str = "playbox.GetAttestation";
 /// `{ "request": "<hex>" }` returns `{ "response": "<hex>" }`: the host's platform hardware answers a
 /// verifier's challenge (TPM credential activation). No auth, like attestation; the hardware serialises calls.
 pub const METHOD_ACTIVATE: &str = "playbox.ActivateCredential";
+/// `{}` returns `{ "root": hex, "entries": [...], "certs": [...] }`: the room's signed log (host-less rooms), for a
+/// member to check from the room key and read the host set from. Needs membership.
+pub const METHOD_HOSTS: &str = "playbox.GetHosts";
 /// JSON-RPC error code for a missing, invalid, expired or revoked grant (A2A defines none for this).
 pub const ERR_UNAUTHORIZED: i32 = -32040;
 pub const BINDING: &str = "PLAYBOX-IROH";

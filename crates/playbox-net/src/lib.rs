@@ -20,14 +20,16 @@ mod link;
 mod op_error;
 pub mod review;
 pub mod revoke;
+pub mod roomsync;
 pub mod shared_memory;
 mod state;
 pub mod steer;
 mod sync;
 pub mod transport;
+pub mod vet;
 pub mod wire;
 pub mod ws;
-pub use client::{join_link, Client, TaskRun};
+pub use client::{join_link, Client, RoomHosts, TaskRun};
 pub(crate) use handler::{finish, refuse, unauthorized, RoomHandler};
 pub use host::{Host, HostConfig};
 pub use keys::{identity_key, new_secret_key, random_bytes};
@@ -37,7 +39,7 @@ pub use state::Admit;
 pub(crate) use state::{write_atomic, State};
 pub use transport::{Transport, TransportChoice};
 
-pub use iroh::EndpointId;
+pub use iroh::{EndpointAddr, EndpointId};
 use std::time::Duration;
 
 pub const ALPN: &[u8] = b"playbox/a2a/1";
