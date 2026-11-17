@@ -85,6 +85,22 @@ pub fn from_process_env() -> Result<Dirs, NoHome> {
     resolve(Os::current(), &|k| std::env::var_os(k))
 }
 
+/// Where a packaged app keeps its resources, found from the running executable on our own instead of through the GUI toolkit. Tauri
+/// refuses the executable path on macOS when any folder above it is a symlink (`/tmp`, a symlinked home or volume), and then reports no
+/// resource directory at all, which made the app fall back to a system Python and never start its hub.
+pub fn resources_for_exe(exe: &std::path::Path) -> Option<PathBuf> {
+    let exe = exe.canonicalize().ok()?;
+    let dir = exe.parent()?;
+    let candidate = if cfg!(target_os = "macos") {
+        dir.join("../Resources")
+    } else if cfg!(windows) {
+        dir.to_path_buf()
+    } else {
+        dir.join("../lib/playbox-desktop")
+    };
+    candidate.canonicalize().ok().filter(|p| p.is_dir())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,22 +174,6 @@ mod tests {
         assert_eq!(resolve(Os::Linux, &env(&[])), Err(NoHome));
         assert_eq!(resolve(Os::Linux, &env(&[("HOME", "")])), Err(NoHome));
     }
-}
-
-/// Where a packaged app keeps its resources, found from the running executable on our own instead of through the GUI toolkit. Tauri
-/// refuses the executable path on macOS when any folder above it is a symlink (`/tmp`, a symlinked home or volume), and then reports no
-/// resource directory at all, which made the app fall back to a system Python and never start its hub.
-pub fn resources_for_exe(exe: &std::path::Path) -> Option<PathBuf> {
-    let exe = exe.canonicalize().ok()?;
-    let dir = exe.parent()?;
-    let candidate = if cfg!(target_os = "macos") {
-        dir.join("../Resources")
-    } else if cfg!(windows) {
-        dir.to_path_buf()
-    } else {
-        dir.join("../lib/playbox-desktop")
-    };
-    candidate.canonicalize().ok().filter(|p| p.is_dir())
 }
 
 #[cfg(all(test, target_os = "macos"))]
