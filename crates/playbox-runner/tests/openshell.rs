@@ -187,3 +187,39 @@ async fn warm_session_is_faster_and_leaves_nothing_behind() {
     );
     r.end_warm("member-a").await;
 }
+
+/// A workspace of a real repository is megabytes: it goes in and comes back as a tar stream on every task.
+/// Regression: a ~9 MB workspace used to stall the upload until the caller gave up.
+#[tokio::test]
+async fn large_workspace_round_trips() {
+    if !enabled() {
+        return;
+    }
+    let ws = std::env::temp_dir().join(format!("pb-osh-big-{}", std::process::id()));
+    std::fs::create_dir_all(&ws).unwrap();
+    // 9 MiB of incompressible bytes in a few hundred files, so size and file count both matter.
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut block = vec![0u8; 30 * 1024];
+    for i in 0..300 {
+        for b in block.iter_mut() {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *b = x as u8;
+        }
+        std::fs::write(ws.join(format!("f{i}.bin")), &block).unwrap();
+    }
+    let want = std::fs::read(ws.join("f299.bin")).unwrap();
+    let r = OpenShellRunner::new(SandboxPolicy::default());
+    let spec = TaskSpec::new(&["sh", "-c", "ls | wc -l; echo changed > f0.bin"]);
+    let t = std::time::Instant::now();
+    let out = r.run(&spec, &ws).await.unwrap();
+    eprintln!("large workspace round trip: {:?}", t.elapsed());
+    assert_eq!(out.exit_code, Some(0), "{out:?}");
+    assert!(out.stdout.trim().starts_with("300"), "{out:?}");
+    assert_eq!(
+        std::fs::read_to_string(ws.join("f0.bin")).unwrap().trim(),
+        "changed"
+    );
+    assert_eq!(std::fs::read(ws.join("f299.bin")).unwrap(), want);
+}
