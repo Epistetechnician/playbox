@@ -1,4 +1,4 @@
-# Build the macOS desktop bundle (Playbox.app: the app, the hub, a pinned Python, the playbox binary), ad-hoc signed.
+# Build the macOS desktop bundles (Apple silicon and Intel; Intel is cross-compiled on the Apple-silicon runner) (Playbox.app: the app, the hub, a pinned Python, the playbox binary), ad-hoc signed.
 # Manual or on a desktop-v* tag. Unsigned by decision (docs/desktop-plan.md): no Developer ID, so no notarization; first launch needs right-click > Open.
 name: desktop-bundle
 on:
@@ -9,44 +9,61 @@ on:
 permissions:
   contents: read
 jobs:
-  macos-arm64:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, triple: aarch64-apple-darwin }
+          - { arch: x86_64, triple: x86_64-apple-darwin }
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
+          targets: ${{ matrix.triple }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p playbox-cli -p playbox-mcp
+      - run: cargo build --release --target ${{ matrix.triple }} -p playbox-cli -p playbox-mcp
       - name: The app reports the release's version (the updater compares it)
         run: python3 -I desktop/scripts/set_version.py
       - name: Stage the bundle contents
         run: |
-          read -r ARCHIVE HASH < <(python3 -I desktop/scripts/fetch_python.py aarch64-apple-darwin "$RUNNER_TEMP/py")
-          python3 -I desktop/scripts/stage.py --playbox target/release/playbox --python-archive "$ARCHIVE" --python-sha256 "$HASH"
+          read -r ARCHIVE HASH < <(python3 -I desktop/scripts/fetch_python.py ${{ matrix.triple }} "$RUNNER_TEMP/py")
+          python3 -I desktop/scripts/stage.py --playbox target/${{ matrix.triple }}/release/playbox --python-archive "$ARCHIVE" --python-sha256 "$HASH"
       - run: cargo install tauri-cli --version "^2" --locked
       - name: Build and ad-hoc sign Playbox.app
         working-directory: desktop
         env:
           PLAYBOX_RELEASE_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PUBKEY }}   # the key the updater trusts; empty falls back to release.pub
         run: |
-          cargo tauri build --config tauri.bundle.conf.json --bundles app
-          codesign --force --deep --sign - target/release/bundle/macos/Playbox.app
-          codesign --verify --deep --strict target/release/bundle/macos/Playbox.app
+          cargo tauri build --target ${{ matrix.triple }} --config tauri.bundle.conf.json --bundles app
+          APP=target/${{ matrix.triple }}/release/bundle/macos/Playbox.app
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          for f in Contents/MacOS/playbox-desktop Contents/Resources/bin/playbox Contents/Resources/python/bin/python3.13; do
+            [ "$(lipo -archs "$APP/$f")" = "${{ matrix.arch }}" ] || { echo "$f is not ${{ matrix.arch }}"; exit 1; }
+          done
+      - name: Can this runner execute the bundle? (Intel needs Rosetta on the Apple-silicon runner)
+        id: runs
+        run: |
+          if [ "${{ matrix.arch }}" = arm64 ] || arch -x86_64 /usr/bin/true 2>/dev/null; then echo ok=true >> "$GITHUB_OUTPUT"; else echo ok=false >> "$GITHUB_OUTPUT"; echo "::notice::no Rosetta here: the ${{ matrix.arch }} app was built and checked but not run"; fi
       - name: "Smoke test: the app starts its own hub with the bundled Python"
+        if: steps.runs.outputs.ok == 'true'
         working-directory: desktop
         run: |
           export PLAYBOX_HUB_HOME="$(mktemp -d)" PLAYBOX_DESKTOP_PORT=7799
-          target/release/bundle/macos/Playbox.app/Contents/MacOS/playbox-desktop &
+          target/${{ matrix.triple }}/release/bundle/macos/Playbox.app/Contents/MacOS/playbox-desktop &
           for i in $(seq 1 60); do curl -fs localhost:7799/api/auth/state | grep -q local_signin && break; sleep 1; done
           curl -fs localhost:7799/api/auth/state | grep -q local_signin
           ps -axo command | grep -q "Playbox.app/Contents/Resources/python/bin/python3"
           pkill -TERM -f Playbox.app/Contents/MacOS/playbox-desktop
       - name: "Smoke test: the app finds its hub when reached through a symlinked folder"
+        if: steps.runs.outputs.ok == 'true'
         working-directory: desktop
         run: |
           # Tauri refuses the executable path on macOS when a parent folder is a symlink; the app resolves its resources itself.
-          mkdir -p "$RUNNER_TEMP/real" && ditto target/release/bundle/macos/Playbox.app "$RUNNER_TEMP/real/Playbox.app"
+          mkdir -p "$RUNNER_TEMP/real" && ditto target/${{ matrix.triple }}/release/bundle/macos/Playbox.app "$RUNNER_TEMP/real/Playbox.app"
           ln -s "$RUNNER_TEMP/real" "$RUNNER_TEMP/link"
           export HOME="$RUNNER_TEMP/h" PLAYBOX_HUB_HOME="$RUNNER_TEMP/hub2" PLAYBOX_DESKTOP_PORT=7798
           mkdir -p "$HOME"
@@ -57,11 +74,11 @@ jobs:
       - name: Package
         working-directory: desktop
         run: |
-          ditto -c -k --keepParent target/release/bundle/macos/Playbox.app Playbox-macos-arm64.zip
-          shasum -a 256 Playbox-macos-arm64.zip | tee Playbox-macos-arm64.zip.sha256
+          ditto -c -k --keepParent target/${{ matrix.triple }}/release/bundle/macos/Playbox.app Playbox-macos-${{ matrix.arch }}.zip
+          shasum -a 256 Playbox-macos-${{ matrix.arch }}.zip | tee Playbox-macos-${{ matrix.arch }}.zip.sha256
       - uses: actions/upload-artifact@v7
         with:
-          name: Playbox-macos-arm64
+          name: Playbox-macos-${{ matrix.arch }}
           path: |
-            desktop/Playbox-macos-arm64.zip
-            desktop/Playbox-macos-arm64.zip.sha256
+            desktop/Playbox-macos-${{ matrix.arch }}.zip
+            desktop/Playbox-macos-${{ matrix.arch }}.zip.sha256

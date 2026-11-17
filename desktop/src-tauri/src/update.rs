@@ -17,6 +17,8 @@ pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 fn asset() -> Option<&'static str> {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         Some("Playbox-macos-arm64.zip")
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        Some("Playbox-macos-x86_64.zip")
     } else {
         None
     }
