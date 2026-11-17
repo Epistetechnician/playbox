@@ -228,13 +228,14 @@ fn the_hub(a: &InitArgs, tty: bool, r: &mut Report) -> Result<Option<HubPlan>> {
     };
     Report::ok(&format!("hub found: {}", script.display()));
     let ha = hub_args(a);
-    let (reach, remember) = match hub::choose(&ha, hub::load(), tty && !a.yes) {
-        Ok(x) => x,
-        Err(e) => {
-            r.warn(&format!("{e:#}"));
-            return Ok(None);
-        }
-    };
+    let (reach, remember) =
+        match hub::load().and_then(|saved| hub::choose(&ha, saved, tty && !a.yes)) {
+            Ok(x) => x,
+            Err(e) => {
+                r.warn(&format!("{e:#}"));
+                return Ok(None);
+            }
+        };
     if remember && !a.dry_run {
         hub::save(&reach)?;
     }
