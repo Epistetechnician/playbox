@@ -222,6 +222,24 @@ async fn revoked_member_loses_access_and_cannot_rejoin() {
     assert_eq!(other.echo("fine").await.unwrap(), "fine");
 }
 
+// REQ: GRANT-3
+#[tokio::test]
+async fn a_rejoined_member_loses_every_grant_when_revoked() {
+    let (host, link) = room("revoke-twice", |_| {}).await;
+    let key = new_secret_key().unwrap();
+    let first = join_link(&link, key.clone(), true).await.unwrap();
+    let second = join_link(&link, key, true).await.unwrap();
+    assert_eq!(first.echo("a").await.unwrap(), "a");
+    assert_eq!(second.echo("b").await.unwrap(), "b");
+
+    assert!(host.revoke_member(&second.id()));
+
+    let err = first.echo("after").await.unwrap_err();
+    assert!(msg(err).contains("revoked"));
+    let err = second.echo("after").await.unwrap_err();
+    assert!(msg(err).contains("revoked"));
+}
+
 // REQ: GRANT-4
 #[tokio::test]
 async fn invite_cannot_be_used_as_a_grant() {
