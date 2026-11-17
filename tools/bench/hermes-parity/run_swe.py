@@ -8,11 +8,12 @@ from score import load, score
 
 inst, arm, n, out = sys.argv[1:5]
 H = os.path.expanduser("~/.playbox-hermes/openshell-parity"); SWE = f"{H}/swe"
-SB = f"parity-{inst}"; r = load(inst); tag = f"{inst}-{arm}{n}"
+fam = "django" if inst.startswith("django-") else inst
+SB = f"parity-{fam}"; r = load(inst); tag = f"{inst}-{arm}{n}"
 os.makedirs(out, exist_ok=True)
 work = tempfile.mkdtemp(prefix=f"pb-{tag}-")
 env = dict(os.environ)
-home = f"{H}/home-{inst}-{arm}"          # persistent per arm/instance (Hermes builds tools/ there on first use); only config.yaml changes
+home = f"{H}/home-{fam}-{arm}"          # persistent per arm/instance (Hermes builds tools/ there on first use); only config.yaml changes
 if not os.path.isdir(home):
     os.makedirs(home)
     skip = ("tools", "hermes-agent", "installs", "bin", "node", "desktop", "bootstrap-cache", "backups", "skills", "cache", "attachments", "image_cache",
@@ -32,8 +33,8 @@ def setterm(cfg, **kv):
     return head + "\nterminal:\n" + block + "\n" + tail
 
 if arm == "L":
-    repo = f"{work}/repo"; shutil.copytree(f"{SWE}/{inst}/testbed", repo, symlinks=True)
-    py = f"{SWE}/venv-{inst}/bin/python"
+    repo = f"{work}/repo"; shutil.copytree(f"{SWE}/{fam}/testbed", repo, symlinks=True); subprocess.run(["git", "-C", repo, "checkout", "-q", "-f", r["base_commit"]], check=True)
+    py = f"{SWE}/venv-{fam}/bin/python"
     subprocess.run(["uv", "pip", "install", "-q", "--python", py, "-e", repo, "--no-deps"], check=True)
     sh = lambda c, **k: subprocess.run(["bash", "-c", c], capture_output=True, text=True, **k)
     cfg = setterm(cfg, backend="local", cwd=repo)
@@ -41,14 +42,15 @@ else:
     repo = f"/sandbox/pb/{arm}{n}-{inst}/repo"; py = "/usr/local/venv/bin/python"
     env["PATH"] = f"{H}/ssh-{SB}/bin:" + env["PATH"]
     ex = lambda c: subprocess.run(["openshell", "sandbox", "exec", SB, "--", "sh", "-c", c], capture_output=True, text=True)
-    t0 = time.time(); e = ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst}; mkdir -p /sandbox/pb/{arm}{n}-{inst} && cp -a /usr/local/testbed {repo} && cd {repo} && git status --short | head -1"); assert e.returncode == 0, e.stderr
+    t0 = time.time(); e = ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst}; mkdir -p /sandbox/pb/{arm}{n}-{inst} && cp -a /usr/local/testbed {repo} && cd {repo} && git checkout -q -f {r['base_commit']} && git status --short | head -1"); assert e.returncode == 0, e.stderr
     upload_s = time.time() - t0
     cfg = setterm(cfg, backend="ssh", cwd=repo, ssh_host=f"openshell-{SB}.default", ssh_user="sandbox", ssh_port="22")
     sh = lambda c, **k: ex(c)
 open(f"{home}/config.yaml", "w").write(cfg); env["HERMES_HOME"] = home; env.pop("TERMINAL_ENV", None)
 
+mod = re.search(r"\((.+)\)", r["F"][0]).group(1).rsplit(".", 1)[0] if inst != "flask" else ""
 pp = f"{repo}/src" if inst == "flask" else repo
-test_hint = f"PYTHONPATH={pp} {py} -m pytest tests/test_blueprints.py -q" if inst == "flask" else f"cd tests && PYTHONPATH={pp} {py} runtests.py --settings=test_sqlite --parallel 1 view_tests.tests.test_debug"
+test_hint = f"PYTHONPATH={pp} {py} -m pytest tests/test_blueprints.py -q" if inst == "flask" else f"cd tests && PYTHONPATH={pp} {py} runtests.py --settings=test_sqlite --parallel 1 {mod}"
 prompt = (f"The repository in {repo} has a bug. Fix it in the source code so the behaviour described in the issue is correct, without breaking existing behaviour. "
           f"Use the Python at {py} (all dependencies are installed). Example test command from the repo root: `{test_hint}`. "
           f"Do not edit existing tests; hidden tests will check your fix. Edit files in place, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}")

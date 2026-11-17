@@ -4,20 +4,24 @@ import json, os, re, subprocess, sys, tempfile
 D = os.path.expanduser("~/.playbox-hermes/openshell-parity/swe")
 INST = {"flask": ("pallets__flask-4045", "pb-swe-flask:arm64"), "django": ("django__django-12700", "pb-swe-django:arm64")}
 
+def _inst(name):
+    if name.startswith("django-"): return ("django__" + name, "pb-swe-django:arm64")
+    return INST[name]
+
 def load(name):
-    r = json.load(open(f"{D}/{INST[name][0]}.inst.json")); r["F"] = json.loads(r["FAIL_TO_PASS"]); r["P"] = json.loads(r["PASS_TO_PASS"]); return r
+    r = json.load(open(f"{D}/{_inst(name)[0]}.inst.json")); r["F"] = json.loads(r["FAIL_TO_PASS"]); r["P"] = json.loads(r["PASS_TO_PASS"]); return r
 
 def score(name, patch):
-    r = load(name); img = INST[name][1]
+    r = load(name); img = _inst(name)[1]
     with tempfile.TemporaryDirectory() as t:
         open(f"{t}/agent.patch", "w").write(patch); open(f"{t}/test.patch", "w").write(r["test_patch"])
         if name == "flask":
             files = sorted(set(x.split("::")[0] for x in r["F"] + r["P"]))
-            run = "pytest -rA -p no:cacheprovider " + " ".join(files)
+            run = "PYTHONPATH=/tmp/tb/src pytest -rA -p no:cacheprovider " + " ".join(files)
         else:
-            files = sorted(set(re.search(r"\((.+)\)", x).group(1).rsplit(".", 1)[0] for x in r["F"] + r["P"] if "(" in x))
-            run = "cd tests && python runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 " + " ".join(files)
-        sh = f"cd /usr/local/testbed && git apply /s/agent.patch && git apply /s/test.patch && ({run}) 2>&1"
+            files = sorted(set(re.search(r"\((.+)\)", x).group(1).rsplit(".", 1)[0] for x in r["F"] + r["P"] if re.search(r"\((.+)\)", x)))
+            run = "cd tests && PYTHONPATH=/tmp/tb python runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 " + " ".join(files)
+        sh = f"cp -a /usr/local/testbed /tmp/tb && cd /tmp/tb && git checkout -q -f {r['base_commit']} && git apply /s/agent.patch && git apply /s/test.patch && ({run}) 2>&1"
         if not patch.strip(): sh = sh.replace("git apply /s/agent.patch && ", "")
         p = subprocess.run(["docker", "run", "--rm", "--network", "none", "-v", f"{t}:/s:ro", "--entrypoint", "bash", img, "-c", sh], capture_output=True, text=True, timeout=1500)
     out = p.stdout + p.stderr

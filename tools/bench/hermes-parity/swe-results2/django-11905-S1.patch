@@ -1,0 +1,79 @@
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979c56..cae16ff211 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -463,6 +463,12 @@ class IsNull(BuiltinLookup):
+     prepare_rhs = False
+ 
+     def as_sql(self, compiler, connection):
++        # Expressions (e.g. F(), Case()) are allowed, but direct values must be boolean
++        if not isinstance(self.rhs, bool) and not hasattr(self.rhs, 'as_sql'):
++            raise ValueError(
++                'The QuerySet value for an isnull lookup must be True or '
++                'False.'
++            )
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+             return "%s IS NULL" % sql, params
+diff --git a/test_isnull_fix.py b/test_isnull_fix.py
+new file mode 100644
+index 0000000000..7ceb8a25f1
+--- /dev/null
++++ b/test_isnull_fix.py
+@@ -0,0 +1,56 @@
++import os
++import django
++
++os.environ['DJANGO_SETTINGS_MODULE'] = 'tests.settings'
++django.setup()
++
++from tests.lookup.models import Article, Author
++
++# Test 1: Valid usage with True
++print("Test 1: Using isnull=True")
++try:
++    list(Article.objects.filter(author__isnull=True))
++    print("✓ PASSED: isnull=True works")
++except ValueError as e:
++    print(f"✗ FAILED: {e}")
++
++# Test 2: Valid usage with False
++print("\nTest 2: Using isnull=False")
++try:
++    list(Article.objects.filter(author__isnull=False))
++    print("✓ PASSED: isnull=False works")
++except ValueError as e:
++    print(f"✗ FAILED: {e}")
++
++# Test 3: Invalid usage with 1 (should raise ValueError)
++print("\nTest 3: Using isnull=1 (should fail)")
++try:
++    list(Article.objects.filter(author__isnull=1))
++    print("✗ FAILED: isnull=1 should raise ValueError")
++except ValueError as e:
++    if "must be True or False" in str(e):
++        print(f"✓ PASSED: {e}")
++    else:
++        print(f"✗ FAILED: Wrong error: {e}")
++
++# Test 4: Invalid usage with 0 (should raise ValueError)
++print("\nTest 4: Using isnull=0 (should fail)")
++try:
++    list(Article.objects.filter(author__isnull=0))
++    print("✗ FAILED: isnull=0 should raise ValueError")
++except ValueError as e:
++    if "must be True or False" in str(e):
++        print(f"✓ PASSED: {e}")
++    else:
++        print(f"✗ FAILED: Wrong error: {e}")
++
++# Test 5: Invalid usage with string (should raise ValueError)
++print("\nTest 5: Using isnull='string' (should fail)")
++try:
++    list(Article.objects.filter(author__isnull='string'))
++    print("✗ FAILED: isnull='string' should raise ValueError")
++except ValueError as e:
++    if "must be True or False" in str(e):
++        print(f"✓ PASSED: {e}")
++    else:
++        print(f"✗ FAILED: Wrong error: {e}")

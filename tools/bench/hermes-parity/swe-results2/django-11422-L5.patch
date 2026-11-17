@@ -1,0 +1,23 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68fae..9483732367 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -580,6 +580,18 @@ def run_with_reloader(main_func, *args, **kwargs):
+         if os.environ.get(DJANGO_AUTORELOAD_ENV) == 'true':
+             reloader = get_reloader()
+             logger.info('Watching for file changes with %s', reloader.__class__.__name__)
++            # Watch the script being run (e.g. manage.py)
++            if sys.argv and sys.argv[0]:
++                try:
++                    script_path = Path(sys.argv[0]).resolve().absolute()
++                    # Only watch regular Python files or scripts without extension
++                    if script_path.is_file() and script_path.suffix in ('.py', ''):
++                        # Only watch if the method exists (for compatibility with mocks/tests)
++                        if hasattr(reloader, 'watch_file'):
++                            reloader.watch_file(script_path)
++                except (ValueError, TypeError):
++                    # In case sys.argv[0] is not a valid path
++                    pass
+             start_django(reloader, main_func, *args, **kwargs)
+         else:
+             exit_code = restart_with_reloader()

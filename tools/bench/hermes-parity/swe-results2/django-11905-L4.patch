@@ -1,0 +1,192 @@
+diff --git a/comprehensive_isnull_test.py b/comprehensive_isnull_test.py
+new file mode 100644
+index 0000000000..ad9f79fa77
+--- /dev/null
++++ b/comprehensive_isnull_test.py
+@@ -0,0 +1,117 @@
++#!/usr/bin/env python
++"""
++Comprehensive test to verify the isnull lookup fix.
++This test demonstrates that:
++1. Boolean values (True/False) work with isnull
++2. Non-boolean values raise ValueError
++3. None is rejected by default
++4. Custom lookups with can_use_none_as_rhs=True can accept None
++"""
++import os
++import sys
++import django
++
++os.environ['DJANGO_SETTINGS_MODULE'] = 'tests.test_sqlite'
++django.setup()
++
++from django.test.utils import setup_test_environment, teardown_test_environment
++from django.db import connection
++
++setup_test_environment()
++
++# Setup test database
++connection.creation.create_test_db(verbosity=0, autoclobber=True, serialize=False)
++
++try:
++    from tests.lookup.models import Season
++    
++    print("=" * 70)
++    print("COMPREHENSIVE ISNULL LOOKUP VALIDATION TEST")
++    print("=" * 70)
++    
++    # Create test data
++    season = Season.objects.create(year=2012)
++    
++    # Test 1: Boolean values should work
++    print("\n1. BOOLEAN VALUES (Expected: PASS)")
++    print("-" * 70)
++    
++    try:
++        result = Season.objects.filter(year__isnull=True)
++        print("   isnull=True: ✓ PASS")
++    except Exception as e:
++        print(f"   isnull=True: ✗ FAIL - {e}")
++    
++    try:
++        result = Season.objects.filter(year__isnull=False)
++        print("   isnull=False: ✓ PASS")
++    except Exception as e:
++        print(f"   isnull=False: ✗ FAIL - {e}")
++    
++    # Test 2: Non-boolean values should raise ValueError
++    print("\n2. NON-BOOLEAN VALUES (Expected: RAISE ValueError)")
++    print("-" * 70)
++    
++    test_values = [
++        (1, "integer 1"),
++        (0, "integer 0"),
++        ("true", "string 'true'"),
++        (1.5, "float 1.5"),
++        ([], "empty list"),
++        ({}, "empty dict"),
++        ((True,), "tuple (True,)"),
++    ]
++    
++    for value, description in test_values:
++        try:
++            result = Season.objects.filter(year__isnull=value)
++            # Force evaluation
++            list(result)
++            print(f"   {description}: ✗ FAIL - Should have raised ValueError")
++        except ValueError as e:
++            print(f"   {description}: ✓ PASS - Raised ValueError")
++        except Exception as e:
++            print(f"   {description}: ✗ FAIL - Wrong exception: {type(e).__name__}")
++    
++    # Test 3: None should be rejected by default
++    print("\n3. NONE VALUE (Expected: RAISE ValueError)")
++    print("-" * 70)
++    
++    try:
++        result = Season.objects.filter(year__isnull=None)
++        print("   isnull=None: ✗ FAIL - Should have raised ValueError")
++    except ValueError as e:
++        print("   isnull=None: ✓ PASS - Raised ValueError")
++    except Exception as e:
++        print(f"   isnull=None: ✗ FAIL - Wrong exception: {type(e).__name__}")
++    
++    # Test 4: Custom lookup with can_use_none_as_rhs=True should accept None
++    print("\n4. CUSTOM LOOKUP WITH can_use_none_as_rhs=True (Expected: PASS)")
++    print("-" * 70)
++    
++    try:
++        result = Season.objects.filter(nulled_text_field__isnull_none_rhs=None)
++        print("   isnull_none_rhs=None: ✓ PASS - None accepted")
++    except Exception as e:
++        print(f"   isnull_none_rhs=None: ✗ FAIL - {e}")
++    
++    try:
++        result = Season.objects.filter(nulled_text_field__isnull_none_rhs=True)
++        print("   isnull_none_rhs=True: ✓ PASS")
++    except Exception as e:
++        print(f"   isnull_none_rhs=True: ✗ FAIL - {e}")
++    
++    try:
++        result = Season.objects.filter(nulled_text_field__isnull_none_rhs=False)
++        print("   isnull_none_rhs=False: ✓ PASS")
++    except Exception as e:
++        print(f"   isnull_none_rhs=False: ✗ FAIL - {e}")
++    
++    print("\n" + "=" * 70)
++    print("TEST COMPLETED SUCCESSFULLY")
++    print("=" * 70)
++
++finally:
++    # Teardown test database
++    connection.creation.destroy_test_db(connection.settings_dict["NAME"], verbosity=0)
++    teardown_test_environment()
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979c56..8e87e87692 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -462,6 +462,15 @@ class IsNull(BuiltinLookup):
+     lookup_name = 'isnull'
+     prepare_rhs = False
+ 
++    def __init__(self, lhs, rhs):
++        super().__init__(lhs, rhs)
++        # Validate that rhs is a boolean or None (if can_use_none_as_rhs is True)
++        if not isinstance(self.rhs, bool):
++            if self.rhs is not None or not self.can_use_none_as_rhs:
++                raise ValueError(
++                    'The isnull lookup expects a boolean value, got %s.' % type(self.rhs).__name__
++                )
++
+     def as_sql(self, compiler, connection):
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+diff --git a/test_isnull_issue.py b/test_isnull_issue.py
+new file mode 100644
+index 0000000000..b7a291e5b6
+--- /dev/null
++++ b/test_isnull_issue.py
+@@ -0,0 +1,43 @@
++import os
++import django
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.test_sqlite')
++django.setup()
++
++from tests.lookup.models import Season
++
++# Try creating a season and filtering with non-boolean values
++season = Season.objects.create(year=2012)
++
++# Test with integer
++try:
++    result = Season.objects.filter(year__isnull=1)
++    print(f"Filter with isnull=1 succeeded: {list(result)}")
++except Exception as e:
++    print(f"Filter with isnull=1 failed: {e}")
++
++# Test with string
++try:
++    result = Season.objects.filter(year__isnull='true')
++    print(f"Filter with isnull='true' succeeded: {list(result)}")
++except Exception as e:
++    print(f"Filter with isnull='true' failed: {e}")
++
++# Test with None
++try:
++    result = Season.objects.filter(year__isnull=None)
++    print(f"Filter with isnull=None succeeded: {list(result)}")
++except Exception as e:
++    print(f"Filter with isnull=None failed: {e}")
++
++# Test with boolean (expected to work)
++try:
++    result = Season.objects.filter(year__isnull=True)
++    print(f"Filter with isnull=True succeeded: {list(result)}")
++except Exception as e:
++    print(f"Filter with isnull=True failed: {e}")
++
++try:
++    result = Season.objects.filter(year__isnull=False)
++    print(f"Filter with isnull=False succeeded: {list(result)}")
++except Exception as e:
++    print(f"Filter with isnull=False failed: {e}")

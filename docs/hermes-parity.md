@@ -53,3 +53,26 @@ Caveats for this set:
 - Model usage: 20 more runs, about 45 in total, beyond the original 30-run cap with the owner's explicit approval. No 429 or usage-limit message.
 
 Raw data: `tools/bench/hermes-parity/swe-results/`.
+
+## Third task set: mid-difficulty Django (11848, 11422, 11905)
+The first SWE-bench pair sat at ceiling and floor. I calibrated 5 small Django 3.x SWE-bench Lite instances with 2 local runs each, dropped the two that were always solved (11001, 11620) and kept three that varied. Then 5 runs per arm per instance, same arm64 image as above.
+
+| Instance | Arm | Resolved | Target tests fixed | Cost/run | Calls/run | Wall/run |
+|---|---|---|---|---|---|---|
+| django-11848 | L | 4/5 | 9/10 | $0.115 | 20 | 95 s |
+| django-11848 | S | 5/5 | 10/10 | $0.115 | 21 | 91 s |
+| django-11422 | L | 4/5 | 4/5 | $0.198 | 31 | 143 s |
+| django-11422 | S | 3/5 | 3/5 | $0.255 | 41 | 176 s |
+| django-11905 | L | 0/5 | 5/10 | $0.341 | 62 | 190 s |
+| django-11905 | S | 0/4 | 4/8 | $0.261 | 51 | 141 s |
+| **all** | **L** | **8/15** | | **$0.218** | | **143 s** |
+| **all** | **S** | **8/14** | | **$0.207** | | **135 s** |
+
+**Result: S and L resolve at the same rate (53% vs 57%) on tasks near Haiku's threshold.** Per-instance rate difference (S minus L), averaged over instances: 0.00, bootstrap 95% CI [-0.20, +0.20]. So at n=14-15 the data rule out a drop of more than about 20 percentage points in resolve rate, not smaller ones; the 2-test margin used for Tripwire does not translate here. The per-instance differences (+1, -1, 0) go in both directions, which is what noise looks like. Cost and time are the same within noise.
+
+Honest gaps:
+- **Stopped by an Anthropic 429.** The last run (django-11905 S5) hit "usage limit resets in ~93h" after 3 retries, so that cell has 4 runs, not 5. No further Hermes runs were made.
+- 15 L / 14 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and kept in `swe-results2/` only as their absence. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
+- 5 runs per cell is thin; one instance flips by a single run.
+- Calibration runs (2 per instance, local only) were used to pick instances, so L is not blind to the selection. Only the post-selection runs are in the table, except L2 of the three kept instances, which were calibration runs and also counted. This could slightly favour L's resolve rate by selection but is small.
+- Model usage in total is now around 65 Hermes runs, above the 30-run cap by your approval of 20 + 60 more; the 60 was nearly used up before the 429.

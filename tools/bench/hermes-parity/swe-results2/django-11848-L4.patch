@@ -1,0 +1,23 @@
+diff --git a/django/utils/http.py b/django/utils/http.py
+index 572cfb4347..06f3aee113 100644
+--- a/django/utils/http.py
++++ b/django/utils/http.py
+@@ -176,10 +176,15 @@ def parse_http_date(date):
+     try:
+         year = int(m.group('year'))
+         if year < 100:
+-            if year < 70:
+-                year += 2000
++            # RFC 7231: timestamps that appear to be more than 50 years in the
++            # future should be interpreted as representing the most recent year
++            # in the past that had the same last two digits.
++            current_year = datetime.datetime.utcnow().year
++            year_as_2000s = 2000 + year
++            if year_as_2000s - current_year > 50:
++                year = 1900 + year
+             else:
+-                year += 1900
++                year = year_as_2000s
+         month = MONTHS.index(m.group('mon').lower()) + 1
+         day = int(m.group('day'))
+         hour = int(m.group('hour'))
