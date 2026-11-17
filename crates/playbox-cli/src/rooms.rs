@@ -224,6 +224,33 @@ pub async fn up(a: UpArgs) -> Result<()> {
             a.sync_interval.max(1)
         );
     }
+    let log_every = Duration::from_secs(a.sync_interval.max(1));
+    let mut log_peers = Vec::new();
+    if !a.room_log_peer.is_empty() {
+        log_peers = a
+            .room_log_peer
+            .iter()
+            .map(|p| playbox_net::decode_peer(p))
+            .collect::<Result<Vec<_>>>()?;
+        if a.replica_of.is_none() && host.room_log_status().is_none() {
+            let ids: Vec<_> = log_peers.iter().map(|p| p.id).collect();
+            let k = majority(ids.len() + 1);
+            host.start_room_log(&ids, k)?;
+        }
+        println!(
+            "room log on with {} peer(s); an entry commits at {} cosigns; failover after {}s of silence",
+            log_peers.len(),
+            majority(log_peers.len() + 1),
+            a.room_log_failover
+        );
+    }
+    host.set_room_log_sticky(Duration::from_secs(a.room_log_failover));
+    host.set_room_evaluator(a.room_log_evaluator.as_deref().map(PathBuf::from));
+    let log_leader = a
+        .room_log_leader
+        .as_deref()
+        .map(playbox_net::decode_peer)
+        .transpose()?;
     let mut first_link: Option<String> = None;
     if a.replica_of.is_some() {
         println!("replica up ({}): serves the room's grants, cannot admit members; join through the primary.", transport.label());
@@ -280,14 +307,145 @@ pub async fn up(a: UpArgs) -> Result<()> {
     };
     #[cfg(not(unix))]
     let serve = std::future::pending::<()>();
+    let serve = async {
+        tokio::select! {
+            () = serve => {}
+            () = room_log_loop(&host, &log_peers, log_leader.as_ref(), log_every, Duration::from_secs(a.room_log_failover)) => {}
+        }
+    };
     if a.console {
-        println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | quit");
+        println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | roomlog | roomlog-add <peer address> | roomlog-remove <host id> | roomlog-problem <hash> <j> <noise ppm> <gain ppm> <baseline> | roomlog-promote <problem> <candidate> | quit");
         tokio::select! { r = console(&host) => r?, () = serve => {} }
     } else {
         println!("(ctrl-c to stop)");
         tokio::select! { r = stop_signal() => r?, () = serve => {} }
     }
     host.shutdown().await
+}
+
+/// More than half of `hosts`.
+fn majority(hosts: usize) -> usize {
+    hosts / 2 + 1
+}
+
+/// Keep the room log moving. The leader asks peers to cosign. A follower pulls from the leader, then from any other
+/// host, and bids for the next epoch once the leader has been silent for `failover` plus a turn per place in the
+/// host list. Never returns; a failed round is reported and tried again.
+async fn room_log_loop(
+    host: &Host,
+    peers: &[playbox_net::EndpointAddr],
+    leader: Option<&playbox_net::EndpointAddr>,
+    every: Duration,
+    failover: Duration,
+) {
+    let others: Vec<_> = leader.into_iter().chain(peers).cloned().collect();
+    if others.is_empty() {
+        return std::future::pending().await;
+    }
+    let mut last = None;
+    let mut was_leader = false;
+    let mut cooling_until = std::time::Instant::now();
+    loop {
+        let r = if host.room_log_is_leader() {
+            if !was_leader {
+                println!("room log: this host leads");
+                was_leader = true;
+            }
+            Some(host.commit_room_log(&others).await)
+        } else {
+            was_leader = false;
+            let mut got = None;
+            let mut why = None;
+            for p in &others {
+                match host.pull_room_log(p).await {
+                    Ok(n) => {
+                        got = Some(Ok(n));
+                        break;
+                    }
+                    Err(e) => why = Some(e),
+                }
+            }
+            if let (None, Some(e)) = (&got, why) {
+                got = Some(Err(e));
+            }
+            let wait = failover + every * 2 * u32::try_from(host.room_log_rank()).unwrap_or(0);
+            if host.room_log_status().is_some()
+                && host.room_log_silence() > wait
+                && std::time::Instant::now() >= cooling_until
+            {
+                match host.propose_room_log_epoch(&others).await {
+                    Ok(e) => println!("room log: leader silent; this host now leads epoch {e}"),
+                    Err(e) => {
+                        eprintln!("room log: bid for the next epoch failed: {e:#}");
+                        // Rivals that bid together each promised themselves; staggered retries let one win.
+                        cooling_until = std::time::Instant::now()
+                            + every * 3 * u32::try_from(host.room_log_rank() + 1).unwrap_or(1);
+                    }
+                }
+            }
+            got
+        };
+        match r {
+            Some(Ok(n)) if last != Some(n) => {
+                println!("room log: {n} entries committed");
+                last = Some(n);
+            }
+            Some(Err(e)) => eprintln!("room log: {e:#}"),
+            _ => {}
+        }
+        tokio::time::sleep(every).await;
+    }
+}
+
+/// `playbox room-log`: check a saved log offline and print where it stands.
+pub fn room_log_cmd(state: &str, root: &str, json: bool) -> Result<()> {
+    let key = playbox_core::roomlog::unhex::<32>(root.trim())
+        .ok_or_else(|| anyhow::anyhow!("--root takes 64 hex characters"))?;
+    let mut path = PathBuf::from(state);
+    if path.is_dir() {
+        path.push("roomlog.jsonl");
+    }
+    let Some(st) = playbox_net::roomsync::read_status(key, &path)? else {
+        bail!("{} holds no room log", path.display());
+    };
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "len": st.len, "head": st.head, "committed": st.committed,
+                "epoch": st.epoch, "leader": st.leader, "hosts": st.hosts, "k": st.k,
+                "problems": st.problems.iter().map(|p| serde_json::json!({"problem": p.problem, "candidate": p.candidate, "metric": p.metric, "strength": p.strength, "j": p.j})).collect::<Vec<_>>(), "equivocators": st.equivocators,
+                "members": st.members, "banned": st.banned })
+        );
+    } else {
+        println!(
+            "room log OK: {} entries, {} committed, epoch {} led by {}; {} of {} hosts needed",
+            st.len,
+            st.committed,
+            st.epoch,
+            st.leader,
+            st.k,
+            st.hosts.len()
+        );
+        if !st.equivocators.is_empty() {
+            println!("EQUIVOCATION PROVEN against: {}", st.equivocators.join(", "));
+        }
+        for pr in &st.problems {
+            println!(
+                "problem {}: frontier {} (needs {} hosts, weakest signer tier {}){}",
+                pr.problem,
+                pr.metric,
+                pr.j,
+                pr.strength,
+                pr.candidate.as_ref().map_or(" [baseline]".to_string(), |c| format!(" candidate {c}"))
+            );
+        }
+        println!("head {}", st.head);
+        println!("members: {}", st.members.join(", "));
+        if !st.banned.is_empty() {
+            println!("banned: {}", st.banned.join(", "));
+        }
+    }
+    Ok(())
 }
 
 /// Ctrl-C, or SIGTERM (what `kill`, launchd and systemd send): either way the host leaves cleanly and removes its record and control socket.
@@ -305,7 +463,47 @@ async fn stop_signal() -> Result<()> {
     }
 }
 
+/// What the guest is about to join, from the host's signed attestation. Limits come with the grant after joining.
+fn consent_text(v: &attest::Verified) -> String {
+    let m = &v.statement.measurements;
+    let mut out = format!(
+        "host      verified tier {} (claims {})\nrunner    {}\nos        {}",
+        v.achieved, v.statement.claimed, m.runner, m.os
+    );
+    if let Some(d) = &v.device {
+        out.push_str(&format!("\ndevice    {d}"));
+    }
+    for n in &v.notes {
+        out.push_str(&format!("\nnote      {n}"));
+    }
+    out.push_str(
+        "\ngrant     limits (cpu, memory, time, network) arrive with the grant after you join",
+    );
+    out
+}
+
+/// Ask on a terminal. Off a terminal there is nobody to ask, so the summary above is printed and the join goes ahead.
+fn confirm_join() -> Result<bool> {
+    use std::io::{BufRead, IsTerminal, Write};
+    if !std::io::stdin().is_terminal() {
+        return Ok(true);
+    }
+    eprint!("join this room? [y/N] ");
+    std::io::stderr().flush()?;
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    Ok(matches!(
+        line.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
 pub async fn join(a: JoinArgs) -> Result<()> {
+    let opts = playbox_net::vet::VetOpts {
+        min_tier: attest::Tier::parse(a.min_host_tier.as_deref().unwrap_or("t0"))
+            .map_err(|e| anyhow::anyhow!(e))?,
+        trust_device: a.trust_host_device,
+    };
     let (link, choice, task, base, via) = (
         a.link.as_str(),
         join_choice(&a.transport)?,
@@ -313,20 +511,35 @@ pub async fn join(a: JoinArgs) -> Result<()> {
         Some(a.base),
         a.via,
     );
-    let primary = join_link(
-        link,
-        playbox_net::key_for_link(link, &store::home().join("guest.key"))?,
-        choice,
-    )
-    .await?;
+    let primary = {
+        let parsed = playbox_net::Link::parse(link)?;
+        let transport = choice.resolve(parsed.transport.as_ref());
+        let client = playbox_net::Client::connect(
+            parsed.addr,
+            playbox_net::key_for_link(link, &store::home().join("guest.key"))?,
+            transport,
+        )
+        .await?;
+        // Attestation needs no membership: a host the guest declines never sees the invite.
+        let (verified, newly_pinned) =
+            playbox_net::vet::vet_host(&client, &store::home(), &opts, "not joining").await?;
+        if newly_pinned {
+            eprintln!("pinned this host's device key");
+        }
+        eprintln!("{}", consent_text(&verified));
+        if !a.yes && !confirm_join()? {
+            client.close().await;
+            bail!("not joined; the invite is unspent");
+        }
+        client.join(&parsed.invite).await?;
+        client
+    };
     // With --via, do the work on another host of the room (a replica) as the same member.
     let (client, primary) = match via {
         Some(addr) => {
             let replica = primary.sibling(playbox_net::decode_peer(&addr)?).await?;
-            replica
-                .verify_host(attest::Tier::T0, &[])
-                .await
-                .map_err(|e| anyhow::anyhow!("not using that host: {e:#}"))?;
+            playbox_net::vet::vet_host(&replica, &store::home(), &opts, "not using that host")
+                .await?;
             println!("using replica {}", replica.host_id().fmt_short());
             (replica, Some(primary))
         }
@@ -467,7 +680,68 @@ async fn console(host: &Host) -> Result<()> {
                         Ok(id) => println!("{}", if host.revoke_member(&id) { "revoked" } else { "not a current member" }),
                         Err(e) => println!("not a member id: {e}"),
                     },
-                    _ => println!("link | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | quit"),
+                    (Some("roomlog"), _) => match host.room_log_status() {
+                        Some(st) => {
+                            println!(
+                                "epoch {} led by {}, {} entries, {} committed, {} of {} hosts needed",
+                                st.epoch, st.leader, st.len, st.committed, st.k, st.hosts.len()
+                            );
+                            for h in &st.hosts {
+                                println!("  host {h}");
+                            }
+                            for pr in &st.problems {
+                                println!(
+                                    "  problem {} frontier {} (j={}, tier {}){}",
+                                    pr.problem, pr.metric, pr.j, pr.strength,
+                                    pr.candidate.as_ref().map_or(String::new(), |c| format!(" candidate {c}"))
+                                );
+                            }
+                            for q in &st.equivocators {
+                                println!("  EQUIVOCATION PROVEN against {q}");
+                            }
+                        }
+                        None => println!("this host has no room log"),
+                    },
+                    (Some("roomlog-problem"), Some(problem)) => {
+                        let nums: Vec<i64> = w.filter_map(|x| x.parse().ok()).collect();
+                        match (playbox_core::roomlog::unhex::<32>(problem), nums.as_slice()) {
+                            (Some(p), [j, noise_ppm, gain_ppm, baseline]) => {
+                                match host.register_room_problem(p, usize::try_from(*j).unwrap_or(0), u64::try_from(*noise_ppm).unwrap_or(0), u64::try_from(*gain_ppm).unwrap_or(0), *baseline) {
+                                    Ok(()) => println!("problem registered"),
+                                    Err(e) => println!("not registered: {e:#}"),
+                                }
+                            }
+                            _ => println!("roomlog-problem <problem hash> <j> <noise ppm> <min gain ppm> <baseline metric>"),
+                        }
+                    }
+                    (Some("roomlog-promote"), Some(problem)) => {
+                        match (playbox_core::roomlog::unhex::<32>(problem), w.next().and_then(playbox_core::roomlog::unhex::<32>)) {
+                            (Some(p), Some(c)) => match host.promote_in_room(&[], p, c).await {
+                                Ok(m) => println!("promoted; the frontier metric is now {m}"),
+                                Err(e) => println!("not promoted: {e:#}"),
+                            },
+                            _ => println!("roomlog-promote <problem hash> <candidate hash>"),
+                        }
+                    }
+                    (Some("roomlog-add"), Some(addr)) => match playbox_net::decode_peer(addr) {
+                        Ok(a) => match host.reconfigure_room_log(&[], &[a], &[]).await {
+                            Ok(e) => println!("host added; now epoch {e}"),
+                            Err(e) => println!("not added: {e:#}"),
+                        },
+                        Err(e) => println!("not a peer address: {e:#}"),
+                    },
+                    (Some("roomlog-remove"), Some(id)) => {
+                        match playbox_core::roomlog::unhex::<32>(id)
+                            .and_then(|b| playbox_net::EndpointId::from_bytes(&b).ok())
+                        {
+                            Some(id) => match host.reconfigure_room_log(&[], &[], &[id]).await {
+                                Ok(e) => println!("host removed; now epoch {e}"),
+                                Err(e) => println!("not removed: {e:#}"),
+                            },
+                            None => println!("give the host's id as 64 hex characters (see `roomlog`)"),
+                        }
+                    }
+                    _ => println!("link | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | roomlog | roomlog-add <peer address> | roomlog-remove <host id> | roomlog-problem <hash> <j> <noise ppm> <gain ppm> <baseline> | roomlog-promote <problem> <candidate> | quit"),
                 }
             }
         }

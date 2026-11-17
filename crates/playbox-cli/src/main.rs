@@ -84,6 +84,7 @@ async fn run() -> Result<ExitCode> {
         Cmd::Call { tool, args, json } => session::call(&tool, &args, json.as_deref()).await,
         Cmd::Mcp => session::mcp().await,
         Cmd::Id => rooms::guest_id(),
+        Cmd::RoomLog { state, root, json } => rooms::room_log_cmd(&state, &root, json),
         Cmd::Latent(LatentCmd::Session {
             link,
             transport,
