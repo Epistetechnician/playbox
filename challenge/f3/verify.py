@@ -1,7 +1,7 @@
 """Independent verifier for an F3 run. It trusts only: the pinned host public key, the committed protocol and code, and
 the signed receipts. It does not import harness.py or challenge/common.py; the promotion rule is re-implemented here.
 
-    verify.py --work RUN_DIR --host-pubkey HEX [--repo-root DIR] [--replay none|recorded|fresh|all] [--json OUT]
+    verify.py --work RUN_DIR --host-pubkey HEX [--repo-root DIR] [--replay none|recorded|fresh|all] [--no-data] [--protocol-file FILE] [--json OUT]
 
 Exit status 0 only if every check passes and the holdout has been revealed.
 """
@@ -40,12 +40,17 @@ class Report:
         self.checks.append({"name": name, "ok": bool(ok), "detail": detail})
         return ok
 
+    def skip(self, name, why):
+        """A check that was not run (no-data mode). Counted as neither pass nor fail; always listed in the output."""
+        self.checks.append({"name": name, "ok": True, "skipped": True, "detail": why})
+        return True
+
     @property
     def failed(self):
         return [c for c in self.checks if not c["ok"]]
 
     def text(self):
-        return "\n".join(f"[{'PASS' if c['ok'] else 'FAIL'}] {c['name']}" + (f": {c['detail']}" if c["detail"] else "") for c in self.checks)
+        return "\n".join(f"[{'SKIP' if c.get('skipped') else 'PASS' if c['ok'] else 'FAIL'}] {c['name']}" + (f": {c['detail']}" if c["detail"] else "") for c in self.checks)
 
 
 # ---- 1. chain -----------------------------------------------------------------------------------------------------
@@ -128,10 +133,10 @@ def check_protocol(rep: Report, b: dict, repo: Path, proto: Path) -> bool:
     return rep.add("genesis: protocol hash equals the committed PROTOCOL.md", False, "pinned text is not an unchanged prefix of the current file, and no earlier committed version has this hash")
 
 
-def check_genesis(rep: Report, g: dict, repo: Path, strict_git: bool = True) -> bool:
+def check_genesis(rep: Report, g: dict, repo: Path, strict_git: bool = True, protocol_file: Path | None = None) -> bool:
     b = g["body"]
     ok = True
-    proto = repo / "docs/f3/PROTOCOL.md"
+    proto = protocol_file or repo / "docs/f3/PROTOCOL.md"
     ok &= check_protocol(rep, b, repo, proto)
     spec = repo / "challenge/f3" / b.get("substrate", {}).get("spec", "task_spec.json")
     ok &= rep.add("genesis: task spec hash", spec.exists() and sha(spec.read_bytes()) == b["spec_sha256"], spec.name)
@@ -212,7 +217,7 @@ def check_decisions(rep: Report, recs, work: Path, spec: dict):
 
 
 # ---- 5. holdout reveal and leak scan ----------------------------------------------------------------------------
-def check_reveal(rep: Report, recs, work: Path, task, allow_unrevealed: bool):
+def check_reveal(rep: Report, recs, work: Path, task, allow_unrevealed: bool, no_data: bool = False):
     g = recs[0]["body"]
     rv = [r for r in recs if r["body"]["kind"] == "reveal"]
     if not rv:
@@ -220,6 +225,15 @@ def check_reveal(rep: Report, recs, work: Path, task, allow_unrevealed: bool):
         return None
     ok = rep.add("holdout: exactly one reveal and it is the last receipt", len(rv) == 1 and recs[-1]["body"]["kind"] == "reveal", "a reveal before the last decision means the holdout leaked mid-round")
     b = rv[0]["body"]
+    if no_data:
+        # The holdout documents are not here, so the Merkle root cannot be opened and only the secret itself can be scanned for.
+        ok &= rep.skip("holdout: revealed seed and salt open the root committed in genesis", "NOT CHECKED (no-data mode: needs the holdout shard)")
+        ok &= rep.add("holdout: replay seeds match the commitment in genesis", sha(canon(b["replay"])) == g["replay_seed_commit"])
+        leaked = [f"{f.stem[:10]}" for f in sorted((work / "candidates").glob("*.py"))
+                  if task.leak_scan(f.read_text(), {"docs": []}, b["holdout_seed"], b["holdout_salt"])]
+        ok &= rep.add("holdout: no archived candidate source contains the revealed seed or salt", not leaked, ", ".join(leaked))
+        rep.skip("holdout: no archived candidate source contains a window of a holdout document", "NOT CHECKED (no-data mode: needs the holdout shard)")
+        return None
     hold = task.holdout_from_secret({"seed": b["holdout_seed"], "salt": b["holdout_salt"]})
     root = task.merkle_root(bytes.fromhex(b["holdout_salt"]), task.holdout_items(hold))
     ok &= rep.add("holdout: revealed seed and salt open the root committed in genesis", root == g["holdout"]["root"])
@@ -288,13 +302,14 @@ def replay(rep: Report, recs, promos, caught, work: Path, task, hold, reveal, mo
 
 
 # ---- driver -------------------------------------------------------------------------------------------------------
-def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unrevealed: bool = False, strict_git: bool = True) -> tuple[Report, dict]:
+def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unrevealed: bool = False, strict_git: bool = True,
+           no_data: bool = False, protocol_file: Path | None = None) -> tuple[Report, dict]:
     rep = Report()
     recs = read_receipts(work / "receipts.jsonl")
     summary = {}
     if not check_chain(rep, recs, host_pub):
         return rep, summary
-    if not check_genesis(rep, recs[0], repo, strict_git):
+    if not check_genesis(rep, recs[0], repo, strict_git, protocol_file):
         return rep, summary
     # The substrate module is imported only now, after its hash was checked against the genesis.
     sub = recs[0]["body"].get("substrate", {"task": "task", "spec": "task_spec.json"})
@@ -304,7 +319,12 @@ def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unre
     os.environ["F3_SPEC"] = sub["spec"]
     sys.path.insert(0, str(repo / "challenge/f3"))
     task = importlib.import_module(sub["task"])
-    if "data_manifest" in recs[0]["body"]:
+    if no_data and mode != "none":
+        rep.add("replay: needs the data", False, "--no-data cannot be combined with --replay")
+        return rep, summary
+    if "data_manifest" in recs[0]["body"] and no_data:
+        rep.skip("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", "NOT CHECKED (no-data mode)")
+    elif "data_manifest" in recs[0]["body"]:
         try:
             local = task.data_manifest(include_holdout=False)
         except OSError as e:
@@ -317,8 +337,10 @@ def verify(work: Path, host_pub: str, repo: Path, mode: str = "none", allow_unre
         if not rep.add("genesis: local data artifacts match the data manifest (tokenizer, token caches, shards)", not bad, ("differs: " + ", ".join(bad)) if bad else ""):
             return rep, summary
     ok, promos, rejects, caught = check_decisions(rep, recs, work, task.SPEC)
-    rv = check_reveal(rep, recs, work, task, allow_unrevealed)
-    if rv and mode != "none":
+    rv = check_reveal(rep, recs, work, task, allow_unrevealed, no_data)
+    if no_data:
+        pass
+    elif rv and mode != "none":
         replay(rep, recs, promos, caught, work, task, rv[0], rv[1], mode)
     elif mode != "none":
         rep.add("replay: needs the reveal", False)
@@ -335,9 +357,12 @@ if __name__ == "__main__":
     ap.add_argument("--replay", default="none", choices=["none", "recorded", "fresh", "all"])
     ap.add_argument("--allow-unrevealed", action="store_true")
     ap.add_argument("--allow-dirty", action="store_true", help="tests only: accept code that differs from the genesis git commit")
+    ap.add_argument("--no-data", action="store_true", help="no dataset or GPU: skip the data manifest, the holdout Merkle opening and the document-window leak scan (reported as SKIP)")
+    ap.add_argument("--protocol-file", help="the PROTOCOL.md text to compare with the genesis pin, instead of <repo-root>/docs/f3/PROTOCOL.md (for a bundle without git history)")
     ap.add_argument("--json")
     a = ap.parse_args()
-    rep, summary = verify(Path(a.work), a.host_pubkey.strip(), Path(a.repo_root), a.replay, a.allow_unrevealed, not a.allow_dirty)
+    rep, summary = verify(Path(a.work), a.host_pubkey.strip(), Path(a.repo_root), a.replay, a.allow_unrevealed, not a.allow_dirty,
+                          a.no_data, Path(a.protocol_file) if a.protocol_file else None)
     print(rep.text())
     ok = not rep.failed
     print(f"\nRESULT: {'VERIFIED' if ok else 'FAILED (' + str(len(rep.failed)) + ' checks)'}  {json.dumps(summary)}")
