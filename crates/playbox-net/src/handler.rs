@@ -217,7 +217,13 @@ impl RoomHandler {
         let Some(grant) = grant else {
             return Err(unauthorized(anyhow!("no grant presented")));
         };
-        let revoked = self.state.lock_recover().revoked.clone();
+        let (revoked, banned) = {
+            let st = self.state.lock_recover();
+            (st.revoked.clone(), st.banned.contains(&from))
+        };
+        if banned {
+            return Err(unauthorized(anyhow!("the member was revoked")));
+        }
         self.auth
             .authorize(grant, &from.to_string(), op, needs, &revoked)
             .map_err(unauthorized)
