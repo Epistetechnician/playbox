@@ -1,0 +1,9 @@
+Host openshell-parity-s.default
+    User sandbox
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    GlobalKnownHostsFile /dev/null
+    LogLevel ERROR
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+    ProxyCommand /opt/homebrew/bin/openshell ssh-proxy --gateway-name openshell --name parity-s --workspace default

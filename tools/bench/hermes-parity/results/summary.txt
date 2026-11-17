@@ -1,0 +1,5 @@
+arm L: runs=10 tests mean=24.00/24 reached24=10 min=24 | cost mean=$0.0411 (sum $0.411) | tokens mean=110034 in=106583 out=3451 | api_calls=8.9 | wall mean=33.0s median=31.6s
+arm S: runs=10 tests mean=24.00/24 reached24=10 min=24 | cost mean=$0.0339 (sum $0.339) | tokens mean=113203 in=110553 out=2650 | api_calls=10.9 | wall mean=30.2s median=30.9s
+   S per-run upload+git-init overhead mean=0.28s
+S - L mean tests = +0.00; bootstrap 95% CI [+0.00, +0.00]; one-sided 97.5% lower bound +0.00 vs margin -2 -> non-inferior
+cost S/L = 0.82x ; wall S/L = 0.92x
