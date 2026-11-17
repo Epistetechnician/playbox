@@ -43,6 +43,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 The supervisor tests use real child processes: crash loops, a hung service, a service that never becomes healthy, attach and take-over, restart, and stopping during a long backoff.
 
+## Signing in
+
+The window signs itself in to the local hub without a passkey: the app writes a one-use, owner-only proof file into the hub's private home (`desktop-login/`, same root of trust as `playbox_hub.py --pair`), then opens `/desktop/signin`. The hub checks and deletes the file and opens a *weak, local-only* session: it is ignored on any request that is not loopback (a stolen cookie is nothing through the tunnel), and sensitive actions still need a real passkey from a browser. It needs a hub that has this flow (`/api/auth/state` reports `local_signin`); with an older hub the window just shows the lock screen. Tray: "Sign in again".
+
 ## Passkeys
 
 The embedded webview cannot do platform passkeys on `localhost` (measured; see `docs/desktop-plan.md`, Spike 1, and `spikes/passkey_probe.py` to repeat it). Sign in through the system browser for now; the window is for status and management.

@@ -2275,7 +2275,9 @@ dependencies = [
 name = "pbd-core"
 version = "0.3.14"
 dependencies = [
+ "getrandom 0.3.4",
  "rustix",
+ "sha2 0.10.9",
 ]
 
 [[package]]

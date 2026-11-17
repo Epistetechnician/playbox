@@ -156,7 +156,10 @@ def make_handler(hub, auth, store, opts):
         def authed(self):
             if opts.get("tailnet_login") and self.headers.get("Tailscale-User-Login") != opts["tailnet_login"]:
                 return None
-            return auth.session(self.cookie())
+            got = auth.session(self.cookie())
+            if got and got[1].get("local_only") and not is_local(self.peer, self.hdrs()):
+                return None             # the desktop app's session means nothing off this machine, even with the cookie
+            return got
 
         def system(self, rec):
             """Everything the System view draws: stage counters, posture checks and the newest security events."""
@@ -313,9 +316,17 @@ def make_handler(hub, auth, store, opts):
                     return self.send(200, ICON_SVG, "image/svg+xml", cache="public, max-age=86400")
                 if p in ("/icon-192.png", "/icon-512.png", "/icon-maskable.png"):
                     return self.send(200, png_icon(192 if "192" in p else 512, "maskable" in p), "image/png", cache="public, max-age=86400")
+                if p == "/desktop/signin":
+                    auth.throttle(self.peer)
+                    if not is_local(self.peer, self.hdrs()) or hostname_of(self.headers.get("Host")) not in ("localhost", "127.0.0.1", "::1"):
+                        raise AuthError(403, "desktop sign-in is only for the machine itself")
+                    n = urllib.parse.parse_qs(url.query).get("n", [""])[0]
+                    tok = auth.local_session(n, self.headers.get("User-Agent", ""), self.peer)
+                    hub.sec.add("auth", "The desktop app signed in from this machine (no passkey; local-only session)", "warn")
+                    return self.send(303, "", "text/plain", {"Location": "/", **self.set_cookie(tok)})
                 if p == "/api/auth/state":
                     rec = self.authed()
-                    return self.j(200, {"enrolled": auth.enrolled(), "authed": bool(rec), "weak": bool(rec and rec[1]["weak"]), "rp": self.rp_id(),
+                    return self.j(200, {"enrolled": auth.enrolled(), "authed": bool(rec), "weak": bool(rec and rec[1]["weak"]), "rp": self.rp_id(), "local_signin": True,
                                         "weak_ok": opts["weak"] and auth.weak_allowed(self.peer, self.headers.get("Host"), self.hdrs())})
             if p.startswith("/api/auth/") and m == "POST":
                 return self.auth_post(p)

@@ -16,6 +16,7 @@ pub struct Handles {
 enum Command {
     Open,
     OpenBrowser,
+    SignIn,
     Restart,
     ToggleLogin,
     OpenLogs,
@@ -26,6 +27,7 @@ fn parse(id: &str) -> Option<Command> {
     Some(match id {
         "open" => Command::Open,
         "browser" => Command::OpenBrowser,
+        "signin" => Command::SignIn,
         "restart" => Command::Restart,
         "login" => Command::ToggleLogin,
         "logs" => Command::OpenLogs,
@@ -68,6 +70,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     }
     b.on_menu_event(|app, ev| match parse(ev.id().as_ref()) {
         Some(Command::Open) => window::reveal(app),
+        Some(Command::SignIn) => {
+            window::reveal(app);
+            window::sign_in(app, crate::service::port());
+        }
         Some(Command::OpenBrowser) => open_browser(),
         Some(Command::Restart) => {
             if let Ok(g) = app.state::<AppState>().supervisor.lock() {

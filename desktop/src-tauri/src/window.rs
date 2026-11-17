@@ -1,7 +1,8 @@
 //! The one window: a small local page while the hub starts, then the hub itself. The hub is a remote origin from the app's point of view
 //! and has no IPC (see `capabilities/main.json`).
 
-use pbd_core::identity::Product;
+use crate::AppState;
+use pbd_core::{identity::Product, signin};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const LABEL: &str = "main";
@@ -29,8 +30,28 @@ pub fn show_hub(app: &AppHandle, port: u16) {
         .map(|u| u.host_str() == url.host_str() && u.port() == url.port())
         .unwrap_or(false);
     if !on_hub {
-        let _ = win.navigate(url);
+        go(app, &win, port, url);
     }
+}
+
+/// Sign the window in again (a session expired, or the hub was reset) and show the hub.
+pub fn sign_in(app: &AppHandle, port: u16) {
+    let Ok(win) = ensure(app) else { return };
+    if let Ok(url) = Product::hub_url(port).parse::<tauri::Url>() {
+        go(app, &win, port, url);
+    }
+}
+
+/// Open the hub in the window, signing in on the way when the hub supports it. Falls back to the plain hub page.
+fn go(app: &AppHandle, win: &WebviewWindow, port: u16, hub: tauri::Url) {
+    let target = if signin::supported(port) {
+        signin::prepare(&app.state::<AppState>().dirs.hub_home)
+            .ok()
+            .and_then(|n| signin::url(port, &n).parse::<tauri::Url>().ok())
+    } else {
+        None
+    };
+    let _ = win.navigate(target.unwrap_or(hub));
 }
 
 /// Say something on the local page (only text we wrote ourselves is ever passed here).

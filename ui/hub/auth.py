@@ -10,6 +10,8 @@ unless the request is physically local.
 """
 import hashlib
 import os
+import re
+import stat
 import ipaddress
 import secrets
 import threading
@@ -101,13 +103,13 @@ class Auth:
         return ent
 
     # ---- sessions ----
-    def new_session(self, cred_id, weak, ua, ip, name):
+    def new_session(self, cred_id, weak, ua, ip, name, local_only=False):
         tok = secrets.token_urlsafe(32)
         now = time.time()
         with self.s.lock:
             self.s.gc(now)
             self.s.d["sessions"][sha(tok)] = {"cred": cred_id, "weak": weak, "created": now, "last": now, "ua": (ua or "")[:90],
-                                              "ip": ip, "fresh_until": now + FRESH_TTL if not weak else 0, "name": name}
+                                              "ip": ip, "fresh_until": now + FRESH_TTL if not weak else 0, "name": name, "local_only": local_only}
             self.s.save()
         return tok
 
@@ -163,6 +165,36 @@ class Auth:
             self._fail(ip)
             raise AuthError(403, "pairing code is invalid or expired")
         return self.new_session(None, True, ua, ip, name or "Local device")
+
+    # ---- desktop sign-in ----
+    LOGIN_DIR = "desktop-login"
+    LOGIN_TTL = 60
+
+    def local_session(self, nonce, ua, ip):
+        """The desktop app proves it can write into this hub's private state directory (owner-only, so it is the same user on this
+        machine, the same root of trust as `--pair`) by creating `desktop-login/<sha256(nonce)>`. One use, 60 seconds, owner-only file.
+        The session it opens is weak (never as strong as a passkey) and local-only: it is ignored on any request that is not loopback."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", nonce or ""):
+            self._fail(ip)
+            raise AuthError(403, "desktop sign-in refused")
+        d = self.s.home / self.LOGIN_DIR
+        f = d / sha(nonce)
+        ok = False
+        try:
+            me = os.getuid() if hasattr(os, "getuid") else None
+            st, dst = f.lstat(), d.lstat()
+            ok = (stat.S_ISREG(st.st_mode) and stat.S_ISDIR(dst.st_mode) and time.time() - st.st_mtime <= self.LOGIN_TTL
+                  and (me is None or (st.st_uid == me and dst.st_uid == me and not st.st_mode & 0o077 and not dst.st_mode & 0o022)))
+        except OSError:
+            pass
+        try:
+            f.unlink()          # single use, whether or not it was good
+        except OSError:
+            pass
+        if not ok:
+            self._fail(ip)
+            raise AuthError(403, "desktop sign-in refused")
+        return self.new_session(None, True, ua, ip, "Playbox Desktop", local_only=True)
 
     # ---- passkey registration ----
     def register_begin(self, code, rp_id, ip):

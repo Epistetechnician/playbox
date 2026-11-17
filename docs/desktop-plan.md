@@ -116,3 +116,5 @@ Builds on `docs/agent-identity-prd.md` (identity cards, admissions, delegation).
 ## Suggested first release
 
 "Playbox Desktop 0.x" = Phase 0 + Phase 1 + the Phase 2 signed-bundle and update path, macOS first. That removes every install script and gives the host a menu-bar status. Phases 3 and 4 follow as ordinary releases of the same app.
+
+**Built (2026-11-17):** the loopback desktop session from Spike 1 outcome 4: proof file in the hub's private home, `/desktop/signin`, weak and local-only session, tests in `ui/tests/test_desktop_signin.py`. Still wants a security review before release.

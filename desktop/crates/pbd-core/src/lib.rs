@@ -22,5 +22,6 @@ pub mod hub;
 pub mod identity;
 pub mod layout;
 pub mod probe;
+pub mod signin;
 pub mod status;
 pub mod supervisor;
