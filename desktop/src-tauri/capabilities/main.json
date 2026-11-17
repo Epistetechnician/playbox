@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The shell window has no IPC at all: it shows a page and the hub. The hub is a remote origin and is never granted anything.",
+  "windows": ["main"],
+  "permissions": []
+}

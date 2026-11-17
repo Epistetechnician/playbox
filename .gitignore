@@ -12,3 +12,6 @@ challenge/state/
 steer/results/**/*.prompt
 steer/results/**/*.out
 steer/results/**/*.pt
+
+# Tauri build output
+desktop/src-tauri/gen/

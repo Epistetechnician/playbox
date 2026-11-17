@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["desktop"]
 members = ["crates/playbox-core", "crates/playbox-cli", "crates/playbox-net", "crates/playbox-git", "crates/playbox-runner", "crates/playbox-mcp", "crates/playbox-bridge", "crates/playbox-rap"]
 
 [workspace.package]

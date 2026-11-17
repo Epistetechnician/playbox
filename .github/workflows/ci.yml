@@ -22,6 +22,30 @@ jobs:
           toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --no-fail-fast
+  desktop:
+    # Playbox Desktop is its own workspace (desktop/): the supervision core runs on Linux and macOS; the window shell builds on macOS.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p pbd-core --all-targets -- -D warnings
+      - run: cargo test -p pbd-core
+      - if: runner.os == 'macOS'
+        run: cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
   audit:
     runs-on: ubuntu-22.04
     steps:

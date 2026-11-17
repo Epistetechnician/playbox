@@ -1,0 +1,20 @@
+[package]
+name = "playbox-desktop"
+description = "Playbox Desktop: a thin native shell that supervises the hub and shows it in a window and a tray item."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+pbd-core = { path = "../crates/pbd-core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"

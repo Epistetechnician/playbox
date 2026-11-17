@@ -1,0 +1,25 @@
+# Playbox Desktop: its own Cargo workspace, so the GUI toolkit and its dependency tree never touch the root workspace's build, CI or lockfile.
+[workspace]
+resolver = "2"
+members = ["crates/pbd-core", "src-tauri"]
+
+[workspace.package]
+version = "0.3.14"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.91"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"
+opt-level = "s"

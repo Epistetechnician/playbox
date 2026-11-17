@@ -1,0 +1,13 @@
+[package]
+name = "pbd-core"
+description = "Playbox Desktop core: supervision, claims, health probes, app directories and autostart. No GUI dependency, so all of it is testable headless."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "process"] }

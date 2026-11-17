@@ -1,6 +1,6 @@
 # Playbox Desktop: release plan
 
-Status: proposal. Nothing here is built yet. Decisions that need the owner are marked **DECIDE**; claims that must be tested before they are relied on are marked **SPIKE**.
+Status: Phase 1 started. `desktop/` holds the supervision core (`pbd-core`, tested, including the real hub) and a working Tauri shell (window, tray, graceful quit); bundling, signing, updates and the passkey spike are not done. See `desktop/README.md`. Decisions that need the owner are marked **DECIDE**; claims that must be tested before they are relied on are marked **SPIKE**.
 
 ## Goal
 
