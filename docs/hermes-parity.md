@@ -64,15 +64,15 @@ The first SWE-bench pair sat at ceiling and floor. I calibrated 5 small Django 3
 | django-11422 | L | 4/5 | 4/5 | $0.198 | 31 | 143 s |
 | django-11422 | S | 3/5 | 3/5 | $0.255 | 41 | 176 s |
 | django-11905 | L | 0/5 | 5/10 | $0.341 | 62 | 190 s |
-| django-11905 | S | 0/4 | 4/8 | $0.261 | 51 | 141 s |
+| django-11905 | S | 0/5 | 5/10 | $0.306 | 54 | 151 s |
 | **all** | **L** | **8/15** | | **$0.218** | | **143 s** |
-| **all** | **S** | **8/14** | | **$0.207** | | **135 s** |
+| **all** | **S** | **8/15** | | **$0.219** | | **138 s** |
 
-**Result: S and L resolve at the same rate (53% vs 57%) on tasks near Haiku's threshold.** Per-instance rate difference (S minus L), averaged over instances: 0.00, bootstrap 95% CI [-0.20, +0.20]. So at n=14-15 the data rule out a drop of more than about 20 percentage points in resolve rate, not smaller ones; the 2-test margin used for Tripwire does not translate here. The per-instance differences (+1, -1, 0) go in both directions, which is what noise looks like. Cost and time are the same within noise.
+**Result: S and L resolve at the same rate (53% vs 53%) on tasks near Haiku's threshold.** Per-instance rate difference (S minus L), averaged over instances: 0.00, bootstrap 95% CI [-0.20, +0.20]. So at n=15 per arm the data rule out a drop of more than about 20 percentage points in resolve rate, not smaller ones; the 2-test margin used for Tripwire does not translate here. The per-instance differences (+1, -1, 0) go in both directions, which is what noise looks like. Cost and time are the same within noise.
 
 Honest gaps:
-- **Stopped by an Anthropic 429.** The last run (django-11905 S5) hit "usage limit resets in ~93h" after 3 retries, so that cell has 4 runs, not 5. No further Hermes runs were made.
-- 15 L / 14 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and not included in `swe-results2/`. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
+- **One Anthropic 429 mid-batch.** The first attempt at django-11905 S5 hit "usage limit resets in ~93h" after 3 retries and was discarded. It was rerun later on a second pooled OAuth credential (label `anthropic-oauth-3`, added by the owner), so every cell now has 5 valid runs. All other runs used the original credential, so the two credentials are not separable in the data.
+- 15 L / 15 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and not included in `swe-results2/`. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
 - 5 runs per cell is thin; one instance flips by a single run.
 - Calibration runs (2 per instance, local only) were used to pick instances, so L is not blind to the selection. Only the post-selection runs are in the table, except L2 of the three kept instances, which were calibration runs and also counted. This could slightly favour L's resolve rate by selection but is small.
 - Model usage: this set used about 38 Hermes runs (11 calibration, 12 more local, 15 sandbox including the 429 one), within the 60 you approved, for about 83 across the whole investigation. The 429 is the account's own usage limit, not the run cap; it resets in about 93 hours.
