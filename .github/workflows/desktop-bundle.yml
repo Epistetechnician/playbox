@@ -33,7 +33,7 @@ jobs:
           cargo tauri build --config tauri.bundle.conf.json --bundles app
           codesign --force --deep --sign - target/release/bundle/macos/Playbox.app
           codesign --verify --deep --strict target/release/bundle/macos/Playbox.app
-      - name: Smoke test: the app starts its own hub with the bundled Python
+      - name: "Smoke test: the app starts its own hub with the bundled Python"
         working-directory: desktop
         run: |
           export PLAYBOX_HUB_HOME="$(mktemp -d)" PLAYBOX_DESKTOP_PORT=7799
