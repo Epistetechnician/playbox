@@ -63,7 +63,7 @@ Sizes are rough: S = days, M = 1–2 weeks, L = a month or more.
 ### Phase 0 — Spikes (S)
 - Spike 1 and Spike 2 above, on a signed, notarized build.
 - (Spike 1 is done, see above.) Confirm a loopback-only hub in a webview can still reach the Cloudflare tunnel for invite links (the tunnel is the hub's own child process, unchanged).
-- **DECIDE:** an Apple Developer ID (paid) for notarization. Without it the app is ad-hoc signed and users must right-click to open, and Gatekeeper warns. Glim ships this way and says so in `SECURITY.md`; mac-performance-monitor is notarized. A host-machine product should be notarized.
+- **DECIDED (2026-11-17): unsigned for now.** macOS builds are ad-hoc signed, not notarized; first launch needs right-click → Open, and `SECURITY.md`/the README say so plainly. Trust comes from the signed `release.json` + `SHA256SUMS` and build provenance, not Gatekeeper. Revisit when there are users who should not have to right-click; the pipeline keeps a notarize step behind a secret so adding a Developer ID later is a config change. (Was: an Apple Developer ID (paid) for notarization. Without it the app is ad-hoc signed and users must right-click to open, and Gatekeeper warns. Glim ships this way and says so in `SECURITY.md`; mac-performance-monitor is notarized. A host-machine product should be notarized.
 
 ### Phase 1 — Supervised shell (M)
 Replaces the LaunchAgent scripts.
@@ -80,7 +80,7 @@ Replaces the LaunchAgent scripts.
 - **Two keys, not one** (mac-performance-monitor): the release-signing key stays in `~/.playbox-release`; any downloaded *data* (for example a future signed checks catalog) gets its own key, so one compromise cannot forge the other.
 - **Channels** stable and canary in the feed contract (Hermes). Canary is opt-in, never the default.
 - **Staged release pipeline** (RustFS + glim): freeze the source SHA and inputs, build candidates, run the full CI on that exact commit, then promote *those same artifacts* to a draft release from a protected environment where the signing key lives, then publish. Pin third-party actions by SHA. No rebuilding at publish time.
-- Notarize and staple the macOS bundle in the candidate stage (needs the Developer ID above).
+- Notarize and staple the macOS bundle in the candidate stage only when a Developer ID secret is present; with none (the current decision) the bundle is ad-hoc signed and the release notes say how to open it.
 
 ### Phase 3 — Host hygiene, enforced by the app (M)
 The "cleanliness and security" goal. Each item is a check the app runs and shows, backed by `playbox secure` where it exists.
@@ -109,7 +109,7 @@ Builds on `docs/agent-identity-prd.md` (identity cards, admissions, delegation).
 
 - **Passkeys in a webview** is the one result that can change the plan (Spike 1).
 - **Python bundling** adds a runtime to patch. Mitigation: pin it, ship it inside the signed bundle, update it with the app, and list it in the SBOM we already produce.
-- **Notarization cost and process** is the owner's call; without it, macOS users see warnings.
+- **Notarization** is deferred by decision; macOS users see a Gatekeeper warning until it is added.
 - **Windows** is untested ground for Playbox. The first desktop release should be macOS and Linux; Windows follows once the shell is stable.
 - **Scope.** Phase 1 is a useful release on its own (one app that runs and supervises everything). Phases 2–4 can each ship independently.
 
