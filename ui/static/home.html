@@ -67,7 +67,8 @@ svg{max-width:100%}
 .col{min-width:0;display:flex;flex-direction:column}
 .strip{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:16px;height:calc(var(--strip) + env(safe-area-inset-top));padding:env(safe-area-inset-top) 14px 0;
   background:var(--bg);border-bottom:1px solid var(--edge);font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
-.strip .brand{display:block;line-height:0}
+.strip .brand{display:flex;align-items:center;gap:8px;line-height:0}
+.strip .brand .pbmark{font-size:20px}
 .strip .brand .dm{height:14px}
 .strip .state{display:inline-flex;align-items:center;gap:8px}
 .strip .hot{color:var(--sig-ink)}
@@ -90,7 +91,8 @@ main{flex:1;width:100%;max-width:1080px;margin:0 auto;padding:18px 14px calc(var
 @media(min-width:820px){
   .shell{grid-template-columns:208px minmax(0,1fr)}
   .rail{display:flex;flex-direction:column;gap:20px;position:sticky;top:0;height:100vh;padding:18px 16px;border-right:1px solid var(--edge)}
-  .rail .brand{display:block;line-height:0;padding:4px 0 2px}
+  .rail .brand{display:flex;align-items:center;gap:10px;line-height:0;padding:4px 0 2px}
+  .rail .brand .pbmark{font-size:28px}
   .rail .brand .dm{height:21px}
   .rail nav{display:grid;gap:2px}
   .rail .tab{flex-direction:row;justify-content:flex-start;gap:10px;min-height:36px;padding:0 10px;border:0;font-size:11px;box-shadow:none}
@@ -281,7 +283,8 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 /* ---------- auth ---------- */
 .center{min-height:100vh;display:grid;place-items:center;padding:24px}
 .auth{max-width:400px;width:100%}
-.auth .wordmark{display:flex;justify-content:center;margin-bottom:14px}
+.auth .wordmark{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:14px}
+.auth .wordmark .pbmark{font-size:64px}
 .auth .wordmark .dm{height:38px}
 .auth .tag{text-align:center;margin-bottom:26px}
 .auth h1{font:600 12px var(--mono);letter-spacing:.14em;text-transform:uppercase;text-align:center;margin-bottom:22px}
@@ -461,7 +464,7 @@ async function boot() {
   if (hashCode || !st.enrolled) return paintPair(st, hashCode);
   paintLock(st);
 }
-const wordmark = (tag) => `<div class="wordmark">${dm("PLAYBOX", true)}</div><div class="lbl tag" style="text-align:center">${tag}</div>`;
+const wordmark = (tag) => `<div class="wordmark"><span class="pbmark" role="img" aria-label="Playbox"></span>${dm("PLAYBOX", true)}</div><div class="lbl tag" style="text-align:center">${tag}</div>`;
 function paintOffline() { $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("No signal")}<p class="mut" style="text-align:center">The hub can't be reached. Is it running on your machine, and are you on the same network (or tailnet)?</p><button class="btn primary block" onclick="location.reload()">Try again</button></div></div>`; }
 
 /* A passkey prompt is a system sheet the page can't see: say so while it is up, and put the button back if it fails. */
@@ -619,12 +622,12 @@ matchMedia("(prefers-color-scheme:dark)").addEventListener?.("change", syncTheme
 const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["system", "System", "shield", "03"], ["add", "Add", "add", ""], ["research", "Research", "research", "04"], ["integrations", "Integrations", "plug", "05"], ["hub", "Hub", "hub", "06"]];
 function paint() {
   $("#root").innerHTML = `<div class="shell">
-    <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
+    <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox"><span class="pbmark"></span>${dm("PLAYBOX", true)}</a>
       <button class="btn primary block" data-act="add">+ Add room</button>
       <nav id="railnav"></nav>
       <div id="railrooms" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
       <div class="foot"><div class="keys">⌘K search<br>J K move · ↵ open</div></div></aside>
-    <div class="col"><div class="strip"><a class="brand" href="/" aria-label="Playbox">${dm("PLAYBOX", true)}</a>
+    <div class="col"><div class="strip"><a class="brand" href="/" aria-label="Playbox"><span class="pbmark"></span>${dm("PLAYBOX", true)}</a>
         <span class="state" id="linkled"></span><span class="hide-s" id="sthost"></span><span id="strooms"></span><span id="stattn"></span><span class="sp"></span>
         <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><button class="iconbtn" data-act="settings" aria-label="Settings" title="Settings (⌘,)">${svgi("hub")}</button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
       <main><div id="view"></div></main></div>

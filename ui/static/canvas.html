@@ -33,7 +33,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 /* chrome */
 .top{position:fixed;left:0;right:0;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:linear-gradient(var(--bg) 60%,transparent);pointer-events:none}
 .top>*{pointer-events:auto}
-.brand{font:700 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink);text-decoration:none;border:1px solid var(--edge);padding:6px 8px;background:var(--panel)}
+.brand .pbmark{font-size:15px;margin-right:4px}.brand{font:700 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink);text-decoration:none;border:1px solid var(--edge);padding:6px 8px;background:var(--panel)}
 .crumbs{flex:1 1 0;display:flex;text-overflow:ellipsis;align-items:center;gap:6px;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;min-width:0;overflow:hidden;white-space:nowrap}
 .crumbs button{background:none;border:0;padding:4px 2px;color:var(--t-mut);font:inherit;letter-spacing:inherit;text-transform:inherit}
 .crumbs button:hover,.crumbs b{color:var(--ink)}
@@ -148,7 +148,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--sig);outline-off
 <body>
 <div id="stage"><div id="world"></div></div>
 <div class="top">
-  <a class="brand" href="/" aria-label="Back to the hub">▪<span class="bw"> Playbox</span></a>
+  <a class="brand" href="/" aria-label="Back to the hub"><span class="pbmark"></span><span class="bw"> Playbox</span></a>
   <div class="crumbs" id="crumbs"></div>
   <span class="sp"></span>
   <span class="chip" id="mode"></span><span class="chip hide-s" id="live"><i class="led"></i><span>…</span></span>
