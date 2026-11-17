@@ -83,10 +83,30 @@ impl SecretStore {
         Self { dir }
     }
 
-    /// Whether `name` exists, for refusing a task before it is queued.
+    /// Check that `name` is valid and points to a regular file in the store within [`MAX_BYTES`].
+    ///
+    /// # Errors
+    ///
+    /// Fails for a bad name, or a missing, non-regular or oversized secret.
+    pub fn check(&self, name: &str) -> Result<()> {
+        if !valid_name(name) {
+            bail!("bad secret name {name:?}");
+        }
+        let meta = std::fs::symlink_metadata(self.dir.join(name))
+            .with_context(|| format!("secret {name:?} is not in the host's store"))?;
+        if !meta.is_file() {
+            bail!("secret {name:?} is not a regular file");
+        }
+        if meta.len() > MAX_BYTES {
+            bail!("secret {name:?} is larger than {MAX_BYTES} bytes");
+        }
+        Ok(())
+    }
+
+    /// Whether `name` exists and passes [`Self::check`], for refusing a task before it is queued.
     #[must_use]
     pub fn has(&self, name: &str) -> bool {
-        valid_name(name) && self.dir.join(name).is_file()
+        self.check(name).is_ok()
     }
 
     /// Check that the secrets directory exists and is not readable by other users.
@@ -147,16 +167,8 @@ impl SecretStore {
         };
         let mut staged = staged;
         for n in names {
-            let src = self.dir.join(n);
-            let meta = std::fs::symlink_metadata(&src)
-                .with_context(|| format!("secret {n:?} is not in the host's store"))?;
-            if !meta.is_file() {
-                bail!("secret {n:?} is not a regular file");
-            }
-            if meta.len() > MAX_BYTES {
-                bail!("secret {n:?} is larger than {MAX_BYTES} bytes");
-            }
-            let value = std::fs::read(&src)?;
+            self.check(n)?;
+            let value = std::fs::read(self.dir.join(n))?;
             let mut f = std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -256,6 +268,12 @@ mod tests {
         assert!(s.has("API_KEY"));
         assert!(!s.has("MISSING"));
         assert!(!s.has(".hidden"));
+        std::os::unix::fs::symlink("/etc/passwd", d.join("LINK")).unwrap();
+        assert!(!s.has("LINK"));
+        assert!(s.check("LINK").is_err());
+        std::fs::write(d.join("BIG"), vec![0u8; MAX_BYTES as usize + 1]).unwrap();
+        assert!(!s.has("BIG"));
+        assert!(s.check("BIG").is_err());
         std::fs::remove_dir_all(d).unwrap();
     }
 }
