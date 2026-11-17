@@ -7,7 +7,7 @@ use pbd_core::{
 };
 use tauri::{AppHandle, Manager};
 
-fn port() -> u16 {
+pub fn port() -> u16 {
     std::env::var("PLAYBOX_DESKTOP_PORT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -22,11 +22,24 @@ pub fn start(app: &AppHandle) -> Supervisor {
     if let Some(s) = std::env::var_os("PLAYBOX_DESKTOP_HUB_SCRIPT") {
         cfg.script = s.into();
     }
+    // A bundled `playbox` binary is the hub's CLI and MCP server (agent setup, machine checks); fall back to whatever is on PATH.
+    let bin = resources.join(if cfg!(windows) {
+        "bin/playbox.exe"
+    } else {
+        "bin/playbox"
+    });
+    let mut env = vec![];
+    if bin.is_file() {
+        env.push(("PLAYBOX_CLI".into(), bin.clone().into_os_string()));
+        cfg.extra_args = vec!["--mcp".into(), bin.into_os_string()];
+    }
     // Extra hub flags (for example the Cloudflare tunnel options), whitespace-separated.
     if let Ok(extra) = std::env::var("PLAYBOX_DESKTOP_HUB_ARGS") {
-        cfg.extra_args = extra.split_whitespace().map(Into::into).collect();
+        cfg.extra_args
+            .extend(extra.split_whitespace().map(Into::into));
     }
-    let spec = hub::spec(&cfg, &state.dirs);
+    let mut spec = hub::spec(&cfg, &state.dirs);
+    spec.env.extend(env);
     let (handle, port) = (app.clone(), cfg.port);
     Supervisor::start(spec, move |e: Event| on_event(&handle, port, &e))
 }

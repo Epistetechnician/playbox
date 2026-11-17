@@ -74,6 +74,7 @@ Replaces the LaunchAgent scripts.
 - One product-identity file (name, bundle id, channel, URL scheme), as Hermes does, so the app, installer and updater cannot drift.
 
 ### Phase 2 — One signed bundle and updates (M)
+*Started:* `desktop/scripts/stage.py` and `tauri.bundle.conf.json` stage and pack the hub, Python and binary; the tray has "Open in browser". Not yet: pinned Python per platform, the signing CI job, updates.
 - Per-platform bundle: `Playbox.app` / AppImage / MSIX containing the binary, the hub, and bundled Python. Windows is new work; Hermes has MSIX/signing code to learn from.
 - **Updates reuse our existing trust:** the app downloads `release.json` and the archive, checks SHA-256, the ed25519 signature against the key built into the binary, and the version the new binary reports. Same rules as `playbox update` (see `docs/releasing.md`), shared code.
 - **Two keys, not one** (mac-performance-monitor): the release-signing key stays in `~/.playbox-release`; any downloaded *data* (for example a future signed checks catalog) gets its own key, so one compromise cannot forge the other.

@@ -15,6 +15,7 @@ pub struct Handles {
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Open,
+    OpenBrowser,
     Restart,
     ToggleLogin,
     OpenLogs,
@@ -24,6 +25,7 @@ enum Command {
 fn parse(id: &str) -> Option<Command> {
     Some(match id {
         "open" => Command::Open,
+        "browser" => Command::OpenBrowser,
         "restart" => Command::Restart,
         "login" => Command::ToggleLogin,
         "logs" => Command::OpenLogs,
@@ -42,6 +44,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &status,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "open", "Open Playbox", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                "browser",
+                "Open in browser (passkeys)",
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(app, "restart", "Restart hub", true, None::<&str>)?,
             &CheckMenuItem::with_id(app, "login", "Launch at login", true, on, None::<&str>)?,
             &MenuItem::with_id(app, "logs", "Show logs", true, None::<&str>)?,
@@ -59,6 +68,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     }
     b.on_menu_event(|app, ev| match parse(ev.id().as_ref()) {
         Some(Command::Open) => window::reveal(app),
+        Some(Command::OpenBrowser) => open_browser(),
         Some(Command::Restart) => {
             if let Ok(g) = app.state::<AppState>().supervisor.lock() {
                 if let Some(s) = g.as_ref() {
@@ -92,6 +102,25 @@ fn toggle_login(app: &AppHandle) {
     };
 }
 
+/// Passkeys need a real browser: the embedded webview has no platform authenticator for `localhost` (see docs/desktop-plan.md).
+fn open_browser() {
+    let url = pbd_core::identity::Product::hub_url(crate::service::port());
+    let _ = if cfg!(windows) {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(&url)
+            .spawn()
+    } else {
+        std::process::Command::new(if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        })
+        .arg(&url)
+        .spawn()
+    };
+}
+
 fn open_logs(app: &AppHandle) {
     let dir = &app.state::<AppState>().dirs.logs;
     let _ = std::fs::create_dir_all(dir);
@@ -113,6 +142,7 @@ mod tests {
     fn menu_ids_map_to_commands_and_unknown_ids_do_nothing() {
         assert_eq!(parse("restart"), Some(Command::Restart));
         assert_eq!(parse("quit"), Some(Command::Quit));
+        assert_eq!(parse("browser"), Some(Command::OpenBrowser));
         assert_eq!(parse("status"), None);
         assert_eq!(parse("../etc/passwd"), None);
     }

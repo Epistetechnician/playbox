@@ -47,6 +47,21 @@ The supervisor tests use real child processes: crash loops, a hung service, a se
 
 The embedded webview cannot do platform passkeys on `localhost` (measured; see `docs/desktop-plan.md`, Spike 1, and `spikes/passkey_probe.py` to repeat it). Sign in through the system browser for now; the window is for status and management.
 
+## Bundling
+
+`scripts/stage.py` assembles `desktop/stage/` (the hub, a relocatable Python, the `playbox` binary); `tauri.bundle.conf.json` packs it into the app's resources:
+
+```bash
+cargo build --release -p playbox-cli
+python3 desktop/scripts/stage.py --playbox target/release/playbox \
+  --python-archive cpython-….tar.gz --python-sha256 <hash>
+cd desktop && cargo tauri build --config tauri.bundle.conf.json
+```
+
+The Python archive is passed with the hash it must have; the script refuses a mismatch or an archive that writes outside the stage. Without `--python-archive` the stage is for development and the app uses the system `python3`. When `bin/playbox` is present the app points the hub at it (`PLAYBOX_CLI`, `--mcp`).
+
+The tray also has "Open in browser", because passkeys need a real browser (see above).
+
 ## Not built yet (see the plan)
 
-Bundling (Python, the `playbox` binary and the hub into one signed package), notarization, updates, secrets in the OS keychain, the passkey spike in the embedded webview, and Windows (the `playbox` binary's control socket is Unix-only).
+Pinned Python runtime per platform and the CI job that builds and signs the bundle, notarization, updates, secrets in the OS keychain, and Windows (the `playbox` binary's control socket is Unix-only). `cargo tauri build` itself has not been run yet.

@@ -15,3 +15,6 @@ steer/results/**/*.pt
 
 # Tauri build output
 desktop/src-tauri/gen/
+
+# Staged bundle contents
+desktop/stage/
