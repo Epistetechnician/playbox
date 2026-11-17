@@ -42,6 +42,18 @@ jobs:
           curl -fs localhost:7799/api/auth/state | grep -q local_signin
           ps -axo command | grep -q "Playbox.app/Contents/Resources/python/bin/python3"
           pkill -TERM -f Playbox.app/Contents/MacOS/playbox-desktop
+      - name: "Smoke test: the app finds its hub when reached through a symlinked folder"
+        working-directory: desktop
+        run: |
+          # Tauri refuses the executable path on macOS when a parent folder is a symlink; the app resolves its resources itself.
+          mkdir -p "$RUNNER_TEMP/real" && ditto target/release/bundle/macos/Playbox.app "$RUNNER_TEMP/real/Playbox.app"
+          ln -s "$RUNNER_TEMP/real" "$RUNNER_TEMP/link"
+          export HOME="$RUNNER_TEMP/h" PLAYBOX_HUB_HOME="$RUNNER_TEMP/hub2" PLAYBOX_DESKTOP_PORT=7798
+          mkdir -p "$HOME"
+          "$RUNNER_TEMP/link/Playbox.app/Contents/MacOS/playbox-desktop" &
+          for i in $(seq 1 60); do curl -fs localhost:7798/api/auth/state | grep -q local_signin && break; sleep 1; done
+          curl -fs localhost:7798/api/auth/state | grep -q local_signin
+          pkill -TERM -f "link/Playbox.app/Contents/MacOS/playbox-desktop"
       - name: Package
         working-directory: desktop
         run: |

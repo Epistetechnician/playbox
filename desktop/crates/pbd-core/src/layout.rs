@@ -159,3 +159,40 @@ mod tests {
         assert_eq!(resolve(Os::Linux, &env(&[("HOME", "")])), Err(NoHome));
     }
 }
+
+/// Where a packaged app keeps its resources, found from the running executable on our own instead of through the GUI toolkit. Tauri
+/// refuses the executable path on macOS when any folder above it is a symlink (`/tmp`, a symlinked home or volume), and then reports no
+/// resource directory at all, which made the app fall back to a system Python and never start its hub.
+pub fn resources_for_exe(exe: &std::path::Path) -> Option<PathBuf> {
+    let exe = exe.canonicalize().ok()?;
+    let dir = exe.parent()?;
+    let candidate = if cfg!(target_os = "macos") {
+        dir.join("../Resources")
+    } else if cfg!(windows) {
+        dir.to_path_buf()
+    } else {
+        dir.join("../lib/playbox-desktop")
+    };
+    candidate.canonicalize().ok().filter(|p| p.is_dir())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod resource_tests {
+    use super::*;
+
+    #[test]
+    fn found_even_when_the_app_is_reached_through_a_symlinked_folder() {
+        let root = std::env::temp_dir().join(format!("pbd-res-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let real = root.join("real/Playbox.app/Contents");
+        std::fs::create_dir_all(real.join("MacOS")).unwrap();
+        std::fs::create_dir_all(real.join("Resources")).unwrap();
+        std::fs::write(real.join("MacOS/playbox-desktop"), b"").unwrap();
+        std::os::unix::fs::symlink(root.join("real"), root.join("link")).unwrap();
+        let via_link = root.join("link/Playbox.app/Contents/MacOS/playbox-desktop");
+        let got = resources_for_exe(&via_link).unwrap();
+        assert!(got.ends_with("Contents/Resources"));
+        assert!(resources_for_exe(&root.join("nope")).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
