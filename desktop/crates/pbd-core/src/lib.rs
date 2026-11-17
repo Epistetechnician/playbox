@@ -25,3 +25,4 @@ pub mod probe;
 pub mod signin;
 pub mod status;
 pub mod supervisor;
+pub mod update;

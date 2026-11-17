@@ -68,6 +68,10 @@ The tray also has "Open in browser", because passkeys need a real browser (see a
 
 The Python runtime is pinned in `python-runtime.json` (hashes from the release's `SHA256SUMS`; `scripts/fetch_python.py <target> <dir>` downloads and verifies it). `.github/workflows/desktop-bundle.yml` builds `Playbox.app`, ad-hoc signs it, smoke-tests that it starts its own hub with the bundled Python, and uploads a zip with its SHA-256. Built and run once locally on macOS arm64 (125 MB).
 
+## Updates
+
+The tray's "Check for updates" item (and a daily background look, packaged app only) fetches the latest release's `SHA256SUMS` and `.sig`, verifies them against the pinned `release.pub` key, checks `release.json` and `Playbox-macos-arm64.zip` against the signed list, and offers the update. Installing is always a click unless the host sets `PLAYBOX_DESKTOP_UPDATE=install`; `off` disables looking. The new app is unpacked next to the old one, must pass `codesign --verify` and report the promised version via `--version`, then replaces the old one (kept as `Playbox.previous.app`) and relaunches. Any failure leaves the installed app untouched. Same trust as `playbox update` (docs/releasing.md); stable releases only; macOS arm64 so far. `scripts/set_version.py` makes the built app report the release's version.
+
 ## Not built yet (see the plan)
 
-Linux and Windows bundles, notarization (deferred: unsigned by decision), updates, secrets in the OS keychain, and Windows (the `playbox` binary's control socket is Unix-only). 
+Linux, Windows and Intel Mac bundles, canary channel, rollback from the menu, notarization (deferred: unsigned by decision), updates, secrets in the OS keychain, and Windows (the `playbox` binary's control socket is Unix-only). 

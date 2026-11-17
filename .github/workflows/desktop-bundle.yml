@@ -2,6 +2,7 @@
 # Manual or on a desktop-v* tag. Unsigned by decision (docs/desktop-plan.md): no Developer ID, so no notarization; first launch needs right-click > Open.
 name: desktop-bundle
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     tags: ["desktop-v*"]
@@ -17,6 +18,8 @@ jobs:
           toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p playbox-cli -p playbox-mcp
+      - name: The app reports the release's version (the updater compares it)
+        run: python3 -I desktop/scripts/set_version.py
       - name: Stage the bundle contents
         run: |
           read -r ARCHIVE HASH < <(python3 -I desktop/scripts/fetch_python.py aarch64-apple-darwin "$RUNNER_TEMP/py")
@@ -24,6 +27,8 @@ jobs:
       - run: cargo install tauri-cli --version "^2" --locked
       - name: Build and ad-hoc sign Playbox.app
         working-directory: desktop
+        env:
+          PLAYBOX_RELEASE_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PUBKEY }}   # the key the updater trusts; empty falls back to release.pub
         run: |
           cargo tauri build --config tauri.bundle.conf.json --bundles app
           codesign --force --deep --sign - target/release/bundle/macos/Playbox.app

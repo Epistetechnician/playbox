@@ -5,6 +5,7 @@
 mod quit;
 mod service;
 mod tray;
+mod update;
 mod window;
 
 use pbd_core::{claim::Claim, layout};
@@ -19,6 +20,10 @@ pub struct AppState {
 }
 
 fn main() {
+    if std::env::args().any(|a| a == "--version") {
+        println!("playbox-desktop {}", update::CURRENT);
+        return;
+    }
     let dirs = match layout::from_process_env() {
         Ok(d) => d,
         Err(e) => {
@@ -42,6 +47,7 @@ fn main() {
 
     let app = tauri::Builder::default()
         .manage(state)
+        .manage(update::Updates::default())
         .setup(move |app| {
             quit::on_signals(app.handle());
             tray::build(app.handle())?;
@@ -49,6 +55,7 @@ fn main() {
             if !background {
                 let _ = win.show();
             }
+            update::start_background_checks(app.handle());
             let sup = service::start(app.handle());
             if let Ok(mut g) = app.state::<AppState>().supervisor.lock() {
                 *g = Some(sup);

@@ -10,6 +10,7 @@ use tauri::{
 
 pub struct Handles {
     status: MenuItem<Wry>,
+    update: MenuItem<Wry>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -17,6 +18,7 @@ enum Command {
     Open,
     OpenBrowser,
     SignIn,
+    Update,
     Restart,
     ToggleLogin,
     OpenLogs,
@@ -28,6 +30,7 @@ fn parse(id: &str) -> Option<Command> {
         "open" => Command::Open,
         "browser" => Command::OpenBrowser,
         "signin" => Command::SignIn,
+        "update" => Command::Update,
         "restart" => Command::Restart,
         "login" => Command::ToggleLogin,
         "logs" => Command::OpenLogs,
@@ -40,6 +43,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let state = app.state::<AppState>();
     let on = autostart::is_enabled(Os::current(), &state.dirs.home);
     let status = MenuItem::with_id(app, "status", "Hub starting…", false, None::<&str>)?;
+    let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -55,12 +59,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             )?,
             &MenuItem::with_id(app, "restart", "Restart hub", true, None::<&str>)?,
             &CheckMenuItem::with_id(app, "login", "Launch at login", true, on, None::<&str>)?,
+            &update,
             &MenuItem::with_id(app, "logs", "Show logs", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", "Quit Playbox", true, Some("CmdOrCtrl+Q"))?,
         ],
     )?;
-    app.manage(Handles { status });
+    app.manage(Handles { status, update });
     let mut b = TrayIconBuilder::with_id("main")
         .menu(&menu)
         .tooltip("Playbox")
@@ -70,6 +75,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     }
     b.on_menu_event(|app, ev| match parse(ev.id().as_ref()) {
         Some(Command::Open) => window::reveal(app),
+        Some(Command::Update) => crate::update::on_click(app),
         Some(Command::SignIn) => {
             window::reveal(app);
             window::sign_in(app, crate::service::port());
@@ -95,6 +101,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 pub fn set_status(app: &AppHandle, line: &Line) {
     if let Some(h) = app.try_state::<Handles>() {
         let _ = h.status.set_text(&line.text);
+    }
+}
+
+pub fn set_update(app: &AppHandle, text: &str, enabled: bool) {
+    if let Some(h) = app.try_state::<Handles>() {
+        let _ = h.update.set_text(text);
+        let _ = h.update.set_enabled(enabled);
     }
 }
 
