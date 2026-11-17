@@ -72,7 +72,7 @@ The first SWE-bench pair sat at ceiling and floor. I calibrated 5 small Django 3
 
 Honest gaps:
 - **Stopped by an Anthropic 429.** The last run (django-11905 S5) hit "usage limit resets in ~93h" after 3 retries, so that cell has 4 runs, not 5. No further Hermes runs were made.
-- 15 L / 14 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and kept in `swe-results2/` only as their absence. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
+- 15 L / 14 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and not included in `swe-results2/`. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
 - 5 runs per cell is thin; one instance flips by a single run.
 - Calibration runs (2 per instance, local only) were used to pick instances, so L is not blind to the selection. Only the post-selection runs are in the table, except L2 of the three kept instances, which were calibration runs and also counted. This could slightly favour L's resolve rate by selection but is small.
-- Model usage in total is now around 65 Hermes runs, above the 30-run cap by your approval of 20 + 60 more; the 60 was nearly used up before the 429.
+- Model usage: this set used about 38 Hermes runs (11 calibration, 12 more local, 15 sandbox including the 429 one), within the 60 you approved, for about 83 across the whole investigation. The 429 is the account's own usage limit, not the run cap; it resets in about 93 hours.
