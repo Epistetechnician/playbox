@@ -1,0 +1,17 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes: { value: "Security problem? Do not file it here: see SECURITY.md." }
+  - type: input
+    id: version
+    attributes: { label: Version, description: Output of `playbox --version`, placeholder: "playbox 0.3.3 (abc1234)" }
+    validations: { required: true }
+  - type: input
+    id: os
+    attributes: { label: OS and architecture, placeholder: macOS 15 arm64 / Ubuntu 22.04 x86_64 }
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: What you did, what you expected, what you got. Remove invite links and keys from logs. }
+    validations: { required: true }
