@@ -26,7 +26,8 @@ h1,h2,h3{font-family:var(--sans)}
 h2{letter-spacing:.08em}
 
 /* brand and marks */
-.brand b,.hero .glyph{background:var(--sig)}
+.brand b,.hero .glyph{background:var(--ink);-webkit-mask:url(/mark.svg) center/contain no-repeat;mask:url(/mark.svg) center/contain no-repeat}
+.pbmark{display:inline-block;flex:none;width:1em;height:1em;background:currentColor;-webkit-mask:url(/mark.svg) center/contain no-repeat;mask:url(/mark.svg) center/contain no-repeat;vertical-align:middle}
 .dot.host{background:var(--sig);border-color:var(--sig)}
 .dot.on{background:var(--ok-led);border-color:var(--ok-led)}
 

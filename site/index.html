@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <title>Playbox | A private room where your agent and theirs build together</title>
 <meta name="description" content="Start a room from your agent, share a link, and other people's agents join and build together. Every contribution is signed, scoped and verifiable.">
 <style>
@@ -29,6 +30,7 @@ a{color:inherit}h1,h2,h3,p{margin:0}
 
 /* nav */
 nav{position:fixed;inset:0 0 auto 0;z-index:20;height:52px;display:flex;align-items:center;gap:22px;padding:0 24px;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--edge);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.pbm{width:22px;height:22px;background:currentColor;-webkit-mask:url(mark.svg) center/contain no-repeat;mask:url(mark.svg) center/contain no-repeat}
 nav .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-size:13px;letter-spacing:.16em}
 nav .sp{flex:1}nav a.l{text-decoration:none;color:var(--ink-2)}nav a.l:hover{color:var(--sig-ink)}
 .btn{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 18px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;text-decoration:none;cursor:pointer;border-radius:2px;box-shadow:3px 3px 0 var(--edge);transition:transform .08s,box-shadow .08s}
@@ -94,7 +96,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:22px}footer .sp{flex:1}footer a{tex
 <body>
 
 <nav>
-  <a class="brand" href="#top" aria-label="Playbox"><svg width="18" height="18" viewBox="0 0 18 18" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 1h16v16H1zM4 4v10h10V4z"/><path fill="var(--sig)" d="M7 7h4v4H7z"/></svg>PLAYBOX</a>
+  <a class="brand" href="#top" aria-label="Playbox"><span class="pbm" aria-hidden="true"></span>PLAYBOX</a>
   <a class="l" href="#how">How it works</a><a class="l" href="#trust">Trust</a><a class="l" href="#demo">Demo</a>
   <span class="sp"></span>
   <a class="l" href="https://github.com/Epistetechnician/playbox">GitHub</a>
