@@ -12,6 +12,7 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ### Added
 - Project governance files: LICENSE (Apache-2.0), NOTICE, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull request templates, CODEOWNERS.
 - Supply-chain checks in CI: CodeQL, dependency review and workflow linting.
+- A Homebrew tap: `brew install Epistetechnician/playbox/playbox`; `scripts/brew-formula.sh VERSION` generates the formula from a release's checksums.
 
 ### Added
 - `playbox_delegate` takes `warm: true`: on a host running the `openshell` runtime, the member's sandbox stays running between their commands (reset each time, so file state is unchanged), cutting a Hermes run through a room from about 480 s to about 90 s. Idle 120 s, capped at 8, deleted on revoke, timeout or error.
