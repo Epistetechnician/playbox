@@ -9,18 +9,20 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- `playbox up --link-ttl SECS` and `--link-uses N`: set the lifetime (1..=86400 seconds, default 3600) and admission count (1..=100, default 1) of the initial invite link.
+- `playbox up --min-isolation container|microvm|confidential`: require at least that runner isolation level when hosting a room (default `container`; values above `container` require `--runtime` or `--docker`).
+
 ### Fixed
 - `playbox up --allow-secret NAME` now checks at startup that each named secret exists and that the secrets directory is mode `0700`, instead of failing later when a task runs.
 - The `libkrun` runner now honours `PLAYBOX_SECRETS_DIR` (via `SecretStore::from_env()`), matching the Docker runner instead of hardcoding `$PLAYBOX_HOME/secrets`.
 - An approval-gated capability call no longer runs after the caller's grant has expired: the standing check now refuses an expired grant.
-- `playbox up --link-ttl SECS` and `--link-uses N`: set the lifetime (1..=86400 seconds, default 3600) and admission count (1..=100, default 1) of the initial invite link.
 - A second host opened on a state directory already in use is refused (an exclusive lock on `host.lock`), instead of racing on `state.json`, corrupting `audit.log` and removing the live control socket. A crashed host's lock is released by the OS, so restarts still work.
 - `playbox up` refuses `--allow-host`, `--allow-image`, and `--allow-secret` without `--runtime` (or `--docker`), and refuses `--allow-host` when the chosen runner cannot enforce a host list, instead of admitting members with grants that fail later.
 - `playbox up` now rejects `0` at parse time for `--max-members`, `--max-concurrent`, `--max-tasks-per-minute`, `--task-budget`, `--latent-posts-per-minute`, and `--latent-max-age-secs`, instead of starting a room that refuses every task.
 - The capability calls store and the conversations store now fail closed: a file that exists but cannot be read (not UTF-8, no permission) is an error at startup instead of being treated as empty and overwritten, which lost the persisted call history.
 - `playbox-bridge` reopens its connection to the room when the host has closed it after sitting idle, instead of answering "room unreachable" until restarted.
 - `playbox mcp` (what `setup` registers) ignored `PLAYBOX_LIVE=1`: it advertised `claude/channel` but never pushed the hello or room messages. It now shares one stdio loop (`Server::serve_stdio`) with `playbox-mcp`.
-- `playbox up --min-isolation container|microvm|confidential`: require at least that runner isolation level when hosting a room (default `container`; values above `container` require `--runtime` or `--docker`).
 - A banned key is refused in `RoomHandler::authorize`, so a grant from an earlier join stops working after the member is revoked (GRANT-3).
 - `playbox hub` and the hub background service now fail loudly with the config path and a `--reconfigure` hint when `hub.json` is unreadable or invalid instead of silently falling back to `localhost` (`--reconfigure` still works to overwrite it).
 - `playbox up --allow-secret` now validates secret names, symlinks and the 64 KiB size limit at startup using the same check as runtime staging, instead of failing later when tasks run.
