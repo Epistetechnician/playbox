@@ -135,4 +135,4 @@ jobs:
           git push origin HEAD:main
       - name: Skipped
         if: ${{ env.TAP_DEPLOY_KEY == '' }}
-        run: echo "TAP_DEPLOY_KEY is not set: the Homebrew tap was not updated"
+        run: echo "TAP_DEPLOY_KEY is not set, so the Homebrew tap was not updated"
