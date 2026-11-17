@@ -64,9 +64,9 @@ The first SWE-bench pair sat at ceiling and floor. I calibrated 5 small Django 3
 | django-11422 | L | 4/5 | 4/5 | $0.198 | 31 | 143 s |
 | django-11422 | S | 3/5 | 3/5 | $0.255 | 41 | 176 s |
 | django-11905 | L | 0/5 | 5/10 | $0.341 | 62 | 190 s |
-| django-11905 | S | 0/5 | 5/10 | $0.306 | 54 | 151 s |
+| django-11905 | S | 0/5 | 5/10 | $0.306 | 56 | 151 s |
 | **all** | **L** | **8/15** | | **$0.218** | | **143 s** |
-| **all** | **S** | **8/15** | | **$0.219** | | **138 s** |
+| **all** | **S** | **8/15** | | **$0.225** | | **139 s** |
 
 **Result: S and L resolve at the same rate (53% vs 53%) on tasks near Haiku's threshold.** Per-instance rate difference (S minus L), averaged over instances: 0.00, bootstrap 95% CI [-0.20, +0.20]. So at n=15 per arm the data rule out a drop of more than about 20 percentage points in resolve rate, not smaller ones; the 2-test margin used for Tripwire does not translate here. The per-instance differences (+1, -1, 0) go in both directions, which is what noise looks like. Cost and time are the same within noise.
 
