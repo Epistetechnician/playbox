@@ -392,3 +392,34 @@ all three criteria hold; for seed 0, (A) and (C) held and (B) was 16.0 against 2
 Two more seeds were started and did not complete: the seed-2 training run (step 1,700 of 5,500, loss finite, 15 batches skipped) was cut short when
 another job started on the same node, so no seed-2 or seed-3 result exists. The benchmark's second corpus seed did not run either. The work is
 therefore still at two training seeds and one corpus seed.
+
+## 13. Mapper recipe v2 (written, tested on a tiny model, not yet trained at scale) and its decision rule
+
+Motivation: section 12 found that the training seed, not the evaluation draw, decides whether the blind mapper clears (B): 16.0 and 26.2 points for two
+seeds of the same recipe. A write-up of cross-model cache transfer (onetriangle.ai, "cache-transfer"; a company post, read through a summary, no code or
+license) describes a recipe aimed at that kind of instability. Nothing was copied; `steer/playbox_steer/l4_swat_v2.py` implements the ideas
+over our own mapper, each as a switch (`V2Config`, `tools/l4_train_v2.py`):
+
+1. **Ridge start.** A closed-form ridge map from the aligned sender cache to the receiver cache, per layer group (centred, per-column scaled, 0.01 relative
+   penalty, fitted on 160 batches, the last tenth held out for R^2). The transformer adds a residual on top and its output layers start at zero, so
+   training begins at the ridge map, not at random.
+2. **KL loss** in stage 2: match the receiver's next-token distribution when it reads the real context cache (teacher) instead of NLL on the true token.
+3. **Key weight 2** in stage 1: keys are weighted twice as much as values in the reconstruction error (the post reports mapped keys hurt recall far more than mapped values).
+4. **Edge recompute (k = 4):** the first context token's K/V is the receiver's own (it depends on that token only) and the last four context tokens are
+   fed to the receiver as input, attending to the mapped cache, as a real receiver would compute them; their predictions are not scored. This is
+   the faithful form: no real-cache information about those tokens leaks into training or evaluation.
+
+What was verified locally (`steer/tests/test_l4_v2.py`, 7 tests, a 4-layer random Llama as sender and receiver, so these check mechanics and not quality):
+the prior is zero before it is fitted and a fitted ridge explains part of the real cache; nearest-token alignment; the edge input equals plain continuation
+when fed the real cache (the two NLLs agree to float noise); KL is zero for the real cache and positive for a zero cache; a short training run stays
+finite and its checkpoint reloads; the settling evaluation runs on a v2 checkpoint and reports an edge condition. What was not verified: any effect on a
+real pair. The ridge matrices are large for the full pair (about 1.06 billion floats at 4 blocks, 4.2 GB in float32, saved in the checkpoint); fitting them was
+not run at that size.
+
+**Plan and rule (fixed before any run).** Train v2 with training seeds 0 to 3 (same data, steps, width and block count as sections 11 and 12) and
+evaluate each with `tools/l4_eval_b_cli.py` (the 720-item, topic-cluster-bootstrap (B) test; v2 is scored on its deployment path, `mapped_edge`, and
+also without the edge tokens). For the old recipe, seeds 0 and 1 exist; seeds 2 and 3 are trained too so both recipes have four. The recipe is
+judged **less seed-sensitive** only if v2's (B) values have a range of at most 5 points across its four seeds, the old recipe's range over its four seeds
+is larger, and the lowest v2 seed is at least 20.0 points. Otherwise the result is "no evidence of an improvement". Ablations (one switch off at a time on
+seeds 0 and 1) are run only if v2 passes. Estimated cost about 20 USD of H100 time (eight trainings of about 40 minutes plus evaluations); it waits for the
+gman workspace cap to be raised and has not been started.
