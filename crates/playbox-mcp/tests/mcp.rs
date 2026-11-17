@@ -795,6 +795,58 @@ fn a_guest_can_use_a_replica_and_loses_it_when_revoked() {
     );
 }
 
+// REQ: ROOM-15
+#[test]
+fn a_guest_whose_host_dies_moves_to_another_host_of_the_room_by_itself() {
+    let _turn = ROOMS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let work = scratch("failover");
+    let mut primary = Mcp::start(&work.join("p"));
+    let (_, p) = primary.tool(
+        "playbox_create",
+        json!({"transport": "local", "name": "team"}),
+    );
+    let mut replica = Mcp::start(&work.join("r"));
+    let (err, r) = replica.tool(
+        "playbox_create",
+        json!({
+            "transport": "local", "name": "team", "replica_of": p["root_public_key"],
+            "sync_peers": [p["peer_address"]], "sync_interval_secs": 1
+        }),
+    );
+    assert!(!err, "{r}");
+    let mut guest = Mcp::start(&work.join("g"));
+    let (err, joined) = guest.tool(
+        "playbox_join",
+        json!({"link": p["link"], "workspace": work.join("ws")}),
+    );
+    assert!(!err, "{joined}");
+    // The guest knows the replica (it was told its address once), then goes back to the primary.
+    let (err, used) = guest.tool("playbox_use_host", json!({"host": r["peer_address"]}));
+    assert!(!err, "{used}");
+    let (err, back) = guest.tool("playbox_use_host", json!({"host": "primary"}));
+    assert!(!err && back["which"] == "primary", "{back}");
+    assert_eq!(
+        guest.tool("playbox_ping", json!({"text": "before"})).1["echo"],
+        "before"
+    );
+
+    // The primary goes away without a word. Within a minute or so the guest is on the replica with no help.
+    drop(primary);
+    let mut moved = false;
+    for _ in 0..120 {
+        let (is_err, _) = guest.tool("playbox_ping", json!({"text": "after"}));
+        let (_, st) = guest.tool("playbox_status", json!({}));
+        if !is_err && st["joined"]["active_host"] == r["host_id"] {
+            moved = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    assert!(moved, "the guest never moved to the other host");
+}
+
 #[test]
 fn history_verify_judges_host_evidence_the_way_join_did() {
     let _turn = ROOMS
@@ -1761,4 +1813,56 @@ fn a_guest_can_join_from_a_link_file_and_leave_to_join_again() {
         json!({"link_file": link_path, "local": true, "workspace": work.join("ws2")}),
     );
     assert!(!err && rejoined["joined"] == true, "{rejoined}");
+}
+
+#[test]
+fn the_core_profile_lists_few_tools_and_more_unlocks_a_group() {
+    let mut m = Mcp::start_with(&scratch("core"), &[("PLAYBOX_TOOLS", "core")]);
+    let names = |m: &mut Mcp| -> Vec<String> {
+        m.rpc("tools/list", json!({}))["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let before = names(&mut m);
+    assert!(
+        before.len() <= 7,
+        "core lists {} tools: {before:?}",
+        before.len()
+    );
+    assert!(before.iter().any(|n| n == "playbox_more"));
+    assert!(!before.iter().any(|n| n == "playbox_push"));
+    let (is_err, body) = m.tool("playbox_more", json!({}));
+    assert!(
+        !is_err
+            && body["groups"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|g| g == "work")
+    );
+    let (is_err, body) = m.tool("playbox_more", json!({"group": "work"}));
+    assert!(
+        !is_err
+            && body["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["name"] == "playbox_push")
+    );
+    assert!(names(&mut m).iter().any(|n| n == "playbox_push"));
+    let (is_err, _) = m.tool("playbox_more", json!({"group": "nope"}));
+    assert!(is_err);
+}
+
+#[test]
+fn the_default_profile_still_lists_everything() {
+    let mut m = Mcp::start(&scratch("full"));
+    let n = m.rpc("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert!(n > 30, "full profile lists {n} tools");
 }

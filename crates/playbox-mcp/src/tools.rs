@@ -40,6 +40,97 @@ pub fn tool_list() -> Value {
     tools
 }
 
+/// Tools every agent sees under `PLAYBOX_TOOLS=core`: enough to start or join a room, see who is there,
+/// talk, run a task, and ask for more. Everything else is in a group named by [`group_of`].
+pub const CORE_TOOLS: &[&str] = &[
+    "playbox_create",
+    "playbox_join",
+    "playbox_status",
+    "playbox_say",
+    "playbox_feed",
+    "playbox_delegate",
+    "playbox_more",
+];
+
+/// The tool groups `playbox_more` can unlock.
+pub const GROUPS: &[&str] = &["work", "memory", "proofs", "room"];
+
+/// The group a non-core tool belongs to.
+pub fn group_of(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "playbox_pull" | "playbox_push" | "playbox_steer" | "playbox_use_host"
+        | "playbox_browse" | "playbox_ping" | "playbox_announce" | "playbox_revoke" => "work",
+        "playbox_room_remember"
+        | "playbox_room_recall"
+        | "playbox_remember"
+        | "playbox_recall"
+        | "playbox_memory_ingest"
+        | "playbox_memory_export" => "memory",
+        "playbox_verify"
+        | "playbox_audit"
+        | "playbox_receipts_check"
+        | "playbox_checkpoint"
+        | "playbox_checkpoint_verify"
+        | "playbox_lineage_check"
+        | "playbox_evidence_sign"
+        | "playbox_evidence_check"
+        | "playbox_holdout_commit"
+        | "playbox_holdout_prove"
+        | "playbox_holdout_verify"
+        | "playbox_evaluator_issue"
+        | "playbox_variant_sign" => "proofs",
+        "playbox_leave"
+        | "playbox_live_ready"
+        | "playbox_conversations"
+        | "playbox_conversation_new"
+        | "playbox_conversation_invite"
+        | "playbox_conversation_say"
+        | "playbox_conversation_read"
+        | "playbox_capabilities"
+        | "playbox_capability_call" => "room",
+        _ => return None,
+    })
+}
+
+fn more_tool() -> Value {
+    tool("playbox_more",
+        "List and unlock more Playbox tools. Call with no group to see the groups, or with a group name to add its tools to your tool list and get their descriptions. Groups: work (pull, push, steer, browse, ping, announce, revoke, use_host), memory (shared and private memory), proofs (receipts, checkpoints, evidence, holdouts), room (leave, conversations, capabilities, live delivery).",
+        json!({"group": {"type": "string", "enum": GROUPS, "description": "The group to unlock. Omit to list the groups."}}),
+        &[])
+}
+
+/// The tools a client is shown. With `core` off this is every tool. With it on, only [`CORE_TOOLS`] plus
+/// the groups in `unlocked`. Hiding a tool does not forbid calling it: the grant is the boundary, this only
+/// saves the agent's context.
+pub fn tool_list_for(core: bool, unlocked: &std::collections::BTreeSet<String>) -> Value {
+    let all = tool_list();
+    if !core {
+        return all;
+    }
+    let mut out: Vec<Value> = Vec::new();
+    for t in all.as_array().into_iter().flatten() {
+        let name = t["name"].as_str().unwrap_or("");
+        let show =
+            CORE_TOOLS.contains(&name) || group_of(name).is_some_and(|g| unlocked.contains(g));
+        if show {
+            out.push(t.clone());
+        }
+    }
+    out.push(more_tool());
+    Value::Array(out)
+}
+
+/// The full definitions of one group's tools, for `playbox_more` to return.
+pub fn group_tools(group: &str) -> Vec<Value> {
+    tool_list()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|t| group_of(t["name"].as_str().unwrap_or("")) == Some(group))
+        .cloned()
+        .collect()
+}
+
 fn base_tool_list() -> Value {
     json!([
         tool("playbox_create",
@@ -92,7 +183,8 @@ fn base_tool_list() -> Value {
                 "min_host_tier": {"type": "string", "description": "Refuse to join unless the host's attestation achieves at least this tier (t0..t3). Default t0: the host must sign measurements of its software with its connection key. t1 needs hardware evidence (Secure Enclave or TPM) from a device key you have pinned (`playbox pin add`, or trust_host_device). t2 also needs PLAYBOX_TPM_BOOT_PCRS reference values."},
                 "trust_host_device": {"type": "boolean", "description": "Pin the host's device key if it is new to you (trust on first use), then judge the host with it pinned. Only do this when you have good reason to think you are talking to the host you meant: the first contact is the one an impostor could win."},
                 "transport": {"type": "string", "description": "Override the transport (`iroh`, `local`, `relay:<url>`). By default the link says which to use."},
-                "local": {"type": "boolean", "description": "Shorthand for transport=local."}
+                "local": {"type": "boolean", "description": "Shorthand for transport=local."},
+                "preview": {"type": "boolean", "description": "Check the host and report what it is (verified tier, runner, device) without joining. The invite is not spent. Use it to show the person you work for what they would be joining, then call again without `preview`."}
             }), &[]),
         tool("playbox_leave",
             "Guest only: drop the room you joined so this sidecar can join another. Your grant stays valid until it expires; the host's member list is unchanged. Does nothing to a room you host.",
@@ -342,4 +434,38 @@ fn base_tool_list() -> Value {
                 "paired": {"type": "boolean", "description": "Bound the mean of per-item differences instead of a difference of means. Set it only if you know this evaluator scores the same items in the same order for every variant (a fixed holdout): then it is much tighter. It is the verifier's assertion, not the author's. Default false."}
             }), &["evaluators", "custodians", "variants"]),
     ])
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    #[test]
+    fn every_tool_is_core_or_in_a_group() {
+        for t in tool_list().as_array().unwrap() {
+            let n = t["name"].as_str().unwrap();
+            assert!(
+                CORE_TOOLS.contains(&n) || group_of(n).is_some(),
+                "{n} is neither core nor in a group"
+            );
+        }
+    }
+
+    #[test]
+    fn core_names_exist_and_groups_are_known() {
+        let all: Vec<String> = tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_owned())
+            .collect();
+        for c in CORE_TOOLS.iter().filter(|c| **c != "playbox_more") {
+            assert!(all.iter().any(|n| n == c), "core tool {c} does not exist");
+        }
+        for n in &all {
+            if let Some(g) = group_of(n) {
+                assert!(GROUPS.contains(&g));
+            }
+        }
+    }
 }

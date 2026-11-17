@@ -328,6 +328,24 @@ impl Server {
         )
         .await?;
         let (host_att, newly_pinned) = self.vet_host(&client, a, "not joining").await?;
+        if b(a, "preview") {
+            // Nothing has been sent to the host but the attestation request, so the invite is still unspent.
+            client.close().await;
+            return Ok(json!({
+                "joined": false,
+                "preview": true,
+                "host_attestation": {
+                    "verified_tier": host_att.achieved.to_string(),
+                    "claimed_tier": host_att.statement.claimed.to_string(),
+                    "runner": host_att.statement.measurements.runner,
+                    "os": host_att.statement.measurements.os,
+                    "notes": host_att.notes,
+                    "device": host_att.device,
+                },
+                "limits": "A grant's limits (cpu, memory, time, network) come with the grant when you join; playbox_status shows them afterwards.",
+                "next": "Show this to the person you work for. If they agree, call playbox_join again without `preview`; the invite is unspent."
+            }));
+        }
         client.join(&parsed.invite).await?;
         // Keep the host's signed statement in our history, so anyone verifying it later can see
         // what we knew about the host when we joined.
@@ -349,9 +367,11 @@ impl Server {
             .await
             .context("preparing the workspace")?;
         self.client = Some(Arc::new(client));
+        self.hint_hosts = parsed.hosts.clone();
         self.join_args = Some(a.clone());
         self.member_id = Some(member.clone());
         self.workspace = Some(ws.clone());
+        self.learn_hosts().await;
         Ok(json!({
             "joined": true,
             "member_id": member,
@@ -378,6 +398,11 @@ impl Server {
         self.client = None;
         self.extra.clear();
         self.active = None;
+        self.room_root = None;
+        self.hint_hosts.clear();
+        self.log_hosts.clear();
+        self.primary_retry = None;
+        self.hosts_checked = None;
         self.member_id = None;
         self.join_args = None;
         self.workspace = None;
