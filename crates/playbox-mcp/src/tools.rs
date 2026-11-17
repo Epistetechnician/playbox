@@ -196,6 +196,7 @@ fn base_tool_list() -> Value {
                 "image": {"type": "string", "description": "Container image. Default alpine:3"},
                 "cpus": {"type": "number"}, "mem_mib": {"type": "integer"},
                 "timeout_secs": {"type": "integer"}, "network": {"type": "boolean"},
+                "warm": {"type": "boolean", "description": "Ask the host to keep your sandbox running between your commands (openshell runtime only; others ignore it). Every command still gets a fresh checkout, so file state is unchanged; only the sandbox start is saved."},
                 "secrets": {"type": "array", "items": {"type": "string"}, "description": "Names of host-held secrets to read at /run/secrets. Must be listed in your grant; you never see the values."},
                 "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Limit the task's network to exactly these destinations (`host` or `host:port`). Must be listed in your grant; needs a host running the openshell runtime."},
                 "apply": {"type": "boolean", "description": "Apply the returned patch to your workspace (staged, not committed). Default false."},

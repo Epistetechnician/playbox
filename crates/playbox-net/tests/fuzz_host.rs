@@ -357,6 +357,7 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
                 Op::Run {
                     base: "main".into(),
                     spec: spec.clone(),
+                    warm: false,
                 },
                 vec![],
             )),

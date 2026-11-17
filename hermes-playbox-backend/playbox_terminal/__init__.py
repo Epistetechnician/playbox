@@ -12,6 +12,7 @@ Config (environment, set by the harness; none of it is a credential):
   PLAYBOX_IMAGE      sandbox image                        (default: hermes-agent-nonroot:latest)
   PLAYBOX_BASE       base branch                          (default: main)
   PLAYBOX_STATS      JSON-lines file; one record per delegate (optional)
+  PLAYBOX_WARM       "0" turns off the warm sandbox (default: on; needs a host that runs the openshell runtime)
 """
 from __future__ import annotations
 
@@ -29,6 +30,8 @@ from agent.terminal_env_provider import TerminalEnvironmentProvider
 from tools.environments.base import BaseEnvironment
 
 SANDBOX_CWD = "/sandbox"
+RATE_WAIT_STEP = 2.0     # seconds between retries when the host says the member is over its task rate limit
+RATE_WAIT_MAX = 90.0     # give up after this long and show the refusal
 
 
 class _Mcp:
@@ -152,14 +155,27 @@ class PlayboxEnvironment(BaseEnvironment):
         with self.s.lock:
             t0 = time.time()      # per-command time excludes the wait for another in-flight command
             rec = {"t": round(t0, 3), "queued_s": round(t0 - t_req, 2), "replayed": len(self.s.edits), "cmd_bytes": len(script)}
-            try:
-                r = self.s.mcp.call("playbox_delegate", {"base": self.s.base, "command": script, "image": self.s.image,
-                                                      "timeout_secs": int(timeout or self.timeout or 120) + 30, "network": False})
-            except Exception as e:  # noqa: BLE001 — a refusal is output the model can read
-                msg = str(e)
-                rec.update(refused=True, error=msg[:300], secs=round(time.time() - t0, 2))
-                self._log(rec)
-                return {"output": f"[playbox refused this command: {msg[:600]}]", "returncode": 1}
+            args = {"base": self.s.base, "command": script, "image": self.s.image,
+                    "timeout_secs": int(timeout or self.timeout or 120) + 30, "network": False,
+                    "warm": os.environ.get("PLAYBOX_WARM", "1") != "0"}
+            waited = 0.0
+            while True:
+                try:
+                    r = self.s.mcp.call("playbox_delegate", args)
+                    break
+                except Exception as e:  # noqa: BLE001 — a refusal is output the model can read
+                    msg = str(e)
+                    # With a warm sandbox commands are quick enough to hit the host's per-member task rate limit. That limit is
+                    # the host's to set; wait for the window to move on instead of showing the model a refusal it cannot act on.
+                    if "rate limit" in msg and waited < RATE_WAIT_MAX:
+                        time.sleep(RATE_WAIT_STEP)
+                        waited += RATE_WAIT_STEP
+                        continue
+                    rec.update(refused=True, error=msg[:300], secs=round(time.time() - t0, 2), rate_waited_s=waited)
+                    self._log(rec)
+                    return {"output": f"[playbox refused this command: {msg[:600]}]", "returncode": 1}
+            if waited:
+                rec["rate_waited_s"] = waited
             out = (r.get("stdout") or "") + (r.get("stderr") or "")
             rc, newcwd = r.get("exit_code") or 0, cwd
             b, e = f"___PBX_BEGIN_{mark}___\n", f"___PBX_END_{mark}___"

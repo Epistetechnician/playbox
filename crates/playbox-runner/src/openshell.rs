@@ -34,7 +34,22 @@ pub struct OpenShellRunner {
     policy: SandboxPolicy,
     /// `openshell --version`, read by `preflight`.
     version: std::sync::OnceLock<String>,
+    /// One warm sandbox per session key (see [`Runner::run_warm`]).
+    warm: tokio::sync::Mutex<std::collections::HashMap<String, Warm>>,
 }
+
+/// A sandbox kept running between one session's tasks.
+struct Warm {
+    name: String,
+    /// Image, resources and policy digest it was created with; a task that differs gets a new sandbox.
+    shape: String,
+    idle_since: std::time::Instant,
+}
+
+/// A warm sandbox idle this long is deleted, and at most this many are kept (the oldest goes first).
+const WARM_IDLE: Duration = Duration::from_secs(120);
+const WARM_MAX: usize = 8;
+const WARM_PREFIX: &str = "pbxw-";
 
 impl OpenShellRunner {
     #[must_use]
@@ -42,6 +57,7 @@ impl OpenShellRunner {
         Self {
             policy,
             version: std::sync::OnceLock::new(),
+            warm: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 }
@@ -133,6 +149,19 @@ fn random_name() -> Result<String> {
     ))
 }
 
+fn warm_name() -> Result<String> {
+    let mut b = [0u8; 5];
+    std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
+    Ok(format!(
+        "{WARM_PREFIX}{}",
+        b.iter().map(|x| format!("{x:02x}")).collect::<String>()
+    ))
+}
+
+async fn delete_sandbox(name: &str) {
+    let _ = cli(&["sandbox", "delete", name], &[], Duration::from_secs(60)).await;
+}
+
 async fn cli(
     args: &[&str],
     envs: &[(&str, &str)],
@@ -189,6 +218,14 @@ impl Runner for OpenShellRunner {
         if out.exit_code != Some(0) {
             bail!("openshell gateway is not reachable: {}", out.stderr.trim());
         }
+        // Warm sandboxes outlive a host that stopped without cleaning up; nothing holds them now.
+        for name in out
+            .stdout
+            .split_whitespace()
+            .filter(|w| w.starts_with(WARM_PREFIX))
+        {
+            delete_sandbox(name).await;
+        }
         if !crate::env_opt_in("PLAYBOX_ALLOW_MISSING_LIMITS") {
             bail!(
                 "OpenShell policies have no CPU, memory or timeout limits and its VM driver ignores --cpu/--memory, \
@@ -200,6 +237,63 @@ impl Runner for OpenShellRunner {
     }
 
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
+        self.execute(spec, workspace, None).await
+    }
+
+    async fn run_warm(
+        &self,
+        spec: &TaskSpec,
+        workspace: &Path,
+        session: &str,
+    ) -> Result<TaskOutput> {
+        self.execute(spec, workspace, Some(session)).await
+    }
+
+    async fn end_warm(&self, session: &str) {
+        let w = self.warm.lock().await.remove(session);
+        if let Some(w) = w {
+            delete_sandbox(&w.name).await;
+        }
+    }
+}
+
+impl OpenShellRunner {
+    /// Delete warm sandboxes idle too long, and the oldest ones beyond the cap (`room` makes space for one more).
+    async fn reap(&self, room: bool) {
+        let mut gone = Vec::new();
+        {
+            let mut m = self.warm.lock().await;
+            let now = std::time::Instant::now();
+            let stale: Vec<String> = m
+                .iter()
+                .filter(|(_, w)| now.duration_since(w.idle_since) > WARM_IDLE)
+                .map(|(k, _)| k.clone())
+                .collect();
+            for k in stale {
+                gone.extend(m.remove(&k));
+            }
+            while m.len() >= WARM_MAX && room {
+                let Some(oldest) = m
+                    .iter()
+                    .min_by_key(|(_, w)| w.idle_since)
+                    .map(|(k, _)| k.clone())
+                else {
+                    break;
+                };
+                gone.extend(m.remove(&oldest));
+            }
+        }
+        for w in gone {
+            delete_sandbox(&w.name).await;
+        }
+    }
+
+    async fn execute(
+        &self,
+        spec: &TaskSpec,
+        workspace: &Path,
+        session: Option<&str>,
+    ) -> Result<TaskOutput> {
         // This runner is the one that honours a host list, so validate the rest of the spec without it.
         check_spec(&TaskSpec {
             allowed_hosts: Vec::new(),
@@ -211,24 +305,102 @@ impl Runner for OpenShellRunner {
         }
         let policy_text = policy_yaml(&spec.allowed_hosts)?;
         let ws = workspace.to_str().context("workspace path is not utf-8")?;
-        let name = random_name()?;
+        let shape = format!(
+            "{}|{}|{}|{}",
+            spec.image,
+            cpu_arg(spec.cpus),
+            mem_arg(spec.mem_mib),
+            digest(&policy_text)
+        );
 
         let dir = tempdir()?;
         let policy_path = dir.join("policy.yaml");
         tokio::fs::write(&policy_path, &policy_text).await?;
         let policy_path = policy_path.to_str().context("temp path")?.to_string();
 
+        // A warm sandbox is taken out of the map while it runs, so one session never runs two tasks in it at once.
+        let mut name = None;
+        if let Some(sess) = session {
+            self.reap(false).await;
+            let held = self.warm.lock().await.remove(sess);
+            if let Some(w) = held {
+                if w.shape == shape && self.reset(&w.name).await.is_ok() {
+                    name = Some(w.name);
+                } else {
+                    delete_sandbox(&w.name).await;
+                }
+            }
+        }
+        let name = match name {
+            Some(n) => n,
+            None => {
+                let n = if session.is_some() {
+                    warm_name()?
+                } else {
+                    random_name()?
+                };
+                if let Err(e) = self.create(spec, &n, &policy_path).await {
+                    delete_sandbox(&n).await;
+                    let _ = tokio::fs::remove_dir_all(&dir).await;
+                    return Err(e);
+                }
+                n
+            }
+        };
+
         let result = self
-            .run_in_sandbox(spec, ws, &name, &policy_path, &dir)
+            .exec_in(spec, ws, &name, &dir)
             .await
-            .map(|mut o| {
+            .map(|(mut o, timed_out)| {
                 o.policy_digest = Some(digest(&policy_text));
-                o
+                (o, timed_out)
             });
-        // Always tear down, even on error or timeout; a leaked sandbox keeps the host's resources.
-        let _ = cli(&["sandbox", "delete", &name], &[], Duration::from_secs(60)).await;
+        // Keep the sandbox only after a clean run in a session; anything else (error, timeout, no session) deletes it,
+        // because a leaked sandbox keeps the host's resources and a timed-out one is in an unknown state.
+        let keep = session.is_some() && matches!(result, Ok((_, false)));
+        if keep {
+            self.reap(true).await;
+            if let Some(sess) = session {
+                self.warm.lock().await.insert(
+                    sess.to_string(),
+                    Warm {
+                        name: name.clone(),
+                        shape,
+                        idle_since: std::time::Instant::now(),
+                    },
+                );
+            }
+        } else {
+            delete_sandbox(&name).await;
+        }
         let _ = tokio::fs::remove_dir_all(&dir).await;
-        result
+        result.map(|(o, _)| o)
+    }
+
+    /// Empty what a previous task left in the places the task user can write, so the next one starts from the
+    /// workspace it is given and nothing else. Processes the previous task left running are not touched.
+    async fn reset(&self, name: &str) -> Result<()> {
+        let (out, timed_out) = cli(
+            &[
+                "sandbox",
+                "exec",
+                "-n",
+                name,
+                "--no-tty",
+                "--no-login-shell",
+                "--",
+                "sh",
+                "-c",
+                "find /sandbox /tmp -mindepth 1 -delete; true",
+            ],
+            &[],
+            Duration::from_secs(60),
+        )
+        .await?;
+        if timed_out {
+            bail!("resetting the warm sandbox timed out");
+        }
+        ok(&out, "reset")
     }
 }
 
@@ -279,14 +451,7 @@ fn osh(args: &[&str]) -> Command {
 }
 
 impl OpenShellRunner {
-    async fn run_in_sandbox(
-        &self,
-        spec: &TaskSpec,
-        ws: &str,
-        name: &str,
-        policy: &str,
-        tmp: &Path,
-    ) -> Result<TaskOutput> {
+    async fn create(&self, spec: &TaskSpec, name: &str, policy: &str) -> Result<()> {
         let (cpu, mem) = (cpu_arg(spec.cpus), mem_arg(spec.mem_mib));
         let (out, timed_out) = cli(
             &[
@@ -311,8 +476,17 @@ impl OpenShellRunner {
         if timed_out {
             bail!("openshell sandbox create timed out");
         }
-        ok(&out, "sandbox create")?;
+        ok(&out, "sandbox create")
+    }
 
+    /// Upload the workspace, run the command, download the workspace. Returns the task output and whether it timed out.
+    async fn exec_in(
+        &self,
+        spec: &TaskSpec,
+        ws: &str,
+        name: &str,
+        tmp: &Path,
+    ) -> Result<(TaskOutput, bool)> {
         // Workspace in: a tar stream on the exec's stdin.
         let packed = Command::new("tar")
             .env("COPYFILE_DISABLE", "1")
@@ -430,7 +604,7 @@ impl OpenShellRunner {
                 );
             }
         }
-        Ok(task)
+        Ok((task, timed_out))
     }
 }
 

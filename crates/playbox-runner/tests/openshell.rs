@@ -105,3 +105,85 @@ async fn network_reaches_only_the_allowed_hosts() {
     .to_string();
     assert_eq!(out.policy_digest.as_deref(), Some(want.as_str()));
 }
+
+/// A warm session reuses one sandbox: the second task skips the sandbox start, sees only its own workspace
+/// (not the first task's files in `/sandbox` or `/tmp`), and a different session gets a different sandbox.
+#[tokio::test]
+async fn warm_session_is_faster_and_leaves_nothing_behind() {
+    if !enabled() {
+        return;
+    }
+    let mk = |tag: &str| {
+        let ws = std::env::temp_dir().join(format!("pb-osh-warm-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), tag).unwrap();
+        ws
+    };
+    let r = OpenShellRunner::new(SandboxPolicy::default());
+    let spec = |s: &str| TaskSpec::new(&["sh", "-c", s]);
+    let (w1, w2, w3) = (mk("one"), mk("two"), mk("three"));
+
+    let t = std::time::Instant::now();
+    let a = r
+        .run_warm(
+            &spec("hostname; echo secret > /tmp/left; echo s > /sandbox/left; ls /sandbox"),
+            &w1,
+            "member-a",
+        )
+        .await
+        .unwrap();
+    let cold = t.elapsed();
+    let t = std::time::Instant::now();
+    let b = r
+        .run_warm(
+            &spec("hostname; ls /sandbox; ls /tmp; cat a.txt"),
+            &w2,
+            "member-a",
+        )
+        .await
+        .unwrap();
+    let warm = t.elapsed();
+    let host =
+        |o: &playbox_runner::TaskOutput| o.stdout.lines().next().unwrap_or_default().to_string();
+    assert_eq!(a.exit_code, Some(0), "{a:?}");
+    assert_eq!(
+        host(&a),
+        host(&b),
+        "same session must reuse the sandbox: {a:?} {b:?}"
+    );
+    assert!(
+        !b.stdout.contains("left"),
+        "the first task's files leaked into the second: {b:?}"
+    );
+    assert!(
+        b.stdout.contains("two"),
+        "the second task must see its own workspace: {b:?}"
+    );
+    assert!(
+        warm < cold,
+        "the warm run ({warm:?}) should beat the cold one ({cold:?})"
+    );
+
+    let c = r
+        .run_warm(&spec("hostname"), &w3, "member-b")
+        .await
+        .unwrap();
+    assert_ne!(
+        host(&a),
+        host(&c),
+        "another session must not share a sandbox"
+    );
+
+    r.end_warm("member-a").await;
+    r.end_warm("member-b").await;
+    let d = r
+        .run_warm(&spec("hostname"), &w1, "member-a")
+        .await
+        .unwrap();
+    assert_ne!(
+        host(&a),
+        host(&d),
+        "a sandbox ended with end_warm must not come back"
+    );
+    r.end_warm("member-a").await;
+}

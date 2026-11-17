@@ -10,6 +10,7 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- `playbox_delegate` takes `warm: true`: on a host running the `openshell` runtime, the member's sandbox stays running between their commands (reset each time, so file state is unchanged), cutting a Hermes run through a room from about 480 s to about 90 s. Idle 120 s, capped at 8, deleted on revoke, timeout or error.
 - `playbox up --link-ttl SECS` and `--link-uses N`: set the lifetime (1..=86400 seconds, default 3600) and admission count (1..=100, default 1) of the initial invite link.
 - `playbox up --min-isolation container|microvm|confidential`: require at least that runner isolation level when hosting a room (default `container`; values above `container` require `--runtime` or `--docker`).
 

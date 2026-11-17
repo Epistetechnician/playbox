@@ -626,7 +626,7 @@ impl RoomHandler {
                 self.audit_op(from, "push", &r, t0, json!({ "branch": audit::clip(&branch), "bytes": bytes }));
                 finish(r)
             }
-            Some(Op::Run { base, spec }) => {
+            Some(Op::Run { base, spec, warm }) => {
                 let t0 = std::time::Instant::now();
                 // Arguments often hold secrets, so the log keeps the program, how many arguments, and a hash.
                 let mut h = blake3::Hasher::new();
@@ -642,8 +642,9 @@ impl RoomHandler {
                     "image": audit::clip(&spec.image),
                     "cpus": spec.cpus, "mem_mib": spec.mem_mib, "timeout_secs": spec.timeout_secs, "network": spec.network,
                     "secrets": spec.secrets,
+                    "warm": warm,
                 });
-                let r = self.run(from, &base, spec).await;
+                let r = self.run(from, &base, spec, warm).await;
                 self.audit_op(from, "task", &r, t0, details);
                 finish(r)
             }
@@ -799,14 +800,17 @@ impl RoomHandler {
 
     /// Run a member's task under the abuse limits, and stop it if the member is revoked while it runs.
     /// Stopping drops the run, which kills its sandbox.
-    async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
+    async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec, warm: bool) -> Result<Task> {
         let _admission = self
             .limiter
             .admit(from)
             .map_err(|e| refuse(e.to_string()))?;
         tokio::select! {
-            r = self.run_inner(from, base, spec) => r,
+            r = self.run_inner(from, base, spec, warm) => r,
             () = self.until_revoked(from) => {
+                if let Some(r) = &self.cfg.runner {
+                    r.end_warm(&from.to_string()).await;
+                }
                 self.audit.record("task_cancelled", Some(&from.to_string()), json!({ "reason": "member revoked" }));
                 Err(refuse("cancelled: your access to this room was revoked"))
             }
@@ -833,7 +837,13 @@ impl RoomHandler {
         }
     }
 
-    async fn run_inner(&self, from: EndpointId, base: &str, spec: TaskSpec) -> Result<Task> {
+    async fn run_inner(
+        &self,
+        from: EndpointId,
+        base: &str,
+        spec: TaskSpec,
+        warm: bool,
+    ) -> Result<Task> {
         let runner = self
             .cfg
             .runner
@@ -887,13 +897,25 @@ impl RoomHandler {
                     .wt
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("the worktree was released before the run"))?;
-                let output = playbox_runner::run_with_quota(
-                    runner.as_ref(),
-                    &spec,
-                    wt.path(),
-                    self.cfg.scratch_quota,
-                )
-                .await?;
+                // The session key is the authenticated sender, never anything the peer wrote.
+                let output = if warm {
+                    playbox_runner::run_warm_with_quota(
+                        runner.as_ref(),
+                        &spec,
+                        wt.path(),
+                        &from.to_string(),
+                        self.cfg.scratch_quota,
+                    )
+                    .await?
+                } else {
+                    playbox_runner::run_with_quota(
+                        runner.as_ref(),
+                        &spec,
+                        wt.path(),
+                        self.cfg.scratch_quota,
+                    )
+                    .await?
+                };
                 let patch = playbox_git::diff_patch(wt, &commit).await?;
                 anyhow::Ok((output, patch))
             }

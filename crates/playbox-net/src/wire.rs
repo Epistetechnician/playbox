@@ -114,7 +114,15 @@ pub enum Op {
     /// Send the git bundle in the message's raw part; stored under the sender's namespace.
     Push { branch: String },
     /// Run `spec` in a sandbox on a checkout of `base`.
-    Run { base: String, spec: TaskSpec },
+    ///
+    /// `warm` asks the host to keep this member's sandbox running between its tasks when the runner can (the
+    /// workspace is replaced each time, so file state is unchanged). The host keys it by the authenticated sender.
+    Run {
+        base: String,
+        spec: TaskSpec,
+        #[serde(default)]
+        warm: bool,
+    },
     /// Apply a signed steering spec (`playbox.steer-spec.v1`) to a hosted model. The message carries two
     /// raw parts: the direction file, then the prompt set. With `probe`, nothing is edited: the host
     /// returns projections of the prompts' activations onto the direction.
@@ -592,6 +600,7 @@ mod tests {
         let op = Op::Run {
             base: "main".into(),
             spec: TaskSpec::new(&["sh", "-c", "true"]),
+            warm: false,
         };
         let m = op.message(vec![]);
         let back = Op::from_message(&m).unwrap().unwrap();
