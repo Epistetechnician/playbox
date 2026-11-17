@@ -101,7 +101,8 @@ def main():
         recent = sorted({(s, tuple(v)): (s, v, w) for s, v, w in seen}.values(), key=lambda t: t[0])[:10]
         vec, how = ask(best, recent, name), "haiku"
         if vec is None:                                # Haiku gave nothing usable: perturb the best, and say so
-            vec = [min(255, max(0, x + random.randint(-12, 12))) for x in best[1]]
+            rng = random.Random(f"{name}:{len(seen)}")  # seeded per agent and history length, so a rerun reproduces the fallback
+            vec = [min(255, max(0, x + rng.randint(-12, 12))) for x in best[1]]
             how = "fallback"
     s = score(vec)
     st["n"] += 1

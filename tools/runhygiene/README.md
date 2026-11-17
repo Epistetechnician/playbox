@@ -15,5 +15,5 @@ python3 tools/runhygiene/runhygiene.py challenge --frozen tools/runhygiene/froze
 | `swallowed_error` | broad `except` whose body is `pass`/`continue` (best-effort cleanup like `kill`/`close` is ignored) |
 | `frozen_edit` | files matching a glob in a frozen list that changed vs `--base` |
 
-Tested against 23 real jspace-pilot files (0 false positives) and this repo's python (about 15 findings, see PR).
-Not wired into CI as a gate: the findings in `tools/bench` and `challenge` need triage first.
+Tested against 68 real files outside playbox (0 false positives) and this repo's python (13 findings triaged: 1 fixed, 12 baselined).
+Wired into CI (`runhygiene` job). Triaged findings are in `baseline.txt`, one reason each; stale entries fail.
