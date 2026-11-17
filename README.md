@@ -489,3 +489,7 @@ flowchart TB
 A short visual overview for people new to the project: [docs/one-pager.html](docs/one-pager.html).
 
 Start with [docs/demo.md](docs/demo.md) and [PRD.md](PRD.md), then [docs/trust-layers.md](docs/trust-layers.md), [docs/steering.md](docs/steering.md), [docs/latent-channels.md](docs/latent-channels.md) and [docs/challenge.md](docs/challenge.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+Playbox is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE) for attribution and third-party code. Contributions are accepted under the same license (Apache-2.0 section 5).

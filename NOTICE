@@ -1,0 +1,8 @@
+Playbox
+Copyright 2026 Epistetechnician and Playbox contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party code keeps its own license: vendor/infinity carries its own LICENSE.txt, and the Rust dependencies listed in Cargo.lock are
+checked against the allowlist in deny.toml (permissive licenses only). An SBOM of every crate in a release binary is published with each
+release as playbox.cdx.json.
