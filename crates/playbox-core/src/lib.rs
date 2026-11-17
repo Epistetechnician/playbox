@@ -10,6 +10,8 @@ pub mod memory;
 pub mod platform;
 pub mod receipt;
 pub mod record;
+pub mod promotion;
+pub mod roomlog;
 pub mod steer;
 pub mod store;
 pub mod taint;
