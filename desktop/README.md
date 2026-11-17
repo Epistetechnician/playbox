@@ -43,6 +43,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 The supervisor tests use real child processes: crash loops, a hung service, a service that never becomes healthy, attach and take-over, restart, and stopping during a long backoff.
 
+## Passkeys
+
+The embedded webview cannot do platform passkeys on `localhost` (measured; see `docs/desktop-plan.md`, Spike 1, and `spikes/passkey_probe.py` to repeat it). Sign in through the system browser for now; the window is for status and management.
+
 ## Not built yet (see the plan)
 
 Bundling (Python, the `playbox` binary and the hub into one signed package), notarization, updates, secrets in the OS keychain, the passkey spike in the embedded webview, and Windows (the `playbox` binary's control socket is Unix-only).

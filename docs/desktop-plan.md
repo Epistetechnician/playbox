@@ -35,10 +35,24 @@ Licences are compatible with ours (Apache-2.0). Anything copied keeps its notice
 
 Hermes shows the shortest path (Electron, copy their supervision and updater code). Tauri keeps one Rust toolchain and a small download, and the app's core can *be* the `playbox` crates. Recommendation: **Tauri 2**, because the host binary is Rust and a second runtime (Chromium) is a large, separately-patched dependency on a security-sensitive machine.
 
-**SPIKE 1: passkeys in the embedded webview.** Sign-in uses WebAuthn on `localhost`. Whether the platform authenticator (Touch ID) works inside macOS WKWebView (Tauri) or Chromium (Electron) depends on entitlements and signing and must be tested on a signed build, not assumed. Outcomes:
-1. Works in Tauri: proceed.
-2. Works only in Electron: use Electron and adopt Hermes's shell code directly.
-3. Works in neither: the app signs the owner in with a Secure Enclave key it holds (Rust `security-framework`), over the hub's existing challenge protocol, and opens the system browser for passkey enrolment. This is more work but keeps the security model.
+**SPIKE 1 result (run 2026-11-16, macOS 26.7.2, `desktop/spikes/passkey_probe.py`): the embedded webview has no platform passkeys on `localhost`.**
+The probe stands in for the hub inside the real Tauri app and asks WKWebView what WebAuthn can do:
+
+| Build | `isUserVerifyingPlatformAuthenticatorAvailable()` | Result |
+|---|---|---|
+| ad-hoc signed (a plain `cargo build`) | `false` | no platform authenticator |
+| signed with our stable local identity (`scripts/dev-sign.sh`) | `false` | same: a stable signature does not change it |
+| signed with `com.apple.developer.web-browser.public-key-credential` | not reached | macOS kills the app at launch (exit 137): that entitlement is Apple-managed and needs a provisioning profile Apple grants to browsers |
+
+(The `create()` calls in the same runs failed with "The document is not focused", so the *create* path was not exercised; the availability answer is the finding. A tap on the probe's button in a focused window repeats it.)
+
+What this means: in a macOS WKWebView, a passkey needs either Apple's browser entitlement or an Associated Domains link between the app and a real HTTPS domain. Neither can apply to a `localhost` relying party, so **Tauri cannot give the hub's current passkey sign-in inside its own window, and no signing choice of ours changes that.** Electron was not measured (its binary download failed from this network); Chromium on macOS also needs a team-provisioned keychain access group for the platform authenticator, so assume the same until a build proves otherwise.
+
+Outcomes, updated:
+1. ~~Works in Tauri~~: ruled out for platform passkeys.
+2. Electron: unmeasured; do not switch shells on a hope.
+3. **Base case: the system browser is the passkey surface.** The window shows status and management and has an "Open in browser" action for sign-in; Safari, Chrome and the phone PWA handle platform passkeys natively. Ship this first.
+4. **Follow-up (needs hub changes and a security review):** let the app sign in the owner it is running for, without a passkey in the window. Candidates: (a) a device key held by the app (Secure Enclave where the signing identity permits, otherwise the keychain) enrolled as a second credential type, with step-up still requiring a passkey in a browser; (b) a one-time loopback-only desktop session minted by the hub for the process that started it. Both weaken "who is at the keyboard" compared with a passkey touch, so sensitive actions must keep requiring a real passkey step-up.
 
 **SPIKE 2: the hub is Python.** The hub is stdlib Python, so the app must either bundle a relocatable Python (python-build-standalone, roughly tens of MB) or the hub moves into the Rust binary. Plan: bundle Python first (small change, same code that runs today and is tested), and treat a Rust hub as an optional later project, not a prerequisite.
 
@@ -48,7 +62,7 @@ Sizes are rough: S = days, M = 1–2 weeks, L = a month or more.
 
 ### Phase 0 — Spikes (S)
 - Spike 1 and Spike 2 above, on a signed, notarized build.
-- Confirm a loopback-only hub in a webview can still reach the Cloudflare tunnel for invite links (the tunnel is the hub's own child process, unchanged).
+- (Spike 1 is done, see above.) Confirm a loopback-only hub in a webview can still reach the Cloudflare tunnel for invite links (the tunnel is the hub's own child process, unchanged).
 - **DECIDE:** an Apple Developer ID (paid) for notarization. Without it the app is ad-hoc signed and users must right-click to open, and Gatekeeper warns. Glim ships this way and says so in `SECURITY.md`; mac-performance-monitor is notarized. A host-machine product should be notarized.
 
 ### Phase 1 — Supervised shell (M)
