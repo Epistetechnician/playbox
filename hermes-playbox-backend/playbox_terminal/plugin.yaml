@@ -1,0 +1,7 @@
+name: playbox-terminal
+version: 0.1.0
+description: "Hermes terminal backend that runs every command as a Playbox `playbox_delegate` task: signed, expiring grant, host-side OpenShell microVM, host audit log. The model call and credentials stay on the Hermes host."
+author: Epistetechnician
+kind: backend
+provides_terminal_backends:
+  - playbox
