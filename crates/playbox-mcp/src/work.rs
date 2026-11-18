@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 impl Server {
-    pub(crate) async fn pull(&self, a: &Value) -> Result<Value> {
+    pub(crate) async fn pull(&mut self, a: &Value) -> Result<Value> {
         let r = req(a, "ref")?;
+        let admission = self.admit("playbox_pull", &[r], s(a, "capability"))?;
         let ws = self.workspace()?;
         let (head, bundle) = self.guest()?.pull(r).await?;
         let dest = format!("refs/remotes/playbox/{r}");
@@ -27,7 +28,7 @@ impl Server {
                 .context("checkout failed")?;
         }
         Ok(
-            json!({"ref": dest, "head": got, "host_head": head, "bytes": bundle.len(), "checked_out": b(a, "checkout")}),
+            json!({"ref": dest, "head": got, "host_head": head, "bytes": bundle.len(), "checked_out": b(a, "checkout"), "admission": admission}),
         )
     }
 

@@ -980,6 +980,14 @@ fn push_is_gated_and_memory_persists() {
         err && refused.as_str().unwrap().contains("needs approval"),
         "push must be gated: {refused}"
     );
+    let (err, refused) = agent.tool(
+        "playbox_pull",
+        json!({"ref": "planted-branch-name-from-a-member-xyz", "checkout": true}),
+    );
+    assert!(
+        err && refused.as_str().unwrap().contains("needs approval"),
+        "pull must be gated: {refused}"
+    );
 
     // Memory: facts need evidence, notes don't; recall returns them; they survive a restart.
     let (err, bad) = agent.tool(

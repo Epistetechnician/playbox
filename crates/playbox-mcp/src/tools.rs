@@ -186,7 +186,8 @@ fn base_tool_list() -> Value {
             "Fetch a branch or commit from the room's shared repository into your workspace as refs/remotes/playbox/<ref>.",
             json!({
                 "ref": {"type": "string", "description": "Branch name, e.g. main"},
-                "checkout": {"type": "boolean", "description": "Also check it out as a local branch of the same name (resets that branch). Default false."}
+                "checkout": {"type": "boolean", "description": "Also check it out as a local branch of the same name (resets that branch). Default false."},
+                "capability": {"type": "string", "description": "A single-use approval for exactly this ref, issued by the person you work for with `playbox approve`. Needed when the ref name contains text copied from another member's task output or patch."}
             }), &["ref"]),
         tool("playbox_delegate",
             "Run a shell command on the room host, in a sandbox, against a checkout of a commit. Returns output and a patch of everything the command changed. Subject to your grant's limits (cpu, memory, time, network).",
