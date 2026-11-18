@@ -96,5 +96,5 @@ def test_merge_ignores_symlinks_in_patches(repo, tmp_path):
         f"+{secret}\n"
         "\\ No newline at end of file\n"
     )
-    res = _merge({"repo": str(repo), "results": [(0, "sym", TaskResult(peer="p0", task_id="t0", state="TASK_STATE_COMPLETED", stdout="", stderr="", patch=sym_patch))]})["merged"]
+    res = _merge({"repo": str(repo), "results": [(0, "sym", TaskResult(peer="p0", state="TASK_STATE_COMPLETED", stdout="", stderr="", patch=sym_patch))]})["merged"]
     assert "leak.txt" not in res["files"]

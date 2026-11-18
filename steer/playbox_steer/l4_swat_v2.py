@@ -102,22 +102,23 @@ class RidgeMapper(S.Mapper):
 
 
 @torch.no_grad()
-def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print) -> dict:
+def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print, seed: int = 0) -> dict:
     """Closed-form ridge per layer group from `cfg.ridge_batches` batches. Features: aligned sender cache, centred and scaled per column.
     Target: the receiver's real cache at the same token. Returns fit diagnostics (held-out R^2 on the last batches)."""
+    rng = random.Random(seed)
     m = su.mapper
     B = m.B
     sums = [None] * B
     held = []
     n_hold = max(2, cfg.ridge_batches // 10)
     all_idx = list(range(len(pool)))
-    random.shuffle(all_idx)
+    rng.shuffle(all_idx)
     split = max(1, int(0.9 * len(all_idx))) if len(all_idx) > 2 else len(all_idx)
     train_idx = all_idx[:split]
     hold_idx = all_idx[split:] or all_idx
     for it in range(cfg.ridge_batches):
         src = hold_idx if it >= cfg.ridge_batches - n_hold else train_idx
-        bt = pool.batch(random.sample(src, min(bs, len(src))), su.pad_s, su.pad_r)
+        bt = pool.batch(rng.sample(src, min(bs, len(src))), su.pad_s, su.pad_r)
         sk, sv = su.sender_cache(bt)
         rk, rv = su.receiver_cache(bt)
         idx = align_index(bt["pos_b"] if su.blind else bt["pos"], bt["cross_b"] if su.blind else bt["cross"], bt["r_ids"].shape[1])
@@ -260,11 +261,13 @@ def make_setup(sender_path, receiver_path, B, D, cfg: V2Config, blind=True, dtyp
     return su
 
 
+@torch.enable_grad()  # other entry points switch autograd off process-wide (engine.load, hub_run); training must not inherit that
 def train(sender_path, receiver_path, out_path, cfg: V2Config, steps1=1500, steps2=4000, bs=32, lr1=3e-4, lr2=5e-5, n_items=50_000, B=4, D=768,
           eval_every=500, time_budget_s=None, log=print, seed=0, blind=True, templ_frac=0.15, items=None, eval_items=None, dtype=torch.bfloat16):
     """Same data and schedule as S.train (so a comparison with the v1 recipe changes only the recipe)."""
     t0 = time.time()
-    torch.manual_seed(seed); random.seed(seed)
+    torch.manual_seed(seed)
+    rng = random.Random(seed)
     su = make_setup(sender_path, receiver_path, B, D, cfg, blind=blind, dtype=dtype)
     if items is None:
         n_wiki = int(n_items * (1 - templ_frac))
@@ -274,18 +277,18 @@ def train(sender_path, receiver_path, out_path, cfg: V2Config, steps1=1500, step
     pool, evp = S.Pool(items, su.st, su.rt), S.Pool(eval_items, su.st, su.rt)
     log(f"pool {len(pool)} train items, {len(evp)} eval items, cfg {json.dumps(asdict(cfg))} [{time.time() - t0:.0f}s]")
     su.calibrate(pool)
-    fit_info = fit_ridge(su, pool, cfg, log=log) if cfg.ridge else {}
+    fit_info = fit_ridge(su, pool, cfg, log=log, seed=seed) if cfg.ridge else {}
     log(f"ridge/prior ready [{time.time() - t0:.0f}s]")
     opt = torch.optim.AdamW([p for p in su.mapper.parameters() if p.requires_grad], lr=lr1, weight_decay=1e-3, betas=(0.9, 0.95))
     hist, bad = [], 0
     order = list(range(len(pool)))
-    random.shuffle(order)
+    rng.shuffle(order)
     ptr = 0
 
     def next_idx():
         nonlocal ptr
         if ptr + bs > len(order):
-            random.shuffle(order); ptr = 0
+            rng.shuffle(order); ptr = 0
         ptr += bs
         return order[ptr - bs: ptr]
 
