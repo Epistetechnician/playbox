@@ -43,7 +43,7 @@ class Stub:
         by = {"w0": 888000000, "w1": 800000000, "w2": 890000000, "w3": None}  # w1 wins, w0 mispredicted, w3 fails
         for c in cands:
             s = by[c["id"][c["id"].index("w"):]]
-            c["result"] = {"exit": 0 if s else 1, "score": s}
+            c["result"] = {"exit": 0 if s else 124, "score": s, **({} if s else {"reason": "benchmark timed out (1500s)"})}
         return cands
 
 
@@ -64,6 +64,7 @@ class E2E(unittest.TestCase):
             verdicts = [a["verdict"] for a in sim.attempts[:4]]
             self.assertEqual(verdicts, ["mispredicted", "improved", "no-gain", "failed"])
             self.assertIn("redundant uncompute", sim.entries())  # root cause normalized and grouped
+            self.assertIn("timed out", sim.attempts[3]["rationale"])  # failure reason reaches the memory
             self.assertEqual(len(sim.entries()["redundant uncompute"]), 2)  # r1 + r2 under one entry
             self.assertEqual(st.advisor_prompts[0].count("ROOT CAUSE"), 0)
             p2 = st.advisor_prompts[1]  # round 2 sees round 1's memory

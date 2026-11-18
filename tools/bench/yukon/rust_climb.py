@@ -42,8 +42,23 @@ def scp_dir(local, remote):
                str(local), f"{VM}:{remote}"], timeout=600)
 
 
+CLI = os.environ.get("CLIMB_CLI", "claude")  # "agy": Antigravity CLI (Gemini 4); edit-only, no shell, no USD budget cap
+
+
+def agy(prompt, model, cwd):
+    r = sh(["agy", "-p", prompt, "--model", model, "--output-format", "json", "--print-timeout", "1500s",
+            "--settings", json.dumps({"permissions": {"allow": ["write_file(*)", "edit_file(*)", "read_file(*)"]}})],
+           cwd=cwd, timeout=2700)
+    try:
+        return json.loads(r.stdout.splitlines()[-1]).get("response", "")
+    except Exception:
+        return r.stdout[-2000:] + r.stderr[-500:]
+
+
 def claude(prompt, model, cwd, tools, budget, effort="low", allowed=None):
     global spent
+    if CLI == "agy":
+        return agy(prompt, model, cwd)
     r = sh(["claude", "-p", "--model", model, "--effort", effort, "--tools", tools,
             "--permission-mode", "acceptEdits", "--max-budget-usd", str(budget),
             *(["--allowedTools", allowed] if allowed else []),
@@ -112,6 +127,8 @@ $S $H "cd ~/work/cand/$ID && cp -a ~/work/ecdsafail-challenge/target . && timeou
          "Finish with the best state of your edits (revert anything that does not score better) and a one-line result."
          f" Hypothesis to try: {hypothesis}\n" + (f"Feedback from your last attempt: {feedback}\n" if feedback else "")
          + "Edit only files under src/point_add. Finish with a one-line summary of the change.")
+    if CLI == "agy":
+        p += "\nYou cannot run commands here. Do not run vmscore.sh; just make your best edit. It is built and scored for you afterwards."
     summary = claude(p, WORKER_MODEL, w, "Read,Grep,Glob,Edit,Write,Bash", WBUDGET, effort="medium", allowed="Bash(./vmscore.sh)")
     diff = sh(["diff", "-ru", "-x", ".claude", str(BASE / "src/point_add"), str(w / "src/point_add")]).stdout
     print(f"  r{rnd}w{i}: diff={diff.count(chr(10))} lines; {summary[-200:]!r}", flush=True)
@@ -132,6 +149,7 @@ def score(cands):
         "cp -r $HOME/work/cand/in/$id $d/src/point_add; cp -a ~/work/ecdsafail-challenge/target $d/target; "
         "cd $d; timeout 1500 ./benchmark.sh > out.log 2>&1; rc=$?; "
         "sc=$(python3 -c 'import json;print(json.load(open(\"score.json\"))[\"score\"])' 2>/dev/null); "
+        "[ -z \"$sc\" ] && [ $rc = 0 ] && sc=$(python3 -c 'import re;t=open(\"out.log\").read();print(round(float(re.search(r\"avg executed Toffoli\\s*:\\s*([0-9.]+)\",t)[1]))*int(re.search(r\"qubits\\s*:\\s*([0-9]+)\",t)[1]))' 2>/dev/null); "
         "echo \"$id $rc $sc\" > RESULT; }; "
         "for id in $(ls ~/work/cand/in); do run $id & done; wait; cat ~/work/cand/*/RESULT")
     r = ssh(script, timeout=3000)
@@ -142,9 +160,13 @@ def score(cands):
             res[t[0]] = {"exit": int(t[1]), "score": int(t[2]) if len(t) > 2 else None}
     for c in cands:
         c["result"] = res.get(c["id"], {"exit": None, "score": None})
-        if c["result"]["score"] is None:
-            t = ssh(f"tail -c 600 ~/work/cand/{c['id']}/out.log").stdout
-            c["result"]["log"] = t
+        r = c["result"]
+        if r["score"] is None:
+            r["reason"] = ("benchmark timed out (1500s)" if r["exit"] == 124 else
+                           f"benchmark exited {r['exit']} without a score" if r["exit"] is not None else
+                           "no RESULT file: ssh dropped, VM stopped, or still running")
+            t = ssh(f"cd ~/work/cand/{c['id']} 2>/dev/null && stat -c 'out.log modified %y' out.log; tail -c 600 out.log").stdout
+            r["log"] = t
     return cands
 
 
@@ -166,12 +188,12 @@ def main():
         score(cands)
         for i, c in enumerate(cands):
             s = c["result"]["score"]
-            a = sim.record(c["root_cause"], c["hyp"], c["summary"], c["predicted"], s, best,
+            a = sim.record(c["root_cause"], c["hyp"], c["summary"] + (f" [score failed: {c['result'].get('reason')}]" if not s else ""), c["predicted"], s, best,
                            model=WORKER_MODEL, round=rnd, run=c["id"])
             line = f"{c['id']} [{a['verdict']}] score={s} exit={c['result']['exit']} hyp={c['hyp'][:90]!r}"
             print(line, flush=True)
             history += line + "\n"
-            feedback[int(c["id"].split("w")[1])] = (f"scored {s}" if s else "failed: " + c["result"].get("log", "")[-400:])
+            feedback[int(c["id"].split("w")[1])] = (f"scored {s}" if s else f"failed ({c['result'].get('reason')}): " + c["result"].get("log", "")[-400:])
             with open(log, "a") as f:
                 f.write(json.dumps({**c, "dir": str(c["dir"]), "spent": spent}) + "\n")
             if s and s < best:
