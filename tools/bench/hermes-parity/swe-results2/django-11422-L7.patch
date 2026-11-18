@@ -1,0 +1,21 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68fae..685eb0b45b 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -580,6 +580,16 @@ def run_with_reloader(main_func, *args, **kwargs):
+         if os.environ.get(DJANGO_AUTORELOAD_ENV) == 'true':
+             reloader = get_reloader()
+             logger.info('Watching for file changes with %s', reloader.__class__.__name__)
++            # Watch the script being executed. This is usually manage.py or another entry point.
++            # sys.argv[0] is the script name. We need to convert it to an absolute path.
++            try:
++                script_path = Path(sys.argv[0]).resolve().absolute()
++                if script_path.is_file():
++                    reloader.watch_file(script_path)
++            except (ValueError, TypeError, AttributeError):
++                # sys.argv[0] may not be a valid path in some cases (e.g., during testing
++                # with mocked objects).
++                pass
+             start_django(reloader, main_func, *args, **kwargs)
+         else:
+             exit_code = restart_with_reloader()

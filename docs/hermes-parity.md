@@ -55,24 +55,24 @@ Caveats for this set:
 Raw data: `tools/bench/hermes-parity/swe-results/`.
 
 ## Third task set: mid-difficulty Django (11848, 11422, 11905)
-The first SWE-bench pair sat at ceiling and floor. I calibrated 5 small Django 3.x SWE-bench Lite instances with 2 local runs each, dropped the two that were always solved (11001, 11620) and kept three that varied. Then 5 runs per arm per instance, same arm64 image as above.
+The first SWE-bench pair sat at ceiling and floor. I calibrated 5 small Django 3.x SWE-bench Lite instances with 2 local runs each, dropped the two that were always solved (11001, 11620) and kept three that varied. Then 5 runs per arm per instance, later extended to 15 per arm on django-11848 and django-11422 (11905 stayed at 5, it never resolves), same arm64 image as above.
 
 | Instance | Arm | Resolved | Target tests fixed | Cost/run | Calls/run | Wall/run |
 |---|---|---|---|---|---|---|
-| django-11848 | L | 4/5 | 9/10 | $0.115 | 20 | 95 s |
-| django-11848 | S | 5/5 | 10/10 | $0.115 | 21 | 91 s |
-| django-11422 | L | 4/5 | 4/5 | $0.198 | 31 | 143 s |
-| django-11422 | S | 3/5 | 3/5 | $0.255 | 41 | 176 s |
+| django-11848 | L | 12/15 | | $0.096 | 17 | 75 s |
+| django-11848 | S | 14/15 | | $0.110 | 20 | 80 s |
+| django-11422 | L | 11/15 | | $0.214 | 35 | 136 s |
+| django-11422 | S | 13/15 | | $0.210 | 37 | 138 s |
 | django-11905 | L | 0/5 | 5/10 | $0.341 | 62 | 190 s |
 | django-11905 | S | 0/5 | 5/10 | $0.306 | 56 | 151 s |
-| **all** | **L** | **8/15** | | **$0.218** | | **143 s** |
-| **all** | **S** | **8/15** | | **$0.225** | | **139 s** |
+| **all** | **L** | **23/35** | | **$0.182** | | **118 s** |
+| **all** | **S** | **27/35** | | **$0.181** | | **115 s** |
 
-**Result: S and L resolve at the same rate (53% vs 53%) on tasks near Haiku's threshold.** Per-instance rate difference (S minus L), averaged over instances: 0.00, bootstrap 95% CI [-0.20, +0.20]. So at n=15 per arm the data rule out a drop of more than about 20 percentage points in resolve rate, not smaller ones; the 2-test margin used for Tripwire does not translate here. The per-instance differences (+1, -1, 0) go in both directions, which is what noise looks like. Cost and time are the same within noise.
+**Result: no loss in resolve rate in the sandbox arm (L 23/35 = 66%, S 27/35 = 77%).** Per-instance rate difference (S minus L), averaged over the three instances: +0.09, bootstrap 95% CI [-0.02, +0.22]. The data rule out a drop of more than about 2 percentage points on this task family; the sandbox's higher count is within noise (a 4-run gap out of 35) and I do not claim it is better. Cost ($0.181 vs $0.182 per run) and time (115 s vs 118 s) are the same. Per-instance rates: 11848 80% vs 93%, 11422 73% vs 87%.
 
 Honest gaps:
 - **One Anthropic 429 mid-batch.** The first attempt at django-11905 S5 hit "usage limit resets in ~93h" after 3 retries and was discarded. It was rerun later on a second pooled OAuth credential (label `anthropic-oauth-3`, added by the owner), so every cell now has 5 valid runs. All other runs used the original credential, so the two credentials are not separable in the data.
-- 15 L / 15 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and not included in `swe-results2/`. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
-- 5 runs per cell is thin; one instance flips by a single run.
+- 35 L / 35 S valid runs; invalid runs (8 S runs that failed before any model call because the shared OpenShell gateway dropped or a stale Hermes daemon was still up, 1 L run with a gateway disconnect, and the 429 run) are excluded and not included in `swe-results2/`. They never reached the model, so excluding them cannot favour either arm. The one exception is the 429 run, which also never completed.
+- 15 runs per cell on two instances, 5 on the third; still a small sample and three instances of one repo.
 - Calibration runs (2 per instance, local only) were used to pick instances, so L is not blind to the selection. Only the post-selection runs are in the table, except L2 of the three kept instances, which were calibration runs and also counted. This could slightly favour L's resolve rate by selection but is small.
-- Model usage: this set used about 38 Hermes runs (11 calibration, 12 more local, 15 sandbox including the 429 one), within the 60 you approved, for about 83 across the whole investigation. The 429 is the account's own usage limit, not the run cap; it resets in about 93 hours.
+- Model usage: about 38 runs for the first pass of this set plus 40 approved extra runs (10 per arm per instance on 11848 and 11422), about 123 across the whole investigation. No 429 in the extension batch. The 429 is the account's own usage limit, not the run cap; it resets in about 93 hours.

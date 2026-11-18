@@ -1,0 +1,24 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68fae..65fc58183e 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -103,7 +103,18 @@ def iter_all_python_module_files():
+     # aren't loaded on the fly.
+     keys = sorted(sys.modules)
+     modules = tuple(m for m in map(sys.modules.__getitem__, keys) if not isinstance(m, weakref.ProxyTypes))
+-    return iter_modules_and_files(modules, frozenset(_error_files))
++    extra_files = set(_error_files)
++    # Include the main script file (e.g., manage.py) if it's a valid Python file.
++    # This ensures that changes to manage.py trigger a reload.
++    if sys.argv[0]:
++        try:
++            main_script = Path(sys.argv[0]).resolve().absolute()
++            if main_script.exists() and main_script.suffix in ('.py', ''):
++                extra_files.add(main_script)
++        except (ValueError, OSError):
++            # Path could not be resolved or doesn't exist, skip it
++            pass
++    return iter_modules_and_files(modules, frozenset(extra_files))
+ 
+ 
+ @functools.lru_cache(maxsize=1)

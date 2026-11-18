@@ -1,0 +1,51 @@
+{
+ "inst": "django-11848",
+ "arm": "L",
+ "n": "14",
+ "wall_s": 105.3,
+ "rc": 0,
+ "patch_lines": 21,
+ "usage": {
+  "estimated_cost_usd": 0.13768355000000004,
+  "cost_status": "estimated",
+  "cost_source": "provider_models_api",
+  "input_tokens": 533231,
+  "output_tokens": 10931,
+  "cache_read_tokens": 507373,
+  "cache_write_tokens": 25733,
+  "reasoning_tokens": 0,
+  "total_tokens": 544162,
+  "api_calls": 25,
+  "model": "claude-haiku-4-5-20251001",
+  "provider": "anthropic",
+  "session_id": "local-2f97797378675808f2ecb8f3099193a8164c3d043921c8a9cd6c1a5d1c6dfe6d",
+  "completed": true,
+  "partial": false,
+  "interrupted": false,
+  "turn_exit_reason": "text_response(finish_reason=stop)",
+  "failed": false,
+  "service_tier": null,
+  "auxiliary": {
+   "api_calls": 0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0,
+   "reasoning_tokens": 0,
+   "estimated_cost_usd": 0,
+   "total_tokens": 0,
+   "by_task": {}
+  },
+  "total_including_auxiliary": {
+   "estimated_cost_usd": 0.13768355000000004,
+   "total_tokens": 544162,
+   "api_calls": 25
+  }
+ },
+ "f2p": 2,
+ "f2p_total": 2,
+ "p2p": 42,
+ "p2p_total": 42,
+ "resolved": true,
+ "applied": true
+}
