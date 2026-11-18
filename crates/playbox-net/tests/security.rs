@@ -524,6 +524,77 @@ async fn garbage_and_oversized_grants_are_refused_without_harm() {
     assert_eq!(c.echo("ok").await.unwrap(), "ok");
 }
 
+#[tokio::test]
+async fn run_rejects_zero_or_negative_limits_and_slash_smuggled_hosts() {
+    let cfg = HostConfig {
+        repo: Some(repo("badlimits")),
+        runner: Some(Arc::new(ProcessRunner)),
+        min_isolation: Isolation::None,
+        limits: Limits {
+            cpus: 1.0,
+            mem_mib: 256,
+            timeout_secs: 30,
+            network: false,
+            allowed_hosts: vec![],
+            allowed_secrets: vec!["API_KEY".into()],
+        },
+        ..Default::default()
+    };
+    let host = Host::start_with(new_secret_key().unwrap(), true, cfg)
+        .await
+        .unwrap();
+    let link = host
+        .create_link(Duration::from_secs(60), 1)
+        .unwrap()
+        .encode();
+    let c = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+    for bad in [
+        TaskSpec {
+            cpus: 0.0,
+            ..TaskSpec::new(&["true"])
+        },
+        TaskSpec {
+            cpus: -1.0,
+            ..TaskSpec::new(&["true"])
+        },
+        TaskSpec {
+            cpus: f32::NAN,
+            ..TaskSpec::new(&["true"])
+        },
+        TaskSpec {
+            mem_mib: 0,
+            ..TaskSpec::new(&["true"])
+        },
+        TaskSpec {
+            timeout_secs: 0,
+            ..TaskSpec::new(&["true"])
+        },
+        TaskSpec {
+            allowed_hosts: vec!["secret/API_KEY".into()],
+            ..TaskSpec::new(&["true"])
+        },
+        TaskSpec {
+            allowed_hosts: vec!["cap/deploy".into()],
+            ..TaskSpec::new(&["true"])
+        },
+    ] {
+        let e = format!(
+            "{:#}",
+            c.run_task("main", bad.clone())
+                .await
+                .expect_err("invalid limits or slash-smuggled host must be refused")
+        );
+        assert!(
+            e.contains("bad playbox operation"),
+            "unexpected error for {bad:?}: {e}"
+        );
+    }
+    assert_eq!(c.echo("ok").await.unwrap(), "ok");
+    drop(host);
+}
+
 // ---- a member (or stranger) using more than a fair share ----------------------------------------
 
 fn bundle_of_size(name: &str, bytes: usize) -> Vec<u8> {
