@@ -80,6 +80,22 @@ pub fn publish(
     Ok((Published { sock, record }, listener))
 }
 
+/// The `HARNESS MODEL IMAGE` words of a `launch` line, after the member id. A client writes `-` for an empty field so the
+/// fields stay in place; a missing or `-` field reads as empty.
+#[cfg(unix)]
+pub(crate) fn launch_fields<'a>(
+    w: &mut impl Iterator<Item = &'a str>,
+) -> (&'a str, &'a str, &'a str) {
+    let mut next = || match w.next() {
+        Some("-") | None => "",
+        Some(s) => s,
+    };
+    let harness = next();
+    let model = next();
+    let image = next();
+    (harness, model, image)
+}
+
 /// Answer control connections for as long as the host runs. Never returns.
 #[cfg(unix)]
 pub async fn serve(
@@ -151,8 +167,8 @@ pub async fn serve(
                 Err(e) => format!("error: not a member id: {e}"),
             },
             (Some("launch"), Some(id)) => {
-                // `launch MEMBER HARNESS [MODEL [IMAGE]]`: the host records that it started this member, signed, in the room's own history.
-                let (harness, model, image) = (w.next().unwrap_or(""), w.next().unwrap_or(""), w.next().unwrap_or(""));
+                // `launch MEMBER HARNESS [MODEL [IMAGE]]` (`-` for an empty field): the host records that it started this member, signed, in the room's own history.
+                let (harness, model, image) = launch_fields(&mut w);
                 match id.parse::<playbox_net::EndpointId>() {
                     Ok(id) => match host
                         .signed_launch(&id, harness, model, image)
