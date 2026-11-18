@@ -10,6 +10,8 @@ on:
   workflow_dispatch:
     inputs:
       seconds: { description: "seconds per target", default: "300" }
+permissions:
+  contents: read
 jobs:
   fuzz:
     runs-on: ubuntu-22.04

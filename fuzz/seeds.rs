@@ -25,7 +25,11 @@ fn main() {
     for (n, op) in [
         Op::Echo { text: "hi".into() },
         Op::Pull { refname: "main".into() },
-        Op::Run { base: "main".into(), spec: playbox_runner_spec() },
+        Op::Run {
+            base: "main".into(),
+            spec: playbox_runner_spec(),
+            warm: false,
+        },
     ]
     .iter()
     .enumerate()
