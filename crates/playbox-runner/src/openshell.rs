@@ -7,8 +7,8 @@
 //!    sandbox's default-deny network applies.
 //! 2. `openshell sandbox create --policy ... --detach` starts a sandbox from the (host-allowed) image.
 //! 3. The workspace goes in as a tar stream on `exec`'s stdin (`create --upload` cannot be combined with
-//!    a command, nests directories, and `download` needs SSH), the command runs with `exec`, and its
-//!    exit code is the task's.
+//!    a command, nests directories, and `download` needs SSH; `exec` takes at most 4 MiB on stdin, so a larger
+//!    tar goes in as several chunks), the command runs with `exec`, and its exit code is the task's.
 //! 4. The workspace comes back as a tar stream, is unpacked into an empty directory and mirrored over
 //!    the host workspace; the sandbox is then deleted.
 //!
@@ -444,6 +444,53 @@ async fn piped(
         .map_err(|_| anyhow::anyhow!("timed out"))?
 }
 
+/// `openshell sandbox exec` refuses more than 4 MiB on stdin ("use `sandbox upload` for larger input"), so a bigger
+/// workspace goes in as several stdin chunks appended to a tar file in the sandbox's `/tmp`, which is unpacked and
+/// removed before the task's command starts.
+const STDIN_CHUNK: usize = 3 * 1024 * 1024;
+/// Longest single argument sent on an `exec` command line (OpenShell rejects more than 32 KiB).
+const MAX_ARG: usize = 24 * 1024;
+const GUEST_SCRIPT: &str = "/tmp/.pbx-task.sh";
+const GUEST_TAR: &str = "/tmp/.pbx-workspace.tar";
+
+impl OpenShellRunner {
+    async fn exec_stdin(&self, name: &str, script: &[&str], data: Vec<u8>) -> Result<()> {
+        let mut args = vec![
+            "sandbox",
+            "exec",
+            "-n",
+            name,
+            "--no-tty",
+            "--no-login-shell",
+            "--",
+        ];
+        args.extend_from_slice(script);
+        let (code, _, err) = piped(osh(&args), Some(data), SETUP_TIMEOUT).await?;
+        if code != Some(0) {
+            bail!("uploading the workspace failed: {}", err.trim());
+        }
+        Ok(())
+    }
+
+    async fn upload(&self, name: &str, tar: Vec<u8>) -> Result<()> {
+        if tar.len() <= STDIN_CHUNK {
+            return self
+                .exec_stdin(name, &["tar", "-xf", "-", "-C", GUEST_DIR], tar)
+                .await;
+        }
+        for (i, chunk) in tar.chunks(STDIN_CHUNK).enumerate() {
+            let redirect = if i == 0 { ">" } else { ">>" };
+            let script = format!("cat {redirect} {GUEST_TAR}");
+            self.exec_stdin(name, &["sh", "-c", &script], chunk.to_vec())
+                .await?;
+        }
+        let unpack =
+            format!("tar -xf {GUEST_TAR} -C {GUEST_DIR}; rc=$?; rm -f {GUEST_TAR}; exit $rc");
+        self.exec_stdin(name, &["sh", "-c", &unpack], Vec::new())
+            .await
+    }
+}
+
 fn osh(args: &[&str]) -> Command {
     let mut c = Command::new(BIN);
     c.args(args);
@@ -500,28 +547,7 @@ impl OpenShellRunner {
                 String::from_utf8_lossy(&packed.stderr).trim()
             );
         }
-        let (code, _, err) = piped(
-            osh(&[
-                "sandbox",
-                "exec",
-                "-n",
-                name,
-                "--no-tty",
-                "--no-login-shell",
-                "--",
-                "tar",
-                "-xf",
-                "-",
-                "-C",
-                GUEST_DIR,
-            ]),
-            Some(packed.stdout),
-            SETUP_TIMEOUT,
-        )
-        .await?;
-        if code != Some(0) {
-            bail!("uploading the workspace failed: {}", err.trim());
-        }
+        self.upload(name, packed.stdout).await?;
 
         let secs = spec.timeout_secs.to_string();
         let mut args = vec![
@@ -537,7 +563,23 @@ impl OpenShellRunner {
             &secs,
             "--",
         ];
-        args.extend(spec.cmd.iter().map(String::as_str));
+        // `exec` also refuses a single argument over 32 KiB. A long `sh -c` script (an edit that carries a whole file, say)
+        // is staged as a file in the sandbox's /tmp instead and run from there; same shell, same user, same policy.
+        let staged;
+        let cmd: Vec<&str> = match spec.cmd.as_slice() {
+            [sh, flag, script] if sh == "sh" && flag == "-c" && script.len() > MAX_ARG => {
+                self.exec_stdin(
+                    name,
+                    &["sh", "-c", &format!("cat > {GUEST_SCRIPT}")],
+                    script.clone().into_bytes(),
+                )
+                .await?;
+                staged = [sh.as_str(), GUEST_SCRIPT];
+                staged.to_vec()
+            }
+            _ => spec.cmd.iter().map(String::as_str).collect(),
+        };
+        args.extend(cmd);
         // A little slack so OpenShell's own timeout reports first; ours is the backstop.
         let (task, timed_out) =
             cli(&args, &[], Duration::from_secs(spec.timeout_secs + 10)).await?;

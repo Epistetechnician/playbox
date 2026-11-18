@@ -380,3 +380,73 @@ def test_protocol_pin_allows_appended_amendments_but_not_edits(tmp_path):
     assert run()  # unchanged file, no git needed
     pf.write_text("rules v1\nA9\n")
     assert not run()  # appended but no commit to show the pinned text came first
+
+
+# ---- no-data mode and an explicit protocol file (outside-review bundle) ------------------------------------------
+def _nodata_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("F3_DATA_DIR", str(tmp_path / "nothing"))
+
+
+def test_no_data_mode_verifies_a_climbmix_run_without_its_data_and_lists_what_it_skipped(tmp_path, monkeypatch):
+    _nodata_env(tmp_path, monkeypatch)
+    work = REPO / "docs/f3/dry_run_climbmix"
+    rep, s = V.verify(work, (work / "host.pub").read_text().strip(), REPO, "none", no_data=True)
+    assert not rep.failed, rep.text()
+    skipped = [c["name"] for c in rep.checks if c.get("skipped")]
+    assert any("data manifest" in n for n in skipped) and any("open the root" in n for n in skipped) and any("window" in n for n in skipped)
+    assert "[SKIP]" in rep.text() and s["promotions"] >= 0 and s["receipts"] > 0
+
+
+def test_no_data_mode_still_catches_a_tampered_candidate_and_refuses_replay(tmp_path, monkeypatch):
+    import shutil
+    _nodata_env(tmp_path, monkeypatch)
+    work = tmp_path / "w"
+    shutil.copytree(REPO / "docs/f3/dry_run_climbmix", work)
+    pub = (work / "host.pub").read_text().strip()
+    f = sorted((work / "candidates").glob("*.py"))[-1]
+    f.write_text(f.read_text() + "\n# edited\n")
+    rep, _ = V.verify(work, pub, REPO, "none", no_data=True)
+    assert any("archived candidate source matches its hash" in n for n in failed_names(rep))
+    rep, _ = V.verify(REPO / "docs/f3/dry_run_climbmix", pub, REPO, "recorded", no_data=True)
+    assert any("--no-data cannot be combined" in str(c) for c in rep.failed)
+
+
+def test_no_data_mode_catches_a_leaked_secret(tmp_path, monkeypatch):
+    import shutil
+    _nodata_env(tmp_path, monkeypatch)
+    work = tmp_path / "w"
+    shutil.copytree(REPO / "docs/f3/dry_run_climbmix", work)
+    recs = V.read_receipts(work / "receipts.jsonl")
+    salt = recs[-1]["body"]["holdout_salt"]
+    # a candidate containing the salt would be flagged; the archived-hash check fails too, which is fine: the leak line must be among the failures
+    (work / "candidates" / "x.py").write_text(f"S = '{salt}'\n")
+    rep, _ = V.verify(work, (work / "host.pub").read_text().strip(), REPO, "none", no_data=True)
+    assert any("revealed seed or salt" in n for n in failed_names(rep))
+
+
+def test_protocol_file_option_verifies_without_git_history(tmp_path):
+    """A repo root with no .git: the pinned protocol text is supplied as a file and must hash to the genesis pin."""
+    import shutil
+    root = tmp_path / "root"
+    shutil.copytree(REPO / "challenge/f3", root / "challenge/f3", ignore=shutil.ignore_patterns("tests", "__pycache__"))
+    work = REPO / "docs/f3/dry_run"
+    pub = (work / "host.pub").read_text().strip()
+    pin = V.read_receipts(work / "receipts.jsonl")[0]["body"]["protocol_sha256"]
+    good = tmp_path / "PROTOCOL.md"
+    good.write_bytes(subprocess_show(pin))
+    rep, _ = V.verify(work, pub, root, "none", protocol_file=good, strict_git=False)
+    assert not rep.failed, rep.text()
+    bad = tmp_path / "BAD.md"
+    bad.write_text(good.read_text() + "\nedited\n")
+    rep, _ = V.verify(work, pub, root, "none", protocol_file=bad, strict_git=False)
+    assert any("protocol hash" in n for n in failed_names(rep))
+
+
+def subprocess_show(pin: str) -> bytes:
+    import subprocess
+    for c in subprocess.run(["git", "log", "--format=%H", "--", "docs/f3/PROTOCOL.md"], cwd=REPO, capture_output=True, text=True).stdout.split():
+        b = subprocess.run(["git", "show", f"{c}:docs/f3/PROTOCOL.md"], cwd=REPO, capture_output=True).stdout
+        if V.sha(b) == pin:
+            return b
+    pytest.skip("pinned protocol text not in git history")
