@@ -68,6 +68,8 @@ The tray also has "Open in browser", because passkeys need a real browser (see a
 
 The Python runtime is pinned in `python-runtime.json` (hashes from the release's `SHA256SUMS`; `scripts/fetch_python.py <target> <dir>` downloads and verifies it). `.github/workflows/desktop-bundle.yml` builds `Playbox.app`, ad-hoc signs it, smoke-tests that it starts its own hub with the bundled Python, and uploads a zip with its SHA-256. Built for Apple silicon and Intel (Intel is cross-compiled; CI runs it only where Rosetta exists). Each is about 125 MB.
 
+**Linux (x86_64):** the same workflow builds `Playbox-linux-x86_64.AppImage` on Ubuntu 22.04 (runs on anything with a newer glibc; needs `libwebkit2gtk-4.1` only through the AppImage's own bundle). It is smoke-tested under Xvfb: the app starts its hub with the bundled Python and stopping the app stops the hub. Launch-at-login registers the AppImage file itself (`APPIMAGE`), not its temporary mount. The updater replaces the AppImage in place (kept as `<name>.previous`), after the signed-hash download and a `--version` check; a `.deb` or a `cargo run` build is never self-updated.
+
 `desktop.log` in the app's log folder records every supervisor state change with its reason ("could not start …"), so a hub that did not start always has an explanation on disk.
 
 ## Updates

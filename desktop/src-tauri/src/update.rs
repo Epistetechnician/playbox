@@ -19,6 +19,10 @@ fn asset() -> Option<&'static str> {
         Some("Playbox-macos-arm64.zip")
     } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
         Some("Playbox-macos-x86_64.zip")
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Some("Playbox-linux-x86_64.AppImage")
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Some("Playbox-linux-aarch64.AppImage")
     } else {
         None
     }
@@ -30,8 +34,14 @@ pub struct Updates {
     busy: Mutex<bool>,
 }
 
-/// The `.app` bundle we are running from, if we are one (a `cargo run` build is never replaced).
+/// What we replace when updating: the `.app` bundle on macOS, the AppImage file on Linux. `None` for a build that is neither (a
+/// `cargo run` build, a `.deb` managed by the package manager), which is never replaced.
 fn bundle() -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        return std::env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute() && p.is_file());
+    }
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
     exe.ancestors()
         .find(|p| p.extension().is_some_and(|e| e == "app") && p.join("Contents/MacOS").is_dir())
@@ -182,6 +192,9 @@ fn run(cmd: &mut Command) -> Result<String, String> {
 }
 
 fn install(app: &AppHandle, rel: &Release) -> Result<(), String> {
+    if cfg!(target_os = "linux") {
+        return install_appimage(app, rel);
+    }
     let bundle = bundle().ok_or("not running from an app bundle")?;
     let parent = bundle.parent().ok_or("no parent directory")?;
     let dirs = &app.state::<AppState>().dirs;
@@ -231,13 +244,53 @@ fn install(app: &AppHandle, rel: &Release) -> Result<(), String> {
     Ok(())
 }
 
+/// Linux: the release asset is the AppImage itself. Download (checked against the signed hash), make it runnable, ask it for its version,
+/// then swap it in with two renames, keeping the old one as `<name>.previous`.
+fn install_appimage(app: &AppHandle, rel: &Release) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let current = bundle().ok_or("not running from an AppImage")?;
+    let parent = current.parent().ok_or("no parent directory")?;
+    let dirs = &app.state::<AppState>().dirs;
+    let dl = dirs.data.join("updates");
+    let _ = std::fs::remove_dir_all(&dl);
+    let image = update::download(&Source::github_latest(), rel, &dl).map_err(|e| e.to_string())?;
+
+    // Same folder as the installed file, so the swap is a rename on one volume.
+    let new = parent.join(format!(".Playbox-update-{}.AppImage", std::process::id()));
+    let result = (|| {
+        std::fs::copy(&image, &new).map_err(|e| format!("cannot write next to the app ({e})"))?;
+        std::fs::set_permissions(&new, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        let said = run(Command::new(&new)
+            .env("APPIMAGE_EXTRACT_AND_RUN", "1") // the check must work on a machine without FUSE too
+            .arg("--version"))?;
+        if said.trim() != format!("playbox-desktop {}", rel.version) {
+            return Err(format!("the new app reports {:?}, not {}", said.trim(), rel.version));
+        }
+        let mut previous = current.clone().into_os_string();
+        previous.push(".previous");
+        let previous = PathBuf::from(previous);
+        let _ = std::fs::remove_file(&previous);
+        std::fs::rename(&current, &previous).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::rename(&new, &current) {
+            let _ = std::fs::rename(&previous, &current); // put the old one back
+            return Err(e.to_string());
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(&new);
+    let _ = std::fs::remove_dir_all(&dl);
+    result?;
+    relaunch(&current);
+    Ok(())
+}
+
 /// Wait for this process to be gone (it holds the single-instance claim), then open the new app.
 fn relaunch(bundle: &Path) {
     use std::os::unix::process::CommandExt;
     let _ = Command::new("sh")
         .args([
             "-c",
-            "while kill -0 \"$1\" 2>/dev/null; do sleep 0.3; done; open \"$2\"",
+            "while kill -0 \"$1\" 2>/dev/null; do sleep 0.3; done; unset APPDIR ARGV0 OWD; if [ \"$(uname)\" = Darwin ]; then open \"$2\"; else exec \"$2\"; fi",
             "sh",
             &std::process::id().to_string(),
         ])

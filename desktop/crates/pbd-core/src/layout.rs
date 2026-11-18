@@ -91,14 +91,27 @@ pub fn from_process_env() -> Result<Dirs, NoHome> {
 pub fn resources_for_exe(exe: &std::path::Path) -> Option<PathBuf> {
     let exe = exe.canonicalize().ok()?;
     let dir = exe.parent()?;
-    let candidate = if cfg!(target_os = "macos") {
-        dir.join("../Resources")
+    let candidates: &[&str] = if cfg!(target_os = "macos") {
+        &["../Resources"]
     } else if cfg!(windows) {
-        dir.to_path_buf()
+        &["."]
     } else {
-        dir.join("../lib/playbox-desktop")
+        // AppImage and .deb both put resources under <prefix>/lib/<productName>.
+        &["../lib/Playbox", "../lib/playbox-desktop"]
     };
-    candidate.canonicalize().ok().filter(|p| p.is_dir())
+    candidates
+        .iter()
+        .filter_map(|c| dir.join(c).canonicalize().ok())
+        .find(|p| p.is_dir())
+}
+
+/// What to register for launch-at-login and to relaunch: inside an AppImage the running executable lives in a temporary mount, so the
+/// path that survives is the AppImage file itself (`APPIMAGE`).
+pub fn launcher(exe: PathBuf, appimage: Option<OsString>) -> PathBuf {
+    appimage
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute() && p.is_file())
+        .unwrap_or(exe)
 }
 
 #[cfg(test)]
@@ -173,6 +186,25 @@ mod tests {
     fn no_home_is_an_error_not_a_panic() {
         assert_eq!(resolve(Os::Linux, &env(&[])), Err(NoHome));
         assert_eq!(resolve(Os::Linux, &env(&[("HOME", "")])), Err(NoHome));
+    }
+}
+
+#[cfg(test)]
+mod launcher_tests {
+    use super::*;
+
+    #[test]
+    fn an_appimage_registers_itself_not_its_temporary_mount() {
+        let d = std::env::temp_dir().join(format!("pbd-launcher-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let img = d.join("Playbox.AppImage");
+        std::fs::write(&img, b"x").unwrap();
+        let exe = PathBuf::from("/tmp/.mount_abc/usr/bin/playbox-desktop");
+        assert_eq!(launcher(exe.clone(), Some(img.clone().into())), img);
+        assert_eq!(launcher(exe.clone(), None), exe);
+        assert_eq!(launcher(exe.clone(), Some("relative".into())), exe);
+        assert_eq!(launcher(exe.clone(), Some(d.join("gone").into())), exe);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
 

@@ -51,7 +51,7 @@ jobs:
           name: playbox-${{ matrix.os }}-${{ matrix.arch }}
           path: playbox-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
   desktop:
-    # The macOS desktop app, built by the same reusable workflow as a manual build. It is listed in the signed SHA256SUMS below, which is
+    # The macOS and Linux desktop apps, built by the same reusable workflow as a manual build. It is listed in the signed SHA256SUMS below, which is
     # what the app's updater trusts. If it fails the release still ships without it (the updater then says there is no desktop build).
     needs: verify
     uses: ./.github/workflows/desktop-bundle.yml
@@ -84,7 +84,7 @@ jobs:
           cargo run --release -q -p playbox-cli -- release manifest "$VERSION" dist --out dist/release.json
           cargo run --release -q -p playbox-cli -- release notes "$VERSION" > notes.md
           cd dist
-          sha256sum playbox-*.tar.gz release.json playbox.cdx.json $(ls Playbox-*.zip 2>/dev/null) > SHA256SUMS
+          sha256sum playbox-*.tar.gz release.json playbox.cdx.json $(ls Playbox-*.zip Playbox-*.AppImage 2>/dev/null) > SHA256SUMS
           cd ..
           if [ -n "$PLAYBOX_RELEASE_KEY" ]; then
             cargo run --release -q -p playbox-cli -- release sign dist/SHA256SUMS

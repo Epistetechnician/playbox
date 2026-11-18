@@ -117,7 +117,10 @@ fn toggle_login(app: &AppHandle) {
     let _ = if autostart::is_enabled(os, &st.dirs.home) {
         autostart::disable(os, &st.dirs.home)
     } else {
-        std::env::current_exe().and_then(|exe| autostart::enable(os, &st.dirs.home, &exe))
+        std::env::current_exe().and_then(|exe| {
+            let exe = pbd_core::layout::launcher(exe, std::env::var_os("APPIMAGE"));
+            autostart::enable(os, &st.dirs.home, &exe)
+        })
     };
 }
 
