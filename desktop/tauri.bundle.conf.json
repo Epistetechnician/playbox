@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "active": true,
+    "resources": {
+      "../stage/hub": "hub",
+      "../stage/python": "python",
+      "../stage/bin": "bin"
+    }
+  }
+}
