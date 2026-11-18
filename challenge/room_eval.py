@@ -71,14 +71,17 @@ def refuse(msg: str):
 
 def check2_matmul(n: int, scheme: dict) -> bool:
     """An independent second checker: random exact rational matrices, scheme output against the true product."""
+    sys.path.insert(0, str(A))
+    import check as c1
+
     r = random.Random(1)
     d = n * n
     for _ in range(8):
         a = [Fraction(r.randint(-9, 9), r.randint(1, 5)) for _ in range(d)]
         b = [Fraction(r.randint(-9, 9), r.randint(1, 5)) for _ in range(d)]
         c = [sum(a[i * n + j] * b[j * n + k] for j in range(n)) for i in range(n) for k in range(n)]
-        m = [sum(Fraction(x) * y for x, y in zip(t["u"], a)) * sum(Fraction(x) * y for x, y in zip(t["v"], b)) for t in scheme["products"]]
-        got = [sum(Fraction(t["w"][o]) * mk for t, mk in zip(scheme["products"], m)) for o in range(d)]
+        m = [sum(c1.parse_rational(x) * y for x, y in zip(t["u"], a)) * sum(c1.parse_rational(x) * y for x, y in zip(t["v"], b)) for t in scheme["products"]]
+        got = [sum(c1.parse_rational(t["w"][o]) * mk for t, mk in zip(scheme["products"], m)) for o in range(d)]
         if got != c:
             return False
     return True
@@ -92,8 +95,11 @@ def eval_a(problem_file: Path, cand: Path) -> dict:
     sys.path.insert(0, str(A))
     import check as c1  # the public exact checker
 
-    prob = json.load(open(problem_file))
-    scheme = json.load(open(cand))
+    prob = json.loads(problem_file.read_text())
+    try:
+        scheme = json.loads(cand.read_text())
+    except (ValueError, UnicodeDecodeError) as e:
+        refuse(f"invalid candidate JSON: {e}")
     r1 = c1.check(prob, scheme)
     if r1["verdict"] != "pass":
         refuse("checker 1: " + r1.get("reason", "fail"))
@@ -115,6 +121,7 @@ def eval_b(problem_file: Path, cand: Path) -> dict:
 
     pb = json.load(open(problem_file))
     seed = random.SystemRandom().randrange(1, 2**31)  # sealed: this host's own
+    rng = random.Random(seed)
     with tempfile.TemporaryDirectory() as td:
         ref = Path(td) / "ref.json"
         base = gate.run_bench(B / "baseline/candidate.py", seed, write_ref=ref)
@@ -123,7 +130,7 @@ def eval_b(problem_file: Path, cand: Path) -> dict:
         ratios = []
         for _ in range(pb["reps"]):
             order = [("cand", cand), ("base", B / "baseline/candidate.py")]
-            random.shuffle(order)
+            rng.shuffle(order)
             got = {}
             for name, path in order:
                 r = gate.run_bench(path, seed, ref=ref)

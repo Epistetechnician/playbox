@@ -93,6 +93,38 @@ def test_best_effort_cleanup_is_not_reported():
     assert kinds("try:\n    run_trial()\nexcept Exception:\n    pass\n") == ["swallowed_error"]
 
 
+def test_call_free_try_and_open_or_join_are_not_cleanup():
+    assert kinds("try:\n    x = 1 / 0\nexcept Exception:\n    pass\n") == ["swallowed_error"]
+    assert kinds("try:\n    open('missing.txt')\nexcept Exception:\n    pass\n") == ["swallowed_error"]
+    assert kinds("try:\n    worker.join()\nexcept Exception:\n    pass\n") == ["swallowed_error"]
+
+
+def test_zero_arg_or_none_seed_does_not_count_as_seeded():
+    assert kinds("import random\nrandom.seed()\nx = random.random()\n") == ["global_rng"]
+    assert kinds("import random\nrandom.seed(None)\nx = random.random()\n") == ["global_rng"]
+    assert kinds("import numpy as np\nnp.random.seed()\nx = np.random.randn(2)\n") == ["global_rng"]
+    assert kinds("import numpy as np\nnp.random.seed(None)\nx = np.random.randn(2)\n") == ["global_rng"]
+    assert kinds("import random\nr = random.Random(None)\n") == ["unseeded_rng"]
+
+
+def test_from_random_direct_imports_detected():
+    for fn, call in (("shuffle", "shuffle(xs)"), ("random", "random()"), ("randint", "randint(1, 5)"), ("choice", "choice(xs)"), ("sample", "sample(xs, 1)")):
+        assert kinds(f"from random import {fn}\n{call}\n") == ["global_rng"]
+    assert kinds("from random import shuffle as sh\nsh(xs)\n") == ["global_rng"]
+    assert kinds("from random import seed, shuffle\nseed(7)\nshuffle(xs)\n") == []
+
+
+def test_option_missing_value_raises_system_exit():
+    import pytest
+
+    with pytest.raises(SystemExit, match="missing value for --baseline"):
+        rh.main(["--baseline"])
+    with pytest.raises(SystemExit, match="missing value for --baseline"):
+        rh.main(["--baseline", "--check"])
+    with pytest.raises(SystemExit, match="missing value for --exclude"):
+        rh.main(["--exclude"])
+
+
 def test_baseline_suppresses_by_source_text_and_flags_stale(tmp_path):
     src = tmp_path / "a.py"
     src.write_text("import random\nrandom.shuffle(order)\n")

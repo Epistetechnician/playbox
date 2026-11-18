@@ -7,7 +7,7 @@ challenge's own ./benchmark.sh in its own checkout. Lower score is better. Nothi
 
 Env: CLIMB_DIR, VM (gcloud instance), CLIMB_CAP (USD, default 3), CLIMB_WORKERS, CLIMB_ROUNDS.
 """
-import json, os, re, shutil, subprocess, sys, time, concurrent.futures as cf
+import hashlib, json, os, re, shutil, subprocess, sys, threading, time, concurrent.futures as cf
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -26,6 +26,7 @@ ADVISOR_MODEL = os.environ.get("CLIMB_ADVISOR", "claude-sonnet-5-5")  # Fable ne
 BASELINE = 886747992
 WBUDGET = float(os.environ.get("CLIMB_WBUDGET", "0.3"))
 spent = 0.0
+SPENT_LOCK = threading.Lock()
 
 
 def sh(args, **kw):
@@ -46,6 +47,8 @@ CLI = os.environ.get("CLIMB_CLI", "claude")  # "agy": Antigravity CLI (Gemini 4)
 
 
 def agy(prompt, model, cwd):
+    prompt = ("You have NO shell: never run commands. Use only the file read, edit and search tools. "
+              "A denied command ends your turn with nothing done.\n\n" + prompt)
     r = sh(["agy", "-p", prompt, "--model", model, "--output-format", "json", "--print-timeout", "1500s",
             "--settings", json.dumps({"permissions": {"allow": ["write_file(*)", "edit_file(*)", "read_file(*)"]}})],
            cwd=cwd, timeout=2700)
@@ -65,7 +68,8 @@ def claude(prompt, model, cwd, tools, budget, effort="low", allowed=None):
             "--output-format", "json", prompt], cwd=cwd, timeout=2700)
     try:
         j = json.loads(r.stdout)
-        spent += float(j.get("total_cost_usd", 0))
+        with SPENT_LOCK:
+            spent += float(j.get("total_cost_usd", 0))
         return j.get("result", "")
     except Exception:
         return r.stdout[-2000:] + r.stderr[-500:]
@@ -108,20 +112,24 @@ def worker(i, rnd, hyp, feedback):
     shutil.copy(BASE / "README.md", w / "README.md")
     ip = sh(["gcloud", "compute", "instances", "describe", VM, f"--zone={ZONE}", f"--project={PROJECT}",
              "--format=value(networkInterfaces[0].accessConfigs[0].natIP)"]).stdout.strip()
-    vs = w / "vmscore.sh"
-    vs.write_text(f"""#!/bin/bash
+    sdir = OUT / "scripts"
+    sdir.mkdir(parents=True, exist_ok=True)
+    vs = sdir / f"vmscore_r{rnd}w{i}.sh"
+    vs_body = f"""#!/bin/bash
 # Build and score src/point_add on the VM with the real benchmark (about 6 min). Prints the verdict.
 set -u
-S="ssh -i $HOME/.ssh/google_compute_engine -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+S="ssh -i $HOME/.ssh/google_compute_engine -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR"
 H=shaanp@{ip}; ID=r{rnd}w{i}
 $S $H "rm -rf ~/work/cand/$ID && mkdir -p ~/work/cand/$ID/src && rsync -a --exclude target --exclude /src/point_add ~/work/ecdsafail-challenge/ ~/work/cand/$ID/" || exit 2
 rsync -a --delete -e "$S" src/point_add/ $H:work/cand/$ID/src/point_add/ || exit 2
 $S $H "cd ~/work/cand/$ID && cp -a ~/work/ecdsafail-challenge/target . && timeout 1500 ./benchmark.sh >out.log 2>&1; echo exit=\\$?; grep -E 'avg executed Toffoli|qubits  |all 9024|mismatch|panicked|error|left:|right:' out.log | head -12; python3 -c 'import json;print(json.load(open(\\"score.json\\")))' 2>/dev/null"
-""")
-    vs.chmod(0o755)
+"""
+    vs.write_text(vs_body)
+    vs.chmod(0o555)
+    vs_hash = hashlib.sha256(vs_body.encode()).hexdigest()
     p = ("You are improving a reversible-circuit builder in src/point_add (Rust). Score = Toffoli x peak qubits, lower "
          f"is better; current best {BASELINE}. A hidden checker requires exact correctness, full uncomputation and zero "
-         "phase. Run ./vmscore.sh (the ONLY command you may run; about 6 minutes; at most 3 runs) to build and score your "
+         f"phase. Run {vs} (the ONLY command you may run; about 6 minutes; at most 3 runs) to build and score your "
          "edit on a real machine, and use its output to fix or refine. Note the code pins some op counts "
          "(source_edits.rs asserts); if an assertion fails, undo or adapt. Score = avg Toffoli x qubits (baseline 722696 x 1227). "
          "Finish with the best state of your edits (revert anything that does not score better) and a one-line result."
@@ -129,7 +137,9 @@ $S $H "cd ~/work/cand/$ID && cp -a ~/work/ecdsafail-challenge/target . && timeou
          + "Edit only files under src/point_add. Finish with a one-line summary of the change.")
     if CLI == "agy":
         p += "\nYou cannot run commands here. Do not run vmscore.sh; just make your best edit. It is built and scored for you afterwards."
-    summary = claude(p, WORKER_MODEL, w, "Read,Grep,Glob,Edit,Write,Bash", WBUDGET, effort="medium", allowed="Bash(./vmscore.sh)")
+    summary = claude(p, WORKER_MODEL, w, "Read,Grep,Glob,Edit,Write,Bash", WBUDGET, effort="medium", allowed=f"Bash({vs})")
+    if not vs.exists() or hashlib.sha256(vs.read_bytes()).hexdigest() != vs_hash:
+        raise RuntimeError(f"worker {rnd}w{i} tampered with {vs}")
     diff = sh(["diff", "-ru", "-x", ".claude", str(BASE / "src/point_add"), str(w / "src/point_add")]).stdout
     print(f"  r{rnd}w{i}: diff={diff.count(chr(10))} lines; {summary[-200:]!r}", flush=True)
     return {"id": f"r{rnd}w{i}", "dir": w, "hyp": hypothesis, "root_cause": root_cause, "predicted": predicted, "summary": summary[-400:], "diff_lines": diff.count("\n")}
@@ -151,8 +161,19 @@ def score(cands):
         "sc=$(python3 -c 'import json;print(json.load(open(\"score.json\"))[\"score\"])' 2>/dev/null); "
         "[ -z \"$sc\" ] && [ $rc = 0 ] && sc=$(python3 -c 'import re;t=open(\"out.log\").read();print(round(float(re.search(r\"avg executed Toffoli\\s*:\\s*([0-9.]+)\",t)[1]))*int(re.search(r\"qubits\\s*:\\s*([0-9]+)\",t)[1]))' 2>/dev/null); "
         "echo \"$id $rc $sc\" > RESULT; }; "
-        "for id in $(ls ~/work/cand/in); do run $id & done; wait; cat ~/work/cand/*/RESULT")
-    r = ssh(script, timeout=3000)
+        "for id in $(ls ~/work/cand/in); do run $id & done; wait")
+    # detached on the VM so a dropped ssh session cannot kill the benchmarks; poll for the RESULT files
+    ssh("cat > ~/work/cand/score.sh <<'EOS'\n" + script + "\nEOS\nrm -f ~/work/cand/*/RESULT ~/work/cand/DONE; "
+        "setsid nohup bash -c 'bash ~/work/cand/score.sh; touch ~/work/cand/DONE' >~/work/cand/score.log 2>&1 < /dev/null & echo started")
+    t0 = time.time()
+    while time.time() - t0 < 3000:
+        time.sleep(30)
+        p = ssh("test -f ~/work/cand/DONE && cat ~/work/cand/*/RESULT; echo \"poll=$?\"", timeout=120)
+        if p.returncode == 0 and "poll=0" in p.stdout:
+            break
+        if p.returncode:
+            print(f"  poll ssh exited {p.returncode}, retrying", flush=True)
+    r = p
     res = {}
     for line in r.stdout.splitlines():
         t = line.split()

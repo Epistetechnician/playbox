@@ -19,7 +19,7 @@ from . import l4_swat as S
 from .l4_eval import caches, nll_with
 from .telepathy_data import FIT_TOPICS
 
-CONDS = ("none", "own", "other_own", "mapped", "mapped_wrong", "mapped_edge")
+CONDS = ("none", "own", "other_own", "mapped", "mapped_wrong", "mapped_edge", "other_own_edge", "edge_only")
 
 
 def retention(rows: list[dict], cond: str) -> float:
@@ -55,21 +55,31 @@ def per_topic(rows: list[dict], a: str, b: str) -> dict:
 
 
 @torch.no_grad()
-def mapped_edge_nll(su, bt, pk, pv, rk, rv) -> float:
-    """The v2 deployment path: first token real, last edge_k context tokens read natively by the receiver on top of the mapped cache."""
+def mapped_edge_nll(su, bt, pk, pv, rk, rv, edge_k: int | None = None, only_first: bool = False, whole: bool = False) -> float:
+    """The v2 deployment path: first token real, last edge_k context tokens read natively by the receiver on top of the mapped cache.
+    only_first=True is the control: the same edge tokens but the cache keeps nothing except the real first token."""
     from . import l4_swat_v2 as V
-    ctx, ids, im, sc = V.with_edge(bt, su.v2.edge_k)
+    ctx, ids, im, sc = V.with_edge(bt, edge_k or su.v2.edge_k)
+    if whole:  # an unrelated real cache of its own length, read in full, plus this item's edge tokens
+        ctx = torch.ones(pk.shape[0], pk.shape[2], dtype=torch.bool, device=pk.device)
+        return float(V.masked_nll(V.logits_with(su.rm, (pk, pv), ctx, ids, im, su.rd), ids, sc))
+    if only_first:
+        ctx = torch.zeros_like(ctx)
+        ctx[:, 0] = bt["r_mask"][:, 0]
     return float(V.masked_nll(V.logits_with(su.rm, (pk, pv), ctx, ids, im, su.rd, real_first=(rk, rv)), ids, sc))
 
 
 @torch.no_grad()
-def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print) -> dict:
+def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print, edge_k: int | None = None) -> dict:
     t0 = time.time()
-    if "v2" in torch.load(ckpt, map_location="cpu"):
+    ck = torch.load(ckpt, map_location="cpu")
+    is_v2 = "v2" in ck
+    if is_v2:
         from . import l4_swat_v2 as V
-        su = V.load_mapper(ckpt, dtype=torch.float32)
+        su = V.load_mapper(ck, dtype=torch.float32)
     else:
         su = S.load_mapper(ckpt, dtype=torch.float32)
+    del ck
     su.mapper.eval()
     names = list(FIT_TOPICS)
     rows = []
@@ -85,8 +95,12 @@ def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print) -> dict:
                 _, other, mapped_other = caches(su, other_ctx, cont)
                 row = {"seed": seed, "topic": t, "none": nll_with(su, bt, None), "own": nll_with(su, bt, own),
                        "other_own": nll_with(su, bt, other), "mapped": nll_with(su, bt, mapped), "mapped_wrong": nll_with(su, bt, mapped_other)}
-                if getattr(su, "v2", None) is not None and su.v2.edge_k:
-                    row["mapped_edge"] = mapped_edge_nll(su, bt, mapped[0], mapped[1], own[0], own[1])
+                ek = edge_k or (su.v2.edge_k if getattr(su, "v2", None) is not None else 0)
+                if ek:
+                    row["mapped_edge"] = mapped_edge_nll(su, bt, mapped[0], mapped[1], own[0], own[1], ek)
+                if edge_k:  # controls, only asked for explicitly: unrelated real cache + the same edge tokens; edge tokens with no mapped cache
+                    row["other_own_edge"] = mapped_edge_nll(su, bt, other[0], other[1], own[0], own[1], ek, whole=True)
+                    row["edge_only"] = mapped_edge_nll(su, bt, mapped[0], mapped[1], own[0], own[1], ek, only_first=True)
                 rows.append(row)
         log(f"seed {seed}: {len(rows)} items [{time.time() - t0:.0f}s]", flush=True)
     out = {"ckpt": ckpt, "draw_seeds": list(seeds), "draws_per_topic": draws, "topics": len(names), "n_items": len(rows)}
@@ -94,6 +108,9 @@ def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print) -> dict:
     out["retention_pooled"] = {c: round(retention(rows, c), 4) for c in conds if c not in ("none", "own")}
     if "mapped_edge" in rows[0]:
         out["B_edge_mapped_minus_unrelated_real"] = cluster_bootstrap(rows, "mapped_edge", "other_own")
+    if "other_own_edge" in rows[0]:
+        out["B_edge_mapped_minus_unrelated_real_edge"] = cluster_bootstrap(rows, "mapped_edge", "other_own_edge")
+        out["B_edge_mapped_minus_edge_only"] = cluster_bootstrap(rows, "mapped_edge", "edge_only")
     out["B_mapped_minus_unrelated_real"] = cluster_bootstrap(rows, "mapped", "other_own")
     out["specificity_mapped_minus_mapped_wrong"] = cluster_bootstrap(rows, "mapped", "mapped_wrong")
     out["by_draw_seed"] = {str(sd): {"B": round(diff([r for r in rows if r["seed"] == sd], "mapped", "other_own"), 4)} for sd in seeds}

@@ -132,6 +132,7 @@ class Steerer:
         for layer in self.spec.layers:
             if layer >= len(bs):
                 raise SteerError(f"layer {layer} out of range (model has {len(bs)})")
+        for layer in self.spec.layers:
             self.handles.append(site_module(bs[layer], self.spec.site).register_forward_hook(self._hook(layer)))
         return self
 
@@ -153,7 +154,7 @@ def calibrate(model, tok, spec: Spec, prompts: PromptSet) -> dict[int, float]:
     for layer in spec.layers:
         if layer >= len(bs):
             raise SteerError(f"layer {layer} out of range (model has {len(bs)})")
-
+    for layer in spec.layers:
         def hook(_m, _i, out, layer=layer):
             cur[layer] = _tensor(out).detach()
 

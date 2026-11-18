@@ -186,12 +186,13 @@ class Playbox:
         time.sleep(2)
 
     def run(self, who, edits, cmd, new_edit):
-        full = "\n".join(edits) + ("\n" if edits else "") + cmd
+        all_edits = list(edits) + ([new_edit] if new_edit else [])
+        full = "\n".join(all_edits) + ("\n" if all_edits else "") + cmd
         try:
             r = self.mcp[who].call("playbox_delegate", {"base": "main", "command": full or "true", "image": IMG, "timeout_secs": 60, "network": False})
         except Exception as e:  # noqa: BLE001
             return f"[playbox refused: {str(e)[:300]}]"
-        if edits and r.get("patch") and not r.get("patch_truncated"):
+        if all_edits and r.get("patch") and not r.get("patch_truncated"):
             self.edits_patch[who] = r["patch"]
         return ((r.get("stdout") or "") + (r.get("stderr") or ""))[-3000:] or f"(exit {r.get('exit_code')})"
 

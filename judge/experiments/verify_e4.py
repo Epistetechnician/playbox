@@ -58,7 +58,12 @@ def main() -> int:
         print(f"lineage: {lineage['variants']} variants, improvement significant={lineage['improvement']['significant'] if lineage.get('improvement') else None}")
         for i, (c, backing) in enumerate(zip(r["chain"], ev["per_variant"])):
             if i == 0:
-                print("variant 0 (root): a definitional zero, no run to back")
+                root_scores = parse_variant_scores(c["variant"])
+                if any(abs(v) > TOLERANCE for v in root_scores):
+                    print(f"variant 0 (root): NON-ZERO ROOT SCORES {root_scores[:4]} -> MISMATCH")
+                    failures += 1
+                else:
+                    print("variant 0 (root): a definitional zero, verified all 0.0")
                 continue
             try:
                 got = verifier.call("playbox_evidence_check", {

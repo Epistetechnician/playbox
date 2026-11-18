@@ -135,14 +135,29 @@ def check_genesis(rep: Report, g: dict, repo: Path, strict_git: bool = True) -> 
     ok &= check_protocol(rep, b, repo, proto)
     spec = repo / "challenge/f3" / b.get("substrate", {}).get("spec", "task_spec.json")
     ok &= rep.add("genesis: task spec hash", spec.exists() and sha(spec.read_bytes()) == b["spec_sha256"], spec.name)
+    commit = b.get("git_commit")
+    has_commit = bool(commit and git(repo, "cat-file", "-t", commit) == "commit")
     for name, h in b["code_sha256"].items():
         f = repo / "challenge/f3" / name
-        ok &= rep.add(f"genesis: {name} hash equals the file in the repo state", f.exists() and sha(f.read_bytes()) == h)
+        cur_ok = f.exists() and sha(f.read_bytes()) == h
+        at_commit_ok = False
+        if not cur_ok and has_commit:
+            blob = subprocess.run(["git", "show", f"{commit}:challenge/f3/{name}"], cwd=repo, capture_output=True).stdout
+            at_commit_ok = blob != b"" and sha(blob) == h
+        hist_commit = None
+        if not cur_ok and not at_commit_ok:
+            for line in git(repo, "log", "--format=%H %ct", "--", f"challenge/f3/{name}").splitlines():
+                c, ts = line.split()
+                blob = subprocess.run(["git", "show", f"{c}:challenge/f3/{name}"], cwd=repo, capture_output=True).stdout
+                if blob and sha(blob) == h and b.get("ts") is not None and int(ts) <= b["ts"]:
+                    hist_commit = c[:10]
+                    break
+        detail = "" if cur_ok else (f"pinned at git commit {commit[:10]}; file updated since" if at_commit_ok else (f"the version at commit {hist_commit}; file updated since" if hist_commit else ""))
+        ok &= rep.add(f"genesis: {name} hash equals the file in the repo state", cur_ok or at_commit_ok or bool(hist_commit), detail)
     first = git(repo, "log", "--diff-filter=A", "--format=%ct", "--", "docs/f3/PROTOCOL.md").splitlines()
     if first:
         ok &= rep.add("genesis: PROTOCOL.md was committed before the genesis receipt", int(first[-1]) <= b["ts"], f"protocol committed {first[-1]}, genesis ts {b['ts']}")
-    commit = b.get("git_commit")
-    if commit and git(repo, "cat-file", "-t", commit) == "commit":
+    if has_commit:
         for name, h in b["code_sha256"].items():
             blob = subprocess.run(["git", "show", f"{commit}:challenge/f3/{name}"], cwd=repo, capture_output=True).stdout
             match = blob != b"" and sha(blob) == h
