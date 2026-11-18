@@ -524,6 +524,21 @@ async fn close(State(rap): State<Arc<Rap>>, h: HeaderMap, Json(c): Json<Close>) 
         "subscription ended: thread closed",
     )
     .await;
+    let mut stopped = Vec::new();
+    rap.running.lock().await.retain(|id, r| {
+        if r.group != c.thread_id {
+            return true;
+        }
+        r.task.abort();
+        stopped.push(id.clone());
+        false
+    });
+    if !stopped.is_empty() {
+        let mut answers = rap.answers.lock().await;
+        for id in &stopped {
+            answers.remove(id);
+        }
+    }
     StatusCode::OK
 }
 

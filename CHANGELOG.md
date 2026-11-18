@@ -9,6 +9,9 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Fixed
+- `playbox-rap`: `POST /close_thread` now aborts in-flight tool calls and removes pending `user_choice` approvals for the closed thread, instead of letting queued calls post results after closure or keeping pending approvals until timeout.
+
 ## [0.3.16] - 2026-11-17
 
 ### Added

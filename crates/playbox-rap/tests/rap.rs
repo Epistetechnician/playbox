@@ -583,6 +583,73 @@ async fn cancel_stops_a_call_that_is_waiting_and_answers_it_once() {
     }
 }
 
+#[tokio::test]
+async fn closing_a_thread_aborts_in_flight_calls_and_pending_choices() {
+    pin_approver();
+    let home = tempfile_dir::Dir::new();
+    let mut server = Server::new(home.path()).unwrap();
+    server.mark_untrusted(MEMBER, "task:guest-1");
+    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let rap = Rap::with_approver(
+        server,
+        TOKEN.into(),
+        vec![],
+        base.clone(),
+        approver(),
+        Duration::from_secs(30),
+    );
+    tokio::spawn(serve(l, rap.clone()));
+
+    let (cb, mut rx) = receiver().await;
+    invoke_revoke(&base, &cb).await;
+    let ask = next(&mut rx).await;
+    assert_eq!(ask["type"], "user_choice");
+    assert_eq!(ask["id"], "call-9");
+    let url = ask["response_url"].as_str().unwrap();
+
+    let busy = rap.lock_server().await;
+    call(&base, &cb, "queued", "playbox_status", json!({})).await;
+    let c = reqwest::Client::new();
+    let other = c
+        .post(format!("{base}/invoke"))
+        .bearer_auth(TOKEN)
+        .json(&json!({
+            "operation": "playbox_status",
+            "arguments": {},
+            "id": "other-thread",
+            "call_id": null,
+            "callback_url": cb,
+            "group_id": "thread-2"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(other.status(), 200);
+
+    let closed = c
+        .post(format!("{base}/close_thread"))
+        .bearer_auth(TOKEN)
+        .json(&json!({"thread_id": "thread-1"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(closed.status(), 200);
+    assert_eq!(answer(url, 0).await, 404);
+
+    drop(busy);
+    let got = next(&mut rx).await;
+    assert_eq!(got["type"], "tool_result", "{got}");
+    assert_eq!(got["id"], "other-thread", "unexpected callback: {got}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    while let Ok(m) = rx.try_recv() {
+        assert_ne!(
+            m["group_id"], "thread-1",
+            "closed thread posted a callback: {m}"
+        );
+    }
+}
+
 mod tempfile_dir {
     use std::path::{Path, PathBuf};
     pub struct Dir(PathBuf);
