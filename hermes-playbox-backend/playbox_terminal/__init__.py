@@ -123,14 +123,21 @@ class _Session:
 
 
 def with_stdin(command, data):
-    """Give `command` the text `data` on stdin, byte for byte. A heredoc on a brace group around the whole command: appended to a
-    multi-statement script it would bind only to the last statement, and Hermes' file tool (`...; cat > "$tmp"; ...; mv ...`)
-    would then write an empty file. A heredoc always ends in a newline, so data that does not end in one is piped decoded from base64."""
+    """Give `command` the text `data` on stdin, byte for byte, in the current shell (so `cd` / `$PWD` changes survive).
+    A heredoc on a brace group wraps the whole command so multi-statement scripts (`...; cat > "$tmp"; ...; mv ...`) read stdin at
+    the right statement, with a collision-free delimiter. A heredoc always ends in a newline, so data without one is staged to an
+    immediately-unlinked temp descriptor decoded from base64 (never a pipeline, which would run the brace group in a subshell)."""
     if data.endswith("\n"):
-        return f"{{\n{command}\n}} <<'__PBX_STDIN__'\n{data}__PBX_STDIN__"
+        delim = "__PBX_STDIN__"
+        while delim in data:
+            delim += "_X"
+        return f"{{\n{command}\n}} <<'{delim}'\n{data}{delim}"
     import base64
     b64 = base64.b64encode(data.encode("utf-8", "surrogateescape")).decode()
-    return f"printf %s {b64} | base64 -d | {{\n{command}\n}}"
+    return (
+        f'__pbx_in="$(mktemp /tmp/.pbx_in.XXXXXX)" && printf %s {b64} | base64 -d > "$__pbx_in" '
+        f'&& exec 9< "$__pbx_in" && rm -f "$__pbx_in" && {{\n{command}\n}} <&9 9<&-'
+    )
 
 
 class PlayboxEnvironment(BaseEnvironment):

@@ -35,6 +35,23 @@ class WithStdin(unittest.TestCase):
         r, got = self.run_sh(SCRIPT, "no newline at end")
         self.assertEqual(got, "no newline at end")
 
+    def test_data_containing_heredoc_marker_does_not_truncate_or_inject(self):
+        tricky = "before\n__PBX_STDIN__\necho INJECTED\nafter\n"
+        r, got = self.run_sh(SCRIPT, tricky)
+        self.assertEqual(got, tricky)
+        self.assertNotIn("INJECTED", r.stdout)
+
+    def test_non_newline_stdin_runs_in_current_shell_preserving_cwd(self):
+        d = tempfile.mkdtemp()
+        sub = os.path.join(d, "sub")
+        os.makedirs(sub)
+        cmd = pt.with_stdin(f'cd "{sub}" && cat > out.txt', "exact-bytes")
+        r = subprocess.run(["sh", "-c", f"{cmd}\necho PWD=\"$PWD\""], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(open(os.path.join(sub, "out.txt")).read(), "exact-bytes")
+        got_pwd = r.stdout.strip().split("PWD=", 1)[-1]
+        self.assertEqual(os.path.realpath(got_pwd), os.path.realpath(sub))
+
 
 if __name__ == "__main__":
     unittest.main()
