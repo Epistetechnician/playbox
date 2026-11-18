@@ -122,6 +122,17 @@ class _Session:
             os.replace(tmp, self.stats_path.replace(".jsonl", "") + ".final.json")
 
 
+def with_stdin(command, data):
+    """Give `command` the text `data` on stdin, byte for byte. A heredoc on a brace group around the whole command: appended to a
+    multi-statement script it would bind only to the last statement, and Hermes' file tool (`...; cat > "$tmp"; ...; mv ...`)
+    would then write an empty file. A heredoc always ends in a newline, so data that does not end in one is piped decoded from base64."""
+    if data.endswith("\n"):
+        return f"{{\n{command}\n}} <<'__PBX_STDIN__'\n{data}__PBX_STDIN__"
+    import base64
+    b64 = base64.b64encode(data.encode("utf-8", "surrogateescape")).decode()
+    return f"printf %s {b64} | base64 -d | {{\n{command}\n}}"
+
+
 class PlayboxEnvironment(BaseEnvironment):
     is_local = False
     uses_host_filesystem = False
@@ -149,7 +160,7 @@ class PlayboxEnvironment(BaseEnvironment):
     def execute(self, command, cwd="", *, timeout=None, stdin_data=None, **_):
         cwd = cwd or self.cwd or SANDBOX_CWD
         if stdin_data:
-            command = f"{command} <<'__PBX_STDIN__'\n{stdin_data}\n__PBX_STDIN__"
+            command = with_stdin(command, stdin_data)
         script, mark = self._script(command, cwd)
         t_req = time.time()
         with self.s.lock:
