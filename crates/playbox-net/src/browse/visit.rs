@@ -1,6 +1,6 @@
 //! One page visit over the Chrome DevTools protocol, vetting every request the page makes.
 
-use super::policy::Policy;
+use super::policy::{bare_host, Policy};
 use super::{clip, clip_url, BrowseConfig, Browsed, Mode};
 use crate::ws::WebSocket;
 use anyhow::{anyhow, bail, Context, Result};
@@ -166,10 +166,11 @@ impl<'a> Visit<'a> {
             return Ok(());
         }
         let url = Url::parse(raw).map_err(|_| "not a URL".to_string())?;
+        self.policy.check(&url)?;
         let key = format!(
             "{}://{}:{}",
             url.scheme(),
-            url.host_str().unwrap_or(""),
+            bare_host(url.host_str().unwrap_or("")),
             url.port_or_known_default().unwrap_or(0)
         );
         if let Some(v) = self.verdicts.get(&key) {
