@@ -3,6 +3,9 @@ name: ci
 on:
   push:
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 env:
@@ -19,9 +22,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.1"
+          components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            desktop
       - run: cargo test --workspace --no-fail-fast
-      - run: cargo test --manifest-path desktop/Cargo.toml -p pbd-core --no-fail-fast
+      - if: runner.os == 'Linux'
+        run: cargo test --manifest-path desktop/Cargo.toml -p pbd-core --no-fail-fast
+      - if: runner.os == 'macOS'
+        run: cargo clippy --manifest-path desktop/Cargo.toml --workspace --all-targets -- -D warnings && cargo test --manifest-path desktop/Cargo.toml --workspace --no-fail-fast
   audit:
     runs-on: ubuntu-22.04
     steps:
@@ -159,7 +170,10 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
+      - run: cargo fmt --manifest-path desktop/Cargo.toml --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --manifest-path desktop/Cargo.toml -p pbd-core --all-targets -- -D warnings
+      - run: python3 -I desktop/scripts/test_stage.py
   f3:
     # The F3 verified hill-climb: harness, verifier and the live room's gate (challenge/f3/tests), then the recorded run re-derived
     # from its receipts, which is what scripts/demo.sh shows. The slow tests re-train a candidate on CPU and run here too.
