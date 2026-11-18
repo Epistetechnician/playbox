@@ -18,13 +18,21 @@ struct Mcp {
 
 impl Mcp {
     fn start(home: &Path, live: bool) -> Self {
+        Self::start_with_link(home, live, None)
+    }
+
+    fn start_with_link(home: &Path, live: bool, link_file: Option<&Path>) -> Self {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_playbox"));
         cmd.arg("mcp")
             .env("PLAYBOX_HOME", home)
             .env_remove("PLAYBOX_LOG")
-            .env_remove("PLAYBOX_LIVE");
+            .env_remove("PLAYBOX_LIVE")
+            .env_remove("PLAYBOX_JOIN_LINK_FILE");
         if live {
             cmd.env("PLAYBOX_LIVE", "1");
+        }
+        if let Some(path) = link_file {
+            cmd.env("PLAYBOX_JOIN_LINK_FILE", path);
         }
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -184,4 +192,29 @@ fn playbox_mcp_without_live_pushes_nothing() {
     let w = scratch("b");
     let mut m = Mcp::start(&w.join("g"), false);
     assert!(m.wait_push(3, |_| true).is_none());
+}
+
+#[test]
+fn playbox_mcp_joins_from_playbox_join_link_file_env() {
+    let w = scratch("c");
+    let mut host = Mcp::start(&w.join("h"), false);
+    let (err, created) = host.tool(
+        "playbox_create",
+        json!({"transport": "local", "name": "autojoin", "max_members": 4}),
+    );
+    assert!(!err, "{created}");
+    let link = created["link"].as_str().expect("invite link");
+    let link_file = w.join("join-link");
+    std::fs::write(&link_file, link).unwrap();
+
+    let mut guest = Mcp::start_with_link(&w.join("g"), false, Some(&link_file));
+    let (err, status) = guest.tool("playbox_status", json!({}));
+    assert!(!err, "{status}");
+    assert!(
+        status["joined"]["member_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()),
+        "{status}"
+    );
+    assert_eq!(status["joined"]["primary_host"], created["host_id"]);
 }
