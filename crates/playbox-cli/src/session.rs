@@ -219,6 +219,7 @@ pub async fn mcp() -> Result<()> {
         env!("CARGO_PKG_VERSION"),
         server.log_path().display()
     );
+    server.join_from_env().await;
     server.serve_stdio().await
 }
 
