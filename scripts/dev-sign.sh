@@ -26,6 +26,10 @@ record() {            # `playbox update` signs the new binary with this identity
     printf '%s\n' "$NAME" > "$HOME/.playbox/sign-identity"
 }
 
+d=""
+out=""
+trap 'rm -rf "${d:-}" "${out:-}"' EXIT INT TERM
+
 setup() {
     if have_identity; then
         echo "identity \"$NAME\" is already in $KC"
@@ -33,7 +37,6 @@ setup() {
         return 0
     fi
     d="$(mktemp -d)"
-    trap 'rm -rf "$d"' EXIT
     cat > "$d/cert.cnf" <<EOF
 [req]
 distinguished_name = dn
@@ -59,8 +62,8 @@ EOF
 
 sign_one() {
     bin="$1"
-    out="$(mktemp)"
     [ -f "$bin" ] || return 0
+    out="$(mktemp)"
     id="com.playbox.$(basename "$bin" | sed 's/[^A-Za-z0-9._-]/-/g')"
     # codesign waits forever if the login keychain is locked or macOS is asking whether it may use the key; give up after 20 s and say what to do.
     codesign --force --sign "$NAME" --identifier "$id" --timestamp=none "$bin" > "$out" 2>&1 &
@@ -69,11 +72,18 @@ sign_one() {
     while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 40 ]; do sleep 0.5; n=$((n + 1)); done
     if kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null || true
+        rm -f "$out"; out=""
         echo "NOT signed: $bin" >&2
         echo "  codesign is waiting on the keychain. Unlock your login keychain (Keychain Access) or click Always Allow on the dialog about \"$NAME\", then run this again." >&2
         return 1
     fi
-    wait "$pid" || { echo "NOT signed: $bin ($(grep -v 'replacing existing signature' "$out" | head -1))" >&2; return 1; }
+    if ! wait "$pid"; then
+        msg="$(grep -v 'replacing existing signature' "$out" | head -1)"
+        rm -f "$out"; out=""
+        echo "NOT signed: $bin ($msg)" >&2
+        return 1
+    fi
+    rm -f "$out"; out=""
     echo "signed $bin"
 }
 

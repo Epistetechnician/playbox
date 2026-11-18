@@ -64,7 +64,8 @@ def mean_norm(model, tok, texts: list[str], layer: int) -> float:
     try:
         for t in texts:
             model(input_ids=tok(t, return_tensors="pt").input_ids[:, :64].to(model.device), use_cache=False)
-            norms.append(cur["x"][0, 1:].float().norm(dim=-1).mean().cpu())
+            x = cur["x"][0].float()
+            norms.append((x[1:].norm(dim=-1).mean() if x.shape[0] > 1 else x[0].norm(dim=-1)).cpu())
     finally:
         h.remove()
     return float(torch.stack(norms).mean())

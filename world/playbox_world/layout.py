@@ -43,7 +43,7 @@ def fit_layout(events, agents, steps=400, margin=0.35, seed=0, embedder=None):
     model = Layout(len(agents), emb.shape[1])
     opt = torch.optim.Adam(model.parameters(), lr=1e-2)
     sim = (emb @ emb.T).clamp(min=0)
-    sim = (sim / sim.max()).detach()
+    sim = (sim / sim.max().clamp_min(1e-8)).detach()
     for _ in range(steps):
         pos = model(emb, t, agent)
         d2 = ((pos[:, None, :2] - pos[None, :, :2]) ** 2).sum(-1)

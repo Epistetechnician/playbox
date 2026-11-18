@@ -65,6 +65,15 @@ pub struct Server {
     /// Which of `extra` serves calls; `None` means the primary in `client`.
     active: Option<usize>,
     member_id: Option<String>,
+    /// The room's key as the host gave it at join; later host lists must come from the same room.
+    room_root: Option<[u8; 32]>,
+    /// Other hosts the join link named, and the ones the signed room log lists (by id only).
+    hint_hosts: Vec<playbox_net::EndpointAddr>,
+    log_hosts: Vec<playbox_net::EndpointAddr>,
+    /// When the primary was last tried again after it failed, so a dead primary is not redialed on every call.
+    primary_retry: Option<std::time::Instant>,
+    /// When the host list was last read, so it is read about once a minute, not on every call.
+    hosts_checked: Option<std::time::Instant>,
     /// The arguments of `playbox_join`, kept so a reconnected host is vetted the way the first connection was.
     join_args: Option<Value>,
     workspace: Option<PathBuf>,
@@ -78,6 +87,9 @@ pub struct Server {
     /// Shared memory with provenance, persisted as a JSON array of signed events in `memory_path`.
     memory: MemoryStore,
     memory_path: PathBuf,
+    /// `PLAYBOX_TOOLS=core`: list only the small core set until `playbox_more` unlocks a group.
+    core_tools: bool,
+    unlocked: std::collections::BTreeSet<String>,
 }
 
 const DEFAULT_STEER_IMAGE: &str = "playbox-steer:0.1";
@@ -90,7 +102,7 @@ mod proofs;
 mod room;
 mod tools;
 mod work;
-pub use tools::{tool_list, ROOM_CARD_URI};
+pub use tools::{tool_list, tool_list_for, CORE_TOOLS, ROOM_CARD_URI};
 
 #[cfg(test)]
 mod tests {

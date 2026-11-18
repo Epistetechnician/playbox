@@ -60,9 +60,16 @@ async fn git_scoped(scope: Scope<'_>, args: &[&str], stdin: Option<&[u8]>) -> Re
         "protocol.allow=never",
         "-c",
         "protocol.file.allow=always",
+        "-c",
+        "core.attributesFile=/dev/null",
+        "-c",
+        "core.excludesFile=/dev/null",
+        "-c",
+        "diff.external=",
     ]);
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ALLOW_PROTOCOL", "file")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1");
     match scope {
         Scope::Repo(repo) => {
@@ -79,15 +86,6 @@ async fn git_scoped(scope: Scope<'_>, args: &[&str], stdin: Option<&[u8]>) -> Re
                 .arg("--work-tree")
                 .arg(&wt.dir)
                 .current_dir(&wt.dir);
-            cmd.args([
-                "-c",
-                "core.attributesFile=/dev/null",
-                "-c",
-                "core.excludesFile=/dev/null",
-                "-c",
-                "diff.external=",
-            ]);
-            cmd.env("GIT_CONFIG_GLOBAL", "/dev/null");
             cmd.env_remove("GIT_DIR")
                 .env_remove("GIT_WORK_TREE")
                 .env_remove("GIT_INDEX_FILE");
@@ -108,9 +106,19 @@ async fn git_scoped(scope: Scope<'_>, args: &[&str], stdin: Option<&[u8]>) -> Re
     }
     let out = child.wait_with_output().await?;
     if !out.status.success() {
+        let mut it = args.iter();
+        let mut sub = "";
+        while let Some(&a) = it.next() {
+            if a == "-c" {
+                let _ = it.next();
+            } else {
+                sub = a;
+                break;
+            }
+        }
         bail!(
             "git {} failed: {}",
-            args.first().unwrap_or(&""),
+            sub,
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
@@ -156,13 +164,13 @@ pub async fn bundle_import(
     let file = dir.join("in.bundle");
     tokio::fs::write(&file, bundle).await?;
     let file_s = file.to_str().context("temp path is not utf-8")?;
+    let staging_ref = format!("refs/playbox/staging/{}", random_hex_16()?);
     let result = async {
         git(repo, &["bundle", "verify", file_s], None).await?;
-        let spec = format!("+{src_ref}:{dest_ref}");
-        // Remember what the ref held, so a rejected import leaves it exactly as it was.
-        let previous = rev_parse(repo, dest_ref).await.ok();
+        let spec = format!("+{src_ref}:{staging_ref}");
         // `transfer.fsckObjects` is kept for fetches that honour it, but git does not apply it when the
         // source is a bundle file (observed on 2.43), so the explicit check below is the real guard.
+        // Stage into a unique ref first so `dest_ref` is never updated until `fsck` succeeds.
         git(
             repo,
             &[
@@ -176,10 +184,9 @@ pub async fn bundle_import(
             None,
         )
         .await?;
-        let new = rev_parse(repo, dest_ref).await?;
-        // Check every object reachable from the new tip (paths like `.git/hooks/..`, malformed trees,
+        // Check every object reachable from the staged tip (paths like `.git/hooks/..`, malformed trees,
         // unsafe .gitmodules) rather than trusting the sender: the bundle comes from a peer.
-        let checked = git(
+        git(
             repo,
             &[
                 "-c",
@@ -187,33 +194,45 @@ pub async fn bundle_import(
                 "fsck",
                 "--strict",
                 "--no-dangling",
-                &new,
+                &staging_ref,
             ],
             None,
         )
-        .await;
-        if let Err(e) = checked {
-            let undo = match &previous {
-                Some(old) => git(repo, &["update-ref", dest_ref, old], None).await,
-                None => git(repo, &["update-ref", "-d", dest_ref], None).await,
-            };
-            undo.context("restore ref after rejecting bundle")?;
-            return Err(e.context("fsck rejected the bundle"));
-        }
+        .await
+        .context("fsck rejected the bundle")?;
+        let new = rev_parse(repo, &staging_ref).await?;
+        git(repo, &["update-ref", dest_ref, &new], None).await?;
         Ok(new)
     }
     .await;
+    let _ = git(repo, &["update-ref", "-d", &staging_ref], None).await;
     let _ = tokio::fs::remove_dir_all(&dir).await;
     result
 }
 
-async fn tempfile_dir() -> Result<std::path::PathBuf> {
-    let mut b = [0u8; 8];
+fn random_hex_16() -> Result<String> {
+    let mut b = [0u8; 16];
     std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
-    let name: String = b.iter().map(|x| format!("{x:02x}")).collect();
-    let dir = std::env::temp_dir().join(format!("playbox-{name}"));
-    tokio::fs::create_dir_all(&dir).await?;
-    Ok(dir)
+    Ok(b.iter().map(|x| format!("{x:02x}")).collect())
+}
+
+async fn tempfile_dir() -> Result<std::path::PathBuf> {
+    let base = std::env::temp_dir();
+    for _ in 0..32 {
+        let dir = base.join(format!("playbox-{}", random_hex_16()?));
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    bail!("could not create an atomic scratch directory")
 }
 
 /// A task's scratch checkout of one commit. Objects are shared with the room's repository through
@@ -240,13 +259,23 @@ impl Worktree {
 /// Returns an error if `git` cannot be run or exits with a failure status.
 pub async fn worktree_add(repo: &Path, commit: &str) -> Result<Worktree> {
     let commit = check_name(commit)?;
-    let dir = tempfile_dir().await?.join("ws");
+    let parent = tempfile_dir().await?;
+    let dir = parent.join("ws");
     let dir_s = dir.to_str().context("temp path is not utf-8")?;
-    git(repo, &["worktree", "add", "--detach", dir_s, commit], None).await?;
-    // Safe to ask now: nothing has run in the directory yet.
-    let gitdir = git(&dir, &["rev-parse", "--absolute-git-dir"], None).await?;
-    let gitdir = PathBuf::from(String::from_utf8(gitdir)?.trim());
-    Ok(Worktree { dir, gitdir })
+    let made = async {
+        git(repo, &["worktree", "add", "--detach", dir_s, commit], None).await?;
+        // Safe to ask now: nothing has run in the directory yet.
+        let gitdir = git(&dir, &["rev-parse", "--absolute-git-dir"], None).await?;
+        Ok::<_, anyhow::Error>(PathBuf::from(String::from_utf8(gitdir)?.trim()))
+    }
+    .await;
+    match made {
+        Ok(gitdir) => Ok(Worktree { dir, gitdir }),
+        Err(e) => {
+            let _ = tokio::fs::remove_dir_all(&parent).await;
+            Err(e)
+        }
+    }
 }
 
 /// # Errors
@@ -261,13 +290,19 @@ pub async fn worktree_remove(repo: &Path, wt: &Worktree) -> Result<()> {
     Ok(())
 }
 
-/// `-c filter.<driver>.<x>=` overrides that switch off every filter driver the *host's* config defines
-/// (git-lfs, say). A task controls `.gitattributes` in its checkout and could otherwise pick which of
-/// those commands the host runs, and on what data. Without a driver, files are stored as they are.
+/// `-c filter.<driver>.<x>=` overrides that switch off every filter driver the *host's* or *guest's*
+/// config defines (git-lfs, say). A peer or task controls `.gitattributes` in the tree and could
+/// otherwise pick which of those commands runs, and on what data. Without a driver, files are stored as they are.
 async fn filter_overrides(gitdir: &Path) -> Result<Vec<String>> {
-    let out = Command::new("git")
-        .arg("--git-dir")
-        .arg(gitdir)
+    filter_overrides_cmd(Command::new("git").arg("--git-dir").arg(gitdir)).await
+}
+
+async fn filter_overrides_repo(repo: &Path) -> Result<Vec<String>> {
+    filter_overrides_cmd(Command::new("git").arg("-C").arg(repo)).await
+}
+
+async fn filter_overrides_cmd(cmd: &mut Command) -> Result<Vec<String>> {
+    let out = cmd
         .args(["config", "--name-only", "--get-regexp", r"^filter\."])
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -395,7 +430,14 @@ pub async fn init(dir: &Path, branch: &str) -> Result<()> {
 /// Returns an error if `git` cannot be run or exits with a failure status.
 pub async fn checkout_branch(repo: &Path, branch: &str, dest_ref: &str) -> Result<()> {
     let (branch, dest_ref) = (check_name(branch)?, check_name(dest_ref)?);
-    git(repo, &["checkout", "-q", "-B", branch, dest_ref], None).await?;
+    let mut args = filter_overrides_repo(repo).await?;
+    args.extend(
+        ["checkout", "-q", "-B", branch, dest_ref]
+            .into_iter()
+            .map(str::to_string),
+    );
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    git(repo, &refs, None).await?;
     Ok(())
 }
 
@@ -536,11 +578,50 @@ pub async fn merge_ff_only(repo: &Path, target: &str) -> Result<()> {
     Ok(())
 }
 
+/// Commit messages and unified diffs introduced at `tip` (or `prev..tip` when `prev` is known),
+/// capped at `max_bytes`, for registering pulled peer content with the taint tracker.
+///
+/// # Errors
+///
+/// Returns an error if `git` cannot be run or exits with a failure status.
+pub async fn pulled_text(
+    repo: &Path,
+    prev: Option<&str>,
+    tip: &str,
+    max_bytes: usize,
+) -> Result<String> {
+    let tip = check_name(tip)?;
+    let spec = match prev {
+        Some(p) if p != tip => format!("{}..{tip}", check_name(p)?),
+        Some(_) => return Ok(String::new()),
+        None => tip.to_string(),
+    };
+    let out = git(
+        repo,
+        &[
+            "log",
+            "-p",
+            "-n20",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            &spec,
+        ],
+        None,
+    )
+    .await?;
+    let capped = &out[..out.len().min(max_bytes)];
+    Ok(String::from_utf8_lossy(capped).into_owned())
+}
+
 /// # Errors
 ///
 /// Returns an error if `git` cannot be run or exits with a failure status.
 pub async fn apply_patch(repo: &Path, patch: &[u8]) -> Result<()> {
-    git(repo, &["apply", "--index", "-"], Some(patch)).await?;
+    let mut args = filter_overrides_repo(repo).await?;
+    args.extend(["apply", "--index", "-"].into_iter().map(str::to_string));
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    git(repo, &refs, Some(patch)).await?;
     Ok(())
 }
 
@@ -917,6 +998,94 @@ mod tests {
         // With fixed commit dates the barrage is reproducible: 37 of 120 are refused (the rest land in bytes git does not check
         // or still form a valid bundle). The bound only guards against a test that damages nothing.
         assert!(refused > 25, "too few mutations were refused ({refused} of 120, {accepted} accepted); the test is not damaging anything");
+        let _ = tokio::fs::remove_dir_all(&victim).await;
+        let _ = tokio::fs::remove_dir_all(&src).await;
+    }
+
+    #[tokio::test]
+    async fn hostile_gitattributes_filters_are_neutralized_on_checkout_and_apply() {
+        let src = tempfile_dir().await.unwrap();
+        sh(&src, &["init", "-q", "-b", "main"]);
+        sh(&src, &["config", "user.email", "t@example.com"]);
+        sh(&src, &["config", "user.name", "t"]);
+        std::fs::write(src.join(".gitattributes"), "* filter=evil\n").unwrap();
+        std::fs::write(
+            src.join(".lfsconfig"),
+            "[lfs]\n\turl = https://evil.example/lfs\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("payload.bin"), "version https://git-lfs.github.com/spec/v1\noid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nsize 12\n").unwrap();
+        sh(&src, &["add", "-A"]);
+        sh(&src, &["commit", "-q", "-m", "lfs"]);
+        let bundle = bundle_create(&src, "main").await.unwrap();
+
+        let victim = tempfile_dir().await.unwrap();
+        init(&victim, "main").await.unwrap();
+        let marker = victim.join("filter-ran");
+        sh(
+            &victim,
+            &[
+                "config",
+                "filter.evil.smudge",
+                &format!("touch {}; cat", marker.display()),
+            ],
+        );
+        sh(
+            &victim,
+            &[
+                "config",
+                "filter.evil.clean",
+                &format!("touch {}; cat", marker.display()),
+            ],
+        );
+        sh(&victim, &["config", "filter.evil.required", "true"]);
+
+        let head = bundle_import(
+            &victim,
+            &bundle,
+            "refs/heads/main",
+            "refs/remotes/peer/main",
+        )
+        .await
+        .unwrap();
+        assert!(
+            list_refs(&victim, "refs/playbox/staging")
+                .await
+                .unwrap()
+                .is_empty(),
+            "staging ref must be cleaned up"
+        );
+        checkout_branch(&victim, "main", "refs/remotes/peer/main")
+            .await
+            .unwrap();
+        assert!(
+            !marker.exists(),
+            "hostile .gitattributes filter executed during checkout_branch"
+        );
+
+        let patch = "diff --git a/extra.txt b/extra.txt\nnew file mode 100644\n--- /dev/null\n+++ b/extra.txt\n@@ -0,0 +1 @@\n+hello\n";
+        apply_patch(&victim, patch.as_bytes()).await.unwrap();
+        assert!(
+            !marker.exists(),
+            "hostile .gitattributes filter executed during apply_patch"
+        );
+
+        // Failed bundle_import preserves existing dest_ref and removes staging refs.
+        let bad = hostile_bundle().await;
+        assert!(
+            bundle_import(&victim, &bad, "refs/heads/main", "refs/remotes/peer/main")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            rev_parse(&victim, "refs/remotes/peer/main").await.unwrap(),
+            head
+        );
+        assert!(list_refs(&victim, "refs/playbox/staging")
+            .await
+            .unwrap()
+            .is_empty());
+
         let _ = tokio::fs::remove_dir_all(&victim).await;
         let _ = tokio::fs::remove_dir_all(&src).await;
     }

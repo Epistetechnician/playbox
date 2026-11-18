@@ -30,28 +30,30 @@ if [ "${1:-}" = "--repin" ]; then
   pin
   launchctl kickstart -k "gui/$(id -u)/$LABEL" && echo "restarted $LABEL"; exit 0
 fi
+xml_esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 ENTRY="$APP/current/playbox_hub.py"
 if [ "${1:-}" = "--live" ]; then shift; ENTRY="$HERE/playbox_hub.py"; else pin; fi
 ARGS=""
 for a in "$@"; do ARGS="$ARGS
-    <string>$a</string>"; done
+    <string>$(xml_esc "$a")</string>"; done
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+(umask 077 && : >> "$LOG") && chmod 600 "$LOG"
 cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$LABEL</string>
+  <key>Label</key><string>$(xml_esc "$LABEL")</string>
   <key>ProgramArguments</key><array>
-    <string>$PY</string><string>$ENTRY</string>$ARGS
+    <string>$(xml_esc "$PY")</string><string>$(xml_esc "$ENTRY")</string>$ARGS
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>$(xml_esc "$HOME")/.cargo/bin:$(xml_esc "$HOME")/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>$LOG</string>
-  <key>StandardErrorPath</key><string>$LOG</string>
+  <key>StandardOutPath</key><string>$(xml_esc "$LOG")</string>
+  <key>StandardErrorPath</key><string>$(xml_esc "$LOG")</string>
 </dict></plist>
 PL
 chmod 600 "$PLIST"

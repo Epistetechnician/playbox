@@ -70,11 +70,14 @@ def render(field, azimuth, elevation=0.35, size=96, samples=64, radius=1.6, devi
 def topic_colors(events, positions_xy, k=3):
     """Colour each event by the nearest of k xy cluster centres found by a few k-means steps."""
     p = positions_xy.numpy()
+    if len(p) == 0:
+        return TOPIC_PALETTE[torch.zeros(0, dtype=torch.long)], np.zeros(0, dtype=np.int64)
+    k_eff = min(k, len(p))
     rng = np.random.default_rng(0)
-    centres = p[rng.choice(len(p), k, replace=False)]
+    centres = p[rng.choice(len(p), k_eff, replace=False)]
     for _ in range(20):
         lab = np.argmin(((p[:, None] - centres[None]) ** 2).sum(-1), axis=1)
-        for j in range(k):
+        for j in range(k_eff):
             if (lab == j).any():
                 centres[j] = p[lab == j].mean(0)
     return TOPIC_PALETTE[torch.tensor(lab)], lab

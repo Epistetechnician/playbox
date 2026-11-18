@@ -32,17 +32,20 @@ func unhex(_ s: String) -> Data? {
 
 func loadOrCreate(_ path: String) -> SecureEnclave.P256.Signing.PrivateKey {
     guard SecureEnclave.isAvailable else { fail("no Secure Enclave on this machine") }
-    if let blob = FileManager.default.contents(atPath: path) {
-        do { return try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob) }
-        catch { fail("cannot load key handle \(path): \(error)") }
+    let url = URL(fileURLWithPath: path)
+    if FileManager.default.fileExists(atPath: path) {
+        do {
+            let blob = try Data(contentsOf: url)
+            return try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob)
+        } catch {
+            fail("cannot load key handle \(path): \(error)")
+        }
     }
     do {
         let key = try SecureEnclave.P256.Signing.PrivateKey()
-        let url = URL(fileURLWithPath: path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard FileManager.default.createFile(atPath: path, contents: key.dataRepresentation, attributes: [.posixPermissions: 0o600]) else {
-            fail("cannot write key handle to \(path)")
-        }
+        try key.dataRepresentation.write(to: url, options: .withoutOverwriting)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
         return key
     } catch {
         fail("cannot create Secure Enclave key: \(error)")

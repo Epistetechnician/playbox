@@ -48,6 +48,7 @@ async fn start_patient(token: Option<&str>, patience: Option<Duration>) -> (Host
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         authenticated_patience: patience.unwrap_or(HostConfig::default().authenticated_patience),
         ..Default::default()

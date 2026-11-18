@@ -20,8 +20,10 @@ PY_GLOBAL = {"random", "randint", "choice", "shuffle", "sample", "uniform", "gau
 TORCH_GLOBAL = {"rand", "randn", "randint", "randperm", "normal", "bernoulli", "multinomial", "dropout"}
 SEEDERS = {"np": ("np.random.seed", "numpy.random.seed"), "py": ("random.seed",), "torch": ("torch.manual_seed", "torch.cuda.manual_seed_all")}
 BROAD_EXCEPT = {"Exception", "BaseException"}
-CLEANUP = {"kill", "terminate", "close", "unlink", "remove", "rmtree", "shutdown", "wait", "open", "cancel", "stop", "join", "rmdir", "disconnect"}
+CLEANUP = {"kill", "terminate", "close", "unlink", "remove", "rmtree", "shutdown", "wait", "cancel", "stop", "rmdir", "disconnect"}
 SKIP_DIRS = {"target", "vendor", "node_modules", ".venv", "venv", "__pycache__", ".git"}
+VALUE_FLAGS = ("--frozen", "--base", "--exclude", "--baseline")
+ALL_FLAGS = (*VALUE_FLAGS, "--check", "--json")
 
 
 @dataclass
@@ -59,17 +61,60 @@ def is_test(path):
     return p.name.startswith("test_") or p.name == "conftest.py" or "tests" in p.parts
 
 
+def _has_seed_arg(node):
+    return any(not (isinstance(a, ast.Constant) and a.value is None) for a in node.args) or any(
+        not (isinstance(k.value, ast.Constant) and k.value.value is None) for k in node.keywords
+    )
+
+
 def lint_source(text, path="<stdin>"):
     try:
         tree = ast.parse(text)
     except SyntaxError as err:
         return [Finding(path, err.lineno or 1, "syntax", "unparseable file", 1.0)]
-    calls = [(dotted(n.func), n) for n in ast.walk(tree) if isinstance(n, ast.Call)]
-    seeded = {fam for fam, names in SEEDERS.items() if any(name in names for name, _ in calls)}
+    direct_map = {}
+    mod_aliases = {}
+    seeders = {fam: set(names) for fam, names in SEEDERS.items()}
+    rng_ctors = {"np.random.default_rng", "numpy.random.default_rng", "random.Random", "np.random.RandomState"}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                if a.asname and a.name in ("random", "numpy.random", "torch"):
+                    mod_aliases[a.asname] = a.name
+        elif isinstance(n, ast.ImportFrom):
+            if n.module == "random":
+                for a in n.names:
+                    local = a.asname or a.name
+                    if a.name in PY_GLOBAL:
+                        direct_map[local] = f"random.{a.name}"
+                    elif a.name == "seed":
+                        seeders["py"].add(local)
+                    elif a.name == "Random":
+                        rng_ctors.add(local)
+            elif n.module == "numpy.random":
+                for a in n.names:
+                    local = a.asname or a.name
+                    if a.name in NP_GLOBAL:
+                        direct_map[local] = f"np.random.{a.name}"
+                    elif a.name == "seed":
+                        seeders["np"].add(local)
+                    elif a.name in ("default_rng", "RandomState"):
+                        rng_ctors.add(local)
+
+    def normalize(raw):
+        if raw in direct_map:
+            return direct_map[raw]
+        head, sep, tail = raw.partition(".")
+        if sep and head in mod_aliases:
+            return f"{mod_aliases[head]}.{tail}"
+        return raw
+
+    calls = [(normalize(dotted(n.func)), n) for n in ast.walk(tree) if isinstance(n, ast.Call)]
+    seeded = {fam for fam, names in seeders.items() if any(name in names and _has_seed_arg(n) for name, n in calls)}
     out = []
     for name, node in calls:
-        bare = not node.args and not node.keywords
-        if name in ("np.random.default_rng", "numpy.random.default_rng", "random.Random", "np.random.RandomState") and bare:
+        bare = not _has_seed_arg(node)
+        if name in rng_ctors and bare:
             out.append(Finding(path, node.lineno, "unseeded_rng", f"{name}() has no seed"))
         family = global_family(name)
         if family and any(k.arg == "generator" for k in node.keywords):
@@ -80,7 +125,8 @@ def lint_source(text, path="<stdin>"):
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
-        cleanup = all(dotted(c.func).rsplit(".", 1)[-1] in CLEANUP for b in node.body for c in ast.walk(b) if isinstance(c, ast.Call))
+        body_calls = [c for b in node.body for c in ast.walk(b) if isinstance(c, ast.Call)]
+        cleanup = bool(body_calls) and all(dotted(c.func).rsplit(".", 1)[-1] in CLEANUP for c in body_calls)
         for h in node.handlers:
             broad = h.type is None or dotted(h.type) in BROAD_EXCEPT
             if broad and all(isinstance(b, (ast.Pass, ast.Continue)) for b in h.body):
@@ -135,11 +181,22 @@ def iter_python(paths, excludes=()):
 
 
 def option(args, flag):
-    return args[args.index(flag) + 1] if flag in args else None
+    if flag not in args:
+        return None
+    i = args.index(flag)
+    if i + 1 >= len(args) or args[i + 1] in ALL_FLAGS:
+        raise SystemExit(f"missing value for {flag}")
+    return args[i + 1]
 
 
 def options(args, flag):
-    return [args[i + 1] for i, a in enumerate(args) if a == flag and i + 1 < len(args)]
+    out = []
+    for i, a in enumerate(args):
+        if a == flag:
+            if i + 1 >= len(args) or args[i + 1] in ALL_FLAGS:
+                raise SystemExit(f"missing value for {flag}")
+            out.append(args[i + 1])
+    return out
 
 
 def main(argv=None):
@@ -153,9 +210,9 @@ def main(argv=None):
     if frozen:
         patterns = [ln.strip() for ln in Path(frozen).read_text().splitlines() if ln.strip() and not ln.startswith("#")]
         findings += frozen_edits(patterns, base, Path(frozen).resolve().parent)
-    if baseline:
-        findings = apply_baseline(findings, load_baseline(baseline))
     hits = [f for f in findings if f.probability >= THRESHOLD]
+    if baseline:
+        hits = apply_baseline(hits, load_baseline(baseline))
     if "--json" in args:
         print(json.dumps([asdict(f) for f in hits], indent=2))
     else:

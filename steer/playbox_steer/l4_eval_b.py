@@ -72,11 +72,14 @@ def mapped_edge_nll(su, bt, pk, pv, rk, rv, edge_k: int | None = None, only_firs
 @torch.no_grad()
 def run(ckpt: str, seeds=(5, 6, 7), draws: int = 15, log=print, edge_k: int | None = None) -> dict:
     t0 = time.time()
-    if "v2" in torch.load(ckpt, map_location="cpu"):
+    ck = torch.load(ckpt, map_location="cpu")
+    is_v2 = "v2" in ck
+    if is_v2:
         from . import l4_swat_v2 as V
-        su = V.load_mapper(ckpt, dtype=torch.float32)
+        su = V.load_mapper(ck, dtype=torch.float32)
     else:
         su = S.load_mapper(ckpt, dtype=torch.float32)
+    del ck
     su.mapper.eval()
     names = list(FIT_TOPICS)
     rows = []

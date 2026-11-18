@@ -2363,7 +2363,7 @@ dependencies = [
 
 [[package]]
 name = "pbd-core"
-version = "0.3.14"
+version = "0.4.0"
 dependencies = [
  "ed25519-dalek",
  "getrandom 0.3.4",
@@ -2508,7 +2508,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "playbox-desktop"
-version = "0.3.14"
+version = "0.4.0"
 dependencies = [
  "pbd-core",
  "signal-hook",

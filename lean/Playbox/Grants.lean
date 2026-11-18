@@ -28,10 +28,10 @@ def Grant.le (c p : Grant) : Prop :=
   c.cpu ≤ p.cpu ∧ c.mem ≤ p.mem ∧ c.timeout ≤ p.timeout ∧ c.expiry ≤ p.expiry ∧
   c.net ≤ p.net ∧ (∀ x, x ∈ c.cmds → x ∈ p.cmds)
 
-/-- The request fits inside the grant's limits at time `now`. -/
+/-- The request fits inside the grant's limits at time `now` (with strictly positive resource requests). -/
 def withinLimits (g : Grant) (now : Nat) (r : Req) : Prop :=
-  now < g.expiry ∧ r.cmd ∈ g.cmds ∧ r.cpu ≤ g.cpu ∧ r.mem ≤ g.mem ∧
-  r.timeout ≤ g.timeout ∧ r.net ≤ g.net
+  now < g.expiry ∧ r.cmd ∈ g.cmds ∧ 0 < r.cpu ∧ r.cpu ≤ g.cpu ∧ 0 < r.mem ∧ r.mem ≤ g.mem ∧
+  0 < r.timeout ∧ r.timeout ≤ g.timeout ∧ r.net ≤ g.net
 
 /-- Full authorization: within limits and not revoked. -/
 def authorizes (g : Grant) (revoked : List Nat) (now : Nat) (r : Req) : Prop :=
@@ -50,9 +50,9 @@ theorem Grant.le_trans {a b c : Grant} (h1 : Grant.le a b) (h2 : Grant.le b c) :
 theorem withinLimits_mono {c p : Grant} {now : Nat} {r : Req}
     (h : Grant.le c p) (hw : withinLimits c now r) : withinLimits p now r := by
   obtain ⟨hcpu, hmem, hto, hexp, hnet, hcmd⟩ := h
-  obtain ⟨w1, w2, w3, w4, w5, w6⟩ := hw
-  exact ⟨Nat.lt_of_lt_of_le w1 hexp, hcmd _ w2, Nat.le_trans w3 hcpu, Nat.le_trans w4 hmem,
-    Nat.le_trans w5 hto, Nat.le_trans w6 hnet⟩
+  obtain ⟨w1, w2, w3p, w3, w4p, w4, w5p, w5, w6⟩ := hw
+  exact ⟨Nat.lt_of_lt_of_le w1 hexp, hcmd _ w2, w3p, Nat.le_trans w3 hcpu, w4p,
+    Nat.le_trans w4 hmem, w5p, Nat.le_trans w5 hto, Nat.le_trans w6 hnet⟩
 
 /-- Property 2a: an expired grant authorizes nothing. -/
 theorem expired_denies {g : Grant} {revoked : List Nat} {now : Nat} {r : Req}
@@ -65,6 +65,12 @@ theorem revoked_denies {g : Grant} {revoked : List Nat} {now : Nat} {r : Req}
     (h : g.id ∈ revoked) : ¬ authorizes g revoked now r := by
   intro ⟨_, hnot⟩
   exact hnot h
+
+/-- Property 2c: a grant attenuated to zero CPU, memory, or timeout authorizes nothing. -/
+theorem zero_cpu_denies {g : Grant} {revoked : List Nat} {now : Nat} {r : Req}
+    (h : g.cpu ≤ 0) : ¬ authorizes g revoked now r := by
+  intro ⟨⟨_, _, hpos, hle, _⟩, _⟩
+  exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le hpos (Nat.le_trans hle h))
 
 /-- A delegation chain where every link attenuates its predecessor. -/
 def attenuates : List Grant → Prop

@@ -11,8 +11,9 @@
 //! | T2 | T1, and the quote covers the sandbox image, kernel and policy | a platform verifier |
 //! | T3 | A confidential-VM report covers the whole host | a platform verifier (SEV-SNP, TDX) |
 //!
-//! No platform verifier ships yet, so every statement achieves T0 here. Evidence for a higher tier is
-//! kept and reported, but it is never believed without a [`PlatformVerifier`] that checks it.
+//! Without a [`PlatformVerifier`], a statement achieves at most T0; [`crate::platform`] (Secure Enclave,
+//! TPM 2.0) and [`crate::confidential`] (Intel TDX) supply verifiers for T1–T3. Unverified evidence is
+//! kept and reported, never believed.
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use std::{collections::BTreeMap, fmt, fs, io::Read, path::Path};

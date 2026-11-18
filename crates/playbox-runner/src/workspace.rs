@@ -12,13 +12,42 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Component, Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 const MAX_FILES: usize = 10_000;
 const MAX_BYTES: u64 = 100 * 1024 * 1024;
 
-static SEQ: AtomicU64 = AtomicU64::new(0);
+struct ScratchDir(PathBuf);
+
+impl ScratchDir {
+    fn new() -> Result<Self> {
+        let base = std::env::temp_dir();
+        for _ in 0..32 {
+            let mut rnd = [0u8; 16];
+            std::io::Read::read_exact(&mut fs::File::open("/dev/urandom")?, &mut rnd)?;
+            let hex: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
+            let dir = base.join(format!("playbox-run-{hex}"));
+            let mut builder = fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(&dir) {
+                Ok(()) => return Ok(Self(dir)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e).context("scratch dir"),
+            }
+        }
+        bail!("could not create an atomic scratch directory")
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 #[derive(Debug)]
 pub struct WorkspaceRun {
@@ -107,21 +136,12 @@ pub async fn run_in_workspace(
     quota: Quota,
 ) -> Result<WorkspaceRun> {
     let before = repo.files(ws)?;
-    let dir = std::env::temp_dir().join(format!(
-        "playbox-run-{}-{}",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&dir).context("scratch dir")?;
-    let result = async {
-        materialize(&before, &dir)?;
-        let output = run_with_quota(runner, spec, &dir, quota).await?;
-        let after = scan(&dir)?;
-        anyhow::Ok((output, after))
-    }
-    .await;
-    let _ = fs::remove_dir_all(&dir);
-    let (output, after) = result?;
+    let scratch = ScratchDir::new()?;
+    let dir = &scratch.0;
+    materialize(&before, dir)?;
+    let output = run_with_quota(runner, spec, dir, quota).await?;
+    let after = scan(dir)?;
+    drop(scratch);
 
     let mut changed = Vec::new();
     for (path, data) in &after {

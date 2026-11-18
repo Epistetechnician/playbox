@@ -34,6 +34,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub(crate) struct RoomHandler {
+    pub(crate) roomlog: Arc<crate::roomsync::RoomLogNode>,
     pub(crate) state: Arc<Mutex<State>>,
     pub(crate) cfg: HostConfig,
     pub(crate) tasks: Arc<Semaphore>,
@@ -161,12 +162,13 @@ impl RoomHandler {
             mem_mib: i64::from(l.mem_mib),
             timeout_secs: i64::try_from(l.timeout_secs).unwrap_or(i64::MAX),
             net: l.network,
-            // A secret is granted as `secret/NAME` in the same allow-list as hosts: `/` is in no host name or secret name.
+            // Secrets (`secret/NAME`) and egress upstreams (`egress/NAME`) share the host allow-list: `/` is in no host, secret, or upstream name.
             hosts: l
                 .allowed_hosts
                 .iter()
                 .cloned()
                 .chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}")))
+                .chain(l.allowed_egress.iter().map(|n| format!("egress/{n}")))
                 .chain(
                     self.cfg
                         .capabilities
@@ -202,6 +204,14 @@ impl RoomHandler {
         );
         st.members.insert(from, grant_id);
         st.save();
+        self.roomlog.record(
+            "member.join",
+            &from.to_string(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+                .unwrap_or(0),
+        );
         Ok(
             json!({ "member": from.to_string(), "grant": grant, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }),
         )
@@ -217,16 +227,44 @@ impl RoomHandler {
         let Some(grant) = grant else {
             return Err(unauthorized(anyhow!("no grant presented")));
         };
-        let (revoked, banned) = {
+        let revoked = {
             let st = self.state.lock_recover();
-            (st.revoked.clone(), st.banned.contains(&from))
+            if st.banned.contains(&from) {
+                return Err(unauthorized(anyhow!("the member was revoked")));
+            }
+            st.revoked.clone()
         };
-        if banned {
-            return Err(unauthorized(anyhow!("the member was revoked")));
+        let grant_id = self
+            .auth
+            .authorize_id(grant, &from.to_string(), op, needs, &revoked)
+            .map_err(unauthorized)?;
+        // On a replica, members join at the primary rather than here; record verified, unrevoked grant
+        // holders so standing checks, feed presence, capabilities and conversations recognise them.
+        if !self.auth.can_issue() {
+            let mut st = self.state.lock_recover();
+            if !st.banned.contains(&from)
+                && !st.revoked.contains(&grant_id)
+                && st.members.get(&from) != Some(&grant_id)
+            {
+                st.members.insert(from, grant_id);
+                st.save();
+            }
         }
-        self.auth
-            .authorize(grant, &from.to_string(), op, needs, &revoked)
-            .map_err(unauthorized)
+        Ok(())
+    }
+
+    fn has_standing(&self, who: &str) -> bool {
+        let Ok(id) = who.parse::<EndpointId>() else {
+            return false;
+        };
+        let st = self.state.lock_recover();
+        if st.banned.contains(&id) {
+            return false;
+        }
+        match st.members.get(&id) {
+            Some(grant) => !st.revoked.contains(grant),
+            None => !self.auth.can_issue(),
+        }
     }
 
     /// One JSON-RPC call from `from`.
@@ -389,6 +427,10 @@ impl RoomHandler {
                 serde_json::to_value(reply)
                     .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
             }
+            wire::METHOD_HOSTS => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                Ok(self.roomlog.snapshot())
+            }
             methods::GET_TASK => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
                 let req: GetTaskRequest = serde_json::from_value(params).map_err(invalid)?;
@@ -506,8 +548,7 @@ impl RoomHandler {
             Some(Op::Recall { query, max_tokens, author }) => {
                 let t0 = std::time::Instant::now();
                 let Some(mem) = self.cfg.memory.clone() else { return reply(OpError::NoSharedMemory.body()) };
-                let members: std::collections::HashSet<String> = self.state.lock_recover().members.keys().map(std::string::ToString::to_string).collect();
-                let r = mem.recall(&query, max_tokens, author.as_deref(), &|k: &str| members.contains(k)).await;
+                let r = mem.recall(&query, max_tokens, author.as_deref(), &|k: &str| self.has_standing(k)).await;
                 self.audit.record(
                     "recall",
                     Some(&from.to_string()),
@@ -521,8 +562,7 @@ impl RoomHandler {
             Some(Op::ConvList) => return reply(json!({ "conversations": self.convs.list(&from.to_string()) }).to_string()),
             Some(Op::ConvNew { title, members }) => {
                 let me = from.to_string();
-                let known = self.member_ids();
-                let r = self.convs.create(&me, &title, &members, &|m: &str| known.contains(m));
+                let r = self.convs.create(&me, &title, &members, &|m: &str| self.has_standing(m));
                 if let Ok(c) = &r {
                     self.audit.record("conv_new", Some(&me), json!({ "conv": c.id, "roster": c.roster.len() }));
                 }
@@ -533,8 +573,7 @@ impl RoomHandler {
             }
             Some(Op::ConvInvite { conv, members }) => {
                 let me = from.to_string();
-                let known = self.member_ids();
-                let r = self.convs.invite(&me, &conv, &members, &|m: &str| known.contains(m));
+                let r = self.convs.invite(&me, &conv, &members, &|m: &str| self.has_standing(m));
                 if let Ok(c) = &r {
                     self.audit.record("conv_invite", Some(&me), json!({ "conv": c.id, "roster": c.roster.len(), "roster_version": c.roster_version }));
                 }
@@ -642,6 +681,7 @@ impl RoomHandler {
                     "image": audit::clip(&spec.image),
                     "cpus": spec.cpus, "mem_mib": spec.mem_mib, "timeout_secs": spec.timeout_secs, "network": spec.network,
                     "secrets": spec.secrets,
+                    "egress": spec.egress,
                     "warm": warm,
                 });
                 let r = self.run(from, &base, spec, warm).await;
@@ -818,16 +858,6 @@ impl RoomHandler {
     }
 
     /// Resolves once `who` has been revoked (here or by a notice that reached this host).
-    /// Ids of the room's current members, as strings.
-    fn member_ids(&self) -> std::collections::HashSet<String> {
-        self.state
-            .lock_recover()
-            .members
-            .keys()
-            .map(std::string::ToString::to_string)
-            .collect()
-    }
-
     async fn until_revoked(&self, who: EndpointId) {
         loop {
             if self.state.lock_recover().banned.contains(&who) {

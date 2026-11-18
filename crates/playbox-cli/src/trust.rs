@@ -50,11 +50,11 @@ pub fn memory_review(id: &str, accept: bool, reject: bool, key: Option<String>) 
         e.topic,
         e.body
     );
-    println!(
-        "{}",
-        mem.review(&full, accept, &reviewer)
-            .map_err(anyhow::Error::msg)?
-    );
+    let tok = mem
+        .review(&full, accept, &reviewer)
+        .map_err(anyhow::Error::msg)?;
+    std::fs::write(home.join("memory.json"), serde_json::to_vec(mem.log())?)?;
+    println!("{tok}");
     Ok(())
 }
 

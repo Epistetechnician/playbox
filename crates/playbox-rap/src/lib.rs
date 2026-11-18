@@ -137,7 +137,13 @@ impl Rap {
 }
 
 fn eq_const_time(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
+    let ha = blake3::hash(a.as_bytes());
+    let hb = blake3::hash(b.as_bytes());
+    ha.as_bytes()
+        .iter()
+        .zip(hb.as_bytes())
+        .fold(0u8, |d, (x, y)| d | (x ^ y))
+        == 0
 }
 
 fn authorized(rap: &Rap, h: &HeaderMap) -> bool {
@@ -235,6 +241,9 @@ async fn invoke(
     let finished = key.clone();
     // Held across the spawn so the call cannot finish and look itself up before it is registered.
     let mut running = rap.running.lock().await;
+    if running.contains_key(&key) {
+        return StatusCode::CONFLICT;
+    }
     let task = tokio::spawn(rap_protocol::log_panic("playbox-rap invoke", async move {
         let rap = worker;
         let args = if inv.arguments.is_null() {

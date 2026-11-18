@@ -8,7 +8,6 @@ TIER = "fast"
 
 
 def run(ctx):
-    os.environ["PLAYBOX_ALLOW_UNSAFE_RUNNER"] = "1"
     marker = os.path.join(tempfile.mkdtemp(dir=ctx.root), "count")
     caps = [
         {"name": "tick", "argv": ["sh", "-c", f"echo x >> {marker}; echo done"], "params": {}, "approval": False, "timeout_secs": 20},

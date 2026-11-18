@@ -79,3 +79,22 @@ def test_a_failed_or_unreachable_peer_does_not_sink_the_merge(repo):
     r = delegate_and_merge(str(repo), [Subtask("good", ok, "x"), Subtask("bad", failed, "x"), Subtask("dead", dead, "x")])
     assert r["applied"] == ["good"]
     assert sorted(f["subtask"] for f in r["failed"]) == ["bad", "dead"]
+
+
+def test_merge_ignores_symlinks_in_patches(repo, tmp_path):
+    from playbox_orchestrator.a2a import TaskResult
+    from playbox_orchestrator.graph import _merge
+
+    secret = tmp_path / "host_secret.txt"
+    secret.write_text("TOP_SECRET_HOST_FILE\n")
+    sym_patch = (
+        "diff --git a/leak.txt b/leak.txt\n"
+        "new file mode 120000\n"
+        "--- /dev/null\n"
+        "+++ b/leak.txt\n"
+        "@@ -0,0 +1 @@\n"
+        f"+{secret}\n"
+        "\\ No newline at end of file\n"
+    )
+    res = _merge({"repo": str(repo), "results": [(0, "sym", TaskResult(peer="p0", state="TASK_STATE_COMPLETED", stdout="", stderr="", patch=sym_patch))]})["merged"]
+    assert "leak.txt" not in res["files"]

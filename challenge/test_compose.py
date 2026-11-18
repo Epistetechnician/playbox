@@ -46,5 +46,22 @@ def test_receipt_is_signed_and_chained(tmp_path, monkeypatch):
     body = compose.compose_files(base, [a, b], out, log)
     compose.compose_files(base, [a], tmp_path / "out2.py", log)
     assert common.verify_log(log) == 2
+    assert body["domain"] == "playbox.compose.v1"
     assert set(body["parents"]) == {str(a), str(b)}
     assert json.loads(log.read_text().splitlines()[0])["body"]["candidate"] == common.sha256_bytes(out.read_bytes())
+    assert json.loads(log.read_text().splitlines()[0])["body"]["domain"] == "playbox.compose.v1"
+
+
+def test_crlf_raw_bytes_and_duplicate_candidates(tmp_path, monkeypatch):
+    monkeypatch.setattr(common, "STATE", tmp_path)
+    crlf_base = "\r\n".join(f"line{i}" for i in range(1, 10)) + "\r\n"
+    base, a = tmp_path / "base.py", tmp_path / "a.py"
+    base.write_bytes(crlf_base.encode("utf-8"))
+    a.write_bytes(crlf_base.replace("line2\r\n", "A\r\n").encode("utf-8"))
+    out = tmp_path / "out.py"
+    log = tmp_path / "c.jsonl"
+    body = compose.compose_files(base, [a, a], out, log)
+    assert body["base"] == common.sha256_bytes(base.read_bytes())
+    assert body["parents"] == {str(a): common.sha256_bytes(a.read_bytes())}
+    assert body["candidate"] == common.sha256_bytes(out.read_bytes())
+    assert any(s["why"] == "duplicate candidate" for s in body["skipped"])

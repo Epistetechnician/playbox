@@ -44,6 +44,7 @@ async fn room(name: &str, cfg: impl FnOnce(&mut HostConfig)) -> (Host, String) {
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };
@@ -340,4 +341,30 @@ async fn secrets_are_checked_against_the_grant_and_the_runner() {
     };
     assert!(msg(c.run_task("main", spec).await.unwrap_err())
         .contains("cannot limit a task to specific hosts"));
+}
+
+// REQ: BOX-7
+#[tokio::test]
+async fn egress_upstreams_are_checked_against_the_grant_and_the_runner() {
+    let (_host, link) = room("egress", |c| {
+        c.limits.allowed_egress = vec!["anthropic".into()];
+    })
+    .await;
+    let c = join_link(&link, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+    let ask = |names: &[&str]| TaskSpec {
+        egress: names.iter().map(|s| (*s).to_string()).collect(),
+        ..TaskSpec::new(&["true"])
+    };
+    for names in [&["openai"][..], &["anthropic", "openai"]] {
+        assert!(
+            msg(c.run_task("main", ask(names)).await.unwrap_err()).contains("not authorized"),
+            "{names:?}"
+        );
+    }
+    assert!(
+        msg(c.run_task("main", ask(&["anthropic"])).await.unwrap_err())
+            .contains("cannot proxy model API egress")
+    );
 }

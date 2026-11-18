@@ -99,4 +99,7 @@ finally:
     shutil.rmtree(d, ignore_errors=True)
 
 print("\nall passed" if not fails else f"\n{len(fails)} failed: {fails}")
-sys.exit(1 if fails else 0)
+if __name__ == "__main__":
+    sys.exit(1 if fails else 0)
+elif fails:
+    raise AssertionError(f"archive tests failed: {fails}")

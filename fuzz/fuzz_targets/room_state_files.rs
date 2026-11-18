@@ -5,7 +5,11 @@ use libfuzzer_sys::fuzz_target;
 use playbox_net::{capabilities, conversations};
 
 fuzz_target!(|data: &[u8]| {
-    let dir = std::env::temp_dir().join(format!("pbfuzz-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "pbfuzz-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     let _ = std::fs::create_dir_all(&dir);
     let f = dir.join("state.json");
     if std::fs::write(&f, data).is_err() {
@@ -19,4 +23,5 @@ fuzz_target!(|data: &[u8]| {
         let _ = book.pending();
         let _ = book.view("someone", "id");
     }
+    let _ = std::fs::remove_dir_all(&dir);
 });

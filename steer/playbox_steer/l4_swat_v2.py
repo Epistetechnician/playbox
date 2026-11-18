@@ -102,16 +102,23 @@ class RidgeMapper(S.Mapper):
 
 
 @torch.no_grad()
-def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print) -> dict:
+def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print, seed: int = 0) -> dict:
     """Closed-form ridge per layer group from `cfg.ridge_batches` batches. Features: aligned sender cache, centred and scaled per column.
     Target: the receiver's real cache at the same token. Returns fit diagnostics (held-out R^2 on the last batches)."""
+    rng = random.Random(seed)
     m = su.mapper
     B = m.B
     sums = [None] * B
     held = []
     n_hold = max(2, cfg.ridge_batches // 10)
+    all_idx = list(range(len(pool)))
+    rng.shuffle(all_idx)
+    split = max(1, int(0.9 * len(all_idx))) if len(all_idx) > 2 else len(all_idx)
+    train_idx = all_idx[:split]
+    hold_idx = all_idx[split:] or all_idx
     for it in range(cfg.ridge_batches):
-        bt = pool.batch(random.sample(range(len(pool)), min(bs, len(pool))), su.pad_s, su.pad_r)
+        src = hold_idx if it >= cfg.ridge_batches - n_hold else train_idx
+        bt = pool.batch(rng.sample(src, min(bs, len(src))), su.pad_s, su.pad_r)
         sk, sv = su.sender_cache(bt)
         rk, rv = su.receiver_cache(bt)
         idx = align_index(bt["pos_b"] if su.blind else bt["pos"], bt["cross_b"] if su.blind else bt["cross"], bt["r_ids"].shape[1])
@@ -124,29 +131,33 @@ def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print)
             if it >= cfg.ridge_batches - n_hold:
                 held.append((b, x, y))
                 continue
+            x64, y64 = x.double(), y.double()
             if sums[b] is None:
-                sums[b] = {"n": 0, "sx": torch.zeros(x.shape[1], device=DEV), "sxx": torch.zeros(x.shape[1], device=DEV),
-                           "sy": torch.zeros(y.shape[1], device=DEV), "xtx": torch.zeros(x.shape[1], x.shape[1], device=DEV),
-                           "xty": torch.zeros(x.shape[1], y.shape[1], device=DEV)}
+                sums[b] = {"n": 0, "sx": torch.zeros(x.shape[1], device=DEV, dtype=torch.float64),
+                           "sxx": torch.zeros(x.shape[1], device=DEV, dtype=torch.float64),
+                           "sy": torch.zeros(y.shape[1], device=DEV, dtype=torch.float64),
+                           "xtx": torch.zeros(x.shape[1], x.shape[1], device=DEV, dtype=torch.float64),
+                           "xty": torch.zeros(x.shape[1], y.shape[1], device=DEV, dtype=torch.float64)}
             s = sums[b]
-            s["n"] += x.shape[0]
-            s["sx"] += x.sum(0)
-            s["sxx"] += (x * x).sum(0)
-            s["sy"] += y.sum(0)
-            s["xtx"] += x.T @ x
-            s["xty"] += x.T @ y
+            s["n"] += x64.shape[0]
+            s["sx"] += x64.sum(0)
+            s["sxx"] += (x64 * x64).sum(0)
+            s["sy"] += y64.sum(0)
+            s["xtx"] += x64.T @ x64
+            s["xty"] += x64.T @ y64
     r2 = []
     for b in range(B):
         s = sums[b]
         n = s["n"]
-        mx, my = s["sx"] / n, s["sy"] / n
-        xs = ((s["sxx"] / n - mx * mx).clamp_min(1e-12)).sqrt()
-        # centred, scaled Gram matrices from the raw sums:  Z = (X - mx) / xs
-        xtx = (s["xtx"] - n * torch.outer(mx, mx)) / torch.outer(xs, xs)
-        xty = (s["xty"] - n * torch.outer(mx, my)) / xs[:, None]
-        lam = cfg.ridge_lam * xtx.diagonal().mean()
-        eye = torch.eye(xtx.shape[0], device=DEV)
-        W = torch.linalg.solve(xtx + lam * eye, xty)
+        mx64, my64 = s["sx"] / n, s["sy"] / n
+        xs64 = ((s["sxx"] / n - mx64 * mx64).clamp_min(1e-12)).sqrt()
+        # centred, scaled Gram matrices in float64 to prevent catastrophic cancellation: Z = (X - mx) / xs
+        xtx64 = (s["xtx"] - n * torch.outer(mx64, mx64)) / torch.outer(xs64, xs64)
+        xty64 = (s["xty"] - n * torch.outer(mx64, my64)) / xs64[:, None]
+        lam = cfg.ridge_lam * xtx64.diagonal().mean()
+        eye = torch.eye(xtx64.shape[0], device=DEV, dtype=torch.float64)
+        W = torch.linalg.solve(xtx64 + lam * eye, xty64).float()
+        mx, my, xs = mx64.float(), my64.float(), xs64.float()
         getattr(m, f"W{b}").copy_(W)
         getattr(m, f"xs{b}").copy_(xs)
         getattr(m, f"c{b}").copy_(mx)
@@ -155,7 +166,7 @@ def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print)
         hy = torch.cat([y for bb, _, y in held if bb == b])
         pred = ((hx - mx) / xs) @ W + my
         r2.append(float(1 - ((pred - hy) ** 2).sum() / ((hy - hy.mean(0)) ** 2).sum()))
-        del xtx, xty, s
+        del xtx64, xty64, s
     m.fitted = True
     log(f"ridge fitted: held-out R^2 per group {[round(v, 3) for v in r2]}")
     return {"ridge_r2_by_group": [round(v, 4) for v in r2], "n_tokens": n}
@@ -255,7 +266,8 @@ def train(sender_path, receiver_path, out_path, cfg: V2Config, steps1=1500, step
           eval_every=500, time_budget_s=None, log=print, seed=0, blind=True, templ_frac=0.15, items=None, eval_items=None, dtype=torch.bfloat16):
     """Same data and schedule as S.train (so a comparison with the v1 recipe changes only the recipe)."""
     t0 = time.time()
-    torch.manual_seed(seed); random.seed(seed)
+    torch.manual_seed(seed)
+    rng = random.Random(seed)
     su = make_setup(sender_path, receiver_path, B, D, cfg, blind=blind, dtype=dtype)
     if items is None:
         n_wiki = int(n_items * (1 - templ_frac))
@@ -265,18 +277,18 @@ def train(sender_path, receiver_path, out_path, cfg: V2Config, steps1=1500, step
     pool, evp = S.Pool(items, su.st, su.rt), S.Pool(eval_items, su.st, su.rt)
     log(f"pool {len(pool)} train items, {len(evp)} eval items, cfg {json.dumps(asdict(cfg))} [{time.time() - t0:.0f}s]")
     su.calibrate(pool)
-    fit_info = fit_ridge(su, pool, cfg, log=log) if cfg.ridge else {}
+    fit_info = fit_ridge(su, pool, cfg, log=log, seed=seed) if cfg.ridge else {}
     log(f"ridge/prior ready [{time.time() - t0:.0f}s]")
     opt = torch.optim.AdamW([p for p in su.mapper.parameters() if p.requires_grad], lr=lr1, weight_decay=1e-3, betas=(0.9, 0.95))
     hist, bad = [], 0
     order = list(range(len(pool)))
-    random.shuffle(order)
+    rng.shuffle(order)
     ptr = 0
 
     def next_idx():
         nonlocal ptr
         if ptr + bs > len(order):
-            random.shuffle(order); ptr = 0
+            rng.shuffle(order); ptr = 0
         ptr += bs
         return order[ptr - bs: ptr]
 
@@ -331,8 +343,8 @@ def train(sender_path, receiver_path, out_path, cfg: V2Config, steps1=1500, step
     return hist
 
 
-def load_mapper(ckpt_path: str, sender_path=None, receiver_path=None, dtype=torch.float32) -> S.Setup:
-    ck = torch.load(ckpt_path, map_location="cpu")
+def load_mapper(ckpt_path: str | dict, sender_path=None, receiver_path=None, dtype=torch.float32) -> S.Setup:
+    ck = ckpt_path if isinstance(ckpt_path, dict) else torch.load(ckpt_path, map_location="cpu")
     cfg = V2Config(**ck["v2"])
     su = make_setup(sender_path or ck["sender"], receiver_path or ck["receiver"], ck["B"], ck["D"], cfg, blind=ck.get("blind", True), dtype=dtype)
     su.mapper.load_state_dict(ck["mapper"])

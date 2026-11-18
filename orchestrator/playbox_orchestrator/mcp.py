@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 from pathlib import Path
 
 
@@ -15,6 +16,7 @@ class McpError(RuntimeError):
 
 class McpClient:
     def __init__(self, binary: str | Path, home: str | Path, env: dict[str, str] | None = None):
+        self._lock = threading.Lock()
         self._p = subprocess.Popen(
             [str(binary)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
@@ -24,7 +26,8 @@ class McpClient:
         init = self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "playbox-orchestrator", "version": "0"}})
         if "result" not in init:
             raise McpError(f"initialize failed: {init}")
-        self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        with self._lock:
+            self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
     def _send(self, msg: dict) -> None:
         assert self._p.stdin
@@ -32,16 +35,17 @@ class McpClient:
         self._p.stdin.flush()
 
     def _rpc(self, method: str, params: dict) -> dict:
-        self._n += 1
-        self._send({"jsonrpc": "2.0", "id": self._n, "method": method, "params": params})
-        assert self._p.stdout
-        line = self._p.stdout.readline()
-        if not line:
-            raise McpError("the sidecar closed its output")
-        reply = json.loads(line)
-        if reply.get("id") != self._n:
-            raise McpError(f"reply id mismatch: {reply}")
-        return reply
+        with self._lock:
+            self._n += 1
+            self._send({"jsonrpc": "2.0", "id": self._n, "method": method, "params": params})
+            assert self._p.stdout
+            line = self._p.stdout.readline()
+            if not line:
+                raise McpError("the sidecar closed its output")
+            reply = json.loads(line)
+            if reply.get("id") != self._n:
+                raise McpError(f"reply id mismatch: {reply}")
+            return reply
 
     def call(self, tool: str, args: dict) -> dict:
         """Call a tool; returns its JSON result, or raises with the tool's own error text."""

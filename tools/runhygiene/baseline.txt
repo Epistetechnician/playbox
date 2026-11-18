@@ -1,5 +1,4 @@
 # Triaged findings (2026-11-17). Format: path-glob | kind | source substring  # reason. A stale entry fails the check.
-challenge/gate.py | global_rng | random.shuffle(order)  # randomised cand/front order per rep on purpose; the verdict must not depend on order
-challenge/f3/harness.py | global_rng | random.shuffle(order)  # same: order randomisation is the control, not a result input
+challenge/f3/harness.py | global_rng | random.shuffle(order)  # order randomisation is the control, not a result input
 tools/bench/*/*.py | swallowed_error | except Exception  # best-effort post to the room chat (b.say / HQ.say); the trial result is recorded separately
 ui/hub/rooms.py | swallowed_error | except Exception  # on_needs_invite callback and prune_stale are best-effort housekeeping in the poll loop

@@ -110,7 +110,10 @@ where
         return ok_response(StatusCode::METHOD_NOT_ALLOWED, "POST only");
     }
 
-    let body = match req.into_body().collect().await {
+    let body = match http_body_util::Limited::new(req.into_body(), 1 << 20)
+        .collect()
+        .await
+    {
         Ok(b) => b.to_bytes(),
         Err(e) => {
             tracing::warn!("Failed to read callback body: {}", e);
@@ -121,8 +124,8 @@ where
     let cb: RapCallback = match serde_json::from_slice(&body) {
         Ok(c) => c,
         Err(e) => {
-            let raw = String::from_utf8_lossy(&body);
-            tracing::error!("Invalid callback payload: {e}\nRaw body: {raw}");
+            let raw: String = String::from_utf8_lossy(&body).chars().take(256).collect();
+            tracing::error!("Invalid callback payload: {e}\nBody prefix: {raw}");
             return ok_response(StatusCode::BAD_REQUEST, &format!("Bad request: {}", e));
         }
     };

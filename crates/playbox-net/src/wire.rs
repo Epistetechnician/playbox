@@ -44,6 +44,9 @@ pub const METHOD_ATTESTATION: &str = "playbox.GetAttestation";
 /// `{ "request": "<hex>" }` returns `{ "response": "<hex>" }`: the host's platform hardware answers a
 /// verifier's challenge (TPM credential activation). No auth, like attestation; the hardware serialises calls.
 pub const METHOD_ACTIVATE: &str = "playbox.ActivateCredential";
+/// `{}` returns `{ "root": hex, "entries": [...], "certs": [...] }`: the room's signed log (host-less rooms), for a
+/// member to check from the room key and read the host set from. Needs membership.
+pub const METHOD_HOSTS: &str = "playbox.GetHosts";
 /// JSON-RPC error code for a missing, invalid, expired or revoked grant (A2A defines none for this).
 pub const ERR_UNAUTHORIZED: i32 = -32040;
 pub const BINDING: &str = "PLAYBOX-IROH";
@@ -268,7 +271,11 @@ impl Op {
     pub fn needs(&self) -> Needs {
         match self {
             Op::Run { spec, .. } => Needs {
-                cpu_milli: (spec.cpus * 1000.0).ceil() as i64,
+                cpu_milli: if !spec.cpus.is_finite() || spec.cpus <= 0.0 {
+                    0
+                } else {
+                    (f64::from(spec.cpus) * 1000.0).ceil() as i64
+                },
                 mem_mib: i64::from(spec.mem_mib),
                 timeout_secs: i64::try_from(spec.timeout_secs).unwrap_or(i64::MAX),
                 net: spec.network && spec.allowed_hosts.is_empty(),
@@ -277,6 +284,7 @@ impl Op {
                     .iter()
                     .cloned()
                     .chain(spec.secrets.iter().map(|n| format!("secret/{n}")))
+                    .chain(spec.egress.iter().map(|n| format!("egress/{n}")))
                     .collect(),
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
                 ..Needs::default()

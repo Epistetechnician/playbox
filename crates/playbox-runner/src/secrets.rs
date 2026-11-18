@@ -129,6 +129,48 @@ impl SecretStore {
         Ok(())
     }
 
+    /// Read one secret's UTF-8 value in-memory on the host (for the egress proxy) without staging it on disk.
+    ///
+    /// # Errors
+    ///
+    /// Fails for a bad name, a store directory readable by other users, or a missing, non-regular, oversized or non-UTF-8 secret.
+    pub fn read_utf8(&self, name: &str) -> Result<(String, SecretUse)> {
+        if !valid_name(name) {
+            bail!("bad secret name {name:?}");
+        }
+        let mode = std::fs::metadata(&self.dir)
+            .with_context(|| format!("secrets directory {}", self.dir.display()))?
+            .permissions()
+            .mode();
+        if mode & 0o077 != 0 {
+            bail!(
+                "the secrets directory {} is readable by others (mode {:o}); chmod 700 it",
+                self.dir.display(),
+                mode & 0o777
+            );
+        }
+        let src = self.dir.join(name);
+        let meta = std::fs::symlink_metadata(&src)
+            .with_context(|| format!("secret {name:?} is not in the host's store"))?;
+        if !meta.is_file() {
+            bail!("secret {name:?} is not a regular file");
+        }
+        if meta.len() > MAX_BYTES {
+            bail!("secret {name:?} is larger than {MAX_BYTES} bytes");
+        }
+        let raw = std::fs::read(&src)?;
+        let hash = blake3::hash(&raw).to_hex().to_string();
+        let text = String::from_utf8(raw)
+            .with_context(|| format!("secret {name:?} is not valid utf-8"))?;
+        Ok((
+            text.trim_end_matches(['\r', '\n']).to_string(),
+            SecretUse {
+                name: name.to_string(),
+                blake3: hash,
+            },
+        ))
+    }
+
     /// Copy the named secrets into a fresh private directory under `scratch`.
     ///
     /// # Errors

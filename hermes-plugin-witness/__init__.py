@@ -69,14 +69,37 @@ def _take_decision(session_id):
 
 def register(ctx):
     w = Witness(_record, _event, _take_decision)
+    aliases = {}          # session_id -> conversation_id so hooks omitting conversation_id share state
+    mid_tool_turn = set() # keys whose last event was post_tool_call (intra-turn LLM continuation)
 
     def key(kw):
         # Context compression rotates session_id; conversation_id survives it. Hermes 0.22.5 passes it to some
-        # hooks and not others, so use it when present.
-        return kw.get("conversation_id") or kw.get("session_id")
+        # hooks and not others, so bind session_id to conversation_id whenever both are seen.
+        cid, sid = kw.get("conversation_id"), kw.get("session_id")
+        if cid and sid:
+            aliases[sid] = cid
+            if sid != cid:
+                if sid in w.in_room:
+                    w.in_room.add(cid)
+                if sid in w.tainted and cid not in w.tainted:
+                    w.tainted[cid] = w.tainted.pop(sid)
+                if sid in w.denied:
+                    w.denied.discard(sid)
+                    w.denied.add(cid)
+                if sid in w.local_read:
+                    w.local_read.discard(sid)
+                    w.local_read.add(cid)
+                if sid in mid_tool_turn:
+                    mid_tool_turn.discard(sid)
+                    mid_tool_turn.add(cid)
+        return cid or aliases.get(sid) or sid
 
     def pre_llm_call(**kw):
-        w.new_turn(key(kw))
+        k = key(kw)
+        if k in mid_tool_turn:
+            mid_tool_turn.discard(k)
+            return
+        w.new_turn(k)
 
     def trace(phase, kw):
         # Hermes scrubs the plugin host's environment, so debugging is switched on by creating this file.
@@ -88,17 +111,20 @@ def register(ctx):
 
     def pre_tool_call(**kw):
         trace("pre", kw)
+        k = key(kw)
         try:
-            return w.before_tool(key(kw), kw.get("tool_name"), kw.get("args"))
+            return w.before_tool(k, kw.get("tool_name"), kw.get("args"))
         except Exception:
             # Fail closed while a room's text is in context; hooks are otherwise fail-open.
-            if w.tainted.get(key(kw)) or key(kw) in w.denied:
+            if w.tainted.get(k) or k in w.denied:
                 return {"action": "block", "message": "Playbox witness could not check this call; ask the user."}
             return None
 
     def post_tool_call(**kw):
         trace("post", kw)
-        w.after_tool(key(kw), kw.get("tool_name"), kw.get("args"), kw.get("result"),
+        k = key(kw)
+        mid_tool_turn.add(k)
+        w.after_tool(k, kw.get("tool_name"), kw.get("args"), kw.get("result"),
                      kw.get("status"), kw.get("duration_ms"))
 
     ctx.register_hook("pre_llm_call", pre_llm_call)

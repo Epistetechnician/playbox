@@ -18,8 +18,8 @@ Surfaces used
   written by another room member, until the user's next message.
 
 Disclosure
-- Needs the `playbox` binary on PATH, installed separately by the user (`install.sh`, checksum-verified; the
-  v0.1.0 release is not signed, no release key is pinned yet). The plugin ships no binaries and never updates itself.
+- Needs the `playbox` binary on PATH, installed separately by the user (`install.sh`, Ed25519 signature-verified
+  against a pinned release key plus `SHA256SUMS`). The plugin ships no binaries and never updates itself.
 - Starts a local `playbox mcp` process. Hosting opens an iroh endpoint reachable through n0's public relays.
   Docker tasks run only on the host, only for members the host invited.
 - Writes keys, histories and room state under `~/.playbox` (`PLAYBOX_HOME` overrides).
@@ -31,7 +31,7 @@ Limits, stated plainly
 - Live stress run (Hermes 0.22.5, Haiku 4.5): 16 planted-message trials (4 variants x 2 prompts x 2), the agent read
   the message in all 16, no write happened in any. The witness hold is visible in 7; in the other 9 the model declined
   by itself. No witness-off baseline, one model, small sample. Control: a user-requested write with no peer read is not held.
-- Prebuilt binaries: macOS arm64, Linux x86_64 and arm64. Intel macOS builds from source.
+- Prebuilt binaries: macOS arm64 and x86_64, Linux x86_64 and arm64.
 - Entry points to review: `hermes-plugin/` (portable) and `hermes-plugin-witness/` (native). Two entries by design:
   the docs say the portable adapter does not replace native plugins. The witness needs `playbox` on PATH, not the
   other plugin.

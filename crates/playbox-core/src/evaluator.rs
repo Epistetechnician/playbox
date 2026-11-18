@@ -343,21 +343,145 @@ impl Variant {
     }
 }
 
-/// The paths a unified diff changes, including both sides of a rename, as the host sees them.
+/// Unescape one C-quoted git path (`"..."`), returning the decoded string and any remaining tail.
+fn unquote_c_prefix(s: &str) -> Option<(String, &str)> {
+    let rest = s.strip_prefix('"')?;
+    let mut bytes = Vec::with_capacity(rest.len());
+    let raw = rest.as_bytes();
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i] {
+            b'"' => {
+                return Some((String::from_utf8_lossy(&bytes).into_owned(), &rest[i + 1..]));
+            }
+            b'\\' if i + 1 < raw.len() => {
+                i += 1;
+                match raw[i] {
+                    b'a' => bytes.push(0x07),
+                    b'b' => bytes.push(0x08),
+                    b'f' => bytes.push(0x0c),
+                    b'n' => bytes.push(b'\n'),
+                    b'r' => bytes.push(b'\r'),
+                    b't' => bytes.push(b'\t'),
+                    b'v' => bytes.push(0x0b),
+                    b'\\' => bytes.push(b'\\'),
+                    b'"' => bytes.push(b'"'),
+                    d @ b'0'..=b'7' => {
+                        let mut val = u32::from(d - b'0');
+                        for _ in 0..2 {
+                            if i + 1 < raw.len() && matches!(raw[i + 1], b'0'..=b'7') {
+                                i += 1;
+                                val = val * 8 + u32::from(raw[i] - b'0');
+                            } else {
+                                break;
+                            }
+                        }
+                        bytes.push((val & 0xff) as u8);
+                    }
+                    other => bytes.push(other),
+                }
+                i += 1;
+            }
+            b => {
+                bytes.push(b);
+                i += 1;
+            }
+        }
+    }
+    None
+}
+
+fn clean_diff_path(raw: &str) -> Option<String> {
+    let decoded = if raw.starts_with('"') {
+        unquote_c_prefix(raw)
+            .map(|(s, _)| s)
+            .unwrap_or_else(|| raw.trim_matches('"').to_string())
+    } else {
+        raw.split('\t').next().unwrap_or(raw).to_string()
+    };
+    if decoded == "/dev/null" || decoded.is_empty() {
+        return None;
+    }
+    Some(
+        decoded
+            .strip_prefix("a/")
+            .or_else(|| decoded.strip_prefix("b/"))
+            .unwrap_or(&decoded)
+            .to_string(),
+    )
+}
+
+fn parse_diff_git_header(rest: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    fn push_clean(out: &mut Vec<String>, s: &str) {
+        if let Some(p) = clean_diff_path(s) {
+            out.push(p);
+        }
+    }
+    if rest.starts_with('"') {
+        if let Some((first, tail)) = unquote_c_prefix(rest) {
+            if let Some(p) = first
+                .strip_prefix("a/")
+                .or_else(|| first.strip_prefix("b/"))
+                .or(Some(first.as_str()))
+                .filter(|p| !p.is_empty() && *p != "/dev/null")
+            {
+                out.push(p.to_string());
+            }
+            push_clean(&mut out, tail.trim_start());
+            return out;
+        }
+    }
+    if let Some((left, right_quoted)) = rest.split_once(" \"") {
+        push_clean(&mut out, left);
+        let q = format!("\"{right_quoted}");
+        push_clean(&mut out, &q);
+        return out;
+    }
+    // Symmetric `a/<p> b/<p>` handles spaces inside `<p>` unambiguously.
+    if let Some(after_a) = rest.strip_prefix("a/") {
+        if after_a.len() >= 3 && (after_a.len() - 3).is_multiple_of(2) {
+            let half = (after_a.len() - 3) / 2;
+            if after_a.get(half..half + 3) == Some(" b/")
+                && after_a.get(..half) == after_a.get(half + 3..)
+            {
+                if let Some(p) = after_a.get(..half).filter(|p| !p.is_empty()) {
+                    out.push(p.to_string());
+                    return out;
+                }
+            }
+        }
+    }
+    if let Some((a, b)) = rest.split_once(" b/") {
+        push_clean(&mut out, a);
+        push_clean(&mut out, &format!("b/{b}"));
+    } else if let Some((a, b)) = rest.split_once(' ') {
+        push_clean(&mut out, a);
+        push_clean(&mut out, b);
+    }
+    out
+}
+
+/// The paths a unified diff changes, including binary patches, mode-only diffs, and both sides of a rename.
 #[must_use]
 pub fn touched_paths(patch: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in patch.lines() {
-        for prefix in ["+++ ", "--- ", "rename from ", "rename to ", "copy to "] {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            out.extend(parse_diff_git_header(rest));
+            continue;
+        }
+        for prefix in [
+            "+++ ",
+            "--- ",
+            "rename from ",
+            "rename to ",
+            "copy from ",
+            "copy to ",
+        ] {
             if let Some(p) = line.strip_prefix(prefix) {
-                let p = p.split('\t').next().unwrap_or(p).trim_matches('"');
-                if p != "/dev/null" {
-                    out.push(
-                        p.strip_prefix("a/")
-                            .or_else(|| p.strip_prefix("b/"))
-                            .unwrap_or(p)
-                            .to_string(),
-                    );
+                if let Some(clean) = clean_diff_path(p) {
+                    out.push(clean);
                 }
             }
         }
@@ -1033,5 +1157,46 @@ mod tests {
             .to_string()
             .contains("same items"));
         assert!(l.improvement_paired("nope", Z_95).is_err());
+    }
+
+    #[test]
+    fn binary_mode_only_and_quoted_diffs_cannot_touch_protected_paths_undetected() {
+        let binary_patch = "\
+diff --git a/eval/run.sh b/eval/run.sh
+index 1111111..2222222 100755
+GIT binary patch
+literal 4
+LcmZQzU<>g600031
+";
+        assert_eq!(touched_paths(binary_patch), vec!["eval/run.sh"]);
+        let (mut l, ev, _root) = lineage();
+        let v = Variant::sign(
+            VariantSpec {
+                parent: None,
+                evaluator: &ev,
+                patch: binary_patch,
+                scores: &[0.9],
+                cost: 1,
+            },
+            &agent(),
+        )
+        .unwrap();
+        assert!(l.add(v, binary_patch).is_err());
+
+        let empty_mode_patch = "\
+diff --git a/eval/sneak.sh b/eval/sneak.sh
+new file mode 100755
+index 0000000..e69de29
+";
+        assert_eq!(touched_paths(empty_mode_patch), vec!["eval/sneak.sh"]);
+
+        // C-quoted octal escape (\057 = '/') in diff --git and +++ headers.
+        let quoted_patch = "\
+diff --git \"a/eval\\057secret.bin\" \"b/eval\\057secret.bin\"
+GIT binary patch
+literal 0
+HcmV?d00001
+";
+        assert_eq!(touched_paths(quoted_patch), vec!["eval/secret.bin"]);
     }
 }

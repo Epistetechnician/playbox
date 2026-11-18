@@ -148,7 +148,11 @@ def merkle_root(salt: bytes, items: list[bytes]) -> str:
 
 
 # ---- static checks (same rules as task.py) -----------------------------------------------------------------------------
-_DENY_CALLS = {"open", "exec", "eval", "compile", "__import__", "input"}
+_DENY_NAMES = {
+    "open", "exec", "eval", "compile", "__import__", "input",
+    "getattr", "setattr", "delattr", "globals", "locals", "vars", "breakpoint", "__builtins__",
+}
+_DENY_ATTRS = {"sys", "os", "_sys", "_os"}
 
 
 def static_check(src: str) -> str | None:
@@ -163,8 +167,13 @@ def static_check(src: str) -> str | None:
         elif isinstance(n, ast.ImportFrom):
             if n.level or (n.module or "").split(".")[0] not in allowed:
                 bad.add(n.module or "<relative>")
-        elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in _DENY_CALLS:
+        elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in _DENY_NAMES:
             bad.add(n.func.id + "()")
+        elif isinstance(n, ast.Name) and n.id in _DENY_NAMES:
+            bad.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            if n.attr in _DENY_ATTRS or (n.attr.startswith("__") and n.attr not in ("__init__", "__call__")):
+                bad.add(n.attr)
     if bad:
         return "disallowed: " + ", ".join(sorted(bad))
     for need in ("build_model", "train"):
@@ -216,13 +225,55 @@ def run_candidate(cand: Path, seed: int, state_out: Path | None, target: float |
 
 
 def evaluate_state(cand: Path, state: Path, H: dict, timeout: float = 1800) -> dict:
+    import threading
     with tempfile.TemporaryDirectory() as scratch:
         cmd = [sys.executable, "-I", str(HERE / "task_climbmix.py"), "eval", "--candidate", str(Path(cand).resolve()), "--state", str(Path(state).resolve())]
-        p = subprocess.run(cmd, input=json.dumps(H["rows"].tolist()), capture_output=True, text=True, env=_env(scratch, True), cwd=scratch, timeout=timeout)
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_env(scratch, False), cwd=scratch)
+        timed_out = False
+
+        def _kill():
+            nonlocal timed_out
+            timed_out = True
+            p.kill()
+
+        timer = threading.Timer(timeout, _kill)
+        timer.start()
+        err_chunks: list[str] = []
+        err_t = threading.Thread(target=lambda: err_chunks.append(p.stderr.read()), daemon=True)
+        err_t.start()
         try:
-            return json.loads(p.stdout.strip().splitlines()[-1])
+            ready = False
+            while True:
+                line = p.stdout.readline()
+                if not line:
+                    break
+                if line.strip() == "READY":
+                    ready = True
+                    break
+            if ready:
+                try:
+                    p.stdin.write(json.dumps(H["rows"].tolist()))
+                    p.stdin.close()
+                except BrokenPipeError:
+                    pass
+                rest = p.stdout.read()
+            else:
+                p.stdin.close()
+                rest = ""
+            err_t.join(timeout=5)
+            p.wait(timeout=5)
+        finally:
+            timer.cancel()
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+        if timed_out:
+            return {"error": "evaluator timeout"}
+        stderr = "".join(err_chunks).strip()
+        try:
+            return json.loads(rest.strip().splitlines()[-1])
         except Exception:
-            return {"error": "evaluator failed: " + p.stderr.strip()[-300:]}
+            return {"error": "evaluator failed: " + stderr[-300:]}
 
 
 # ---- in-subprocess code --------------------------------------------------------------------------------------------------
@@ -238,11 +289,42 @@ def _load_candidate(path: str):
     return mod
 
 
+def _check_causal(model, b: np.ndarray) -> bool:
+    """Verify autoregressive causality: altering future tokens x[:, k:] must not alter past logits model(x)[:, :k]."""
+    import torch
+    was = model.training
+    model.eval()
+    try:
+        param = next(model.parameters(), None)
+        dev = param.device if param is not None else torch.device("cpu")
+        x1 = torch.from_numpy(np.asarray(b[: min(4, len(b))], dtype=np.int64)[:, :-1]).long().to(dev).clone()
+        seq_len = x1.shape[1]
+        if seq_len < 2:
+            return True
+        with torch.no_grad():
+            y1 = model(x1.clone()).float()
+            for k in sorted({1, seq_len // 2, seq_len - 1}):
+                if not (0 < k < seq_len):
+                    continue
+                x2 = x1.clone()
+                shift = 1 + (torch.arange(seq_len - k, device=dev)[None, :] % max(V - 1, 1))
+                x2[:, k:] = (x2[:, k:] + shift) % V
+                y2 = model(x2).float()
+                if not torch.isfinite(y1[:, :k]).all() or not torch.isfinite(y2[:, :k]).all():
+                    return False
+                if (y1[:, :k] - y2[:, :k]).abs().max().item() > 1e-4:
+                    return False
+        return True
+    finally:
+        model.train(was)
+
+
 def mean_bpb(model, rows: np.ndarray, token_bytes, batch: int = 16) -> float:
     """Bits per byte over the target tokens of `rows` (special tokens have 0 bytes and are excluded)."""
     import torch
     import torch.nn.functional as F
-    dev = next(model.parameters()).device
+    param = next(model.parameters(), None)
+    dev = param.device if param is not None else torch.device("cpu")
     was = model.training
     model.eval()
     tb = token_bytes.to(dev)
@@ -250,7 +332,8 @@ def mean_bpb(model, rows: np.ndarray, token_bytes, batch: int = 16) -> float:
     with torch.no_grad(), autocast(dev):
         for i in range(0, len(rows), batch):
             b = torch.from_numpy(rows[i : i + batch]).long().to(dev)
-            logits = model(b[:, :-1]).float()
+            x = b[:, :-1].clone()
+            logits = model(x).float()
             loss = F.cross_entropy(logits.reshape(-1, V), b[:, 1:].reshape(-1), reduction="none")
             nb = tb[b[:, 1:].reshape(-1)]
             nats += (loss * (nb > 0)).sum().item()
@@ -295,6 +378,8 @@ class Ctx:
     def eval_dev(self, model) -> float:
         sync(self.device)
         self.wall += time.perf_counter() - self.t0  # the clock stops while the harness evaluates
+        if self.last_dev is None and not _check_causal(model, self._dev):
+            raise RuntimeError("non-causal model: future tokens alter past logits")
         loss = mean_bpb(model, self._dev, self._tb)
         self.last_dev = loss
         why = None
@@ -339,15 +424,24 @@ def _cmd_run(a):
 
 
 def _cmd_eval(a):
+    _stdin, _stdout = sys.stdin, sys.stdout
     import torch
     torch.set_num_threads(SPEC.get("threads", 4))
     mod = _load_candidate(a.candidate)  # import first: candidate code runs before the holdout exists in this process
     model = mod.build_model(V, T, dict(HP))
     model.load_state_dict(torch.load(a.state, weights_only=True))
     model.to(pick_device())
-    rows = np.array(json.loads(sys.stdin.read()), dtype=np.int64)
+    _stdout.write("READY\n")
+    _stdout.flush()
+    rows = np.array(json.loads(_stdin.read()), dtype=np.int64)
+    dev_rows = np.load(cache_dir() / "dev_rows.npy")
+    if not _check_causal(model, dev_rows) or not _check_causal(model, rows):
+        _stdout.write(json.dumps({"error": "non-causal model: future tokens alter past logits"}) + "\n")
+        _stdout.flush()
+        return
     tb = cd.load_token_bytes()
-    print(json.dumps({"dev_loss": mean_bpb(model, np.load(cache_dir() / "dev_rows.npy"), tb), "holdout_loss": mean_bpb(model, rows, tb)}))
+    _stdout.write(json.dumps({"dev_loss": mean_bpb(model, dev_rows, tb), "holdout_loss": mean_bpb(model, rows, tb)}) + "\n")
+    _stdout.flush()
 
 
 def _cmd_prepare(a):

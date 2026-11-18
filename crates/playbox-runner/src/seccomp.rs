@@ -37,6 +37,10 @@ pub const DENIED: &[&str] = &[
     "swapon",
     "swapoff",
     "open_by_handle_at",
+    "io_uring_setup",
+    "io_uring_enter",
+    "io_uring_register",
+    "userfaultfd",
     "mount_setattr",
     "move_mount",
     "fsopen",
@@ -90,8 +94,11 @@ fn number(name: &str) -> Option<u32> {
         "adjtimex" => n(libc::SYS_adjtimex)?,
         "syslog" => n(libc::SYS_syslog)?,
         "quotactl" => n(libc::SYS_quotactl)?,
-        // The mount API and kexec_file_load have no constant in every libc release; the numbers are the same on both
-        // architectures except the last.
+        "userfaultfd" => n(libc::SYS_userfaultfd)?,
+        // Unified Linux syscall numbers (identical on x86_64 and aarch64) that are not in every libc release.
+        "io_uring_setup" => 425,
+        "io_uring_enter" => 426,
+        "io_uring_register" => 427,
         "open_tree" => 428,
         "move_mount" => 429,
         "fsopen" => 430,
@@ -115,39 +122,80 @@ fn number(name: &str) -> Option<u32> {
 
 const BPF_LD_W_ABS: u16 = 0x20;
 const BPF_JEQ_K: u16 = 0x15;
+const BPF_JGE_K: u16 = 0x35;
+const BPF_JSET_K: u16 = 0x45;
 const BPF_RET_K: u16 = 0x06;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
 const SECCOMP_RET_ERRNO: u32 = 0x0005_0000;
 
+const SYS_CLONE3: u32 = 435;
+/// `CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET`.
+const CLONE_NS_MASK: u32 = 0x7e02_0000;
+#[cfg(target_arch = "x86_64")]
+const X32_SYSCALL_BIT: u32 = 0x4000_0000;
+
 fn insn(code: u16, jt: u8, jf: u8, k: u32) -> libc::sock_filter {
     libc::sock_filter { code, jt, jf, k }
 }
 
-/// The filter program: architecture check, then one compare per denied number.
+/// The filter program: architecture check, x32 rejection (`x86_64`), `clone3` -> `ENOSYS` fallback,
+/// denied syscalls -> `EPERM`, and `clone` namespace-flag inspection -> `EPERM`.
 #[must_use]
 pub fn program() -> Vec<libc::sock_filter> {
     let nums: Vec<u32> = DENIED.iter().filter_map(|n| number(n)).collect();
-    // offsetof(struct seccomp_data, nr) = 0, offsetof(arch) = 4
-    let mut p = vec![
-        insn(BPF_LD_W_ABS, 0, 0, 4),
-        insn(BPF_JEQ_K, 1, 0, AUDIT_ARCH),
-        insn(BPF_RET_K, 0, 0, SECCOMP_RET_KILL_PROCESS),
-        insn(BPF_LD_W_ABS, 0, 0, 0),
-    ];
-    let count = nums.len();
-    for (i, nr) in nums.iter().enumerate() {
-        // On a match jump to the EPERM return, which sits after the remaining compares and the ALLOW.
-        let to_deny = u8::try_from(count - i).unwrap_or(u8::MAX);
-        p.push(insn(BPF_JEQ_K, to_deny, 0, *nr));
+    let clone_nr = u32::try_from(libc::SYS_clone).expect("SYS_clone fits in u32");
+    let x32_len: usize = usize::from(cfg!(target_arch = "x86_64"));
+    // Header (4) + optional x32 check (0/1) + clone3 check (1) + DENIED (nums.len()) + clone check (3) + returns (3: ALLOW, ENOSYS, EPERM).
+    let total = 4 + x32_len + 1 + nums.len() + 3 + 3;
+    let idx_enosys = total - 2;
+    let idx_eperm = total - 1;
+    let jump_to = |cur: usize, target: usize| -> u8 {
+        u8::try_from(target - (cur + 1)).expect("seccomp jump fits in u8")
+    };
+
+    // offsetof(struct seccomp_data, nr) = 0, offsetof(arch) = 4, offsetof(args[0]) = 16 (little-endian low 32 bits of flags)
+    let mut p = Vec::with_capacity(total);
+    p.push(insn(BPF_LD_W_ABS, 0, 0, 4));
+    p.push(insn(BPF_JEQ_K, 1, 0, AUDIT_ARCH));
+    p.push(insn(BPF_RET_K, 0, 0, SECCOMP_RET_KILL_PROCESS));
+    p.push(insn(BPF_LD_W_ABS, 0, 0, 0));
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        let cur = p.len();
+        p.push(insn(BPF_JGE_K, jump_to(cur, idx_eperm), 0, X32_SYSCALL_BIT));
     }
+
+    // Return ENOSYS for clone3 so libc cleanly falls back to clone(2), whose flags we can inspect.
+    let cur = p.len();
+    p.push(insn(BPF_JEQ_K, jump_to(cur, idx_enosys), 0, SYS_CLONE3));
+
+    for nr in &nums {
+        let cur = p.len();
+        p.push(insn(BPF_JEQ_K, jump_to(cur, idx_eperm), 0, *nr));
+    }
+
+    // On both x86_64 and aarch64 Linux, clone(unsigned long flags, ...) passes `flags` in args[0].
+    p.push(insn(BPF_JEQ_K, 0, 2, clone_nr));
+    p.push(insn(BPF_LD_W_ABS, 0, 0, 16));
+    let cur = p.len();
+    p.push(insn(BPF_JSET_K, jump_to(cur, idx_eperm), 0, CLONE_NS_MASK));
+
     p.push(insn(BPF_RET_K, 0, 0, SECCOMP_RET_ALLOW));
+    p.push(insn(
+        BPF_RET_K,
+        0,
+        0,
+        SECCOMP_RET_ERRNO | libc::ENOSYS as u32,
+    ));
     p.push(insn(
         BPF_RET_K,
         0,
         0,
         SECCOMP_RET_ERRNO | libc::EPERM as u32,
     ));
+    debug_assert_eq!(p.len(), total);
     p
 }
 
@@ -207,21 +255,96 @@ mod tests {
         );
     }
 
+    fn eval(prog: &[libc::sock_filter], arch: u32, nr: u32, arg0: u64) -> u32 {
+        let mut pc = 0usize;
+        let mut acc = 0u32;
+        loop {
+            let ins = prog[pc];
+            match ins.code {
+                BPF_LD_W_ABS => {
+                    acc = match ins.k {
+                        0 => nr,
+                        4 => arch,
+                        16 => (arg0 & 0xffff_ffff) as u32,
+                        20 => (arg0 >> 32) as u32,
+                        other => panic!("unexpected seccomp_data offset {other}"),
+                    };
+                    pc += 1;
+                }
+                BPF_JEQ_K => {
+                    pc += 1 + usize::from(if acc == ins.k { ins.jt } else { ins.jf });
+                }
+                BPF_JGE_K => {
+                    pc += 1 + usize::from(if acc >= ins.k { ins.jt } else { ins.jf });
+                }
+                BPF_JSET_K => {
+                    pc += 1 + usize::from(if (acc & ins.k) != 0 { ins.jt } else { ins.jf });
+                }
+                BPF_RET_K => return ins.k,
+                other => panic!("unexpected BPF opcode {other:#x}"),
+            }
+        }
+    }
+
     #[test]
     fn the_program_is_well_formed() {
         let p = program();
-        assert!(p.len() > DENIED.len() / 2 && p.len() < 100);
+        assert!(p.len() > DENIED.len() / 2 && p.len() < 120);
         // Every conditional jump lands inside the program.
         for (i, ins) in p.iter().enumerate() {
-            if ins.code == BPF_JEQ_K {
+            if matches!(ins.code, BPF_JEQ_K | BPF_JGE_K | BPF_JSET_K) {
                 assert!(
                     i + 1 + usize::from(ins.jt) < p.len() && i + 1 + usize::from(ins.jf) < p.len()
                 );
             }
         }
+        let eperm = SECCOMP_RET_ERRNO | libc::EPERM as u32;
+        let enosys = SECCOMP_RET_ERRNO | libc::ENOSYS as u32;
+        assert_eq!(p.last().map(|i| i.k), Some(eperm));
+
+        assert_eq!(eval(&p, AUDIT_ARCH ^ 1, 0, 0), SECCOMP_RET_KILL_PROCESS);
+        #[cfg(target_arch = "x86_64")]
+        assert_eq!(eval(&p, AUDIT_ARCH, X32_SYSCALL_BIT | 1, 0), eperm);
+
+        for name in [
+            "io_uring_setup",
+            "io_uring_enter",
+            "io_uring_register",
+            "userfaultfd",
+            "open_by_handle_at",
+            "unshare",
+            "mount",
+        ] {
+            assert_eq!(
+                eval(&p, AUDIT_ARCH, number(name).unwrap(), 0),
+                eperm,
+                "{name}"
+            );
+        }
+        assert_eq!(eval(&p, AUDIT_ARCH, SYS_CLONE3, 0), enosys);
+
+        let clone_nr = u32::try_from(libc::SYS_clone).unwrap();
+        for ns_flag in [
+            0x0002_0000u64, // CLONE_NEWNS
+            0x0200_0000,    // CLONE_NEWCGROUP
+            0x0400_0000,    // CLONE_NEWUTS
+            0x0800_0000,    // CLONE_NEWIPC
+            0x1000_0000,    // CLONE_NEWUSER
+            0x2000_0000,    // CLONE_NEWPID
+            0x4000_0000,    // CLONE_NEWNET
+        ] {
+            assert_eq!(eval(&p, AUDIT_ARCH, clone_nr, ns_flag), eperm);
+        }
+        // Normal thread / fork clone flags are allowed.
         assert_eq!(
-            p.last().map(|i| i.k),
-            Some(SECCOMP_RET_ERRNO | libc::EPERM as u32)
+            eval(&p, AUDIT_ARCH, clone_nr, 0x0001_0f00),
+            SECCOMP_RET_ALLOW
         );
+        assert_eq!(
+            eval(&p, AUDIT_ARCH, clone_nr, libc::SIGCHLD as u64),
+            SECCOMP_RET_ALLOW
+        );
+        let read_nr = u32::try_from(libc::SYS_read).unwrap();
+        assert_eq!(eval(&p, AUDIT_ARCH, read_nr, 0), SECCOMP_RET_ALLOW);
     }
 }

@@ -14,6 +14,7 @@ use tokio::{io::AsyncReadExt, process::Command};
 pub mod cgroup;
 #[cfg(target_os = "linux")]
 pub mod confine;
+pub mod egress;
 pub mod guestnames;
 #[cfg(target_os = "linux")]
 pub mod jail;
@@ -115,6 +116,9 @@ pub struct TaskSpec {
     /// Names of host-held secrets to show at `/run/secrets` (see [`secrets`]). The task never carries a value.
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// Names of host-proxied model API upstreams (`BOX-7`; see [`egress`]). The task receives a loopback URL, never the API key.
+    #[serde(default)]
+    pub egress: Vec<String>,
 }
 
 impl TaskSpec {
@@ -129,21 +133,32 @@ impl TaskSpec {
             network: false,
             allowed_hosts: Vec::new(),
             secrets: Vec::new(),
+            egress: Vec::new(),
         }
     }
 
     /// Caps applied by the host regardless of what a peer asks for.
     #[must_use]
     pub fn clamp(mut self, max: &Limits) -> Self {
-        if !self.cpus.is_finite() {
-            self.cpus = 0.1;
-        }
-        self.cpus = self.cpus.clamp(0.1, max.cpus.max(0.1));
-        self.mem_mib = self.mem_mib.clamp(16, max.mem_mib);
-        self.timeout_secs = self.timeout_secs.clamp(1, max.timeout_secs);
+        let max_cpu = if max.cpus.is_nan() {
+            0.0
+        } else {
+            max.cpus.max(0.0)
+        };
+        let min_cpu = 0.1_f32.min(max_cpu);
+        self.cpus = if !self.cpus.is_finite() || self.cpus <= 0.0 || max_cpu <= 0.0 {
+            0.0
+        } else {
+            self.cpus.clamp(min_cpu, max_cpu)
+        };
+        self.mem_mib = self.mem_mib.clamp(16.min(max.mem_mib), max.mem_mib);
+        self.timeout_secs = self
+            .timeout_secs
+            .clamp(1.min(max.timeout_secs), max.timeout_secs);
         self.network = self.network && max.network;
         self.allowed_hosts.retain(|h| max.allowed_hosts.contains(h));
         self.secrets.retain(|n| max.allowed_secrets.contains(n));
+        self.egress.retain(|n| max.allowed_egress.contains(n));
         self
     }
 }
@@ -158,6 +173,8 @@ pub struct Limits {
     pub allowed_hosts: Vec<String>,
     /// Names of host-held secrets a task may ask for (`TaskSpec::secrets`). Empty: none.
     pub allowed_secrets: Vec<String>,
+    /// Names of host-proxied model API upstreams a task may ask for (`TaskSpec::egress`). Empty: none.
+    pub allowed_egress: Vec<String>,
 }
 
 impl Default for Limits {
@@ -169,6 +186,7 @@ impl Default for Limits {
             network: false,
             allowed_hosts: Vec::new(),
             allowed_secrets: Vec::new(),
+            allowed_egress: Vec::new(),
         }
     }
 }
@@ -291,6 +309,8 @@ pub fn runner_by_name(name: &str, policy: SandboxPolicy) -> Result<std::sync::Ar
 pub struct RunnerOptions {
     /// Confine each libkrun task (Linux): the most network a task may have, and whether the helper installs the syscall filter.
     pub confine: Option<(netpolicy::Level, bool)>,
+    /// Host-side model API egress proxy configuration (`BOX-7`, libkrun).
+    pub egress: Option<egress::EgressConfig>,
 }
 
 impl RunnerOptions {
@@ -304,8 +324,11 @@ impl RunnerOptions {
             .and_then(|v| v.parse().ok())
             .unwrap_or_default();
         let seccomp = std::env::var("PLAYBOX_CONFINE_SECCOMP").map_or(true, |v| v != "off");
+        let egress = std::env::var_os("PLAYBOX_EGRESS_FILE")
+            .and_then(|p| egress::EgressConfig::load(Path::new(&p)).ok());
         Self {
             confine: on.then_some((level, seccomp)),
+            egress,
         }
     }
 }
@@ -323,16 +346,24 @@ pub fn runner_with(
     if opts.confine.is_some() && !matches!(name, "libkrun" | "krun") {
         bail!("confinement applies to the libkrun runner only (the {name} runner has its own isolation)");
     }
+    if opts.egress.is_some() && !matches!(name, "libkrun" | "krun") {
+        bail!("egress proxy applies to the libkrun runner only (got {name})");
+    }
     match name {
         "docker" => Ok(std::sync::Arc::new(DockerRunner::new(policy))),
         "libkrun" | "krun" => {
             #[allow(unused_mut)]
             let mut r = KrunRunner::locate(policy)?;
+            if let Some(eg) = &opts.egress {
+                eg.validate()?;
+                r = r.with_egress(eg.clone());
+            }
             if let Some((_level, _seccomp)) = opts.confine {
                 #[cfg(target_os = "linux")]
                 {
                     let mut c = confine::Confinement::new(_level);
                     c.seccomp = _seccomp;
+                    c.egress = opts.egress.is_some();
                     r = r.with_confinement(c);
                 }
                 #[cfg(not(target_os = "linux"))]
@@ -465,19 +496,22 @@ fn check_spec(spec: &TaskSpec) -> Result<()> {
         bail!("empty command");
     }
     if !spec.cpus.is_finite() || spec.cpus <= 0.0 {
-        bail!("cpus must be a finite number greater than 0");
+        bail!("cpus must be a positive finite number");
     }
     if spec.mem_mib == 0 {
-        bail!("mem_mib must be greater than 0");
+        bail!("mem_mib must be greater than zero");
     }
     if spec.timeout_secs == 0 {
-        bail!("timeout_secs must be greater than 0");
+        bail!("timeout_secs must be greater than zero");
     }
     if !spec.allowed_hosts.is_empty() {
         bail!("this runner cannot limit a task to specific hosts; use the openshell runner or a confined libkrun host");
     }
     if !spec.secrets.is_empty() {
         bail!("this runner cannot hand secrets to a task");
+    }
+    if !spec.egress.is_empty() {
+        bail!("this runner cannot proxy model API egress for a task; use the libkrun runner with --egress");
     }
     if spec.image.starts_with('-') || spec.image.contains(char::is_whitespace) {
         bail!("invalid image name");
@@ -926,19 +960,16 @@ mod tests {
     }
 
     #[test]
-    fn check_spec_and_clamp_reject_non_positive_and_non_finite_limits() {
+    fn non_positive_and_non_finite_limits_are_refused_and_clamp_never_panics() {
         assert!(check_spec(&TaskSpec::new(&["true"])).is_ok());
-        for cpus in [0.0_f32, -1.5, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for bad_cpu in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
             let spec = TaskSpec {
-                cpus,
+                cpus: bad_cpu,
                 ..TaskSpec::new(&["true"])
             };
-            assert!(check_spec(&spec).is_err(), "cpus={cpus} must be rejected");
-            let clamped = spec.clamp(&Limits::default());
             assert!(
-                clamped.cpus.is_finite() && clamped.cpus >= 0.1 && clamped.cpus <= 2.0,
-                "clamped cpus={} for input {cpus}",
-                clamped.cpus
+                check_spec(&spec).is_err(),
+                "cpus={bad_cpu:?} must be refused"
             );
         }
         assert!(check_spec(&TaskSpec {
@@ -951,5 +982,64 @@ mod tests {
             ..TaskSpec::new(&["true"])
         })
         .is_err());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        for bad in [
+            TaskSpec {
+                cpus: 0.0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: -1.0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: f32::NAN,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                mem_mib: 0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                timeout_secs: 0,
+                ..TaskSpec::new(&["true"])
+            },
+        ] {
+            assert!(rt
+                .block_on(ProcessRunner.run(&bad, Path::new("/tmp")))
+                .is_err());
+        }
+
+        // Guard against min > max panics in TaskSpec::clamp when host Limits are zero/tiny/NaN.
+        let zero_lim = Limits {
+            cpus: 0.0,
+            mem_mib: 0,
+            timeout_secs: 0,
+            network: false,
+            allowed_hosts: vec![],
+            allowed_secrets: vec![],
+            allowed_egress: vec![],
+        };
+        let c = TaskSpec::new(&["true"]).clamp(&zero_lim);
+        assert_eq!((c.cpus, c.mem_mib, c.timeout_secs), (0.0, 0, 0));
+        assert!(check_spec(&c).is_err());
+
+        let tiny_lim = Limits {
+            cpus: 0.05,
+            mem_mib: 8,
+            timeout_secs: 0,
+            ..zero_lim.clone()
+        };
+        let c2 = TaskSpec::new(&["true"]).clamp(&tiny_lim);
+        assert_eq!((c2.cpus, c2.mem_mib, c2.timeout_secs), (0.05, 8, 0));
+
+        let nan_lim = Limits {
+            cpus: f32::NAN,
+            ..Limits::default()
+        };
+        assert_eq!(TaskSpec::new(&["true"]).clamp(&nan_lim).cpus, 0.0);
     }
 }

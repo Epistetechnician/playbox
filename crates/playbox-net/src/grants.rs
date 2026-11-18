@@ -245,6 +245,12 @@ impl Authority {
         out
     }
 
+    /// The root signing key, for signing a room's genesis log entry; `None` on a replica.
+    #[must_use]
+    pub fn root_signing_key(&self) -> Option<&ed25519_dalek::SigningKey> {
+        self.notice_key.as_ref()
+    }
+
     /// Sign `data` with the root key; `None` on a replica.
     #[must_use]
     pub fn sign_notice(&self, data: &[u8]) -> Option<[u8; 64]> {
@@ -393,9 +399,9 @@ impl Authority {
                 check if subject({subject});
                 check if now($t), $t < {exp};
                 check if operation($op), right($op);
-                check if req_cpu($c), $c <= {cpu};
-                check if req_mem($m), $m <= {mem};
-                check if req_timeout($t), $t <= {timeout};
+                check if operation($o), !["run", "steer", "steer_probe"].contains($o) or req_cpu($c), $c > 0, $c <= {cpu};
+                check if operation($o), !["run", "steer", "steer_probe"].contains($o) or req_mem($m), $m > 0, $m <= {mem};
+                check if operation($o), !["run", "steer", "steer_probe"].contains($o) or req_timeout($t), $t > 0, $t <= {timeout};
                 check if req_net($n), $n <= {net};
                 check all req_host($h), {allowed}.contains($h);
                 "#),
@@ -419,6 +425,18 @@ impl Authority {
         needs: &Needs,
         revoked: &HashSet<String>,
     ) -> Result<()> {
+        self.authorize_id(grant, subject, op, needs, revoked)
+            .map(|_| ())
+    }
+
+    pub(crate) fn authorize_id(
+        &self,
+        grant: &str,
+        subject: &str,
+        op: &str,
+        needs: &Needs,
+        revoked: &HashSet<String>,
+    ) -> Result<String> {
         let b = Biscuit::from_base64(grant, self.public())
             .context("grant is not valid for this room")?;
         // Any block's id being revoked kills the token; the authority id revokes every descendant.
@@ -428,7 +446,8 @@ impl Authority {
         {
             return Err(anyhow!("grant revoked"));
         }
-        self.run(&b, op, subject, needs)
+        self.run(&b, op, subject, needs)?;
+        Ok(hex(&b.revocation_identifiers()[0]))
     }
 
     fn run(&self, b: &Biscuit, op: &str, subject: &str, n: &Needs) -> Result<()> {
@@ -592,5 +611,94 @@ mod refusal_tests {
             readable_refusal("check if req_cpu($c), $c <= 2", 2000),
             "check if req_cpu($c), $c <= 2"
         );
+    }
+    #[test]
+    fn non_positive_or_non_finite_task_limits_and_zeroed_grants_authorize_no_tasks() {
+        use super::{attenuate, Authority, Caps, Needs};
+        use crate::wire::Op;
+        use playbox_runner::TaskSpec;
+        use std::collections::HashSet;
+
+        let auth = Authority::from_seed("room", &[5u8; 32]).unwrap();
+        let rev = HashSet::new();
+        let (grant, _) = auth
+            .mint_grant(
+                "alice",
+                3600,
+                &Caps {
+                    cpu_milli: 2000,
+                    mem_mib: 1024,
+                    timeout_secs: 60,
+                    net: false,
+                    hosts: vec![],
+                },
+            )
+            .unwrap();
+        assert!(auth
+            .authorize(&grant, "alice", "echo", &Needs::default(), &rev)
+            .is_ok());
+
+        for bad in [
+            TaskSpec {
+                cpus: 0.0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: -1.0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: f32::NAN,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: f32::INFINITY,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: f32::NEG_INFINITY,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                mem_mib: 0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                timeout_secs: 0,
+                ..TaskSpec::new(&["true"])
+            },
+        ] {
+            let needs = Op::Run {
+                base: "main".into(),
+                spec: bad.clone(),
+                warm: false,
+            }
+            .needs();
+            assert!(
+                auth.authorize(&grant, "alice", "run", &needs, &rev)
+                    .is_err(),
+                "{bad:?} must be rejected by Biscuit"
+            );
+        }
+
+        // Narrowing a grant to cpu <= 0 still permits echo/pull/push, and rejects every task.
+        let narrowed = attenuate(&grant, "check if req_cpu($c), $c <= 0;").unwrap();
+        assert!(auth
+            .authorize(&narrowed, "alice", "echo", &Needs::default(), &rev)
+            .is_ok());
+        for cpus in [0.0, 0.5, 1.0] {
+            let needs = Op::Run {
+                base: "main".into(),
+                spec: TaskSpec {
+                    cpus,
+                    ..TaskSpec::new(&["true"])
+                },
+                warm: false,
+            }
+            .needs();
+            assert!(auth
+                .authorize(&narrowed, "alice", "run", &needs, &rev)
+                .is_err());
+        }
     }
 }

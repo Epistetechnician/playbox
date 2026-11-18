@@ -31,13 +31,32 @@ def sample_prompts(tok, seed, count):
     return [ids[s:s + L] for s in (r.randrange(0, len(ids) - L) for _ in range(count))]
 
 
+_DENY_NAMES = {
+    "__import__", "eval", "exec", "compile", "open", "getattr", "setattr", "delattr",
+    "globals", "locals", "vars", "breakpoint", "input", "__builtins__",
+}
+_DENY_ATTRS = {"sys", "os", "_sys", "_os"}
+
+
 def imports_ok(path):
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError as e:
+        return [f"syntax error: {e.msg}"]
     bad = []
-    for node in ast.walk(ast.parse(Path(path).read_text())):
-        mods = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""] if isinstance(node, ast.ImportFrom) else []
-        for m in mods:
-            if m.split(".")[0] not in P["allowed_imports"]:
-                bad.append(m)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name.split(".")[0] not in P["allowed_imports"]:
+                    bad.append(a.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or (node.module or "").split(".")[0] not in P["allowed_imports"]:
+                bad.append(node.module or "<relative>")
+        elif isinstance(node, ast.Name) and node.id in _DENY_NAMES:
+            bad.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _DENY_ATTRS or (node.attr.startswith("__") and node.attr not in ("__init__", "__call__")):
+                bad.append(node.attr)
     return bad
 
 
@@ -49,6 +68,8 @@ def load(path, model_dir):
 
 
 def main():
+    _pc = time.perf_counter
+    _stdout, _stderr = sys.stdout, sys.stderr
     ap = argparse.ArgumentParser()
     ap.add_argument("--candidate", required=True)
     ap.add_argument("--model", required=True)
@@ -59,7 +80,7 @@ def main():
 
     bad = imports_ok(a.candidate)
     if bad:
-        print(json.dumps({"verdict": "fail", "reason": f"disallowed imports: {bad}"}))
+        _stdout.write(json.dumps({"verdict": "fail", "reason": f"disallowed imports: {bad}"}) + "\n")
         return
     import torch
     from transformers import AutoTokenizer
@@ -70,23 +91,30 @@ def main():
     model.generate(warm, 4)  # untimed warmup on a different prompt
     n = P["new_tokens"]
     outs, total = [], 0.0
+    _stderr.write("BENCH_START\n")
+    _stderr.flush()
     for pr in prompts:
-        t = time.perf_counter()
+        t = _pc()
         o = model.generate(pr, n)
-        total += time.perf_counter() - t
+        total += _pc() - t
         outs.append(o)
-    if a.write_ref:
+    _stderr.write("BENCH_END\n")
+    _stderr.flush()
+    shape_ok = len(outs) == len(prompts) and all(isinstance(o, list) and len(o) == n and all(type(x) is int for x in o) for o in outs)
+    if a.write_ref and shape_ok:
         json.dump(outs, open(a.write_ref, "w"))
-    res = {"tok_s": len(prompts) * n / total, "seconds": total}
+    res = {"tok_s": (len(prompts) * n / total) if total > 0 else 0.0, "seconds": total, "outputs": outs}
     if a.ref:
         ref = json.load(open(a.ref))
-        shape_ok = all(isinstance(o, list) and len(o) == n and all(isinstance(x, int) for x in o) for o in outs)
-        mism = sum(1 for o, r in zip(outs, ref) if o != r)
-        res.update(verdict="pass" if shape_ok and mism == 0 else "fail", mismatched_prompts=mism,
-                   reason=None if shape_ok and mism == 0 else ("bad output shape" if not shape_ok else f"{mism}/{len(ref)} prompts differ from reference"))
+        shape_ok = shape_ok and len(outs) == len(ref)
+        mism = sum(1 for o, r in zip(outs, ref) if o != r) if shape_ok else len(ref)
+        res.update(verdict="pass" if shape_ok and total > 0 and mism == 0 else "fail", mismatched_prompts=mism,
+                   reason=None if shape_ok and total > 0 and mism == 0 else ("bad output shape" if not shape_ok else f"{mism}/{len(ref)} prompts differ from reference"))
     else:
-        res["verdict"] = "pass"
-    print(json.dumps(res))
+        res.update(verdict="pass" if shape_ok and total > 0 else "fail",
+                   reason=None if shape_ok and total > 0 else ("bad output shape" if not shape_ok else "non-positive elapsed time"))
+    _stdout.write(json.dumps(res) + "\n")
+    _stdout.flush()
 
 
 if __name__ == "__main__":
