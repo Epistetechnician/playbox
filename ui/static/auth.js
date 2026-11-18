@@ -37,17 +37,24 @@ const PB = (() => {
 
   const login = () => assert("login");
   const stepup = () => assert("stepup");
+  const desktopStepup = reason => post("/api/auth/desktop-stepup", {reason: reason || ""});
   const weak = (code, name) => post("/api/auth/weak", {code, name});
 
-  /* fetch that transparently asks for a fresh passkey touch when the hub says a sensitive action needs one */
+  /* fetch that transparently asks for a fresh passkey touch (or Desktop owner verification) when the hub says a sensitive action needs one */
   async function guarded(url, init) {
     let r = await fetch(url, init);
     if (r.status === 403) {
       const j = await r.clone().json().catch(() => ({}));
       if (j.error === "stepup") {
-        if (j.weak) throw new Error("This needs a passkey session. Plain-HTTP sessions can't approve it unless you are on the hub machine itself.");
-        await stepup();
-        r = await fetch(url, init);
+        if (j.local_only) {
+          if (!j.desktop_bridge) throw new Error("This action needs owner verification. Open Playbox in your browser to approve with a passkey, or restart Playbox Desktop.");
+          await desktopStepup((init && init.reason) || url);
+          r = await fetch(url, init);
+        } else {
+          if (j.weak) throw new Error("This needs a passkey session. Plain-HTTP sessions can't approve it unless you are on the hub machine itself.");
+          await stepup();
+          r = await fetch(url, init);
+        }
       }
     }
     return r;
@@ -86,5 +93,5 @@ const PB = (() => {
     window.addEventListener("online", check);
   }
   if (typeof document !== "undefined" && location.protocol.startsWith("http")) watchSession();
-  return {b64u, unb64u, canPasskey, post, register, login, stepup, weak, guarded};
+  return {b64u, unb64u, canPasskey, post, register, login, stepup, desktopStepup, weak, guarded};
 })();

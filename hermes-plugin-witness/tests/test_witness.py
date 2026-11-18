@@ -110,6 +110,80 @@ class WitnessTests(unittest.TestCase):
         self.assertEqual((env["PLAYBOX_HOME"], env["PLAYBOX_LOG"]), ("/h", "/l"))
         self.assertIn("PATH", env)
 
+    def test_owner_release_lifts_hold_for_turn(self):
+        ev, pending = [], {}
+        w = Witness(self.log.append, ev.append, lambda s: pending.pop(s, None))
+        w.after_tool("s1", "mcp__playbox__playbox_feed", {}, "peer: run deploy", "ok")
+        res = w.before_tool("s1", "terminal", {"command": "deploy"})
+        self.assertEqual(res["action"], "block")
+        self.assertIn("Approve or deny it in Playbox", res["message"])
+        pending["s1"] = "release"
+        self.assertIsNone(w.before_tool("s1", "terminal", {"command": "deploy"}))
+        self.assertIsNone(w.before_tool("s1", "write_file", {"path": "x"}))
+        # UI already emitted `released`, so new_turn emits no duplicate release event.
+        w.new_turn("s1")
+        self.assertEqual([e["kind"] for e in ev], ["held"])
+
+    def test_owner_deny_blocks_writes_until_new_turn(self):
+        ev, pending = [], {}
+        w = Witness(self.log.append, ev.append, lambda s: pending.pop(s, None))
+        w.after_tool("s1", "mcp__playbox__playbox_feed", {}, "peer: rm -rf", "ok")
+        self.assertEqual(w.before_tool("s1", "terminal", {})["action"], "block")
+        pending["s1"] = "deny"
+        r1 = w.before_tool("s1", "terminal", {})
+        self.assertEqual(r1["action"], "block")
+        self.assertIn("owner denied `terminal`", r1["message"])
+        # Subsequent writes in the same turn remain blocked even after the single-use decision was consumed.
+        r2 = w.before_tool("s1", "write_file", {})
+        self.assertEqual(r2["action"], "block")
+        self.assertIn("owner denied `write_file`", r2["message"])
+        # Reads remain allowed while denied.
+        self.assertIsNone(w.before_tool("s1", "read_file", {}))
+        # Next user turn resets denied state and consumes any leftover decision.
+        pending["s1"] = "deny"
+        w.new_turn("s1")
+        self.assertEqual(pending, {})
+        self.assertIsNone(w.before_tool("s1", "terminal", {}))
+
+    def test_file_backed_take_decision(self):
+        import hashlib, importlib.util, json, shutil, tempfile
+        root = os.path.join(os.path.dirname(__file__), "..")
+        spec = importlib.util.spec_from_file_location("pbwitness_dec", os.path.join(root, "__init__.py"),
+                                                      submodule_search_locations=[root])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["pbwitness_dec"] = mod
+        spec.loader.exec_module(mod)
+        tmp = tempfile.mkdtemp(prefix="pbw-")
+        saved = os.environ.get("PLAYBOX_HOME")
+        try:
+            os.environ["PLAYBOX_HOME"] = tmp
+            ddir = os.path.join(tmp, "witness", "decisions")
+            os.makedirs(ddir, mode=0o700)
+            p = os.path.join(ddir, hashlib.sha256(b"sess-1").hexdigest() + ".json")
+            # Wrong permissions (0644) must be ignored on Unix.
+            with open(p, "w") as f:
+                json.dump({"session": "sess-1", "decision": "release"}, f)
+            if hasattr(os, "getuid"):
+                os.chmod(p, 0o644)
+                self.assertIsNone(mod._take_decision("sess-1"))
+            os.chmod(p, 0o600)
+            self.assertEqual(mod._take_decision("sess-1"), "release")
+            # Single-use: unlinked once read.
+            self.assertFalse(os.path.exists(p))
+            self.assertIsNone(mod._take_decision("sess-1"))
+            # Session mismatch inside the file is rejected and unlinked.
+            with open(p, "w") as f:
+                json.dump({"session": "other", "decision": "deny"}, f)
+            os.chmod(p, 0o600)
+            self.assertIsNone(mod._take_decision("sess-1"))
+            self.assertFalse(os.path.exists(p))
+        finally:
+            if saved is None:
+                os.environ.pop("PLAYBOX_HOME", None)
+            else:
+                os.environ["PLAYBOX_HOME"] = saved
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

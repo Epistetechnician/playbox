@@ -27,6 +27,7 @@ from .integrations import Integrations, IntegError
 from .invites import Invites, InviteError
 from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
+from playbox_ui import discover_repos, witness_decide, witness_state
 from .sec import SecLog, STAGES, posture
 from . import board
 from . import ans as ans_mod
@@ -35,12 +36,14 @@ from .store import Store
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 MAX_BODY = 1 << 20
-SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate"}      # playbox_create is sensitive too unless it only replicates (see room_route)
+SENSITIVE_TOOLS = {"playbox_revoke", "playbox_delegate", "playbox_capability_call"}
+CGNAT = ipaddress.ip_network("100.64.0.0/10")
+TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 BRAND_FILES = {"/icon.svg": ("icon.svg", "image/svg+xml"), "/mark.svg": ("mark.svg", "image/svg+xml"), "/logo.svg": ("logo.svg", "image/svg+xml"),
                "/icon-192.png": ("icon-192.png", "image/png"), "/icon-512.png": ("icon-512.png", "image/png"), "/icon-maskable.png": ("icon-maskable.png", "image/png")}
-PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/research.js": ("research.js", "text/javascript; charset=utf-8"), "/markdown.js": ("markdown.js", "text/javascript; charset=utf-8"), "/settings.js": ("settings.js", "text/javascript; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
+PUBLIC_FILES = {"/auth.js": ("auth.js", "text/javascript; charset=utf-8"), "/space.js": ("space.js", "text/javascript; charset=utf-8"), "/instruments.js": ("instruments.js", "text/javascript; charset=utf-8"), "/theme.css": ("theme.css", "text/css; charset=utf-8"), "/themes.js": ("themes.js", "text/javascript; charset=utf-8"), "/shell.js": ("shell.js", "text/javascript; charset=utf-8"), "/qr.js": ("qr.js", "text/javascript; charset=utf-8"), "/research.js": ("research.js", "text/javascript; charset=utf-8"), "/markdown.js": ("markdown.js", "text/javascript; charset=utf-8"), "/settings.js": ("settings.js", "text/javascript; charset=utf-8"), "/cockpit.html": ("index.html", "text/html; charset=utf-8"), "/canvas.html": ("canvas.html", "text/html; charset=utf-8"), "/sw.js": ("sw.js", "text/javascript; charset=utf-8")}
 
 
 def is_local(peer, headers):
@@ -124,7 +127,8 @@ def make_handler(hub, auth, store, opts):
 
         def body(self):
             raw = self.slurp()
-            if "application/json" not in self.headers.get("Content-Type", ""):
+            ct = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if ct != "application/json":
                 raise AuthError(415, "json only")
             if self._big:
                 raise AuthError(413, "too large")
@@ -136,8 +140,35 @@ def make_handler(hub, auth, store, opts):
                 raise AuthError(400, "object expected")
             return v
 
+        def host_ok(self):
+            """On direct loopback (no tunnel/proxy headers), refuse foreign DNS names so evil.example:7717 DNS rebinding cannot reach the hub."""
+            if opts.get("cloudflare") or not is_local(self.peer, self.hdrs()):
+                return True
+            h = hostname_of(self.headers.get("Host", "")).lower()
+            if not h:
+                return False
+            if h in ("localhost",) or h.endswith((".local", ".ts.net")):
+                return True
+            try:
+                ipaddress.ip_address(h)
+                return True
+            except ValueError:
+                return False
+
+        def is_tailnet_host(self):
+            h = hostname_of(self.headers.get("Host", "")).lower()
+            if h.endswith(".ts.net"):
+                return True
+            try:
+                a = ipaddress.ip_address(h)
+                return a in CGNAT or (a.version == 6 and a in TAILNET_V6)
+            except ValueError:
+                return False
+
         def origin_ok(self):
             """State-changing requests must come from this very origin (blocks cross-site and DNS-rebinding tricks)."""
+            if not self.host_ok():
+                return False
             host = self.headers.get("Host", "")
             o = self.headers.get("Origin")
             if o is not None:
@@ -167,28 +198,43 @@ def make_handler(hub, auth, store, opts):
             digests = hub.digests()
             lst = invites.listing(digests)
             open_ = [i for i in lst if i["state"] == "pending"]
-            raw = store.d["invites"]
+            with store.lock:
+                raw = dict(store.d["invites"])
+                weak = len([x for x in store.d["sessions"].values() if x.get("weak")])
+                n_creds = len(store.d["creds"])
+                n_sess = len(store.d["sessions"])
+                n_push = len(store.d["push"])
             inv = {"open": len(open_), "keyed_open": len([i for i in open_ if not raw.get(i["id"], {}).get("approve")]),
                    "approval_open": len([i for i in open_ if raw.get(i["id"], {}).get("approve")]), "guest_locked_open": len([i for i in open_ if i.get("guest")]),
                    "states": {st: len([i for i in lst if i["state"] == st]) for st in {i["state"] for i in lst}}}
-            weak = len([x for x in store.d["sessions"].values() if x.get("weak")])
             public = bool(opts.get("cloudflare") or self.public_base()[1])
+            tailnet = bool(opts.get("tailscale")) or self.is_tailnet_host()
             local = is_local(self.peer, self.hdrs())
             fresh = auth.is_fresh(rec, local)
             knocks = len(hub.knocks.pending())
             rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
-            checks = posture(public=public, access=bool(opts.get("access")), creds=len(store.d["creds"]), weak_sessions=weak, invites=inv, knocks=knocks,
-                             push=len(store.d["push"]), rooms=rooms, fresh=fresh)
+            checks = posture(public=public, access=bool(opts.get("access")), creds=n_creds, weak_sessions=weak, invites=inv, knocks=knocks,
+                             push=n_push, rooms=rooms, fresh=fresh, tailnet=tailnet)
             return {"health": self.health(), "machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
-                    "facts": {"public": public, "access": bool(opts.get("access")), "passkeys": len(store.d["creds"]), "sessions": len(store.d["sessions"]), "weak_sessions": weak,
-                              "fresh": fresh, "invites": inv, "knocks": knocks, "push": len(store.d["push"]), "host": self.headers.get("Host", "")},
+                    "facts": {"public": public, "tailnet": tailnet, "access": bool(opts.get("access")), "passkeys": n_creds, "sessions": n_sess, "weak_sessions": weak,
+                              "fresh": fresh, "invites": inv, "knocks": knocks, "push": n_push, "host": self.headers.get("Host", "")},
                     "rooms": rooms}
 
         def notify_view(self):
             from .rooms import DOWN_URGENT_S
-            n = store.d.get("notify") or {}
-            return {"down_alert_s": int(hub.down_alert_s()), "default_s": int(DOWN_URGENT_S), "custom": "down_alert_s" in n, "push_subs": len(store.d["push"]),
+            with store.lock:
+                n = dict(store.d.get("notify") or {})
+                n_push = len(store.d["push"])
+            return {"down_alert_s": int(hub.down_alert_s()), "default_s": int(DOWN_URGENT_S), "custom": "down_alert_s" in n, "push_subs": n_push,
                     "rooms": [{"id": d["id"], "label": d.get("label") or d["id"], "muted": bool(d.get("muted"))} for d in hub.digests()]}
+
+        def network_view(self):
+            with store.lock:
+                net = dict(store.d.get("network") or {})
+            saved = net.get("mode")
+            default_mode = "cloudflare" if opts.get("cloudflare") else "tailscale" if opts.get("tailscale") else "local"
+            mode = saved if saved in ("local", "tailscale", "cloudflare") else default_mode
+            return {"mode": mode, "desktop_managed": auth.desktop_bridge_ready(), "tunnel": self.health().get("tunnel")}
 
         def health(self):
             """What is broken or about to be, in plain fields: the tunnel, and for each room its host, its last error and when its grant was renewed.
@@ -197,7 +243,9 @@ def make_handler(hub, auth, store, opts):
             proc = ts.get("proc") if ts else None
             tunnel = {"configured": bool(opts.get("cloudflare")), "up": bool(proc is not None and proc.poll() is None), "url": opts.get("public_url") or ""}
             rooms = []
-            for r in list(hub.rooms.values()):
+            with hub.mu:
+                rlist = list(hub.rooms.values())
+            for r in rlist:
                 d = r.digest
                 rooms.append({"id": r.id, "label": r.rec.get("label", ""), "state": d.get("state"), "mode": d.get("mode"), "err": d.get("err") or r.err,
                               "offline": bool(d.get("offline")), "hosted": r.rec.get("host") is not None, "adopted": bool(r.rec.get("adopted_host")),
@@ -211,10 +259,12 @@ def make_handler(hub, auth, store, opts):
             return {"tunnel": tunnel, "rooms": rooms, "problems": problems, "ok": not problems, "started_ms": int(STARTED * 1000), "build": build}
 
         def need_fresh(self, rec):
-            if auth.is_fresh(rec, is_local(self.peer, self.hdrs())):
+            loc = is_local(self.peer, self.hdrs())
+            if auth.is_fresh(rec, loc):
                 return True
             hub.sec.add("auth", "A sensitive action asked for a fresh passkey touch", "info")
-            self.j(403, {"error": "stepup", "weak": rec["weak"]})
+            self.j(403, {"error": "stepup", "weak": rec["weak"], "local_only": bool(rec.get("local_only")),
+                         "desktop_bridge": bool(rec.get("local_only") and loc and auth.desktop_bridge_ready())})
             return False
 
         # ---- dispatch ----
@@ -279,6 +329,8 @@ def make_handler(hub, auth, store, opts):
             return False
 
         def route(self, m):
+            if not self.host_ok():
+                return self.j(403, {"error": "forbidden host"})
             url = urllib.parse.urlparse(self.path)
             p = url.path
             if not self.invite_public(m, p) and not self.access_ok():
@@ -292,7 +344,9 @@ def make_handler(hub, auth, store, opts):
                 if p.startswith("/api/invite/"):
                     auth.throttle(self.peer)
                     iid = p.rsplit("/", 1)[1]
-                    rec0 = store.d["invites"].get(iid)
+                    with store.lock:
+                        rec0 = store.d["invites"].get(iid)
+                        rec0 = dict(rec0) if rec0 else None
                     room0 = hub.get(rec0["room"]) if rec0 else None
                     v = invites.public(iid, room0.digest.get("members") if room0 else None)
                     if not v:
@@ -320,13 +374,20 @@ def make_handler(hub, auth, store, opts):
                     auth.throttle(self.peer)
                     if not is_local(self.peer, self.hdrs()) or hostname_of(self.headers.get("Host")) not in ("localhost", "127.0.0.1", "::1"):
                         raise AuthError(403, "desktop sign-in is only for the machine itself")
-                    n = urllib.parse.parse_qs(url.query).get("n", [""])[0]
+                    qs = urllib.parse.parse_qs(url.query)
+                    n = qs.get("n", [""])[0]
+                    nxt = qs.get("next", ["/"])[0]
+                    if not re.fullmatch(r"/(?:$|r/[A-Za-z0-9_-]{1,64}/(?:canvas)?|\?view=[a-z]+|join)", nxt):
+                        nxt = "/"
                     tok = auth.local_session(n, self.headers.get("User-Agent", ""), self.peer)
                     hub.sec.add("auth", "The desktop app signed in from this machine (no passkey; local-only session)", "warn")
-                    return self.send(303, "", "text/plain", {"Location": "/", **self.set_cookie(tok)})
+                    return self.send(303, "", "text/plain", {"Location": nxt, **self.set_cookie(tok)})
                 if p == "/api/auth/state":
                     rec = self.authed()
-                    return self.j(200, {"enrolled": auth.enrolled(), "authed": bool(rec), "weak": bool(rec and rec[1]["weak"]), "rp": self.rp_id(), "local_signin": True,
+                    loc = is_local(self.peer, self.hdrs())
+                    return self.j(200, {"enrolled": auth.enrolled(), "authed": bool(rec), "weak": bool(rec and rec[1]["weak"]),
+                                        "local_only": bool(rec and rec[1].get("local_only")), "local_signin": True,
+                                        "desktop_bridge": auth.desktop_bridge_ready() if loc else False, "rp": self.rp_id(),
                                         "weak_ok": opts["weak"] and auth.weak_allowed(self.peer, self.headers.get("Host"), self.hdrs())})
             if p.startswith("/api/auth/") and m == "POST":
                 return self.auth_post(p)
@@ -377,10 +438,20 @@ def make_handler(hub, auth, store, opts):
             sess = self.authed()
             if p == "/api/auth/logout":
                 auth.logout(self.cookie())
-                return self.j(200, {"ok": True}, self.set_cookie("", 0))
+                return self.j(200, {"ok": True}, {**self.set_cookie("", 0), "Clear-Site-Data": '"cache"'})
             if not sess:
                 raise AuthError(401, "unauthorized")
             key, rec = sess
+            if p == "/api/auth/desktop-stepup":
+                if not is_local(self.peer, self.hdrs()):
+                    raise AuthError(403, "desktop owner verification is only for the machine itself")
+                try:
+                    auth.desktop_stepup(key, str(b.get("reason", "")), ip)
+                except AuthError:
+                    hub.sec.add("auth", "Owner verification in Playbox Desktop was refused or cancelled", "warn")
+                    raise
+                hub.sec.add("auth", "Owner verification completed in Playbox Desktop (5 min)", "ok")
+                return self.j(200, {"ok": True})
             if p == "/api/auth/stepup/begin":
                 if rec["weak"]:
                     raise AuthError(403, "a plain-HTTP session cannot do step-up; use a passkey session")
@@ -399,7 +470,9 @@ def make_handler(hub, auth, store, opts):
             """Public, for people holding an approval invite: knock, then poll for the answer. Authenticated by the invite's secret `k`."""
             auth.throttle(self.peer)
             parts = p.split("/")      # ['', 'api', 'invite', id, action]
-            rec0 = store.d["invites"].get(parts[3]) if len(parts) == 5 else None
+            with store.lock:
+                rec0 = store.d["invites"].get(parts[3]) if len(parts) == 5 else None
+                rec0 = dict(rec0) if rec0 else None
             if not rec0 or parts[4] not in ("knock", "poll"):
                 auth._fail(self.peer)
                 raise AuthError(404, "no such invite")
@@ -428,11 +501,14 @@ def make_handler(hub, auth, store, opts):
                 hub.sec.add("approve", "A join request was denied", "info", r.get("room"))
                 hub.wake.set()
                 return self.j(200, {"ok": True})
-            inv = store.d["invites"].get(r["invite"])
+            with store.lock:
+                inv = store.d["invites"].get(r["invite"])
+                inv = dict(inv) if inv else None
+                used = len([x for x in store.d["knocks"].values() if x["invite"] == (inv["id"] if inv else "") and x["state"] in ("approved", "done")])
             room = hub.get(r["room"])
             if not inv or not room or invites.state(inv) not in ("pending",):
                 raise AuthError(410, "that invite is no longer open")
-            if len([x for x in store.d["knocks"].values() if x["invite"] == inv["id"] and x["state"] in ("approved", "done")]) >= inv["uses"]:
+            if used >= inv["uses"]:
                 raise AuthError(410, "this invite has already let in everyone it was for")
             sc = room.ensure()
             err, st = sc.call("playbox_status", {}) if sc else (True, None)
@@ -536,11 +612,11 @@ def make_handler(hub, auth, store, opts):
         def public_base(self):
             """The address a friend can open. The one this request came in on if that is public, else the tunnel the hub published."""
             host = self.headers.get("Host", "")
-            h = hostname_of(host)
-            private = h in ("localhost",) or h.endswith(".local")
+            h = hostname_of(host).lower()
+            private = h in ("localhost",) or h.endswith((".local", ".ts.net"))
             try:
                 a = ipaddress.ip_address(h)
-                private = private or a.is_private or a.is_loopback or a.is_link_local
+                private = private or a.is_private or a.is_loopback or a.is_link_local or a in CGNAT or (a.version == 6 and a in TAILNET_V6)
             except ValueError:
                 pass
             if not private:
@@ -588,9 +664,15 @@ def make_handler(hub, auth, store, opts):
         # ---- hub API ----
         def api(self, m, p, url, key, rec):
             if m == "GET" and p == "/api/me":
-                return self.j(200, {"name": rec["name"], "weak": rec["weak"], "local": is_local(self.peer, self.hdrs()), "fresh": auth.is_fresh(rec, is_local(self.peer, self.hdrs())),
-                                    "devices": auth.devices(rec["cred"]), "sessions": auth.sessions(key), "push_key": store.d["vapid"]["pub"],
-                                    "push_subs": len(store.d["push"]), "rp": self.rp_id(), "version": 1})
+                loc = is_local(self.peer, self.hdrs())
+                with store.lock:
+                    pkey = store.d["vapid"]["pub"]
+                    psubs = len(store.d["push"])
+                return self.j(200, {"name": rec["name"], "weak": rec["weak"], "local_only": bool(rec.get("local_only")),
+                                    "desktop_bridge": auth.desktop_bridge_ready() if loc else False,
+                                    "local": loc, "fresh": auth.is_fresh(rec, loc),
+                                    "devices": auth.devices(rec["cred"]), "sessions": auth.sessions(key), "push_key": pkey,
+                                    "push_subs": psubs, "rp": self.rp_id(), "version": 1})
             if m == "GET" and p == "/api/rooms":
                 return self.j(200, {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()})
             if m == "GET" and p == "/api/attention":
@@ -598,7 +680,11 @@ def make_handler(hub, auth, store, opts):
             if m == "GET" and p == "/api/events":
                 return self.events()
             if m == "GET" and p == "/api/local-rooms":
-                have = {r.rec.get("adopted_host") for r in hub.rooms.values()} if hasattr(hub, "rooms") else set()
+                if hasattr(hub, "rooms"):
+                    with hub.mu:
+                        have = {r.rec.get("adopted_host") for r in hub.rooms.values()}
+                else:
+                    have = set()
                 return self.j(200, {"rooms": [dict(h, adopted=h["id"] in have) for h in local_hosts()]})
             if m == "POST" and p == "/api/local-rooms/adopt":
                 if not self.need_fresh(rec):      # this mints a join link into a room: a passkey touch
@@ -632,9 +718,18 @@ def make_handler(hub, auth, store, opts):
                     store.save()
                 hub.wake.set()
                 hub.sec.add("join", f'Adopted the room "{label}" hosted on this machine', "ok", room.id)
+                if hasattr(hub, "local_cache"):
+                    lock = getattr(hub, "local_lock", None)
+                    if lock:
+                        with lock:
+                            hub.local_cache["at"] = 0.0
+                    else:
+                        hub.local_cache["at"] = 0.0          # the "new room on this machine" item goes away at once
                 return self.j(200, {"room": room.digest, "id": room.id})
             if m == "POST" and p == "/api/rooms":
                 b = self.body()
+                if b.get("home") and not self.need_fresh(rec):
+                    return
                 try:
                     room = hub.add(str(b.get("label", "")), str(b.get("machine", "")), str(b.get("kind", "shared")), b.get("home") or None)
                 except ValueError as e:
@@ -652,6 +747,9 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"room": room.digest, "id": room.id})
             if m == "GET" and p == "/api/agents":
                 return self.j(200, {"agents": agentmod.detect(), "manual": agentmod.manual()})
+            if m == "GET" and p == "/api/repos":
+                extra = [r.rec.get("host", {}).get("repo") for r in list(hub.rooms.values()) if isinstance(r.rec.get("host"), dict) and r.rec["host"].get("repo")]
+                return self.j(200, {"repos": discover_repos(extra)})
             if m == "POST" and p.startswith("/api/agents/") and p.endswith("/connect"):
                 if not self.need_fresh(rec):      # this edits the agent's own config files
                     return
@@ -663,8 +761,11 @@ def make_handler(hub, auth, store, opts):
                 except IntegError as e:
                     return self.j(e.status, {"error": e.msg})
             if m == "GET" and p == "/api/knocks":
+                pending = hub.knocks.pending()
+                with store.lock:
+                    inv_map = dict(store.d["invites"])
                 return self.j(200, {"requests": [{"rid": r["rid"], "name": r["name"], "code": r["code"], "room": r["room"], "created": r["created"],
-                                                  "label": store.d["invites"].get(r["invite"], {}).get("label", "")} for r in hub.knocks.pending()]})
+                                                  "label": inv_map.get(r["invite"], {}).get("label", "")} for r in pending]})
             if m == "POST" and p.startswith("/api/knocks/") and p.rsplit("/", 1)[1] in ("approve", "deny"):
                 return self.approve_knock(p.split("/")[3], rec, deny=p.endswith("/deny"))
             if m == "POST" and p == "/api/knock":
@@ -762,7 +863,12 @@ def make_handler(hub, auth, store, opts):
                     hub.sec.add("auth", "A passkey device was removed and its sessions ended", "warn")
                 return self.j(200 if ok else 404, {"ok": ok})
             if m == "DELETE" and p.startswith("/api/sessions/"):
-                ok = auth.revoke_session(p.split("/", 3)[3])
+                prefix = p.split("/", 3)[3]
+                with store.lock:
+                    hits = [k for k in store.d["sessions"] if len(prefix) >= 8 and k.startswith(prefix)]
+                if any(k != key for k in hits) and not self.need_fresh(rec):
+                    return
+                ok = auth.revoke_session(prefix)
                 return self.j(200 if ok else 404, {"ok": ok})
             if p == "/api/settings/notify":
                 if m == "GET":
@@ -784,13 +890,43 @@ def make_handler(hub, auth, store, opts):
                     hub.sec.add("auth", "The down-alert threshold was " + (f"set to {new} s" if new else "reset to its default"), "info")
                     hub.wake.set()
                     return self.j(200, self.notify_view())
+            if p == "/api/settings/network":
+                if m == "GET":
+                    return self.j(200, self.network_view())
+                if m == "POST":
+                    if not self.need_fresh(rec):
+                        return
+                    b = self.body()
+                    mode = str(b.get("mode", "")).strip()
+                    if mode not in ("local", "tailscale", "cloudflare"):
+                        raise AuthError(400, 'mode must be "local", "tailscale" or "cloudflare"')
+                    now_s = int(time.time())
+                    net_doc = {"mode": mode, "updated": now_s}
+                    with store.lock:
+                        store.d["network"] = net_doc
+                        store.save()
+                    hdir = Path(store.home)
+                    hdir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    tmp = hdir / f".desktop-network.{secrets.token_hex(4)}.tmp"
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    try:
+                        if hasattr(os, "fchmod"):
+                            os.fchmod(fd, 0o600)
+                        os.write(fd, (json.dumps(net_doc) + "\n").encode("utf-8"))
+                    finally:
+                        os.close(fd)
+                    os.replace(tmp, hdir / "desktop-network.json")
+                    hub.sec.add("edge", f"Network reach set to {mode}", "info")
+                    return self.j(200, self.network_view())
             if m == "POST" and p == "/api/push/test":
-                v = store.d["vapid"]
+                with store.lock:
+                    v = dict(store.d["vapid"])
+                    subs = list(store.d["push"])
                 sent = 0
-                for sub in list(store.d["push"]):
+                for sub in subs:
                     if webpush.send(int(v["d"], 16), v["pub"], sub["endpoint"]) in (200, 201, 202):
                         sent += 1
-                return self.j(200, {"sent": sent, "subscriptions": len(store.d["push"])})
+                return self.j(200, {"sent": sent, "subscriptions": len(subs)})
             if m == "GET" and p == "/api/approvals":
                 return self.j(200, {"approvals": hub.approvals(True)})
             if m == "POST" and p.startswith("/api/approvals/"):
@@ -855,7 +991,7 @@ def make_handler(hub, auth, store, opts):
                     except queue.Empty:
                         emit(b": ping\n\n")
                     self.wfile.flush()
-                    if not auth.session(self.cookie()):
+                    if not self.authed():
                         emit(sse("bye", {}))
                         self.wfile.write(b"0\r\n\r\n")
                         self.wfile.flush()
@@ -938,8 +1074,26 @@ def make_handler(hub, auth, store, opts):
                               "admin": d.get("mode") in ("host", "both")})
                 return self.j(200, model)
             if m == "GET" and rest == "/api/witness":
-                from playbox_ui import witness_state
                 return self.j(200, witness_state(room.home))
+            if m == "POST" and rest == "/api/witness/decide":
+                b = self.body()
+                if not self.need_fresh(rec):
+                    return
+                dec = str(b.get("decision", ""))
+                try:
+                    out = witness_decide(room.home, str(b.get("session", "")), dec)
+                except ValueError as e:
+                    raise AuthError(400, str(e))
+                room.refresh_witness()
+                hub.bus.publish("room", room.digest)
+                att = hub.attention()
+                hub.known_attention = {a["id"] for a in att}
+                hub.bus.publish("attention", {"items": att})
+                hub.wake.set()
+                if out.get("ok"):
+                    hub.sec.add("feed", f"Owner {'lifted' if dec == 'release' else 'denied'} a witness hold in {room.rec.get('label', room.id)}",
+                                "ok" if dec == "release" else "warn", room.id)
+                return self.j(200, out)
             if m == "POST" and rest == "/api/endorse":
                 # The owner vouches for one agent key in THIS room, bound to the card it is showing now. Needs a fresh passkey touch.
                 b = self.body()
@@ -1042,8 +1196,8 @@ def make_handler(hub, auth, store, opts):
                     return self.j(502, {"error": True, "data": room.err})
                 if name not in sc.tools:
                     return self.j(400, {"error": f"unknown tool {name}"})
-                # minting a join link (playbox_create) or running a command on the host (playbox_delegate) is as strong as an invite: same passkey touch
-                if (name in SENSITIVE_TOOLS or (name == "playbox_create" and not args.get("replica_of"))) and not self.need_fresh(rec):
+                # minting a join link / replicating (playbox_create) or running a command/capability on the host is as strong as an invite: same passkey touch
+                if (name in SENSITIVE_TOOLS or name == "playbox_create") and not self.need_fresh(rec):
                     return
                 if name == "playbox_revoke" and room.rec.get("adopted_host"):
                     # This hub is a guest of that host, so it cannot revoke itself: ask the host over its private control socket (the same action as the host's console).
@@ -1115,13 +1269,13 @@ def sse(kind, data):
 
 MANIFEST = {
     "name": "Playbox", "short_name": "Playbox", "description": "Every Playbox room, yours and shared, in one place.",
-    "id": "/", "start_url": "/", "scope": "/", "display": "standalone", "orientation": "any",
-    "background_color": "#171715", "theme_color": "#171715", "categories": ["developer", "productivity"],
+    "id": "/", "start_url": "/", "scope": "/", "display": "standalone", "display_override": ["window-controls-overlay", "standalone"], "orientation": "any",
+    "background_color": "#151713", "theme_color": "#151713", "categories": ["developer", "productivity"],
     "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
               {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
               {"src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
               {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}],
-    "shortcuts": [{"name": "Attention", "url": "/?view=attention"}],
+    "shortcuts": [{"name": "Attention", "url": "/?view=attention"}, {"name": "Add room", "url": "/?view=rooms"}],
     "protocol_handlers": [{"protocol": "web+playbox", "url": "/join#%s"}]}
 
 
@@ -1272,9 +1426,11 @@ def main(argv=None):
     auth = Auth(store, allow_weak=not a.no_weak)
 
     def push_fn(items):
-        v = store.d["vapid"]
+        with store.lock:
+            v = dict(store.d["vapid"])
+            subs = list(store.d["push"])
         dead = []
-        for sub in list(store.d["push"]):
+        for sub in subs:
             if webpush.send(int(v["d"], 16), v["pub"], sub["endpoint"]) in (404, 410):
                 dead.append(sub["endpoint"])
         if dead:
@@ -1284,17 +1440,20 @@ def main(argv=None):
 
     hub = Hub(store, a.mcp, push_fn)
     acache = {"at": 0.0, "v": []}
+    acache_mu = threading.Lock()
 
     def approvals(fresh=False):
         """Calls waiting for the owner on hosts on this machine, labelled with the hub's room for each (cached a few seconds: every attention read comes through here)."""
-        if fresh or time.time() - acache["at"] > 4:
-            names = {r.rec.get("adopted_host"): r for r in list(hub.rooms.values()) if r.rec.get("adopted_host")}
-            out = []
-            for c in pending_calls():
-                r = names.get(c["host"])
-                out.append(dict(c, room=r.id if r else None, label=(r.rec.get("label") if r else None) or c["name"]))
-            acache.update(at=time.time(), v=out)
-        return acache["v"]
+        with acache_mu:
+            if fresh or time.time() - acache["at"] > 4:
+                with hub.mu:
+                    names = {r.rec.get("adopted_host"): r for r in hub.rooms.values() if r.rec.get("adopted_host")}
+                out = []
+                for c in pending_calls():
+                    r = names.get(c["host"])
+                    out.append(dict(c, room=r.id if r else None, label=(r.rec.get("label") if r else None) or c["name"]))
+                acache.update(at=time.time(), v=out)
+            return list(acache["v"])
 
     def approval_attention():
         return [{"id": f"approval:{c['host']}:{c['call']}", "room": c["room"], "kind": "approval", "urgent": True, "host": c["host"], "call": c["call"],
@@ -1302,19 +1461,49 @@ def main(argv=None):
     hub.sec = SecLog(hub.bus)
     hub.approvals = approvals
     hub.extra_attention.append(approval_attention)
+    lcache = {"at": 0.0, "v": []}
+    lcache_mu = threading.Lock()
+
+    def local_room_attention():
+        """Rooms hosted on this machine that the hub has not adopted: offered automatically, never joined without a passkey touch."""
+        with lcache_mu:
+            if time.time() - lcache["at"] > 2:
+                try:
+                    with hub.mu:
+                        have = {r.rec.get("adopted_host") for r in hub.rooms.values()}
+                    lcache.update(at=time.time(), v=[h for h in local_hosts() if h["id"] not in have])
+                except Exception:  # noqa: BLE001  (a listing hiccup must not break the attention feed)
+                    lcache.update(at=time.time(), v=[])
+            vals = list(lcache["v"])
+        return [{"id": f"local:{h['id']}", "room": None, "kind": "local_room", "urgent": False, "hid": h["id"], "name": h["name"], "repo": h.get("repo"),
+                 "title": f"New room on this machine: {h['name']}", "body": "Adopt it to watch and join it from here (needs your passkey)."} for h in vals]
+    hub.extra_attention.append(local_room_attention)
+    hub.local_cache = lcache
+    hub.local_lock = lcache_mu
     hub.sec.add("edge", "Hub started" + (" behind Cloudflare Access" if (team and aud) else " (no Cloudflare Access in front)" if cloud else " on this machine only"), "ok" if (team and aud) or not cloud else "bad")
     hub.knocks = Knocks(store)
     hub.outgoing = Outgoing(hub, store)
-    hub.outgoing_busy = lambda: len([r for r in store.d["knock_out"].values() if r["state"] == "waiting"]) >= 3
+
+    def outgoing_busy():
+        with store.lock:
+            return len([r for r in store.d["knock_out"].values() if r["state"] == "waiting"]) >= 3
+
+    def knock_attention():
+        pending = hub.knocks.pending()
+        with store.lock:
+            inv_map = dict(store.d["invites"])
+        return [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
+                 "title": f"{r['name']} wants to join {inv_map.get(r['invite'], {}).get('label', 'a room')}",
+                 "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in pending]
+
+    hub.outgoing_busy = outgoing_busy
     hub.reknock = hub.outgoing.reknock
     hub.rejoining = lambda rid: bool(hub.outgoing.waiting_for(rid))
     hub.extra_attention.append(lambda: [{"id": f"knock_wait:{r['rid']}", "room": r["room"], "kind": "knock_wait", "urgent": False, "rid": r["rid"],
                                          "title": f"{r['label']}: waiting for the host to approve", "body": f"verify code {r['code']}: read it to the host; they approve on their side"}
                                         for r in hub.outgoing.waiting_for_all()])
-    hub.extra_attention.append(lambda: [{"id": f"knock:{r['rid']}", "room": r["room"], "kind": "knock", "urgent": True, "rid": r["rid"],
-                                         "title": f"{r['name']} wants to join {store.d['invites'].get(r['invite'], {}).get('label', 'a room')}",
-                                         "body": f"verify code {r['code']}: approve only if they read you the same one"} for r in hub.knocks.pending()])
-    opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "access": Access(team, aud) if team else None}
+    hub.extra_attention.append(knock_attention)
+    opts = {"port": a.port, "public_url": None, "weak": not a.no_weak, "tailnet_login": a.require_tailnet_login, "cloudflare": cloud, "tailscale": bool(a.tailscale), "access": Access(team, aud) if team else None}
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = QuickBindServer((host, a.port), make_handler(hub, auth, store, opts))
     srv.daemon_threads = True
@@ -1325,11 +1514,13 @@ def main(argv=None):
         ts, ts_name = tailscale_info()
         if not ts_name:
             print("Tailscale is not running or not installed; skipping --tailscale.", flush=True)
+            opts["tailscale"] = False
         else:
             r = subprocess.run([ts, "serve", "--bg", f"--https=443", f"http://127.0.0.1:{port}"], capture_output=True, text=True, timeout=30)
             if r.returncode != 0:
                 print("`tailscale serve` failed: " + (r.stderr or r.stdout).strip()[:200], flush=True)
                 ts_name = None
+                opts["tailscale"] = False
     import signal
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))   # `kill` must also take the tunnel/tailnet publication down
     cf_proc = cf_url = None

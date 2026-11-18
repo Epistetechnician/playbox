@@ -1,7 +1,7 @@
 /* Playbox service worker: offline shell, last-known rooms, and payload-free push.
    A push carries no data. On wake this worker asks the hub (over the signed-in session) what needs attention. */
-const VER = "pb-v12";
-const SHELL = ["/", "/auth.js", "/space.js", "/instruments.js", "/theme.css", "/themes.js", "/shell.js", "/research.js", "/markdown.js", "/settings.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const VER = "pb-v14";
+const SHELL = ["/", "/cockpit.html", "/canvas.html", "/auth.js", "/space.js", "/instruments.js", "/theme.css", "/themes.js", "/shell.js", "/qr.js", "/research.js", "/markdown.js", "/settings.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VER).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
@@ -12,12 +12,18 @@ self.addEventListener("fetch", e => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin) return;
   if (url.pathname === "/api/rooms") {                      // network first, remember the last picture of your rooms
-    e.respondWith(fetch(req).then(r => { if (r.ok) { const c = r.clone(); caches.open("pb-data").then(d => d.put("/api/rooms", c)); } return r; })
+    e.respondWith(fetch(req).then(r => { if (r.ok) { const c = r.clone(); caches.open("pb-data").then(d => d.put("/api/rooms", c)); } else if (r.status === 401) { caches.delete("pb-data"); } return r; })
       .catch(() => caches.open("pb-data").then(d => d.match("/api/rooms")).then(r => r || Response.error())));
     return;
   }
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/r/")) return;
+  const isRoomNav = req.mode === "navigate" && /^\/r\/[^/]+\/?(?:canvas\/?)?$/.test(url.pathname) && !url.pathname.includes("/api/");
+  if (url.pathname.startsWith("/api/") || (url.pathname.startsWith("/r/") && !isRoomNav)) return;
   if (req.mode === "navigate") {                           // the shell holds no data, so it is safe to serve offline
+    if (url.pathname.startsWith("/r/")) {
+      const shell = /\/canvas\/?$/.test(url.pathname) ? "/canvas.html" : "/cockpit.html";
+      e.respondWith(fetch(req).catch(() => caches.match(shell).then(r => r || caches.match("/"))));
+      return;
+    }
     e.respondWith(fetch(req).catch(() => caches.match("/").then(r => r || new Response("Offline. Reconnect and reload.", {status: 503, headers: {"Content-Type": "text/plain"}}))));
     return;
   }
@@ -38,7 +44,7 @@ self.addEventListener("push", e => {
     items.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
     if (!items.length) return self.registration.showNotification("Playbox", {tag: "pb-generic", body: "Something in your rooms needs a look.", icon: "/icon-192.png", data: {url: "/?view=attention"}});
     await Promise.all(items.slice(0, 3).map(i => self.registration.showNotification(i.title, {
-      tag: "pb-" + i.id, body: i.body || "", icon: "/icon-192.png", badge: "/icon-192.png", requireInteraction: !!i.urgent, data: {url: `/r/${i.room}/`}})));
+      tag: "pb-" + i.id, body: i.body || "", icon: "/icon-192.png", badge: "/icon-192.png", requireInteraction: !!i.urgent, data: {url: i.room ? `/r/${i.room}/` : "/"}})));
     if (self.navigator.setAppBadge) self.navigator.setAppBadge(items.length).catch(() => {});
   })());
 });

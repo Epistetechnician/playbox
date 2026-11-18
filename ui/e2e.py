@@ -24,11 +24,12 @@ def check(name, cond, detail=""):
 
 
 class UI:
-    def __init__(self, port, home):
+    def __init__(self, port, home, env_extra=None):
         self.token = "t" + str(port)
         self.base = f"http://127.0.0.1:{port}"
         self.p = subprocess.Popen([sys.executable, os.path.join(HERE, "playbox_ui.py"), "--port", str(port),
-                                   "--home", home, "--token", self.token], stdout=subprocess.PIPE, text=True)
+                                   "--home", home, "--token", self.token], stdout=subprocess.PIPE, text=True,
+                                  env={**os.environ, **(env_extra or {})})
         self.p.stdout.readline()
 
     def req(self, path, body=None, token=True):
@@ -79,7 +80,13 @@ def main():
     open(os.path.join(repo, "bad.sh"), "w").write("if then fi done\n")
     open(os.path.join(repo, "package.json"), "w").write("{}\n")
     g("add", "."), g("commit", "-qm", "init")
-    host, guest = UI(17731, work + "/host"), UI(17732, work + "/guest")
+    nested = os.path.join(work, "roots", "org", "nested-repo")
+    os.makedirs(nested)
+    subprocess.run(["git", "init", "-q"], cwd=nested, check=True, capture_output=True)
+    os.makedirs(os.path.join(work, "roots", ".hidden", "secret-repo", ".git"))
+    os.makedirs(os.path.join(work, "roots", "node_modules", "pkg-repo", ".git"))
+    env_roots = {"PLAYBOX_REPO_ROOTS": os.path.join(work, "roots") + ":" + work}
+    host, guest = UI(17731, work + "/host", env_roots), UI(17732, work + "/guest", env_roots)
     try:
         # access control
         check("page needs the token", host.req("/", token=False)[0] == 401)
@@ -170,6 +177,37 @@ def main():
             f.write(json.dumps({"ts": 2, "kind": "released", "session": "s1", "origin": "room:feed"}) + "\n")
         w2 = json.loads(guest.req("/api/witness")[1])
         check("the next user message releases it", w2["active"] == [] and len(w2["events"]) == 2, w2)
+
+        # 1-tap witness decide (release & deny) + discovered git repos
+        import hashlib
+        check("witness decide needs the token", guest.req("/api/witness/decide", {"session": "s2", "decision": "release"}, token=False)[0] == 401)
+        check("witness decide rejects bad input", guest.req("/api/witness/decide", {"session": "../bad", "decision": "release"})[0] == 400
+              and guest.req("/api/witness/decide", {"session": "s2", "decision": "maybe"})[0] == 400)
+        with open(os.path.join(hp, "holds.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": 3, "kind": "held", "session": "s2", "tool": "write_file", "origin": "room:feed"}) + "\n")
+        code, wd1 = guest.req("/api/witness/decide", {"session": "s2", "decision": "release"})
+        wd1 = json.loads(wd1)
+        df_s2 = os.path.join(hp, "decisions", hashlib.sha256(b"s2").hexdigest() + ".json")
+        check("owner release clears active hold and writes 0600 decision file",
+              code == 200 and wd1.get("ok") is True and wd1["active"] == [] and wd1["events"][-1]["kind"] == "released"
+              and wd1["events"][-1]["by"] == "owner" and os.path.isfile(df_s2) and (os.stat(df_s2).st_mode & 0o777) == 0o600, wd1)
+        code, wd_dup = guest.req("/api/witness/decide", {"session": "s2", "decision": "release"})
+        check("second decide on resolved hold reports already resolved", code == 200 and json.loads(wd_dup).get("ok") is False)
+        with open(os.path.join(hp, "holds.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": 4, "kind": "held", "session": "s3", "tool": "terminal", "origin": "room:feed"}) + "\n")
+        code, wd2 = guest.req("/api/witness/decide", {"session": "s3", "decision": "deny"})
+        wd2 = json.loads(wd2)
+        df_s3 = os.path.join(hp, "decisions", hashlib.sha256(b"s3").hexdigest() + ".json")
+        check("owner deny clears active hold and records denied",
+              code == 200 and wd2.get("ok") is True and wd2["active"] == [] and wd2["events"][-1]["kind"] == "denied"
+              and wd2["events"][-1]["by"] == "owner" and json.load(open(df_s3))["decision"] == "deny", wd2)
+
+        check("repos API needs the token", host.req("/api/repos", token=False)[0] == 401)
+        code, rpb = host.req("/api/repos")
+        rpj = json.loads(rpb)
+        rnames = {r["name"] for r in rpj.get("repos", [])}
+        check("repos API discovers depth-1 and depth-2 git repos and skips hidden/node_modules",
+              code == 200 and {"repo", "nested-repo"} <= rnames and not ({"secret-repo", "pkg-repo"} & rnames), rpj)
 
         # tamper demo flips a byte in a copy and never touches the real log
         before = open(log["history_log"], "rb").read()

@@ -50,7 +50,7 @@ impl std::error::Error for NoHome {}
 pub fn resolve(os: Os, env: &dyn Fn(&str) -> Option<OsString>) -> Result<Dirs, NoHome> {
     let get = |k: &str| env(k).filter(|v| !v.is_empty()).map(PathBuf::from);
     let home = get("HOME").or_else(|| get("USERPROFILE")).ok_or(NoHome)?;
-    let (data, logs) = match os {
+    let (default_data, logs) = match os {
         Os::Mac => (
             home.join("Library/Application Support/Playbox"),
             home.join("Library/Logs/Playbox"),
@@ -72,6 +72,7 @@ pub fn resolve(os: Os, env: &dyn Fn(&str) -> Option<OsString>) -> Result<Dirs, N
                 .join("Playbox/Logs"),
         ),
     };
+    let data = get("PLAYBOX_DESKTOP_DATA_DIR").unwrap_or(default_data);
     let hub_home = get("PLAYBOX_HUB_HOME").unwrap_or_else(|| home.join(".playbox-hub"));
     Ok(Dirs {
         home,

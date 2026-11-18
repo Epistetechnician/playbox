@@ -18,11 +18,15 @@
 pub mod autostart;
 pub mod backoff;
 pub mod claim;
+pub mod deeplink;
 pub mod hub;
 pub mod identity;
 pub mod layout;
 pub mod probe;
 pub mod signin;
 pub mod status;
+pub mod stepup;
 pub mod supervisor;
 pub mod update;
+pub mod watch;
+pub mod window_state;

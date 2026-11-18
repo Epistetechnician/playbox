@@ -140,6 +140,9 @@
   }
 
   /* ---- boot ---- */
+  if (typeof navigator !== "undefined" && /PlayboxDesktop/.test(navigator.userAgent)) {
+    R.dataset.desktop = /Mac/i.test(navigator.userAgent) ? "macos" : "other";
+  }
   { const m = ls.get("pb.theme", "auto"); if (m === "light" || m === "dark") R.dataset.theme = m; }
   apply();
   new MutationObserver(apply).observe(R, {attributes: true, attributeFilter: ["data-theme"]});     // the page's own light/dark toggle
@@ -147,10 +150,10 @@
   window.addEventListener("storage", e => { if (e.key && e.key.startsWith("pb.")) apply(); });   // another tab changed it
 
   /* ---- preferences (interface behaviour, kept in this browser like the look) ---- */
-  const PREFS = {sidebar: "on", statusbar: "on", motion: "full", clock24: "1", landing: "last", tz: "local"};
+  const PREFS = {sidebar: "on", statusbar: "on", motion: "full", clock24: "1", landing: "last", roomview: "canvas", tz: "local"};
   const pref = k => ls.get("pb.pref." + k, PREFS[k]);
   function setPref(k, v) { ls.set("pb.pref." + k, String(v)); applyPrefs(); document.dispatchEvent(new CustomEvent("pb:pref", {detail: {k, v}})); }
-  function applyPrefs() { R.dataset.sidebar = pref("sidebar"); R.dataset.statusbar = pref("statusbar"); R.dataset.motion = pref("motion"); }
+  function applyPrefs() { R.dataset.sidebar = pref("sidebar"); R.dataset.statusbar = pref("statusbar"); R.dataset.motion = pref("motion"); R.dataset.roomview = pref("roomview"); }
   applyPrefs();
 
   /* ---- export and import of a look ---- */

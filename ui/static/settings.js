@@ -62,7 +62,7 @@
   const tog = (key, on) => `<button type="button" class="sw2" role="switch" aria-checked="${on}" data-tog="${key}" aria-label="${esc(key)}"></button>`;
 
   /* ---------- hub data ---------- */
-  let hub = {me: null, sys: null, err: null};
+  let hub = {me: null, sys: null, net: null, err: null};
   async function call(method, path, body) {
     const init = {method, headers: {"Content-Type": "application/json"}, credentials: "same-origin"};
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -76,6 +76,7 @@
     hub.at = Date.now();
     try { hub.me = await call("GET", "/api/me"); hub.err = null; } catch (e) { hub.err = e.message; }
     try { hub.sys = await call("GET", "/api/system"); } catch {}
+    try { hub.net = await call("GET", "/api/settings/network"); } catch {}
     if (page().group === "notifications" || cur === "approvals") await loadNotif();
     if (open_ && page().needsHub) paint();
   }
@@ -135,30 +136,36 @@
         + (T().users().length ? row("Your themes", T().users().map(t => esc(t.label)).join(", "), `<button class="act" data-removeusers>Remove all</button>`) : "")
         + row("Reset appearance and interface", "Back to the defaults. Your rooms, devices and the hub itself are not touched.", `<button class="act danger" data-reset>Reset</button>`) + `<p class="note" id="pbs-msg"></p>`; }},
 
-    navigation: {label: "Navigation", group: "interface", words: "sidebar status bar landing start page", render() {
+    navigation: {label: "Navigation", group: "interface", words: "sidebar status bar landing start page roomview canvas cockpit", render() {
       const P = T().pref, views = [["last", "The last one I used"], ["rooms", "Rooms"], ["attention", "Attention"], ["system", "System"], ["research", "Research"]];
       return row("Rooms sidebar", "The list of rooms down the left side of the home page and of every room.", tog("sidebar", P("sidebar") === "on"))
         + row("Status bar", "Hub health, the public address, the room count and the theme along the bottom of the screen on desktop.", tog("statusbar", P("statusbar") === "on"))
+        + row("Open rooms in", "Which room surface opens by default when you select a room.", seg("pref", "roomview", [["canvas", "Canvas"], ["cockpit", "Cockpit"]], P("roomview"), "Open rooms in"))
         + row("Open on", "Which hub view to land on when you open the app.", sel("pref", "landing", views, P("landing"))); }},
     time: {label: "Time and motion", group: "interface", words: "clock 24 hour animation reduce motion timezone", render() {
       const P = T().pref;
       return row("24-hour clock", "The clock in the top strip of the home page.", tog("clock24", P("clock24") === "1"))
         + row("Reduce motion", "Stops animations and transitions. Turn on if motion bothers you.", seg("pref", "motion", [["full", "Full"], ["reduce", "Reduced"]], P("motion"))); }},
 
-    devices: {label: "Devices", group: "hub", needsHub: true, words: "passkey pair remove device sign in", render() {
+    devices: {label: "Devices", group: "hub", needsHub: true, words: "passkey pair remove device sign in desktop", render() {
       if (hub.err && !hub.me) return `<p class="lead">${esc(hub.err)}</p>`;
       const m = hub.me; if (!m) return `<p class="lead">Loading…</p>`;
       return `<p class="lead">Each device unlocks this hub with its own passkey. Removing one signs it out and its passkey stops working.</p>`
+        + (m.local_only ? `<div class="li"><div class="snm">Playbox Desktop <span class="chip ok" title="Local Playbox Desktop session; step-up uses OS verification">desktop</span><small>signed in on this machine${m.desktop_bridge ? " · owner verification ready" : ""}</small></div></div>` : "")
         + (m.devices || []).map(d => `<div class="li"><div class="snm">${esc(d.name)} ${d.current ? '<span class="chip ok">this device</span>' : ""}<small>paired ${ago(d.created * 1000)} · used ${ago(d.last * 1000)}</small></div>${d.current ? "" : `<button class="act danger" data-rmdev="${esc(d.id)}">Remove</button>`}</div>`).join("")
-        + `<div class="row"><div class="t">Add a device</div><div class="d">Makes a one-time pairing link for a phone or another computer. It needs a fresh passkey touch.</div><div class="c"><button class="act" data-pair>Add a device</button></div></div><p class="note" id="pbs-msg"></p>`; }},
-    sessions: {label: "Sessions", group: "hub", needsHub: true, words: "signed in sign out", render() {
+        + `<div class="row"><div class="t">Add a device</div><div class="d">Makes a one-time pairing link for a phone or another computer. It needs ${m.local_only ? "owner verification" : "a fresh passkey touch"}.</div><div class="c"><button class="act" data-pair>Add a device</button></div></div><p class="note" id="pbs-msg"></p>`; }},
+    sessions: {label: "Sessions", group: "hub", needsHub: true, words: "signed in sign out desktop", render() {
       const m = hub.me; if (!m) return `<p class="lead">${esc(hub.err || "Loading…")}</p>`;
-      return `<p class="lead">Browsers and apps currently signed in to this hub.</p>` + ((m.sessions || []).map(x => `<div class="li"><div class="snm">${esc(x.name)} ${x.current ? '<span class="chip">this session</span>' : ""} ${x.weak ? '<span class="chip warn" title="Plain HTTP session">no passkey</span>' : ""}<small>started ${ago(x.created * 1000)} · active ${ago(x.last * 1000)}</small></div>${x.current ? "" : `<button class="act" data-rmses="${esc(x.key)}">End</button>`}</div>`).join("") || `<p class="note">No other sessions.</p>`) + `<p class="note" id="pbs-msg"></p>`; }},
-    network: {label: "Network", group: "hub", needsHub: true, words: "address tunnel cloudflare https tailscale", render() {
-      const h = hub.sys && hub.sys.health, t = h && h.tunnel, secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-      return `<table class="kt"><tr><td>address</td><td>${esc(location.host)}</td></tr><tr><td>connection</td><td><span class="chip ${secure ? "ok" : "warn"}">${location.protocol === "https:" ? "HTTPS" : secure ? "local" : "plain HTTP"}</span></td></tr>`
+      return `<p class="lead">Browsers and apps currently signed in to this hub.</p>` + ((m.sessions || []).map(x => `<div class="li"><div class="snm">${esc(x.name)} ${x.current ? '<span class="chip">this session</span>' : ""} ${x.local_only ? '<span class="chip ok" title="Local Playbox Desktop session; step-up uses OS verification">desktop</span>' : x.weak ? '<span class="chip warn" title="Plain HTTP session">no passkey</span>' : ""}<small>started ${ago(x.created * 1000)} · active ${ago(x.last * 1000)}</small></div>${x.current ? "" : `<button class="act" data-rmses="${esc(x.key)}">End</button>`}</div>`).join("") || `<p class="note">No other sessions.</p>`) + `<p class="note" id="pbs-msg"></p>`; }},
+    network: {label: "Network", group: "hub", needsHub: true, words: "address tunnel cloudflare https tailscale remote reach", render() {
+      const h = hub.sys && hub.sys.health, t = (hub.net && hub.net.tunnel) || (h && h.tunnel), mode = (hub.net && hub.net.mode) || "local", managed = !!(hub.net && hub.net.desktop_managed);
+      const secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+      return row("Remote reach", "How other devices reach this hub. Playbox Desktop restarts the hub automatically when changed; changing it needs owner verification.",
+                 seg("net", "mode", [["local", "This machine"], ["tailscale", "Tailscale"], ["cloudflare", "Cloudflare"]], mode, "Remote reach"))
+        + `<table class="kt" style="margin-top:8px"><tr><td>address</td><td>${esc(location.host)}</td></tr><tr><td>connection</td><td><span class="chip ${secure ? "ok" : "warn"}">${location.protocol === "https:" ? "HTTPS" : secure ? "local" : "plain HTTP"}</span></td></tr>`
         + (t ? `<tr><td>public address</td><td>${t.configured ? `<span class="chip ${t.up ? "ok" : "bad"}">${t.up ? "up" : "down"}</span> ${esc(t.url || "")}` : "not configured"}</td></tr>` : "")
-        + (h ? `<tr><td>hub up since</td><td>${esc(ago(h.started_ms))}</td></tr><tr><td>build</td><td>${esc(h.build || "")}</td></tr>` : "") + `</table><p class="note">The public address is a Cloudflare tunnel with Access in front. Change it by reinstalling the service (<code>ui/service/install-macos.sh</code>).</p>`; }},
+        + (h ? `<tr><td>hub up since</td><td>${esc(ago(h.started_ms))}</td></tr><tr><td>build</td><td>${esc(h.build || "")}</td></tr>` : "")
+        + `</table><p class="note" id="pbs-msg">${managed ? "Managed by Playbox Desktop: switching reach restarts the hub automatically." : "Standalone hub: pass <code>--tailscale</code> or <code>--cloudflare</code> when starting <code>playbox_hub.py</code>, or reinstall the service (<code>ui/service/install-macos.sh</code>)."}</p>`; }},
 
     posture: {label: "Posture", group: "safety", needsHub: true, words: "security controls passkey step-up access weak", render() {
       const sys = hub.sys; if (!sys) return `<p class="lead">${esc(hub.err || "Loading…")}</p>`;
@@ -235,6 +242,18 @@
         if ((b = c("[data-p]"))) { cur = b.dataset.p; openG.add(PAGES[cur].group); if (page().needsHub) loadHub(true); return paint(); }
         if ((b = c("[data-k]"))) { T().set(b.dataset.k, b.dataset.v); return paint(); }
         if ((b = c("[data-set]"))) { T().set(b.dataset.set, b.dataset.v); return paint(); }
+        if ((b = c('[data-net="mode"]'))) {
+          try {
+            const v = b.dataset.v;
+            hub.net = await call("POST", "/api/settings/network", {mode: v});
+            paint();
+            say(hub.net && hub.net.desktop_managed
+              ? "Saved. Playbox Desktop is restarting the hub…"
+              : v === "local" ? "Saved. Standalone hub: restart playbox_hub.py without --tailscale or --cloudflare to apply."
+              : `Saved. Standalone hub: restart playbox_hub.py with --${v} (or reinstall ui/service/install-macos.sh) to apply.`);
+          } catch (er) { say(er.message); }
+          return;
+        }
         if ((b = c("[data-pref]"))) { T().setPref(b.dataset.pref, b.dataset.v); return paint(); }
         if ((b = c("[data-tog]")) && !b.dataset.tog.startsWith("mute:")) { const k = b.dataset.tog, on = b.getAttribute("aria-checked") === "true"; T().setPref(k, k === "clock24" ? (on ? "0" : "1") : (on ? "off" : "on")); return paint(); }
         if (c("[data-custom]")) { T().set("accent", "custom:" + dlg.querySelector("#pbs-color").value); return paint(); }

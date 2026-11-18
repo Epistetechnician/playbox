@@ -298,6 +298,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 .setup{margin-bottom:18px}
 .knock{margin-bottom:18px;border-width:2px;border-color:var(--sig)}
 .kq{padding:12px 0;border-bottom:1px dashed var(--line-2)} .kq:last-child{border:0;padding-bottom:0}
+.kq code{font:600 12px var(--mono);padding:1px 6px;background:var(--field);border:1px solid var(--line-2)}
 .kcode{margin:8px 0}.kcode .dm{height:40px}
 .sus{list-style:none;margin:0;padding:0;display:grid;gap:14px}
 .su{display:grid;grid-template-columns:26px 1fr;gap:12px;align-items:start}
@@ -305,6 +306,13 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 .su.done .sn{background:var(--ok-led);border-color:var(--ok-led);color:var(--on-sig)}
 .su b{font-weight:600}.sb{margin-top:6px}
 .offline{border:1px solid var(--sig);border-left-width:4px;background:color-mix(in srgb,var(--sig) 10%,var(--panel));color:var(--sig-ink);padding:9px 14px;margin-bottom:16px;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.qrbox{display:flex;justify-content:center;padding:12px;background:#fff;border:1px solid var(--line-2);margin:12px auto;width:fit-content}
+.msheet{display:grid;gap:8px;padding:14px 20px 20px}
+.msheet button{display:flex;align-items:center;gap:12px;width:100%;min-height:46px;padding:0 14px;border:1px solid var(--line-2);background:var(--field);border-radius:var(--r);cursor:pointer;font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;text-align:left}
+.msheet button:hover,.msheet button[aria-current=page]{border-color:var(--edge);background:var(--panel-2)}
+.msheet button[aria-current=page]{box-shadow:inset 3px 0 0 var(--sig)}
+.msheet svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:square;flex:none}
+.msheet small{margin-left:auto;color:var(--mut);font-weight:500;letter-spacing:.04em}
 @media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}}
 @media(max-width:599px){.cell{padding:11px 12px}.sect.tools .filters{flex:1 1 100%;order:2}.strip{gap:12px;padding-left:12px;padding-right:12px}#strooms{display:none}}
 
@@ -354,6 +362,7 @@ dialog h2{margin:0 -20px 4px;padding:12px 20px;border-bottom:1px solid var(--lin
 <link rel="stylesheet" href="/theme.css">
 <script src="/themes.js"></script>
 <script src="/shell.js" onerror="void 0"></script>
+<script src="/qr.js" onerror="void 0"></script>
 <script src="/research.js" onerror="void 0"></script>
 </head>
 <body>
@@ -372,7 +381,6 @@ const ICON = {
   rooms: '<circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><circle cx="19" cy="9" r="1.6"/><circle cx="6" cy="16.5" r="1.6"/>',
   attention: '<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',
   plug: '<path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
-  shield: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',
   hub: '<rect x="4" y="4" width="16" height="6"/><rect x="4" y="14" width="16" height="6"/><path d="M8 7h.01M8 17h.01"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   shield: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
@@ -383,6 +391,8 @@ const ICON = {
   shieldx: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M10 10l4 4M14 10l-4 4"/>',
 };
 ICON.research = '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>';
+ICON.settings = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>';
+ICON.more = '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>';
 const svgi = (n, cls = "") => `<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${ICON[n]}</svg>`;
 
 function toast(text, err) {
@@ -444,7 +454,10 @@ function sigil(id, size = 36) {
 
 /* ---------- state ---------- */
 const S = {knocks: [], out: [], rooms: [], attention: [], activity: [], filter: "all", view: store.get("pb.view", "rooms"), mode: store.get("pb.mode", innerWidth >= 820 ? "orbit" : "list"), live: false, me: null, loaded: false};
+const goneLocal = () => { try { const g = JSON.parse(store.get("pb.localgone", "[]")); return Array.isArray(g) ? g : []; } catch { return []; } };
+const activeAttention = () => { const gone = goneLocal(); return S.attention.filter(i => !(i.kind === "local_room" && gone.includes(i.hid))); };
 const room = id => S.rooms.find(r => r.id === id);
+const roomUrl = id => window.PBShell && PBShell.roomHref ? PBShell.roomHref(id) : `/r/${encodeURIComponent(id)}/canvas`;
 const STATE_TXT = {live: "Active", idle: "Quiet", hold: "Witness hold", bad: "Chain failed", empty: "No room yet", down: "Unreachable"};
 
 /* ---------- boot / auth ---------- */
@@ -497,20 +510,35 @@ function paintLock(st) {
 function paintPair(st, code) {
   if (onLoopbackIp()) { $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("Pair this device")}<div class="card"><h2>Use localhost, not 127.0.0.1</h2><p class="mut" style="margin:0">Your browser only allows passkeys on a name, not an IP address. It's the same hub, and your pairing code comes with you.</p><p style="margin:14px 0 0"><a class="btn primary block" style="text-decoration:none;text-align:center" href="${esc(localhostUrl("/pair") + (code ? "#" + encodeURIComponent(code) : ""))}">Continue on localhost</a></p></div></div></div>`; return; }
   const strong = PB.canPasskey();
+  const showForm = Boolean(code || st.enrolled || location.pathname === "/pair");
   $("#root").innerHTML = `<div class="center"><div class="auth">${wordmark("Pair this device")}
-    ${!code && !st.enrolled ? `<p class="mut" style="text-align:center">This hub has no devices yet. Start it in a terminal and open the pairing link it prints.</p>` : `
+    ${!showForm ? `<p class="mut" style="text-align:center">This hub has no devices yet. Start it in a terminal and open the pairing link it prints, or <a href="/pair">enter a pairing code</a>.</p>` : `
     <div class="card"><label for="dn" style="margin-top:0">Name this device</label><input id="dn" value="${esc(deviceGuess())}" maxlength="40">
-      ${code ? "" : `<label for="code">Pairing code</label><input id="code" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false">`}
+      <div id="coderow" ${code ? "hidden" : ""}><label for="code">Pairing code</label><input id="code" class="mono" value="${esc(code || "")}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste code from hub terminal"></div>
       ${strong ? `<button class="btn primary block" id="go" style="margin-top:18px">Create passkey</button>
+        ${st.weak_ok ? `<button class="btn block" id="weak" style="margin-top:8px">Pair on this network (no passkey)</button>` : ""}
         <p class="mut" style="font-size:12.5px;margin:12px 0 0">Your fingerprint, face or device PIN will unlock Playbox here. The key never leaves this device.</p>` :
         st.weak_ok ? `<p class="mut" style="font-size:13px">This address is plain HTTP, so passkeys aren't available. Because you're on a private network you can pair without one. Sessions like this can't add or remove devices. For the full thing, use the hub's HTTPS address.</p>
           <button class="btn primary block" id="weak">Pair on this network</button>` :
         `<p class="mut">Passkeys need HTTPS and this address is plain HTTP. Open the hub's HTTPS address instead (start it with <span class="mono">--tailscale</span>).</p>`}
     </div>`}<p class="err" id="err"></p></div></div>`;
-  const val = () => (code || $("#code")?.value || "").trim();
-  $("#go")?.addEventListener("click", () => withPrompt($("#go"), $("#err"), "Waiting for your passkey…", async () => { await PB.register(val(), $("#dn").value.trim()); location.href = "/"; }));
-  $("#weak")?.addEventListener("click", async () => { try { await PB.weak(val(), $("#dn").value.trim()); location.href = "/"; } catch (e) { $("#err").textContent = e.message; } });
+  const val = () => ($("#code")?.value || code || "").trim();
+  const revealCodeOnErr = e => {
+    if (/invalid|expired/i.test(String(e?.message || e || "")) && $("#coderow")?.hidden) {
+      $("#coderow").hidden = false;
+      if ($("#code")) { $("#code").value = ""; $("#code").focus(); }
+    }
+  };
+  $("#go")?.addEventListener("click", () => withPrompt($("#go"), $("#err"), "Waiting for your passkey…", async () => {
+    try { await PB.register(val(), $("#dn").value.trim()); location.href = "/"; }
+    catch (e) { revealCodeOnErr(e); throw e; }
+  }));
+  $("#weak")?.addEventListener("click", async () => {
+    try { await PB.weak(val(), $("#dn").value.trim()); location.href = "/"; }
+    catch (e) { revealCodeOnErr(e); $("#err").textContent = e.message; }
+  });
 }
+addEventListener("hashchange", () => { if (location.pathname === "/pair" && location.hash.length > 1) boot(); });
 
 /* ---------- app ---------- */
 async function startApp(view, inviteRoom) {
@@ -597,12 +625,13 @@ function startPolling() {
 }
 function localNotify(a) {
   if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
-  swReady().then(reg => reg.showNotification(a.title, {tag: "pb-" + a.id, body: a.body || "", icon: "/icon-192.png", data: {url: a.room ? `/r/${a.room}/` : "/"}})).catch(() => {});
+  swReady().then(reg => reg.showNotification(a.title, {tag: "pb-" + a.id, body: a.body || "", icon: "/icon-192.png", data: {url: a.room ? roomUrl(a.room) : "/"}})).catch(() => {});
 }
 function mood() {
-  const m = S.attention.some(a => a.urgent) ? "alert" : S.rooms.some(r => r.state === "live") ? "live" : "calm";
+  const att = activeAttention();
+  const m = att.some(a => a.urgent) ? "alert" : S.rooms.some(r => r.state === "live") ? "live" : "calm";
   document.documentElement.dataset.mood = m;
-  const n = S.attention.length;
+  const n = att.length;
   document.title = (n ? `(${n}) ` : "") + "Playbox";
   if (navigator.setAppBadge) (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
@@ -620,6 +649,7 @@ matchMedia("(prefers-color-scheme:dark)").addEventListener?.("change", syncTheme
 
 /* ---------- chrome ---------- */
 const TABS = [["rooms", "Rooms", "rooms", "01"], ["attention", "Attention", "attention", "02"], ["system", "System", "shield", "03"], ["add", "Add", "add", ""], ["research", "Research", "research", "04"], ["integrations", "Integrations", "plug", "05"], ["hub", "Hub", "hub", "06"]];
+const MOBILE_PRIMARY = [["rooms", "Rooms", "rooms"], ["attention", "Attention", "attention"], ["add", "Add", "add"], ["system", "System", "shield"]];
 function paint() {
   $("#root").innerHTML = `<div class="shell">
     <aside class="rail" aria-label="Primary"><a class="brand" href="/" aria-label="Playbox"><span class="pbmark"></span>${dm("PLAYBOX", true)}</a>
@@ -629,16 +659,18 @@ function paint() {
       <div class="foot"><div class="keys">⌘K search<br>J K move · ↵ open</div></div></aside>
     <div class="col"><div class="strip"><a class="brand" href="/" aria-label="Playbox"><span class="pbmark"></span>${dm("PLAYBOX", true)}</a>
         <span class="state" id="linkled"></span><span class="hide-s" id="sthost"></span><span id="strooms"></span><span id="stattn"></span><span class="sp"></span>
-        <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><button class="iconbtn" data-act="settings" aria-label="Settings" title="Settings (⌘,)">${svgi("hub")}</button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
+        <button class="iconbtn" data-act="palette" aria-label="Search rooms">${svgi("search")}</button><button class="iconbtn" data-act="theme" aria-label="Toggle theme" id="themebtn"></button><button class="iconbtn" data-act="settings" aria-label="Settings" title="Settings (⌘,)">${svgi("settings")}</button><span id="clock" class="hide-s">${new Date().toLocaleTimeString([], {hour12: false})}</span></div>
       <main><div id="view"></div></main></div>
     <aside class="pane" id="pane" aria-label="Activity"></aside></div>
     <nav class="bottom" id="bottom" aria-label="Sections"></nav>`;
   paintChrome(); paintStatus(); paintView();
 }
 function paintChrome() {
-  const n = S.attention.length;
-  const html = TABS.map(([id, label, ic, ix]) => `<button class="tab" data-tab="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${ix ? `<span class="ix">${ix}</span>` : ""}${svgi(ic)}<span>${label}</span>${id === "attention" && n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>`).join("");
-  const bottom = $("#bottom"); if (bottom) bottom.innerHTML = html;
+  const n = activeAttention().length;
+  const moreOn = ["research", "integrations", "hub"].includes(S.view);
+  const bottomHtml = MOBILE_PRIMARY.map(([id, label, ic]) => `<button class="tab" data-tab="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${svgi(ic)}<span>${label}</span>${id === "attention" && n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>`).join("")
+    + `<button class="tab" data-act="more" ${moreOn ? 'aria-current="page"' : ""}>${svgi("more")}<span>More</span></button>`;
+  const bottom = $("#bottom"); if (bottom) bottom.innerHTML = bottomHtml;
   const rail = $("#railnav"); if (rail) rail.innerHTML = TABS.filter(t => t[0] !== "add").map(([id, label, ic, ix]) => `<button class="tab" data-tab="${id}" ${S.view === id ? 'aria-current="page"' : ""}><span class="ix">${ix}</span>${svgi(ic)}<span>${label}</span>${id === "attention" && n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>`).join("");
   const tb = $("#themebtn"); if (tb) tb.innerHTML = svgi(themeNow() === "dark" ? "sun" : "moon");
   const r = $("#strooms"); if (r) r.textContent = `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`;
@@ -655,9 +687,21 @@ let enter = true;           // fade in on navigation only, not on every live upd
 function paintView(soft) {
   const v = $("#view"); if (!v) return;
   if (soft && document.activeElement && v.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  let openDet = null;
+  if (soft) {
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed && sel.anchorNode && v.contains(sel.anchorNode)) { paintChrome(); return; }
+    openDet = new Set([...v.querySelectorAll("details[open]")].map(d => d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim()));
+  }
   const selId = $(".rw.sel")?.dataset.room;
   paintChrome();
   v.innerHTML = `<div class="view ${enter ? "enter" : ""}"><div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub. Showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)() + "</div>";
+  if (openDet && openDet.size) {
+    v.querySelectorAll("details").forEach(d => {
+      const k = d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim();
+      if (openDet.has(k)) d.open = true;
+    });
+  }
   if (selId) $(`.rw[data-room="${selId}"]`)?.classList.add("sel");
   if (S.view === "rooms") { if (S.agents === null) loadAgents(); paintSetup(); }
   if (S.view === "rooms" && S.mode === "orbit" && S.rooms.length && $("#space")) mountSpace(); else PBSpace.unmount();
@@ -721,7 +765,7 @@ function roomRow(r) {
     : r.offline ? `<small class="last warn" title="${esc(r.err || "")}">Host offline. This hub kept ${r.archived} saved message${r.archived === 1 ? "" : "s"}; open to read them.</small>`
     : r.err ? `<small class="last bad">${esc(r.err)}</small>`
     : r.last ? `<small class="last" title="Text from another party is untrusted"><i></i><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</small>` : `<small class="last">No messages yet</small>`;
-  return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="/r/${r.id}/canvas" aria-label="Open ${esc(r.label)}">
+  return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="${esc(roomUrl(r.id))}" aria-label="Open ${esc(r.label)}">
     <span>${sigil(r.id, 36)}</span>
     <span class="nm"><b>${esc(r.label)}</b><span class="sub">${sub}</span>${last}</span>
     <span class="mt"><span class="chip ${r.kind}">${r.kind === "mine" ? "mine" : "shared"}</span>${r.machine ? `<span class="chip">${esc(r.machine)}</span>` : ""}${r.members ? `<span class="chip">${r.members} in</span>` : ""}${chainChip(r)}</span>
@@ -731,7 +775,7 @@ function roomRow(r) {
     <button class="kebab" data-act="edit" data-id="${r.id}" aria-label="Room options for ${esc(r.label)}">⋯</button></div>`;
 }
 function actRow(a) {
-  return `<a class="lg ${a.me ? "me" : "peer"} ${a.fresh ? "new" : ""}" href="/r/${a.room}/canvas">${sigil(a.room, 26)}<span class="who"><b>${esc(a.from || "member")}</b> in ${esc(a.label)}</span><span class="t" data-ms="${a.ms}">${rel(a.ms)}</span><span class="tx">${esc(a.text)}</span></a>`;
+  return `<a class="lg ${a.me ? "me" : "peer"} ${a.fresh ? "new" : ""}" href="${esc(roomUrl(a.room))}">${sigil(a.room, 26)}<span class="who"><b>${esc(a.from || "member")}</b> in ${esc(a.label)}</span><span class="t" data-ms="${a.ms}">${rel(a.ms)}</span><span class="tx">${esc(a.text)}</span></a>`;
 }
 function paintActivity() {
   const rows = (S.activity || []).map(a => ({...a, fresh: a.fresh && Date.now() - a.ms < 8000}));
@@ -743,7 +787,7 @@ function tiles() {
   const live = S.rooms.filter(r => r.state === "live").length, members = S.rooms.reduce((n, r) => n + (r.members || 0), 0);
   const machines = new Set(S.rooms.map(r => r.machine).filter(Boolean)).size, mine = S.rooms.filter(r => r.kind === "mine").length;
   const withChain = S.rooms.filter(r => r.chain), okc = withChain.filter(r => r.chain.ok).length;
-  const urgent = S.attention.filter(a => a.urgent).length, n = S.attention.length;
+  const att = activeAttention(), urgent = att.filter(a => a.urgent).length, n = att.length;
   const t = (cls, k, v, s, extra = "") => { const tag = extra ? "button" : "div"; return `<${tag} class="cell ${cls}" ${extra}><div class="lbl">${k}</div><div class="dmv" data-count="${v}" data-key="${k}">${dm(pad(v))}</div><div class="sub">${s}</div></${tag}>`; };
   const broken = withChain.length && okc < withChain.length;
   return `<div class="readout">
@@ -754,12 +798,38 @@ function tiles() {
 }
 
 /* ---------- ask-to-join: requests to you, and requests you have sent ---------- */
+const HOLD_ORIGIN = {"room:feed": "room feed", "room:delegate": "delegated task result", "room:recall": "shared room memory", "room:steer": "steering message", "room:memory_ingest": "ingested memory", "room:memory_export": "exported memory", "room workspace file": "room workspace"};
+function holdOf(i) {
+  if (!i || i.kind !== "hold") return null;
+  const r = room(i.room);
+  const h = i.hold || (r?.holds?.[0] && {...r.holds[0], room: i.room, label: r.label});
+  return h && h.session && (h.room || i.room) ? {...h, room: h.room || i.room, label: h.label || r?.label || h.room || i.room} : null;
+}
+function holdCards(items) {
+  const seen = new Set(), hs = [];
+  for (const i of items || []) {
+    const h = holdOf(i);
+    if (h && !seen.has(h.room + ":" + h.session)) { seen.add(h.room + ":" + h.session); hs.push(h); }
+  }
+  return hs.length ? `<div class="card knock"><h2>Paused by the witness</h2>${hs.map(h => {
+    const orig = HOLD_ORIGIN[h.origin] || h.origin || "room feed / workspace";
+    return `<div class="kq"><div class="kqh"><code>${esc(h.tool || "write")}</code> <span class="mut">in</span> <b>${esc(h.label)}</b></div>
+      <p class="mut" style="margin:6px 0 10px;font-size:13px">Paused after reading untrusted text from ${esc(orig)}.</p>
+      <div class="row"><button class="btn primary sm" data-act="whold" data-dec="release" data-room="${esc(h.room)}" data-ses="${esc(h.session)}">Lift hold</button><button class="btn sm danger" data-act="whold" data-dec="deny" data-room="${esc(h.room)}" data-ses="${esc(h.session)}">Deny</button><a class="btn sm" href="${esc(roomUrl(h.room))}">Open room</a></div></div>`;
+  }).join("")}</div>` : "";
+}
 function approvalCards(items) {
   const ap = items.filter(i => i.kind === "approval" && i.approval);
   return ap.length ? `<div class="card knock"><h2>Waiting for your approval</h2>${ap.map(i => { const c = i.approval; return `<div class="kq"><div class="kqh"><b>${esc(c.cap)}</b> <span class="mut">in</span> <b>${esc(c.label)}</b></div>
       <p class="mut" style="margin:6px 0 8px;font-size:13px">Asked by <span class="mono">${esc(c.member)}</span></p>
       <div class="card mono" style="margin:0 0 10px;max-height:8em;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(Object.entries(c.args || {}).map(([k, v]) => k + "=" + v).join("\n") || "(no arguments)")}</div>
       <div class="row"><button class="btn primary sm" data-act="apv" data-dec="approve" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Approve</button><button class="btn sm danger" data-act="apv" data-dec="deny" data-room="${esc(c.room || c.host)}" data-call="${esc(c.call)}">Deny</button></div></div>`; }).join("")}</div>` : "";
+}
+function localRoomCards(items) {
+  const gone = goneLocal();
+  const lr = items.filter(i => i.kind === "local_room" && !gone.includes(i.hid));
+  return lr.length ? `<div class="card knock"><h2>Rooms on this machine</h2><p class="mut" style="margin:0 0 10px;font-size:13px">Found automatically. Adopting joins the room as a member, so it asks for your passkey.</p>${lr.map(i => `<div class="kq"><div class="kqh"><b>${esc(i.name)}</b> <span class="mut">${esc(i.repo || "no repository")}</span></div>
+      <div class="row"><button class="btn primary sm" data-act="adoptlocal" data-id="${esc(i.hid)}" data-name="${esc(i.name)}">Adopt</button><button class="btn sm" data-act="dismisslocal" data-id="${esc(i.hid)}">Not now</button></div></div>`).join("")}</div>` : "";
 }
 function knockCard() {
   const inc = S.knocks.map(k => `<div class="kq"><div class="kqh"><b>${esc(k.name)}</b> <span class="mut">wants to join</span> <b>${esc(k.label)}</b></div>
@@ -802,7 +872,8 @@ S.agents = null;
 async function loadAgents() { try { const j = await api("GET", "/api/agents"); S.agents = j.agents; S.manual = j.manual; } catch { S.agents = []; } if (S.view === "rooms" && $("#setup")) paintSetup(); }
 function setupNeeded() {
   let pend = false; try { pend = !!(sessionStorage.getItem("pb.knockctx") || sessionStorage.getItem("pb.agentlink")); } catch {}
-  return pend;      // only while an invite is waiting for the agent to come in
+  if (pend) return true;
+  return store.get("pb.setup.hide") !== "1" && S.loaded && S.rooms.length === 0;
 }
 function paintSetup() {
   const el = $("#setup"); if (!el) return;
@@ -820,9 +891,10 @@ function paintSetup() {
       <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="agid" class="mono" placeholder="64 hex characters" spellcheck="false" autocomplete="off"><button class="btn sm" data-act="kagent">Ask</button></div>` : "";
   const handBody = agentAsk || (held && hasAgent ? `Tell your agent:<div class="card mono" style="margin:8px 0;user-select:all;word-break:break-all;max-height:6em;overflow:auto">${esc(`Join this Playbox room with playbox_join, using this link: ${held.link}`)}</div>
       <button class="btn sm" data-act="copyagent">Copy</button> <span class="mut" style="font-size:12.5px">Works if the invite allowed you and your agent; otherwise ask for another.</span>` : "");
+  const authStep = S.me?.local_only ? step(1, true, "Desktop session", "") : step(1, !S.me?.weak, "Passkey", S.me?.weak ? "This session has no passkey. Open the hub's HTTPS address to add one." : "");
   el.innerHTML = `<div class="card setup"><h2>Get started</h2><ol class="sus">
-    ${step(1, !S.me?.weak, "Passkey", S.me?.weak ? "This session has no passkey. Open the hub's HTTPS address to add one." : "")}
-    ${step(2, hasAgent, "Connect your coding agent", hasAgent ? "" : `<button class="btn sm" data-act="gointeg">Open Integrations</button>`)}
+    ${authStep}
+    ${step(2, hasAgent, "Connect your coding agent", hasAgent ? agentBody : `${agentBody}${other}<div style="margin-top:8px"><button class="btn sm" data-act="gointeg">Open Integrations</button></div>`)}
     ${step(3, S.rooms.length > 0, "Join or host a room", roomBody)}
     ${(held || kctx) && S.rooms.length && handBody ? step(4, false, "Bring your agent into the room", handBody) : ""}</ol>
     <p style="margin:12px 0 0"><button class="btn sm" data-act="hidesetup">Hide</button></p></div>`;
@@ -890,7 +962,7 @@ function harness() {
     open: S.ins["h-stats"] ?? innerWidth >= 700, meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`, who: "hub", name: location.host || "this hub",
     bar: {label: "rooms", right: `${by("live")} live`, parts: Object.keys(C).map(k => ({c: C[k], w: by(k), t: k}))},
     kv: [["rooms", String(S.rooms.length)], ["members", String(members)], ["mine", String(S.rooms.filter(r => r.kind === "mine").length)], ["shared", String(S.rooms.filter(r => r.kind === "shared").length)],
-         ["attention", String(S.attention.length)], ["asking to join", String((S.knocks || []).length)], ["history", S.rooms.every(r => !r.chain || r.chain.ok) ? "all verified" : "FAILED"], ["offline", String(S.rooms.filter(r => r.offline).length)]],
+         ["attention", String(activeAttention().length)], ["asking to join", String((S.knocks || []).length)], ["history", S.rooms.every(r => !r.chain || r.chain.ok) ? "all verified" : "FAILED"], ["offline", String(S.rooms.filter(r => r.offline).length)]],
     rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / series.length).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
     groups: [{title: "Rooms", rows: [["live", "live"], ["idle", "idle"], ["hold", "held by witness"], ["bad", "history failed"], ["down", "unreachable"], ["empty", "empty"]].map(([k, l]) => ({c: C[k], l, n: by(k), pct: Math.round(by(k) / S.rooms.length * 100) + "%", o: k === "empty"}))}]});
   const t0 = Math.min(now - 30 * 60e3, ...act.map(a => a.ms));
@@ -925,19 +997,21 @@ const VIEWS = {
     const flt = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["attn", "Attention"]];
     const bar = `<div class="sect tools"><h2 class="rule"><span class="ix">01</span>Rooms</h2></div><div class="sect tools" style="margin-top:0"><div class="filters" role="group" aria-label="Filter rooms">${flt.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
       <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
-    if (!S.rooms.length) return `${knockCard()}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
+    const att = activeAttention();
+    if (!S.rooms.length) return `${knockCard()}${holdCards(att)}${localRoomCards(att)}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
-      : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="/r/${r.id}/" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
+      : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="${esc(roomUrl(r.id))}" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
-    return `${knockCard()}<div id="setup"></div>${tiles()}${harness()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
+    return `${knockCard()}${holdCards(att)}${localRoomCards(att)}<div id="setup"></div>${tiles()}${harness()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
   attention() {
-    const a = [...S.attention].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
-    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}${approvalCards(a)}`;
-    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock" && i.kind !== "approval"));
-    if (!a.length && (S.knocks.length || S.attention.some(i => i.kind === "approval"))) return head;
+    const att = activeAttention();
+    const a = [...att].sort((x, y) => (y.urgent ? 1 : 0) - (x.urgent ? 1 : 0));
+    const head = `<div class="sect"><h2 class="rule"><span class="ix">02</span>Attention</h2></div>${knockCard()}${holdCards(a)}${localRoomCards(a)}${approvalCards(a)}`;
+    a.splice(0, a.length, ...a.filter(i => i.kind !== "knock" && i.kind !== "approval" && i.kind !== "local_room" && !holdOf(i)));
+    if (!a.length && (S.knocks.length || att.some(i => i.kind === "approval" || i.kind === "local_room" || holdOf(i)))) return head;
     if (!a.length) return `${head}<div class="card empty">${sigil("calm", 64)}<h2>All quiet</h2><p>Nothing in any room needs you.</p></div>`;
-    return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="${i.room ? `/r/${i.room}/` : "/"}">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
+    return `${head}<div class="ledger att">${a.map(i => { const r = room(i.room); return `<div class="rw att ${i.urgent ? "urgent" : ""}"><a href="${esc(i.room ? roomUrl(i.room) : "/")}">${r ? sigil(r.id, 36) : `<span class="led hold"></span>`}<span class="nm"><b>${esc(i.title)}</b><p>${esc(i.body || "")}</p></span><span class="go">Open →</span></a></div>`; }).join("")}</div>`;
   },
   integrations() {
     const I = S.integ, ags = S.agents;
@@ -1043,18 +1117,24 @@ const VIEWS = {
 /* ---------- radar ---------- */
 function mountSpace() {
   const list = S.rooms.filter(r => { const f = S.filter || "all"; return f === "all" || (f === "mine" && r.kind === "mine") || (f === "shared" && r.kind === "shared") || (f === "attn" && (r.state === "hold" || r.state === "bad" || r.unread)); });
-  PBSpace.mount($("#space"), list, (room, from) => { toast("Entering " + room.label); PBSpace.enter(room, from); });
+  PBSpace.mount($("#space"), list, (room, from) => {
+    toast("Entering " + room.label);
+    const target = roomUrl(room.id);
+    if (target.endsWith("/canvas")) location.href = target;
+    else if (window.PBSpace && PBSpace.enter) PBSpace.enter(room, from);
+    else location.href = target;
+  });
 }
 function ripple(id) { PBSpace.ping(id); }
 
 /* ---------- command palette ---------- */
 function openPalette() {
   const items = [
-    ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: `/r/${r.id}/canvas`, sig: r.id})),
-    {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${S.attention.length} items`, act: () => go("attention"), ic: "attention"},
-    {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub settings", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
+    ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: roomUrl(r.id), sig: r.id})),
+    {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${activeAttention().length} items`, act: () => go("attention"), ic: "attention"},
+    {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Research", s: "autonomous runs", act: () => go("research"), ic: "research"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub & Invites", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
     {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"},
-    ...(window.PBTheme ? [{t: "Settings", s: "appearance, interface, hub, safety  ⌘,", act: () => PBTheme.open(), ic: "hub"}, {t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open("appearance"), ic: "hub"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
+    ...(window.PBTheme ? [{t: "Settings", s: "appearance, interface, hub, safety  ⌘,", act: () => PBTheme.open(), ic: "settings"}, {t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open("appearance"), ic: "settings"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
   const sh = $("#sheet"); let q = "", sel = 0, list = items;
   const draw = () => {
     $("#pal-list").innerHTML = list.length ? list.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ph">${it.sig ? sigil(it.sig, 28) : svgi(it.ic)}</span><span>${esc(it.t)}</span><small>${esc(it.s)}</small></li>`).join("") : `<li class="mut">No match</li>`;
@@ -1085,6 +1165,25 @@ addEventListener("keydown", e => {
 
 /* ---------- sheets ---------- */
 const sheet = () => $("#sheet");
+function openMore() {
+  const sh = sheet();
+  sh.innerHTML = `<div><h2 style="margin:0;padding:12px 20px;border-bottom:1px solid var(--line-2);background:var(--panel-2);color:var(--ink)">More</h2>
+    <div class="msheet">
+      <button type="button" data-mnav="research" ${S.view === "research" ? 'aria-current="page"' : ""}>${svgi("research")}<span>Research</span><small>04</small></button>
+      <button type="button" data-mnav="integrations" ${S.view === "integrations" ? 'aria-current="page"' : ""}>${svgi("plug")}<span>Integrations</span><small>05</small></button>
+      <button type="button" data-mnav="hub" ${S.view === "hub" ? 'aria-current="page"' : ""}>${svgi("hub")}<span>Hub &amp; Invites</span><small>06</small></button>
+      <button type="button" data-mact="settings">${svgi("settings")}<span>Settings</span><small>⌘,</small></button>
+      <button type="button" data-mact="palette">${svgi("search")}<span>Search rooms</span><small>⌘K</small></button>
+    </div></div>`;
+  $(".msheet", sh).addEventListener("click", ev => {
+    const b = ev.target.closest("[data-mnav],[data-mact]"); if (!b) return;
+    sh.close();
+    if (b.dataset.mnav) go(b.dataset.mnav);
+    else if (b.dataset.mact === "settings") window.PBTheme && PBTheme.open();
+    else if (b.dataset.mact === "palette") openPalette();
+  });
+  sh.showModal();
+}
 function openAdd(pre) {
   const machines = [...new Set(S.rooms.map(r => r.machine).filter(Boolean))];
   const hostFirst = !(pre && pre.link) && S.rooms.length === 0;      // nothing here yet: the common first move is to host
@@ -1098,7 +1197,8 @@ function openAdd(pre) {
     <div id="hostrow" hidden>
       <label>Who can reach it?</label>
       <div class="radio"><label><input type="radio" name="reach" value="iroh" checked>Anywhere<small>friends on other networks</small></label><label><input type="radio" name="reach" value="local">Same network<small>this machine or Wi-Fi only</small></label></div>
-      <label for="arepo">Git repository <span class="mut">(optional)</span></label><input id="arepo" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <label for="arepo">Git repository <span class="mut">(optional)</span></label><input id="arepo" list="repolist" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false"><datalist id="repolist"></datalist>
+      <div id="repopicks" class="row" style="gap:6px;margin-top:6px"></div>
       <p class="mut" style="font-size:12px;margin:6px 0 0">Leave it empty for a room to talk and share notes in. Add one so members can pull and push code.</p>
     </div>
     <label for="amachine">This machine <span class="mut">(optional)</span></label><input id="amachine" list="machines" maxlength="40" placeholder="e.g. this laptop, studio-mac, cloud VM" autocomplete="off"><datalist id="machines">${machines.map(m => `<option value="${esc(m)}">`).join("")}</datalist>
@@ -1122,7 +1222,7 @@ function openAdd(pre) {
       const btn = document.createElement("button"); btn.type = "button"; btn.className = "btn primary"; btn.textContent = r.adopted ? "Adopted" : "Adopt"; btn.disabled = !!r.adopted;
       btn.addEventListener("click", async () => {
         btn.disabled = true; btn.textContent = "Joining…"; $("#aerr").textContent = "";
-        try { const j = await api("POST", "/api/local-rooms/adopt", {id: r.id, label: r.name}); sheet().close(); toast(`"${r.name}" adopted`); await refreshRooms(); location.href = `/r/${j.id}/canvas`; }
+        try { const j = await api("POST", "/api/local-rooms/adopt", {id: r.id, label: r.name}); sheet().close(); toast(`"${r.name}" adopted`); await refreshRooms(); location.href = roomUrl(j.id); }
         catch (err) { btn.disabled = false; btn.textContent = "Adopt"; $("#aerr").textContent = err.message; }
       });
       row.append(t, btn); box.append(row);
@@ -1130,6 +1230,17 @@ function openAdd(pre) {
     syncLocal();
   };
   api("GET", "/api/local-rooms").then(j => paintLocal(j.rooms || [])).catch(() => {});
+  api("GET", "/api/repos").then(j => {
+    const repos = j.repos || [], dl = $("#repolist"), pk = $("#repopicks");
+    if (dl) dl.innerHTML = repos.map(r => `<option value="${esc(r.path)}">`).join("");
+    if (pk) pk.innerHTML = repos.slice(0, 6).map(r => `<button type="button" class="btn sm" data-pickrepo="${esc(r.path)}" data-reponame="${esc(r.name)}">${esc(r.name)}</button>`).join("");
+  }).catch(() => {});
+  $("#repopicks")?.addEventListener("click", ev => {
+    const b = ev.target.closest("[data-pickrepo]"); if (!b) return;
+    const ar = $("#arepo"), al = $("#alabel");
+    if (ar) ar.value = b.dataset.pickrepo;
+    if (al && !al.value.trim()) al.value = b.dataset.reponame || b.textContent.trim();
+  });
   sheet().querySelectorAll("[name=how]").forEach(i => i.addEventListener("change", sync));
   $("#ahome").addEventListener("input", sync);
   sync();
@@ -1157,12 +1268,12 @@ function openAdd(pre) {
         if (!res.ok || j.error) throw Object.assign(new Error((typeof j.data === "string" && j.data) || j.error || "The room was added but couldn't be hosted."), {added: r.id});
       }
       sheet().close();
-      if (mode === "host" && !body.home) { toast(`"${body.label}" is hosted`); location.href = body.kind === "shared" ? `/?invite=${r.id}` : `/r/${r.id}/`; }
+      if (mode === "host" && !body.home) { toast(`"${body.label}" is hosted`); location.href = body.kind === "shared" ? `/?invite=${r.id}` : roomUrl(r.id); }
       else { toast(mode === "join" ? "Joined" : "Room added"); await refreshRooms(); }
     } catch (err) {
       $("#aerr").textContent = err.message + (err.added ? " The room was added; open it to try again." : "");
       btn.disabled = false; btn.textContent = idle;
-      if (err.added) { await refreshRooms(); btn.textContent = "Open room"; btn.onclick = ev => { ev.preventDefault(); location.href = `/r/${err.added}/`; }; }
+      if (err.added) { await refreshRooms(); btn.textContent = "Open room"; btn.onclick = ev => { ev.preventDefault(); location.href = roomUrl(err.added); }; }
     }
   });
   if (pre && pre.link) { $("#alink").value = pre.link; $("#alabel").value = pre.label || ""; $("#addform").insertAdjacentHTML("afterbegin", `<p class="offline" style="margin:14px 0 0">Joining from an invite link. Only continue if you know who sent it.</p>`); }
@@ -1195,7 +1306,9 @@ function openInvite(id) {
       const j = await api("POST", `/api/rooms/${id}/invite`, {...pk, approve: !!pk.approve, from, guest: $("#iguest").value.trim() || undefined});
       const url = j.approve ? `${j.url}#a.${j.k}` : `${j.url}#${b64s(j.link)}`;
       const text = `Join my Playbox room "${r.label}": ${url}`;
+      const qr = window.PBQR ? PBQR.svg(url, 168) : "";
       $("#iout").innerHTML = `<label>Send this to your friend</label><div class="card mono" id="iurl" style="word-break:break-all;user-select:all;max-height:7.5em;overflow:auto">${esc(url)}</div>
+        ${qr ? `<details style="margin-top:10px"${url.length <= 420 ? " open" : ""}><summary class="lbl" style="cursor:pointer">QR code (scan in person)</summary><div class="qrbox">${qr}</div></details>` : ""}
         <p class="mut" style="font-size:13px;margin:8px 0 0">${j.approve ? `Works until ${hhmm(j.expires * 1000)}. Nobody gets in on this link alone: you'll see each request here with a short code, and approve only if it matches what they read to you.` : `Works until ${hhmm(j.expires * 1000)}, once it's used it's spent. The part after # never reaches any server.`}</p>
         ${j.public ? "" : `<p class="offline" style="margin:10px 0 0">This hub is only reachable from your own network, so your friend can't open the link yet. Start it with <span class="mono">--cloudflare</span> to get a public address.</p>`}
         <div class="row" style="margin-top:12px"><button class="btn sm" id="icp" value="x">Copy link</button>${navigator.share ? '<button class="btn sm" id="ish" value="x">Share…</button>' : ""}<a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">Preview what they see</a></div>`;
@@ -1241,7 +1354,9 @@ async function pairDevice() {
   try {
     const r = await api("POST", "/api/devices/pair");
     const url = `${location.origin}/pair#${r.code}`;
+    const qr = window.PBQR ? PBQR.svg(url, 164) : "";
     sheet().innerHTML = `<form method="dialog"><h2>Add a device</h2><p class="mut" style="margin-top:14px">Open this link on the new device within 10 minutes. It works once.</p>
+      ${qr ? `<div class="qrbox">${qr}</div><p class="mut" style="font-size:12.5px;text-align:center;margin:0 0 8px">Scan with your phone's camera, or copy the link:</p>` : ""}
       <div class="card mono" style="word-break:break-all;user-select:all">${esc(url)}</div>
       <p class="mut" style="font-size:13px">${location.protocol === "https:" ? "" : "This address is plain HTTP, so the new device can only pair without a passkey. Open the hub's HTTPS address for passkeys."}</p>
       <div class="row" style="justify-content:flex-end"><button class="btn" id="cp" value="x">Copy</button>${navigator.share ? '<button class="btn" id="sh" value="x">Share</button>' : ""}<button class="btn primary" value="cancel">Done</button></div></form>`;
@@ -1290,6 +1405,7 @@ document.addEventListener("click", async e => {
   if (act !== "edit" && t.closest("a")) return;
   e.preventDefault();
   if (act === "add") openAdd();
+  else if (act === "more") openMore();
   else if (act === "palette") openPalette();
   else if (act === "theme") toggleTheme();
   else if (act === "appearance") window.PBTheme && PBTheme.open("appearance");
@@ -1329,7 +1445,10 @@ document.addEventListener("click", async e => {
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();
+  else if (act === "adoptlocal") { t.disabled = true; t.textContent = "Joining…"; try { const j = await api("POST", "/api/local-rooms/adopt", {id: t.dataset.id, label: t.dataset.name}); toast(`"${t.dataset.name}" adopted`); await refreshRooms(); location.href = roomUrl(j.id); } catch (er) { toast(er.message, true); t.disabled = false; t.textContent = "Adopt"; } }
+  else if (act === "dismisslocal") { const g = goneLocal(); if (!g.includes(t.dataset.id)) g.push(t.dataset.id); store.set("pb.localgone", JSON.stringify(g.slice(-50))); mood(); paintView(true); }
   else if (act === "apv") { t.disabled = true; try { const j = await api("POST", `/api/approvals/${encodeURIComponent(t.dataset.room)}/${encodeURIComponent(t.dataset.call)}`, {decision: t.dataset.dec}); toast(j.ok ? (t.dataset.dec === "approve" ? "Approved" : "Denied") : j.message, !j.ok); } catch (er) { toast(er.message, true); } refreshRooms(); }
+  else if (act === "whold") { t.disabled = true; try { await api("POST", `/r/${encodeURIComponent(t.dataset.room)}/api/witness/decide`, {session: t.dataset.ses, decision: t.dataset.dec}); toast(t.dataset.dec === "release" ? "Hold lifted" : "Write denied"); } catch (er) { toast(er.message, true); t.disabled = false; } refreshRooms(); }
   else if (act === "push") togglePush();
   else if (act === "install") { installEvt?.prompt(); installEvt = null; t.hidden = true; }
   else if (act === "logout") { await fetch("/api/auth/logout", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); try { await caches.delete("pb-data"); } catch {} location.href = "/"; }

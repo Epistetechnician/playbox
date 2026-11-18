@@ -1,6 +1,8 @@
 """Playbox witness: signed whole-session history and a pause on peer-triggered writes."""
+import hashlib
 import json
 import os
+import stat
 import subprocess
 import time
 from pathlib import Path
@@ -43,8 +45,30 @@ def _event(e):
         pass
 
 
+def _take_decision(session_id):
+    """Consume a single-use owner decision (`release` or `deny`) written by Playbox for `session_id`."""
+    if not session_id:
+        return None
+    try:
+        home = Path(os.environ.get("PLAYBOX_HOME") or Path.home() / ".playbox")
+        p = home / "witness" / "decisions" / f"{hashlib.sha256(str(session_id).encode()).hexdigest()}.json"
+        st = os.lstat(p)
+        if not stat.S_ISREG(st.st_mode):
+            return None
+        if hasattr(os, "getuid") and ((st.st_mode & 0o777) != 0o600 or st.st_uid != os.getuid()):
+            return None
+        raw = p.read_text(encoding="utf-8")
+        p.unlink(missing_ok=True)
+        data = json.loads(raw)
+        if isinstance(data, dict) and data.get("session") == session_id and data.get("decision") in ("release", "deny"):
+            return data["decision"]
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def register(ctx):
-    w = Witness(_record, _event)
+    w = Witness(_record, _event, _take_decision)
 
     def key(kw):
         # Context compression rotates session_id; conversation_id survives it. Hermes 0.22.5 passes it to some
@@ -68,7 +92,7 @@ def register(ctx):
             return w.before_tool(key(kw), kw.get("tool_name"), kw.get("args"))
         except Exception:
             # Fail closed while a room's text is in context; hooks are otherwise fail-open.
-            if w.tainted.get(key(kw)):
+            if w.tainted.get(key(kw)) or key(kw) in w.denied:
                 return {"action": "block", "message": "Playbox witness could not check this call; ask the user."}
             return None
 
