@@ -43,9 +43,26 @@ pub async fn up(a: UpArgs) -> Result<()> {
     let steer_image = a.steer_image.clone();
     let steer_mem = a.steer_mem_mib;
     let has_steer = a.steer_store.is_some();
+    let egress_cfg = match &a.egress {
+        None => None,
+        Some(file) => Some(playbox_runner::egress::EgressConfig::load(
+            std::path::Path::new(file),
+        )?),
+    };
+    if !a.allow_egress.is_empty() {
+        let Some(cfg) = &egress_cfg else {
+            bail!("--allow-egress requires --egress <FILE> defining the named upstreams");
+        };
+        for want in &a.allow_egress {
+            if !cfg.upstreams.iter().any(|u| &u.name == want) {
+                bail!("--allow-egress {want:?} is not defined in --egress");
+            }
+        }
+    }
     let mut limits = playbox_runner::Limits {
         allowed_hosts: a.allow_host.clone(),
         allowed_secrets: a.allow_secret.clone(),
+        allowed_egress: a.allow_egress.clone(),
         ..Default::default()
     };
     if has_steer {
@@ -73,6 +90,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
                         .confine
                         .then(|| a.confine_net.parse().map(|l| (l, !a.no_seccomp)))
                         .transpose()?,
+                    egress: egress_cfg,
                 };
                 Some(runner_with(&name, policy, &opts)?)
             }
@@ -427,7 +445,10 @@ pub fn room_log_cmd(state: &str, root: &str, json: bool) -> Result<()> {
             st.hosts.len()
         );
         if !st.equivocators.is_empty() {
-            println!("EQUIVOCATION PROVEN against: {}", st.equivocators.join(", "));
+            println!(
+                "EQUIVOCATION PROVEN against: {}",
+                st.equivocators.join(", ")
+            );
         }
         for pr in &st.problems {
             println!(
@@ -436,7 +457,9 @@ pub fn room_log_cmd(state: &str, root: &str, json: bool) -> Result<()> {
                 pr.metric,
                 pr.j,
                 pr.strength,
-                pr.candidate.as_ref().map_or(" [baseline]".to_string(), |c| format!(" candidate {c}"))
+                pr.candidate
+                    .as_ref()
+                    .map_or(" [baseline]".to_string(), |c| format!(" candidate {c}"))
             );
         }
         println!("head {}", st.head);

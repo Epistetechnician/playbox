@@ -201,12 +201,18 @@ pub fn parse_sums(text: &str) -> BTreeMap<String, String> {
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Result<Self> {
+        let rnd = playbox_net::random_bytes()?;
         let d = std::env::temp_dir().join(format!(
-            "playbox-update-{}-{}",
-            std::process::id(),
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            "playbox-update-{}",
+            playbox_core::record::hex(&rnd[..16])
         ));
-        std::fs::create_dir_all(&d)?;
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            b.mode(0o700);
+        }
+        b.create(&d)?;
         Ok(Self(d))
     }
 }
@@ -216,10 +222,11 @@ impl Drop for TempDir {
     }
 }
 
-fn manifest(base: &str) -> Result<Manifest> {
+fn manifest(base: &str) -> Result<(Manifest, Vec<u8>)> {
     let raw = fetch(&format!("{base}/release.json"))
         .context("this release has no release.json (releases before 0.2 do not); reinstall with install.sh to move onto one that does")?;
-    serde_json::from_slice(&raw).context("release.json is malformed")
+    let m = serde_json::from_slice(&raw).context("release.json is malformed")?;
+    Ok((m, raw))
 }
 
 /// The exe to replace, refusing locations an update should not touch.
@@ -262,7 +269,7 @@ pub fn run(o: &Opts) -> Result<u8> {
     }
     let want = o.version.as_deref().map(Version::parse).transpose()?;
     let base = base_url(want.as_ref().map(ToString::to_string).as_deref());
-    let m = manifest(&base)?;
+    let (m, manifest_raw) = manifest(&base)?;
     let latest = Version::parse(&m.version)?;
     let cur = current();
     let target = want.clone().unwrap_or(latest.clone());
@@ -326,10 +333,9 @@ pub fn run(o: &Opts) -> Result<u8> {
     }
     let sums = parse_sums(&String::from_utf8_lossy(&sums_raw));
 
-    // 2. The manifest is covered by the same list, and the archive by both.
+    // 2. The manifest bytes already parsed above are covered by the same list, and the archive by both.
     if let Some(h) = sums.get("release.json") {
-        let again = fetch(&format!("{base}/release.json"))?;
-        if &sha256_hex(&again) != h {
+        if &sha256_hex(&manifest_raw) != h {
             bail!("release.json does not match SHA256SUMS; not updating");
         }
     }

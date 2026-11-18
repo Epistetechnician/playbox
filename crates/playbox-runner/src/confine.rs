@@ -25,10 +25,12 @@ use std::process::Stdio;
 pub struct Confinement {
     /// The cgroup directory runs are created in, e.g. `/sys/fs/cgroup/playbox/runs`.
     pub cgroup_root: PathBuf,
-    /// The most network any task may have. `Level::None` means the network filter is not needed and not loaded.
+    /// The most network any task may have. `Level::None` means the network filter is not needed unless `egress` is on.
     pub max_net: Level,
     /// Install the syscall deny-list in the helper.
     pub seccomp: bool,
+    /// Load the nftables table even when `max_net == Level::None` so tasks with `egress` can reach `127.0.0.1:PORT` only.
+    pub egress: bool,
 }
 
 const CGROUP_MOUNT: &str = "/sys/fs/cgroup";
@@ -41,6 +43,7 @@ impl Confinement {
             cgroup_root: Path::new(CGROUP_MOUNT).join("playbox/runs"),
             max_net,
             seccomp: true,
+            egress: false,
         }
     }
 
@@ -109,7 +112,7 @@ impl Confinement {
         for stale in cgroup::stale(&self.cgroup_root).unwrap_or_default() {
             let _ = cgroup::remove(&stale);
         }
-        if self.max_net > Level::None {
+        if self.max_net > Level::None || self.egress {
             // Start from nothing: chains left by a host that died are gone with the table.
             nft("add table inet playbox_runner\ndelete table inet playbox_runner\n")?;
             nft(&netpolicy::base_ruleset(&self.relative_root()?)?).context(
@@ -131,22 +134,47 @@ impl Confinement {
         level: Level,
         dests: &[SocketAddr],
     ) -> Result<RunGuard> {
+        self.begin_with_egress(run_id, limits, level, dests, None)
+    }
+
+    /// Like [`Self::begin`], with an optional host-side loopback egress proxy port (`BOX-7`).
+    ///
+    /// # Errors
+    ///
+    /// Fails if the task asks for more network than the host allows, or the kernel refuses a limit or a rule.
+    pub fn begin_with_egress(
+        &self,
+        run_id: &str,
+        limits: Limits,
+        level: Level,
+        dests: &[SocketAddr],
+        egress_port: Option<u16>,
+    ) -> Result<RunGuard> {
         if level > self.max_net {
             bail!(
                 "the task needs network level {level}, above this host's maximum {}",
                 self.max_net
             );
         }
+        if egress_port.is_some() && !self.egress && self.max_net == Level::None {
+            bail!("egress proxy requires confinement preflight with egress enabled");
+        }
         let cg = RunCgroup::create(&self.cgroup_root, run_id, limits)?;
         let mut guard = RunGuard {
             cgroup: Some(cg),
             chain: None,
         };
-        if level > Level::None {
-            let rules = netpolicy::run_chain(&self.relative_root()?, run_id, level, dests)?;
+        if level > Level::None || egress_port.is_some() {
+            let rules = netpolicy::run_chain_with_egress(
+                &self.relative_root()?,
+                run_id,
+                level,
+                dests,
+                egress_port,
+            )?;
             nft(&rules).context("loading the task's network rules")?;
             guard.chain = Some(run_id.to_string());
-        } else if self.max_net > Level::None {
+        } else if self.max_net > Level::None || self.egress {
             // A task with no network still gets its chain: an explicit reject, not the base table's default.
             nft(&netpolicy::run_chain(
                 &self.relative_root()?,

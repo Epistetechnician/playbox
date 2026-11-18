@@ -293,7 +293,10 @@ impl Client {
         f.accept_all(entries)
             .map_err(|e| anyhow!("the host's room log does not check: {e}"))?;
         let Some(log) = f.into_log() else {
-            return Ok(RoomHosts { root, ..RoomHosts::default() });
+            return Ok(RoomHosts {
+                root,
+                ..RoomHosts::default()
+            });
         };
         let mut certs = Vec::new();
         for c in v["certs"].as_array().into_iter().flatten() {

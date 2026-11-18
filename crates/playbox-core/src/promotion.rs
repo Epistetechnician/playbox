@@ -73,7 +73,13 @@ pub struct Frontier {
 pub type State = BTreeMap<Hash, (Rule, Frontier)>;
 
 impl Receipt {
-    fn signing_bytes(&self, room: &Key, problem: &Hash, candidate: &Hash, weights: &Hash) -> Vec<u8> {
+    fn signing_bytes(
+        &self,
+        room: &Key,
+        problem: &Hash,
+        candidate: &Hash,
+        weights: &Hash,
+    ) -> Vec<u8> {
         let mut b = Vec::with_capacity(RECEIPT_DOMAIN.len() + 200);
         b.extend_from_slice(RECEIPT_DOMAIN);
         b.extend_from_slice(room);
@@ -175,7 +181,10 @@ pub fn parse_register(e: &Entry) -> Result<Register, LogError> {
         min_gain_ppm: num("min_gain_ppm")?,
     };
     if rule.j < MIN_J || rule.j > MAX_RECEIPTS {
-        return Err(bad(e, format!("j must be {MIN_J} to {MAX_RECEIPTS}: one host's word is not enough")));
+        return Err(bad(
+            e,
+            format!("j must be {MIN_J} to {MAX_RECEIPTS}: one host's word is not enough"),
+        ));
     }
     if rule.noise_ppm > 1_000_000 || rule.min_gain_ppm > 100_000_000 {
         return Err(bad(e, "noise_ppm or min_gain_ppm is out of range"));
@@ -237,7 +246,10 @@ pub fn check_register(e: &Entry, hosts: &BTreeSet<Key>, state: &State) -> Result
         return Err(bad(e, "that problem is already registered"));
     }
     if r.rule.j > hosts.len() {
-        return Err(bad(e, format!("j={} is more than the {} hosts", r.rule.j, hosts.len())));
+        return Err(bad(
+            e,
+            format!("j={} is more than the {} hosts", r.rule.j, hosts.len()),
+        ));
     }
     Ok(())
 }
@@ -265,10 +277,16 @@ pub fn check_promotion(
     let mut metrics = Vec::new();
     for r in &p.receipts {
         if !hosts.contains(&r.host) {
-            return Err(bad(e, "a receipt is from a key that is not a host of this epoch"));
+            return Err(bad(
+                e,
+                "a receipt is from a key that is not a host of this epoch",
+            ));
         }
         if !seen.insert(r.host) {
-            return Err(bad(e, "two receipts from one host count once; send distinct hosts"));
+            return Err(bad(
+                e,
+                "two receipts from one host count once; send distinct hosts",
+            ));
         }
         if !r.verifies(room, &p) {
             return Err(bad(e, "a receipt's signature does not verify"));
@@ -279,18 +297,34 @@ pub fn check_promotion(
         metrics.push(r.metric);
     }
     if seen.len() < rule.j {
-        return Err(bad(e, format!("{} distinct host(s) measured it; the rule needs {}", seen.len(), rule.j)));
+        return Err(bad(
+            e,
+            format!(
+                "{} distinct host(s) measured it; the rule needs {}",
+                seen.len(),
+                rule.j
+            ),
+        ));
     }
     let (lo, hi) = (
         i128::from(*metrics.iter().min().unwrap_or(&0)),
         i128::from(*metrics.iter().max().unwrap_or(&0)),
     );
     if (hi - lo) * 1_000_000 > hi * i128::from(rule.noise_ppm) {
-        return Err(bad(e, format!("the receipts differ by more than {} ppm", rule.noise_ppm)));
+        return Err(bad(
+            e,
+            format!("the receipts differ by more than {} ppm", rule.noise_ppm),
+        ));
     }
     // The claim is the lowest measurement: a host that measured less is not talked over by one that measured more.
     if lo * 1_000_000 < i128::from(front.metric) * (1_000_000 + i128::from(rule.min_gain_ppm)) {
-        return Err(bad(e, format!("the lowest metric {lo} does not beat the frontier {} by {} ppm", front.metric, rule.min_gain_ppm)));
+        return Err(bad(
+            e,
+            format!(
+                "the lowest metric {lo} does not beat the frontier {} by {} ppm",
+                front.metric, rule.min_gain_ppm
+            ),
+        ));
     }
     Ok(())
 }
@@ -319,7 +353,12 @@ pub fn replay(entries: &[Entry]) -> State {
                     if let Some((_, f)) = st.get_mut(&p.problem) {
                         *f = Frontier {
                             candidate: p.candidate,
-                            metric: p.receipts.iter().map(|r| r.metric).min().unwrap_or(f.metric),
+                            metric: p
+                                .receipts
+                                .iter()
+                                .map(|r| r.metric)
+                                .min()
+                                .unwrap_or(f.metric),
                             strength: p.receipts.iter().map(|r| r.tier).min().unwrap_or(0),
                             index: e.index,
                         };

@@ -383,6 +383,7 @@ async fn bare_member() -> (Host, Client) {
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };

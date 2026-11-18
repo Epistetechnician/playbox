@@ -265,6 +265,7 @@ async fn env_with(
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };

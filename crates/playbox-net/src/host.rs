@@ -351,6 +351,7 @@ impl Host {
         );
         let memory = cfg.memory.clone();
         let standing_state = state.clone();
+        let is_primary = auth.can_issue();
         let caps = Arc::new(
             capabilities::Engine::new(
                 capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
@@ -368,7 +369,8 @@ impl Host {
                     return Err("the member was revoked".into());
                 }
                 match st.members.get(&id) {
-                    None => Err("the member is no longer in the room".into()),
+                    None if is_primary => Err("the member is no longer in the room".into()),
+                    None => Ok(()),
                     Some(grant) if st.revoked.contains(grant) => {
                         Err("the member's grant was revoked".into())
                     }
@@ -403,17 +405,14 @@ impl Host {
             convs: Arc::new(conversations::Book::new(cfg.conversations_store.clone())?),
             cfg,
         };
-        let sync = revoke::SyncHandler {
-            state: state.clone(),
-            allowed: repl.allowed.clone(),
-        };
+        let sync = revoke::SyncHandler::new(state.clone(), repl.allowed.clone());
         let router = Router::builder(endpoint)
             .accept(ALPN, handler)
             .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
             .accept(SYNC_ALPN, sync)
             .accept(
                 crate::roomsync::ROOMLOG_ALPN,
-                crate::roomsync::RoomLogHandler(roomlog.clone()),
+                crate::roomsync::RoomLogHandler::new(roomlog.clone()),
             )
             .spawn();
         Ok(Self {
@@ -510,7 +509,11 @@ impl Host {
             invite,
             transport: Some(self.transport.clone()),
             bound: opts.bind_to.is_some(),
-            hosts: self.with_log_hosts(&[]).into_iter().take(crate::link::MAX_HINTS).collect(),
+            hosts: self
+                .with_log_hosts(&[])
+                .into_iter()
+                .take(crate::link::MAX_HINTS)
+                .collect(),
         })
     }
 
@@ -687,7 +690,10 @@ impl Host {
         let mut ids: Vec<[u8; 32]> = hosts.iter().map(|h| *h.as_bytes()).collect();
         ids.push(*self.router.endpoint().id().as_bytes());
         self.roomlog.start(root, ids, k, now)?;
-        self.repl.allowed.lock_recover().extend(hosts.iter().copied());
+        self.repl
+            .allowed
+            .lock_recover()
+            .extend(hosts.iter().copied());
         for m in self.members() {
             self.roomlog.record("member.join", &m.to_string(), now);
         }
@@ -807,7 +813,11 @@ impl Host {
     ) -> Result<()> {
         let reg = playbox_core::promotion::Register {
             problem,
-            rule: playbox_core::promotion::Rule { j, noise_ppm, min_gain_ppm },
+            rule: playbox_core::promotion::Rule {
+                j,
+                noise_ppm,
+                min_gain_ppm,
+            },
             baseline,
         };
         self.roomlog.register_problem(&reg, now_ms_host())

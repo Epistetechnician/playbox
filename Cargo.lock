@@ -3740,6 +3740,7 @@ version = "0.3.6"
 dependencies = [
  "anyhow",
  "axum",
+ "blake3",
  "ed25519-dalek 2.2.0",
  "playbox-core",
  "playbox-mcp",
@@ -3761,10 +3762,12 @@ dependencies = [
  "blake3",
  "libc",
  "playbox-core",
+ "reqwest",
  "rustix",
  "serde",
  "serde_json",
  "tokio",
+ "url",
 ]
 
 [[package]]

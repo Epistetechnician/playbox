@@ -263,7 +263,11 @@ impl Op {
     pub fn needs(&self) -> Needs {
         match self {
             Op::Run { spec, .. } => Needs {
-                cpu_milli: (spec.cpus * 1000.0).ceil() as i64,
+                cpu_milli: if !spec.cpus.is_finite() || spec.cpus <= 0.0 {
+                    0
+                } else {
+                    (f64::from(spec.cpus) * 1000.0).ceil() as i64
+                },
                 mem_mib: i64::from(spec.mem_mib),
                 timeout_secs: i64::try_from(spec.timeout_secs).unwrap_or(i64::MAX),
                 net: spec.network && spec.allowed_hosts.is_empty(),
@@ -272,6 +276,7 @@ impl Op {
                     .iter()
                     .cloned()
                     .chain(spec.secrets.iter().map(|n| format!("secret/{n}")))
+                    .chain(spec.egress.iter().map(|n| format!("egress/{n}")))
                     .collect(),
                 cmd: spec.cmd.first().cloned().unwrap_or_default(),
                 ..Needs::default()

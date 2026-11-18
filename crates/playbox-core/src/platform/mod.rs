@@ -17,8 +17,9 @@
 //! Without reference boot values the quote could not distinguish an honest host from one that simply
 //! extended whatever it liked.
 //!
-//! Not checked: the TPM's endorsement-key certificate chain (manufacturer roots) and Apple's App
-//! Attest. Both would turn "pinned device key" into "genuine hardware"; neither is implemented.
+//! TPM endorsement-key certificate chains and credential activation (`$PLAYBOX_TPM_EK_ANCHORS`; see
+//! [`crate::tpm_ek`]) verify genuine TPM hardware when configured. Not implemented: Apple's App Attest
+//! for Secure Enclave keys, which rely on device-key pinning alone.
 
 use crate::attest::{AttestError, PlatformProvider, PlatformVerifier, Statement};
 use crate::tpm_ek;

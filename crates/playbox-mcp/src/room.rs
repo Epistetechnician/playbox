@@ -25,6 +25,9 @@ impl Server {
                 bail!("this sidecar already hosts the room `{have}`; restart it to host `{want}`");
             }
         }
+        if self.host.is_some() && !self.is_replica && s(a, "replica_of").is_some() {
+            bail!("this sidecar already hosts a primary room; restart it to open a replica");
+        }
         if self.host.is_none() {
             let repo = s(a, "repo").map(PathBuf::from);
             if let Some(r) = &repo {
@@ -40,6 +43,34 @@ impl Server {
             if s(a, "steer_store").is_some() {
                 policy.allowed_images.push(steer_image.clone());
             }
+            let egress_cfg = match a.get("egress") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(file)) => {
+                    Some(playbox_runner::egress::EgressConfig::load(Path::new(file))?)
+                }
+                Some(v) => Some(playbox_runner::egress::EgressConfig::from_json_bytes(
+                    &serde_json::to_vec(v)?,
+                )?),
+            };
+            let allowed_egress: Vec<String> = a
+                .get("allowed_egress")
+                .and_then(Value::as_array)
+                .map(|v| {
+                    v.iter()
+                        .filter_map(|h| h.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !allowed_egress.is_empty() {
+                let Some(cfg) = &egress_cfg else {
+                    bail!("allowed_egress requires `egress` defining the named upstreams");
+                };
+                for want in &allowed_egress {
+                    if !cfg.upstreams.iter().any(|u| &u.name == want) {
+                        bail!("allowed_egress {want:?} is not defined in `egress`");
+                    }
+                }
+            }
             let runner: Option<Arc<dyn Runner>> = if let Some(name) = runtime {
                 let confine = if b(a, "confine") {
                     Some((s(a, "confine_net").unwrap_or("none").parse()?, true))
@@ -49,7 +80,10 @@ impl Server {
                 Some(playbox_runner::runner_with(
                     name,
                     policy,
-                    &playbox_runner::RunnerOptions { confine },
+                    &playbox_runner::RunnerOptions {
+                        confine,
+                        egress: egress_cfg,
+                    },
                 )?)
             } else if b(a, "unsafe_process_runner")
                 && playbox_runner::env_opt_in("PLAYBOX_ALLOW_UNSAFE_RUNNER")
@@ -84,6 +118,7 @@ impl Server {
                             .collect()
                     })
                     .unwrap_or_default(),
+                allowed_egress,
                 ..Default::default()
             };
             let steer = match s(a, "steer_store") {

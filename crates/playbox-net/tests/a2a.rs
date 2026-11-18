@@ -47,6 +47,7 @@ async fn room(name: &str, with_repo: bool, with_runner: bool) -> (Host, String) 
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };

@@ -177,7 +177,12 @@ async fn when_the_leader_dies_a_follower_takes_over_and_nothing_committed_is_los
 
     // A follower that is not the leader cannot commit; one that bids with the leader dead and a peer up wins.
     assert!(r1.commit_room_log(&[]).await.is_err());
-    assert_eq!(r1.propose_room_log_epoch(&[r2.addr(), old_addr.clone()]).await.unwrap(), 1);
+    assert_eq!(
+        r1.propose_room_log_epoch(&[r2.addr(), old_addr.clone()])
+            .await
+            .unwrap(),
+        1
+    );
     assert!(r1.room_log_is_leader() && !r2.room_log_is_leader());
 
     // The new leader commits with r2; everything committed before is still there, and the epoch entry is committed too.
@@ -186,7 +191,10 @@ async fn when_the_leader_dies_a_follower_takes_over_and_nothing_committed_is_los
     r2.pull_room_log(&r1.addr()).await.unwrap();
     let (s1, s2) = (r1.room_log_status().unwrap(), r2.room_log_status().unwrap());
     assert_eq!((s1.epoch, s2.epoch), (1, 1));
-    assert_eq!((s1.head.as_str(), &s1.members), (s2.head.as_str(), &s2.members));
+    assert_eq!(
+        (s1.head.as_str(), &s1.members),
+        (s2.head.as_str(), &s2.members)
+    );
     assert_eq!(s2.committed, after);
 
     // The old leader comes back in epoch 0, hears the epoch entry and becomes a follower.
@@ -197,7 +205,10 @@ async fn when_the_leader_dies_a_follower_takes_over_and_nothing_committed_is_los
     r1.commit_room_log(&[p.addr(), r2.addr()]).await.unwrap();
     let sp = p.room_log_status().unwrap();
     assert_eq!((sp.epoch, sp.leader.clone()), (1, s1.leader.clone()));
-    assert!(p.commit_room_log(&[]).await.is_err(), "the old leader no longer leads");
+    assert!(
+        p.commit_room_log(&[]).await.is_err(),
+        "the old leader no longer leads"
+    );
 
     // A follower that restarts keeps its promise and its log.
     r2.shutdown().await.unwrap();
@@ -259,7 +270,10 @@ async fn the_leader_can_swap_a_host_and_the_removed_one_stops_counting() {
         .await
         .unwrap();
     let still = p.commit_room_log(&[r2.addr()]).await.unwrap();
-    assert_eq!(still, after, "a removed host's cosignature counts for nothing");
+    assert_eq!(
+        still, after,
+        "a removed host's cosignature counts for nothing"
+    );
     assert!(p.room_log_status().unwrap().len > after);
 }
 
@@ -277,7 +291,13 @@ async fn a_guest_reads_the_signed_host_set_and_moves_to_another_host_when_its_ho
     }
     let link = p.create_link(Duration::from_secs(60), 1).unwrap();
     assert_eq!(link.hosts.len(), 2, "the link names the other hosts");
-    assert_eq!(playbox_net::Link::parse(&link.encode()).unwrap().hosts.len(), 2);
+    assert_eq!(
+        playbox_net::Link::parse(&link.encode())
+            .unwrap()
+            .hosts
+            .len(),
+        2
+    );
     let guest = join_link(&link.encode(), new_secret_key().unwrap(), true)
         .await
         .unwrap();
@@ -295,10 +315,7 @@ async fn a_guest_reads_the_signed_host_set_and_moves_to_another_host_when_its_ho
     // The guest's host dies. The guest goes to another host of the room with the same grant and member id.
     let dead = p.addr();
     p.shutdown().await.unwrap();
-    let fresh = guest
-        .failover(&[dead, r1.addr(), r2.addr()])
-        .await
-        .unwrap();
+    let fresh = guest.failover(&[dead, r1.addr(), r2.addr()]).await.unwrap();
     assert_ne!(fresh.host_id(), guest.host_id());
     assert_eq!(fresh.grant(), guest.grant());
     // It reads the same host set there, and a replica's reply is checked the same way.
@@ -341,8 +358,11 @@ async fn a_promotion_needs_two_hosts_that_each_ran_the_evaluation_and_agree() {
     }
     let problem = [7u8; 32];
     // One host's word is never enough, even as a rule.
-    assert!(p.register_room_problem(problem, 1, 50_000, 50_000, 1_000_000).is_err());
-    p.register_room_problem(problem, 2, 50_000, 50_000, 1_000_000).unwrap();
+    assert!(p
+        .register_room_problem(problem, 1, 50_000, 50_000, 1_000_000)
+        .is_err());
+    p.register_room_problem(problem, 2, 50_000, 50_000, 1_000_000)
+        .unwrap();
     p.commit_room_log(&[r1.addr(), r2.addr()]).await.unwrap();
 
     // r2 measured something very different: it is left out, and p and r1 carry it. The claim is the lower number.

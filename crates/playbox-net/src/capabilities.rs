@@ -794,19 +794,11 @@ impl Engine {
                     }
                     spec.timeout_secs = cap.timeout_secs.unwrap_or(60).min(me.limits.timeout_secs);
                     spec.mem_mib = cap.mem_mib.unwrap_or(512).min(me.limits.mem_mib);
-                    let dir = std::env::temp_dir().join(format!(
-                        "playbox-cap-{}-{}",
-                        std::process::id(),
-                        blake3::hash(format!("{member}/{id}").as_bytes()).to_hex()
-                    ));
                     let ran = async {
-                        std::fs::create_dir_all(&dir)?;
-                        // The task runs as the directory's owner and may be a different user inside a container.
-                        #[cfg(unix)]
-                        std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o777))?;
+                        let (_guard, work) = cap_scratch_dir()?;
                         // Stop the run, which kills its sandbox, if the member loses access while it runs.
                         tokio::select! {
-                            r = playbox_runner::run_with_quota(runner.as_ref(), &spec, &dir, me.quota) => r.map(Some),
+                            r = playbox_runner::run_with_quota(runner.as_ref(), &spec, &work, me.quota) => r.map(Some),
                             why = async {
                                 loop {
                                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -821,7 +813,6 @@ impl Engine {
                         }
                     }
                     .await;
-                    let _ = std::fs::remove_dir_all(&dir);
                     match ran {
                         Ok(Some(o)) => (o.exit_code, o.timed_out, o.stdout, o.stderr),
                         Ok(None) => {
@@ -839,6 +830,53 @@ impl Engine {
             }
         });
     }
+}
+
+struct CapScratchGuard(PathBuf);
+
+impl Drop for CapScratchGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Atomically create a `0o711` parent directory in `temp_dir` (traversable by non-root container UIDs,
+/// non-listable by local users) and an inner `work` (`0o777`) directory mounted into the sandbox.
+fn cap_scratch_dir() -> Result<(CapScratchGuard, PathBuf)> {
+    let base = std::env::temp_dir();
+    for _ in 0..32 {
+        let hex: String = crate::random_bytes()?[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let parent = base.join(format!("playbox-cap-{hex}"));
+        let mut pb = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            pb.mode(0o711);
+        }
+        match pb.create(&parent) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+        let guard = CapScratchGuard(parent.clone());
+        if std::fs::symlink_metadata(&parent)?.file_type().is_symlink() {
+            bail!("capability scratch parent is a symlink");
+        }
+        #[cfg(unix)]
+        std::fs::set_permissions(&parent, std::os::unix::fs::PermissionsExt::from_mode(0o711))?;
+        let work = parent.join("work");
+        std::fs::DirBuilder::new().create(&work)?;
+        if std::fs::symlink_metadata(&work)?.file_type().is_symlink() {
+            bail!("capability scratch directory is a symlink");
+        }
+        #[cfg(unix)]
+        std::fs::set_permissions(&work, std::os::unix::fs::PermissionsExt::from_mode(0o777))?;
+        return Ok((guard, work));
+    }
+    bail!("could not create an atomic capability scratch directory")
 }
 
 #[cfg(test)]

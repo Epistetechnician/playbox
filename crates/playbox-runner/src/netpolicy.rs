@@ -185,8 +185,27 @@ pub fn run_chain(
     level: Level,
     dests: &[SocketAddr],
 ) -> Result<String> {
+    run_chain_with_egress(cgroup_root, run_id, level, dests, None)
+}
+
+/// Like [`run_chain`], with an optional host-side loopback egress proxy port (`127.0.0.1:PORT`) accepted ahead of the
+/// loopback reject rule (`BOX-7`). Even at [`Level::None`] the guest may reach that exact TCP port and nothing else.
+///
+/// # Errors
+///
+/// Returns an error for a bad run id or cgroup path, port `0`, a destination the level forbids, or `Level::None` with destinations.
+pub fn run_chain_with_egress(
+    cgroup_root: &str,
+    run_id: &str,
+    level: Level,
+    dests: &[SocketAddr],
+    egress_port: Option<u16>,
+) -> Result<String> {
     if !valid_id(run_id) {
         bail!("bad run id {run_id:?}");
+    }
+    if egress_port == Some(0) {
+        bail!("egress proxy port cannot be 0");
     }
     let depth = cgroup_depth(cgroup_root)? + 1;
     let chain = format!("run_{run_id}");
@@ -199,6 +218,12 @@ pub fn run_chain(
     let add = |out: &mut String, rule: &str| {
         let _ = writeln!(out, "add rule inet playbox_runner {chain} {rule}");
     };
+    if let Some(port) = egress_port {
+        add(
+            &mut out,
+            &format!("ip daddr 127.0.0.1 tcp dport {port} accept"),
+        );
+    }
     if level == Level::None {
         if !dests.is_empty() {
             bail!("a run with no network cannot list destinations");
@@ -470,5 +495,29 @@ mod tests {
         assert!(t.contains("socket cgroupv2 level 2 \"playbox/runs\" jump runs"));
         let runs = t.split("chain runs").nth(1).unwrap();
         assert!(runs.contains("admin-prohibited") && !runs.contains("accept"));
+    }
+
+    // REQ: BOX-7
+    #[test]
+    fn egress_port_is_accepted_ahead_of_loopback_reject_and_nothing_else_passes_at_level_none() {
+        let rules =
+            run_chain_with_egress("playbox/runs", "deadbeef01", Level::None, &[], Some(45123))
+                .unwrap();
+        let lines: Vec<&str> = rules.lines().collect();
+        let acc = lines
+            .iter()
+            .position(|l| l.contains("ip daddr 127.0.0.1 tcp dport 45123 accept"))
+            .expect("egress accept rule");
+        let rej = lines
+            .iter()
+            .position(|l| l.contains("reject with icmpx admin-prohibited"))
+            .expect("reject rule");
+        assert!(
+            acc < rej,
+            "egress accept must precede catch-all reject: {rules}"
+        );
+        assert!(
+            run_chain_with_egress("playbox/runs", "deadbeef01", Level::None, &[], Some(0)).is_err()
+        );
     }
 }

@@ -17,8 +17,8 @@
 #[cfg(target_os = "linux")]
 use super::{cgroup::Limits, confine::Confinement, netpolicy::Level};
 use super::{
-    check_spec, guestnames, quota_exceeded, run_child, secrets::SecretStore, Isolation, Quota,
-    Runner, SandboxPolicy, TaskOutput, TaskSpec,
+    check_spec, egress::EgressConfig, guestnames, quota_exceeded, run_child, secrets::SecretStore,
+    Isolation, Quota, Runner, SandboxPolicy, TaskOutput, TaskSpec,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -44,6 +44,8 @@ pub struct KrunRunner {
     export: Arc<tokio::sync::Mutex<()>>,
     /// The host's credentials a task may ask for by name.
     secrets: SecretStore,
+    /// Named model-API upstreams proxied on host loopback (`BOX-7`).
+    egress: Option<EgressConfig>,
     /// Linux confinement of the helper and the task's network; `None` runs the helper as before.
     #[cfg(target_os = "linux")]
     confine: Option<Confinement>,
@@ -143,6 +145,7 @@ impl KrunRunner {
             quota: Quota::default(),
             export: Arc::default(),
             secrets: SecretStore::new(playbox_home().join("secrets")),
+            egress: None,
             #[cfg(target_os = "linux")]
             confine: None,
         }
@@ -152,6 +155,13 @@ impl KrunRunner {
     #[must_use]
     pub fn with_secrets(mut self, store: SecretStore) -> Self {
         self.secrets = store;
+        self
+    }
+
+    /// Configure host-side model API egress upstreams (`BOX-7`).
+    #[must_use]
+    pub fn with_egress(mut self, cfg: EgressConfig) -> Self {
+        self.egress = Some(cfg);
         self
     }
 
@@ -359,6 +369,9 @@ impl Runner for KrunRunner {
     async fn run(&self, spec: &TaskSpec, workspace: &Path) -> Result<TaskOutput> {
         let mut plain = spec.clone();
         plain.secrets.clear();
+        if self.egress.is_some() {
+            plain.egress.clear();
+        }
         #[cfg(target_os = "linux")]
         if self.confine.is_some() {
             plain.allowed_hosts.clear(); // enforced below by the network filter
@@ -369,13 +382,23 @@ impl Runner for KrunRunner {
         let filtered = self.confine.is_some();
         #[cfg(not(target_os = "linux"))]
         let filtered = false;
+        let wants_tsi = spec.network || !spec.egress.is_empty();
         if let Some(why) = unfiltered_network_refusal(
-            spec.network,
+            wants_tsi,
             filtered,
             crate::env_opt_in("PLAYBOX_ALLOW_UNFILTERED_NETWORK"),
         ) {
             bail!(why);
         }
+        let egress_proxy = if spec.egress.is_empty() {
+            None
+        } else {
+            let cfg = self
+                .egress
+                .as_ref()
+                .ok_or_else(|| anyhow!("this host has no egress upstreams configured"))?;
+            Some(super::egress::Proxy::start(cfg, &self.secrets, &spec.egress).await?)
+        };
         let rootfs = self.rootfs(&spec.image).await?;
         let clone = self.clone_rootfs(&rootfs).await?;
         let staged = self.secrets.stage(&spec.secrets, &self.root.join("run"));
@@ -398,6 +421,13 @@ impl Runner for KrunRunner {
         if !spec.secrets.is_empty() {
             cmd.arg("--secrets").arg(staged.path());
         }
+        if let Some(proxy) = &egress_proxy {
+            for (k, v) in proxy.env_vars() {
+                cmd.args(["--env", &format!("{k}={v}")]);
+            }
+        }
+        #[cfg(target_os = "linux")]
+        let egress_port = egress_proxy.as_ref().map(super::egress::Proxy::port);
         // Held until the task ends: dropping it kills the cgroup and removes the network chain.
         #[cfg(target_os = "linux")]
         let _guard = match &self.confine {
@@ -410,6 +440,7 @@ impl Runner for KrunRunner {
                     staged.path(),
                     vcpus,
                     mem,
+                    egress_port,
                     &mut cmd,
                 )
                 .await
@@ -421,18 +452,22 @@ impl Runner for KrunRunner {
                 }
             },
             None => {
-                if spec.network {
+                if wants_tsi {
                     cmd.arg("--network");
-                    // Unfiltered (the owner opted in above): the guest shares the host's network, so its resolvers work as they are.
-                    give_resolvers(&clone, |_| true);
+                    if spec.network {
+                        // Unfiltered (the owner opted in above): the guest shares the host's network, so its resolvers work as they are.
+                        give_resolvers(&clone, |_| true);
+                    }
                 }
                 None
             }
         };
         #[cfg(not(target_os = "linux"))]
-        if spec.network {
+        if wants_tsi {
             cmd.arg("--network");
-            give_resolvers(&clone, |_| true);
+            if spec.network {
+                give_resolvers(&clone, |_| true);
+            }
         }
         cmd.arg("--").args(&spec.cmd);
 
@@ -448,6 +483,9 @@ impl Runner for KrunRunner {
             .with_context(|| format!("running {}", self.helper.display()))?
             .0;
         out.secrets_used = staged.used.clone();
+        if let Some(proxy) = egress_proxy {
+            out.secrets_used.extend_from_slice(proxy.secrets_used());
+        }
         Ok(out)
     }
 }
@@ -476,6 +514,7 @@ impl KrunRunner {
         secrets: &Path,
         vcpus: u32,
         mem: u32,
+        egress_port: Option<u16>,
         cmd: &mut Command,
     ) -> Result<super::confine::RunGuard> {
         let (level, dests) = if spec.allowed_hosts.is_empty() {
@@ -510,7 +549,10 @@ impl KrunRunner {
         };
         let guard = {
             let (c, id, dests) = (c.clone(), run_id.clone(), dests);
-            tokio::task::spawn_blocking(move || c.begin(&id, limits, level, &dests)).await??
+            tokio::task::spawn_blocking(move || {
+                c.begin_with_egress(&id, limits, level, &dests, egress_port)
+            })
+            .await??
         };
         let jail_dir = clone.with_extension("jail");
         tokio::fs::create_dir_all(&jail_dir).await?;
@@ -522,7 +564,7 @@ impl KrunRunner {
         if !spec.secrets.is_empty() {
             cmd.arg("--ro").arg(secrets);
         }
-        if level > Level::None {
+        if level > Level::None || egress_port.is_some() {
             cmd.arg("--network");
         }
         if c.seccomp {

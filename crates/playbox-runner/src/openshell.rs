@@ -117,7 +117,7 @@ fn digest(policy: &str) -> String {
     reason = "the value is bounded, or truncated on purpose; the value is clamped to be non-negative first"
 )]
 fn cpu_arg(cpus: f32) -> String {
-    format!("{}m", (cpus * 1000.0).round() as u32)
+    format!("{}m", ((cpus * 1000.0).round() as u32).max(1))
 }
 
 fn mem_arg(mem_mib: u32) -> String {
@@ -236,6 +236,8 @@ impl Runner for OpenShellRunner {
 /// user can write (`/workspace` cannot be created by a non-root user).
 const GUEST_DIR: &str = "/sandbox";
 
+const MAX_STREAM_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Run a command with `input` on stdin and return its raw stdout (a tar stream, so not lossy-decoded).
 async fn piped(
     mut cmd: Command,
@@ -260,10 +262,33 @@ async fn piped(
     let mut stdout = child.stdout.take().context("child stdout was not piped")?;
     let mut stderr = child.stderr.take().context("child stderr was not piped")?;
     let run = async {
-        let (mut o, mut e) = (Vec::new(), Vec::new());
-        let (a, b) = tokio::join!(stdout.read_to_end(&mut o), stderr.read_to_end(&mut e));
-        a?;
-        b?;
+        let out_fut = async {
+            let mut o = Vec::new();
+            (&mut stdout)
+                .take(MAX_STREAM_BYTES + 1)
+                .read_to_end(&mut o)
+                .await?;
+            if o.len() as u64 > MAX_STREAM_BYTES {
+                let _ = tokio::io::copy(&mut stdout, &mut tokio::io::sink()).await;
+                bail!(
+                    "sandbox stream exceeds {} MiB limit",
+                    MAX_STREAM_BYTES >> 20
+                );
+            }
+            Ok::<_, anyhow::Error>(o)
+        };
+        let err_fut = async {
+            let mut e = Vec::new();
+            (&mut stderr)
+                .take(super::MAX_OUTPUT as u64)
+                .read_to_end(&mut e)
+                .await?;
+            let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
+            Ok::<_, anyhow::Error>(e)
+        };
+        let (a, b) = tokio::join!(out_fut, err_fut);
+        let o = a?;
+        let e = b?;
         let status = child.wait().await?;
         Ok::<_, anyhow::Error>((status.code(), o, String::from_utf8_lossy(&e).into_owned()))
     };
@@ -435,9 +460,25 @@ impl OpenShellRunner {
 }
 
 fn tempdir() -> Result<std::path::PathBuf> {
-    let p = std::env::temp_dir().join(random_name()?);
-    std::fs::create_dir_all(&p)?;
-    Ok(p)
+    let base = std::env::temp_dir();
+    for _ in 0..32 {
+        let mut rnd = [0u8; 16];
+        std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut rnd)?;
+        let hex: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
+        let p = base.join(format!("playbox-osh-{hex}"));
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&p) {
+            Ok(()) => return Ok(p),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    bail!("could not create an atomic scratch directory")
 }
 
 #[cfg(test)]

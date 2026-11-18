@@ -200,6 +200,12 @@ pub struct UpArgs {
     /// Let members' tasks read this secret from the host's secrets directory ($PLAYBOX_HOME/secrets) at /run/secrets; repeatable
     #[arg(long = "allow-secret", value_name = "NAME")]
     pub allow_secret: Vec<String>,
+    /// Named model-API upstreams for the host-side egress proxy (JSON file: array of upstreams or {upstreams, log_file})
+    #[arg(long, value_name = "FILE")]
+    pub egress: Option<String>,
+    /// Let members' tasks reach this upstream from --egress through the host-side proxy (injects secret header host-side); repeatable
+    #[arg(long = "allow-egress", value_name = "NAME")]
+    pub allow_egress: Vec<String>,
     /// Let members' tasks use this container image, besides the default (alpine:3); repeatable. Members still cannot name any other image.
     #[arg(long, value_name = "IMAGE")]
     pub allow_image: Vec<String>,

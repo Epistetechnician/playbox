@@ -259,19 +259,37 @@ impl Server {
         );
         self.refresh_connections().await;
         let mut out = self.dispatch(name, args).await;
-        if out.is_err() && self.client.is_some() && !matches!(name, "playbox_join" | "playbox_leave" | "playbox_create" | "playbox_use_host") {
+        if out.is_err()
+            && self.client.is_some()
+            && !matches!(
+                name,
+                "playbox_join" | "playbox_leave" | "playbox_create" | "playbox_use_host"
+            )
+        {
             // A call that failed may be a host that stopped answering. Check with a short ping; if it is gone, move to
             // another host of the room now, rather than waiting for the connection to time out. The failed call is not
             // retried (it may have reached the host), so say what happened and let the caller decide.
             if let Some(cur) = self.guest_arc() {
                 // Only a host that does not answer counts as gone; one that answers "no" (a revoked grant, say) is there.
-                let down = match tokio::time::timeout(std::time::Duration::from_secs(5), cur.echo("probe")).await {
+                let down = match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    cur.echo("probe"),
+                )
+                .await
+                {
                     Ok(Ok(_)) => false,
                     Ok(Err(e)) => {
                         let m = format!("{e:#}");
-                        !["revoked", "unauthorized", "grant", "not a member", "refused", "denied"]
-                            .iter()
-                            .any(|w| m.contains(w))
+                        ![
+                            "revoked",
+                            "unauthorized",
+                            "grant",
+                            "not a member",
+                            "refused",
+                            "denied",
+                        ]
+                        .iter()
+                        .any(|w| m.contains(w))
                     }
                     Err(_) => true,
                 };

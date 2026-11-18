@@ -29,6 +29,11 @@ fn main() -> ExitCode {
     unsafe {
         libc_sigpipe_default();
     }
+    let cli = Cli::parse();
+    if let Some(h) = &cli.home {
+        // Set before constructing the multi-threaded Tokio runtime so no worker thread races with setenv.
+        std::env::set_var("PLAYBOX_HOME", h);
+    }
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -39,7 +44,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match rt.block_on(run()) {
+    match rt.block_on(run(cli)) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("error: {e}");
@@ -61,11 +66,7 @@ unsafe fn libc_sigpipe_default() {
     signal(SIGPIPE, SIG_DFL);
 }
 
-async fn run() -> Result<ExitCode> {
-    let cli = Cli::parse();
-    if let Some(h) = &cli.home {
-        std::env::set_var("PLAYBOX_HOME", h);
-    }
+async fn run(cli: Cli) -> Result<ExitCode> {
     let r: Result<()> = match cli.command {
         Cmd::Up(a) => rooms::up(a).await,
         Cmd::Join(a) => rooms::join(a).await,

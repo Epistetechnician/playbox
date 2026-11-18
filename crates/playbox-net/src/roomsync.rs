@@ -5,8 +5,7 @@
 //! Peers are the same hosts the revocation sync already knows (`SyncHandler`'s allow-list).
 //!
 //! The log and its certificates are kept in a file (`roomlog.jsonl` in the state directory) and re-verified on
-//! load. Limits: the leader resends the whole log on each commit (fine for small rooms), and there is no
-//! failover yet (M2).
+//! load. Limits: the leader resends the whole log on each commit (fine for small rooms).
 
 use crate::sync::LockExt;
 use anyhow::{anyhow, bail, Context, Result};
@@ -322,7 +321,11 @@ impl RoomLogNode {
         if !out.status.success() {
             bail!(
                 "the evaluator failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect::<String>()
+                String::from_utf8_lossy(&out.stderr)
+                    .trim()
+                    .chars()
+                    .take(300)
+                    .collect::<String>()
             );
         }
         let line = String::from_utf8_lossy(&out.stdout);
@@ -340,7 +343,9 @@ impl RoomLogNode {
             .ok_or_else(|| anyhow!("the evaluator's `metric` is not a positive integer"))?;
         let tier = u8::try_from(v["tier"].as_u64().unwrap_or(0)).unwrap_or(0);
         Ok((
-            Receipt::sign(&self.room, &self.key, &problem, &candidate, &weights, env, tier, metric),
+            Receipt::sign(
+                &self.room, &self.key, &problem, &candidate, &weights, env, tier, metric,
+            ),
             weights,
         ))
     }
@@ -386,9 +391,15 @@ impl RoomLogNode {
         let mut why = Vec::new();
         for (peer, reply) in ask_all(endpoint, peers, &req).await {
             match reply {
-                Ok(v) => match (receipt_from_json(&v["receipt"]), v["weights"].as_str().and_then(roomlog::unhex::<32>)) {
+                Ok(v) => match (
+                    receipt_from_json(&v["receipt"]),
+                    v["weights"].as_str().and_then(roomlog::unhex::<32>),
+                ) {
                     (Some(r), Some(w)) if w == weights => receipts.push(r),
-                    (Some(_), _) => why.push(format!("{}: measured with other weights", peer.id.fmt_short())),
+                    (Some(_), _) => why.push(format!(
+                        "{}: measured with other weights",
+                        peer.id.fmt_short()
+                    )),
                     _ => why.push(format!("{}: no receipt", peer.id.fmt_short())),
                 },
                 Err(e) => why.push(format!("{}: {e:#}", peer.id.fmt_short())),
@@ -405,13 +416,29 @@ impl RoomLogNode {
         let before = receipts.len();
         let receipts = agreeing(receipts, noise);
         if receipts.len() < before {
-            why.push(format!("{} receipt(s) differed from the rest by more than {noise} ppm", before - receipts.len()));
+            why.push(format!(
+                "{} receipt(s) differed from the rest by more than {noise} ppm",
+                before - receipts.len()
+            ));
         }
-        let p = Promotion { problem, candidate, weights, receipts };
+        let p = Promotion {
+            problem,
+            candidate,
+            weights,
+            receipts,
+        };
         let mut g = self.log.lock_recover();
         let l = g.as_mut().ok_or_else(|| anyhow!("no room log"))?;
-        l.promote(&self.key, &p, now_ms())
-            .map_err(|e| anyhow!("{e} (from peers: {})", if why.is_empty() { "all answered".to_string() } else { why.join("; ") }))?;
+        l.promote(&self.key, &p, now_ms()).map_err(|e| {
+            anyhow!(
+                "{e} (from peers: {})",
+                if why.is_empty() {
+                    "all answered".to_string()
+                } else {
+                    why.join("; ")
+                }
+            )
+        })?;
         let metric = l.frontier(None)[&problem].1.metric;
         drop(g);
         self.save();
@@ -564,7 +591,11 @@ impl RoomLogNode {
                     bail!("this host has signed a bid for a later epoch");
                 }
                 let (who, sig) = l.cosign(&self.key, &cp).map_err(|e| anyhow!("{e}"))?;
-                if loc.last.as_ref().is_none_or(|c| (c.epoch, c.size) < (cp.epoch, cp.size)) {
+                if loc
+                    .last
+                    .as_ref()
+                    .is_none_or(|c| (c.epoch, c.size) < (cp.epoch, cp.size))
+                {
                     loc.last = Some(cp);
                 }
                 drop(loc);
@@ -585,7 +616,8 @@ impl RoomLogNode {
             }
             Some("propose") => {
                 let entries = Self::entries_from(&req["entries"])?;
-                let p = proposal_from_json(&req["proposal"]).ok_or_else(|| anyhow!("bad proposal"))?;
+                let p =
+                    proposal_from_json(&req["proposal"]).ok_or_else(|| anyhow!("bad proposal"))?;
                 let mut f = RoomLog::follower(self.room);
                 f.accept_all(entries).map_err(|e| anyhow!("{e}"))?;
                 let theirs = f.into_log().ok_or_else(|| anyhow!("no entries"))?;
@@ -600,7 +632,13 @@ impl RoomLogNode {
                 let mine = g.get_or_insert_with(|| theirs.clone());
                 let mut loc = self.local.lock_recover();
                 let (who, sig) = mine
-                    .cosign_proposal(&self.key, &theirs, &p, loc.last.as_ref(), loc.promised.as_ref())
+                    .cosign_proposal(
+                        &self.key,
+                        &theirs,
+                        &p,
+                        loc.last.as_ref(),
+                        loc.promised.as_ref(),
+                    )
                     .map_err(|e| anyhow!("{e}"))?;
                 loc.promised = Some(p);
                 drop(loc);
@@ -743,7 +781,9 @@ impl RoomLogNode {
         let reply = ask(endpoint, peer, &json!({ "op": "pull", "from": from })).await?;
         self.adopt(Self::entries_from(&reply["entries"])?)?;
         let g = self.log.lock_recover();
-        if g.as_ref().is_some_and(|l| l.config().leader == *peer.id.as_bytes()) {
+        if g.as_ref()
+            .is_some_and(|l| l.config().leader == *peer.id.as_bytes())
+        {
             // The leader itself answered: it is alive even if it has nothing to commit.
             *self.heard.lock_recover() = Instant::now();
         }
@@ -958,7 +998,19 @@ async fn ask(endpoint: &Endpoint, peer: &EndpointAddr, req: &Value) -> Result<Va
 }
 
 #[derive(Clone)]
-pub(crate) struct RoomLogHandler(pub Arc<RoomLogNode>);
+pub(crate) struct RoomLogHandler {
+    node: Arc<RoomLogNode>,
+    conns: Arc<tokio::sync::Semaphore>,
+}
+
+impl RoomLogHandler {
+    pub(crate) fn new(node: Arc<RoomLogNode>) -> Self {
+        Self {
+            node,
+            conns: Arc::new(tokio::sync::Semaphore::new(16)),
+        }
+    }
+}
 
 impl std::fmt::Debug for RoomLogHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -968,26 +1020,34 @@ impl std::fmt::Debug for RoomLogHandler {
 
 impl ProtocolHandler for RoomLogHandler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
-        if !self.0.allowed.lock_recover().contains(&conn.remote_id()) {
+        const IO_TIMEOUT: Duration = Duration::from_secs(15);
+        if !self.node.allowed.lock_recover().contains(&conn.remote_id()) {
             conn.close(1u32.into(), b"not a room peer");
             return Ok(());
         }
-        let Ok((mut send, mut recv)) = conn.accept_bi().await else {
+        let Ok(_slot) = self.conns.clone().try_acquire_owned() else {
+            conn.close(2u32.into(), b"too many sync streams");
             return Ok(());
         };
-        let Ok(body) = recv.read_to_end(MAX_MSG).await else {
+        let Ok(Ok((mut send, mut recv))) = tokio::time::timeout(IO_TIMEOUT, conn.accept_bi()).await
+        else {
+            conn.close(1u32.into(), b"sync stream timed out");
+            return Ok(());
+        };
+        let Ok(Ok(body)) = tokio::time::timeout(IO_TIMEOUT, recv.read_to_end(MAX_MSG)).await else {
+            conn.close(1u32.into(), b"sync read timed out");
             return Ok(());
         };
         let out = match serde_json::from_slice::<Value>(&body) {
-            Ok(r) => match self.0.handle_async(&r).await {
+            Ok(r) => match self.node.handle_async(&r).await {
                 Ok(v) => v,
                 Err(e) => json!({ "error": format!("{e:#}") }),
             },
             Err(e) => json!({ "error": format!("{e}") }),
         };
-        let _ = send.write_all(out.to_string().as_bytes()).await;
+        let _ = tokio::time::timeout(IO_TIMEOUT, send.write_all(out.to_string().as_bytes())).await;
         let _ = send.finish();
-        conn.closed().await;
+        let _ = tokio::time::timeout(IO_TIMEOUT, conn.closed()).await;
         Ok(())
     }
 }
@@ -1002,10 +1062,13 @@ mod tests {
         let root = SigningKey::from_bytes(&[7; 32]);
         let leader = SigningKey::from_bytes(&[8; 32]);
         let room = root.verifying_key().to_bytes();
-        let node = |key: &SigningKey| {
-            RoomLogNode::new(room, key.clone(), Arc::default(), None).unwrap()
-        };
-        let (a, b, watcher) = (node(&leader), node(&leader), node(&SigningKey::from_bytes(&[9; 32])));
+        let node =
+            |key: &SigningKey| RoomLogNode::new(room, key.clone(), Arc::default(), None).unwrap();
+        let (a, b, watcher) = (
+            node(&leader),
+            node(&leader),
+            node(&SigningKey::from_bytes(&[9; 32])),
+        );
         let hosts = vec![leader.verifying_key().to_bytes(); 1];
         for n in [&a, &b] {
             n.start(&root, hosts.clone(), 1, 5).unwrap();
@@ -1013,19 +1076,18 @@ mod tests {
         // One leader, two stories for entry 1.
         a.record("member.join", "alice", 10);
         b.record("member.join", "bob", 10);
-        let story = |n: &RoomLogNode| {
-            n.log
-                .lock_recover()
-                .as_ref()
-                .unwrap()
-                .entries()
-                .to_vec()
-        };
+        let story = |n: &RoomLogNode| n.log.lock_recover().as_ref().unwrap().entries().to_vec();
         watcher.adopt(story(&a)).unwrap();
-        assert!(watcher.adopt(story(&b)).is_err(), "the second story is refused");
+        assert!(
+            watcher.adopt(story(&b)).is_err(),
+            "the second story is refused"
+        );
         let st = watcher.status().unwrap();
         assert_eq!(st.members, vec!["alice".to_string()]);
-        assert_eq!(st.equivocators, vec![roomlog::hex(&leader.verifying_key().to_bytes())]);
+        assert_eq!(
+            st.equivocators,
+            vec![roomlog::hex(&leader.verifying_key().to_bytes())]
+        );
     }
 
     // REQ: ROOM-12
@@ -1035,14 +1097,26 @@ mod tests {
         let keys: Vec<SigningKey> = (10..13).map(|i| SigningKey::from_bytes(&[i; 32])).collect();
         let room = root.verifying_key().to_bytes();
         let hosts: Vec<[u8; 32]> = keys.iter().map(|k| k.verifying_key().to_bytes()).collect();
-        let node = |i: usize| RoomLogNode::new(room, keys[i].clone(), Arc::default(), None).unwrap();
+        let node =
+            |i: usize| RoomLogNode::new(room, keys[i].clone(), Arc::default(), None).unwrap();
         let (leader, bidder, voter) = (node(0), node(1), node(2));
         leader.start(&root, hosts, 2, 5).unwrap();
-        let entries = leader.log.lock_recover().as_ref().unwrap().entries().to_vec();
+        let entries = leader
+            .log
+            .lock_recover()
+            .as_ref()
+            .unwrap()
+            .entries()
+            .to_vec();
         for n in [&bidder, &voter] {
             n.adopt(entries.clone()).unwrap();
         }
-        let p = bidder.log.lock_recover().as_ref().unwrap().proposal(hosts_of(&keys, 1));
+        let p = bidder
+            .log
+            .lock_recover()
+            .as_ref()
+            .unwrap()
+            .proposal(hosts_of(&keys, 1));
         let req = json!({
             "op": "propose",
             "entries": entries.iter().map(text::entry_to_json).collect::<Vec<_>>(),

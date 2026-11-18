@@ -336,7 +336,7 @@ impl Equivocation {
         if (self.a.epoch, self.a.index) != (self.b.epoch, self.b.index) {
             return Err(no("different epoch or index"));
         }
-        if self.a.id(room) == self.b.id(room) {
+        if self.a.signing_bytes(room) == self.b.signing_bytes(room) {
             return Err(no("the same entry twice"));
         }
         self.a.check_signature(room)?;
@@ -710,16 +710,22 @@ impl RoomLog {
             return Err(bad("the proposer already leads and changes nothing"));
         }
         if theirs.cfg.epoch < self.cfg.epoch {
-            return Err(bad("the proposer's log is in an older epoch than this host's"));
+            return Err(bad(
+                "the proposer's log is in an older epoch than this host's",
+            ));
         }
         if let Some(c) = last {
             if theirs.head_at(c.size) != Some(c.head) {
-                return Err(bad("the proposer's log lacks a checkpoint this host cosigned"));
+                return Err(bad(
+                    "the proposer's log lacks a checkpoint this host cosigned",
+                ));
             }
         }
         if let Some(q) = promised {
             if q.epoch > p.epoch || (q.epoch == p.epoch && q != p) {
-                return Err(bad("this host promised that epoch or a later one to another bid"));
+                return Err(bad(
+                    "this host promised that epoch or a later one to another bid",
+                ));
             }
         }
         Ok((me, key.sign(&p.signing_bytes(&self.room)).to_bytes()))
@@ -798,7 +804,12 @@ impl RoomLog {
         reg: &promotion::Register,
         time_ms: u64,
     ) -> Result<&Entry, LogError> {
-        self.append(key, "problem.register", &promotion::register_payload(reg), time_ms)
+        self.append(
+            key,
+            "problem.register",
+            &promotion::register_payload(reg),
+            time_ms,
+        )
     }
 
     /// Record a promotion (leader only), carrying the receipts. Every host replaying the log re-checks them.
@@ -1097,18 +1108,20 @@ pub mod text {
     use super::{hex, unhex, Entry, FollowerLog, Key, LogError, RoomLog};
     use serde_json::{json, Value};
 
+    fn unhex_vec(s: &str) -> Option<Vec<u8>> {
+        if !s.len().is_multiple_of(2) || !s.is_ascii() {
+            return None;
+        }
+        (0..s.len() / 2)
+            .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok())
+            .collect()
+    }
+
     #[must_use]
     pub fn to_text(l: &RoomLog) -> String {
         let mut out = String::new();
         for e in l.entries() {
-            out.push_str(
-                &json!({
-                    "epoch": e.epoch, "index": e.index, "prev": hex(&e.prev), "kind": e.kind,
-                    "payload": String::from_utf8_lossy(&e.payload), "time_ms": e.time_ms,
-                    "signer": hex(&e.signer), "sig": hex(&e.sig),
-                })
-                .to_string(),
-            );
+            out.push_str(&entry_to_json(e).to_string());
             out.push('\n');
         }
         out
@@ -1134,12 +1147,19 @@ pub mod text {
     }
 
     pub fn entry_from_json(v: &Value) -> Option<Entry> {
+        let payload = if let Some(s) = v.get("payload").and_then(Value::as_str) {
+            s.as_bytes().to_vec()
+        } else if let Some(h) = v.get("payload_hex").and_then(Value::as_str) {
+            unhex_vec(h)?
+        } else {
+            return None;
+        };
         Some(Entry {
             epoch: v["epoch"].as_u64()?,
             index: v["index"].as_u64()?,
             prev: unhex(v["prev"].as_str()?)?,
             kind: v["kind"].as_str()?.to_string(),
-            payload: v["payload"].as_str()?.as_bytes().to_vec(),
+            payload,
             time_ms: v["time_ms"].as_u64()?,
             signer: unhex(v["signer"].as_str()?)?,
             sig: unhex(v["sig"].as_str()?)?,
@@ -1160,11 +1180,18 @@ pub mod text {
 
     #[must_use]
     pub fn entry_to_json(e: &Entry) -> Value {
-        json!({
-            "epoch": e.epoch, "index": e.index, "prev": hex(&e.prev), "kind": e.kind,
-            "payload": String::from_utf8_lossy(&e.payload), "time_ms": e.time_ms,
-            "signer": hex(&e.signer), "sig": hex(&e.sig),
-        })
+        match std::str::from_utf8(&e.payload) {
+            Ok(s) => json!({
+                "epoch": e.epoch, "index": e.index, "prev": hex(&e.prev), "kind": e.kind,
+                "payload": s, "time_ms": e.time_ms,
+                "signer": hex(&e.signer), "sig": hex(&e.sig),
+            }),
+            Err(_) => json!({
+                "epoch": e.epoch, "index": e.index, "prev": hex(&e.prev), "kind": e.kind,
+                "payload_hex": hex(&e.payload), "time_ms": e.time_ms,
+                "signer": hex(&e.signer), "sig": hex(&e.sig),
+            }),
+        }
     }
 }
 
@@ -1529,10 +1556,14 @@ mod tests {
         let (p, sigs) = bid(&r, 1, &f1, &[(1, &copy(&l)), (2, &f2)]);
         assert_eq!(sigs.len(), 2);
         f1.new_epoch(&r.hosts[1], &p, &sigs, 20).unwrap();
-        assert_eq!((f1.config().epoch, f1.config().leader), (1, pk(&r.hosts[1])));
+        assert_eq!(
+            (f1.config().epoch, f1.config().leader),
+            (1, pk(&r.hosts[1]))
+        );
         f1.append(&r.hosts[1], "member.join", &json!({"member": "b"}), 30)
             .unwrap();
-        f1.verify().expect("the whole log replays from the genesis, across the epoch change");
+        f1.verify()
+            .expect("the whole log replays from the genesis, across the epoch change");
 
         // A follower that was in epoch 0 takes the new epoch and the entries after it.
         let mut f2 = f2;
@@ -1569,8 +1600,14 @@ mod tests {
             pk(&stranger),
             stranger.sign(&p.signing_bytes(&l.room())).to_bytes(),
         );
-        let other = Proposal { leader: pk(&r.hosts[2]), ..p.clone() };
-        sigs.insert(pk(&r.hosts[3]), r.hosts[3].sign(&other.signing_bytes(&l.room())).to_bytes());
+        let other = Proposal {
+            leader: pk(&r.hosts[2]),
+            ..p.clone()
+        };
+        sigs.insert(
+            pk(&r.hosts[3]),
+            r.hosts[3].sign(&other.signing_bytes(&l.room())).to_bytes(),
+        );
         assert_eq!(
             t.new_epoch(&r.hosts[1], &p, &sigs, 20).unwrap_err(),
             LogError::NoQuorum(2)
@@ -1691,7 +1728,10 @@ mod tests {
                 _ => neither += 1,
             }
         }
-        assert!(won1 > 0 && won2 > 0 && neither > 0, "{won1}/{won2}/{neither}: the schedules should vary");
+        assert!(
+            won1 > 0 && won2 > 0 && neither > 0,
+            "{won1}/{won2}/{neither}: the schedules should vary"
+        );
     }
 
     // REQ: ROOM-13
@@ -1705,17 +1745,43 @@ mod tests {
             ..a.clone()
         }
         .sign(&l.room(), &r.hosts[0]);
-        let q = Equivocation { a: a.clone(), b: b.clone() };
+        let q = Equivocation {
+            a: a.clone(),
+            b: b.clone(),
+        };
         assert_eq!(q.verify(&l.room()).unwrap(), pk(&r.hosts[0]));
         // Another room's key does not accept it: the signatures cover the room.
         assert!(q.verify(&pk(&key())).is_err());
         // Not a proof: one entry twice, different positions, different keys, a bad signature.
-        assert!(Equivocation { a: a.clone(), b: a.clone() }.verify(&l.room()).is_err());
-        let moved = Entry { index: 5, ..a.clone() }.sign(&l.room(), &r.hosts[0]);
-        assert!(Equivocation { a: a.clone(), b: moved }.verify(&l.room()).is_err());
+        assert!(Equivocation {
+            a: a.clone(),
+            b: a.clone()
+        }
+        .verify(&l.room())
+        .is_err());
+        let moved = Entry {
+            index: 5,
+            ..a.clone()
+        }
+        .sign(&l.room(), &r.hosts[0]);
+        assert!(Equivocation {
+            a: a.clone(),
+            b: moved
+        }
+        .verify(&l.room())
+        .is_err());
         let other_key = Entry { ..b.clone() }.sign(&l.room(), &r.hosts[1]);
-        let other_key = Entry { signer: pk(&r.hosts[1]), ..other_key }.sign(&l.room(), &r.hosts[1]);
-        assert!(Equivocation { a: a.clone(), b: other_key }.verify(&l.room()).is_err());
+        let other_key = Entry {
+            signer: pk(&r.hosts[1]),
+            ..other_key
+        }
+        .sign(&l.room(), &r.hosts[1]);
+        assert!(Equivocation {
+            a: a.clone(),
+            b: other_key
+        }
+        .verify(&l.room())
+        .is_err());
         let mut forged = b.clone();
         forged.sig[0] ^= 1;
         assert!(Equivocation { a, b: forged }.verify(&l.room()).is_err());
@@ -1732,7 +1798,9 @@ mod tests {
         other
             .append(&r.hosts[0], "member.join", &json!({"member": "y"}), 11)
             .unwrap();
-        let q = l.find_equivocation(other.since(2, 1).as_slice()).expect("proof");
+        let q = l
+            .find_equivocation(other.since(2, 1).as_slice())
+            .expect("proof");
         assert_eq!(q.verify(&l.room()).unwrap(), pk(&r.hosts[0]));
         // The same entry, or one in another epoch's position, is no proof.
         assert!(l.find_equivocation(l.since(2, 1).as_slice()).is_none());
@@ -1830,13 +1898,20 @@ mod tests {
             &l,
             &hosts,
             3,
-            &[(&r.hosts[0], &copies[0]), (&r.hosts[1], &copies[1]), (&r.hosts[2], &copies[2])],
+            &[
+                (&r.hosts[0], &copies[0]),
+                (&r.hosts[1], &copies[1]),
+                (&r.hosts[2], &copies[2]),
+            ],
         );
         assert_eq!(sigs.len(), 3);
         l.new_epoch(&r.hosts[0], &p, &sigs, 20).unwrap();
         assert_eq!(l.config().epoch, 1);
-        assert!(l.config().hosts.contains(&pk(&fresh)) && !l.config().hosts.contains(&pk(&r.hosts[4])));
-        l.verify().expect("the log replays from the genesis across the change");
+        assert!(
+            l.config().hosts.contains(&pk(&fresh)) && !l.config().hosts.contains(&pk(&r.hosts[4]))
+        );
+        l.verify()
+            .expect("the log replays from the genesis across the change");
 
         // The removed key can no longer cosign, lead or have a signature counted.
         let cp = l.checkpoint();
@@ -1891,7 +1966,9 @@ mod tests {
         // One newcomer, who replays the log first, makes the new quorum; the old one still holds.
         let mut sigs = sigs;
         let nc = copy(&l);
-        let (who, sig) = nc.cosign_proposal(&newcomers[0], &l, &p, None, None).unwrap();
+        let (who, sig) = nc
+            .cosign_proposal(&newcomers[0], &l, &p, None, None)
+            .unwrap();
         sigs.insert(who, sig);
         copy(&l).new_epoch(&r.hosts[0], &p, &sigs, 20).unwrap();
         // The new set alone is not enough either: the old hosts must agree to the change.
@@ -1901,10 +1978,14 @@ mod tests {
             only_new.insert(who, sig);
             let _ = i;
         }
-        let (who, sig) = copies[0].cosign_proposal(&r.hosts[0], &l, &p, None, None).unwrap();
+        let (who, sig) = copies[0]
+            .cosign_proposal(&r.hosts[0], &l, &p, None, None)
+            .unwrap();
         only_new.insert(who, sig);
         assert_eq!(
-            copy(&l).new_epoch(&r.hosts[0], &p, &only_new, 20).unwrap_err(),
+            copy(&l)
+                .new_epoch(&r.hosts[0], &p, &only_new, 20)
+                .unwrap_err(),
             LogError::NoQuorum(2)
         );
     }
@@ -1929,7 +2010,13 @@ mod tests {
         assert!(sigs.is_empty());
         // Removing a host down to two of two is fine: k = 2.
         let two: Vec<Key> = all[..2].to_vec();
-        let (p, mut sigs) = reconfig_bid(&r, &l, &two, 2, &[(&r.hosts[0], &copies[0]), (&r.hosts[1], &copies[1])]);
+        let (p, mut sigs) = reconfig_bid(
+            &r,
+            &l,
+            &two,
+            2,
+            &[(&r.hosts[0], &copies[0]), (&r.hosts[1], &copies[1])],
+        );
         // The old quorum is 2 of 3 and the new is 2 of 2; both are met.
         let mut t = copy(&l);
         t.new_epoch(&r.hosts[0], &p, &sigs, 20).unwrap();
@@ -1949,8 +2036,15 @@ mod tests {
         let mut hosts: Vec<Key> = r.hosts.iter().map(pk).collect();
         hosts.push(pk(&newcomer));
         let (p, sigs) = reconfig_bid(
-            &r, &l, &hosts, 3,
-            &[(&r.hosts[0], &copies[0]), (&r.hosts[1], &copies[1]), (&r.hosts[2], &copies[2])],
+            &r,
+            &l,
+            &hosts,
+            3,
+            &[
+                (&r.hosts[0], &copies[0]),
+                (&r.hosts[1], &copies[1]),
+                (&r.hosts[2], &copies[2]),
+            ],
         );
         let before = l.config().clone();
         l.new_epoch(&r.hosts[0], &p, &sigs, 20).unwrap();
@@ -1978,7 +2072,11 @@ mod tests {
         let (r, mut l) = room(n, k);
         let reg = Register {
             problem: PROBLEM,
-            rule: Rule { j, noise_ppm: 50_000, min_gain_ppm: 50_000 },
+            rule: Rule {
+                j,
+                noise_ppm: 50_000,
+                min_gain_ppm: 50_000,
+            },
             baseline: 1_000_000,
         };
         l.register_problem(&r.hosts[0], &reg, 5).unwrap();
@@ -1986,11 +2084,25 @@ mod tests {
     }
 
     fn receipt(r: &Room, l: &RoomLog, host: usize, cand: Hash, tier: u8, metric: i64) -> Receipt {
-        Receipt::sign(&l.room(), &r.hosts[host], &PROBLEM, &cand, &WEIGHTS, [host as u8; 32], tier, metric)
+        Receipt::sign(
+            &l.room(),
+            &r.hosts[host],
+            &PROBLEM,
+            &cand,
+            &WEIGHTS,
+            [host as u8; 32],
+            tier,
+            metric,
+        )
     }
 
     fn promo(cand: Hash, receipts: Vec<Receipt>) -> Promotion {
-        Promotion { problem: PROBLEM, candidate: cand, weights: WEIGHTS, receipts }
+        Promotion {
+            problem: PROBLEM,
+            candidate: cand,
+            weights: WEIGHTS,
+            receipts,
+        }
     }
 
     // REQ: ROOM-16
@@ -2000,13 +2112,29 @@ mod tests {
         for (j, ok) in [(1usize, false), (2, true), (4, false)] {
             let reg = Register {
                 problem: [j as u8; 32],
-                rule: Rule { j, noise_ppm: 1, min_gain_ppm: 1 },
+                rule: Rule {
+                    j,
+                    noise_ppm: 1,
+                    min_gain_ppm: 1,
+                },
                 baseline: 1,
             };
-            assert_eq!(l.register_problem(&r.hosts[0], &reg, 5).is_ok(), ok, "j={j}");
+            assert_eq!(
+                l.register_problem(&r.hosts[0], &reg, 5).is_ok(),
+                ok,
+                "j={j}"
+            );
         }
         // The same problem cannot be registered twice with a different rule.
-        let again = Register { problem: [2; 32], rule: Rule { j: 2, noise_ppm: 1_000_000, min_gain_ppm: 0 }, baseline: 1 };
+        let again = Register {
+            problem: [2; 32],
+            rule: Rule {
+                j: 2,
+                noise_ppm: 1_000_000,
+                min_gain_ppm: 0,
+            },
+            baseline: 1,
+        };
         assert!(l.register_problem(&r.hosts[0], &again, 6).is_err());
     }
 
@@ -2015,10 +2143,20 @@ mod tests {
     fn two_distinct_hosts_with_agreeing_receipts_promote_and_the_strength_is_the_lowest_tier() {
         let (r, mut l) = registered(3, 2, 2);
         let cand = [1; 32];
-        let p = promo(cand, vec![receipt(&r, &l, 0, cand, 3, 1_200_000), receipt(&r, &l, 1, cand, 1, 1_180_000)]);
+        let p = promo(
+            cand,
+            vec![
+                receipt(&r, &l, 0, cand, 3, 1_200_000),
+                receipt(&r, &l, 1, cand, 1, 1_180_000),
+            ],
+        );
         l.promote(&r.hosts[0], &p, 10).unwrap();
         let f = &l.frontier(None)[&PROBLEM].1;
-        assert_eq!((f.candidate, f.metric, f.strength), (cand, 1_180_000, 1), "lowest metric and lowest tier");
+        assert_eq!(
+            (f.candidate, f.metric, f.strength),
+            (cand, 1_180_000, 1),
+            "lowest metric and lowest tier"
+        );
         // A follower replaying from the root key reaches the same frontier.
         let f2 = copy(&l);
         assert_eq!(f2.frontier(None)[&PROBLEM].1, *f);
@@ -2031,26 +2169,79 @@ mod tests {
         let cand = [1; 32];
         let good = receipt(&r, &l, 0, cand, 2, 1_200_000);
         // One receipt.
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![good.clone()]), 10).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("1 distinct")), "{e}");
+        let e = l
+            .promote(&r.hosts[0], &promo(cand, vec![good.clone()]), 10)
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("1 distinct")),
+            "{e}"
+        );
         // The same host twice.
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![good.clone(), good.clone()]), 10).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("once")), "{e}");
+        let e = l
+            .promote(
+                &r.hosts[0],
+                &promo(cand, vec![good.clone(), good.clone()]),
+                10,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("once")),
+            "{e}"
+        );
         // A key that is not a host.
         let stranger = key();
-        let s = Receipt::sign(&l.room(), &stranger, &PROBLEM, &cand, &WEIGHTS, [0; 32], 4, 1_200_000);
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![good.clone(), s]), 10).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("not a host")), "{e}");
+        let s = Receipt::sign(
+            &l.room(),
+            &stranger,
+            &PROBLEM,
+            &cand,
+            &WEIGHTS,
+            [0; 32],
+            4,
+            1_200_000,
+        );
+        let e = l
+            .promote(&r.hosts[0], &promo(cand, vec![good.clone(), s]), 10)
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("not a host")),
+            "{e}"
+        );
         // A receipt whose number was edited after signing, or that was signed for other weights or another candidate.
         let mut edited = receipt(&r, &l, 1, cand, 2, 1_190_000);
         edited.metric = 2_000_000;
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![good.clone(), edited]), 10).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("signature")), "{e}");
-        let other_weights = Receipt::sign(&l.room(), &r.hosts[1], &PROBLEM, &cand, &[9; 32], [1; 32], 2, 1_190_000);
-        assert!(l.promote(&r.hosts[0], &promo(cand, vec![good.clone(), other_weights]), 10).is_err());
+        let e = l
+            .promote(&r.hosts[0], &promo(cand, vec![good.clone(), edited]), 10)
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("signature")),
+            "{e}"
+        );
+        let other_weights = Receipt::sign(
+            &l.room(),
+            &r.hosts[1],
+            &PROBLEM,
+            &cand,
+            &[9; 32],
+            [1; 32],
+            2,
+            1_190_000,
+        );
+        assert!(l
+            .promote(
+                &r.hosts[0],
+                &promo(cand, vec![good.clone(), other_weights]),
+                10
+            )
+            .is_err());
         let other_cand = receipt(&r, &l, 1, [2; 32], 2, 1_190_000);
-        assert!(l.promote(&r.hosts[0], &promo(cand, vec![good, other_cand]), 10).is_err());
-        assert!(l.frontier(None)[&PROBLEM].1.candidate == [0; 32], "nothing was promoted");
+        assert!(l
+            .promote(&r.hosts[0], &promo(cand, vec![good, other_cand]), 10)
+            .is_err());
+        assert!(
+            l.frontier(None)[&PROBLEM].1.candidate == [0; 32],
+            "nothing was promoted"
+        );
     }
 
     // REQ: ROOM-16
@@ -2059,17 +2250,95 @@ mod tests {
         let (r, mut l) = registered(3, 2, 2);
         let cand = [1; 32];
         // 20% apart is more than the 5% noise allowed.
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_500_000), receipt(&r, &l, 1, cand, 2, 1_200_000)]), 10).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("differ")), "{e}");
+        let e = l
+            .promote(
+                &r.hosts[0],
+                &promo(
+                    cand,
+                    vec![
+                        receipt(&r, &l, 0, cand, 2, 1_500_000),
+                        receipt(&r, &l, 1, cand, 2, 1_200_000),
+                    ],
+                ),
+                10,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("differ")),
+            "{e}"
+        );
         // Both agree, but the lower one is only 3% over the baseline: under the 5% gain.
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_060_000), receipt(&r, &l, 1, cand, 2, 1_030_000)]), 10).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("does not beat")), "{e}");
+        let e = l
+            .promote(
+                &r.hosts[0],
+                &promo(
+                    cand,
+                    vec![
+                        receipt(&r, &l, 0, cand, 2, 1_060_000),
+                        receipt(&r, &l, 1, cand, 2, 1_030_000),
+                    ],
+                ),
+                10,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("does not beat")),
+            "{e}"
+        );
         // Promoted, then the same candidate again, and a gain measured against the new frontier.
-        l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_300_000), receipt(&r, &l, 1, cand, 2, 1_280_000)]), 10).unwrap();
-        assert!(l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_300_000), receipt(&r, &l, 1, cand, 2, 1_280_000)]), 11).is_err());
+        l.promote(
+            &r.hosts[0],
+            &promo(
+                cand,
+                vec![
+                    receipt(&r, &l, 0, cand, 2, 1_300_000),
+                    receipt(&r, &l, 1, cand, 2, 1_280_000),
+                ],
+            ),
+            10,
+        )
+        .unwrap();
+        assert!(l
+            .promote(
+                &r.hosts[0],
+                &promo(
+                    cand,
+                    vec![
+                        receipt(&r, &l, 0, cand, 2, 1_300_000),
+                        receipt(&r, &l, 1, cand, 2, 1_280_000)
+                    ]
+                ),
+                11
+            )
+            .is_err());
         let next = [2; 32];
-        assert!(l.promote(&r.hosts[0], &promo(next, vec![receipt(&r, &l, 0, next, 2, 1_310_000), receipt(&r, &l, 1, next, 2, 1_300_000)]), 12).is_err(), "1.3 is not 5% over 1.28");
-        l.promote(&r.hosts[0], &promo(next, vec![receipt(&r, &l, 0, next, 2, 1_400_000), receipt(&r, &l, 1, next, 2, 1_380_000)]), 13).unwrap();
+        assert!(
+            l.promote(
+                &r.hosts[0],
+                &promo(
+                    next,
+                    vec![
+                        receipt(&r, &l, 0, next, 2, 1_310_000),
+                        receipt(&r, &l, 1, next, 2, 1_300_000)
+                    ]
+                ),
+                12
+            )
+            .is_err(),
+            "1.3 is not 5% over 1.28"
+        );
+        l.promote(
+            &r.hosts[0],
+            &promo(
+                next,
+                vec![
+                    receipt(&r, &l, 0, next, 2, 1_400_000),
+                    receipt(&r, &l, 1, next, 2, 1_380_000),
+                ],
+            ),
+            13,
+        )
+        .unwrap();
         assert_eq!(l.frontier(None)[&PROBLEM].1.candidate, next);
     }
 
@@ -2078,7 +2347,10 @@ mod tests {
     fn a_leader_that_writes_a_promotion_the_rule_forbids_is_refused_by_every_follower() {
         let (r, l) = registered(3, 2, 2);
         let cand = [1; 32];
-        let forged = promotion::promotion_payload(&promo(cand, vec![receipt(&r, &l, 0, cand, 4, 9_000_000)]));
+        let forged = promotion::promotion_payload(&promo(
+            cand,
+            vec![receipt(&r, &l, 0, cand, 4, 9_000_000)],
+        ));
         // The leader signs it itself, skipping its own checks.
         let e = Entry {
             epoch: 0,
@@ -2107,8 +2379,25 @@ mod tests {
         };
         let reg = commit(&l);
         let cand = [1; 32];
-        l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_200_000), receipt(&r, &l, 1, cand, 2, 1_190_000)]), 10).unwrap();
-        assert_eq!(l.frontier(Some(std::slice::from_ref(&reg)))[&PROBLEM].1.candidate, [0; 32], "promotion not committed yet");
+        l.promote(
+            &r.hosts[0],
+            &promo(
+                cand,
+                vec![
+                    receipt(&r, &l, 0, cand, 2, 1_200_000),
+                    receipt(&r, &l, 1, cand, 2, 1_190_000),
+                ],
+            ),
+            10,
+        )
+        .unwrap();
+        assert_eq!(
+            l.frontier(Some(std::slice::from_ref(&reg)))[&PROBLEM]
+                .1
+                .candidate,
+            [0; 32],
+            "promotion not committed yet"
+        );
         let both = commit(&l);
         assert_eq!(l.frontier(Some(&[reg, both]))[&PROBLEM].1.candidate, cand);
     }
@@ -2119,11 +2408,87 @@ mod tests {
         let (r, mut l) = registered(3, 2, 2);
         let copies: Vec<RoomLog> = (0..3).map(|_| copy(&l)).collect();
         let hosts: Vec<Key> = r.hosts[..2].iter().map(pk).collect();
-        let (p, sigs) = reconfig_bid(&r, &l, &hosts, 2, &[(&r.hosts[0], &copies[0]), (&r.hosts[1], &copies[1])]);
+        let (p, sigs) = reconfig_bid(
+            &r,
+            &l,
+            &hosts,
+            2,
+            &[(&r.hosts[0], &copies[0]), (&r.hosts[1], &copies[1])],
+        );
         l.new_epoch(&r.hosts[0], &p, &sigs, 20).unwrap();
         let cand = [1; 32];
-        let e = l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_200_000), receipt(&r, &l, 2, cand, 2, 1_190_000)]), 30).unwrap_err();
-        assert!(matches!(&e, LogError::Promotion(_, m) if m.contains("not a host")), "{e}");
-        l.promote(&r.hosts[0], &promo(cand, vec![receipt(&r, &l, 0, cand, 2, 1_200_000), receipt(&r, &l, 1, cand, 2, 1_190_000)]), 30).unwrap();
+        let e = l
+            .promote(
+                &r.hosts[0],
+                &promo(
+                    cand,
+                    vec![
+                        receipt(&r, &l, 0, cand, 2, 1_200_000),
+                        receipt(&r, &l, 2, cand, 2, 1_190_000),
+                    ],
+                ),
+                30,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&e, LogError::Promotion(_, m) if m.contains("not a host")),
+            "{e}"
+        );
+        l.promote(
+            &r.hosts[0],
+            &promo(
+                cand,
+                vec![
+                    receipt(&r, &l, 0, cand, 2, 1_200_000),
+                    receipt(&r, &l, 1, cand, 2, 1_190_000),
+                ],
+            ),
+            30,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn non_utf8_entry_payloads_and_equivocations_round_trip_through_json() {
+        let (r, l) = room(1, 1);
+        let a = Entry {
+            epoch: 0,
+            index: 1,
+            prev: l.head(),
+            kind: "note".into(),
+            payload: vec![0xff, 0xfe, 0x00, 0x80],
+            time_ms: 10,
+            signer: pk(&r.hosts[0]),
+            sig: [0; 64],
+        }
+        .sign(&l.room(), &r.hosts[0]);
+        let b = Entry {
+            payload: vec![0xff, 0xfd, 0x00, 0x80],
+            ..a.clone()
+        }
+        .sign(&l.room(), &r.hosts[0]);
+
+        let ja = text::entry_to_json(&a);
+        assert!(ja.get("payload").is_none());
+        assert_eq!(ja["payload_hex"], "fffe0080");
+        assert_eq!(text::entry_from_json(&ja).unwrap(), a);
+
+        let q = Equivocation {
+            a: a.clone(),
+            b: b.clone(),
+        };
+        assert_eq!(q.verify(&l.room()).unwrap(), pk(&r.hosts[0]));
+        let round = text::equivocation_from_json(&text::equivocation_to_json(&q)).unwrap();
+        assert_eq!(round, q);
+        assert_eq!(round.verify(&l.room()).unwrap(), pk(&r.hosts[0]));
+
+        // Identical signing_bytes with a different signature byte is rejected as not an equivocation
+        // (and bad signature if invalid, or "same entry twice" when signing_bytes match).
+        let mut alt_sig = a.clone();
+        alt_sig.sig[0] ^= 1;
+        assert!(matches!(
+            Equivocation { a, b: alt_sig }.verify(&l.room()),
+            Err(LogError::NotEquivocation(_))
+        ));
     }
 }

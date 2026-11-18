@@ -33,7 +33,7 @@ extern "C" {
     fn krun_start_enter(ctx: u32) -> i32;
 }
 
-const USAGE: &str = "usage: playbox-krun-helper --root DIR --workspace DIR --cpus N --mem MIB [--network] [--secrets DIR] [--cgroup DIR] [--jail-dir DIR] [--rw DIR].. [--ro DIR].. [--seccomp] -- CMD [ARG...]";
+const USAGE: &str = "usage: playbox-krun-helper --root DIR --workspace DIR --cpus N --mem MIB [--network] [--secrets DIR] [--env KEY=VAL].. [--cgroup DIR] [--jail-dir DIR] [--rw DIR].. [--ro DIR].. [--seccomp] -- CMD [ARG...]";
 
 /// Mount the workspace share, enter it, and hand over to the command.
 const GUEST_SCRIPT: &str = r#"mkdir -p /workspace && mount -t virtiofs workspace /workspace || exit 125; cd /workspace || exit 125; exec "$@""#;
@@ -61,6 +61,7 @@ fn main() {
     let (mut root, mut workspace, mut cpus, mut mem, mut network) =
         (None, None, 1u8, 512u32, false);
     let mut secrets: Option<String> = None;
+    let mut extra_env: Vec<String> = Vec::new();
     let (mut cgroup, mut jail_dir, mut seccomp) = (None::<String>, None::<String>, false);
     let (mut rw, mut ro): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     let mut cmd: Vec<String> = Vec::new();
@@ -82,6 +83,22 @@ fn main() {
             }
             "--network" => network = true,
             "--secrets" => secrets = args.next(),
+            "--env" => {
+                let kv = args.next().unwrap_or_else(|| die("missing --env value"));
+                let Some((k, _)) = kv.split_once('=') else {
+                    die("bad --env (expected KEY=VALUE)");
+                };
+                if k.is_empty()
+                    || matches!(
+                        k,
+                        "PATH" | "HOME" | "TERM" | "LD_PRELOAD" | "LD_LIBRARY_PATH"
+                    )
+                    || !k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                {
+                    die("bad --env key");
+                }
+                extra_env.push(kv);
+            }
             "--cgroup" => cgroup = args.next(),
             "--jail-dir" => jail_dir = args.next(),
             "--rw" => rw.extend(args.next()),
@@ -113,11 +130,12 @@ fn main() {
     let secrets_tag = c("secrets");
     // An explicit environment: with NULL libkrun copies ours onto the guest kernel command line,
     // which overflows for a normal shell environment.
-    let env_strings = [
+    let mut env_strings = vec![
         c("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
         c("HOME=/root"),
         c("TERM=dumb"),
     ];
+    env_strings.extend(extra_env.iter().map(|kv| c(kv)));
     let mut envp: Vec<*const c_char> = env_strings.iter().map(|s| s.as_ptr()).collect();
     envp.push(std::ptr::null());
 

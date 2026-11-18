@@ -5,7 +5,11 @@ use libfuzzer_sys::fuzz_target;
 use playbox_net::latent::{LatentPolicy, Mailbox};
 
 fuzz_target!(|data: &[u8]| {
-    let path = std::env::temp_dir().join(format!("playbox-fuzz-latent-{}.json", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "playbox-fuzz-latent-{}-{:?}.json",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     if std::fs::write(&path, data).is_ok() {
         let _ = Mailbox::new(LatentPolicy {
             store: Some(path.clone()),

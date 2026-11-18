@@ -163,6 +163,8 @@ fn base_tool_list() -> Value {
                 "memory_review": {"type": "boolean", "description": "Hold members' memory entries as pending until you accept them. Default false."},
                 "capabilities": {"type": "array", "items": {"type": "object"}, "description": "Operations members may call by name, each run once in the sandbox (docs/capabilities.md): {name, argv with {param} placeholders, params {name: {allowed, max_len}}, approval, image, timeout_secs}. Needs a runtime."},
                 "allowed_secrets": {"type": "array", "items": {"type": "string"}, "description": "Names of secrets in the host's secrets directory that members' tasks may read at /run/secrets. Never shown to members; the audit log records names and hashes."},
+                "egress": {"description": "Host-side model-API egress proxy config (`libkrun`): path to a JSON file, array of upstreams, or `{upstreams, log_file}`."},
+                "allowed_egress": {"type": "array", "items": {"type": "string"}, "description": "Names of upstreams from `egress` that members' tasks may reach through the host-side proxy. The host injects credentials outside the guest."},
                 "confine": {"type": "boolean", "description": "Linux, libkrun only: jail each task's helper, put it in a cgroup with memory/CPU/process limits, and filter its network."},
                 "confine_net": {"type": "string", "description": "With confine: the most network a task may have: none (default), internet, internet+lan."},
                 "latent_hubs": {"type": "array", "items": {"type": "string"}, "description": "Accept hub latent messages (docs/latent-channels.md) only for these hub ids. Without it any hub id is accepted."},
@@ -289,6 +291,7 @@ fn base_tool_list() -> Value {
                 "cpus": {"type": "number"}, "mem_mib": {"type": "integer"},
                 "timeout_secs": {"type": "integer"}, "network": {"type": "boolean"},
                 "secrets": {"type": "array", "items": {"type": "string"}, "description": "Names of host-held secrets to read at /run/secrets. Must be listed in your grant; you never see the values."},
+                "egress": {"type": "array", "items": {"type": "string"}, "description": "Names of host-side egress upstreams to expose inside the guest as loopback base URLs (with credentials injected host-side). Must be listed in your grant; needs a host running `libkrun`."},
                 "allowed_hosts": {"type": "array", "items": {"type": "string"}, "description": "Limit the task's network to exactly these destinations (`host` or `host:port`). Must be listed in your grant; needs a host running the openshell runtime."},
                 "apply": {"type": "boolean", "description": "Apply the returned patch to your workspace (staged, not committed). Default false."},
                 "capability": {"type": "string", "description": "A single-use approval for exactly this command, issued by the person you work for with `playbox approve`. Needed when the command contains text copied from another member's task output or patch."}
@@ -320,7 +323,7 @@ fn base_tool_list() -> Value {
                 "capability": {"type": "string", "description": "A single-use approval for exactly this branch name, from `playbox approve`. Needed when the name contains text copied from another member's output."}
             }), &["branch"]),
         tool("playbox_verify",
-            "Verify a history log: hash chain, signatures, and any attestations in it (including the host's, recorded when you joined). Defaults to this session's log. Verified tier T0 means the key holder signed the claims; higher tiers need platform verifiers that are not available yet.",
+            "Verify a history log: hash chain, signatures, and any attestations in it (including the host's, recorded when you joined). Defaults to this session's log. Verified tier T0 means the key holder signed the claims; T1 verifies Secure Enclave / TPM device binding and T3 verifies Confidential Space TDX reports.",
             json!({"path": {"type": "string"}}), &[]),
         tool("playbox_use_host",
             "Guest only: send your calls to another host of the room you joined (a replica) instead of the primary, using the grant you already have. Give the replica's `peer_address` (from its playbox_create), or `primary` to switch back. The replica is vetted like the primary was (attestation, min_host_tier, trust_host_device) and must accept your grant before you switch. A replica has its own repository and runner, so pull before you delegate. If the primary revokes you, the replica refuses you once it hears.",

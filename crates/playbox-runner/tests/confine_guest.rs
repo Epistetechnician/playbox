@@ -50,6 +50,7 @@ fn confined(max_net: Level) -> Option<Arc<dyn Runner>> {
     }
     let opts = RunnerOptions {
         confine: Some((max_net, true)),
+        egress: None,
     };
     Some(
         runner_with("libkrun", SandboxPolicy::default(), &opts).expect("a confined libkrun runner"),

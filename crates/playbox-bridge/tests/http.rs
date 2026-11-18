@@ -43,6 +43,7 @@ async fn start(token: Option<&str>) -> (Host, String) {
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };
