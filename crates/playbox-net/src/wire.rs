@@ -308,10 +308,31 @@ impl Op {
         for p in &m.parts {
             if let PartContent::Data(v) = &p.content {
                 if let Some(op) = v.get("playbox") {
-                    return Ok(Some(
-                        serde_json::from_value(op.clone())
-                            .map_err(|e| anyhow!("bad playbox operation: {e}"))?,
-                    ));
+                    let parsed: Self = serde_json::from_value(op.clone())
+                        .map_err(|e| anyhow!("bad playbox operation: {e}"))?;
+                    if let Op::Run { spec, .. } = &parsed {
+                        if !spec.cpus.is_finite() || spec.cpus <= 0.0 {
+                            return Err(anyhow!(
+                                "bad playbox operation: cpus must be a finite number greater than 0"
+                            ));
+                        }
+                        if spec.mem_mib == 0 {
+                            return Err(anyhow!(
+                                "bad playbox operation: mem_mib must be greater than 0"
+                            ));
+                        }
+                        if spec.timeout_secs == 0 {
+                            return Err(anyhow!(
+                                "bad playbox operation: timeout_secs must be greater than 0"
+                            ));
+                        }
+                        if spec.allowed_hosts.iter().any(|h| h.contains('/')) {
+                            return Err(anyhow!(
+                                "bad playbox operation: allowed_hosts must not contain '/' (cannot limit a task to specific hosts across secret/cap namespaces)"
+                            ));
+                        }
+                    }
+                    return Ok(Some(parsed));
                 }
             }
         }
@@ -610,6 +631,48 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn run_op_rejects_non_positive_limits_and_slash_hosts() {
+        for bad in [
+            TaskSpec {
+                cpus: 0.0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: -1.0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                cpus: f32::NAN,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                mem_mib: 0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                timeout_secs: 0,
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                allowed_hosts: vec!["secret/API_KEY".into()],
+                ..TaskSpec::new(&["true"])
+            },
+            TaskSpec {
+                allowed_hosts: vec!["cap/deploy".into()],
+                ..TaskSpec::new(&["true"])
+            },
+        ] {
+            let m = Op::Run {
+                base: "main".into(),
+                spec: bad.clone(),
+                warm: false,
+            }
+            .message(vec![]);
+            assert!(Op::from_message(&m).is_err(), "{bad:?} must be rejected");
+        }
     }
 
     #[test]

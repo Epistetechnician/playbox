@@ -135,7 +135,10 @@ impl TaskSpec {
     /// Caps applied by the host regardless of what a peer asks for.
     #[must_use]
     pub fn clamp(mut self, max: &Limits) -> Self {
-        self.cpus = self.cpus.clamp(0.1, max.cpus);
+        if !self.cpus.is_finite() {
+            self.cpus = 0.1;
+        }
+        self.cpus = self.cpus.clamp(0.1, max.cpus.max(0.1));
         self.mem_mib = self.mem_mib.clamp(16, max.mem_mib);
         self.timeout_secs = self.timeout_secs.clamp(1, max.timeout_secs);
         self.network = self.network && max.network;
@@ -460,6 +463,15 @@ pub async fn run_warm_with_quota(
 fn check_spec(spec: &TaskSpec) -> Result<()> {
     if spec.cmd.is_empty() {
         bail!("empty command");
+    }
+    if !spec.cpus.is_finite() || spec.cpus <= 0.0 {
+        bail!("cpus must be a finite number greater than 0");
+    }
+    if spec.mem_mib == 0 {
+        bail!("mem_mib must be greater than 0");
+    }
+    if spec.timeout_secs == 0 {
+        bail!("timeout_secs must be greater than 0");
     }
     if !spec.allowed_hosts.is_empty() {
         bail!("this runner cannot limit a task to specific hosts; use the openshell runner or a confined libkrun host");
@@ -911,5 +923,33 @@ mod tests {
         // `<no value>` shifts the fields, which is still a refusal rather than a pass.
         assert!(!missing_limits("<no value> true true").is_empty());
         assert_eq!(missing_limits("true true"), ["CPU limits"]);
+    }
+
+    #[test]
+    fn check_spec_and_clamp_reject_non_positive_and_non_finite_limits() {
+        assert!(check_spec(&TaskSpec::new(&["true"])).is_ok());
+        for cpus in [0.0_f32, -1.5, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let spec = TaskSpec {
+                cpus,
+                ..TaskSpec::new(&["true"])
+            };
+            assert!(check_spec(&spec).is_err(), "cpus={cpus} must be rejected");
+            let clamped = spec.clamp(&Limits::default());
+            assert!(
+                clamped.cpus.is_finite() && clamped.cpus >= 0.1 && clamped.cpus <= 2.0,
+                "clamped cpus={} for input {cpus}",
+                clamped.cpus
+            );
+        }
+        assert!(check_spec(&TaskSpec {
+            mem_mib: 0,
+            ..TaskSpec::new(&["true"])
+        })
+        .is_err());
+        assert!(check_spec(&TaskSpec {
+            timeout_secs: 0,
+            ..TaskSpec::new(&["true"])
+        })
+        .is_err());
     }
 }
