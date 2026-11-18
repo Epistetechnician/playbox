@@ -255,6 +255,9 @@ pub async fn serve(
     token: Option<String>,
     public_url: String,
 ) -> Result<()> {
+    if token.as_deref().is_some_and(|t| t.trim().is_empty()) {
+        bail!("bearer token must not be empty or whitespace");
+    }
     let addr = listener.local_addr()?;
     if !addr.ip().is_loopback() && token.is_none() {
         bail!("refusing to listen on {addr} without a bearer token: anyone who can reach it would act as the bridge's room member");
