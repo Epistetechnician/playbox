@@ -259,12 +259,17 @@ fn install_appimage(app: &AppHandle, rel: &Release) -> Result<(), String> {
     let new = parent.join(format!(".Playbox-update-{}.AppImage", std::process::id()));
     let result = (|| {
         std::fs::copy(&image, &new).map_err(|e| format!("cannot write next to the app ({e})"))?;
-        std::fs::set_permissions(&new, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(&new, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
         let said = run(Command::new(&new)
             .env("APPIMAGE_EXTRACT_AND_RUN", "1") // the check must work on a machine without FUSE too
             .arg("--version"))?;
         if said.trim() != format!("playbox-desktop {}", rel.version) {
-            return Err(format!("the new app reports {:?}, not {}", said.trim(), rel.version));
+            return Err(format!(
+                "the new app reports {:?}, not {}",
+                said.trim(),
+                rel.version
+            ));
         }
         let mut previous = current.clone().into_os_string();
         previous.push(".previous");
