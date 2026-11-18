@@ -228,6 +228,15 @@ pub struct UpArgs {
     /// Total tasks the room may start over the host's lifetime (default 100000)
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub task_budget: Option<u64>,
+    /// CPU cores each task may use (0.1..=256, default 2.0)
+    #[arg(long, value_name = "CPUS", value_parser = parse_task_cpus)]
+    pub task_cpus: Option<f32>,
+    /// Memory each task may use, in MiB (at least 16, default 1024)
+    #[arg(long, value_name = "MIB", value_parser = clap::value_parser!(u32).range(16..))]
+    pub task_mem_mib: Option<u32>,
+    /// Time limit for each task, in seconds (1..=2592000, default 300)
+    #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=2_592_000))]
+    pub task_timeout_secs: Option<u64>,
     /// How long each member's grant lasts, in seconds (default 3600, at most 30 days). A grant that runs out mid-session is refused,
     /// so agents that run for hours need a longer one; the invite link's own lifetime is separate.
     #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=2_592_000))]
@@ -723,6 +732,16 @@ pub enum MinIsolation {
     Confidential,
 }
 
+fn parse_task_cpus(s: &str) -> Result<f32, String> {
+    let v: f32 = s
+        .parse()
+        .map_err(|e| format!("invalid CPU limit {s:?}: {e}"))?;
+    if !v.is_finite() || !(0.1..=256.0).contains(&v) {
+        return Err(format!("--task-cpus must be between 0.1 and 256 (got {s})"));
+    }
+    Ok(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Cli, Cmd};
@@ -884,5 +903,45 @@ mod tests {
         );
         assert!(parse(&["playbox", "up", "--min-isolation", "none"]).is_err());
         assert!(parse(&["playbox", "up", "--min-isolation", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn task_limit_flags_are_bounded_at_parse_time() {
+        let Cmd::Up(a) = Cli::try_parse_from([
+            "playbox",
+            "up",
+            "--task-cpus",
+            "0.5",
+            "--task-mem-mib",
+            "256",
+            "--task-timeout-secs",
+            "60",
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("not up")
+        };
+        assert_eq!(a.task_cpus, Some(0.5));
+        assert_eq!(a.task_mem_mib, Some(256));
+        assert_eq!(a.task_timeout_secs, Some(60));
+
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "0.1"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "256"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "0.05"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "-1"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "256.1"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "NaN"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-cpus", "inf"]).is_err());
+
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-mem-mib", "16"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-mem-mib", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-mem-mib", "15"]).is_err());
+
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-timeout-secs", "1"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-timeout-secs", "2592000"]).is_ok());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-timeout-secs", "0"]).is_err());
+        assert!(Cli::try_parse_from(["playbox", "up", "--task-timeout-secs", "2592001"]).is_err());
     }
 }

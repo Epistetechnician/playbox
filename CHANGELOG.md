@@ -9,7 +9,19 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+### Added
+- `playbox up --task-cpus CPUS`, `--task-mem-mib MIB`, and `--task-timeout-secs SECS`: override the default per-task resource limits (2 cpus, 1024 MiB, 300 s) before any steering bump.
+
 ### Fixed
+- `playbox up` refuses `--allow-secret` on the `openshell` and `process` runners and `--allow-image` on the `process` runner at startup, since those runners cannot honour them.
+- `playbox launch` without `--model` no longer shifts the executable digest into the model field of the launch record, and its "no running host" hint now points at `playbox up --state DIR`.
+- `playbox_pull` now goes through the taint broker like `playbox_push`: a ref name copied from another member's output needs a single-use `capability` (new optional argument) before it is fetched or checked out.
+- `playbox mcp`: honour `PLAYBOX_JOIN_LINK_FILE` on startup like `playbox-mcp`, so coding agents configured by `playbox setup` and started with `playbox launch` join their room automatically.
+- `Op::from_message` and `check_spec` now reject tasks with non-finite or non-positive `cpus`, `mem_mib == 0`, `timeout_secs == 0`, or `'/'` in `allowed_hosts`, and `TaskSpec::clamp` guards non-finite `cpus`.
+- Admission broker: `Broker::redeem` now denies unknown policy actions and blocks non-read capabilities while frozen without spending their ticket, `shingles()` extracts delimiter-wrapped distinctive tokens (JSON, quotes and prose punctuation), and capability expiry uses saturating addition.
+- `playbox-bridge` now refuses empty or whitespace-only bearer tokens at startup instead of accepting `Authorization: Bearer ` on external listeners or disabling loopback browser guards.
+- `playbox_browse` now runs `Policy::check` before consulting the per-visit host verdict cache, so credentialed URLs on an allowed host cannot bypass the credential check or poison the cache for clean requests.
+- `Client::latent_pull` now verifies that each delivered item's `from` matches the envelope's `signer` and that any attached `reveal` parses and matches the envelope's signed `commit`, instead of trusting the host for sender attribution or reveal payloads.
 - `playbox-rap`: `POST /close_thread` now aborts in-flight tool calls and removes pending `user_choice` approvals for the closed thread, instead of letting queued calls post results after closure or keeping pending approvals until timeout.
 
 ## [0.3.16] - 2026-11-17
