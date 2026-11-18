@@ -808,15 +808,27 @@ impl Client {
             if envelope.hub != hub {
                 bail!("the host sent a message for another hub");
             }
+            let from = it["from"].as_str().ok_or_else(|| anyhow!("bad item"))?;
+            if from != hex(&envelope.signer) {
+                bail!("the host sent a message whose sender does not match its signer");
+            }
+            let reveal = match it.get("reveal") {
+                None | Some(Value::Null) => None,
+                Some(r) => {
+                    let raw = B64S.decode(r.as_str().ok_or_else(|| anyhow!("bad item"))?)?;
+                    let rv = Reveal::parse(&raw)?;
+                    if envelope.commit.as_deref() != Some(rv.commit().as_str()) {
+                        bail!("the reveal does not match the message's commitment");
+                    }
+                    Some(raw)
+                }
+            };
             out.push(Delivered {
                 seq: it["seq"].as_u64().unwrap_or(0),
-                from: it["from"].as_str().unwrap_or_default().to_string(),
+                from: from.to_string(),
                 envelope,
                 raw: bytes,
-                reveal: match it["reveal"].as_str() {
-                    Some(r) => Some(B64S.decode(r)?),
-                    None => None,
-                },
+                reveal,
             });
         }
         Ok((out, v["next"].as_u64().unwrap_or(since)))

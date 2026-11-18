@@ -487,3 +487,164 @@ fn base64_encode(b: &[u8]) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
     STANDARD.encode(b)
 }
+
+#[derive(Clone, Debug)]
+struct FakePullHost(std::sync::Arc<std::sync::Mutex<serde_json::Value>>);
+
+impl iroh::protocol::ProtocolHandler for FakePullHost {
+    async fn accept(
+        &self,
+        conn: iroh::endpoint::Connection,
+    ) -> Result<(), iroh::protocol::AcceptError> {
+        while let Ok((mut send, mut recv)) = conn.accept_bi().await {
+            let Ok(bytes) = recv.read_to_end(1 << 20).await else {
+                break;
+            };
+            let Ok(frame) = serde_json::from_slice::<playbox_net::wire::Frame>(&bytes) else {
+                break;
+            };
+            let body = self.0.lock().unwrap().to_string();
+            let task = playbox_net::wire::task(
+                a2a::TaskState::Completed,
+                None,
+                vec![playbox_net::wire::text_artifact("latent", body)],
+                vec![("kind", serde_json::json!("latent_pull"))],
+            );
+            let resp = a2a::JsonRpcResponse::success(
+                frame.rpc.id,
+                serde_json::to_value(a2a::SendMessageResponse::Task(task)).unwrap(),
+            );
+            if send
+                .write_all(&serde_json::to_vec(&resp).unwrap())
+                .await
+                .is_err()
+                || send.finish().is_err()
+            {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_reader_refuses_a_spoofed_sender_or_an_unverified_reveal_from_the_host() {
+    let payload = std::sync::Arc::new(std::sync::Mutex::new(serde_json::Value::Null));
+    let ep = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .clear_ip_transports()
+        .bind_addr(std::net::SocketAddr::from((
+            std::net::Ipv4Addr::LOCALHOST,
+            0,
+        )))
+        .unwrap()
+        .secret_key(new_secret_key().unwrap())
+        .alpns(vec![playbox_net::ALPN.to_vec()])
+        .bind()
+        .await
+        .unwrap();
+    let addr = iroh::EndpointAddr::from_parts(
+        ep.id(),
+        ep.bound_sockets().into_iter().map(iroh::TransportAddr::Ip),
+    );
+    let router = iroh::protocol::Router::builder(ep)
+        .accept(playbox_net::ALPN, FakePullHost(payload.clone()))
+        .spawn();
+    let client = Client::connect(addr, new_secret_key().unwrap(), true)
+        .await
+        .unwrap();
+
+    let hex32 = |k: &SigningKey| -> String {
+        k.verifying_key()
+            .as_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    };
+    let ka = SigningKey::from_bytes(&[11u8; 32]);
+    let kb = SigningKey::from_bytes(&[12u8; 32]);
+    let sender = hex32(&ka);
+    let other = hex32(&kb);
+    let rand_salt: String = new_secret_key()
+        .unwrap()
+        .to_bytes()
+        .iter()
+        .take(16)
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let sents: Vec<String> = SENTENCES.iter().map(|x| (*x).to_string()).collect();
+    let env = base64_encode(&pack_with(
+        &ka,
+        HUB,
+        "x",
+        0.5,
+        &[3u8; 16],
+        Some(&commit_of(&rand_salt, &sents)),
+    ));
+    let plain = base64_encode(&pack(&ka, HUB, "x", 0.5, &[3u8; 16]));
+    let good_reveal = reveal_json(&rand_salt, &SENTENCES);
+
+    let set = |item: serde_json::Value| {
+        *payload.lock().unwrap() = serde_json::json!({ "items": [item], "next": 1 });
+    };
+
+    // An honest delivery with a matching sender and reveal is accepted.
+    set(serde_json::json!({
+        "seq": 1,
+        "from": sender,
+        "envelope": env,
+        "reveal": base64_encode(&good_reveal),
+    }));
+    let (got, next) = client.latent_pull(HUB, 0).await.unwrap();
+    assert_eq!((got.len(), next), (1, 1));
+    assert_eq!(got[0].from, sender);
+    assert_eq!(got[0].reveal.as_deref(), Some(good_reveal.as_slice()));
+
+    // A host that swaps `from` for another member (or omits it) is caught by the envelope's signer.
+    set(serde_json::json!({
+        "seq": 1,
+        "from": other,
+        "envelope": env,
+        "reveal": serde_json::Value::Null,
+    }));
+    let err = client.latent_pull(HUB, 0).await.unwrap_err();
+    assert!(format!("{err:#}").contains("sender"), "{err:#}");
+
+    set(serde_json::json!({
+        "seq": 1,
+        "envelope": env,
+        "reveal": serde_json::Value::Null,
+    }));
+    assert!(client.latent_pull(HUB, 0).await.is_err());
+
+    // A reveal whose sentences do not match the signed commitment, one attached to an uncommitted
+    // envelope, or malformed reveal bytes are all refused.
+    let wrong_reveal = reveal_json(&rand_salt, &["A forged sentence."]);
+    set(serde_json::json!({
+        "seq": 1,
+        "from": sender,
+        "envelope": env,
+        "reveal": base64_encode(&wrong_reveal),
+    }));
+    let err = client.latent_pull(HUB, 0).await.unwrap_err();
+    assert!(format!("{err:#}").contains("commitment"), "{err:#}");
+
+    set(serde_json::json!({
+        "seq": 1,
+        "from": sender,
+        "envelope": plain,
+        "reveal": base64_encode(&good_reveal),
+    }));
+    let err = client.latent_pull(HUB, 0).await.unwrap_err();
+    assert!(format!("{err:#}").contains("commitment"), "{err:#}");
+
+    set(serde_json::json!({
+        "seq": 1,
+        "from": sender,
+        "envelope": env,
+        "reveal": base64_encode(b"not a reveal"),
+    }));
+    assert!(client.latent_pull(HUB, 0).await.is_err());
+
+    client.close().await;
+    router.shutdown().await.unwrap();
+}
