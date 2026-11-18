@@ -494,3 +494,103 @@ async fn a_browser_that_goes_silent_ends_the_visit_at_the_deadline() {
     ));
     assert!(t0.elapsed() < Duration::from_secs(5));
 }
+
+#[tokio::test]
+async fn credentialed_requests_neither_hit_nor_poison_the_verdict_cache() {
+    for paused in [
+        [
+            ("r1", "https://example.com/ok"),
+            ("r2", "https://user:pw@example.com/x"),
+        ],
+        [
+            ("r1", "https://user:pw@example.com/x"),
+            ("r2", "https://example.com/ok"),
+        ],
+    ] {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let srv = tokio::spawn(async move {
+            let mut p = server::accept(&l).await;
+            let mut log = Vec::new();
+            while let Some(m) = p.recv().await {
+                let v: Value = serde_json::from_str(&m).unwrap();
+                let id = v["id"].as_u64().unwrap();
+                let method = v["method"].as_str().unwrap().to_string();
+                let sess = v.get("sessionId").cloned();
+                log.push(
+                    format!(
+                        "{method} {}",
+                        v["params"]
+                            .get("requestId")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                    )
+                    .trim()
+                    .to_string(),
+                );
+                let result = match method.as_str() {
+                    "Target.createBrowserContext" => json!({"browserContextId": "ctx"}),
+                    "Target.createTarget" => json!({"targetId": "T1"}),
+                    "Target.attachToTarget" => json!({"sessionId": "S1"}),
+                    "Page.navigate" => json!({"frameId": "F"}),
+                    "Runtime.evaluate" => {
+                        let e = v["params"]["expression"].as_str().unwrap();
+                        if e.starts_with("JSON.stringify") {
+                            json!({"result": {"type": "string", "value": "{\"u\":\"https://example.com/final\",\"t\":\"A title\"}"}})
+                        } else {
+                            json!({"result": {"type": "string", "value": "ok"}})
+                        }
+                    }
+                    _ => json!({}),
+                };
+                let mut reply = json!({"id": id, "result": result});
+                if let Some(s) = sess {
+                    reply["sessionId"] = s;
+                }
+                p.send(&reply.to_string()).await;
+                if method == "Page.navigate" {
+                    for (rid, url) in paused {
+                        p.send(&json!({"method": "Fetch.requestPaused", "sessionId": "S1", "params": {"requestId": rid, "request": {"url": url, "method": "GET"}}}).to_string()).await;
+                    }
+                    p.send(&json!({"method": "Network.responseReceived", "sessionId": "S1", "params": {"type": "Document", "response": {"status": 200}}}).to_string()).await;
+                    p.send(
+                        &json!({"method": "Page.loadEventFired", "sessionId": "S1", "params": {}})
+                            .to_string(),
+                    )
+                    .await;
+                }
+            }
+            log
+        });
+        let mut c = BrowseConfig::new(
+            &format!("ws://127.0.0.1:{port}/"),
+            vec!["example.com".into()],
+        );
+        c.allow_private = true;
+        c.timeout = Duration::from_secs(10);
+        let b = Browser::new(c).unwrap();
+        let r = b
+            .browse("alice", "https://example.com/", Mode::Text, None)
+            .await
+            .unwrap();
+        assert_eq!(r.requests, 2);
+        assert_eq!(
+            r.blocked,
+            vec!["https://example.com/x (a URL with credentials in it is not allowed)"]
+        );
+        let log = srv.await.unwrap();
+        let (ok_id, bad_id) = if paused[0].1.contains('@') {
+            ("r2", "r1")
+        } else {
+            ("r1", "r2")
+        };
+        assert!(
+            log.contains(&format!("Fetch.continueRequest {ok_id}")),
+            "{log:?}"
+        );
+        assert!(
+            log.contains(&format!("Fetch.failRequest {bad_id}")),
+            "{log:?}"
+        );
+    }
+}
