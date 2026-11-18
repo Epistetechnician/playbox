@@ -28,6 +28,29 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 1 << 20
+STATIC_JS = {
+    "/instruments.js": HERE / "static" / "instruments.js",
+    "/themes.js": HERE / "static" / "themes.js",
+    "/qr.js": HERE / "static" / "qr.js",
+    "/shell.js": HERE / "static" / "shell.js",
+    "/settings.js": HERE / "static" / "settings.js",
+    "/markdown.js": HERE / "static" / "markdown.js",
+}
+VENDOR_MIME = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}
+
+
+def _build_vendor_map():
+    root = (HERE / "static" / "vendor").resolve()
+    out = {}
+    if root.is_dir():
+        for f in root.rglob("*"):
+            ct = VENDOR_MIME.get(f.suffix)
+            if ct and f.is_file():
+                out["/vendor/" + f.relative_to(root).as_posix()] = (f, ct)
+    return out
+
+
+VENDOR_FILES = _build_vendor_map()
 
 
 class Sidecar:
@@ -170,14 +193,13 @@ def make_handler(sidecar, token, page_path, home):
                 return self._send(200, ICON, "image/svg+xml")
             if not self._authed():
                 return self._send(401, LOCKED, "text/html; charset=utf-8")
-            if url.path in ("/instruments.js", "/themes.js", "/qr.js", "/shell.js", "/settings.js", "/markdown.js"):
-                return self._send(200, (HERE / "static" / url.path[1:]).read_bytes(), "text/javascript; charset=utf-8")
+            js_file = STATIC_JS.get(url.path)
+            if js_file is not None:
+                return self._send(200, js_file.read_bytes(), "text/javascript; charset=utf-8")
             if url.path.startswith("/vendor/"):
-                ok_path = re.fullmatch(r"/vendor/[A-Za-z0-9._/-]{1,80}", url.path) and ".." not in url.path
-                vf = (HERE / "static" / url.path[1:]).resolve() if ok_path else None
-                vt = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}.get(vf.suffix) if vf else None
-                if vt and vf.is_file() and (HERE / "static" / "vendor").resolve() in vf.parents:
-                    return self._send(200, vf.read_bytes(), vt)
+                vent = VENDOR_FILES.get(url.path)
+                if vent is not None:
+                    return self._send(200, vent[0].read_bytes(), vent[1])
                 return self._json(404, {"error": "not found"})
             if url.path == "/mark.svg":
                 return self._send(200, (HERE / "static" / "brand" / "mark.svg").read_bytes(), "image/svg+xml")

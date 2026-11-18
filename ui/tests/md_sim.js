@@ -35,7 +35,7 @@ ok("feedHtml: @mentions render <span class=\"at\"> and line breaks become <br>",
 ctx.DOMPurify = {sanitize: s => s};
 h = feedHtml("# NotHeading\n<script>alert(1)</script> <img src=x onerror=alert(1)> [click](javascript:alert(1)) [ok](https://example.com) ```\n<img onerror=alert(2)>\n```");
 ok("feedHtml: never produces <a>, <img>, <script> or headings inside or outside code blocks",
-   !/<(a|img|script|h[1-6])\b/i.test(h) && !/onerror\s*=/i.test(ctx.PBMd.esc ? h.replace(/&lt;[^&]*onerror/g, "") : h) && h.includes("&lt;script&gt;") && h.includes("&lt;img src=x onerror=alert(1)&gt;"));
+   !/<(a|img|script|h[1-6])\b/i.test(h) && !/<[^>]*\bonerror\b/i.test(h) && h.includes("&lt;script&gt;") && h.includes("&lt;img src=x onerror=alert(1)&gt;"));
 delete ctx.DOMPurify;
 h = feedHtml("streaming\n```js\nconst y = 1 < 2;");
 ok("feedHtml: unclosed streaming fence still renders safely as code", h.includes('<pre class="pbm-code" data-lang="js" data-src="1"><code>const y = 1 &lt; 2;</code></pre>'));
