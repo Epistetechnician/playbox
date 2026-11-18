@@ -423,3 +423,27 @@ judged **less seed-sensitive** only if v2's (B) values have a range of at most 5
 is larger, and the lowest v2 seed is at least 20.0 points. Otherwise the result is "no evidence of an improvement". Ablations (one switch off at a time on
 seeds 0 and 1) are run only if v2 passes. Estimated cost about 20 USD of H100 time (eight trainings of about 40 minutes plus evaluations); it waits for the
 gman workspace cap to be raised and has not been started.
+
+## 14. Result of the v2 run (section 13's rule applied as written)
+
+(B) = mapped retention minus unrelated-real-cache retention, 720 items, in points. v2 is scored on its deployment path (mapped_edge: first token real,
+last 4 context tokens read natively) and also on the plain mapped cache. Files: `steer/results/telepathy/l4_v2/`.
+
+| seed | v2 edge path | v2 plain | old recipe plain |
+|---|---|---|---|
+| 0 | 26.6 | 16.6 | 16.0 |
+| 1 | 25.7 | 8.2 | 26.2 |
+| 2 | 27.0 | 20.0 | 16.8 |
+| 3 | 27.1 | 7.9 | 17.6 |
+| range | 1.4 | 12.1 | 10.2 |
+
+Rule: v2 range <= 5 (1.4, yes), old recipe's range larger (10.2, yes), lowest v2 seed >= 20.0 (25.7, yes). **By the rule as written, v2 passes.**
+
+What the pass does and does not mean:
+- The stability comes from the edge path. Without the edge tokens v2 is no better than the old recipe (range 12.1, two seeds below 10 points), so the
+  receiver is not reading "nothing but the cache"; the section-11 bar (retention with the cache alone) is still not met.
+- The old recipe has no edge-path number, so the comparison mixes paths: the edge tokens themselves may supply some of the +26 points. A fair next step
+  is the old recipe's checkpoints scored with the same edge tokens, and an edge-only control (real last tokens, no mapped cache).
+- Specificity (mapped minus mapped-wrong cache) is 44-48 points for v2 and 53-55 for the old recipe: both carry topic information.
+- The ablations of section 13 are now licensed by the rule but not run. The full-size mapper spend stays on hold.
+Cost: about 37 USD of H100 time for this run.
