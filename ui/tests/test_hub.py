@@ -842,7 +842,12 @@ def test_http():
         with open(os.path.join(wdir, "holds.jsonl"), "a") as wf:
             wf.write(json.dumps({"ts": 10, "kind": "held", "session": "ws-1", "tool": "terminal", "origin": "room:feed"}) + "\n")
         a.req("POST", "/api/system/verify")
-        att_h = [i for i in a.req("GET", "/api/attention")[1]["items"] if i.get("kind") == "hold" and i.get("room") == rid]
+        att_h = []
+        for _ in range(50):
+            att_h = [i for i in a.req("GET", "/api/attention")[1]["items"] if i.get("kind") == "hold" and i.get("room") == rid]
+            if att_h:
+                break
+            time.sleep(0.1)
         check("witness: attention hold item includes structured hold metadata",
               len(att_h) == 1 and att_h[0].get("hold", {}).get("session") == "ws-1" and att_h[0]["hold"].get("tool") == "terminal", str(att_h))
         check("witness: bad session or decision rejected with 400",
