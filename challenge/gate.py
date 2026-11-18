@@ -31,7 +31,8 @@ A = ROOT / "tier_a_matmul"
 PB = json.load(open(B / "problem.json"))
 LOG = STATE / "receipts.jsonl"
 FRONT = STATE / "frontier.json"
-ENV = {**os.environ, "HF_HUB_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false"}
+# Pinned thread count: measured run-to-run spread roughly halves vs the default (about 5% vs 10%).
+ENV = {**os.environ, "HF_HUB_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false", "OMP_NUM_THREADS": "4"}
 
 
 def model_dir() -> Path:
@@ -115,7 +116,8 @@ def submit_b(path, author):
                     cs.append(r["tok_s"])
                 else:
                     fs.append(r["tok_s"])
-        ratios[role] = statistics.median(cs) / statistics.median(fs)
+        # Paired ratio: each rep's candidate/frontier runs are adjacent, so load that hits both cancels.
+        ratios[role] = statistics.median(c / f for c, f in zip(cs, fs))
         runs[role] = {"cand_tok_s": cs, "front_tok_s": fs, "ratio": round(ratios[role], 3)}
     worst = min(ratios.values())
     body["measurements"] = runs
