@@ -51,9 +51,12 @@ jobs:
         working-directory: desktop
         run: |
           export PLAYBOX_HUB_HOME="$(mktemp -d)" PLAYBOX_DESKTOP_PORT=7799 HOME="$(mktemp -d)" APPIMAGE_EXTRACT_AND_RUN=1
-          xvfb-run -a dbus-run-session -- ./Playbox-linux-x86_64.AppImage --background &
+          xvfb-run -a dbus-run-session -- ./Playbox-linux-x86_64.AppImage --background >"$RUNNER_TEMP/app.out" 2>&1 &
           for i in $(seq 1 90); do curl -fs localhost:7799/api/auth/state | grep -q local_signin && break; sleep 1; done
-          curl -fs localhost:7799/api/auth/state | grep -q local_signin
+          if ! curl -fs localhost:7799/api/auth/state | grep -q local_signin; then
+            echo "--- app output"; cat "$RUNNER_TEMP/app.out"; echo "--- desktop.log"; cat "$HOME"/.local/state/playbox/logs/*.log 2>&1 | tail -40
+            echo "--- processes"; ps -eo pid,args | grep -E "playbox|python" | grep -v grep; exit 1
+          fi
           ps -eo args | grep -q "/python/bin/python3"
           pkill -TERM -f playbox-desktop
           sleep 2
