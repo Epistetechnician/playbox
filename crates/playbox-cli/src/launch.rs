@@ -60,7 +60,7 @@ fn find_host(room: &str) -> Result<(PathBuf, String)> {
         }
     }
     match found.len() {
-        0 => bail!("no running host called {room:?}: start one with `playbox up`, or check `playbox service list`"),
+        0 => bail!("no running host called {room:?}: start one with `playbox up --state DIR`"),
         1 => Ok(found.remove(0)),
         _ => bail!("more than one running host matches {room:?}: use more of its id"),
     }
@@ -96,6 +96,19 @@ fn exe_digest(cmd: &str) -> String {
         .unwrap_or_default()
 }
 
+/// The `launch` control line. An empty field is sent as `-` so the host, which reads whitespace-separated words, keeps
+/// harness, model and image in their places.
+fn launch_line(id: &str, harness: &str, model: &str, image: &str) -> String {
+    let f = |s: &str| {
+        if s.is_empty() {
+            "-".to_string()
+        } else {
+            s.to_string()
+        }
+    };
+    format!("launch {id} {} {} {}", f(harness), f(model), f(image))
+}
+
 /// Wait for `id` to be a member, then have the host sign the record. Gives up after a few minutes.
 fn record_when_joined(
     sock: &Path,
@@ -111,8 +124,7 @@ fn record_when_joined(
         }
         let members = ask(sock, "members")?;
         if members.contains(id) {
-            let line = format!("launch {id} {harness} {model} {image}");
-            let reply = ask(sock, line.trim_end())?;
+            let reply = ask(sock, &launch_line(id, harness, model, image))?;
             if reply.starts_with("ok") {
                 eprintln!(
                     "launch recorded: the host signed that it started {}",
@@ -216,6 +228,21 @@ mod tests {
     fn words_carry_no_whitespace_and_are_clipped() {
         assert_eq!(word("Claude Code\n1", 30), "Claude-Code-1");
         assert_eq!(word("abcdef", 3), "abc");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_launch_line_keeps_its_fields_in_place_without_a_model() {
+        let digest = "sha256:abc";
+        for (model, image) in [("", digest), ("opus", digest), ("", ""), ("opus", "")] {
+            let line = launch_line("member", "claude", model, image);
+            let mut w = line.split_whitespace();
+            assert_eq!((w.next(), w.next()), (Some("launch"), Some("member")));
+            assert_eq!(
+                crate::control::launch_fields(&mut w),
+                ("claude", model, image)
+            );
+        }
     }
 
     #[test]
