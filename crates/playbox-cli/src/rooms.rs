@@ -46,16 +46,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
     let has_steer = a.steer_store.is_some();
     let secrets = playbox_runner::secrets::SecretStore::from_env();
     check_allowed_secrets(&secrets, &a.allow_secret)?;
-    let mut limits = playbox_runner::Limits {
-        allowed_hosts: a.allow_host.clone(),
-        allowed_secrets: a.allow_secret.clone(),
-        ..Default::default()
-    };
-    if has_steer {
-        // The grant's task caps come from these limits, so steering's needs raise them.
-        limits.mem_mib = limits.mem_mib.max(steer_mem);
-        limits.timeout_secs = limits.timeout_secs.max(600);
-    }
+    let limits = build_limits(&a);
     let runner = match runtime {
         Some(name) => {
             let mut policy = SandboxPolicy::default();
@@ -563,6 +554,29 @@ impl From<MinIsolation> for Isolation {
     }
 }
 
+fn build_limits(a: &UpArgs) -> playbox_runner::Limits {
+    let mut limits = playbox_runner::Limits {
+        allowed_hosts: a.allow_host.clone(),
+        allowed_secrets: a.allow_secret.clone(),
+        ..Default::default()
+    };
+    if let Some(cpus) = a.task_cpus {
+        limits.cpus = cpus;
+    }
+    if let Some(mem_mib) = a.task_mem_mib {
+        limits.mem_mib = mem_mib;
+    }
+    if let Some(timeout_secs) = a.task_timeout_secs {
+        limits.timeout_secs = timeout_secs;
+    }
+    if a.steer_store.is_some() {
+        // The grant's task caps come from these limits, so steering's needs raise them.
+        limits.mem_mib = limits.mem_mib.max(a.steer_mem_mib);
+        limits.timeout_secs = limits.timeout_secs.max(600);
+    }
+    limits
+}
+
 fn resolve_min_isolation(min: MinIsolation, runtime: Option<&str>) -> Result<Isolation> {
     let isolation = Isolation::from(min);
     if isolation > Isolation::Container && runtime.is_none() {
@@ -573,7 +587,7 @@ fn resolve_min_isolation(min: MinIsolation, runtime: Option<&str>) -> Result<Iso
 
 #[cfg(test)]
 mod tests {
-    use super::{check_allowed_secrets, check_flags, resolve_min_isolation};
+    use super::{build_limits, check_allowed_secrets, check_flags, resolve_min_isolation};
     use crate::cli::{Cli, Cmd, MinIsolation, UpArgs};
     use clap::Parser;
     use playbox_runner::{
@@ -766,5 +780,62 @@ mod tests {
         );
         assert!(resolve_min_isolation(MinIsolation::MicroVm, None).is_err());
         assert!(resolve_min_isolation(MinIsolation::Confidential, None).is_err());
+    }
+
+    #[test]
+    fn build_limits_overrides_defaults_and_preserves_steer_max() {
+        let defaults = build_limits(&up_args(&[]));
+        assert_eq!(defaults.cpus, 2.0);
+        assert_eq!(defaults.mem_mib, 1024);
+        assert_eq!(defaults.timeout_secs, 300);
+
+        let tightened = build_limits(&up_args(&[
+            "--task-cpus",
+            "0.5",
+            "--task-mem-mib",
+            "256",
+            "--task-timeout-secs",
+            "45",
+        ]));
+        assert_eq!(tightened.cpus, 0.5);
+        assert_eq!(tightened.mem_mib, 256);
+        assert_eq!(tightened.timeout_secs, 45);
+
+        let raised = build_limits(&up_args(&[
+            "--task-cpus",
+            "8",
+            "--task-mem-mib",
+            "8192",
+            "--task-timeout-secs",
+            "1200",
+        ]));
+        assert_eq!(raised.cpus, 8.0);
+        assert_eq!(raised.mem_mib, 8192);
+        assert_eq!(raised.timeout_secs, 1200);
+
+        let steer_bumps_low = build_limits(&up_args(&[
+            "--steer-store",
+            "/tmp/weights",
+            "--task-cpus",
+            "0.5",
+            "--task-mem-mib",
+            "256",
+            "--task-timeout-secs",
+            "45",
+        ]));
+        assert_eq!(steer_bumps_low.cpus, 0.5);
+        assert_eq!(steer_bumps_low.mem_mib, 4096);
+        assert_eq!(steer_bumps_low.timeout_secs, 600);
+
+        let steer_keeps_higher = build_limits(&up_args(&[
+            "--steer-store",
+            "/tmp/weights",
+            "--task-mem-mib",
+            "8192",
+            "--task-timeout-secs",
+            "1200",
+        ]));
+        assert_eq!(steer_keeps_higher.mem_mib, 8192);
+        assert_eq!(steer_keeps_higher.timeout_secs, 1200);
     }
 }
