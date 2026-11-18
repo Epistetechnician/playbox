@@ -5,6 +5,8 @@ permissions:
   contents: read
 jobs:
   review:
+    # Needs the Dependency graph repo setting; set repo variable DEPENDENCY_GRAPH=true once it is enabled.
+    if: vars.DEPENDENCY_GRAPH == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
