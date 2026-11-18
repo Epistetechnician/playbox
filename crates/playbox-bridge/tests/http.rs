@@ -408,3 +408,28 @@ async fn a_token_holder_may_still_come_from_a_browser() {
         .unwrap();
     assert!(r.status().is_success(), "{}", r.status());
 }
+
+#[tokio::test]
+async fn empty_or_whitespace_bearer_tokens_are_refused() {
+    let host = Host::start(new_secret_key().unwrap(), true).await.unwrap();
+    let link = host
+        .create_link(Duration::from_secs(60), 4)
+        .unwrap()
+        .encode();
+    for bind_addr in ["0.0.0.0:0", "127.0.0.1:0"] {
+        for bad_token in ["", "   "] {
+            let client = join_link(&link, new_secret_key().unwrap(), true)
+                .await
+                .unwrap();
+            let (l, a) = playbox_bridge::bind(bind_addr).await.unwrap();
+            let err =
+                playbox_bridge::serve(client, l, Some(bad_token.into()), format!("http://{a}"))
+                    .await
+                    .unwrap_err();
+            assert!(
+                format!("{err:#}").contains("empty"),
+                "expected empty-token refusal on {bind_addr} with {bad_token:?}, got: {err:#}"
+            );
+        }
+    }
+}
