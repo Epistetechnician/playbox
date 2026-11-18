@@ -6,6 +6,7 @@
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const T = () => window.PBTheme;
   const ago = ms => { if (!ms) return "never"; const s = Math.max(0, (Date.now() - ms) / 1000 | 0); return s < 60 ? "just now" : s < 3600 ? `${s / 60 | 0} min ago` : s < 86400 ? `${s / 3600 | 0} h ago` : `${s / 86400 | 0} d ago`; };
+  const devName = () => { const u = navigator.userAgent || ""; const os = /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Mac/.test(u) ? "Mac" : /Windows/.test(u) ? "Windows PC" : /Linux/.test(u) ? "Linux" : "Device"; const br = /Edg\//.test(u) ? "Edge" : /Firefox/.test(u) ? "Firefox" : /Chrome/.test(u) ? "Chrome" : /Safari/.test(u) ? "Safari" : ""; return (os + " " + br).trim(); };
 
   const CSS = `
 .pbs{width:min(1040px,calc(100vw - 24px));height:min(700px,calc(100vh - 40px));max-width:none;padding:0;border:1px solid var(--line-2);background:var(--panel);color:var(--ink);box-shadow:0 20px 70px rgba(0,0,0,.45);overflow:hidden}
@@ -44,6 +45,7 @@
 .pbs .sw2[aria-checked=true]{background:var(--blue-grad);border-color:var(--blue-edge)}.pbs .sw2[aria-checked=true]::after{left:20px;background:var(--blue)}
 .pbs .live{padding:14px;border:1px solid var(--line-2);background:var(--bg-2);display:grid;gap:6px}.pbs .live .h{font:600 17px var(--sans)}.pbs .live p{margin:0;color:var(--ink-2);font:14px/1.5 var(--sans)}.pbs .live code{font:13px var(--mono);color:var(--sig-ink)}
 .pbs button.act{padding:6px 14px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font:500 13px var(--sans);cursor:pointer}.pbs button.act:hover{border-color:var(--edge)}.pbs button.act.danger{color:var(--bad);border-color:var(--bad);background:none}
+.pbs button.btn.sm{padding:5px 12px;border:1px solid transparent;border-radius:var(--r);cursor:pointer}
 .pbs .note{font:12.5px/1.45 var(--sans);color:var(--mut);margin:12px 0 0}.pbs .chip{display:inline-flex}
 .pbs table.kt{width:100%;border-collapse:collapse;font:13px var(--sans)}.pbs table.kt td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}.pbs table.kt td:first-child{width:34%;font:12.5px var(--mono);color:var(--mut)}
 .pbs .li{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.pbs .li:last-child{border:0}.pbs .li .snm{flex:1;min-width:0;display:block}.pbs .li small{display:block;color:var(--mut);font-size:12px}
@@ -150,13 +152,16 @@
     devices: {label: "Devices", group: "hub", needsHub: true, words: "passkey pair remove device sign in desktop", render() {
       if (hub.err && !hub.me) return `<p class="lead">${esc(hub.err)}</p>`;
       const m = hub.me; if (!m) return `<p class="lead">Loading…</p>`;
+      const canUp = !!(m.weak && !m.local_only && window.PB && PB.canPasskey && PB.canPasskey());
       return `<p class="lead">Each device unlocks this hub with its own passkey. Removing one signs it out and its passkey stops working.</p>`
         + (m.local_only ? `<div class="li"><div class="snm">Playbox Desktop <span class="chip ok" title="Local Playbox Desktop session; step-up uses OS verification">desktop</span><small>signed in on this machine${m.desktop_bridge ? " · owner verification ready" : ""}</small></div></div>` : "")
+        + (canUp ? `<div class="li"><div class="snm">This browser <span class="chip warn" title="Plain HTTP session">no passkey</span><small>signed in without a passkey · upgrade to unlock sensitive actions</small></div><button type="button" class="btn sm primary" data-sact="upgrade-pk">Add passkey</button></div>` : "")
         + (m.devices || []).map(d => `<div class="li"><div class="snm">${esc(d.name)} ${d.current ? '<span class="chip ok">this device</span>' : ""}<small>paired ${ago(d.created * 1000)} · used ${ago(d.last * 1000)}</small></div>${d.current ? "" : `<button class="act danger" data-rmdev="${esc(d.id)}">Remove</button>`}</div>`).join("")
         + `<div class="row"><div class="t">Add a device</div><div class="d">Makes a one-time pairing link for a phone or another computer. It needs ${m.local_only ? "owner verification" : "a fresh passkey touch"}.</div><div class="c"><button class="act" data-pair>Add a device</button></div></div><p class="note" id="pbs-msg"></p>`; }},
     sessions: {label: "Sessions", group: "hub", needsHub: true, words: "signed in sign out desktop", render() {
       const m = hub.me; if (!m) return `<p class="lead">${esc(hub.err || "Loading…")}</p>`;
-      return `<p class="lead">Browsers and apps currently signed in to this hub.</p>` + ((m.sessions || []).map(x => `<div class="li"><div class="snm">${esc(x.name)} ${x.current ? '<span class="chip">this session</span>' : ""} ${x.local_only ? '<span class="chip ok" title="Local Playbox Desktop session; step-up uses OS verification">desktop</span>' : x.weak ? '<span class="chip warn" title="Plain HTTP session">no passkey</span>' : ""}<small>started ${ago(x.created * 1000)} · active ${ago(x.last * 1000)}</small></div>${x.current ? "" : `<button class="act" data-rmses="${esc(x.key)}">End</button>`}</div>`).join("") || `<p class="note">No other sessions.</p>`) + `<p class="note" id="pbs-msg"></p>`; }},
+      const canUp = !!(m.weak && !m.local_only && window.PB && PB.canPasskey && PB.canPasskey());
+      return `<p class="lead">Browsers and apps currently signed in to this hub.</p>` + ((m.sessions || []).map(x => `<div class="li"><div class="snm">${esc(x.name)} ${x.current ? '<span class="chip">this session</span>' : ""} ${x.local_only ? '<span class="chip ok" title="Local Playbox Desktop session; step-up uses OS verification">desktop</span>' : x.weak ? '<span class="chip warn" title="Plain HTTP session">no passkey</span>' : ""}<small>started ${ago(x.created * 1000)} · active ${ago(x.last * 1000)}</small></div>${x.current ? (canUp ? '<button type="button" class="btn sm primary" data-sact="upgrade-pk">Add passkey</button>' : "") : `<button class="act" data-rmses="${esc(x.key)}">End</button>`}</div>`).join("") || `<p class="note">No other sessions.</p>`) + `<p class="note" id="pbs-msg"></p>`; }},
     network: {label: "Network", group: "hub", needsHub: true, words: "address tunnel cloudflare https tailscale remote reach", render() {
       const h = hub.sys && hub.sys.health, t = (hub.net && hub.net.tunnel) || (h && h.tunnel), mode = (hub.net && hub.net.mode) || "local", managed = !!(hub.net && hub.net.desktop_managed);
       const secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
@@ -269,6 +274,7 @@
         if ((b = c("[data-tog^='mute:']"))) { const id = b.dataset.tog.slice(5), on = b.getAttribute("aria-checked") === "true"; try { await call("PATCH", "/api/rooms/" + encodeURIComponent(id), {muted: on}); await loadNotif(); paint(); } catch (er) { say(er.message); } return; }
         if ((b = c("[data-rmdev]"))) { if (!confirm("Remove this device? It will be signed out and its passkey stops working here.")) return; try { await call("DELETE", "/api/devices/" + encodeURIComponent(b.dataset.rmdev)); await loadHub(true); paint(); } catch (er) { say(er.message); } return; }
         if ((b = c("[data-rmses]"))) { try { await call("DELETE", "/api/sessions/" + encodeURIComponent(b.dataset.rmses)); await loadHub(true); paint(); } catch (er) { say(er.message); } return; }
+        if ((b = c('[data-sact="upgrade-pk"]'))) { b.disabled = true; try { await PB.upgrade(devName()); await loadHub(true); paint(); say("Passkey added — this browser now uses strong sign-in."); } catch (er) { b.disabled = false; say(er.message); } return; }
         if (c("[data-pair]")) { dlg.close(); if (window.pairDevice) window.pairDevice(); else location.href = "/?view=hub"; return; }
       });
       dlg.addEventListener("input", e => {

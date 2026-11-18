@@ -44,11 +44,24 @@ pub fn prepare(hub_home: &Path) -> io::Result<String> {
 
 #[cfg(unix)]
 fn make_private_dir(dir: &Path) -> io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(dir)
+        .create(dir)?;
+    let meta = std::fs::symlink_metadata(dir)?;
+    if !meta.file_type().is_dir() {
+        return Err(io::Error::other("desktop-login path is not a directory"));
+    }
+    if meta.uid() != rustix::process::getuid().as_raw() {
+        return Err(io::Error::other(
+            "desktop-login directory owned by another user",
+        ));
+    }
+    if meta.permissions().mode() & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 #[cfg(not(unix))]
 fn make_private_dir(dir: &Path) -> io::Result<()> {

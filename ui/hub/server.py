@@ -264,7 +264,8 @@ def make_handler(hub, auth, store, opts):
                 return True
             hub.sec.add("auth", "A sensitive action asked for a fresh passkey touch", "info")
             self.j(403, {"error": "stepup", "weak": rec["weak"], "local_only": bool(rec.get("local_only")),
-                         "desktop_bridge": bool(rec.get("local_only") and loc and auth.desktop_bridge_ready())})
+                         "desktop_bridge": bool(rec.get("local_only") and loc and auth.desktop_bridge_ready()),
+                         "enrolled_rp": auth.has_passkey(self.rp_id())})
             return False
 
         # ---- dispatch ----
@@ -442,6 +443,18 @@ def make_handler(hub, auth, store, opts):
             if not sess:
                 raise AuthError(401, "unauthorized")
             key, rec = sess
+            if p == "/api/auth/upgrade/begin":
+                if not is_local(self.peer, self.hdrs()):
+                    raise AuthError(403, "inline passkey enrollment is only allowed on the hub machine itself; mint a pairing link from an enrolled device instead")
+                if not self.need_fresh(rec):
+                    return
+                return self.j(200, auth.upgrade_begin(key, self.rp_id(), ip))
+            if p == "/api/auth/upgrade/finish":
+                if not is_local(self.peer, self.hdrs()):
+                    raise AuthError(403, "inline passkey enrollment is only allowed on the hub machine itself; mint a pairing link from an enrolled device instead")
+                tok = auth.upgrade_finish(key, str(b.get("ticket", "")), b.get("response") or {}, str(b.get("name", "")), ua, ip)
+                hub.sec.add("auth", "Session upgraded to a passkey", "ok")
+                return self.j(200, {"ok": True}, self.set_cookie(tok))
             if p == "/api/auth/desktop-stepup":
                 if not is_local(self.peer, self.hdrs()):
                     raise AuthError(403, "desktop owner verification is only for the machine itself")
@@ -671,6 +684,7 @@ def make_handler(hub, auth, store, opts):
                 return self.j(200, {"name": rec["name"], "weak": rec["weak"], "local_only": bool(rec.get("local_only")),
                                     "desktop_bridge": auth.desktop_bridge_ready() if loc else False,
                                     "local": loc, "fresh": auth.is_fresh(rec, loc),
+                                    "enrolled_rp": auth.has_passkey(self.rp_id()),
                                     "devices": auth.devices(rec["cred"]), "sessions": auth.sessions(key), "push_key": pkey,
                                     "push_subs": psubs, "rp": self.rp_id(), "version": 1})
             if m == "GET" and p == "/api/rooms":

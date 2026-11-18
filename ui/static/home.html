@@ -691,14 +691,14 @@ function paintView(soft) {
   if (soft) {
     const sel = window.getSelection?.();
     if (sel && !sel.isCollapsed && sel.anchorNode && v.contains(sel.anchorNode)) { paintChrome(); return; }
-    openDet = new Set([...v.querySelectorAll("details[open]")].map(d => d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim()));
+    openDet = new Set([...v.querySelectorAll("details[open]")].map(d => d.dataset.ins ? "ins:" + d.dataset.ins : d.id ? "id:" + d.id : "sum:" + (d.querySelector("summary")?.textContent || "").trim()));
   }
   const selId = $(".rw.sel")?.dataset.room;
   paintChrome();
   v.innerHTML = `<div class="view ${enter ? "enter" : ""}"><div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub. Showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)() + "</div>";
   if (openDet && openDet.size) {
     v.querySelectorAll("details").forEach(d => {
-      const k = d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim();
+      const k = d.dataset.ins ? "ins:" + d.dataset.ins : d.id ? "id:" + d.id : "sum:" + (d.querySelector("summary")?.textContent || "").trim();
       if (openDet.has(k)) d.open = true;
     });
   }
@@ -828,8 +828,14 @@ function approvalCards(items) {
 function localRoomCards(items) {
   const gone = goneLocal();
   const lr = items.filter(i => i.kind === "local_room" && !gone.includes(i.hid));
-  return lr.length ? `<div class="card knock"><h2>Rooms on this machine</h2><p class="mut" style="margin:0 0 10px;font-size:13px">Found automatically. Adopting joins the room as a member, so it asks for your passkey.</p>${lr.map(i => `<div class="kq"><div class="kqh"><b>${esc(i.name)}</b> <span class="mut">${esc(i.repo || "no repository")}</span></div>
-      <div class="row"><button class="btn primary sm" data-act="adoptlocal" data-id="${esc(i.hid)}" data-name="${esc(i.name)}">Adopt</button><button class="btn sm" data-act="dismisslocal" data-id="${esc(i.hid)}">Not now</button></div></div>`).join("")}</div>` : "";
+  if (!lr.length) return "";
+  const hint = S.me?.local_only ? "Found automatically on this machine. Adopting joins the room and confirms with Touch ID."
+    : S.me?.weak ? "Found automatically on this machine. Adopting joins the room from this hub."
+    : "Found automatically on this machine. Adopting joins the room and asks for a passkey touch.";
+  const row = i => `<div class="kq"><div class="kqh"><b>${esc(i.name)}</b> <span class="mut">${esc(i.repo || "no repository")}</span></div>
+      <div class="row"><button class="btn primary sm" data-act="adoptlocal" data-id="${esc(i.hid)}" data-name="${esc(i.name)}">Adopt</button><button class="btn sm" data-act="dismisslocal" data-id="${esc(i.hid)}">Not now</button></div></div>`;
+  const more = lr.length > 2 ? `<details id="more-local" style="margin-top:8px"><summary class="lbl" style="cursor:pointer">Show ${lr.length - 2} more on this machine</summary><div style="margin-top:6px">${lr.slice(2).map(row).join("")}</div></details>` : "";
+  return `<div class="card knock"><h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>Rooms on this machine</span>${lr.length >= 2 ? '<button class="btn sm" data-act="dismissalllocal">Dismiss all</button>' : ""}</h2><p class="mut" style="margin:0 0 10px;font-size:13px">${hint}</p>${lr.slice(0, 2).map(row).join("")}${more}</div>`;
 }
 function knockCard() {
   const inc = S.knocks.map(k => `<div class="kq"><div class="kqh"><b>${esc(k.name)}</b> <span class="mut">wants to join</span> <b>${esc(k.label)}</b></div>
@@ -1090,14 +1096,17 @@ const VIEWS = {
   hub() {
     const m = S.me || {};
     const dev = (m.devices || []).map(d => `<div class="stat"><span>${esc(d.name)} ${d.current ? '<span class="chip ok">this device</span>' : ""}<br><span class="mut" style="font-size:12px">paired ${ago(d.created * 1000)} · used ${ago(d.last * 1000)}</span></span>
-      <button class="btn sm danger" data-act="rmdev" data-id="${esc(d.id)}">Remove</button></div>`).join("");
+      ${d.current ? "" : `<button class="btn sm danger" data-act="rmdev" data-id="${esc(d.id)}">Remove</button>`}</div>`).join("");
     const ses = (m.sessions || []).map(s => `<div class="stat"><span>${esc(s.name)} ${s.current ? '<span class="chip">this session</span>' : ""} ${s.weak ? '<span class="chip warn" title="Plain HTTP session">no passkey</span>' : ""}<br><span class="mut" style="font-size:12px">${esc(s.ip)} · ${ago(s.last * 1000)}</span></span>
       ${s.current ? "" : `<button class="btn sm" data-act="rmses" data-id="${esc(s.key)}">End</button>`}</div>`).join("");
+    const canUpgrade = !!(S.me && S.me.weak && !S.me.local_only && PB.canPasskey());
     const secure = location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
     const th = store.get("pb.theme", "auto");
     return `<div class="sect"><h2 class="rule"><span class="ix">05</span>Hub</h2></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
       <div class="card"><h2>Invites</h2><div id="invlist"><p class="mut" style="margin:0">Loading…</p></div>
         <p class="mut" style="font-size:12.5px;margin:12px 0 0">Make one from a room's <b>⋯</b> menu. Withdrawing hides the share page; the underlying single-use key still expires on its own clock.</p></div>
+      <div class="card"><h2>Devices</h2><div>${dev || '<p class="mut" style="margin:0">No passkeys yet.</p>'}</div>
+        <div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap">${canUpgrade ? '<button class="btn primary sm" data-act="upgrade-pk">Add passkey for this browser</button>' : ""}<button class="btn ${canUpgrade ? "" : "primary "}sm" data-act="pairdev">Pair a device</button></div></div>
       <div class="card"><h2>Notifications</h2><p class="mut" style="margin:0 0 14px">Get a nudge when the witness pauses a write, a history check fails or a room needs you. The push carries no content: your phone wakes, then asks your hub directly.</p>
         <div class="row"><button class="btn" data-act="push" id="pushbtn">Checking…</button></div></div>
       <div class="card"><h2>Install</h2><p class="mut" style="margin:0 0 14px">Playbox runs as an app: its own window, a badge for what needs you, and the last known state while you're offline.</p>
@@ -1445,8 +1454,10 @@ document.addEventListener("click", async e => {
   else if (act === "sysverify") { t.disabled = true; t.textContent = "Verifying…"; try { S.sys = await api("POST", "/api/system/verify"); S.sysAt = Date.now(); toast("History re-verified"); } catch (er) { toast(er.message, true); } paintView(true); }
   else if (act === "rminv") { try { await api("DELETE", `/api/invites/${t.dataset.id}`); loadInvites(); } catch (er) { toast(er.message, true); } }
   else if (act === "pairdev") pairDevice();
+  else if (act === "upgrade-pk") { t.disabled = true; try { await PB.upgrade(deviceGuess()); S.me = await api("GET", "/api/me"); toast("Passkey added — this browser now uses strong sign-in"); paintView(); } catch (er) { toast(er.message, true); t.disabled = false; } }
   else if (act === "adoptlocal") { t.disabled = true; t.textContent = "Joining…"; try { const j = await api("POST", "/api/local-rooms/adopt", {id: t.dataset.id, label: t.dataset.name}); toast(`"${t.dataset.name}" adopted`); await refreshRooms(); location.href = roomUrl(j.id); } catch (er) { toast(er.message, true); t.disabled = false; t.textContent = "Adopt"; } }
-  else if (act === "dismisslocal") { const g = goneLocal(); if (!g.includes(t.dataset.id)) g.push(t.dataset.id); store.set("pb.localgone", JSON.stringify(g.slice(-50))); mood(); paintView(true); }
+  else if (act === "dismisslocal") { const g = goneLocal(); if (!g.includes(t.dataset.id)) g.push(t.dataset.id); store.set("pb.localgone", JSON.stringify(g.slice(-200))); mood(); paintChrome(); paintView(true); }
+  else if (act === "dismissalllocal") { const g = goneLocal(); for (const i of activeAttention()) if (i.kind === "local_room" && i.hid && !g.includes(i.hid)) g.push(i.hid); store.set("pb.localgone", JSON.stringify(g.slice(-200))); mood(); paintChrome(); paintView(true); toast("Dismissed local rooms"); }
   else if (act === "apv") { t.disabled = true; try { const j = await api("POST", `/api/approvals/${encodeURIComponent(t.dataset.room)}/${encodeURIComponent(t.dataset.call)}`, {decision: t.dataset.dec}); toast(j.ok ? (t.dataset.dec === "approve" ? "Approved" : "Denied") : j.message, !j.ok); } catch (er) { toast(er.message, true); } refreshRooms(); }
   else if (act === "whold") { t.disabled = true; try { await api("POST", `/r/${encodeURIComponent(t.dataset.room)}/api/witness/decide`, {session: t.dataset.ses, decision: t.dataset.dec}); toast(t.dataset.dec === "release" ? "Hold lifted" : "Write denied"); } catch (er) { toast(er.message, true); t.disabled = false; } refreshRooms(); }
   else if (act === "push") togglePush();
