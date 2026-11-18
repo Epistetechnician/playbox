@@ -448,6 +448,9 @@ async fn piped(
 /// workspace goes in as several stdin chunks appended to a tar file in the sandbox's `/tmp`, which is unpacked and
 /// removed before the task's command starts.
 const STDIN_CHUNK: usize = 3 * 1024 * 1024;
+/// Longest single argument sent on an `exec` command line (OpenShell rejects more than 32 KiB).
+const MAX_ARG: usize = 24 * 1024;
+const GUEST_SCRIPT: &str = "/tmp/.pbx-task.sh";
 const GUEST_TAR: &str = "/tmp/.pbx-workspace.tar";
 
 impl OpenShellRunner {
@@ -560,7 +563,23 @@ impl OpenShellRunner {
             &secs,
             "--",
         ];
-        args.extend(spec.cmd.iter().map(String::as_str));
+        // `exec` also refuses a single argument over 32 KiB. A long `sh -c` script (an edit that carries a whole file, say)
+        // is staged as a file in the sandbox's /tmp instead and run from there; same shell, same user, same policy.
+        let staged;
+        let cmd: Vec<&str> = match spec.cmd.as_slice() {
+            [sh, flag, script] if sh == "sh" && flag == "-c" && script.len() > MAX_ARG => {
+                self.exec_stdin(
+                    name,
+                    &["sh", "-c", &format!("cat > {GUEST_SCRIPT}")],
+                    script.clone().into_bytes(),
+                )
+                .await?;
+                staged = [sh.as_str(), GUEST_SCRIPT];
+                staged.to_vec()
+            }
+            _ => spec.cmd.iter().map(String::as_str).collect(),
+        };
+        args.extend(cmd);
         // A little slack so OpenShell's own timeout reports first; ours is the backstop.
         let (task, timed_out) =
             cli(&args, &[], Duration::from_secs(spec.timeout_secs + 10)).await?;

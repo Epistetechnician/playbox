@@ -223,3 +223,29 @@ async fn large_workspace_round_trips() {
     );
     assert_eq!(std::fs::read(ws.join("f299.bin")).unwrap(), want);
 }
+
+/// `exec` rejects a single argument over 32 KiB; a long script (an edit carrying a whole file) must still run.
+#[tokio::test]
+async fn long_script_runs() {
+    if !enabled() {
+        return;
+    }
+    let ws = std::env::temp_dir().join(format!("pb-osh-long-{}", std::process::id()));
+    std::fs::create_dir_all(&ws).unwrap();
+    let pad = "x".repeat(80);
+    let mut script = String::new();
+    for i in 0..600 {
+        script.push_str(&format!("# {pad} {i}\n"));
+    }
+    script.push_str("echo long-script-ok; echo data > out.txt\n");
+    assert!(script.len() > 40 * 1024);
+    let r = OpenShellRunner::new(SandboxPolicy::default());
+    let spec = TaskSpec::new(&["sh", "-c", &script]);
+    let out = r.run(&spec, &ws).await.unwrap();
+    assert_eq!(out.exit_code, Some(0), "{out:?}");
+    assert!(out.stdout.contains("long-script-ok"), "{out:?}");
+    assert_eq!(
+        std::fs::read_to_string(ws.join("out.txt")).unwrap().trim(),
+        "data"
+    );
+}
