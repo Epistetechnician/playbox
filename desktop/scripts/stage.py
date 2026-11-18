@@ -52,7 +52,9 @@ def stage_python(archive: Path, want: str, dst: Path) -> None:
                 link = (target.parent / m.linkname).resolve() if m.issym() else (dst / m.linkname).resolve()
                 if dst.resolve() not in link.parents and link != dst.resolve():
                     sys.exit(f"unsafe link in python archive: {m.name} -> {m.linkname}")
-        t.extractall(dst, filter="data")
+        # Every member was vetted above (paths and both link kinds); the stdlib "data" filter of older 3.10 patch releases wrongly rejects
+        # the in-tree symlinks of the Linux archive, so extract with the checks we already made.
+        t.extractall(dst, filter="fully_trusted")
     # python-build-standalone archives hold a single top-level `python/` directory: flatten it.
     inner = dst / "python"
     if inner.is_dir() and not (dst / "bin").exists():
