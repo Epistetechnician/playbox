@@ -26,8 +26,8 @@ container; resolved means all FAIL_TO_PASS and PASS_TO_PASS pass. It is our own 
 | arm total cost, 15 runs | $3.27 | $3.38 | $3.49 |
 
 Arm P facts, 15 runs: 1028 delegates, 526 of them changed the tree; audit log verified in 15 of 15; 756 taint advisories (advisory mode,
-`PLAYBOX_APPROVERS` unset, so none blocked anything); 3 refused delegates (0.3%), all "uploading the workspace failed" with macOS tar xattr warnings; the model retried each. No run needed a
-retry for a missing model call (`attempts` is 1 in all 15).
+`PLAYBOX_APPROVERS` unset, so none blocked anything); 3 refused delegates (0.3%), all "uploading the workspace failed" with macOS tar xattr warnings; the model retried each. One run (django-11905 P5) made no model call
+on its first attempt and was retried by the driver; its time and cost are from the retry (`attempts: 2` in its JSON).
 
 ## Reading it
 
