@@ -1,0 +1,7 @@
+django-11848: n=15 pairs  both=11 neither=0 S-only=3 L-only=1  diff(S-L)=+0.133  paired 95% CI [-0.133, +0.400]  McNemar exact p=0.625
+django-11422: n=15 pairs  both=10 neither=1 S-only=3 L-only=1  diff(S-L)=+0.133  paired 95% CI [-0.133, +0.400]  McNemar exact p=0.625
+django-11905: n=5 pairs  both=0 neither=5 S-only=0 L-only=0  diff(S-L)=+0.000  paired 95% CI [+0.000, +0.000]  McNemar exact p=1.000
+all 3 instances: n=35 pairs  both=21 neither=6 S-only=6 L-only=2  diff(S-L)=+0.114  paired 95% CI [-0.029, +0.286]  McNemar exact p=0.289
+11848+11422: n=30 pairs  both=21 neither=1 S-only=6 L-only=2  diff(S-L)=+0.133  paired 95% CI [-0.033, +0.300]  McNemar exact p=0.289
+paired wall diff S-L: mean -2.2s  95% CI [-23.0, +18.7]
+paired cost diff S-L: mean -0.0006$ 95% CI [-0.0318, +0.0286]
