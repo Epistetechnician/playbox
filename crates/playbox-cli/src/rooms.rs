@@ -300,7 +300,7 @@ pub async fn up(a: UpArgs) -> Result<()> {
     host.shutdown().await
 }
 
-/// Refuse runtime-only flags that the chosen runner (or lack of one) would silently ignore.
+/// Refuse runtime-only flags that the chosen runner (or lack of one) would silently ignore or fail on at task time.
 fn check_flags(a: &UpArgs, runtime: Option<&str>, enforces_host_list: bool) -> Result<()> {
     if !a.allow_host.is_empty() {
         match runtime {
@@ -313,11 +313,23 @@ fn check_flags(a: &UpArgs, runtime: Option<&str>, enforces_host_list: bool) -> R
             Some(_) => {}
         }
     }
-    if !a.allow_image.is_empty() && runtime.is_none() {
-        bail!("--allow-image requires a runtime; pass --runtime NAME or --docker");
+    if !a.allow_image.is_empty() {
+        match runtime {
+            None => bail!("--allow-image requires a runtime; pass --runtime NAME or --docker"),
+            Some(name @ ("process" | "process-UNSAFE")) => bail!(
+                "--allow-image cannot be honoured by the {name} runner; pass --runtime docker, --runtime libkrun or --runtime openshell"
+            ),
+            Some(_) => {}
+        }
     }
-    if !a.allow_secret.is_empty() && runtime.is_none() {
-        bail!("--allow-secret requires a runtime; pass --runtime NAME or --docker");
+    if !a.allow_secret.is_empty() {
+        match runtime {
+            None => bail!("--allow-secret requires a runtime; pass --runtime NAME or --docker"),
+            Some(name @ ("openshell" | "process" | "process-UNSAFE")) => bail!(
+                "--allow-secret cannot be honoured by the {name} runner; pass --runtime docker or --runtime libkrun"
+            ),
+            Some(_) => {}
+        }
     }
     Ok(())
 }
@@ -681,6 +693,46 @@ mod tests {
             &up_args(&["--allow-secret", "api_key"]),
             Some("docker"),
             false,
+        )
+        .is_ok());
+        assert!(check_flags(
+            &up_args(&["--allow-secret", "api_key"]),
+            Some("libkrun"),
+            false,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn check_flags_refuses_allow_secret_on_unsupported_runners() {
+        for name in ["openshell", "process-UNSAFE"] {
+            let err = check_flags(
+                &up_args(&["--allow-secret", "api_key"]),
+                Some(name),
+                name == "openshell",
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(err.contains("--allow-secret"), "{err}");
+            assert!(err.contains(name), "{err}");
+        }
+    }
+
+    #[test]
+    fn check_flags_refuses_allow_image_on_process_runner() {
+        let err = check_flags(
+            &up_args(&["--allow-image", "python:3.12-alpine"]),
+            Some("process-UNSAFE"),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("--allow-image"), "{err}");
+        assert!(err.contains("process-UNSAFE"), "{err}");
+        assert!(check_flags(
+            &up_args(&["--allow-image", "python:3.12-alpine"]),
+            Some("openshell"),
+            true,
         )
         .is_ok());
     }
