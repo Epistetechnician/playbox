@@ -1,0 +1,18 @@
+diff --git a/django/utils/.hermes-tmp.5196 b/django/utils/.hermes-tmp.5196
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68..6b447bc 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -580,6 +580,10 @@ def run_with_reloader(main_func, *args, **kwargs):
+         if os.environ.get(DJANGO_AUTORELOAD_ENV) == 'true':
+             reloader = get_reloader()
+             logger.info('Watching for file changes with %s', reloader.__class__.__name__)
++            # Watch the script file being executed (e.g. manage.py).
++            script_file = Path(sys.argv[0]).resolve().absolute()
++            if hasattr(reloader, 'watch_file'):
++                reloader.watch_file(script_file)
+             start_django(reloader, main_func, *args, **kwargs)
+         else:
+             exit_code = restart_with_reloader()

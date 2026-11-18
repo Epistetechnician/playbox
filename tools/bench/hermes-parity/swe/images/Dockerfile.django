@@ -1,0 +1,8 @@
+FROM hermes-agent-nonroot:latest
+USER root
+ENV UV_PYTHON_INSTALL_DIR=/usr/local/uv-python
+RUN uv venv --python 3.8 /usr/local/venv && uv pip install --python /usr/local/venv/bin/python asgiref==3.4.1 pytz sqlparse==0.4.4 Jinja2==3.0.3 MarkupSafe==2.0.1 PyYAML tblib==1.7.0 numpy
+COPY testbed /usr/local/testbed
+RUN uv pip install --python /usr/local/venv/bin/python -e /usr/local/testbed --no-deps && chmod -R a+rX /usr/local/uv-python /usr/local/venv /usr/local/testbed && git config --system --add safe.directory '*'
+USER 10001:10001
+ENV PATH=/usr/local/venv/bin:/usr/local/hermes/bin:/usr/local/hermes/.venv/bin:/usr/local/bin:/usr/bin:/bin

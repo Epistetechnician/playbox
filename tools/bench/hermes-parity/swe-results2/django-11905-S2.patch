@@ -1,0 +1,25 @@
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979c56..ceb508f950 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -462,6 +462,20 @@ class IsNull(BuiltinLookup):
+     lookup_name = 'isnull'
+     prepare_rhs = False
+ 
++    def __init__(self, lhs, rhs):
++        # Validate the rhs value before calling super().__init__()
++        # to ensure we check against the potentially overridden class attribute
++        if not hasattr(rhs, 'resolve_expression') and rhs is not None:
++            if not isinstance(rhs, bool):
++                raise TypeError(
++                    f"The 'isnull' lookup expects a boolean value, got {type(rhs).__name__}."
++                )
++        elif rhs is None and not self.can_use_none_as_rhs:
++            raise TypeError(
++                "The 'isnull' lookup expects a boolean value, got NoneType."
++            )
++        super().__init__(lhs, rhs)
++
+     def as_sql(self, compiler, connection):
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:

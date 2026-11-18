@@ -1,0 +1,23 @@
+diff --git a/django/views/debug.py b/django/views/debug.py
+index e6b7d4d821..f1a87c2346 100755
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -84,12 +84,18 @@ class SafeExceptionReporterFilter:
+         """
+         Cleanse an individual setting key/value of sensitive content. If the
+         value is a dictionary, recursively cleanse the keys in that dictionary.
++        If the value is a list or tuple, recursively cleanse items within them.
+         """
+         try:
+             if self.hidden_settings.search(key):
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple)):
++                # Recursively cleanse items in lists and tuples
++                cleansed_items = [self.cleanse_setting(key, item) for item in value]
++                # Preserve the original type (list or tuple)
++                cleansed = type(value)(cleansed_items)
+             else:
+                 cleansed = value
+         except TypeError:

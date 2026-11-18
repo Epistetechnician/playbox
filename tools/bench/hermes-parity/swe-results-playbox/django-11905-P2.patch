@@ -1,0 +1,53 @@
+diff --git a/django/db/models/.hermes-tmp.11469 b/django/db/models/.hermes-tmp.11469
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979..61cff78 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -462,6 +462,18 @@ class IsNull(BuiltinLookup):
+     lookup_name = 'isnull'
+     prepare_rhs = False
+ 
++    def get_prep_lookup(self):
++        value = super().get_prep_lookup()
++        if hasattr(value, 'resolve_expression'):
++            return value
++        if value is None and self.can_use_none_as_rhs:
++            return value
++        if not isinstance(value, bool):
++            raise TypeError(
++                "isnull lookup value must be a boolean; got %s" % type(value).__name__
++            )
++        return value
++
+     def as_sql(self, compiler, connection):
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+diff --git a/test_isnull.py b/test_isnull.py
+new file mode 100644
+index 0000000..3d23905
+--- /dev/null
++++ b/test_isnull.py
+@@ -0,0 +1,21 @@
++import os
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.settings')
++
++import django
++django.setup()
++
++from tests.lookup.models import Season
++
++# Create a test season
++season = Season.objects.create(year=2020, nulled_text_field="test")
++
++# Test with boolean value
++print("Test with True:", Season.objects.filter(nulled_text_field__isnull=True).exists())
++print("Test with False:", Season.objects.filter(nulled_text_field__isnull=False).exists())
++
++# Test with non-boolean values
++print("Test with 1:", Season.objects.filter(nulled_text_field__isnull=1).exists())
++print("Test with 0:", Season.objects.filter(nulled_text_field__isnull=0).exists())
++print("Test with 'yes':", Season.objects.filter(nulled_text_field__isnull='yes').exists())
++print("Test with '':", Season.objects.filter(nulled_text_field__isnull='').exists())
++

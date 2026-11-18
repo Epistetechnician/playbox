@@ -1,0 +1,20 @@
+diff --git a/django/utils/.hermes-tmp.2489 b/django/utils/.hermes-tmp.2489
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68..3ecdd2e 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -103,7 +103,11 @@ def iter_all_python_module_files():
+     # aren't loaded on the fly.
+     keys = sorted(sys.modules)
+     modules = tuple(m for m in map(sys.modules.__getitem__, keys) if not isinstance(m, weakref.ProxyTypes))
+-    return iter_modules_and_files(modules, frozenset(_error_files))
++    extra_files = frozenset(_error_files)
++    # Include sys.argv[0] if it exists and is a file
++    if sys.argv[0]:
++        extra_files = extra_files | frozenset([sys.argv[0]])
++    return iter_modules_and_files(modules, extra_files)
+ 
+ 
+ @functools.lru_cache(maxsize=1)

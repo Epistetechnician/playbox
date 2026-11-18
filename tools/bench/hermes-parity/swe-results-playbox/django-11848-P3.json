@@ -1,0 +1,70 @@
+{
+ "inst": "django-11848",
+ "arm": "P",
+ "n": "3",
+ "wall_s": 681.5,
+ "rc": 0,
+ "attempts": 1,
+ "patch_lines": 26,
+ "usage": {
+  "estimated_cost_usd": 0.28661935000000005,
+  "cost_status": "estimated",
+  "cost_source": "provider_models_api",
+  "input_tokens": 1401664,
+  "output_tokens": 18225,
+  "cache_read_tokens": 1353501,
+  "cache_write_tokens": 47925,
+  "reasoning_tokens": 0,
+  "total_tokens": 1419889,
+  "api_calls": 48,
+  "model": "claude-haiku-4-5-20251001",
+  "provider": "anthropic",
+  "session_id": "local-a69b5eb89c51e4edcc92695cb310887bb14d8d51d030000b5c91cddc18b1e940",
+  "completed": true,
+  "partial": false,
+  "interrupted": false,
+  "turn_exit_reason": "text_response(finish_reason=stop)",
+  "failed": false,
+  "service_tier": null,
+  "auxiliary": {
+   "api_calls": 0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0,
+   "reasoning_tokens": 0,
+   "estimated_cost_usd": 0,
+   "total_tokens": 0,
+   "by_task": {}
+  },
+  "total_including_auxiliary": {
+   "estimated_cost_usd": 0.28661935000000005,
+   "total_tokens": 1419889,
+   "api_calls": 48
+  }
+ },
+ "setup_s": 16.1,
+ "playbox": {
+  "delegates": 69,
+  "refused": 0,
+  "edits": 34,
+  "rate_waited_s": 0,
+  "taint_advisories": 49,
+  "median_cmd_s": 7.08,
+  "total_cmd_s": 508.6,
+  "audit_verifies": true,
+  "patch_truncated": false,
+  "refusal_msgs": [],
+  "admissions": [
+   "advisory: this playbox_delegate contains text that came from task:01a1ec16-a659-73ab-a06f-56219adc006b; set PLAYBOX_APPROVERS to require approval",
+   "advisory: this playbox_delegate contains text that came from task:01a1ec17-6ca9-75fc-b2ab-398b36419e14; set PLAYBOX_APPROVERS to require approval"
+  ]
+ },
+ "note": "",
+ "f2p": 2,
+ "f2p_total": 2,
+ "p2p": 42,
+ "p2p_total": 42,
+ "resolved": true,
+ "applied": true
+}

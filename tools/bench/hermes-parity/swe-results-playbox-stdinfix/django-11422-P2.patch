@@ -1,0 +1,20 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68..aa4734a 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -580,6 +580,15 @@ def run_with_reloader(main_func, *args, **kwargs):
+         if os.environ.get(DJANGO_AUTORELOAD_ENV) == 'true':
+             reloader = get_reloader()
+             logger.info('Watching for file changes with %s', reloader.__class__.__name__)
++            # Watch the main script file (e.g., manage.py)
++            script_file = Path(sys.argv[0]).resolve().absolute()
++            if script_file.exists() and script_file.is_file():
++                try:
++                    reloader.watch_file(script_file)
++                except (AttributeError, ValueError):
++                    # AttributeError: mock objects may not have watch_file
++                    # ValueError: Path may not be absolute (shouldn't happen, but be safe)
++                    pass
+             start_django(reloader, main_func, *args, **kwargs)
+         else:
+             exit_code = restart_with_reloader()
