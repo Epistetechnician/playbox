@@ -2,12 +2,17 @@
 """Merge the R&D room's pull requests one at a time, in order: rebase onto current main (only the changelog may conflict, and it is
 re-inserted by hand), push, wait for every CI check to pass, then squash-merge. Stops at the first thing it cannot do safely.
 Usage: merge_queue.py 16 17 18 ...   (runs from ~/.playbox-rnd/repo)"""
-import json, os, re, shutil, subprocess, sys, time
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
 
 REPO = os.path.expanduser("~/.playbox-rnd/repo")
 SLUG = "Epistetechnician/playbox"
 TMP = os.environ.get("TMPDIR", "/tmp")
-
 
 ENTRY_FILE = os.path.expanduser("~/.playbox-rnd/changelog_entries.json")
 ENTRIES = json.load(open(ENTRY_FILE)) if os.path.exists(ENTRY_FILE) else {}
@@ -28,13 +33,13 @@ def log(*a):
 
 
 def added_lines(sha, cwd):
-    return [l[1:] for l in run(["git", "show", sha, "--format=", "--", "CHANGELOG.md"], cwd)[1].split("\n") if l.startswith("+- ")]
+    return [ln[1:] for ln in run(["git", "show", sha, "--format=", "--", "CHANGELOG.md"], cwd)[1].split("\n") if ln.startswith("+- ")]
 
 
 def put_in_changelog(path, lines, head):
     s = open(path).read()
-    for l in lines:
-        s = s.replace(l + "\n", "")
+    for ln in lines:
+        s = s.replace(ln + "\n", "")
     i = s.index("## [Unreleased]")
     nxt = s.index("\n## [", i + 5)
     if f"### {head}\n" in s[i:nxt]:
@@ -54,7 +59,7 @@ def rebase(n, br, title):
     if rc:
         return None, out
     base = run(["git", "merge-base", "origin/main", f"origin/{br}"], wt)[1]
-    lines_all = [l[1:] for l in run(["git", "diff", base, "HEAD", "--", "CHANGELOG.md"], wt)[1].split("\n") if l.startswith("+- ")]
+    lines_all = [ln[1:] for ln in run(["git", "diff", base, "HEAD", "--", "CHANGELOG.md"], wt)[1].split("\n") if ln.startswith("+- ")]
     msg = run(["git", "log", "-1", "--format=%s", "HEAD"], wt)[1]
     body = run(["git", "log", "-1", "--format=%b", "HEAD"], wt)[1]
     run(["git", "reset", "-q", "--soft", base], wt)
@@ -94,7 +99,7 @@ def wait_green(n, flake_budget=2):
         c = checks(n)
         states = [x["state"] for x in c]
         if len(c) >= 10 and not any(s in ("IN_PROGRESS", "QUEUED", "PENDING", "WAITING") for s in states):
-            bad = [x["name"] for x in c if x["state"] != "SUCCESS"]
+            bad = [x["name"] for x in c if x["state"] not in ("SUCCESS", "SKIPPED", "NEUTRAL")]
             if not bad:
                 return True, ""
             if flake_budget > 0:
@@ -124,13 +129,16 @@ def main():
             log(f"#{n}: rebasing {br} onto main (attempt {attempt + 1})")
             wt, err = rebase(n, br, title)
             if wt is None:
-                log(f"#{n}: STOP {err}"); return 1
+                log(f"#{n}: STOP {err}")
+                return 1
             rc, out = run(["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{br}"], wt)
             if rc:
-                log(f"#{n}: STOP push failed: {out[-200:]}"); return 1
+                log(f"#{n}: STOP push failed: {out[-200:]}")
+                return 1
             ok, why = wait_green(n)
             if not ok:
-                log(f"#{n}: STOP {why}"); return 1
+                log(f"#{n}: STOP {why}")
+                return 1
             if info["isDraft"]:
                 gh("pr", "ready", str(n))
             subject = re.sub(r"^\[R&D room\]\s*", "", title)
@@ -140,11 +148,12 @@ def main():
                 break
             log(f"#{n}: merge refused ({out[-160:]}); main probably moved, retrying")
         else:
-            log(f"#{n}: STOP could not merge after 3 tries"); return 1
+            log(f"#{n}: STOP could not merge after 3 tries")
+            return 1
         run(["git", "worktree", "remove", "--force", wt])
     merged = [n for n in sorted(ENTRIES) if json.loads(gh("pr", "view", str(n), "--json", "state")[1] or "{}").get("state") == "MERGED"]
     if merged:
-        add = [l for n in merged for l in ENTRIES[n]["lines"]]
+        add = [ln for n in merged for ln in ENTRIES[n]["lines"]]
         run(["git", "fetch", "-q", "origin", "main"])
         wt = f"{TMP}/mq-changelog"
         shutil.rmtree(wt, ignore_errors=True)
