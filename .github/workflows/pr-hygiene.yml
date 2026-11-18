@@ -1,0 +1,20 @@
+# Fails a pull request whose body carries AI attribution ("Generated with Claude Code", "Co-Authored-By: Claude").
+# Re-runs when the body is edited, so fixing the text turns the check green.
+name: pr-hygiene
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  pr-body:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No AI attribution in the PR body
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s' "$BODY" | grep -qiE 'Generated with.{0,4}Claude|Co-Authored-By: *Claude'; then
+            echo "::error::PR body carries AI attribution; remove it."
+            exit 1
+          fi
