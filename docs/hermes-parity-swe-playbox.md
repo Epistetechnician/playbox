@@ -36,10 +36,24 @@ on its first attempt and was retried by the driver; its time and cost are from t
 - django-11848: parity. django-11905: no arm resolves it in any of 5 runs, so it cannot separate arms.
 - django-11422 is the gap: P resolved 1 of 5 against 4 of 5 (L) and 3 of 5 (S). With n = 5 that difference is not significant (Fisher exact,
   P vs L, p about 0.2), but it is the only cell where P is clearly below the other arms and it is not shown to be noise either. The
-  total 6/15 vs 8/15 is likewise inside what 5 runs per cell can tell apart. Two things in P's runs plausibly cost it: Hermes's file tool
-  verifies a write by reading it back, and in a fresh-checkout-per-command sandbox that read-back sometimes disagrees ("Post-write
-  verification failed"), which sends the model into extra turns; and the 6x slower loop. This is a hypothesis from reading logs, not tested.
+  total 6/15 vs 8/15 is likewise inside what 5 runs per cell can tell apart. In 4 of 5 P runs the model patched
+  `run_with_reloader` (watch `sys.argv[0]`), which the hidden tests do not cover; the resolving patches (L: 4 of 5, S: 3 of 5, P: 1 of 5)
+  change `iter_modules_and_files`. L5, S4 and S5 took the wrong route too. So the gap is which fix the model chose. What differs in P's loop
+  is not established; see the rerun below.
 - The agent's patch can carry stray `.hermes-tmp.*` files from the file tool; they are harmless to scoring.
+
+## django-11422 rerun after a backend fix
+
+Reading the P logs showed a real defect in our backend: stdin for a command (the Hermes file tool's write) was bound to the last statement of
+its script, so file-tool writes left empty files and Hermes reported "Post-write verification failed" in 4 of the 5 first P runs (PR #66 fixes
+it; checked live: 0 bytes before, all bytes after). The 5 django-11422 runs were repeated on the fixed backend
+(`swe-results-playbox-stdinfix/`): **0 of 5 resolved**, no verification failures, 0 refused delegates, audit verified 5 of 5, $1.28 total,
+mean wall 778 s. Four of the five again patched `run_with_reloader`/`BaseReloader` rather than `iter_modules_and_files`. So the write bug
+cost the model turns but is not what separated P from L and S on this instance; across both P sets django-11422 is 1 of 10, against 4 of 5
+(L) and 3 of 5 (S). With these sample sizes that is suggestive of a real P deficit on this instance, not proof, and its cause is still
+unexplained (candidates, untested: the 5 to 6 times slower loop, replayed edits, no network in the sandbox for any exploration the
+model did elsewhere). The 15-run table above is the original set and is kept as is; with the rerun in place of the original 11422 cell P is
+5 + 0 + 0 = 5 of 15.
 
 ## Design
 

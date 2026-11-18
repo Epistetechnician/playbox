@@ -1,0 +1,39 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68..7e54182 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -266,6 +266,25 @@ class BaseReloader:
+             logger.debug('Main Django thread has terminated before apps are ready.')
+             return False
+ 
++    def _watch_sys_argv_0(self):
++        """
++        Watch sys.argv[0] if it's a Python script. This is used to watch
++        manage.py and other entry scripts for changes.
++        """
++        import django.__main__
++        
++        # Don't watch django.__main__ as it's part of Django itself
++        script_path = sys.argv[0]
++        if script_path == django.__main__.__file__:
++            return
++        
++        # Convert to absolute path
++        script_path = Path(script_path).resolve().absolute()
++        
++        # Only watch if the file exists and is a Python file
++        if script_path.exists() and script_path.suffix in ('.py', ''):
++            self.watch_file(script_path)
++
+     def run(self, django_main_thread):
+         logger.debug('Waiting for apps ready_event.')
+         self.wait_for_apps_ready(apps, django_main_thread)
+@@ -279,6 +298,8 @@ class BaseReloader:
+             # If this occurs then swallow the error and continue.
+             pass
+         logger.debug('Apps ready_event triggered. Sending autoreload_started signal.')
++        # Watch the entry script (e.g. manage.py) for changes.
++        self._watch_sys_argv_0()
+         autoreload_started.send(sender=self)
+         self.run_loop()
+ 
