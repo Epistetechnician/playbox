@@ -75,7 +75,35 @@ fn create_private_file(path: &Path) -> io::Result<()> {
 }
 
 pub fn url(port: u16, nonce: &str) -> String {
-    format!("http://localhost:{port}/desktop/signin?n={nonce}")
+    url_with_next(port, nonce, None)
+}
+
+pub fn url_with_next(port: u16, nonce: &str, next: Option<&str>) -> String {
+    match next {
+        Some(n) if n != "/" && n.starts_with('/') => {
+            let (path_and_query, frag) = match n.split_once('#') {
+                Some((p, f)) => (p, Some(f)),
+                None => (n, None),
+            };
+            let encoded: String = path_and_query
+                .bytes()
+                .map(|b| {
+                    if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.') {
+                        (b as char).to_string()
+                    } else {
+                        format!("%{b:02X}")
+                    }
+                })
+                .collect();
+            match frag {
+                Some(f) => {
+                    format!("http://localhost:{port}/desktop/signin?n={nonce}&next={encoded}#{f}")
+                }
+                None => format!("http://localhost:{port}/desktop/signin?n={nonce}&next={encoded}"),
+            }
+        }
+        _ => format!("http://localhost:{port}/desktop/signin?n={nonce}"),
+    }
 }
 
 /// Does this hub know the `/desktop/signin` flow? (An older hub does not: then the window just opens the hub.)

@@ -289,6 +289,80 @@ fn install_appimage(app: &AppHandle, rel: &Release) -> Result<(), String> {
     Ok(())
 }
 
+/// Companion `.previous` backup kept by `install`, if any.
+pub fn previous_path_for(bundle: &Path) -> Option<PathBuf> {
+    if bundle.extension().is_some_and(|e| e == "app") {
+        Some(bundle.parent()?.join("Playbox.previous.app"))
+    } else {
+        let mut p = bundle.as_os_str().to_os_string();
+        p.push(".previous");
+        Some(PathBuf::from(p))
+    }
+}
+
+pub fn has_previous() -> bool {
+    bundle()
+        .and_then(|b| previous_path_for(&b))
+        .is_some_and(|p| p.exists())
+}
+
+/// Swap the preserved `.previous` bundle back into place after verifying it, then relaunch.
+pub fn on_rollback(app: &AppHandle) {
+    if !busy(app, true) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        tray::set_update(&app, "Rolling back…", false);
+        match rollback_sync() {
+            Ok(()) => quit::graceful(&app),
+            Err(e) => {
+                eprintln!("playbox-desktop: rollback failed: {e}");
+                tray::set_update(&app, "Rollback failed; current version kept", true);
+                busy(&app, false);
+            }
+        }
+    });
+}
+
+fn rollback_sync() -> Result<(), String> {
+    let current = bundle().ok_or("not running from a packaged app")?;
+    let previous = previous_path_for(&current).ok_or("no previous bundle path")?;
+    if !previous.exists() {
+        return Err("no previous version is saved on this machine".into());
+    }
+    let parent = current.parent().ok_or("no parent directory")?;
+    if cfg!(target_os = "linux") {
+        let said = run(Command::new(&previous)
+            .env("APPIMAGE_EXTRACT_AND_RUN", "1")
+            .arg("--version"))?;
+        if !said.trim().starts_with("playbox-desktop ") {
+            return Err("previous AppImage failed version check".into());
+        }
+    } else {
+        run(Command::new("codesign")
+            .args(["--verify", "--deep", "--strict"])
+            .arg(&previous))?;
+        let said =
+            run(Command::new(previous.join("Contents/MacOS/playbox-desktop")).arg("--version"))?;
+        if !said.trim().starts_with("playbox-desktop ") {
+            return Err("previous app bundle failed version check".into());
+        }
+    }
+    let aside = parent.join(format!(".Playbox-rollback-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&aside);
+    let _ = std::fs::remove_file(&aside);
+    std::fs::rename(&current, &aside).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(&previous, &current) {
+        let _ = std::fs::rename(&aside, &current);
+        return Err(e.to_string());
+    }
+    let _ = std::fs::remove_dir_all(&aside);
+    let _ = std::fs::remove_file(&aside);
+    relaunch(&current);
+    Ok(())
+}
+
 /// Wait for this process to be gone (it holds the single-instance claim), then open the new app.
 fn relaunch(bundle: &Path) {
     use std::os::unix::process::CommandExt;
@@ -305,4 +379,23 @@ fn relaunch(bundle: &Path) {
         .stderr(Stdio::null())
         .process_group(0)
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previous_bundle_path_matches_macos_and_appimage_conventions() {
+        assert_eq!(
+            previous_path_for(Path::new("/Applications/Playbox.app")),
+            Some(PathBuf::from("/Applications/Playbox.previous.app"))
+        );
+        assert_eq!(
+            previous_path_for(Path::new("/home/u/Apps/Playbox-x86_64.AppImage")),
+            Some(PathBuf::from(
+                "/home/u/Apps/Playbox-x86_64.AppImage.previous"
+            ))
+        );
+    }
 }

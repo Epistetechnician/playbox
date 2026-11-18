@@ -210,19 +210,19 @@ pre{border-radius:8px}input{border-radius:8px}
 @media (max-width:480px){.auth{padding:24px 18px 18px;border-radius:14px}}
 
 /* ===== Refined style (default): flat, plain, dense. Expressive keeps the glows, shadows and dot-matrix type. ===== */
-html:not([data-style=expressive]){--r:6px}
+html:not([data-style=expressive]){--r:0}
 html:not([data-style=expressive]) body{background-image:none;font-size:13.5px;line-height:1.5}
-html:not([data-style=expressive]) .card,html:not([data-style=expressive]) .ins,html:not([data-style=expressive]) .rh,html:not([data-style=expressive]) .nt,html:not([data-style=expressive]) .since{border-radius:6px;box-shadow:none}
-html:not([data-style=expressive]) .panel{border-radius:6px}
-html:not([data-style=expressive]) .auth,html:not([data-style=expressive]) dialog,html:not([data-style=expressive]) .pbs{border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+html:not([data-style=expressive]) .card,html:not([data-style=expressive]) .ins,html:not([data-style=expressive]) .rh,html:not([data-style=expressive]) .nt,html:not([data-style=expressive]) .since{border-radius:0;box-shadow:none}
+html:not([data-style=expressive]) .panel{border-radius:0}
+html:not([data-style=expressive]) .auth,html:not([data-style=expressive]) dialog,html:not([data-style=expressive]) .pbs{border-radius:0;box-shadow:0 8px 30px rgba(0,0,0,.25)}
 html:not([data-style=expressive]) .center{background:none}
-html:not([data-style=expressive]) .btn,html:not([data-style=expressive]) .tbtn,html:not([data-style=expressive]) input[type=text],html:not([data-style=expressive]) textarea,html:not([data-style=expressive]) select{border-radius:5px}
+html:not([data-style=expressive]) .btn,html:not([data-style=expressive]) .tbtn,html:not([data-style=expressive]) input[type=text],html:not([data-style=expressive]) textarea,html:not([data-style=expressive]) select{border-radius:0}
 html:not([data-style=expressive]) .btn{min-height:32px;padding:0 12px;font-size:13px}
 html:not([data-style=expressive]) .btn.sm{min-height:26px;padding:0 9px;font-size:12px}
-html:not([data-style=expressive]) .auth .btn.primary{min-height:38px;border-radius:6px}
-html:not([data-style=expressive]) .chip,html:not([data-style=expressive]) .kd,html:not([data-style=expressive]) .tlc{border-radius:4px}
+html:not([data-style=expressive]) .auth .btn.primary{min-height:38px;border-radius:0}
+html:not([data-style=expressive]) .chip,html:not([data-style=expressive]) .kd,html:not([data-style=expressive]) .tlc{border-radius:0}
 html:not([data-style=expressive]) .readout::before,html:not([data-style=expressive]) .readout::after{display:none}
-html:not([data-style=expressive]) .readout{border-radius:6px;overflow:hidden}
+html:not([data-style=expressive]) .readout{border-radius:0;overflow:hidden}
 html:not([data-style=expressive]) .cell .dmv{margin:8px 0 6px;font:600 28px/1 var(--mono);letter-spacing:-.02em}
 html:not([data-style=expressive]) .cell .dmv svg{display:none}
 html:not([data-style=expressive]) .cell .dmv::after{content:attr(data-count)}
@@ -265,9 +265,13 @@ html:not([data-style=expressive]) .brand b{width:10px;height:10px;border-radius:
 .kvt{width:100%;border-collapse:collapse;font:13px var(--sans)}.kvt td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}.kvt .k{width:34%;font:12.5px var(--mono);color:var(--mut)}
 .rtl .tlr{grid-template-columns:90px 1fr 100px}
 
-/* Square corners everywhere: no rounded edges, on any page, theme or style. Last rule on purpose. */
-:root,html[data-style]{--r:0}
-*,*::before,*::after{border-radius:0!important}
+/* Refined zeroes structural surfaces and controls; Expressive keeps its rounded --r radii and glows; circular indicators stay round everywhere. */
+html[data-style=expressive]{--r:8px}
+html[data-style=expressive] .pbs .sw2{border-radius:999px}
+html[data-style=expressive] .pbs .sw2::after{border-radius:50%}
+html:not([data-style=expressive]) :is(.card,.ins,.rh,.nt,.since,.panel,.auth,dialog,.pbs,.btn,.tbtn,.iconbtn,.kebab,input,textarea,select,pre,.chip,.kd,.tlc,.seg,.seg2,.ndoc .seg2,.zoom,.tile,.col,.col h4,.board .card,.board .item,.rr a.rrow,.rr .run,.nfi,.nfh,.recipe,.link-box,.toast,.offline,.state,.verdict,.node,h1 em,.pbs .sw2,.pbpal,.pbpal li,.pbdrawer,.pbsw,.pbsw a,.rail .nav,.rail .tab,.badge,.unread,.readout,.brand,.brand b,.kpis span,.doc code,.src,.bar2){border-radius:0}
+html:not([data-style=expressive]) .pbs .sw2::after{border-radius:0}
+.led,.dot,.rr .rsd,.hxr .sd,.nfi i,.rv i,.spin,.plus,.avatar{border-radius:50%}
 
 /* Rendered markdown (Notes, results): maths, code, tables, quotes */
 .doc blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--blue-edge);color:var(--ink-2)}
@@ -287,9 +291,17 @@ html[data-theme=dark] .pbm-code span{color:var(--shiki-dark)}
 /* Interface preferences (Settings > Interface) */
 html[data-statusbar=off] .pbsb{display:none!important}html[data-statusbar=off] body.has-sb{padding-bottom:0!important}
 html[data-statusbar=off] body.has-sb .rail,html[data-statusbar=off] body.has-sb .pulse,html[data-statusbar=off] body.has-sb .pane{height:100vh!important;max-height:100vh!important}
-html[data-sidebar=off] .rr,html[data-sidebar=off] #railrooms{display:none!important}
+html[data-sidebar=off] :not(.pbdrawer-rooms)>.rr,html[data-sidebar=off] #railrooms{display:none!important}
 html[data-motion=reduce] *,html[data-motion=reduce] *::before,html[data-motion=reduce] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 .cmx{margin:0 20px}.cmx-c{border-left:2px solid var(--line-2);padding:4px 10px;margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}.cmx-f{display:flex;gap:6px;margin:8px 0}.cmx-f input{flex:1;min-width:0}.cmx-b{margin-left:6px}
+
+/* macOS Desktop hiddenInset titlebar: drag regions and traffic-light clearance (76px inset) */
+html[data-desktop=macos] .strip,html[data-desktop=macos] header.top,html[data-desktop=macos] .top,html[data-desktop=macos] .rail .brand{-webkit-app-region:drag}
+html[data-desktop=macos] :is(.strip,header.top,.top,.rail .brand) :is(a,button,input,select,textarea,[role=button],.crumbs,.pbsw){-webkit-app-region:no-drag}
+@media (min-width:820px){html[data-desktop=macos] .rail{padding-top:40px}}
+@media (max-width:899px){html[data-desktop=macos] .strip,html[data-desktop=macos] header.top{padding-left:80px}}
+html[data-desktop=macos] body:has(#stage) .top,html[data-desktop=macos] #stage~.top{padding-left:84px}
+html[data-desktop=macos] .pbdrawer{padding-top:40px}
 
 /* pages whose brand already carries text must not get the generated one as well */
 html:not([data-style=expressive]) .brand:has(.bk)::after{content:none}

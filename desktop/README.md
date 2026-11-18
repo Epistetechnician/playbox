@@ -16,7 +16,9 @@ desktop/
 - Restarts a crashed or hung hub with growing delays; a hub that keeps failing opens a circuit breaker and waits for "Restart hub" in the tray.
 - One app per user (an advisory file lock the OS releases on any exit, so there are no stale locks).
 - Closing the window keeps it in the tray; Quit, `kill` and Ctrl-C stop the hub politely first, so its tunnel goes with it.
-- Tray: status line, Open, Restart hub, Launch at login (a LaunchAgent / XDG autostart entry / per-user Run key; no administrator rights), Show logs, Quit.
+- Native window chrome: `TitleBarStyle::Overlay` (`hiddenInset` traffic-light clearance and drag regions on macOS), persisted window bounds (`window.json`), Dock / menu-bar attention badges, and a full native application menu (`Edit`, `View` with `⌘K` Jump to Room, `⌘,` Settings, `⌘[` / `⌘]` Back / Forward).
+- Room-aware tray & native OS notifications: polls `/api/rooms` over loopback to list urgent Attention items and active rooms in the tray menu and fire native OS notifications when a room needs you.
+- OS deep links (`playbox://` and `web+playbox:`): registered via `Info.plist` on macOS and per-user handlers on Linux/Windows; clicking an invite link focuses the running app (or starts it) and opens `/join#…`.
 - The window has **no IPC**: the hub is a remote origin and is granted nothing (`src-tauri/capabilities/main.json`).
 
 ## Run it from a checkout
@@ -43,9 +45,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 The supervisor tests use real child processes: crash loops, a hung service, a service that never becomes healthy, attach and take-over, restart, and stopping during a long backoff.
 
-## Signing in
+## Signing in & Touch ID / Owner Step-Up
 
-The window signs itself in to the local hub without a passkey: the app writes a one-use, owner-only proof file into the hub's private home (`desktop-login/`, same root of trust as `playbox_hub.py --pair`), then opens `/desktop/signin`. The hub checks and deletes the file and opens a *weak, local-only* session: it is ignored on any request that is not loopback (a stolen cookie is nothing through the tunnel), and sensitive actions still need a real passkey from a browser. It needs a hub that has this flow (`/api/auth/state` reports `local_signin`); with an older hub the window just shows the lock screen. Tray: "Sign in again".
+The window signs itself in to the local hub without a passkey: the app writes a one-use, owner-only proof file into the hub's private home (`desktop-login/`, same root of trust as `playbox_hub.py --pair`), then opens `/desktop/signin`. The hub checks and deletes the file and opens a *weak, local-only* session: it is ignored on any request that is not loopback (a stolen cookie is nothing through the tunnel).
+
+Sensitive actions (revoking a member, delegating a task, adopting a local room, approving a capability call, pairing or removing a device) still require live human verification (`fresh_until`, 5 min). Instead of failing on a WebAuthn prompt in the embedded webview, the hub writes a one-use challenge under `desktop-stepup/` (`0700`/`0600`) and Playbox Desktop prompts the OS owner natively (**Touch ID / Apple Watch / macOS password** via `LocalAuthentication`, `pkexec` Polkit on Linux, `UserConsentVerifier` on Windows) before returning `sha256("playbox-stepup-v1:" + nonce)`. Tray: "Sign in again".
 
 ## Passkeys
 

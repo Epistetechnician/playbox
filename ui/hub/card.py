@@ -64,6 +64,8 @@ def _dec(b):
     if y >= _P:
         raise ValueError("bad point")
     x = _xrecover(y)
+    if x == 0 and sign == 1:
+        raise ValueError("bad point")
     if x & 1 != sign:
         x = _P - x
     return (x, y, 1, x * y % _P)
@@ -78,8 +80,11 @@ def ed25519_verify(pub, msg, sig):
         s = int.from_bytes(sig[32:], "little")
         if s >= _L:
             return False
+        a8 = _mul(8, a)
+        if a8[0] % _P == 0 and a8[1] % _P == a8[2] % _P:
+            return False
         h = int.from_bytes(hashlib.sha512(sig[:32] + pub + msg).digest(), "little") % _L
-        lhs, rhs = _mul(s, _B), _add(r, _mul(h, a))
+        lhs, rhs = _mul(8 * s, _B), _add(_mul(8, r), _mul(h, a8))
         return lhs[0] * rhs[2] % _P == rhs[0] * lhs[2] % _P and lhs[1] * rhs[2] % _P == rhs[1] * lhs[2] % _P
     except (ValueError, ZeroDivisionError):
         return False

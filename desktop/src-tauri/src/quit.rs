@@ -1,17 +1,20 @@
-//! Leaving: stop the hub politely (it takes its tunnel down with it) before the process ends, without freezing the UI while it does.
+//! Leaving: stop the step-up bridge, background watcher and hub politely (it takes its tunnel down with it) before the process ends,
+//! without freezing the UI while it does.
 
 use crate::AppState;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 
 pub fn graceful(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        let sup = app
-            .state::<AppState>()
-            .supervisor
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take());
+        let state = app.state::<AppState>();
+        state.stop_bg.store(true, Ordering::Release);
+        let bridge = state.stepup.lock().ok().and_then(|mut g| g.take());
+        if let Some(mut b) = bridge {
+            b.stop();
+        }
+        let sup = state.supervisor.lock().ok().and_then(|mut g| g.take());
         if let Some(s) = sup {
             s.stop();
         }

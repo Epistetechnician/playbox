@@ -177,15 +177,17 @@ class Integrations:
         return Composio(k)
 
     def user_id(self):
-        return "playbox-" + self.s.d["user_id"]
+        with self.s.lock:
+            return "playbox-" + self.s.d["user_id"]
 
     # ---- state ----
     def state(self):
         k = self.key()
-        return {"configured": bool(k), "hint": ("…" + k[-4:]) if k else "", "from_env": bool(os.environ.get("COMPOSIO_API_KEY")),
-                "grants": list(self.s.d["grants"]), "levels": list(LEVELS),
-                "tokens": [{k: t[k] for k in ("id", "room", "label", "created", "last")} for t in self.s.d["agent_tokens"]],
-                "audit": list(self.s.d["audit"][-15:])}
+        with self.s.lock:
+            return {"configured": bool(k), "hint": ("…" + k[-4:]) if k else "", "from_env": bool(os.environ.get("COMPOSIO_API_KEY")),
+                    "grants": list(self.s.d["grants"]), "levels": list(LEVELS),
+                    "tokens": [{k2: t[k2] for k2 in ("id", "room", "label", "created", "last")} for t in self.s.d["agent_tokens"]],
+                    "audit": list(self.s.d["audit"][-15:])}
 
     # ---- grants ----
     def grant(self, room, toolkit, account, level, by=""):
@@ -257,7 +259,9 @@ class Integrations:
     # ---- what a room's agent can do ----
     def room_grants(self, room):
         best = {}
-        for g in self.s.d["grants"]:
+        with self.s.lock:
+            grants = list(self.s.d["grants"])
+        for g in grants:
             if g["room"] == room and (g["toolkit"] not in best or RANK[g["level"]] > RANK[best[g["toolkit"]]["level"]]):
                 best[g["toolkit"]] = g
         return best
