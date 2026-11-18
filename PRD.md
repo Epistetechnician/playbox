@@ -1,6 +1,8 @@
 # Playbox: PRD
 
-Status: draft v0.2 · 2026-10-28 (v0.2 adds the world view, section 7a)
+Status: historical founding draft v0.2 · 2026-10-28 (v0.2 adds the world view, section 7a)
+
+> **Current architecture & release status (v0.3.6+):** This file is preserved as the original founding PRD. For the shipped binary layout (`playbox` CLI + `playbox mcp` sidecar across 8 crates), Hub PWA (`ui/`), T1/T3 attestation, signed multi-host room logs, steering/telepathy (`steer/`), and hill-climbing gates (`challenge/`), see [README.md](README.md), [docs/requirements.md](docs/requirements.md), [docs/cli.md](docs/cli.md), [docs/threat-model.md](docs/threat-model.md), and [docs/host-less-rooms.md](docs/host-less-rooms.md).
 
 ## 1. One line
 

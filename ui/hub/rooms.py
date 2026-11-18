@@ -17,7 +17,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 import sys
 sys.path.insert(0, str(HERE))
-from playbox_ui import Sidecar, witness_state  # noqa: E402
+from playbox_ui import Sidecar, witness_decide, witness_state  # noqa: E402
 from .local import ask_host, hosting_dir, prune_stale  # noqa: E402
 from .archive import Archive  # noqa: E402
 from . import board, card as idcard  # noqa: E402
@@ -342,6 +342,20 @@ class Room:
                       else "live" if recent else "idle")
         return d
 
+    def refresh_witness(self):
+        with self.tick_mu:
+            w = witness_state(self.home)
+            holds = [{"tool": e.get("tool"), "origin": e.get("origin"), "session": e.get("session")} for e in w["active"]]
+            self.hold_ids = {str(h.get("session")) for h in holds}
+            d = dict(self.digest)
+            d["holds"] = holds
+            recent = d.get("last") and d["last"].get("ms") and time.time() * 1000 - d["last"]["ms"] < LIVE_MS
+            d["state"] = ("hold" if holds else "empty" if d.get("mode") == "none" else "bad" if d.get("chain") and not d["chain"]["ok"]
+                          else "live" if recent else "idle")
+            d["updated"] = int(time.time() * 1000)
+            self.digest = d
+            return w
+
     def seen(self):
         self.digest["unread"] = 0
 
@@ -351,6 +365,7 @@ class Hub:
     reknock = None                                       # the server sets it: called with a room whose access ran out
     def __init__(self, store, binary, push_fn=None):
         self.store, self.binary, self.push_fn = store, binary, push_fn
+        self.dir = Path(store.home)
         self.bus = Bus()
         self.rooms = {}
         self.known_attention = set()
@@ -362,7 +377,9 @@ class Hub:
         self.sec = None               # hub.sec.SecLog, set by the server
         self.mu = threading.RLock()
         self.wake = threading.Event()
-        for rec in store.d["rooms"]:
+        with store.lock:
+            recs = list(store.d["rooms"])
+        for rec in recs:
             self._start(rec)
         threading.Thread(target=self._loop, daemon=True, name="poller").start()
 
@@ -397,7 +414,10 @@ class Hub:
         if not room:
             return False
         room.close()
-        room.archive.delete()          # removing a room from the hub also forgets what the hub saved of it
+        rooms_dir = (self.dir / "rooms").resolve()
+        rp = Path(room.home).resolve()
+        if rp != rooms_dir and rp.is_relative_to(rooms_dir):
+            room.archive.delete()          # removing a hub-owned room also forgets what the hub saved of it; never touch an external home
         with self.store.lock:
             self.store.d["rooms"] = [r for r in self.store.d["rooms"] if r["id"] != rid]
             self.store.save()
@@ -426,7 +446,12 @@ class Hub:
 
     def down_alert_s(self):
         """Seconds a room or the public address may stay unreachable before it is urgent: the hub setting, else PLAYBOX_DOWN_ALERT_S (default 300)."""
-        v = (self.store.d.get("notify") or {}).get("down_alert_s")
+        lock = getattr(self.store, "lock", None)
+        if lock:
+            with lock:
+                v = (self.store.d.get("notify") or {}).get("down_alert_s")
+        else:
+            v = (self.store.d.get("notify") or {}).get("down_alert_s")
         return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else DOWN_URGENT_S
 
     def muted(self, rid):
@@ -446,7 +471,8 @@ class Hub:
             lab = d["label"]
             for h in d["holds"]:
                 items.append({"id": f"hold:{d['id']}:{h['session']}", "room": d["id"], "kind": "hold", "urgent": True,
-                              "title": f"Witness paused a write in {lab}", "body": f"tool {h.get('tool') or 'write'}"})
+                              "title": f"Witness paused a write in {lab}", "body": f"tool {h.get('tool') or 'write'}",
+                              "hold": {"room": d["id"], "label": lab, "session": h.get("session"), "tool": h.get("tool"), "origin": h.get("origin")}})
             if d["state"] == "bad":
                 items.append({"id": f"chain:{d['id']}", "room": d["id"], "kind": "chain", "urgent": True, "title": f"History check failed in {lab}",
                               "body": "the signed log no longer verifies"})

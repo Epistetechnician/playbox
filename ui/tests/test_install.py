@@ -34,9 +34,22 @@ def free_port():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
 
 
+def find_bin(name, env_var=None):
+    if env_var and os.environ.get(env_var):
+        return os.environ[env_var]
+    if os.environ.get("PLAYBOX_BIN"):
+        cand = os.path.join(os.environ["PLAYBOX_BIN"], name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    dbg = os.path.join(ROOT, "target", "debug", name)
+    if os.path.isfile(dbg) and os.access(dbg, os.X_OK):
+        return dbg
+    return shutil.which(name)
+
+
 def main():
-    playbox = shutil.which("playbox")
-    mcp = os.environ.get("PLAYBOX_MCP") or shutil.which("playbox-mcp")
+    playbox = find_bin("playbox")
+    mcp = find_bin("playbox-mcp", "PLAYBOX_MCP")
     if not (playbox and mcp):
         print("SKIP install tests (playbox / playbox-mcp not found)")
         return

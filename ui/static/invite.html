@@ -51,10 +51,12 @@ p{margin:8px 0}.mut{color:var(--mut)} .small{font-size:13px}
 .state{border:1px solid;padding:14px 16px;margin-top:6px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase}
 .state.bad{color:var(--bad);border-color:var(--bad)}
 .safe{border-left:4px solid var(--sig);padding:2px 0 2px 12px;margin:18px 0 0;color:var(--ink-2);font-size:13.5px}
+.qrbox{display:flex;justify-content:center;padding:12px;background:#fff;border:1px solid var(--line-2);margin:12px auto;width:fit-content}
 [hidden]{display:none!important}
 </style>
 <link rel="stylesheet" href="/theme.css">
 <script src="/themes.js"></script>
+<script src="/qr.js" onerror="void 0"></script>
 </head>
 <body>
 <div class="wrap">
@@ -98,11 +100,12 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
   const left = () => { const s = Math.max(0, v.expires - Date.now() / 1000 | 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`; };
   const ua = navigator.userAgent, plat = /iPhone|iPad|Android/.test(ua) ? "phone" : /Windows/.test(ua) ? "windows" : "computer";
   let returning = false; try { returning = !!localStorage.getItem("pb.myhub"); } catch {}      // been through this before: lead with "I already have Playbox"
+  const qr = window.PBQR ? PBQR.svg(location.href, 164) : "";
   const haveCard = `    <div class="card"><div class="hd lbl">${returning ? "I already have Playbox" : "Already have Playbox?"}</div>
       <label class="lbl" for="hub" style="display:block;margin-bottom:6px">Your hub's address</label>
       <input id="hub" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://your-hub.example.com">
       <div class="row"><button class="btn primary block" id="go">Open in my Playbox</button></div>
-      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Use the installed app</a>${ask ? "" : `<button class="btn sm" id="cpl">Copy for my agent</button>`}</div>
+      <div class="row"><a class="btn sm" href="web+playbox:${fr}">Open in Playbox app</a>${ask ? "" : `<button class="btn sm" id="cpl">Copy for my agent</button>`}</div>
       <p class="mut small">Your hub opens with the invite filled in. You confirm there; nothing joins until you do.</p></div>`;
   main.innerHTML = `<h1><em>${esc(v.from)}</em> invited you to <em>${esc(v.room)}</em></h1>
     <p class="mut">A private room where people and their agents work together, with limits the host sets and a signed record nobody can quietly edit.</p>
@@ -115,12 +118,14 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
     ${returning ? haveCard : ""}
     <div class="card"><div class="hd lbl">${returning ? "I'm new" : "Get Playbox and join"}</div>
       ${plat === "phone" ? `<p style="margin-top:0">Playbox installs on a computer (a Mac or a Linux machine), not on a phone. Open this same link there, or send it to yourself.</p>
+        ${qr ? `<div class="qrbox">${qr}</div>` : ""}
         <div class="row"><button class="btn primary block" id="cpu">Copy this link</button></div>
         <details style="margin-top:14px"><summary class="lbl" style="cursor:pointer">Show the install command anyway</summary><pre id="cmds" style="margin-top:10px">${esc(cmd)}</pre><div class="row"><button class="btn sm" id="cpc">Copy command</button></div></details>`
       : `<p style="margin-top:0">One command. It installs Playbox, joins this room, starts your own dashboard and opens it in your browser so you can set up a passkey. Then it offers to connect your coding agent.</p>
         ${plat === "windows" ? `<p class="offline" style="margin:0 0 12px">The installer runs on macOS and Linux. On Windows, you can try it inside WSL (a Linux terminal), or ask ${esc(v.from)} for another way in.</p>` : ""}
         <pre id="cmds">${esc(cmd)}</pre>
         <div class="row"><button class="btn sm${plat === "windows" ? "" : " primary"}" id="cpc">Copy command</button></div>
+        ${qr ? `<details style="margin-top:12px"><summary class="lbl" style="cursor:pointer">Scan on another device</summary><div class="qrbox">${qr}</div></details>` : ""}
         <p class="mut small">It runs the installer published in the Playbox project on GitHub and checks its downloads against a checksum list. Read it first if you like. Needs macOS or Linux with python3. Leave that terminal window open while you use the dashboard.</p>`}</div>
 
     ${returning ? "" : haveCard}

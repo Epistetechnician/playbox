@@ -8,11 +8,13 @@ Stdlib only. Binds to 127.0.0.1 unless --lan is given; every request needs the a
     python3 ui/playbox_ui.py --lan      # also reachable from a phone on the same network
 """
 import argparse
+import hashlib
 import hmac
 import http.server
 import socketserver
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -26,6 +28,29 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 1 << 20
+STATIC_JS = {
+    "/instruments.js": HERE / "static" / "instruments.js",
+    "/themes.js": HERE / "static" / "themes.js",
+    "/qr.js": HERE / "static" / "qr.js",
+    "/shell.js": HERE / "static" / "shell.js",
+    "/settings.js": HERE / "static" / "settings.js",
+    "/markdown.js": HERE / "static" / "markdown.js",
+}
+VENDOR_MIME = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}
+
+
+def _build_vendor_map():
+    root = (HERE / "static" / "vendor").resolve()
+    out = {}
+    if root.is_dir():
+        for f in root.rglob("*"):
+            ct = VENDOR_MIME.get(f.suffix)
+            if ct and f.is_file():
+                out["/vendor/" + f.relative_to(root).as_posix()] = (f, ct)
+    return out
+
+
+VENDOR_FILES = _build_vendor_map()
 
 
 class Sidecar:
@@ -168,10 +193,16 @@ def make_handler(sidecar, token, page_path, home):
                 return self._send(200, ICON, "image/svg+xml")
             if not self._authed():
                 return self._send(401, LOCKED, "text/html; charset=utf-8")
-            if url.path == "/instruments.js":
-                return self._send(200, (HERE / "static" / "instruments.js").read_bytes(), "text/javascript; charset=utf-8")
-            if url.path == "/themes.js":
-                return self._send(200, (HERE / "static" / "themes.js").read_bytes(), "text/javascript; charset=utf-8")
+            js_file = STATIC_JS.get(url.path)
+            if js_file is not None:
+                return self._send(200, js_file.read_bytes(), "text/javascript; charset=utf-8")
+            if url.path.startswith("/vendor/"):
+                vent = VENDOR_FILES.get(url.path)
+                if vent is not None:
+                    return self._send(200, vent[0].read_bytes(), vent[1])
+                return self._json(404, {"error": "not found"})
+            if url.path == "/mark.svg":
+                return self._send(200, (HERE / "static" / "brand" / "mark.svg").read_bytes(), "image/svg+xml")
             if url.path == "/theme.css":
                 return self._send(200, (HERE / "static" / "theme.css").read_bytes(), "text/css; charset=utf-8")
             if url.path == "/":
@@ -181,6 +212,8 @@ def make_handler(sidecar, token, page_path, home):
                 return self._json(200, {"ok": not err, "status": status, "tools": sidecar.tools})
             if url.path == "/api/witness":
                 return self._json(200, witness_state(home))
+            if url.path == "/api/repos":
+                return self._json(200, {"repos": discover_repos([os.getcwd()])})
             self._send(404, "not found", "text/plain")
 
         def do_POST(self):
@@ -188,6 +221,20 @@ def make_handler(sidecar, token, page_path, home):
                 return self._json(401, {"error": "unauthorized"})
             if self.path == "/api/tamper":
                 return self._tamper()
+            if self.path == "/api/witness/decide":
+                if "application/json" not in self.headers.get("Content-Type", ""):
+                    return self._json(415, {"error": "json only"})
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                    if n > MAX_BODY:
+                        return self._json(413, {"error": "too large"})
+                    req = json.loads(self.rfile.read(n) or b"{}")
+                    if not isinstance(req, dict):
+                        raise ValueError("bad witness decision")
+                    out = witness_decide(home, req.get("session"), req.get("decision"))
+                except ValueError as e:
+                    return self._json(400, {"error": str(e)})
+                return self._json(200, out)
             if self.path != "/api/tool":
                 return self._json(404, {"error": "not found"})
             if "application/json" not in self.headers.get("Content-Type", ""):
@@ -240,7 +287,7 @@ def make_handler(sidecar, token, page_path, home):
 
 
 def witness_state(home):
-    """Holds and releases the Hermes witness plugin wrote, newest last. Read-only, never touches the sidecar."""
+    """Holds, releases and denials the Hermes witness plugin or owner wrote, newest last. Read-only, never touches the sidecar."""
     path = Path(home) / "witness" / "holds.jsonl"
     events = []
     try:
@@ -250,8 +297,8 @@ def witness_state(home):
             for line in f.read().decode("utf-8", "replace").splitlines()[-200:]:
                 try:
                     e = json.loads(line)
-                    if isinstance(e, dict) and e.get("kind") in ("held", "released"):
-                        events.append({k: e.get(k) for k in ("ts", "kind", "session", "tool", "origin")})
+                    if isinstance(e, dict) and e.get("kind") in ("held", "released", "denied"):
+                        events.append({k: e.get(k) for k in ("ts", "kind", "session", "tool", "origin", "by")})
                 except ValueError:
                     pass
     except OSError:
@@ -261,6 +308,115 @@ def witness_state(home):
         last[e["session"]] = e
     active = [e for e in last.values() if e["kind"] == "held"]
     return {"events": events[-50:], "active": active}
+
+
+def witness_decide(home, session_id, decision):
+    """Record a single-use owner decision (`release` or `deny`) for an active witness hold in `home`."""
+    if not (isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", session_id) and decision in ("release", "deny")):
+        raise ValueError("bad witness decision")
+    st = witness_state(home)
+    hit = next((e for e in st["active"] if e.get("session") == session_id), None)
+    if not hit:
+        return {"ok": False, "error": "that hold is already resolved"}
+    now_ms = int(time.time() * 1000)
+    wdir = Path(home) / "witness"
+    ddir = wdir / "decisions"
+    wdir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ddir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        os.chmod(wdir, 0o700)
+        os.chmod(ddir, 0o700)
+    except OSError:
+        pass
+    digest_hex = hashlib.sha256(session_id.encode()).hexdigest()
+    target = ddir / f"{digest_hex}.json"
+    tmp = ddir / f".{digest_hex}.{secrets.token_hex(4)}.tmp"
+    payload = json.dumps({"session": session_id, "decision": decision, "ts": now_ms}) + "\n"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        os.write(fd, payload.encode("utf-8"))
+    finally:
+        os.close(fd)
+    os.replace(tmp, target)
+    line = json.dumps({"ts": now_ms, "kind": "released" if decision == "release" else "denied",
+                       "session": session_id, "tool": hit.get("tool"), "origin": hit.get("origin"), "by": "owner"}) + "\n"
+    hfd = os.open(wdir / "holds.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(hfd, 0o600)
+        os.write(hfd, line.encode("utf-8"))
+    finally:
+        os.close(hfd)
+    return {"ok": True, "decision": decision, "session": session_id, **witness_state(home)}
+
+
+_REPO_CACHE = {}
+_REPO_LOCK = threading.Lock()
+_SKIP_REPO_DIRS = {"node_modules", "target", ".venv"}
+_DEFAULT_REPO_DIRS = ("Documents/GitHub", "GitHub", "code", "Code", "src", "projects", "Projects", "dev", "work")
+
+
+def discover_repos(extra=()):
+    """Discover up to 30 local git repositories sorted by recent `.git` mtime descending, cached for 15 s."""
+    roots_env = os.environ.get("PLAYBOX_REPO_ROOTS")
+    norm_extra = tuple(str(p) for p in (extra or ()) if p)
+    cache_key = (roots_env, norm_extra)
+    now = time.monotonic()
+    with _REPO_LOCK:
+        hit = _REPO_CACHE.get(cache_key)
+        if hit and now - hit[0] < 15.0:
+            return [dict(x) for x in hit[1]]
+    seen = {}
+
+    def add_candidate(path_obj):
+        try:
+            rp = Path(path_obj).expanduser().resolve()
+            if str(rp) in seen or not rp.is_dir():
+                return False
+            st = (rp / ".git").stat()
+            seen[str(rp)] = (st.st_mtime, {"path": str(rp), "name": rp.name})
+            return True
+        except OSError:
+            return False
+
+    for p in norm_extra:
+        add_candidate(p)
+
+    if roots_env is not None:
+        roots = [Path(p).expanduser() for p in roots_env.split(":") if p.strip()]
+    else:
+        home = Path.home()
+        roots = [home / sub for sub in _DEFAULT_REPO_DIRS]
+
+    def scan_dir(d, depth):
+        try:
+            with os.scandir(d) as it:
+                entries = list(it)
+        except OSError:
+            return
+        for e in entries:
+            if e.name.startswith(".") or e.name in _SKIP_REPO_DIRS:
+                continue
+            try:
+                if not e.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+            if add_candidate(e.path):
+                continue
+            if depth < 2:
+                scan_dir(e.path, depth + 1)
+
+    for r in roots:
+        if not add_candidate(r):
+            scan_dir(r, 1)
+
+    ordered = [item for _, item in sorted(seen.values(), key=lambda x: (-x[0], x[1]["path"]))][:30]
+    with _REPO_LOCK:
+        _REPO_CACHE[cache_key] = (now, ordered)
+    return [dict(x) for x in ordered]
 
 
 LOCKED = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=color-scheme content="light dark">

@@ -4,8 +4,9 @@ const PB = (() => {
   const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
   const canPasskey = () => !!(window.isSecureContext && window.PublicKeyCredential && navigator.credentials);
 
-  async function post(path, body) {
-    const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+  async function post(path, body, useGuard) {
+    const init = {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})};
+    const r = useGuard ? await guarded(path, init) : await fetch(path, init);
     let j = {};
     try { j = await r.json(); } catch {}
     if (!r.ok) throw Object.assign(new Error(j.error || r.statusText || (r.status === 401 ? "Your session ended. Reload and sign in again." : r.status === 429 ? "Too many attempts. Wait a minute and try again." : r.status === 403 ? "The hub refused this (" + r.status + "). Reload the page and try again." : "The hub answered " + r.status + ". Reload and try again.")), {status: r.status, body: j});
@@ -24,6 +25,17 @@ const PB = (() => {
       clientDataJSON: b64u(cred.response.clientDataJSON), attestationObject: b64u(cred.response.attestationObject)}});
   }
 
+  async function upgrade(name) {
+    const b = await post("/api/auth/upgrade/begin", {}, true);
+    const o = b.publicKey;
+    o.challenge = unb64u(o.challenge); o.user.id = unb64u(o.user.id);
+    o.excludeCredentials = (o.excludeCredentials || []).map(c => ({...c, id: unb64u(c.id)}));
+    let cred;
+    try { cred = await navigator.credentials.create({publicKey: o}); } catch (e) { throw friendly(e); }
+    return post("/api/auth/upgrade/finish", {ticket: b.ticket, name, response: {
+      clientDataJSON: b64u(cred.response.clientDataJSON), attestationObject: b64u(cred.response.attestationObject)}});
+  }
+
   async function assert(kind) {
     const b = await post(`/api/auth/${kind}/begin`);
     const o = b.publicKey;
@@ -37,17 +49,30 @@ const PB = (() => {
 
   const login = () => assert("login");
   const stepup = () => assert("stepup");
+  const desktopStepup = reason => post("/api/auth/desktop-stepup", {reason: reason || ""});
   const weak = (code, name) => post("/api/auth/weak", {code, name});
 
-  /* fetch that transparently asks for a fresh passkey touch when the hub says a sensitive action needs one */
+  /* fetch that transparently asks for a fresh passkey touch (or Desktop owner verification) when the hub says a sensitive action needs one */
   async function guarded(url, init) {
     let r = await fetch(url, init);
     if (r.status === 403) {
       const j = await r.clone().json().catch(() => ({}));
       if (j.error === "stepup") {
-        if (j.weak) throw new Error("This needs a passkey session. Plain-HTTP sessions can't approve it unless you are on the hub machine itself.");
-        await stepup();
-        r = await fetch(url, init);
+        if (j.local_only) {
+          if (!j.desktop_bridge) throw new Error("This action needs owner verification. Open Playbox in your browser to approve with a passkey, or restart Playbox Desktop.");
+          await desktopStepup((init && init.reason) || url);
+          r = await fetch(url, init);
+        } else if (j.weak) {
+          if (j.enrolled_rp && canPasskey()) {
+            await login();
+            r = await fetch(url, init);
+          } else {
+            throw new Error("This action needs a passkey session. Add a passkey in Hub & Invites (or Settings → Hub) on the hub machine first.");
+          }
+        } else {
+          await stepup();
+          r = await fetch(url, init);
+        }
       }
     }
     return r;
@@ -86,5 +111,5 @@ const PB = (() => {
     window.addEventListener("online", check);
   }
   if (typeof document !== "undefined" && location.protocol.startsWith("http")) watchSession();
-  return {b64u, unb64u, canPasskey, post, register, login, stepup, weak, guarded};
+  return {b64u, unb64u, canPasskey, post, register, upgrade, login, stepup, desktopStepup, weak, guarded};
 })();

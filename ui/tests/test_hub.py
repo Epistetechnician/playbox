@@ -163,6 +163,14 @@ def test_webauthn():
     b = a.register_begin(code, rp, "1.1.1.1")
     tok = a.register_finish(b["ticket"], dev.create(b["publicKey"], origin), "Phone", "ua", "1.1.1.1")
     check("webauthn: enrollment yields a strong session", bool(a.session(tok)) and not a.session(tok)[1]["weak"])
+    check("webauthn: has_passkey checks by rp_id", a.has_passkey(rp) is True and a.has_passkey("other.example") is False)
+    wcode = a.mint_code()
+    wtok = a.weak_session(wcode, "ua", "127.0.0.1", "Local")
+    wkey, _ = a.session(wtok)
+    ub = a.upgrade_begin(wkey, rp, "127.0.0.1")
+    udev = Authenticator()
+    utok = a.upgrade_finish(wkey, ub["ticket"], udev.create(ub["publicKey"], origin), "Laptop", "ua", "127.0.0.1")
+    check("webauthn: upgrade replaces weak session with a strong session", a.session(wtok) is None and bool(a.session(utok)) and not a.session(utok)[1]["weak"])
     check("webauthn: pairing code is single use", refuses(a.register_begin, code, rp, "1.1.1.1"))
     lb = a.login_begin(rp)
     check("webauthn: no passkey for another address", refuses(a.login_begin, "other.example"))
@@ -406,9 +414,15 @@ def test_http():
     fakecli = os.path.join(home, "fake-playbox")
     open(fakecli, "w").write('#!/bin/sh\necho \'{"version":1,"at":%d,"playbox":"9.9.9","score":80,"checks":[{"group":"machine","id":"x","label":"Keys","level":"warn","detail":"too open","fix":"chmod 700","fixable":true}],"fuzz":null}\'\n' % int(time.time()))
     os.chmod(fakecli, 0o755)
+    reporoots = os.path.join(home, "reporoots")
+    os.makedirs(os.path.join(reporoots, "alpha"))
+    os.makedirs(os.path.join(reporoots, "org", "beta"))
+    os.makedirs(os.path.join(reporoots, ".hidden", "skiprepo", ".git"))
+    subprocess.run(["git", "init", "-q"], cwd=os.path.join(reporoots, "alpha"), check=True)
+    subprocess.run(["git", "init", "-q"], cwd=os.path.join(reporoots, "org", "beta"), check=True)
     p = subprocess.Popen([sys.executable, os.path.join(UI, "playbox_hub.py"), "--port", str(port), "--home", home, "--mcp", mcp],
                          stdout=subprocess.PIPE, text=True,
-                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_HOSTING_DIR": os.path.join(home, "hosting"), "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
+                         env={**os.environ, "PLAYBOX_CLI": fakecli, "PLAYBOX_HOME": os.path.join(home, "pbhome"), "PLAYBOX_HUB_NO_MACHINE": "1", "PLAYBOX_HUB_FRESH": "2", "PLAYBOX_HOSTING_DIR": os.path.join(home, "hosting"), "PLAYBOX_REPO_ROOTS": reporoots, "PLAYBOX_COMPOSIO_BASE": "http://127.0.0.1:%d" % fsrv.server_address[1]})
     try:
         code = None
         for _ in range(12):
@@ -580,6 +594,8 @@ def test_http():
         check("endorsing needs a fresh passkey touch", s.req("POST", f"/r/{rid}/api/endorse", {"key": K})[1].get("error") == "stepup")
         check("removing an endorsement needs a fresh passkey touch", s.req("DELETE", f"/r/{rid}/api/endorse/{K}")[1].get("error") == "stepup")
         check("checking an ANS receipt needs a session and a fresh passkey touch", Client(port).req("POST", f"/r/{rid}/api/ans", {"key": K})[0] in (401, 303) and s.req("POST", f"/r/{rid}/api/ans", {"key": K})[1].get("error") == "stepup")
+        check("witness decide needs a session and a fresh passkey touch", Client(port).req("POST", f"/r/{rid}/api/witness/decide", {"session": "s1", "decision": "release"})[0] in (401, 303) and s.req("POST", f"/r/{rid}/api/witness/decide", {"session": "s1", "decision": "release"})[1].get("error") == "stepup")
+        check("network reach setting needs a session and a fresh passkey touch", Client(port).req("POST", "/api/settings/network", {"mode": "tailscale"})[0] == 401 and s.req("POST", "/api/settings/network", {"mode": "tailscale"})[1].get("error") == "stepup")
         check("an endorsement key must look like a key", s.req("POST", f"/r/{rid}/api/endorse", {"key": "nope"})[0] == 400)
         st, sb, _ = s.req("POST", "/api/auth/stepup/begin", {})
         st, _, _ = s.req("POST", "/api/auth/stepup/finish", {"ticket": sb["ticket"], "id": b64u(dev.cid), "response": dev.get(sb["publicKey"], origin, kind="webauthn.get")})
@@ -595,6 +611,25 @@ def test_http():
         check("device removal by the weak session is blocked behind a proxy", a.req("DELETE", "/api/devices/" + b64u(dev.cid), None, {"X-Forwarded-For": "1.1.1.1"})[0] == 403)
         st, j, _ = s.req("DELETE", "/api/devices/" + b64u(dev.cid))
         check("removing a device ends its sessions", st == 200 and s.req("GET", "/api/rooms")[0] == 401)
+        # ---- inline passkey upgrade on loopback ----
+        _, pj, _ = a.req("POST", "/api/devices/pair", {})
+        w = Client(port)
+        w.req("POST", "/api/auth/weak", {"code": pj["code"], "name": "Local Browser"})
+        old_weak_tok = w.cookie
+        check("upgrade: refused behind a proxy header", w.req("POST", "/api/auth/upgrade/begin", {}, {"X-Forwarded-For": "1.2.3.4"})[0] == 403
+              and w.req("POST", "/api/auth/upgrade/finish", {"ticket": "x", "name": "x", "response": {}}, {"X-Forwarded-For": "1.2.3.4"})[0] == 403)
+        udev = Authenticator()
+        st_ub, ub, _ = w.req("POST", "/api/auth/upgrade/begin", {})
+        st_uf, uf, _ = w.req("POST", "/api/auth/upgrade/finish", {"ticket": ub["ticket"], "name": "Upgraded Mac", "response": udev.create(ub["publicKey"], origin)})
+        st_me, ume, _ = w.req("GET", "/api/me")
+        stale_w = Client(port); stale_w.cookie = old_weak_tok
+        check("upgrade: loopback weak session upgrades to a strong passkey session",
+              st_ub == 200 and st_uf == 200 and w.cookie and w.cookie != old_weak_tok
+              and st_me == 200 and ume["weak"] is False and ume["fresh"] is True and ume["enrolled_rp"] is True
+              and stale_w.req("GET", "/api/me")[0] == 401, str((st_ub, st_uf, ume)))
+        st_su, j_su, _ = a.req("POST", f"/r/{rid}/api/endorse", {"key": K}, {"X-Forwarded-For": "1.2.3.4"})
+        check("step-up response advertises enrolled_rp for weak-session passkey promotion", st_su == 403 and j_su.get("error") == "stepup" and j_su.get("enrolled_rp") is True, str(j_su))
+        w.req("DELETE", "/api/devices/" + b64u(udev.cid))
         # ---- friend invites ----
         repo = os.path.join(home, "repo")
         os.makedirs(repo)
@@ -627,7 +662,12 @@ def test_http():
         st_h, _, _ = anon.req("GET", "/shell.js")
         check("the theme and shell scripts are public, loaded by the pages and cached", st_s == 200 and st_h == 200 and all("/themes.js" in open(os.path.join(UI, "static", f)).read() for f in ("home.html", "index.html", "canvas.html", "invite.html", "sw.js")) and "/shell.js" in open(os.path.join(UI, "static", "home.html")).read())
         check("the look has a refined default and an expressive option, plus a compact density, all user-selectable", all(x in (open(os.path.join(UI, "static", "themes.js")).read() + open(os.path.join(UI, "static", "settings.js")).read()) for x in ("pb.style", "pb.density", "dataset.style", "dataset.density", "data-set")) and "data-style=expressive" in open(os.path.join(UI, "static", "theme.css")).read())
-        check("corners are square on every page: theme.css ends with a global zero radius", "*,*::before,*::after{border-radius:0!important}" in open(os.path.join(UI, "static", "theme.css")).read())
+        tcss = open(os.path.join(UI, "static", "theme.css")).read()
+        check("refined zeroes structural surface corners while preserving round spinners/LEDs and expressive radii",
+              "*,*::before,*::after{border-radius:0!important}" not in tcss and "html:not([data-style=expressive]){--r:0}" in tcss
+              and "border-radius:0" in tcss and ".spin" in tcss and ".led" in tcss and "border-radius:50%" in tcss
+              and "html[data-style=expressive]{--r:8px}" in tcss)
+        check("qr encoder and offline room shells are served publicly", all(anon.req("GET", u)[0] == 200 for u in ("/qr.js", "/cockpit.html", "/canvas.html")))
         ss = anon.req("GET", "/settings.js")[0]
         check("the settings screen is served, loaded on demand by PBTheme, and covers appearance, interface, hub, safety, shortcuts and about", ss == 200 and all(x in open(os.path.join(UI, "static", "settings.js")).read() for x in ('group: "appearance"', 'group: "interface"', 'group: "hub"', 'group: "safety"', 'group: "keys"', 'group: "about"')) and "/settings.js" in open(os.path.join(UI, "static", "themes.js")).read())
         check("themes keep text legible: the palette is nudged until text, status colours and button labels reach WCAG AA", "const ensure" in open(os.path.join(UI, "static", "themes.js")).read() and "ensure(p.ink, p.bg, 7" in open(os.path.join(UI, "static", "themes.js")).read())
@@ -669,12 +709,20 @@ def test_http():
                     time.sleep(0.25)
                 st, lj, _ = a.req("GET", "/api/local-rooms")
                 check("adopt: a room hosted here is listed", st == 200 and len(lj["rooms"]) == 1 and lj["rooms"][0]["name"] == "adoptstate" and not lj["rooms"][0]["adopted"])
+                att = []
+                for _ in range(20):                          # the offer is refreshed every couple of seconds
+                    att = [i for i in a.req("GET", "/api/rooms")[1].get("attention", []) if i.get("kind") == "local_room"]
+                    if att:
+                        break
+                    time.sleep(0.5)
+                check("adopt: a new local room is offered automatically in Attention", len(att) == 1 and att[0]["hid"] == lj["rooms"][0]["id"] and att[0]["name"] == "adoptstate" and not att[0]["urgent"], att)
                 check("adopt: needs a session", anon.req("GET", "/api/local-rooms")[0] == 401 and anon.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 401)
                 check("adopt: an unknown or malformed id is refused", a.req("POST", "/api/local-rooms/adopt", {"id": "0" * 16})[0] == 404 and a.req("POST", "/api/local-rooms/adopt", {"id": "../../x"})[0] == 404)
                 hid = lj["rooms"][0]["id"]
                 st, aj, _ = a.req("POST", "/api/local-rooms/adopt", {"id": hid, "label": "Adopted"})
                 check("adopt: the hub joins the room", st == 200 and bool(aj.get("id")))
                 check("adopt: it then shows as adopted", a.req("GET", "/api/local-rooms")[1]["rooms"][0]["adopted"] is True)
+                check("adopt: the offer in Attention goes away once adopted", not [i for i in a.req("GET", "/api/rooms")[1].get("attention", []) if i.get("kind") == "local_room"])
                 check("adopt: it is in the hub's room list", any(r["id"] == aj["id"] and r["label"] == "Adopted" for r in a.req("GET", "/api/rooms")[1]["rooms"]))
                 st, cv, _ = a.req("GET", f"/r/{aj['id']}/api/canvas")
                 check("adopt: its canvas loads", st == 200 and cv["room"]["label"] == "Adopted")
@@ -768,6 +816,58 @@ def test_http():
         check("notify: a threshold is stored", st == 200 and nj["down_alert_s"] == 900 and nj["custom"] is True and json.load(open(os.path.join(home, "hub.json")))["notify"]["down_alert_s"] == 900)
         st, nj, _ = a.req("POST", "/api/settings/notify", {"down_alert_s": None})
         check("notify: null returns to the default", st == 200 and nj["custom"] is False and nj["down_alert_s"] == nj["default_s"])
+
+        # ---- remote reach settings (/api/settings/network), discovered repos (/api/repos), and 1-tap witness decide ----
+        check("network settings need a session", anon.req("GET", "/api/settings/network")[0] == 401)
+        st, net0, _ = a.req("GET", "/api/settings/network")
+        check("network: default mode is local with tunnel info", st == 200 and net0["mode"] == "local" and net0["desktop_managed"] is False and "tunnel" in net0, str(net0))
+        check("network: invalid mode refused", a.req("POST", "/api/settings/network", {"mode": "carrier-pigeon"})[0] == 400)
+        st, net1, _ = a.req("POST", "/api/settings/network", {"mode": "tailscale"})
+        dnet_path = os.path.join(home, "desktop-network.json")
+        check("network: saving mode updates hub.json and writes 0600 desktop-network.json",
+              st == 200 and net1["mode"] == "tailscale" and os.path.isfile(dnet_path)
+              and (os.stat(dnet_path).st_mode & 0o777) == 0o600
+              and json.load(open(dnet_path))["mode"] == "tailscale"
+              and json.load(open(os.path.join(home, "hub.json")))["network"]["mode"] == "tailscale"
+              and any("Network reach set to tailscale" in e.get("text", "") for e in a.req("GET", "/api/system")[1]["events"]), str(net1))
+
+        check("repos endpoint needs a session", anon.req("GET", "/api/repos")[0] == 401)
+        st, rps, _ = a.req("GET", "/api/repos")
+        rnames = {r["name"] for r in rps.get("repos", [])}
+        check("repos: discovers PLAYBOX_REPO_ROOTS + hosted room repos and skips hidden dirs",
+              st == 200 and {"alpha", "beta", "repo"} <= rnames and "skiprepo" not in rnames, str(rps))
+
+        wdir = os.path.join(home, "rooms", rid, "witness")
+        os.makedirs(wdir, mode=0o700, exist_ok=True)
+        with open(os.path.join(wdir, "holds.jsonl"), "a") as wf:
+            wf.write(json.dumps({"ts": 10, "kind": "held", "session": "ws-1", "tool": "terminal", "origin": "room:feed"}) + "\n")
+        a.req("POST", "/api/system/verify")
+        att_h = []
+        for _ in range(50):
+            att_h = [i for i in a.req("GET", "/api/attention")[1]["items"] if i.get("kind") == "hold" and i.get("room") == rid]
+            if att_h:
+                break
+            time.sleep(0.1)
+        check("witness: attention hold item includes structured hold metadata",
+              len(att_h) == 1 and att_h[0].get("hold", {}).get("session") == "ws-1" and att_h[0]["hold"].get("tool") == "terminal", str(att_h))
+        check("witness: bad session or decision rejected with 400",
+              a.req("POST", f"/r/{rid}/api/witness/decide", {"session": "../x", "decision": "release"})[0] == 400
+              and a.req("POST", f"/r/{rid}/api/witness/decide", {"session": "ws-1", "decision": "nope"})[0] == 400)
+        st, wd1, _ = a.req("POST", f"/r/{rid}/api/witness/decide", {"session": "ws-1", "decision": "release"})
+        wdf1 = os.path.join(wdir, "decisions", hashlib.sha256(b"ws-1").hexdigest() + ".json")
+        check("witness: owner release clears room hold, attention item, and writes 0600 decision file",
+              st == 200 and wd1.get("ok") is True and wd1["active"] == []
+              and not [i for i in a.req("GET", "/api/attention")[1]["items"] if i.get("kind") == "hold" and i.get("room") == rid]
+              and next(x for x in a.req("GET", "/api/rooms")[1]["rooms"] if x["id"] == rid)["state"] != "hold"
+              and os.path.isfile(wdf1) and (os.stat(wdf1).st_mode & 0o777) == 0o600, str(wd1))
+        with open(os.path.join(wdir, "holds.jsonl"), "a") as wf:
+            wf.write(json.dumps({"ts": 20, "kind": "held", "session": "ws-2", "tool": "write_file", "origin": "room:feed"}) + "\n")
+        st, wd2, _ = a.req("POST", f"/r/{rid}/api/witness/decide", {"session": "ws-2", "decision": "deny"})
+        wdf2 = os.path.join(wdir, "decisions", hashlib.sha256(b"ws-2").hexdigest() + ".json")
+        check("witness: owner deny clears active hold, records denied, and logs to security trail",
+              st == 200 and wd2.get("ok") is True and wd2["active"] == [] and wd2["events"][-1]["kind"] == "denied"
+              and wd2["events"][-1]["by"] == "owner" and json.load(open(wdf2))["decision"] == "deny"
+              and any("Owner denied a witness hold" in e.get("text", "") for e in a.req("GET", "/api/system")[1]["events"]), str(wd2))
         mid = a.req("GET", "/api/rooms")[1]["rooms"][0]["id"] if a.req("GET", "/api/rooms")[1]["rooms"] else None
         if mid:
             check("mute: a room can be muted and shows as muted", a.req("PATCH", f"/api/rooms/{mid}", {"muted": True})[0] == 200 and next(r for r in a.req("GET", "/api/settings/notify")[1]["rooms"] if r["id"] == mid)["muted"] is True)

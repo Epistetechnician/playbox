@@ -46,7 +46,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .btn{background:var(--panel);border:1px solid var(--line-2);border-radius:8px;padding:7px 11px;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase}
 a.btn{color:var(--ink);text-decoration:none;display:inline-flex;align-items:center}a.btn.primary{color:var(--on-sig)}
 .btn:hover{background:var(--panel-2)}.btn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--edge)}
-.btn.primary{background:var(--sig);color:var(--on-sig)}.btn.sm{padding:4px 7px;font-size:10px;box-shadow:none}
+.btn.primary{background:var(--sig);color:var(--on-sig)}.btn.sm{padding:4px 7px;font-size:10px;box-shadow:none}.btn.danger{color:var(--t-bad);border-color:var(--t-bad)}
 .zoom{position:fixed;right:14px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:20;display:flex;flex-direction:column;border:1px solid var(--edge);background:var(--panel)}
 .zoom button{width:38px;height:36px;background:none;border:0;border-bottom:1px solid var(--line-2);font:700 16px var(--mono)}
 .zoom button:last-child{border-bottom:0;font-size:10px}.zoom button:hover{background:var(--panel-2)}
@@ -87,6 +87,12 @@ a.btn{color:var(--ink);text-decoration:none;display:inline-flex;align-items:cent
 .msg{display:grid;grid-template-columns:22px 1fr auto;gap:8px;padding:6px 0;border-bottom:1px solid var(--dim);align-items:start}
 .msg:last-child{border-bottom:0}.msg .t{font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap}.msg .w{font:700 10.5px var(--mono);color:var(--t-mut);text-transform:uppercase;letter-spacing:.06em}
 .msg .tm{font:10.5px var(--mono);color:var(--t-mut)}.msg.me .w{color:var(--t-sig)}
+.msg .t.md{white-space:normal}.msg .t pre.pbm-code{margin:6px 0;padding:8px 10px;font:12px/1.45 var(--mono);background:var(--field);border:1px solid var(--line-2);white-space:pre-wrap;overflow-x:auto}.msg .t code{font:12px var(--mono);padding:1px 4px;background:var(--field);border:1px solid var(--line-2)}.msg .t pre code{padding:0;background:none;border:0}.at{color:var(--t-sig);font-weight:600}
+.panel[data-p="feed"] .pb{display:flex;flex-direction:column;overflow:hidden}
+.c-feed{height:100%;display:flex;flex-direction:column;min-height:0}
+.c-msgs{flex:1;min-height:0;overflow:auto;touch-action:pan-y}
+.c-say{display:flex;gap:6px;padding-top:8px;margin-top:6px;border-top:1px solid var(--line-2);flex:none;cursor:auto}
+.c-say input{flex:1;min-width:0;padding:6px 9px;font-size:13px}
 .msg.new,.item.new,.tile.new,.card.new,.ev.new{animation:pop 1.6s ease-out 1}
 @keyframes pop{0%{background:color-mix(in srgb,var(--sig) 22%,transparent)}100%{background:transparent}}
 .sig{width:22px;height:22px;display:block}
@@ -126,6 +132,7 @@ svg.ch{width:100%;display:block;overflow:hidden}
 .insp header h2{margin:0;font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .insp .body{padding:16px;overflow:auto;flex:1}.insp h3{margin:18px 0 6px;font:700 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--t-mut)}
 .insp pre{background:var(--field);border:1px solid var(--line-2);padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--mono);margin:0}
+pre .add{color:var(--t-ok)}pre .del{color:var(--t-bad)}pre .hdr{color:var(--t-sig)}
 .chk{display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--dim);font:12px var(--mono)}.chk .ok{color:var(--t-ok)}.chk .no{color:var(--t-bad)}
 .rev{position:relative;padding:0 0 12px 18px;border-left:2px solid var(--line-2);margin-left:5px}.rev::before{content:"";position:absolute;left:-6px;top:3px;width:10px;height:10px;background:var(--panel);border:2px solid var(--ink)}
 .rev.verified::before{border-color:var(--t-ok);background:var(--t-ok)}.rev.failed::before{border-color:var(--t-bad)}.rev small{color:var(--t-mut);font:10.5px var(--mono)}
@@ -137,29 +144,37 @@ input,select,textarea{width:100%;background:var(--field);border:1px solid var(--
 input:focus,select:focus,textarea:focus{outline:2px solid var(--sig);outline-offset:-1px}
 .err{color:var(--t-bad);font-size:12.5px;min-height:1.2em;margin-top:8px}
 .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:60;background:var(--ink);color:var(--bg);padding:8px 14px;font:600 11px var(--mono);letter-spacing:.06em}
-@media(max-width:700px){.plus{bottom:calc(120px + env(safe-area-inset-bottom))}.zoom{bottom:calc(120px + env(safe-area-inset-bottom))}.kpis{display:none}.hint{display:none}.crumbs{font-size:10px}.top .chip.hide-s{display:none}.brand .bw{display:none}.panel.dim{visibility:hidden}.top{gap:6px;padding-left:10px;padding-right:10px}.crumbs button{max-width:34vw;overflow:hidden;text-overflow:ellipsis}.hx-grid{grid-template-columns:1fr}.tiles{grid-template-columns:1fr}.board{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:900px){body.has-sb .zoom,body.has-sb .plus{bottom:calc(40px + env(safe-area-inset-bottom))}body.has-sb .hint{bottom:calc(36px + env(safe-area-inset-bottom))}}
+@media(max-width:700px){.plus{bottom:calc(120px + env(safe-area-inset-bottom))}.zoom{bottom:calc(120px + env(safe-area-inset-bottom))}.kpis{display:none}.hint{display:none}.crumbs{font-size:10px}.top .chip.hide-s,.top .btn.hide-s,#roomsbtn .hide-s{display:none}.brand .bw{display:none}.panel.dim{visibility:hidden}.top{gap:6px;padding-left:10px;padding-right:10px}.crumbs button{max-width:34vw;overflow:hidden;text-overflow:ellipsis}.hx-grid{grid-template-columns:1fr}.tiles{grid-template-columns:1fr}.board{grid-template-columns:repeat(2,1fr)}}
 /* touch: keep tap targets 36px on screen even when the world is scaled down */
 @media(pointer:coarse){.btn,.zoom button,.jump button{min-height:40px}.panel .btn.sm,.panel .mv button,.panel .drill,.hx-a,.panel .ag,.insp .btn{min-height:calc(36px / var(--k,1));min-width:calc(36px / var(--k,1))}.panel .mv{gap:calc(6px / var(--k,1))}.top .btn.sm{min-height:36px}}
 @media(prefers-reduced-motion:reduce){#world.glide,.insp{transition:none}.msg.new,.item.new,.tile.new,.card.new,.ev.new,.live{animation:none}}
 </style>
 <link rel="stylesheet" href="/theme.css">
 <script src="/themes.js"></script>
+<script src="/auth.js" onerror="void 0"></script>
+<script src="/shell.js" onerror="void 0"></script>
+<script src="/qr.js" onerror="void 0"></script>
+<script src="/markdown.js" onerror="void 0"></script>
 </head>
 <body>
 <div id="stage"><div id="world"></div></div>
 <div class="top">
   <a class="brand" href="/" aria-label="Back to the hub"><span class="pbmark"></span><span class="bw"> Playbox</span></a>
+  <button class="btn sm" id="roomsbtn" type="button" title="Switch room" aria-label="Rooms">☰ <span class="hide-s">Rooms</span></button>
   <div class="crumbs" id="crumbs"></div>
   <span class="sp"></span>
   <span class="chip" id="mode"></span><span class="chip hide-s" id="live"><i class="led"></i><span>…</span></span>
-  <a class="btn sm" id="research" href="/?view=research">Research</a>
-  <a class="btn sm" id="cockpit" href="#">Cockpit</a>
+  <a class="btn sm hide-s" id="research" href="/?view=research">Research</a>
+  <span id="switcher" style="display:inline-flex;align-items:center"></span>
+  <button class="btn sm" id="palbtn" type="button" title="Search / Jump (⌘K)" aria-label="Command palette">⌘K</button>
+  <button class="btn sm" id="setbtn" type="button" title="Settings (⌘,)" aria-label="Settings" style="display:inline-flex;align-items:center;padding:4px 6px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </div>
 <div class="kpis" id="kpis"></div>
 <nav class="jump" id="jump" aria-label="Jump to a panel"></nav>
 <div class="zoom"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zfit" aria-label="Fit the whole room">FIT</button></div>
 <button class="plus" id="plus" aria-label="Add to the room" hidden>+</button>
-<div class="hint" id="hint">Drag to pan · scroll or pinch to zoom · tap a panel to drill in · Esc to go back</div>
+<div class="hint" id="hint">Scroll or drag to pan · pinch or ⌘+scroll to zoom · 1–8 jump panels · Esc back</div>
 <aside class="insp" id="insp" aria-label="Details"></aside>
 <dialog id="dlg"></dialog>
 <script>
@@ -170,7 +185,7 @@ const RID = location.pathname.split("/")[2];
 const W = 2500, H = 1950;
 const rel = ms => { if (!ms) return "never"; const s = Math.max(0, (Date.now() - ms) / 1000 | 0); return s < 45 ? "now" : s < 3600 ? `${Math.max(1, s / 60 | 0)}m` : s < 86400 ? `${s / 3600 | 0}h` : `${s / 86400 | 0}d`; };
 const hhmm = ms => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
-let M = null, seenKeys = new Set(), first = true, focus = null, sel = null, view = {x: 0, y: 0, k: 1}, filt = {feed: "all", art: "all", log: "all"};
+let M = null, seenKeys = new Set(), first = true, focus = null, sel = null, view = {x: 0, y: 0, k: 1}, filt = {feed: "all", feedQ: "", art: "all", log: "all"};
 
 /* ---------- identicon ---------- */
 function sig(id, size = 22) {
@@ -235,14 +250,31 @@ R.pulse = d => {
     ${ms.length ? `<div style="grid-column:1/-1"><p class="lbl">Living metrics · posted by agents</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${d ? 300 : 230}px,1fr));gap:16px">${ms.map(s => { const l = s.pts[s.pts.length - 1], f = s.pts[0]; return `<div class="item" data-sel="metric:${esc(s.name)}" style="cursor:pointer"><div class="row" style="justify-content:space-between"><b class="mono" style="font-size:12px">${esc(s.name)}</b><span class="mono" style="font-size:17px">${+l.v.toFixed(4)}${esc(s.unit)}</span></div>${spark(s.pts, 240, d ? 70 : 38, true)}<span class="mono mut" style="font-size:10.5px">${s.pts.length} pts · ${l.v === f.v ? "flat" : l.v > f.v ? "▲" : "▼"} since start</span></div>`; }).join("")}</div></div>` : ""}</div>`;
 };
 
-R.feed = d => {
-  const typed = M.changelog.filter(e => e.type !== "member").slice(0, 60).map(e => ({seq: e.seq, from: e.who, ms: e.ms, work: e.text, ref: e.ref, type: e.type}));
-  let list = M.feed.map(m => ({...m, work: null}));
-  if (filt.feed !== "work") list = list.concat([]);
-  const all = [...(filt.feed === "work" ? [] : list), ...(filt.feed === "msgs" ? [] : typed)].sort((a, b) => a.ms - b.ms).slice(d ? -120 : -12);
-  const bar = d ? `<div class="row" style="margin:0 0 8px">${[["all", "All"], ["msgs", "Messages"], ["work", "Work"]].map(([k, l]) => `<button class="btn sm ${filt.feed === k ? "primary" : ""}" data-act="ff" data-v="${k}">${l}</button>`).join("")}</div>` : "";
-  return bar + (all.length ? all.map(m => `<div class="msg ${m.from === M.me ? "me" : ""} ${isNew("m" + m.seq + (m.work ? "w" : ""))}" ${m.work ? `data-sel="${m.type}:${esc(m.ref)}" style="cursor:pointer"` : ""}>${sig(m.from)}<div><span class="w">${esc(who(m.from))}</span>${m.work ? `<div class="t"><span class="chip blue">${esc(m.type)}</span> ${esc(m.work)}</div>` : `<div class="t">${esc(m.text)}</div>`}</div><span class="tm">${hhmm(m.ms)}</span></div>`).join("") : '<p class="empty">The room is quiet. Messages appear here the moment anyone posts.</p>')
+function feedParts(d) {
+  const q = d ? (filt.feedQ || "").trim().toLowerCase() : "", bare = q.startsWith("@") ? q.slice(1) : q;
+  const matchFeed = (txt, from) => {
+    if (!q) return true;
+    const w = who(from || "");
+    const hay = `${txt || ""} ${w} @${w} ${from || ""}`.toLowerCase();
+    return hay.includes(q) || (bare && hay.includes(bare));
+  };
+  const baseTyped = M.changelog.filter(e => e.type !== "member").slice(0, 60).map(e => ({seq: e.seq, from: e.who, ms: e.ms, work: e.text, ref: e.ref, type: e.type}));
+  const typed = baseTyped.filter(e => matchFeed(`${e.type} ${e.work}`, e.from));
+  const list = M.feed.filter(m => matchFeed(m.text, m.from)).map(m => ({...m, work: null}));
+  const allFull = [...(filt.feed === "work" ? [] : list), ...(filt.feed === "msgs" ? [] : typed)].sort((a, b) => a.ms - b.ms);
+  const totalBase = (filt.feed === "work" ? 0 : M.feed.length) + (filt.feed === "msgs" ? 0 : baseTyped.length);
+  const all = allFull.slice(d ? -120 : -12);
+  const metaTxt = q ? `${allFull.length} of ${totalBase}` : "";
+  const bar = d ? `<div class="row" style="margin:0 0 8px">${[["all", "All"], ["msgs", "Messages"], ["work", "Work"]].map(([k, l]) => `<button type="button" class="btn sm ${filt.feed === k ? "primary" : ""}" data-act="ff" data-v="${k}">${l}</button>`).join("")}<input type="search" data-cfeedq value="${esc(filt.feedQ)}" placeholder="Filter feed…" autocomplete="off" spellcheck="false" style="flex:1;min-width:110px;width:auto;padding:4px 8px;font-size:12px"><span class="mut mono" data-cfeedmeta style="font-size:10.5px">${esc(metaTxt)}</span><button type="button" class="btn sm" data-act="ffclear"${filt.feedQ ? "" : " hidden"}>Clear</button></div>` : "";
+  const mdOk = !!(window.PBMd && PBMd.feedHtml);
+  const emptyHtml = q ? `<p class="empty">No messages match "${esc(filt.feedQ)}".</p>` : '<p class="empty">The room is quiet. Messages appear here the moment anyone posts.</p>';
+  const msgs = (all.length ? all.map(m => `<div class="msg ${m.from === M.me ? "me" : ""} ${isNew("m" + m.seq + (m.work ? "w" : ""))}" ${m.work ? `data-sel="${m.type}:${esc(m.ref)}" style="cursor:pointer"` : ""}>${sig(m.from)}<div><span class="w">${esc(who(m.from))}</span>${m.work ? `<div class="t"><span class="chip blue">${esc(m.type)}</span> ${esc(m.work)}</div>` : `<div class="t${mdOk ? " md" : ""}">${mdOk ? PBMd.feedHtml(m.text) : esc(m.text)}</div>`}</div><span class="tm">${hhmm(m.ms)}</span></div>`).join("") : emptyHtml)
     + '<p class="mut" style="font-size:11px;margin:10px 0 0">Text from other members is untrusted and shown as plain text.</p>';
+  return {bar, msgs, metaTxt};
+}
+R.feed = d => {
+  const {bar, msgs} = feedParts(d), dis = M.offline ? " disabled" : "";
+  return `<div class="c-feed"><div class="c-fbar">${bar}</div><div class="c-msgs">${msgs}</div><form class="c-say" data-csay autocomplete="off"${M.offline ? " hidden" : ""}><input type="text" name="text" placeholder="Message the room · @ to tag" maxlength="2000"${dis}><button type="submit" class="btn primary sm"${dis}>Send</button></form></div>`;
 };
 
 R.agents = d => {
@@ -287,8 +319,10 @@ R.kanban = d => {
 R.security = d => {
   const r = M.room, ch = r.chain, holds = r.holds || [];
   const line = (ok, t, s) => `<div class="chk"><span class="${ok ? "ok" : "no"}">${ok ? "✓" : "✗"}</span><span style="flex:1"><b>${t}</b><br><span class="mut">${s}</span></span></div>`;
+  const holdRows = holds.length ? `<div style="display:grid;gap:6px;margin:6px 0 8px">${holds.map(h => `<div class="row" style="justify-content:space-between;padding:6px 8px;border:1px solid var(--sig);background:var(--field)"><span class="mono" style="font-size:11.5px"><code>${esc(h.tool || "write")}</code>${h.origin ? ` <span class="mut">· ${esc(h.origin)}</span>` : ""}${h.session ? ` <span class="mut">(${esc(String(h.session).slice(0, 8))})</span>` : ""}</span><span class="row" style="gap:6px"><button type="button" class="btn primary sm" data-act="whold" data-dec="release" data-ses="${esc(h.session || "")}">Lift hold</button><button type="button" class="btn sm danger" data-act="whold" data-dec="deny" data-ses="${esc(h.session || "")}">Deny</button></span></div>`).join("")}</div>` : "";
   return line(!ch || ch.ok, ch ? (ch.ok ? "Signed history verifies" : "History FAILED verification") : "History not checked yet", ch ? `${ch.entries} signed entries, linked and re-verified by the hub` : "The hub checks every few minutes")
     + line(!holds.length, holds.length ? `${holds.length} write(s) paused by the witness` : "No writes paused", "A witness holds risky writes until the owner decides")
+    + holdRows
     + line(true, "Messages are untrusted", "Other members' text is shown as plain text and never run")
     + line(M.members.every(m => m.id !== "" ), `${M.members.length} members, ${M.members.filter(m => m.present).length} online`, "Every member joined with a grant bound to its own key")
     + `<div class="row" style="margin-top:12px"><a class="btn sm" href="/?view=system">Open System view</a><a class="btn sm" href="/r/${esc(RID)}/api/history.jsonl" download>Download history</a>${M.admin ? '<button class="btn sm" data-act="verify">Verify now</button>' : ""}</div>`;
@@ -302,11 +336,12 @@ R.settings = () => `<p class="lbl">Room</p><div class="row"><b style="font-size:
 function isNew(key) { if (first) { seenKeys.add(key); return ""; } if (seenKeys.has(key)) return ""; seenKeys.add(key); return "new"; }
 
 /* ---------- world render ---------- */
-function layout() { const L = {...LAYOUT, pulse: {...LAYOUT.pulse}}; if (M.admin) { L.pulse.w = 1660; L.settings = {x: 1800, y: 70, w: 600, h: 330, t: "Settings", ix: "09"}; }
+function layout() { const L = {...LAYOUT, pulse: {...LAYOUT.pulse}}; if (M && M.admin) { L.pulse.w = 1660; L.settings = {x: 1800, y: 70, w: 600, h: 330, t: "Settings", ix: "09"}; }
   // phone: a drilled panel reflows to a narrow, tall page (it is a reading view) instead of shrinking its wide desktop box to a speck
   if (focus && L[focus] && innerWidth < 700) L[focus] = {...L[focus], w: 460, h: Math.max(520, Math.floor((innerHeight - 290) / (innerWidth / 480)))};
   return L; }
 function drawWorld() {
+  if (!M) return;
   const L = layout(), world = $("#world");
   for (const [id, p] of Object.entries(L)) {
     let el = $(`.panel[data-p="${id}"]`, world);
@@ -318,13 +353,46 @@ function drawWorld() {
     $(".drill", el).textContent = open ? "Back ↩" : "Open ↗";
     const count = {pulse: "", agents: M.members.length, feed: M.feed.length, artifacts: M.artifacts.length, changelog: M.changelog.length, kanban: M.cards.length, security: "", harnesses: M.members.filter(m => m.harness).length, settings: ""}[id];
     $(".n", el).textContent = count === "" ? "" : count;
-    pb.innerHTML = R[id](open); $(".far", el).innerHTML = FAR[id] ? FAR[id]() : "";
-    pb.scrollTop = open ? top : 0;
-    if (id === "feed" && open && top === 0) pb.scrollTop = pb.scrollHeight;
+    $(".far", el).innerHTML = FAR[id] ? FAR[id]() : "";
+    if (id === "feed" && $(".c-feed", pb)) {
+      const {bar, msgs, metaTxt} = feedParts(open), msgsEl = $(".c-msgs", pb), fbar = $(".c-fbar", pb);
+      const mTop = msgsEl.scrollTop, nearBot = msgsEl.scrollHeight - mTop - msgsEl.clientHeight < 36;
+      const fq = open && $("[data-cfeedq]", fbar);
+      if (fq) {
+        $$('[data-act="ff"]', fbar).forEach(b => b.classList.toggle("primary", b.dataset.v === filt.feed));
+        if (document.activeElement !== fq && fq.value !== filt.feedQ) fq.value = filt.feedQ;
+        const fm = $("[data-cfeedmeta]", fbar), fc = $('[data-act="ffclear"]', fbar);
+        if (fm) fm.textContent = metaTxt || "";
+        if (fc) fc.hidden = !filt.feedQ;
+      } else fbar.innerHTML = bar;
+      msgsEl.innerHTML = msgs;
+      const sayForm = $("[data-csay]", pb), sayInp = $("[data-csay] input", pb), sayBtn = $("[data-csay] button", pb);
+      if (sayForm) sayForm.hidden = !!M.offline;
+      if (sayInp) sayInp.disabled = !!M.offline;
+      if (sayBtn && !sayBtn.dataset.sending) sayBtn.disabled = !!M.offline;
+      msgsEl.scrollTop = (open && (nearBot || mTop === 0)) || !open ? msgsEl.scrollHeight : mTop;
+      if (window.PBMd && PBMd.need && PBMd.upgrade) {
+        const joined = M.feed.filter(m => typeof m.text === "string" && m.text.includes("```")).map(m => m.text).join("\n");
+        if (joined) Promise.resolve(PBMd.need(joined)).then(() => { if (msgsEl.isConnected) PBMd.upgrade(msgsEl); }).catch(() => {});
+      }
+    } else {
+      pb.innerHTML = R[id](open);
+      if (id === "feed") {
+        const msgsEl = $(".c-msgs", pb);
+        if (msgsEl) {
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+          if (window.PBMd && PBMd.need && PBMd.upgrade) {
+            const joined = M.feed.filter(m => typeof m.text === "string" && m.text.includes("```")).map(m => m.text).join("\n");
+            if (joined) Promise.resolve(PBMd.need(joined)).then(() => { if (msgsEl.isConnected) PBMd.upgrade(msgsEl); }).catch(() => {});
+          }
+        }
+      }
+      else pb.scrollTop = open ? top : 0;
+    }
   }
   $("#kpis").innerHTML = [["members", M.members.length], ["online", M.members.filter(m => m.present).length], ["artifacts", M.artifacts.length], ["verified", M.stats.artifacts.verified], ["tasks", M.cards.length], ["done", M.stats.cards.done]].map(([k, v]) => `<span><b>${v}</b>${k}</span>`).join("");
   $("#mode").textContent = M.admin ? "Host" : "Guest"; $("#mode").className = "chip " + (M.admin ? "host" : "");
-  $("#plus").hidden = !M.admin; $("#cockpit").href = `/r/${RID}/`; $("#cockpit").hidden = !M.admin && false;
+  $("#plus").hidden = !M.admin;
   document.title = `${M.room.label} · Playbox`;
   const ok = M.room.chain ? M.room.chain.ok : true, hold = (M.room.holds || []).length;
   $("#live").innerHTML = M.offline ? `<i class="led warn"></i><span>offline · saved</span>` : `<i class="led ${!ok ? "bad" : hold ? "warn" : "on"} live"></i><span>${!ok ? "history failed" : hold ? "needs you" : "live"}</span>`;
@@ -365,6 +433,7 @@ function fitRect(r, pad = .9, glide = true) {
 const fitAll = glide => fitRect({x: 60, y: 40, w: W - 120, h: H - 100}, .98, glide);
 function zoomAt(px, py, f, glide) { const k = Math.max(.12, Math.min(3, view.k * f)), r = k / view.k; view = {k, x: px - (px - view.x) * r, y: py - (py - view.y) * r}; apply(glide); }
 function drill(id) {
+  if (!M) return;
   if (focus === id) return back();
   focus = id; sel = null; closeInsp(); drawWorld(); fitRect(layout()[id], .96);
 }
@@ -373,7 +442,8 @@ function back() { if (sel) { sel = null; closeInsp(); drawWorld(); return; } if 
 /* pan + pinch + wheel */
 const ptrs = new Map(); let pan = null, pinch = null, moved = 0;
 stage.addEventListener("pointerdown", e => {
-  if (e.target.closest("button,a,input,select,textarea,.pb *[data-sel],.pb.scroll")) { if (!e.target.closest(".panel.open .pb")) return; }
+  if (e.target.closest(".c-say,input,select,textarea")) return;
+  if (e.target.closest("button,a,.pb *[data-sel],.pb.scroll")) { if (!e.target.closest(".panel.open .pb")) return; }
   if (e.target.closest(".panel.open .pb")) return;
   stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY}); moved = 0;
   if (ptrs.size === 1) pan = {x: e.clientX - view.x, y: e.clientY - view.y}; else { pan = null; const [a, b] = [...ptrs.values()]; pinch = {d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k}; }
@@ -387,18 +457,99 @@ stage.addEventListener("pointermove", e => {
 const up = e => { ptrs.delete(e.pointerId); pinch = null; if (!ptrs.size) { pan = null; stage.classList.remove("drag"); } else if (ptrs.size === 1) { const [p] = [...ptrs.values()]; pan = {x: p.x - view.x, y: p.y - view.y}; } };
 stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
 stage.addEventListener("wheel", e => {
-  const pb = e.target.closest(".panel.open .pb"); if (pb && !e.ctrlKey && pb.scrollHeight > pb.clientHeight) return;     // a focused panel scrolls its own content
-  e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0016)), false);
+  const pb = e.target.closest(".panel.open .pb, .c-msgs"); if (pb && !e.ctrlKey && !e.metaKey && pb.scrollHeight > pb.clientHeight) return;     // a focused panel scrolls its own content
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0025)), false);
+  else { view.x -= e.deltaX; view.y -= e.deltaY; apply(false); }
 }, {passive: false});
 $("#zin").onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1.3, true); $("#zout").onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.3, true);
 $("#zfit").onclick = () => { focus = null; sel = null; closeInsp(); drawWorld(); fitAll(true); };
-addEventListener("keydown", e => { if (e.target.matches("input,textarea,select")) return; if (e.key === "Escape") { if ($("#dlg").open) return; back(); } else if (e.key === "+" || e.key === "=") $("#zin").click(); else if (e.key === "-") $("#zout").click(); else if (e.key === "0") $("#zfit").click(); });
+
+function canvasPanelItems() {
+  const src = M ? layout() : LAYOUT;
+  return [
+    ...Object.entries(src).map(([id, p]) => {
+      const title = `${p.ix} ${p.t}`;
+      return {label: title, t: title, title, sub: "Canvas panel", s: "Canvas panel", hint: "Panel", act: () => drill(id), run: () => drill(id), action: () => drill(id)};
+    }),
+    {label: "Fit entire canvas (Overview)", t: "Fit entire canvas (Overview)", title: "Fit entire canvas (Overview)", sub: "0", s: "0", hint: "0", act: () => $("#zfit").click(), run: () => $("#zfit").click(), action: () => $("#zfit").click()},
+  ];
+}
+function openCanvasPalette() {
+  if (window.PBShell && PBShell.openPalette) PBShell.openPalette(canvasPanelItems());
+}
+
+addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && window.PBShell && PBShell.openPalette) { e.preventDefault(); openCanvasPalette(); return; }
+  if (e.target.matches?.("[data-cfeedq]") && e.key === "Escape" && !document.querySelector("dialog[open]")) {
+    e.preventDefault();
+    if (filt.feedQ) { filt.feedQ = ""; e.target.value = ""; drawWorld(); }
+    else e.target.blur();
+    return;
+  }
+  if (e.target.matches?.("input,textarea,select") || e.target.closest?.(".c-say")) return;
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && focus === "feed" && !document.querySelector("dialog[open]")) {
+    const fq = $("[data-cfeedq]");
+    if (fq) { e.preventDefault(); fq.focus(); fq.select(); return; }
+  }
+  if (e.key === "Escape") { if (document.querySelector("dialog[open]")) return; back(); }
+  else if (!e.metaKey && !e.ctrlKey && !e.altKey && !document.querySelector("dialog[open]") && /^[1-9]$/.test(e.key)) {
+    const keys = Object.keys(M ? layout() : LAYOUT), k = keys[+e.key - 1];
+    if (k) { e.preventDefault(); drill(k); }
+  }
+  else if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "+" || e.key === "=")) $("#zin").click();
+  else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "-") $("#zout").click();
+  else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "0") $("#zfit").click();
+});
 addEventListener("resize", () => { if (focus) fitRect(layout()[focus], .96, false); else fitAll(false); });
 
 /* ---------- inspector (drill into an artifact, agent, task, metric) ---------- */
 function selTitle() { const [t, id] = [sel.t, sel.id]; if (t === "artifact") return (M.artifacts.find(a => a.id === id) || {}).title || id; if (t === "card") return (M.cards.find(a => a.id === id) || {}).title || id; if (t === "agent") return who(id); return id; }
 function openSel(t, id) { sel = {t, id}; focus = focus || ({artifact: "artifacts", card: "kanban", agent: "agents", metric: "pulse"}[t]); drawWorld(); renderInsp(); $("#insp").classList.add("on"); fitRect(layout()[focus], .96); }
 function closeInsp() { $("#insp").classList.remove("on"); }
+let lastInspPatch = "";
+function renderPatchBody(src) {
+  const norm = String(src || "").replace(/\r\n?/g, "\n");
+  lastInspPatch = src || "";
+  const colorLines = ls => ls.map(l => {
+    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") || l.startsWith("@@") || l.startsWith("index ") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+    return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
+  }).join("\n");
+  const lines = norm.split("\n"), rawSecs = [];
+  const hasGit = /(?:^|\n)diff --git /.test(norm);
+  let cur = null, pre = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const startNew = hasGit ? l.startsWith("diff --git ") : (l.startsWith("--- ") && (lines[i + 1] || "").startsWith("+++ "));
+    if (startNew) {
+      if (cur) rawSecs.push(cur);
+      cur = pre.length ? [...pre, l] : [l];
+      pre = [];
+    } else if (cur) cur.push(l);
+    else if (l) pre.push(l);
+  }
+  if (cur) rawSecs.push(cur);
+  else if (lines.length) rawSecs.push(lines);
+  const secs = rawSecs.map(sec => {
+    const hdr = sec.find(l => l.startsWith("diff --git ")) || "";
+    const plus = sec.find(l => l.startsWith("+++ "));
+    const minus = sec.find(l => l.startsWith("--- "));
+    const m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(hdr);
+    const cleanRef = (s, pfx) => s ? s.slice(4).split("\t")[0].replace(pfx, "") : "";
+    const pPath = plus && !plus.startsWith("+++ /dev/null") ? cleanRef(plus, /^b\//) : "";
+    const mPath = minus && !minus.startsWith("--- /dev/null") ? cleanRef(minus, /^a\//) : "";
+    const filePath = pPath || (m && m[2]) || mPath || hdr.replace(/^diff --git\s+/, "") || "patch";
+    let adds = 0, dels = 0;
+    for (const l of sec) {
+      if (l.startsWith("+") && !l.startsWith("+++")) adds++;
+      else if (l.startsWith("-") && !l.startsWith("---")) dels++;
+    }
+    return {filePath, adds, dels, lines: sec};
+  });
+  const totAdds = secs.reduce((a, s) => a + s.adds, 0), totDels = secs.reduce((a, s) => a + s.dels, 0);
+  return `<div class="row" style="justify-content:space-between;margin:0 0 6px;gap:6px"><span class="row" style="gap:6px"><span class="mono mut" style="font-size:11px">${secs.length} file${secs.length === 1 ? "" : "s"}</span><span class="chip ok">+${totAdds}</span><span class="chip bad">-${totDels}</span></span><button type="button" class="btn sm" data-act="copypatch">Copy patch</button></div>`
+    + secs.map((s, idx) => `<details class="diff-file" ${idx < 5 ? "open" : ""} style="border:1px solid var(--line-2);margin-top:8px;background:var(--field)"><summary class="row" style="cursor:pointer;justify-content:space-between;padding:7px 10px;background:var(--panel-2);user-select:none"><span class="mono" style="font-size:11.5px;font-weight:600;word-break:break-all">${esc(s.filePath)}</span><span class="row" style="gap:5px"><span class="chip ok">+${s.adds}</span><span class="chip bad">-${s.dels}</span></span></summary><pre class="patchpre" style="margin:0;border:0;border-top:1px solid var(--line-2);max-height:280px;overflow:auto">${colorLines(s.lines)}</pre></details>`).join("");
+}
 function renderInsp() {
   if (!sel) return; const el = $("#insp"); let html = "", title = sel.t;
   if (sel.t === "artifact") {
@@ -406,7 +557,7 @@ function renderInsp() {
       title = `${a.kind} · ${a.title}`;
       html = `<div class="row"><span class="chip st-${a.status}">${esc(a.status)}</span><span class="chip">${ICON[a.kind] || "·"} ${esc(a.kind)}</span><span class="chip">rev ${a.revs.length}</span></div><h2 style="font:700 20px var(--sans);margin:14px 0 6px">${esc(a.title)}</h2><p class="mut" style="margin:0">${esc(a.summary)}</p>
       ${a.ref ? `<h3>Reference</h3><pre>${esc(a.ref)}</pre>` : ""}${a.checks && a.checks.length ? `<h3>Checks · ${a.checks.filter(c => c.ok).length}/${a.checks.length} pass</h3>${a.checks.map(c => `<div class="chk"><span class="${c.ok ? "ok" : "no"}">${c.ok ? "✓" : "✗"}</span><span>${esc(c.name)}</span></div>`).join("")}` : ""}
-      ${a.body ? `<h3>Content</h3><pre>${esc(a.body)}</pre>` : ""}<h3>Revision history</h3>${[...a.revs].reverse().map(r => `<div class="rev ${r.status}"><b>${esc(r.status)}</b> · ${esc(who(r.from))}<br><small>${new Date(r.ms).toLocaleString()}</small>${r.summary ? `<div style="font-size:12.5px;margin-top:3px">${esc(r.summary)}</div>` : ""}</div>`).join("")}
+      ${a.body ? `<h3>Content</h3>${a.body.startsWith("diff --git ") || a.body.startsWith("--- ") ? renderPatchBody(a.body) : `<pre>${esc(a.body)}</pre>`}` : ""}<h3>Revision history</h3>${[...a.revs].reverse().map(r => `<div class="rev ${r.status}"><b>${esc(r.status)}</b> · ${esc(who(r.from))}<br><small>${new Date(r.ms).toLocaleString()}</small>${r.summary ? `<div style="font-size:12.5px;margin-top:3px">${esc(r.summary)}</div>` : ""}</div>`).join("")}
       <h3>Linked tasks</h3>${M.cards.filter(c => c.artifact === a.id).map(c => `<div class="chk"><span>▪</span><span>${esc(c.title)} · ${esc(c.col)}</span></div>`).join("") || '<p class="empty">None.</p>'}`;
     }
   } else if (sel.t === "agent") {
@@ -426,8 +577,9 @@ function renderInsp() {
   el.innerHTML = `<header><h2>${esc(title)}</h2><button class="btn sm" data-act="closeinsp">Close ✕</button></header><div class="body">${html}</div>`;
 }
 
-/* ---------- host actions ---------- */
-const post = async text => { const r = await fetch(`/r/${RID}/api/tool`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: "playbox_say", args: {text}})}); const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(typeof j.data === "string" ? j.data : j.error || "could not post"); };
+/* ---------- host & room actions ---------- */
+const gfetch = (u, i) => window.PB && PB.guarded ? PB.guarded(u, i) : fetch(u, i);
+const post = async text => { const r = await gfetch(`/r/${RID}/api/tool`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: "playbox_say", args: {text}})}); const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(typeof j.data === "string" ? j.data : j.error || "could not post"); };
 const enc = (k, o) => "::pbx " + k + " " + JSON.stringify(o);
 function toast(t) { const e = document.createElement("div"); e.className = "toast"; e.textContent = t; document.body.append(e); setTimeout(() => e.remove(), 2200); }
 function modal(kind) {
@@ -450,24 +602,65 @@ function modal(kind) {
 async function rename() {
   const d = $("#dlg"); d.innerHTML = `<form method="dialog"><h2>Edit room</h2><label>Name</label><input name="label" value="${esc(M.room.label)}" maxlength="60"><label>Where it runs</label><input name="machine" value="${esc(M.room.machine || "")}" maxlength="40"><label>Who is in it</label><select name="kind"><option value="mine" ${M.room.kind === "mine" ? "selected" : ""}>My agents</option><option value="shared" ${M.room.kind === "shared" ? "selected" : ""}>Shared</option></select><p class="err" id="derr"></p><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Save</button></div></form>`;
   $("form", d).addEventListener("submit", async e => { if (e.submitter && e.submitter.value === "cancel") return; e.preventDefault(); const o = Object.fromEntries(new FormData(e.target));
-    try { const r = await fetch(`/api/rooms/${RID}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify(o)}); if (!r.ok) throw new Error("could not save"); d.close(); refresh(); } catch (er) { $("#derr").textContent = er.message; } });
+    try { const r = await gfetch(`/api/rooms/${RID}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify(o)}); if (!r.ok) throw new Error("could not save"); d.close(); refresh(); } catch (er) { $("#derr").textContent = er.message; } });
   d.showModal();
 }
 $("#plus").onclick = () => { const d = $("#dlg"); d.innerHTML = `<form method="dialog"><h2>Add to the room</h2><div class="row" style="flex-direction:column;align-items:stretch;gap:8px"><button class="btn" value="card">Task for the board</button><button class="btn" value="artifact">Artifact or proof</button><button class="btn" value="metric">Metric for the charts</button><button class="btn" value="say">Message to everyone</button><a class="btn primary" href="/?invite=${esc(RID)}" style="text-align:center;text-decoration:none">Invite someone</a></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" value="cancel">Close</button></div></form>`;
   $("form", d).addEventListener("submit", e => { const v = e.submitter && e.submitter.value; if (v && v !== "cancel") { e.preventDefault(); d.close(); modal(v); } }); d.showModal(); };
 
 /* ---------- events ---------- */
+document.addEventListener("submit", async e => {
+  const f = e.target.closest?.("[data-csay]"); if (!f) return;
+  e.preventDefault();
+  if (M && M.offline) { toast("The host is offline, so nothing can be posted."); return; }
+  const inp = f.querySelector("input[name=text]"), btn = f.querySelector("button[type=submit]");
+  const text = (inp ? inp.value : "").trim(); if (!text) return;
+  if (btn) { btn.disabled = true; btn.dataset.sending = "1"; }
+  try {
+    await post(text);
+    if (inp) inp.value = "";
+    await pull();
+  } catch (er) { toast(er.message || "Could not send"); }
+  finally {
+    if (btn) { delete btn.dataset.sending; btn.disabled = !!(M && M.offline); }
+    inp?.focus();
+  }
+});
+document.addEventListener("input", e => {
+  if (e.target.matches?.("[data-cfeedq]")) { filt.feedQ = e.target.value; drawWorld(); }
+});
 document.addEventListener("click", async e => {
+  if (e.target.closest("#switcher a")) window.PBShell?.setRoomView?.("cockpit");
+  if (e.target.closest(".c-say,input,select,textarea")) return;
   const s = e.target.closest("[data-sel]"); const a = e.target.closest("[data-act]");
   if (a && a.dataset.act !== "drill" || (a && a.dataset.act === "drill")) {
     const act = a.dataset.act;
     if (act === "drill") { if (moved > 6) return; drill(a.dataset.id); return; }
     if (act === "home") { sel = null; focus = null; closeInsp(); drawWorld(); fitAll(true); return; }
     if (act === "closeinsp") { sel = null; closeInsp(); drawWorld(); return; }
-    if (act === "ff") { filt.feed = a.dataset.v; drawWorld(); return; } if (act === "fa") { filt.art = a.dataset.v; drawWorld(); return; } if (act === "fl") { filt.log = a.dataset.v; drawWorld(); return; }
+    if (act === "ff") { filt.feed = a.dataset.v; drawWorld(); return; }
+    if (act === "ffclear") { filt.feedQ = ""; const fq = $("[data-cfeedq]"); if (fq) { fq.value = ""; fq.focus(); } drawWorld(); return; }
+    if (act === "copypatch") { if (lastInspPatch && navigator.clipboard?.writeText) navigator.clipboard.writeText(lastInspPatch).then(() => toast("Patch copied"), () => {}); return; }
+    if (act === "fa") { filt.art = a.dataset.v; drawWorld(); return; } if (act === "fl") { filt.log = a.dataset.v; drawWorld(); return; }
     if (act === "mv") { e.stopPropagation(); try { await post(enc("card", {id: a.dataset.id, col: a.dataset.col})); refresh(); } catch (er) { toast(er.message); } return; }
     if (act === "add") { modal(a.dataset.k); return; } if (act === "rename") { rename(); return; }
-    if (act === "verify") { try { await fetch("/api/system/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast("Re-verifying"); setTimeout(refresh, 1500); } catch {} return; }
+    if (act === "verify") { try { await gfetch("/api/system/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast("Re-verifying"); setTimeout(refresh, 1500); } catch {} return; }
+    if (act === "whold") {
+      e.stopPropagation();
+      a.disabled = true;
+      try {
+        const r = await gfetch(`/r/${RID}/api/witness/decide`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({session: a.dataset.ses || "", decision: a.dataset.dec})});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || j.message || "Could not update hold");
+        toast(a.dataset.dec === "release" ? "Hold lifted" : "Write denied");
+        await pull();
+      } catch (er) {
+        const m = String(er && (er.message || er));
+        toast(/NotAllowed|cancel|abort/i.test(m) ? "Passkey confirmation was cancelled" : m);
+        a.disabled = false;
+      }
+      return;
+    }
   }
   if (s) { const [t, ...r] = s.dataset.sel.split(":"); openSel(t, r.join(":")); }
   else if (e.target.closest(".panel") && !focus && moved < 6) { drill(e.target.closest(".panel").dataset.p); }
@@ -486,10 +679,19 @@ async function refresh() {
   } catch (e) { backoff = Math.min(backoff + 1, 5); if (!M) { $("#world").innerHTML = `<div style="position:absolute;left:900px;top:600px;width:700px;font:700 28px var(--mono)">${esc(e.message)}<p class="mut" style="font:14px var(--sans)">The room isn't answering yet. Retrying…</p></div>`; } }
   clearTimeout(timer); timer = setTimeout(refresh, 3000 * (1 + backoff));
 }
+const pull = refresh;
+$("#roomsbtn").onclick = () => { if (window.PBShell && PBShell.toggleDrawer) PBShell.toggleDrawer(); else location.href = "/"; };
+$("#palbtn").onclick = () => openCanvasPalette();
+$("#setbtn").onclick = () => window.PBTheme && PBTheme.open();
+$("#switcher").innerHTML = window.PBShell && PBShell.switcherHtml ? PBShell.switcherHtml(RID, "canvas") : `<a class="btn sm" href="/r/${esc(RID)}/">Cockpit</a>`;
+if (window.PBShell) {
+  PBShell.mountDrawer?.(RID);
+  PBShell.start?.();
+  fetch("/api/rooms", {credentials: "same-origin"}).then(r => r.ok ? r.json() : null).then(d => { if (d && d.rooms) PBShell.sync?.(d.rooms, RID); }).catch(() => {});
+}
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 setTimeout(() => $("#hint").style.opacity = ".0", 12000);
 apply(false); refresh();
 </script>
-<script src="/auth.js"></script>
 </body>
 </html>

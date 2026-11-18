@@ -22,27 +22,29 @@ BIN=$(command -v playbox) || { echo "playbox is not on PATH" >&2; exit 1; }
 LABEL="com.playbox.host.$NAME"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/playbox-host-$NAME.log"
+xml_esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 STATE="$HOME/.playbox-rooms/$NAME"
 for a in "$@"; do [ "$a" = "--state" ] && STATE=""; done      # the caller chose one
 ARGS="<string>up</string>"
-[ -n "$STATE" ] && ARGS="$ARGS<string>--state</string><string>$STATE</string>"
-for a in "$@"; do ARGS="$ARGS<string>$a</string>"; done
+[ -n "$STATE" ] && ARGS="$ARGS<string>--state</string><string>$(xml_esc "$STATE")</string>"
+for a in "$@"; do ARGS="$ARGS<string>$(xml_esc "$a")</string>"; done
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+(umask 077 && : >> "$LOG") && chmod 600 "$LOG"
 [ -n "$STATE" ] && mkdir -p "$STATE" && chmod 700 "$STATE"
 cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>$BIN</string>$ARGS</array>
+  <key>Label</key><string>$(xml_esc "$LABEL")</string>
+  <key>ProgramArguments</key><array><string>$(xml_esc "$BIN")</string>$ARGS</array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>$(xml_esc "$HOME")/.cargo/bin:$(xml_esc "$HOME")/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>$LOG</string>
-  <key>StandardErrorPath</key><string>$LOG</string>
+  <key>StandardOutPath</key><string>$(xml_esc "$LOG")</string>
+  <key>StandardErrorPath</key><string>$(xml_esc "$LOG")</string>
 </dict></plist>
 PL
 chmod 600 "$PLIST"

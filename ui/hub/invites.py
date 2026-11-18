@@ -59,7 +59,9 @@ class Invites:
 
     def public(self, iid, members=None):
         """What the share page may show anyone holding the id: nothing about members, nothing secret."""
-        rec = self.store.d["invites"].get(iid)
+        with self.store.lock:
+            rec = self.store.d["invites"].get(iid)
+            rec = dict(rec) if rec else None
         if not rec:
             return None
         st = self.state(rec, members=members)
@@ -72,7 +74,9 @@ class Invites:
         now = time.time()
         members = {d["id"]: d.get("members", 0) for d in room_digests}
         out = []
-        for rec in sorted(self.store.d["invites"].values(), key=lambda r: -r["created"]):
+        with self.store.lock:
+            recs = sorted((dict(r) for r in self.store.d["invites"].values()), key=lambda r: -r["created"])
+        for rec in recs:
             joined = max(0, members.get(rec["room"], rec["members_at"]) - rec["members_at"])
             out.append({**{k: rec[k] for k in ("id", "room", "label", "created", "expires", "grant", "uses", "guest")}, "state": self.state(rec, now, members.get(rec["room"])), "joined": joined, "approve": rec.get("approve", False)})
         return out

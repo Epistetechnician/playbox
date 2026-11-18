@@ -56,11 +56,14 @@ class Mcp:
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
     def _read(self):
-        for line in self.p.stdout:
-            try:
-                self.q.put(json.loads(line))
-            except ValueError:
-                pass
+        try:
+            for line in self.p.stdout:
+                try:
+                    self.q.put(json.loads(line))
+                except ValueError:
+                    pass
+        finally:
+            self.q.put(None)
 
     def _send(self, msg):
         self.p.stdin.write(json.dumps(msg) + "\n")
@@ -75,13 +78,19 @@ class Mcp:
                 m = self.q.get(timeout=max(0.01, end - time.time()))
             except queue.Empty:
                 raise TimeoutError(f"{method} got no reply in {timeout}s")
+            if m is None:
+                self.q.put(None)
+                raise RuntimeError(f"playbox-mcp exited while waiting for {method}")
             if m.get("id") == self.n:
                 return m
             self.pushed.append(m)
 
     def tool(self, name, /, **args):
         """(is_error, parsed JSON or text)."""
-        r = self.rpc("tools/call", {"name": name, "arguments": args})["result"]
+        resp = self.rpc("tools/call", {"name": name, "arguments": args})
+        if "error" in resp:
+            return True, resp["error"]
+        r = resp["result"]
         text = (r.get("content") or [{}])[0].get("text", "")
         try:
             body = json.loads(text)
@@ -106,9 +115,13 @@ class Mcp:
                 if pred(m):
                     return self.pushed.pop(i)
             try:
-                self.pushed.append(self.q.get(timeout=max(0.01, end - time.time())))
+                nxt = self.q.get(timeout=max(0.01, end - time.time()))
             except queue.Empty:
                 return None
+            if nxt is None:
+                self.q.put(None)
+                return None
+            self.pushed.append(nxt)
 
     def close(self):
         try:
@@ -143,14 +156,14 @@ class Ctx:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
-def room(ctx: Ctx, guests=1, old_host=False, old_guests=False, **create):
+def room(ctx: Ctx, guests=1, old_host=False, old_guests=False, prefix="", **create):
     """A host sidecar with a room and `guests` joined guest sidecars. Returns (host, [guest...], created).
     `old_host` / `old_guests` use the binaries in PLAYBOX_OLD_BIN (a previous release) for that side."""
-    host = ctx.mcp("host", old=old_host)
-    created = host.ok("playbox_create", transport="local", name="conf", uses=guests, **create)
+    host = ctx.mcp(f"{prefix}host", old=old_host)
+    created = host.ok("playbox_create", transport="local", name=f"{prefix}conf", uses=guests, **create)
     out = []
     for i in range(guests):
-        g = ctx.mcp(f"guest{i}", old=old_guests)
-        g.ok("playbox_join", link=created["link"], workspace=str(ctx.dir(f"ws{i}")))
+        g = ctx.mcp(f"{prefix}guest{i}", old=old_guests)
+        g.ok("playbox_join", link=created["link"], workspace=str(ctx.dir(f"{prefix}ws{i}")))
         out.append(g)
     return host, out, created

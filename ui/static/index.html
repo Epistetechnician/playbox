@@ -41,6 +41,19 @@ h2{font:600 11px/1.2 var(--mono);letter-spacing:.12em;text-transform:uppercase;c
 a{color:var(--ink)}
 .mono{font-family:var(--mono);font-size:12.5px}
 .mut{color:var(--mut)}
+.lbl{font:600 10.5px/1.2 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--mut)}
+.iconbtn{width:28px;height:28px;border:1px solid var(--line-2);background:var(--panel);display:grid;place-items:center;cursor:pointer;color:var(--ink-2);border-radius:var(--r);padding:0;flex:none}
+.iconbtn:hover{border-color:var(--edge);color:var(--ink)}
+.iconbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:square;stroke-linejoin:miter}
+.rail-tools{display:flex;align-items:center;gap:6px;padding:0 6px 10px;flex-wrap:wrap}
+.top-tools{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:8px}
+.msheet{display:grid;gap:8px;margin-top:12px}
+.msheet button,.msheet a{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 14px;border:1px solid var(--line-2);background:var(--field);border-radius:var(--r);cursor:pointer;font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;text-align:left;text-decoration:none;color:var(--ink)}
+.msheet button:hover,.msheet a:hover,.msheet [aria-current=page]{border-color:var(--edge);background:var(--panel-2)}
+.msheet [aria-current=page]{box-shadow:inset 3px 0 0 var(--sig)}
+.msheet svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:square;flex:none}
+.msheet small{margin-left:auto;color:var(--mut);font-weight:500;letter-spacing:.04em}
+@media (max-width:520px){#pill span:last-child{display:none}.top-tools{margin-right:4px}}
 :focus-visible{outline:2px solid var(--sig);outline-offset:2px}
 [hidden]{display:none!important}
 
@@ -68,13 +81,13 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 @media (min-width:900px){
   .app{grid-template-columns:208px minmax(0,1fr)}
   .rail{display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;padding:18px 16px;border-right:1px solid var(--edge)}
-  .rail .brand{padding:4px 10px 18px}
+  .rail .brand{padding:4px 10px 10px}
   .rail .nav{flex-direction:row;justify-content:flex-start;gap:10px;min-height:36px;padding:0 10px;border:0;font-size:11px;box-shadow:none}
   .rail .nav:hover{background:var(--panel-2);color:var(--ink)}
   .rail .nav[aria-current=page]{background:var(--ink);color:var(--bg)}
   .rail .nav .badge{position:static;margin-left:auto}
   .rail .foot{margin-top:auto;font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);padding:0 10px}
-  .tabbar,.top .brand{display:none}
+  .tabbar,.top .brand,.top-tools{display:none!important}
   .top{justify-content:flex-end;margin:0 -32px 22px;padding:0 32px}
   main{padding-bottom:48px;max-width:none;margin:0;padding-left:32px;padding-right:32px}
   .content{max-width:760px}
@@ -116,7 +129,7 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 /* controls */
 label{display:block;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin:14px 0 6px}
 label:first-child{margin-top:0}
-input[type=text],textarea,select,input[type=number]{width:100%;background:var(--field);border:1px solid var(--line-2);border-radius:var(--r);padding:10px 11px;font-size:16px}
+input[type=text],input[type=search],textarea,select,input[type=number]{width:100%;background:var(--field);border:1px solid var(--line-2);border-radius:var(--r);padding:10px 11px;font-size:16px}
 textarea{resize:vertical;min-height:84px}
 textarea.mono,input.mono{font-size:14px}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-offset:0;border-color:var(--edge)}
@@ -145,6 +158,10 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-off
 .msg.me{margin-left:auto;background:var(--ink);border-color:var(--ink);color:var(--bg)}
 .msg.me .who{color:inherit;opacity:.7}
 .msg.peer{border-left:4px solid var(--sig)}
+.msg-body{line-height:1.5}
+.msg pre.pbm-code{margin:6px 0;padding:8px 10px;font-size:12px;color:var(--ink)}
+.msg code{font:12px var(--mono);padding:1px 4px;background:var(--field);border:1px solid var(--line-2);color:var(--ink)}
+.msg pre code{padding:0;background:none;border:0;color:inherit}
 .sys{text-align:center;font:500 11px var(--mono);color:var(--mut)}
 .composer{display:flex;gap:8px;position:sticky;bottom:calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));padding:10px;background:var(--panel);border:1px solid var(--edge);box-shadow:var(--hard)}
 @media (min-width:900px){.composer{bottom:16px}}
@@ -201,11 +218,13 @@ dialog h2{color:var(--ink)}
 <link rel="stylesheet" href="/theme.css">
 <script src="/themes.js"></script>
 <script src="/shell.js" onerror="void 0"></script>
+<script src="/qr.js" onerror="void 0"></script>
 </head>
 <body>
 <div class="app">
   <aside class="rail" aria-label="Primary">
     <div class="brand"><b></b> <span class="bk">Playbox</span></div>
+    <div class="rail-tools" id="railtools" hidden></div>
     <div id="railnav"></div>
     <div id="railrooms" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
     <div class="foot" id="railfoot"></div>
@@ -214,6 +233,7 @@ dialog h2{color:var(--ink)}
   <main>
     <header class="top">
       <div class="brand"><b></b> <span class="bk">Playbox</span></div>
+      <div class="top-tools" id="toptools" hidden></div>
       <span class="pill" id="pill"><span class="dot"></span><span>Connecting…</span></span>
     </header>
     <div class="content"><div class="hold" id="holdbar" role="alert"></div><section id="view" aria-live="polite"></section></div>
@@ -249,14 +269,21 @@ const ICONS = {
   timeline: '<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/>',
   harnesses: '<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="8.5" y="14" width="7" height="7" rx="1.5"/><path d="M10 7.5h4M12 11v3"/>',
   proof: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/>',
+  canvas: '<rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="6"/><rect x="13" y="11" width="8" height="10"/><rect x="3" y="13" width="8" height="8"/>',
+  more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  rooms: '<circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><circle cx="19" cy="9" r="1.6"/><circle cx="6" cy="16.5" r="1.6"/>',
 };
 const TABS = [["room", "Room"], ["timeline", "Timeline"], ["notes", "Notes"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["harnesses", "Harnesses"], ["proof", "Proof"]];
 
-const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
+const S = {tab: "room", status: null, ok: false, feed: [], feedQ: "", seq: 0, invite: null, hostArgs: {}, running: false, runInfo: null, runTimer: null, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
+const hasSelectionIn = el => { const sel = window.getSelection?.(); return !!(el && sel && !sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode)); };
 
 /* ---------- api ---------- */
 const BASE = (location.pathname.match(/^\/r\/[^/]+\//) || ["/"])[0];     // under the hub a room lives at /r/<id>/
 const HUB = BASE !== "/";
+const RID = HUB ? BASE.split("/")[2] : "";
 let ROOM = "";       // the room's name, from the hub (a standalone cockpit has none)
 const qn = () => ROOM ? `“${esc(ROOM)}”` : "";
 const gfetch = (u, i) => typeof PB !== "undefined" ? PB.guarded(u, i) : fetch(u, i);
@@ -289,17 +316,86 @@ function paintPill() {
   const m = mode();
   const txt = !S.ok ? "Offline" : m === "none" ? "No room" : m === "guest" ? "In a room" : `Hosting · ${members().length} member${members().length === 1 ? "" : "s"}`;
   const cls = m === "none" || !S.ok ? "" : m === "guest" ? "on" : "host";
-  $("#pill").innerHTML = `<span class="dot ${cls}"></span><span>${esc(txt)}</span>`;
+  const pill = $("#pill"); pill.title = txt;
+  pill.innerHTML = `<span class="dot ${cls}"></span><span>${esc(txt)}</span>`;
   $("#railfoot").innerHTML = `<span class="dot ${cls}" style="display:inline-block;margin-right:7px"></span>${esc(txt)}`;
 }
 
+function cockpitPaletteItems() {
+  return [["room", "Room"], ["feed", "Feed"], ["work", "Work"], ["notes", "Notes"], ["timeline", "Timeline"], ["harnesses", "Harnesses"], ["people", "People"], ["proof", "Proof"]].map(([id, label]) => ({
+    label: `Cockpit: ${label}`,
+    t: `Cockpit: ${label}`,
+    title: `Cockpit: ${label}`,
+    sub: ROOM ? `${ROOM} tab` : "Cockpit tab",
+    s: ROOM ? `${ROOM} tab` : "Cockpit tab",
+    hint: "Tab",
+    act: () => show(id),
+    run: () => show(id),
+    action: () => show(id),
+  }));
+}
+function openCockpitPalette() {
+  if (window.PBShell && PBShell.openPalette) PBShell.openPalette(cockpitPaletteItems());
+}
+window.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && window.PBShell && PBShell.openPalette) {
+    e.preventDefault();
+    PBShell.openPalette(cockpitPaletteItems());
+    return;
+  }
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && S.tab === "feed" && !document.querySelector("dialog[open]") && !e.target.matches?.("input,textarea,select,[contenteditable=true]")) {
+    const fq = $("#feedq");
+    if (fq) { e.preventDefault(); fq.focus(); fq.select(); }
+  }
+});
+
+function switcherMarkup() {
+  if (window.PBShell && PBShell.switcherHtml) return PBShell.switcherHtml(RID, "cockpit");
+  return `<span class="seg" style="min-height:28px"><a href="${BASE}canvas" style="display:inline-flex;align-items:center;padding:0 9px;min-height:28px;font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;text-decoration:none;color:var(--mut)">Canvas</a><span style="display:inline-flex;align-items:center;padding:0 9px;min-height:28px;font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--bg)">Cockpit</span></span>`;
+}
+function paintRoomTools() {
+  if (!HUB) return;
+  const tools = `<span style="flex:1;display:flex;align-items:center">${switcherMarkup()}</span><button type="button" class="iconbtn" data-act="palette" title="Search / Jump (⌘K)" aria-label="Search or jump"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.search}</svg></button><button type="button" class="iconbtn" data-act="settings" title="Settings (⌘,)" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.settings}</svg></button>`;
+  const rt = $("#railtools"), tt = $("#toptools");
+  if (rt) { rt.hidden = false; rt.innerHTML = tools; }
+  if (tt) { tt.hidden = false; tt.innerHTML = tools; }
+}
+
 function paintNav() {
-  const html = TABS.map(([id, label]) => {
+  const railHtml = TABS.map(([id, label]) => {
     const badge = id === "feed" && S.unread ? `<span class="badge" aria-label="${S.unread} new">${S.unread > 9 ? "9+" : S.unread}</span>` : "";
-    return `<button class="nav" data-tab="${id}" ${S.tab === id ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[id === "people" ? "people" : id]}</svg><span>${label}</span>${badge}</button>`;
-  }).join("") + (BASE !== "/" ? `<a class="nav" href="${BASE}canvas" style="text-decoration:none"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.room}</svg><span>Canvas</span></a>` : "");
-  $("#tabbar").innerHTML = html;
-  $("#railnav").innerHTML = html;
+    return `<button class="nav" data-tab="${id}" ${S.tab === id ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[id]}</svg><span>${label}</span>${badge}</button>`;
+  }).join("");
+  const unreadBadge = S.unread ? `<span class="badge" aria-label="${S.unread} new">${S.unread > 9 ? "9+" : S.unread}</span>` : "";
+  const moreActive = ["room", "timeline", "people", "harnesses", "proof"].includes(S.tab) && (HUB || S.tab !== "room");
+  const fourth = HUB
+    ? `<a class="nav" href="${BASE}canvas" style="text-decoration:none"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.canvas}</svg><span>Canvas</span></a>`
+    : `<button class="nav" data-tab="room" ${S.tab === "room" ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.room}</svg><span>Room</span></button>`;
+  const mobileHtml = `<button class="nav" data-tab="feed" ${S.tab === "feed" ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.feed}</svg><span>Feed</span>${unreadBadge}</button>`
+    + `<button class="nav" data-tab="work" ${S.tab === "work" ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.work}</svg><span>Work</span></button>`
+    + `<button class="nav" data-tab="notes" ${S.tab === "notes" ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.notes}</svg><span>Notes</span></button>`
+    + fourth
+    + `<button class="nav" data-act="moretabs" ${moreActive ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.more}</svg><span>More</span></button>`;
+  $("#tabbar").innerHTML = mobileHtml;
+  $("#railnav").innerHTML = railHtml;
+}
+
+function openMoreTabs() {
+  const d = $("#dlg"); d.onclose = null;
+  const extraTabs = [...(HUB ? [["room", "Room"]] : []), ["timeline", "Timeline"], ["harnesses", "Harnesses"], ["people", "People"], ["proof", "Proof"]];
+  d.innerHTML = `<div><div class="row" style="justify-content:space-between"><h2 style="color:var(--ink);font-size:13px">More in ${esc(ROOM || "Room")}</h2><button type="button" class="btn sm" data-mclose>Close</button></div>
+    <div class="msheet">
+      ${extraTabs.map(([id, label]) => `<button type="button" data-mtab="${id}" ${S.tab === id ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[id]}</svg><span>${label}</span></button>`).join("")}
+      ${HUB ? `<a href="/"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.rooms}</svg><span>All rooms</span><small>Hub</small></a>` : ""}
+      ${window.PBTheme ? `<button type="button" data-mset><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.settings}</svg><span>Settings</span><small>⌘,</small></button>` : ""}
+    </div></div>`;
+  d.onclick = ev => {
+    if (ev.target === d || ev.target.closest("[data-mclose]")) { d.close(); return; }
+    const b = ev.target.closest("[data-mtab]");
+    if (b) { d.close(); show(b.dataset.mtab); return; }
+    if (ev.target.closest("[data-mset]")) { d.close(); window.PBTheme && PBTheme.open(); }
+  };
+  d.showModal();
 }
 
 
@@ -405,9 +501,11 @@ function peopleInsights(ms) {
 }
 function paintInsights() {
   const el = $("#insights");
-  if (!el || document.activeElement?.closest?.("#insights details details")) return;
+  if (!el || document.activeElement?.closest?.("#insights details details") || hasSelectionIn(el)) return;
+  const openIns = new Set([...el.querySelectorAll("details[open][data-ins]")].map(d => d.dataset.ins));
   const open = new Set([...el.querySelectorAll(".steps details[open]")].map(d => d.querySelector("summary .x")?.textContent));
   el.outerHTML = insights() || '<div id="insights"></div>';
+  if (openIns.size) document.querySelectorAll("#insights details[data-ins]").forEach(d => { if (openIns.has(d.dataset.ins)) d.open = true; });
   if (open.size) document.querySelectorAll("#insights .steps details").forEach(d => { if (open.has(d.querySelector("summary .x")?.textContent)) d.open = true; });
 }
 document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
@@ -484,8 +582,8 @@ document.addEventListener("click", e => {
 });
 async function loadNotes() {
   try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); const m = r.ok ? await r.json() : {}; S.notes = m.artifacts || []; S.cm = {n: (m.comments || []).length, ev: m.event_comments || {}}; } catch { S.notes = S.notes || []; }
-  if (S.tab === "notes" && !document.activeElement?.closest?.(".nt")) show("notes");
-  else if (S.tab === "timeline" && !document.activeElement?.closest?.(".cmx-f")) show("timeline");
+  if (S.tab === "notes" && !document.activeElement?.closest?.(".nt")) show("notes", true);
+  else if (S.tab === "timeline" && !document.activeElement?.closest?.(".cmx-f")) show("timeline", true);
 }
 /* The open note, rendered with the strict markdown module: maths, code colours and links load on demand from the hub's own files. */
 function paintNoteDoc() {
@@ -495,7 +593,7 @@ function paintNoteDoc() {
   if (window.PBMd) PBMd.into(el, src); else el.textContent = src;
 }
 function hlPatch() {
-  const pre = $("#patchpre"); if (!pre || !window.PBMd || pre.dataset.hl) return;
+  const pre = $("#patchpre"); if (!pre || pre.closest(".diff-file") || !window.PBMd || pre.dataset.hl) return;
   pre.dataset.hl = "1";
   PBMd.highlight(pre.textContent, "diff").then(h => { if (pre.isConnected && h && h.includes("shiki")) { pre.outerHTML = h.replace("<pre ", '<pre id="patchpre-hl" '); } });
 }
@@ -526,10 +624,10 @@ document.addEventListener("input", e => { if (e.target.id === "nq") { S.nq = e.t
 setInterval(() => { if (S.tab === "notes" && !document.hidden) loadNotes(); }, 15000);
 
 /* ---------- Harnesses: who is in the room, grouped by the tool they run in ---------- */
-async function loadHarnesses() {
+async function loadHarnesses(soft) {
   try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); S.hx = r.ok ? await r.json() : {members: []}; } catch { S.hx = S.hx || {members: []}; }
   if (HUB && !S.local) { try { const r = await fetch("/api/agents", {credentials: "same-origin"}); if (r.ok) S.local = (await r.json()).agents || []; } catch {} }
-  if (S.tab === "harnesses") show("harnesses");
+  if (S.tab === "harnesses") show("harnesses", !!soft);
 }
 const HX_NONE = "Unidentified";
 function launchChip(m) {
@@ -613,7 +711,7 @@ document.addEventListener("click", async e => {
   } catch (er) { toast(String(er.message || er), true); }
   await loadHarnesses();
 });
-setInterval(() => { if (S.tab === "harnesses" && !document.hidden) loadHarnesses(); }, 15000);
+setInterval(() => { if (S.tab === "harnesses" && !document.hidden) loadHarnesses(true); }, 15000);
 
 /* ---------- Work and Proof headers ---------- */
 function stripHtml(title, sub, nums, meta) {
@@ -634,14 +732,49 @@ function proofHeader(v, t) {
 
 /* ---------- views ---------- */
 function rawInvite() {
+  const qr = S.invite && window.PBQR ? PBQR.svg(S.invite, 156) : "";
   return `${S.invite ? `<div class="link-box mono" id="invitebox">${esc(S.invite)}</div>
       <div class="row" style="margin-top:12px">
         <button class="btn sm" data-act="copy-invite">Copy</button>
         ${navigator.share ? '<button class="btn sm" data-act="share-invite">Share</button>' : ""}
         <button class="btn sm" data-act="save-invite">Save as file</button></div>
+      ${qr ? `<details style="margin-top:10px"><summary class="lbl" style="cursor:pointer">QR code</summary><div class="qrbox" style="display:flex;justify-content:center;padding:10px;background:#fff;border:1px solid var(--line-2);margin-top:8px;width:fit-content">${qr}</div></details>` : ""}
       <p class="mut" style="font-size:13px;margin:12px 0 0">Single use. Agents join most reliably from a file: ask them to use <span class="mono">link_file</span>.</p>`
       : `<p class="mut" style="margin-top:0">Each link works once. Make one per agent or person.</p>`}
     <p style="margin:12px 0 0" class="row"><button class="btn${HUB ? "" : " primary"}" data-act="invite">${S.invite ? "New link" : "Create invite link"}</button></p>`;
+}
+function repoPicksHtml() {
+  return (S.repos || []).slice(0, 6).map(r => `<button type="button" class="btn sm" data-act="pickrepo" data-path="${esc(r.path)}">${esc(r.name)}</button>`).join("");
+}
+async function ensureRepos() {
+  if (S.repos !== undefined) return;
+  S.repos = [];
+  try {
+    const r = await gfetch("/api/repos");
+    if (r.ok) { const j = await r.json(); S.repos = j.repos || []; }
+  } catch {}
+  const dl = $("#repolist"), pk = $("#repopicks");
+  if (dl) dl.innerHTML = S.repos.map(x => `<option value="${esc(x.path)}">`).join("");
+  if (pk) pk.innerHTML = repoPicksHtml();
+}
+function renderRunLive() {
+  const info = S.runInfo;
+  if (!info) return "";
+  const sec = ((Date.now() - info.startedAt) / 1000).toFixed(1);
+  return `<div class="card" style="border-color:var(--sig);border-left-width:4px;margin-bottom:14px">
+    <div class="row" style="margin-bottom:10px"><span class="spin" style="border-top-color:var(--sig)"></span><b class="mono" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--sig-ink)">Running in sandbox · <span data-run-elapsed>${sec}s</span></b>${info.label ? `<span class="chip warn">${esc(info.label)}</span>` : ""}</div>
+    <pre class="mono" style="max-height:140px">${esc(info.cmd)}</pre>
+    <p class="mut" style="font-size:12.5px;margin:10px 0 0">Output and git diff appear here as soon as the sandbox finishes.</p>
+  </div>`;
+}
+function paintRunLive() {
+  const el = $("#runlive"); if (el) el.innerHTML = renderRunLive();
+  const wh = $("#workhdr"); if (wh) wh.innerHTML = workHeader(S.lastWork);
+}
+function tickRunLive() {
+  if (!S.runInfo) return;
+  const s = $("#runlive [data-run-elapsed]");
+  if (s) s.textContent = ((Date.now() - S.runInfo.startedAt) / 1000).toFixed(1) + "s";
 }
 const VIEWS = {
   harnesses() { return harnessesView(); },
@@ -651,13 +784,16 @@ const VIEWS = {
     const m = mode();
     const parts = [roomHeader()];
     if (m === "none") {
+      ensureRepos();
       parts.push(`<div class="card hero"><span class="glyph"></span><h1>${ROOM ? esc(ROOM) : "Playbox"}</h1>
         <p>A private room where your agent and other people's agents build together, under limits you set, with a record nobody can quietly edit.</p></div>
       <div class="grid2">
         <div class="card"><h2>Host a room</h2>
           <div class="preset" role="group" aria-label="Presets">${PRESETS.map((x, i) => `<button type="button" data-act="preset" data-i="${i}">${esc(x.t)}</button>`).join("")}</div>
           <label for="repo">Git repository (absolute path, optional)</label>
-          <input type="text" id="repo" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <input type="text" id="repo" list="repolist" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <datalist id="repolist">${(S.repos || []).map(r => `<option value="${esc(r.path)}">`).join("")}</datalist>
+          <div id="repopicks" class="row" style="gap:6px;margin-top:6px">${repoPicksHtml()}</div>
           <p class="mut" style="font-size:12.5px;margin:6px 0 0">Leave it empty for a room to talk and share notes in. Add one so members can pull and push code.</p>
           <label>Reach</label>
           <div class="seg" role="group" aria-label="Reach"><button type="button" data-reach="local" aria-pressed="true">Same network</button><button type="button" data-reach="iroh" aria-pressed="false">Anywhere</button></div>
@@ -701,6 +837,7 @@ const VIEWS = {
   feed() {
     if (mode() === "none") return emptyCard("Join or host a room to see its feed.");
     return `<div class="legend"><span><i style="background:var(--ink)"></i>You</span><span><i style="background:var(--sig)"></i>Other members: untrusted text, the witness watches it</span></div>
+      <div class="row" style="gap:8px;margin:0 0 10px"><input type="search" id="feedq" value="${esc(S.feedQ || "")}" placeholder="Filter messages or @member…  (/)" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;width:auto;margin:0;padding:6px 10px;font-size:12.5px"><span class="mut mono" id="feedqmeta" style="font-size:11.5px"></span><button type="button" class="btn sm" id="feedqclear" ${S.feedQ ? "" : "hidden"}>Clear</button></div>
       <div class="feed" id="feedlist"></div>
       <div class="quick" role="group" aria-label="Quick replies">${QUICK.map(q => `<button type="button" data-act="quick" data-text="${esc(q)}">${esc(q)}</button>`).join("")}</div>
       <div class="tags" id="tags" role="group" aria-label="Tag someone"></div>
@@ -713,7 +850,7 @@ const VIEWS = {
       ? "Members run tasks on your machine from their own Playbox. To run one yourself, join a room as a guest."
       : "Join a room to pull code and run sandboxed tasks.");
     const w = S.lastWork;
-    return workHeader(w) + `<div class="wk"><div class="card"><h2>Sync code</h2>
+    return `<div id="workhdr">${workHeader(w)}</div><div class="wk"><div class="card"><h2>Sync code</h2>
         <label for="ref">Branch</label><input type="text" id="ref" value="main" class="mono" autocapitalize="off" spellcheck="false">
         <label class="switch"><input type="checkbox" id="checkout" checked><span>Check it out in my folder</span></label>
         <p class="row" style="margin:14px 0 0"><button class="btn" data-act="pull">Pull</button><button class="btn" data-act="push">Push my branch</button></p>
@@ -728,7 +865,7 @@ const VIEWS = {
         <label class="switch"><input type="checkbox" id="net"><span>Allow network <span class="mut">(if your grant permits)</span></span></label>
         <label class="switch"><input type="checkbox" id="apply" checked><span>Apply the resulting patch to my folder</span></label>
         <p style="margin:14px 0 0"><button class="btn primary block" data-act="run" id="runbtn">Run in sandbox</button></p></div>
-      </div><div id="result">${w ? renderResult(w) : ""}</div>`;
+      </div><div id="runlive">${renderRunLive()}</div><div id="result">${w ? renderResult(w) : ""}</div>`;
   },
 
   people() {
@@ -752,7 +889,7 @@ const VIEWS = {
         <p class="mut" style="margin-top:0">Flips one byte in a <b>copy</b> of the log and verifies the copy. Your real log is never touched.</p>
         <p class="row" style="margin:0"><button class="btn danger" data-act="tamper" ${log ? "" : "disabled"}>Flip a byte</button></p>
         <div id="tres">${t ? renderTamper(t) : ""}</div></div>
-      <div class="card"><h2>Witness holds</h2>${renderHolds()}</div>
+      <div class="card" id="holds-card"><h2>Witness holds</h2>${renderHolds()}</div>
       <div class="card"><h2>Check any log</h2>
         <label for="vpath">Path to a history log</label><input type="text" id="vpath" class="mono" placeholder="~/.playbox/history/hermes-session.log" spellcheck="false" autocapitalize="off">
         <p style="margin:12px 0 0"><button class="btn" data-act="verify-path">Verify</button></p>
@@ -788,9 +925,14 @@ function renderTamper(t) {
 function renderHolds() {
   const ev = S.holds.slice(-8).reverse();
   if (!ev.length) return `<p class="mut" style="margin:0">No holds yet. When the witness plugin pauses your Hermes agent after it reads another member's text, it shows here. Only the tool name and where the text came from are kept, never the text.</p>`;
-  return ev.map(e => `<div class="evt"><time>${esc(hhmm(e.ts))}</time>
-      <span class="chip ${e.kind === "held" ? "warn" : "ok"}">${e.kind === "held" ? "held" : "released"}</span>
-      <span class="grow">${e.kind === "held" ? `<span class="mono">${esc(e.tool || "")}</span> <span class="mut">after ${esc(originText(e.origin))}</span>` : `<span class="mut">your next message lifted it</span>`}</span></div>`).join("");
+  return ev.map(e => {
+    const chip = e.kind === "held" ? '<span class="chip warn">held</span>' : e.kind === "denied" ? '<span class="chip bad">denied</span>' : '<span class="chip ok">released</span>';
+    const desc = e.kind === "held" ? `<span class="mono">${esc(e.tool || "")}</span> <span class="mut">after ${esc(originText(e.origin))}</span>`
+      : e.kind === "denied" ? `<span class="mut">you denied it from Playbox</span>`
+      : e.by === "owner" ? `<span class="mut">you lifted the hold in Playbox</span>`
+      : `<span class="mut">your next message lifted it</span>`;
+    return `<div class="evt"><time>${esc(hhmm(e.ts))}</time>${chip}<span class="grow">${desc}</span></div>`;
+  }).join("");
 }
 
 function renderVerify(v) {
@@ -802,22 +944,99 @@ function renderVerify(v) {
     ${v.error ? `<pre style="margin-top:10px">${esc(v.error)}</pre>` : ""}`;
 }
 
-function renderResult(w) {
-  const lines = (w.patch || "").split("\n").map(l => {
-    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+function colorDiffLines(lines) {
+  return lines.map(l => {
+    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") || l.startsWith("@@") || l.startsWith("index ") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
     return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
   }).join("\n");
+}
+function parseDiffSections(src) {
+  const lines = src.split("\n"), secs = [];
+  let cur = null, pre = [];
+  for (const l of lines) {
+    if (l.startsWith("diff --git ")) {
+      if (cur) secs.push(cur);
+      cur = pre.length ? [...pre, l] : [l];
+      pre = [];
+    } else if (cur) cur.push(l);
+    else if (l) pre.push(l);
+  }
+  if (cur) secs.push(cur);
+  return secs.map(sec => {
+    const hdr = sec.find(l => l.startsWith("diff --git ")) || sec[0] || "";
+    const plus = sec.find(l => l.startsWith("+++ b/"));
+    const minus = sec.find(l => l.startsWith("--- a/"));
+    const m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(hdr);
+    const filePath = plus ? plus.slice(6) : m ? m[2] : minus ? minus.slice(6) : hdr.replace(/^diff --git\s+/, "");
+    let adds = 0, dels = 0;
+    for (const l of sec) {
+      if (l.startsWith("+") && !l.startsWith("+++")) adds++;
+      else if (l.startsWith("-") && !l.startsWith("---")) dels++;
+    }
+    return {filePath, adds, dels, lines: sec};
+  });
+}
+function renderPatchView(patchText, patchBytes, truncated) {
+  const src = String(patchText || "").replace(/\r\n?/g, "\n");
+  S._patchRaw = patchText || "";
+  const bytes = `${patchBytes ?? (patchText || "").length} bytes${truncated ? " (truncated)" : ""}`;
+  if (/(?:^|\n)diff --git /.test(src)) {
+    const secs = parseDiffSections(src);
+    const totAdds = secs.reduce((a, s) => a + s.adds, 0), totDels = secs.reduce((a, s) => a + s.dels, 0);
+    return `<div class="row" style="justify-content:space-between;margin:14px 0 6px;gap:8px">
+      <span class="row" style="gap:6px"><span class="lbl" style="margin:0">Patch · ${secs.length} file${secs.length === 1 ? "" : "s"}</span><span class="chip ok">+${totAdds}</span><span class="chip bad">-${totDels}</span><span class="mut mono" style="font-size:11.5px">${bytes}</span></span>
+      <button type="button" class="btn sm" data-act="copypatch">Copy patch</button></div>`
+      + secs.map((s, idx) => `<details class="diff-file" id="df-${idx}" ${idx < 5 ? "open" : ""} style="border:1px solid var(--line-2);margin-top:8px;background:var(--field)">
+        <summary class="row" style="cursor:pointer;justify-content:space-between;padding:8px 10px;background:var(--panel-2);user-select:none">
+          <span class="mono" style="font-size:12px;font-weight:600;word-break:break-all">${esc(s.filePath)}</span>
+          <span class="row" style="gap:6px"><span class="chip ok">+${s.adds}</span><span class="chip bad">-${s.dels}</span></span>
+        </summary>
+        <pre${idx === 0 ? ' id="patchpre"' : ""} class="patchpre" style="margin:0;border:0;border-radius:0;border-top:1px solid var(--line-2);max-height:320px;overflow:auto">${colorDiffLines(s.lines)}</pre>
+      </details>`).join("");
+  }
+  const lines = src.split("\n");
+  let adds = 0, dels = 0;
+  for (const l of lines) {
+    if (l.startsWith("+") && !l.startsWith("+++")) adds++;
+    else if (l.startsWith("-") && !l.startsWith("---")) dels++;
+  }
+  return `<div class="row" style="justify-content:space-between;margin:14px 0 6px;gap:8px">
+    <span class="row" style="gap:6px"><span class="lbl" style="margin:0">Patch · ${bytes}</span>${adds || dels ? `<span class="chip ok">+${adds}</span><span class="chip bad">-${dels}</span>` : ""}</span>
+    <button type="button" class="btn sm" data-act="copypatch">Copy patch</button></div>
+    <div class="diff-file"><pre id="patchpre" class="patchpre">${colorDiffLines(lines)}</pre></div>`;
+}
+function renderResult(w) {
   const ok = w.exit_code === 0 && !w.timed_out;
   return `<div class="card"><h2>Result</h2>
     <div class="row"><span class="chip ${ok ? "ok" : "bad"}">${w.timed_out ? "timed out" : "exit " + w.exit_code}</span>
       ${w.runner ? `<span class="chip">${esc(w.runner)}</span>` : ""}${w.patch_applied ? '<span class="chip ok">patch applied</span>' : ""}</div>
     ${w.stdout ? `<label>Output</label><pre>${esc(w.stdout)}</pre>` : ""}
     ${w.stderr ? `<label>Errors</label><pre>${esc(w.stderr)}</pre>` : ""}
-    ${w.patch ? `<label>Patch · ${w.patch_bytes ?? w.patch.length} bytes${w.patch_truncated ? " (truncated)" : ""}</label><pre id="patchpre">${lines}</pre>` : ""}</div>`;
+    ${w.patch ? renderPatchView(w.patch, w.patch_bytes, w.patch_truncated) : ""}</div>`;
 }
 
 /* ---------- feed ---------- */
 const atHtml = t => esc(t).replace(/(^|[\s(])@([\w.\-]{1,40})/g, '$1<span class="at">@$2</span>');
+const fallbackInlineHtml = s => String(s ?? "").split(/(`[^`\n]+`)/g).map(p => p.startsWith("`") && p.endsWith("`") && p.length > 1 ? `<code>${esc(p.slice(1, -1))}</code>` : atHtml(p).replace(/\n/g, "<br>")).join("");
+function fallbackFeedHtml(t) {
+  const src = String(t ?? "").replace(/\r\n?/g, "\n");
+  if (!src.includes("```") && !src.includes("`") && !src.includes("\n")) return atHtml(src);
+  let out = "", last = 0;
+  const re = /```([A-Za-z0-9_.+-]{0,24})[ \t]*\n?([\s\S]*?)```/g;
+  for (let m; (m = re.exec(src)); ) {
+    if (m.index > last) out += fallbackInlineHtml(src.slice(last, m.index));
+    const lang = m[1] || "";
+    out += `<pre class="pbm-code"${lang ? ` data-lang="${esc(lang)}"` : ""}><code>${esc(m[2].replace(/\n$/, ""))}</code></pre>`;
+    last = re.lastIndex;
+  }
+  if (last < src.length) out += fallbackInlineHtml(src.slice(last));
+  return out;
+}
+function upgradeFeedCode(el, items) {
+  if (!el || !window.PBMd || !PBMd.need || !PBMd.upgrade) return;
+  const joinedText = items.filter(i => i.kind === "say" && typeof i.text === "string" && i.text.includes("```")).map(i => i.text).join("\n");
+  if (joinedText) Promise.resolve(PBMd.need(joinedText)).then(() => { const f = $("#feedlist"); if (el === f ? f : el.isConnected) PBMd.upgrade(el === f ? f : el); }).catch(() => {});
+}
 const tagOf = n => String(n).trim().replace(/\s+/g, "-").slice(0, 40);
 function tagTargets() {
   const out = [{tag: "all", label: "Everyone"}], seen = new Set(["all"]);
@@ -847,19 +1066,50 @@ function feedItemHtml(it) {
   const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
   const who = it.name || (fromHost ? "host" : short(it.from)) || "member";
   const tag = fromHost ? "host" : "member";
-  return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div>${atHtml(it.text)}</div>`;
+  const body = window.PBMd && PBMd.feedHtml ? PBMd.feedHtml(it.text) : fallbackFeedHtml(it.text);
+  return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div><div class="msg-body">${body}</div></div>`;
 }
-function paintFeed() {
-  const el = $("#feedlist");
+function feedMatch(it, q) {
+  const needle = q.toLowerCase(), bare = needle.startsWith("@") ? needle.slice(1) : needle;
+  const fromHost = it.from === "host";
+  const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
+  const who = it.name || (fromHost ? "host" : short(it.from)) || "";
+  const hay = `${it.text || ""} ${it.name || ""} ${it.name ? "@" + tagOf(it.name) : ""} ${it.from || ""} ${who} ${me ? "you" : ""}`.toLowerCase();
+  return hay.includes(needle) || (bare && hay.includes(bare));
+}
+function paintFeed(fresh) {
+  const el = $("#feedlist"), rawQ = S.feedQ || "", q = rawQ.trim();
+  const shown = q ? S.feed.filter(it => feedMatch(it, q)) : S.feed;
+  const meta = $("#feedqmeta"), clr = $("#feedqclear");
+  if (meta) meta.textContent = q ? `${shown.length} of ${S.feed.length}` : "";
+  if (clr) clr.hidden = !rawQ;
   if (el) {
     const stick = innerHeight + scrollY > document.documentElement.scrollHeight - 160;
-    el.innerHTML = S.feed.length ? S.feed.map(feedItemHtml).join("") : `<div class="empty">No messages yet. Say hello.</div>`;
-    if (stick) scrollTo({top: document.documentElement.scrollHeight});
+    if (fresh && hasSelectionIn(el)) {
+      const freshShown = q ? fresh.filter(it => feedMatch(it, q)) : fresh;
+      if (freshShown.length) {
+        el.querySelector(".empty")?.remove();
+        const startIdx = el.children.length;
+        el.insertAdjacentHTML("beforeend", freshShown.map(feedItemHtml).join(""));
+        if (window.PBMd && PBMd.need && PBMd.upgrade) {
+          const joinedText = freshShown.filter(i => i.kind === "say" && typeof i.text === "string" && i.text.includes("```")).map(i => i.text).join("\n");
+          if (joinedText) Promise.resolve(PBMd.need(joinedText)).then(() => {
+            if (!el.isConnected) return;
+            for (let i = startIdx; i < el.children.length; i++) PBMd.upgrade(el.children[i]);
+          }).catch(() => {});
+        }
+      }
+    } else {
+      el.innerHTML = shown.length ? shown.map(feedItemHtml).join("") : q ? `<div class="empty">No messages match "${esc(S.feedQ)}".</div>` : `<div class="empty">No messages yet. Say hello.</div>`;
+      upgradeFeedCode(el, shown);
+      if (stick && fresh !== false) scrollTo({top: document.documentElement.scrollHeight});
+    }
   }
   paintTags(); paintPulse();
 }
 function paintPulse() {
   const p = $("#pulse");
+  if (hasSelectionIn(p)) return;
   const last = S.feed.slice(-8);
   p.innerHTML = `<div class="brand" style="margin-bottom:18px"><b></b> Pulse</div>
     <div class="card" style="margin-bottom:14px"><h2>Room</h2>
@@ -867,6 +1117,7 @@ function paintPulse() {
       ${hosting() ? `<div class="stat"><span>Members</span><span>${members().length}</span></div>` : ""}
       ${S.verify ? `<div class="stat"><span>History</span><span class="chip ${S.verify.valid ? "ok" : "bad"}">${S.verify.valid ? "✓ " + S.verify.entries : "✕"}</span></div>` : ""}</div>
     <div class="card"><h2>Latest</h2><div class="feed">${last.length ? last.map(feedItemHtml).join("") : '<div class="empty" style="padding:12px">Quiet.</div>'}</div></div>`;
+  upgradeFeedCode(p, last);
 }
 /* The host cannot be reached: the hub answers from what it saved. Say so, with a way to keep the history. */
 function setOffline(d) {
@@ -897,9 +1148,9 @@ async function pollFeed() {
   S.seq = Math.max(S.seq, ...fresh.map(i => i.seq));
   S.feed.push(...fresh);
   if (S.tab !== "feed") { S.unread += fresh.filter(i => i.kind === "say" && i.from !== myId()).length; paintNav(); }
-  paintFeed();
+  paintFeed(fresh);
   if (S.tab === "room") paintInsights();
-  if (S.tab === "timeline" && !document.activeElement?.closest?.("#view")) show("timeline");
+  if (S.tab === "timeline" && !document.activeElement?.closest?.("#view")) show("timeline", true);
 }
 
 /* ---------- witness ---------- */
@@ -907,22 +1158,29 @@ const HOLD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 
 function paintHold() {
   const el = $("#holdbar"), a = S.hold;
   if (!a.length) { el.className = "hold"; el.innerHTML = ""; return; }
-  const e = a[a.length - 1];
   const fresh = !el.classList.contains("on");
-  el.innerHTML = `${HOLD_ICON}<div><b>Witness paused your agent</b>
+  const rows = a.map((e, i) => `<div style="${i ? "padding-top:8px;margin-top:8px;border-top:1px dashed var(--line-2)" : ""}">
     <p>Hermes tried <code>${esc(e.tool || "a write")}</code> after reading ${esc(originText(e.origin))}. Text from another member can't trigger changes on its own, so it waits for you.</p>
-    <p class="mut" style="font-size:13px">Reply in Hermes to go ahead or to say no. Your next message lifts the hold.${a.length > 1 ? ` ${a.length} sessions are held.` : ""}</p></div>`;
+    <div class="row" style="margin-top:10px"><button type="button" class="btn primary sm" data-act="whold" data-dec="release" data-ses="${esc(e.session || "")}">Lift hold</button><button type="button" class="btn sm danger" data-act="whold" data-dec="deny" data-ses="${esc(e.session || "")}">Deny write</button></div></div>`).join("");
+  el.innerHTML = `${HOLD_ICON}<div class="grow"><b>Witness paused your agent${a.length > 1 ? ` · ${a.length} sessions` : ""}</b>${rows}
+    <p class="mut" style="font-size:13px;margin-top:8px">Decide here with one tap, or reply in Hermes (your next message also lifts the hold).</p></div>`;
   el.className = "hold on";
   if (fresh) toast("Witness paused a write");
 }
-async function pollWitness() {
+async function pollWitness(silent) {
   let r;
   try { r = await (await fetch(BASE + "api/witness")).json(); } catch { return; }
   const was = S.hold.length;
   S.holds = r.events || []; S.hold = r.active || [];
-  if (was && !S.hold.length) toast("Hold lifted");
+  if (was && !S.hold.length && !silent) {
+    const last = S.holds[S.holds.length - 1];
+    toast(last && last.kind === "denied" ? "Write denied" : "Hold lifted");
+  }
   paintHold();
-  if (S.tab === "proof" && !document.activeElement.closest?.("#view")) { const c = $("#view .card:nth-of-type(3)"); if (c) c.innerHTML = "<h2>Witness holds</h2>" + renderHolds(); }
+  if (S.tab === "proof" && !document.activeElement?.closest?.("#view") && !hasSelectionIn($("#view"))) {
+    const c = $("#holds-card") || $("#view .card:nth-of-type(3)");
+    if (c) c.innerHTML = "<h2>Witness holds</h2>" + renderHolds();
+  }
 }
 
 /* ---------- hub: back to all rooms ---------- */
@@ -931,7 +1189,7 @@ if (HUB) {
     const x = d && d.rooms.find(r => r.id === BASE.split("/")[2]);
     if (!x) return;
     ROOM = x.label; document.title = `${x.label} · Playbox`;
-    if (!document.activeElement.closest?.("#view")) show(S.tab);
+    if (!document.activeElement?.closest?.("#view")) show(S.tab, true);
   }).catch(() => {});
   document.querySelectorAll(".brand .bk").forEach(el => { el.outerHTML = '<a class="bk" href="/" style="color:inherit;text-decoration:none" aria-label="All rooms">‹ Rooms</a>'; });
   const st = document.createElement("style");
@@ -946,21 +1204,30 @@ async function refresh(poll) {
     const before = mode() + members().length;
     S.ok = r.ok; S.status = r.ok ? r.status : S.status;
     paintPill();
-    if (poll && before !== mode() + members().length && ["people", "room"].includes(S.tab) && !document.activeElement.closest?.("#view")) show(S.tab);
+    if (poll && before !== mode() + members().length && ["people", "room"].includes(S.tab) && !document.activeElement?.closest?.("#view")) show(S.tab, true);
     paintPulse();
   } catch { S.ok = false; paintPill(); }
 }
-function show(tab) {
+function show(tab, soft) {
+  const sameTab = S.tab === tab;
   S.tab = tab;
   if (tab === "feed") { S.unread = 0; markSeen(); }
   paintNav();
   const v = $("#view");
+  if (soft && hasSelectionIn(v)) return;
+  const openDet = sameTab && v ? new Set([...v.querySelectorAll("details[open]")].map(d => d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim())) : null;
   v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
+  if (openDet && openDet.size) {
+    v.querySelectorAll("details").forEach(d => {
+      const k = d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim();
+      if (openDet.has(k)) d.open = true;
+    });
+  }
   if (tab === "feed") { paintFeed(); pollFeed(); }
   if (tab === "notes") paintNoteDoc();
   if (tab === "work") hlPatch();
   if (tab === "room" || tab === "people" || tab === "timeline") pollFeed();
-  scrollTo({top: 0});
+  if (!soft && !sameTab) scrollTo({top: 0});
 }
 
 /* ---------- actions ---------- */
@@ -1013,19 +1280,39 @@ async function act(name, btn) {
       break;
     }
     case "run": case "run-noapply": {
-      if (!val("cmd").trim()) return toast("Enter a command to run.", true);
+      const cmd = val("cmd");
+      if (!cmd.trim()) return toast("Enter a command to run.", true);
+      const label = S.nextRunLabel || ""; delete S.nextRunLabel;
       const apply = name === "run" && chk("apply");
+      S.running = true;
+      S.runInfo = {cmd, startedAt: Date.now(), label};
+      paintRunLive();
+      clearInterval(S.runTimer);
+      S.runTimer = setInterval(tickRunLive, 200);
+      $("#runlive")?.scrollIntoView({behavior: "smooth", block: "nearest"});
       busy(btn, true);
-      const r = await api("playbox_delegate", {base: val("base") || "main", command: val("cmd"), timeout_secs: +val("tmo") || 120, network: chk("net"), apply});
-      busy(btn, false);
+      let r;
+      try {
+        r = await api("playbox_delegate", {base: val("base") || "main", command: cmd, timeout_secs: +val("tmo") || 120, network: chk("net"), apply});
+      } finally {
+        clearInterval(S.runTimer); S.runTimer = null;
+        S.running = false; S.runInfo = null;
+        paintRunLive();
+        busy(btn, false);
+      }
       const box = $("#result");
       if (r.error) {
         const m = msgOf(r.data);
-        box.innerHTML = `<div class="card"><h2>Task did not finish cleanly</h2><p style="margin:0 0 12px">${esc(m)}</p>
+        if (box) box.innerHTML = `<div class="card"><h2>Task did not finish cleanly</h2><p style="margin:0 0 12px">${esc(m)}</p>
           ${/applying patch/.test(m) ? `<p class="mut" style="font-size:13px;margin:0 0 12px">The task ran on the host, but its patch doesn't fit your folder (for example a file it creates is already there). Run it again without applying to read the output and patch.</p>
           <button class="btn" data-act="run-noapply">Run again without applying</button>` : ""}</div>`;
-      } else { S.lastWork = r.data; box.innerHTML = renderResult(r.data); hlPatch(); }
-      box.scrollIntoView({behavior: "smooth", block: "nearest"});
+        else toast(m, true);
+      } else {
+        S.lastWork = r.data;
+        const wh = $("#workhdr"); if (wh) wh.innerHTML = workHeader(S.lastWork);
+        if (box) { box.innerHTML = renderResult(r.data); hlPatch(); }
+      }
+      box?.scrollIntoView({behavior: "smooth", block: "nearest"});
       break;
     }
     case "verify": case "verify-path": {
@@ -1059,13 +1346,43 @@ async function act(name, btn) {
     case "recipe": {
       const x = RECIPES[+btn.dataset.i];
       $("#cmd").value = x.cmd; $("#apply").checked = false; $("#net").checked = false; $("#tmo").value = 180;
+      S.nextRunLabel = x.t;
       act("run", $("#runbtn"));
+      break;
+    }
+    case "pickrepo": {
+      const inp = $("#repo");
+      if (inp) { inp.value = btn.dataset.path || ""; inp.focus(); }
+      break;
+    }
+    case "whold": {
+      const dec = btn.dataset.dec, ses = btn.dataset.ses || "";
+      busy(btn, true);
+      try {
+        const r = await gfetch(BASE + "api/witness/decide", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({session: ses, decision: dec})});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || j.message || `Failed (${r.status})`);
+        toast(dec === "release" ? "Hold lifted" : "Write denied");
+      } catch (er) {
+        const m = String(er && (er.message || er));
+        toast(/NotAllowed|cancel|abort/i.test(m) ? "Passkey confirmation was cancelled." : m, true);
+      } finally {
+        busy(btn, false);
+      }
+      await pollWitness(true);
       break;
     }
     case "quick": {
       const r = await api("playbox_say", {text: btn.dataset.text});
       if (r.error) return toast(msgOf(r.data), true);
       pollFeed();
+      break;
+    }
+    case "copypatch": {
+      const p = (S.lastWork && S.lastWork.patch) || S._patchRaw || "";
+      if (!p) break;
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(p).then(() => toast("Patch copied"), () => copyText(p));
+      else copyText(p);
       break;
     }
     case "copy-invite": copyText(S.invite); break;
@@ -1108,15 +1425,29 @@ function confirmRevoke(id) {
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
+  if (e.target.closest("#feedqclear")) {
+    S.feedQ = "";
+    const fq = $("#feedq");
+    if (fq) { fq.value = ""; fq.focus(); }
+    paintFeed(false);
+    return;
+  }
+  if (e.target.closest('a[href$="/canvas"]')) window.PBShell?.setRoomView?.("canvas");
   const t = e.target.closest("[data-tab],[data-act],[data-reach]");
   if (!t) return;
   if (t.dataset.tab) return show(t.dataset.tab);
   if (t.dataset.reach) { document.querySelectorAll("[data-reach]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
   if (t.dataset.act === "tag") return insertTag(t.dataset.tag);
   if (t.dataset.act === "revoke") return confirmRevoke(t.dataset.id);
+  if (t.dataset.act === "moretabs") return openMoreTabs();
+  if (t.dataset.act === "palette") return openCockpitPalette();
+  if (t.dataset.act === "settings") { window.PBTheme && PBTheme.open(); return; }
   act(t.dataset.act, t);
 });
-document.addEventListener("input", e => { if (e.target.id === "saytext") paintTags(); });
+document.addEventListener("input", e => {
+  if (e.target.id === "saytext") paintTags();
+  else if (e.target.id === "feedq") { S.feedQ = e.target.value; paintFeed(false); }
+});
 document.addEventListener("keyup", e => { if (e.target.id === "saytext" && /Arrow|Home|End/.test(e.key)) paintTags(); });
 document.addEventListener("submit", async e => {
   if (e.target.id !== "say") return;
@@ -1131,7 +1462,7 @@ document.addEventListener("submit", async e => {
 });
 
 /* ---------- boot ---------- */
-paintNav(); paintPulse();
+paintRoomTools(); paintNav(); paintPulse();
 refresh().then(() => show("room")); pollWitness();
 let tick = 0;
 setInterval(() => {

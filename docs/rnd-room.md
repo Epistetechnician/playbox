@@ -1,16 +1,34 @@
-# R&D room: a cross-vendor agent team improving Playbox through a Playbox room
+# R&D room: a multi-family agent team improving Playbox through a Playbox room
 
-`tools/bench/rnd/rnd.py` runs Claude agents (Claude Code) and Gemini agents (Antigravity `agy`) as separate members of one local Playbox room. Each has its own key and announces a signed card naming its harness and model.
+`tools/bench/rnd/rnd.py` runs an autonomous R&D team inside one local Playbox room where every member holds its own cryptographic key and posts a signed `::pbx identity` card naming its harness and model.
 
-Phases: research (each agent reads a read-only snapshot of the repo through a lens such as security, reliability or developer experience, and posts proposals) → cross-review (every agent rates the others' proposals) → selection (the harness ranks by impact times feasibility, drops risky or forbidden paths and proposals that touch the same file) → implementation (the *other* vendor writes the change, the harness applies it and runs fmt, clippy and the crate's tests) → diff review (the proposer's vendor must approve) → a **draft** pull request with the room's provenance in its body.
+## Default Triad Mode (`RND_BACKEND=agy`)
 
-Rules that keep it safe:
+Uses the authenticated Antigravity CLI (`agy`) to orchestrate all three Gemini 4 model families (**Carbon**, **Argon**, and **Hydrogen**) with strict cross-family separation of duties and effort right-sizing:
 
-- Agents can read the snapshot and nothing else. They reply with JSON; they never write files, run commands or push. The harness applies edits, runs the gates, commits and opens the PR.
-- Model-written text never reaches a shell: commits and PRs are made with argument lists. (An early version built the title as a shell string, and backticks in a title were executed. It was found on the first real run and fixed.)
-- Forbidden paths: workflows, dependency files, release and signing, the grant and audit core, attestation and steering. Diffs over 400 lines are refused.
-- The room is the record: proposals and reviews are read back from the room feed and only count if the signing key belongs to the claimed author.
+1. **Snapshot refresh & in-flight deduplication:** Fetches `origin/main`, resets `~/.playbox-rnd/snap`, and queries open PRs so agents never inspect stale code or duplicate in-flight `[R&D room]` changes.
+2. **Research (`PROPOSAL`):** `Carbon` (`gemini-4-carbon-medium`), `Argon` (`gemini-4-argon-medium`), and `Hydrogen` (`gemini-4-hydrogen-high`) inspect the read-only snapshot across security, reliability, and CLI/MCP experience lenses (2 distinct families per lens) and post signed proposals to the room feed.
+3. **Cross-family review (`REVIEW`):** Fast reviewers (`carbon-low`, `argon-low`, `hydrogen-medium`) verify `path:line` claims in the codebase and score only proposals from the *other two* families (4 cross-family reviews per proposal, zero self-family grading).
+4. **Advisor triage (`ADVICE`):** `Advisor` (`gemini-4-carbon-high`) verifies top candidates in the code, drops duplicates or overlapping proposals, and ranks non-colliding picks.
+5. **3-family implementation, diff review, and ship gate:** For every selected proposal, `{Implementer, Diff Reviewer, Ship Gate}` spans `{Carbon, Argon, Hydrogen}` with `Implementer != Author`:
+   - `Carbon-high` or `Argon-high` produces JSON edits from a clean worktree.
+   - The harness resets any stray worktree state, applies JSON edits, and runs `rustfmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (plus `py_compile` and hub `pytest` when Python files change).
+   - A second family reviews the diff (`VERDICT`), and the third family performs a final `ship`/`hold` check (`ADVICE`).
+6. **Provenance & canvas:** Emits live `::pbx card`, `::pbx artifact`, and `::pbx metric` updates to the Playbox Hub canvas and opens **draft** pull requests (`RND_PR=1`) recording the full room provenance.
 
-Run: `RND_PER_VENDOR=3 RND_PICK=6 RND_PR=1 python3 tools/bench/rnd/rnd.py`. With `RND_HUB=1` the room is registered with the hub (adopt it to watch). `RND_RESUME=<run dir>` reuses an earlier run's proposals.
+Legacy mixed mode (`RND_BACKEND=mixed`) remains supported for Claude Code + `agy` runs.
 
-First run (2026-11-16): 17 proposals, 85 reviews, 4 selected, 3 drafts opened (#16, #17, #18), 1 rejected in review.
+## Safety invariants
+
+- Agents have read-only permissions (`--sandbox` + explicit `write_file`/`edit_file`/mutating command denies); worktrees are reset before applying JSON edits.
+- Model-written text never reaches a shell: git commits, pushes, and `gh pr create` calls use argument lists.
+- Forbidden paths: `.github/`, `desktop/`, dependency files, release/signing scripts, `grants.rs`, `audit.rs`, attestation, and `steer/`. Diffs over 400 lines are refused.
+- The room is the source of truth: proposals and reviews are read back from the signed Playbox feed and verified against each author's member ID.
+
+## Running
+
+```bash
+RND_PR=1 RND_HUB=1 python3 tools/bench/rnd/rnd.py
+```
+
+Key environment variables: `RND_PICK` (default `4` in `agy` mode), `RND_PER_FAMILY` (default `2`), `RND_PR=1` (push branches and open draft PRs), `RND_HUB=1` (register room in `~/.playbox/hosting`), `RND_RESUME=<run dir>`, `RND_MAX_TOKENS`.

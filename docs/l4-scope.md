@@ -423,3 +423,58 @@ judged **less seed-sensitive** only if v2's (B) values have a range of at most 5
 is larger, and the lowest v2 seed is at least 20.0 points. Otherwise the result is "no evidence of an improvement". Ablations (one switch off at a time on
 seeds 0 and 1) are run only if v2 passes. Estimated cost about 20 USD of H100 time (eight trainings of about 40 minutes plus evaluations); it waits for the
 gman workspace cap to be raised and has not been started.
+
+## 14. Result of the v2 run (section 13's rule applied as written)
+
+(B) = mapped retention minus unrelated-real-cache retention, 720 items, in points. v2 is scored on its deployment path (mapped_edge: first token real,
+last 4 context tokens read natively) and also on the plain mapped cache. Files: `steer/results/telepathy/l4_v2/`.
+
+| seed | v2 edge path | v2 plain | old recipe plain |
+|---|---|---|---|
+| 0 | 26.6 | 16.6 | 16.0 |
+| 1 | 25.7 | 8.2 | 26.2 |
+| 2 | 27.0 | 20.0 | 16.8 |
+| 3 | 27.1 | 7.9 | 17.6 |
+| range | 1.4 | 12.1 | 10.2 |
+
+Rule: v2 range <= 5 (1.4, yes), old recipe's range larger (10.2, yes), lowest v2 seed >= 20.0 (25.7, yes). **By the rule as written, v2 passes.**
+
+What the pass does and does not mean:
+- The stability comes from the edge path. Without the edge tokens v2 is no better than the old recipe (range 12.1, two seeds below 10 points), so the
+  receiver is not reading "nothing but the cache"; the section-11 bar (retention with the cache alone) is still not met.
+- The old recipe has no edge-path number, so the comparison mixes paths: the edge tokens themselves may supply some of the +26 points. That comparison was then run (below).
+- Specificity (mapped minus mapped-wrong cache) is 44-48 points for v2 and 53-55 for the old recipe: both carry topic information.
+- The ablations of section 13 are now licensed by the rule but not run. The full-size mapper spend stays on hold.
+Cost: about 37 USD of H100 time for this run.
+
+### 14.1 Edge controls (run after the table above)
+
+The old recipe's four checkpoints scored with the same 4 edge tokens, plus two controls on the same 720 items (`edge_v1_s0..3.json`; code: `l4_eval_b.py`
+with `edge_k`, `tools/node/edge_chain.sh`). A first attempt ran the old evaluation code by mistake (packing error, no edge numbers) and was discarded.
+Retention = share of the real-cache gain recovered; (B) in points against the unrelated real cache.
+
+| condition | retention |
+|---|---|
+| edge tokens only (real first token, no mapped cache) | 7.4% |
+| unrelated real cache + edge tokens | 58.9% |
+| v2 mapped cache + edge tokens (seeds 0-3) | 85.3-86.6% |
+| old recipe, plain / with edge tokens (seeds 0-3) | 75.6-85.8% / 69.6-77.7% |
+
+| seed | old recipe plain (B) | old recipe + edge (B) | v2 + edge (B) |
+|---|---|---|---|
+| 0 | 16.0 | 10.1 | 26.6 |
+| 1 | 26.2 | 18.1 | 25.7 |
+| 2 | 16.8 | 13.9 | 27.0 |
+| 3 | 17.6 | 11.3 | 27.1 |
+| range | 10.2 | 8.0 | 1.4 |
+
+Reading:
+- The edge tokens alone are not the source of v2's gain (7.4% retention on their own), and giving them to a mapper not trained for them makes it slightly
+  worse (every old-recipe seed drops 3-8 points). The gain needs a mapper trained with them (the other v2 switches could also contribute; not isolated).
+- On the deployment path v2 is both higher (mean 26.6 vs 13.4) and far steadier (range 1.4 vs 8.0). The section-13 pass stands, now with the path
+  confound removed.
+- Still true: the receiver reads 4 real tokens alongside the mapped cache, so this is not "the receiver reads nothing but the cache"; on the plain path v2
+  is not better (range 12.1). The v2 checkpoints were deleted, so v2 itself has no edge-only or unrelated-cache-plus-edge control of its own; the
+  controls above are properties of the receiver and the items and were measured with the old checkpoints.
+- The 20-point bar of section 11 is met on the edge path (about 26 points) but not on the cache-only path. Whether a 4-token edge counts as an acceptable
+  deployment is a decision for the user, not a result. Ablations and the full-size mapper remain unstarted. Cost of the controls: about 6 USD (including the wasted first attempt).

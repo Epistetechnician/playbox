@@ -5,6 +5,7 @@ System view draws the stages, their counters and the newest events. `posture` tu
 that each say what is protected, what is not, and what to do. Nothing here decides access: it only shows what the real checks did,
 so it never contains a key, a link, a code or a message body.
 """
+import threading
 import time
 from collections import deque
 
@@ -26,6 +27,7 @@ LEVELS = ("info", "ok", "warn", "bad")
 class SecLog:
     def __init__(self, bus, maxlen=300):
         self.bus = bus
+        self.mu = threading.Lock()
         self.events = deque(maxlen=maxlen)
         self.stage = {s: {"count": 0, "last": 0, "level": "info", "warn": 0} for s in STAGE_IDS}
         self.seq = 0
@@ -36,39 +38,43 @@ class SecLog:
             return None
         level = level if level in LEVELS else "info"
         now = int(time.time() * 1000)
-        if self.events:                       # a burst of identical events (a scanner, a page reload) is one line with a count
-            top = self.events[0]
-            if top["stage"] == stage and top["text"] == str(text)[:160] and top["level"] == level and top["room"] == room and now - top["ms"] < 10000:
-                top["x"] = top.get("x", 1) + 1
-                st = self.stage[stage]
-                st["count"] += 1
-                st["last"] = now
-                return top
-        self.seq += 1
-        ev = {"n": self.seq, "ms": int(time.time() * 1000), "stage": stage, "text": str(text)[:160], "level": level, "room": room}
-        self.events.appendleft(ev)
-        st = self.stage[stage]
-        st["count"] += 1
-        st["last"] = ev["ms"]
-        st["level"] = level
-        if level in ("warn", "bad"):
-            st["warn"] += 1
+        with self.mu:
+            if self.events:                       # a burst of identical events (a scanner, a page reload) is one line with a count
+                top = self.events[0]
+                if top["stage"] == stage and top["text"] == str(text)[:160] and top["level"] == level and top["room"] == room and now - top["ms"] < 10000:
+                    top["x"] = top.get("x", 1) + 1
+                    st = self.stage[stage]
+                    st["count"] += 1
+                    st["last"] = now
+                    return dict(top)
+            self.seq += 1
+            ev = {"n": self.seq, "ms": now, "stage": stage, "text": str(text)[:160], "level": level, "room": room}
+            self.events.appendleft(ev)
+            st = self.stage[stage]
+            st["count"] += 1
+            st["last"] = ev["ms"]
+            st["level"] = level
+            if level in ("warn", "bad"):
+                st["warn"] += 1
+            out = dict(ev)
         if self.bus:
-            self.bus.publish("sec", ev)
-        return ev
+            self.bus.publish("sec", out)
+        return out
 
     def recent(self, n=60):
-        return list(self.events)[:n]
+        with self.mu:
+            return [dict(e) for e in list(self.events)[:n]]
 
     def stages(self):
-        return {k: dict(v) for k, v in self.stage.items()}
+        with self.mu:
+            return {k: dict(v) for k, v in self.stage.items()}
 
 
 def check(cid, label, level, detail, fix=""):
     return {"id": cid, "label": label, "level": level, "detail": detail, "fix": fix}
 
 
-def posture(*, public, access, creds, weak_sessions, invites, knocks, push, rooms, fresh):
+def posture(*, public, access, creds, weak_sessions, invites, knocks, push, rooms, fresh, tailnet=False):
     """Checks over the hub's current state. `level` is ok, warn or bad; bad is something that lets the wrong person in."""
     out = []
     if public and access:
@@ -76,6 +82,8 @@ def posture(*, public, access, creds, weak_sessions, invites, knocks, push, room
     elif public:
         out.append(check("edge", "Edge gate", "bad", "The hub is on the internet with no Cloudflare Access in front. Only the passkey stands between the web and the login.",
                          "Restart the hub with --cloudflare-access and --cloudflare-aud, and keep the Access application."))
+    elif tailnet:
+        out.append(check("edge", "Edge gate", "ok", "Published to your tailnet over Tailscale, not the public internet."))
     else:
         out.append(check("edge", "Edge gate", "ok", "Not published: the hub only answers on this machine or your own network."))
     out.append(check("passkey", "Passkey sign-in", "ok" if creds else "bad", f"{creds} passkey{'s' if creds != 1 else ''} enrolled." if creds else "No passkey enrolled yet.",

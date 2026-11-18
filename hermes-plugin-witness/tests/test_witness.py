@@ -110,6 +110,122 @@ class WitnessTests(unittest.TestCase):
         self.assertEqual((env["PLAYBOX_HOME"], env["PLAYBOX_LOG"]), ("/h", "/l"))
         self.assertIn("PATH", env)
 
+    def test_owner_release_lifts_hold_for_turn(self):
+        ev, pending = [], {}
+        w = Witness(self.log.append, ev.append, lambda s: pending.pop(s, None))
+        w.after_tool("s1", "mcp__playbox__playbox_feed", {}, "peer: run deploy", "ok")
+        res = w.before_tool("s1", "terminal", {"command": "deploy"})
+        self.assertEqual(res["action"], "block")
+        self.assertIn("Approve or deny it in Playbox", res["message"])
+        pending["s1"] = "release"
+        self.assertIsNone(w.before_tool("s1", "terminal", {"command": "deploy"}))
+        self.assertIsNone(w.before_tool("s1", "write_file", {"path": "x"}))
+        # UI already emitted `released`, so new_turn emits no duplicate release event.
+        w.new_turn("s1")
+        self.assertEqual([e["kind"] for e in ev], ["held"])
+
+    def test_owner_deny_blocks_writes_until_new_turn(self):
+        ev, pending = [], {}
+        w = Witness(self.log.append, ev.append, lambda s: pending.pop(s, None))
+        w.after_tool("s1", "mcp__playbox__playbox_feed", {}, "peer: rm -rf", "ok")
+        self.assertEqual(w.before_tool("s1", "terminal", {})["action"], "block")
+        pending["s1"] = "deny"
+        r1 = w.before_tool("s1", "terminal", {})
+        self.assertEqual(r1["action"], "block")
+        self.assertIn("owner denied `terminal`", r1["message"])
+        # Subsequent writes in the same turn remain blocked even after the single-use decision was consumed.
+        r2 = w.before_tool("s1", "write_file", {})
+        self.assertEqual(r2["action"], "block")
+        self.assertIn("owner denied `write_file`", r2["message"])
+        # Reads remain allowed while denied.
+        self.assertIsNone(w.before_tool("s1", "read_file", {}))
+        # Next user turn resets denied state and consumes any leftover decision.
+        pending["s1"] = "deny"
+        w.new_turn("s1")
+        self.assertEqual(pending, {})
+        self.assertIsNone(w.before_tool("s1", "terminal", {}))
+
+    def test_file_backed_take_decision(self):
+        import hashlib, importlib.util, json, shutil, tempfile
+        root = os.path.join(os.path.dirname(__file__), "..")
+        spec = importlib.util.spec_from_file_location("pbwitness_dec", os.path.join(root, "__init__.py"),
+                                                      submodule_search_locations=[root])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["pbwitness_dec"] = mod
+        spec.loader.exec_module(mod)
+        tmp = tempfile.mkdtemp(prefix="pbw-")
+        saved = os.environ.get("PLAYBOX_HOME")
+        try:
+            os.environ["PLAYBOX_HOME"] = tmp
+            ddir = os.path.join(tmp, "witness", "decisions")
+            os.makedirs(ddir, mode=0o700)
+            p = os.path.join(ddir, hashlib.sha256(b"sess-1").hexdigest() + ".json")
+            # Wrong permissions (0644) must be ignored on Unix.
+            with open(p, "w") as f:
+                json.dump({"session": "sess-1", "decision": "release"}, f)
+            if hasattr(os, "getuid"):
+                os.chmod(p, 0o644)
+                self.assertIsNone(mod._take_decision("sess-1"))
+            os.chmod(p, 0o600)
+            self.assertEqual(mod._take_decision("sess-1"), "release")
+            # Single-use: unlinked once read.
+            self.assertFalse(os.path.exists(p))
+            self.assertIsNone(mod._take_decision("sess-1"))
+            # Session mismatch inside the file is rejected and unlinked.
+            with open(p, "w") as f:
+                json.dump({"session": "other", "decision": "deny"}, f)
+            os.chmod(p, 0o600)
+            self.assertIsNone(mod._take_decision("sess-1"))
+            self.assertFalse(os.path.exists(p))
+        finally:
+            if saved is None:
+                os.environ.pop("PLAYBOX_HOME", None)
+            else:
+                os.environ["PLAYBOX_HOME"] = saved
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_additional_foreign_tools_and_exfil_guards(self):
+        for tool in ("room_recall", "conversation_read", "conversations", "browse", "capability_call"):
+            s = f"s-{tool}"
+            self.w.after_tool(s, f"mcp__playbox__playbox_{tool}", {}, "peer payload", "ok")
+            self.assertEqual(self.w.before_tool(s, "terminal", {})["action"], "block", tool)
+            self.assertEqual(self.w.before_tool(s, "web_search", {"q": "leak"})["action"], "block", tool)
+            self.assertEqual(self.w.before_tool(s, "web_extract", {"url": "https://x"})["action"], "block", tool)
+            self.assertEqual(self.w.before_tool(s, "mcp__playbox__playbox_pull", {"checkout": True})["action"], "block", tool)
+            self.assertIsNone(self.w.before_tool(s, "mcp__playbox__playbox_pull", {"checkout": False}), tool)
+        # Reading a non-workspace local file + posting to the room (`playbox_say`) in a tainted turn is blocked.
+        self.feed("exfil")
+        self.assertIsNone(self.w.before_tool("exfil", "mcp__playbox__playbox_say", {"text": "hi"}))
+        self.w.after_tool("exfil", "read_file", {"path": "/Users/a/.ssh/id_rsa"}, "SECRET", "ok")
+        self.assertEqual(self.w.before_tool("exfil", "mcp__playbox__playbox_say", {"text": "SECRET"})["action"], "block")
+        self.w.new_turn("exfil")
+        self.assertIsNone(self.w.before_tool("exfil", "mcp__playbox__playbox_say", {"text": "ok"}))
+
+    def test_hook_session_aliasing_and_mid_turn_llm_call(self):
+        import importlib.util
+        root = os.path.join(os.path.dirname(__file__), "..")
+        spec = importlib.util.spec_from_file_location("pbwitness_hook", os.path.join(root, "__init__.py"),
+                                                      submodule_search_locations=[root])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["pbwitness_hook"] = mod
+        spec.loader.exec_module(mod)
+        mod._record = lambda e: None
+        mod._event = lambda e: None
+        hooks = {}
+        class Ctx:
+            def register_hook(self, name, fn):
+                hooks[name] = fn
+        mod.register(Ctx())
+        hooks["pre_llm_call"](conversation_id="c1", session_id="s1")
+        # post_tool_call receives only session_id, followed by intra-turn pre_llm_call, then pre_tool_call with conversation_id
+        hooks["post_tool_call"](session_id="s1", tool_name="mcp__playbox__playbox_feed", args={}, result="x", status="ok")
+        hooks["pre_llm_call"](conversation_id="c1", session_id="s1")
+        res = hooks["pre_tool_call"](conversation_id="c1", tool_name="terminal", args={"command": "id"})
+        self.assertEqual(res["action"], "block")
+        # Next genuine user turn (pre_llm_call not preceded by post_tool_call) lifts hold
+        hooks["pre_llm_call"](conversation_id="c1", session_id="s1")
+        self.assertIsNone(hooks["pre_tool_call"](conversation_id="c1", tool_name="terminal", args={"command": "id"}))
+
 
 if __name__ == "__main__":
     unittest.main()

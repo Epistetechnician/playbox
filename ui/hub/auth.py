@@ -9,9 +9,13 @@ Sensitive actions need a fresh assertion (step-up, 5 minutes). Weak sessions can
 unless the request is physically local.
 """
 import hashlib
-import os
+import hmac
 import ipaddress
+import json
+import os
+import re
 import secrets
+import stat
 import threading
 import time
 
@@ -22,6 +26,7 @@ from .webauthn import WebAuthnError, b64u
 CHALLENGE_TTL = 120
 FRESH_TTL = int(os.environ.get("PLAYBOX_HUB_FRESH", "300"))   # env override exists so tests can expire step-up quickly
 PAIR_TTL = 600
+MAX_FAIL_IPS = 4096
 PROXY_HEADERS = ("x-forwarded-for", "forwarded", "cf-connecting-ip", "x-real-ip", "tailscale-user-login", "cf-ray")
 
 def hostname_of(host):
@@ -76,13 +81,25 @@ class Auth:
         now = time.time()
         with self.mu:
             q = [t for t in self.fails.get(ip, []) if now - t < 300]
-            self.fails[ip] = q
+            if q:
+                self.fails[ip] = q
+            else:
+                self.fails.pop(ip, None)
             if len(q) >= 8:
                 raise AuthError(429, "too many attempts; wait a few minutes")
 
     def _fail(self, ip):
+        now = time.time()
         with self.mu:
-            self.fails.setdefault(ip, []).append(time.time())
+            q = [t for t in self.fails.pop(ip, []) if now - t < 300]
+            q.append(now)
+            self.fails[ip] = q
+            if len(self.fails) > MAX_FAIL_IPS:
+                stale = [k for k, v in self.fails.items() if not v or now - v[-1] >= 300]
+                for k in stale:
+                    del self.fails[k]
+                while len(self.fails) > MAX_FAIL_IPS:
+                    del self.fails[next(iter(self.fails))]
 
     # ---- tickets ----
     def _ticket(self, **kw):
@@ -101,13 +118,13 @@ class Auth:
         return ent
 
     # ---- sessions ----
-    def new_session(self, cred_id, weak, ua, ip, name):
+    def new_session(self, cred_id, weak, ua, ip, name, local_only=False):
         tok = secrets.token_urlsafe(32)
         now = time.time()
         with self.s.lock:
             self.s.gc(now)
             self.s.d["sessions"][sha(tok)] = {"cred": cred_id, "weak": weak, "created": now, "last": now, "ua": (ua or "")[:90],
-                                              "ip": ip, "fresh_until": now + FRESH_TTL if not weak else 0, "name": name}
+                                              "ip": ip, "fresh_until": now + FRESH_TTL if not weak else 0, "name": name, "local_only": local_only}
             self.s.save()
         return tok
 
@@ -132,8 +149,10 @@ class Auth:
             self.s.save()
 
     def is_fresh(self, rec, local):
+        if rec.get("local_only"):
+            return local and rec.get("fresh_until", 0) > time.time()
         if rec["weak"]:
-            return local          # a weak session is only ever as strong as physical access to this machine
+            return local          # a weak pairing-code session on loopback keeps existing behaviour
         return rec["fresh_until"] > time.time()
 
     # ---- weak path ----
@@ -143,10 +162,11 @@ class Auth:
         from the hub's side those look like loopback."""
         if any(h in headers for h in PROXY_HEADERS):
             return False
-        h = hostname_of(host)
-        host_ok = h in ("localhost",) or h.endswith(".local")
+        h = hostname_of(host).lower()
+        host_ok = h in ("localhost",) or h.endswith((".local", ".ts.net"))
         try:
-            host_ok = host_ok or ipaddress.ip_address(h).is_private or ipaddress.ip_address(h).is_loopback
+            ha = ipaddress.ip_address(h)
+            host_ok = host_ok or ha.is_private or ha.is_loopback or ha in ipaddress.ip_network("100.64.0.0/10")
         except ValueError:
             pass
         try:
@@ -163,6 +183,131 @@ class Auth:
             self._fail(ip)
             raise AuthError(403, "pairing code is invalid or expired")
         return self.new_session(None, True, ua, ip, name or "Local device")
+
+    # ---- desktop sign-in & owner step-up ----
+    LOGIN_DIR = "desktop-login"
+    LOGIN_TTL = 60
+    STEPUP_DIR = "desktop-stepup"
+
+    def local_session(self, nonce, ua, ip):
+        """The desktop app proves it can write into this hub's private state directory (owner-only, so it is the same user on this
+        machine, the same root of trust as `--pair`) by creating `desktop-login/<sha256(nonce)>`. One use, 60 seconds, owner-only file.
+        The session it opens is weak (never as strong as a passkey) and local-only: it is ignored on any request that is not loopback."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", nonce or ""):
+            self._fail(ip)
+            raise AuthError(403, "desktop sign-in refused")
+        d = self.s.home / self.LOGIN_DIR
+        f = d / sha(nonce)
+        ok = False
+        try:
+            me = os.getuid() if hasattr(os, "getuid") else None
+            st, dst = f.lstat(), d.lstat()
+            ok = (stat.S_ISREG(st.st_mode) and stat.S_ISDIR(dst.st_mode) and time.time() - st.st_mtime <= self.LOGIN_TTL
+                  and (me is None or (st.st_uid == me and dst.st_uid == me and not st.st_mode & 0o077 and not dst.st_mode & 0o022)))
+        except OSError:
+            pass
+        try:
+            f.unlink()          # single use, whether or not it was good
+        except OSError:
+            pass
+        if not ok:
+            self._fail(ip)
+            raise AuthError(403, "desktop sign-in refused")
+        return self.new_session(None, True, ua, ip, "Playbox Desktop", local_only=True)
+
+    def desktop_bridge_ready(self):
+        d = self.s.home / self.STEPUP_DIR
+        f = d / "ready"
+        try:
+            me = os.getuid() if hasattr(os, "getuid") else None
+            st, dst = f.lstat(), d.lstat()
+            return bool(stat.S_ISREG(st.st_mode) and stat.S_ISDIR(dst.st_mode) and time.time() - st.st_mtime <= 35
+                        and not (st.st_mode & 0o077) and not (dst.st_mode & 0o022)
+                        and (me is None or (st.st_uid == me and dst.st_uid == me)))
+        except OSError:
+            return False
+
+    def desktop_stepup(self, session_key, reason, ip):
+        with self.s.lock:
+            rec = self.s.d["sessions"].get(session_key)
+        if not rec or not rec.get("local_only"):
+            raise AuthError(403, "desktop owner verification is only for Playbox Desktop sessions")
+        if not self.desktop_bridge_ready():
+            raise AuthError(403, "Playbox Desktop owner verification is not running; approve this in your browser with a passkey")
+        req_id = secrets.token_hex(16)
+        nonce = secrets.token_urlsafe(32)
+        clean_reason = re.sub(r"[\x00-\x1f\x7f]", " ", str(reason or "Approve sensitive action in Playbox")).strip()[:120] or "Approve sensitive action in Playbox"
+        d = self.s.home / self.STEPUP_DIR
+        d.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp_path = d / f"{req_id}.req.tmp"
+        req_path = d / f"{req_id}.req"
+        res_path = d / f"{req_id}.res"
+        payload = json.dumps({"id": req_id, "nonce": nonce, "reason": clean_reason, "exp": int(time.time()) + 60}).encode()
+        try:
+            fd = os.open(tmp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                os.write(fd, payload)
+            finally:
+                os.close(fd)
+            os.replace(tmp_path, req_path)
+            wait_s = max(0.2, min(120.0, float(os.environ.get("PLAYBOX_STEPUP_WAIT_S", "55"))))
+            deadline = time.monotonic() + wait_s
+            me = os.getuid() if hasattr(os, "getuid") else None
+            while time.monotonic() < deadline:
+                try:
+                    st = res_path.lstat()
+                except FileNotFoundError:
+                    time.sleep(0.08)
+                    continue
+                except OSError:
+                    raise AuthError(403, "Touch ID / owner verification failed")
+                dst = d.lstat()
+                mode_ok = (stat.S_ISREG(st.st_mode) and stat.S_ISDIR(dst.st_mode)
+                           and not (st.st_mode & 0o077) and not (dst.st_mode & 0o022)
+                           and (me is None or (st.st_uid == me and dst.st_uid == me)))
+                raw = b""
+                if mode_ok:
+                    try:
+                        raw = res_path.read_bytes()
+                        if not raw:
+                            time.sleep(0.02)
+                            raw = res_path.read_bytes()
+                    except OSError:
+                        mode_ok = False
+                try:
+                    res_path.unlink()
+                except OSError:
+                    pass
+                if not mode_ok:
+                    self._fail(ip)
+                    raise AuthError(403, "Touch ID / owner verification response was invalid")
+                try:
+                    data = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    self._fail(ip)
+                    raise AuthError(403, "Touch ID / owner verification response was invalid")
+                if not isinstance(data, dict):
+                    self._fail(ip)
+                    raise AuthError(403, "Touch ID / owner verification response was invalid")
+                expected = hashlib.sha256(("playbox-stepup-v1:" + nonce).encode()).hexdigest()
+                if data.get("ok") is True and isinstance(data.get("proof"), str) and hmac.compare_digest(data["proof"], expected):
+                    with self.s.lock:
+                        rec2 = self.s.d["sessions"].get(session_key)
+                        if not rec2 or not rec2.get("local_only"):
+                            raise AuthError(401, "session ended")
+                        rec2["fresh_until"] = time.time() + FRESH_TTL
+                        self.s.save()
+                    return True
+                if data.get("ok") is True:
+                    self._fail(ip)
+                raise AuthError(403, str(data.get("error") or "Touch ID / owner verification was cancelled")[:120])
+            raise AuthError(408, "Timed out waiting for Touch ID / owner verification")
+        finally:
+            for p in (tmp_path, req_path, res_path):
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
 
     # ---- passkey registration ----
     def register_begin(self, code, rp_id, ip):
@@ -199,6 +344,25 @@ class Auth:
             self._burn_code(ent["code"])
             self.s.save()
         return self.new_session(cred["id"], False, ua, ip, name or "Device")
+
+    def upgrade_begin(self, session_key: str, rp_id: str, ip: str):
+        with self.s.lock:
+            if session_key not in self.s.d["sessions"]:
+                raise AuthError(401, "session ended")
+        code = self.mint_code(note="session upgrade")
+        return self.register_begin(code, rp_id, ip)
+
+    def upgrade_finish(self, session_key: str, ticket: str, resp: dict, name: str, ua: str, ip: str) -> str:
+        with self.s.lock:
+            if session_key not in self.s.d["sessions"]:
+                raise AuthError(401, "session ended")
+        tok = self.register_finish(ticket, resp, name, ua, ip)
+        new_key = sha(tok)
+        with self.s.lock:
+            if session_key != new_key and session_key in self.s.d["sessions"]:
+                del self.s.d["sessions"][session_key]
+                self.s.save()
+        return tok
 
     # ---- passkey login / step-up ----
     def login_begin(self, rp_id, kind="login", cred_id=None):
@@ -254,7 +418,7 @@ class Auth:
 
     def sessions(self, current_key):
         with self.s.lock:
-            return [{"key": k[:16], "name": v["name"], "weak": v["weak"], "last": v["last"], "created": v["created"], "ip": v["ip"],
+            return [{"key": k[:16], "name": v["name"], "weak": v["weak"], "local_only": bool(v.get("local_only")), "last": v["last"], "created": v["created"], "ip": v["ip"],
                      "current": k == current_key} for k, v in sorted(self.s.d["sessions"].items(), key=lambda kv: -kv[1]["last"])]
 
     def revoke_session(self, prefix):
@@ -268,3 +432,7 @@ class Auth:
     def enrolled(self):
         with self.s.lock:
             return bool(self.s.d["creds"])
+
+    def has_passkey(self, rp_id: str) -> bool:
+        with self.s.lock:
+            return any(c.get("rp_id") == rp_id for c in self.s.d["creds"])

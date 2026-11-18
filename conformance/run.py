@@ -40,8 +40,15 @@ def main() -> int:
     ap.add_argument("names", nargs="*")
     a = ap.parse_args()
     require_all = bool(os.environ.get("CONFORMANCE_REQUIRE_ALL"))
+    scenarios = load(a.tier, a.names)
+    if a.names:
+        found = {n for n, _, _, _ in scenarios}
+        missing = [n for n in a.names if n not in found]
+        if missing:
+            print(f"unknown scenario(s): {', '.join(missing)}", file=sys.stderr)
+            return 2
     failed = skipped = 0
-    for name, tier, fn, doc in load(a.tier, a.names):
+    for name, tier, fn, doc in scenarios:
         ctx = Ctx()
         t0 = time.time()
         try:

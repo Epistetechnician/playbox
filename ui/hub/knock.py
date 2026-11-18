@@ -7,17 +7,21 @@ room mint a join link, and that link is bound to that guest id, so it is useless
 """
 import hashlib
 import hmac
+import ipaddress
 import json
 import re
 import secrets
+import socket
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import ipaddress
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_NUM_LABEL = re.compile(r"^(0x[0-9a-fA-F]+|[0-9]+)$")
+CGNAT = ipaddress.ip_network("100.64.0.0/10")
+TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 MAX_PENDING_PER_INVITE = 5
 LINK_TTL = 600          # a minted link must be redeemed within ten minutes
 POLL_EVERY = 3
@@ -97,12 +101,16 @@ class Knocks:
 
     def pending(self):
         now = time.time()
-        inv = self.store.d.get("invites", {})
-        return [r for r in sorted(self.store.d["knocks"].values(), key=lambda r: r["created"])
+        with self.store.lock:
+            inv = dict(self.store.d.get("invites", {}))
+            knocks = [dict(r) for r in self.store.d["knocks"].values()]
+        return [r for r in sorted(knocks, key=lambda r: r["created"])
                 if r["state"] == "pending" and r["invite"] in inv and inv[r["invite"]]["expires"] > now and inv[r["invite"]]["status"] != "revoked"]
 
     def get(self, rid):
-        return self.store.d["knocks"].get(rid)
+        with self.store.lock:
+            r = self.store.d["knocks"].get(rid)
+            return dict(r) if r else None
 
     def set(self, rid, **kw):
         with self.store.lock:
@@ -114,28 +122,76 @@ class Knocks:
 
 
 # ------------------------------------------------------------------ friend side
-def check_base(base):
+def _numeric_ipv4_name(host):
+    """True for non-standard numeric/hex/octal IPv4 forms (2852039166, 0xa9.0xfe.0xa9.0xfe, 0x7f.0.0.1, 0177.0.0.1)
+    that ipaddress.ip_address rejects as non-decimal-quads while OS resolvers accept them."""
+    h = (host or "").rstrip(".")
+    if not h:
+        return False
+    try:
+        ipaddress.ip_address(h)
+        return False
+    except ValueError:
+        pass
+    parts = h.split(".")
+    return bool(parts) and all(_NUM_LABEL.match(p) for p in parts)
+
+
+def _bad_ip(addr, allow_local=False, allow_tailnet=False):
+    ip = ipaddress.ip_address(addr)
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    if ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return True
+    if not allow_local:
+        if ip in CGNAT or (ip.version == 6 and ip in TAILNET_V6):
+            return not allow_tailnet
+        if ip.is_private or ip.is_loopback:
+            return True
+    return False
+
+
+def check_base(base, allow_local=None):
     """The host's address comes from a link, so it is untrusted: https, or plain http only for this machine / a private network."""
     u = urllib.parse.urlparse(base)
     if u.scheme not in ("https", "http") or not u.hostname or u.username or u.password:
         raise KnockError("that isn't a usable host address")
+    h = u.hostname.lower().rstrip(".")
+    if not h or _numeric_ipv4_name(h):
+        raise KnockError("that isn't a usable host address")
     try:
-        lit = ipaddress.ip_address(u.hostname)
+        lit = ipaddress.ip_address(h)
         lit = getattr(lit, "ipv4_mapped", None) or lit
     except ValueError:
         lit = None
-    if lit and (lit.is_link_local or lit.is_unspecified or lit.is_multicast):      # 169.254.169.254 (cloud metadata) and friends, over either scheme
-        raise KnockError("that isn't a usable host address")
-    if u.scheme == "http":
-        h = u.hostname
-        try:
-            a = ipaddress.ip_address(h)
-            local = a.is_private or a.is_loopback
-        except ValueError:
-            local = h == "localhost" or h.endswith(".local")
-        if not local:
+    if allow_local is not None:
+        local_ok = bool(allow_local)
+    elif u.scheme == "http":
+        local_ok = (h == "localhost" or h.endswith(".local")) if lit is None else bool(lit.is_private or lit.is_loopback)
+        if not local_ok:
             raise KnockError("plain http is only allowed to this machine or a private network")
+    else:
+        if h == "localhost" or h.endswith((".local", ".localhost", ".internal")):
+            raise KnockError("that isn't a usable host address")
+        local_ok = False
+    if lit is not None and _bad_ip(lit, allow_local=local_ok, allow_tailnet=h.endswith(".ts.net")):
+        raise KnockError("that isn't a usable host address")
     return f"{u.scheme}://{u.netloc}"
+
+
+def resolve_base(base, allow_local=None):
+    base = check_base(base, allow_local=allow_local)
+    u = urllib.parse.urlparse(base)
+    h = u.hostname.lower().rstrip(".")
+    port = u.port or (443 if u.scheme == "https" else 80)
+    local_ok = (u.scheme == "http") if allow_local is None else bool(allow_local)
+    tailnet_ok = h.endswith(".ts.net")
+    try:
+        infos = socket.getaddrinfo(h, port, type=socket.SOCK_STREAM)
+    except OSError as e:
+        raise KnockError(f"couldn't resolve host: {e}", 502)
+    if not infos or any(_bad_ip(info[4][0], allow_local=local_ok, allow_tailnet=tailnet_ok) for info in infos):
+        raise KnockError("that isn't a usable host address")
+    return base
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -144,9 +200,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 _opener = urllib.request.build_opener(_NoRedirect)
+_OPEN = _opener.open
 
 
 def host_post(base, path, body, timeout=12):
+    try:
+        base = resolve_base(base) if _opener.open == _OPEN else check_base(base)
+    except KnockError as e:
+        return 0, {"error": str(e)[:120]}
     req = urllib.request.Request(base + path, json.dumps(body).encode(), {"Content-Type": "application/json", "User-Agent": "playbox-hub"})
     try:
         with _opener.open(req, timeout=timeout) as r:
@@ -217,7 +278,9 @@ class Outgoing:
         with self.mu:
             if time.time() - self.last_re.get(room.id, 0) < REKNOCK_EVERY:
                 return None
-            if any(r["state"] == "waiting" and r.get("room") == room.id for r in self.store.d["knock_out"].values()):
+            with self.store.lock:
+                waiting = any(r["state"] == "waiting" and r.get("room") == room.id for r in self.store.d["knock_out"].values())
+            if waiting:
                 return None
             self.last_re[room.id] = time.time()
         threading.Thread(target=self._reknock, args=(room, src), daemon=True, name="reknock-" + room.id[:4]).start()
@@ -241,10 +304,12 @@ class Outgoing:
         self._spawn(rid)
 
     def waiting_for_all(self):
-        return [r for r in self.store.d["knock_out"].values() if r["state"] == "waiting" and r.get("rejoin")]
+        with self.store.lock:
+            return [dict(r) for r in self.store.d["knock_out"].values() if r["state"] == "waiting" and r.get("rejoin")]
 
     def waiting_for(self, room_id):
-        return [r for r in self.store.d["knock_out"].values() if r["state"] == "waiting" and r.get("rejoin") and r.get("room") == room_id]
+        with self.store.lock:
+            return [dict(r) for r in self.store.d["knock_out"].values() if r["state"] == "waiting" and r.get("rejoin") and r.get("room") == room_id]
 
     def _set(self, rid, **kw):
         with self.store.lock:
@@ -256,7 +321,9 @@ class Outgoing:
     def _run(self, rid):
         start = time.time()
         while time.time() - start < GIVE_UP:
-            r = self.store.d["knock_out"].get(rid)
+            with self.store.lock:
+                r = self.store.d["knock_out"].get(rid)
+                r = dict(r) if r else None
             if not r or r["state"] != "waiting":
                 return
             code, resp = host_post(r["base"], f"/api/invite/{urllib.parse.quote(r['invite'], safe='')}/poll", {"k": r["k"], "rid": rid})
@@ -289,16 +356,21 @@ class Outgoing:
 
     def listing(self):
         out = []
-        for r in sorted(self.store.d["knock_out"].values(), key=lambda r: -r["created"]):
+        with self.store.lock:
+            recs = sorted((dict(r) for r in self.store.d["knock_out"].values()), key=lambda r: -r["created"])
+        for r in recs:
             row = {k: r[k] for k in ("rid", "label", "code", "state", "agent", "created", "note", "room")}
             row["rejoin"] = bool(r.get("rejoin"))
             if r["agent"] and r["state"] == "approved":
-                row["link"] = self.links.get(r["rid"])
+                with self.mu:
+                    row["link"] = self.links.get(r["rid"])
             out.append(row)
         return out[:10]
 
     def cancel(self, rid):
-        r = self.store.d["knock_out"].get(rid)
+        with self.store.lock:
+            r = self.store.d["knock_out"].get(rid)
+            r = dict(r) if r else None
         if not r:
             return False
         self._set(rid, state="cancelled")
@@ -309,7 +381,9 @@ class Outgoing:
 
     def dismiss(self, rid):
         """Clear an entry from the list. Still waiting means giving up: the placeholder room goes too. Finished entries just disappear."""
-        r = self.store.d["knock_out"].get(rid)
+        with self.store.lock:
+            r = self.store.d["knock_out"].get(rid)
+            r = dict(r) if r else None
         if not r:
             return False
         if r["state"] == "waiting":

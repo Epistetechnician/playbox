@@ -3,7 +3,7 @@ const fs = require("fs"), vm = require("vm"), assert = require("assert");
 const ctx = {window: {}, document: {}}; ctx.window = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(__dirname + "/../static/markdown.js", "utf8"), ctx);
-const {render} = ctx.PBMd;
+const {render, feedHtml} = ctx.PBMd;
 const ok = (n, c) => { assert(c, n); console.log("PASS " + n); };
 let h = render("# Title\nhello <script>alert(1)</script> **bold** and `a<b`\n- one\n- two\n\n1. x");
 ok("headings, lists, bold, code render", h.includes("<h2>Title</h2>") && h.includes("<b>bold</b>") && h.includes("<code>a&lt;b</code>") && h.includes("<ul><li>one</li>") && h.includes("<ol>"));
@@ -26,4 +26,22 @@ h = render("| a | b |\n|---|---|\n| 1 | 2 |");
 ok("tables render", h.includes("<th>a</th>") && h.includes("<td>2</td>"));
 h = render("$$\nE = mc^2\n$$");
 ok("display maths block", h.includes("pbm-display"));
+
+// Safe Feed renderer (`PBMd.feedHtml`)
+h = feedHtml("hi @alice (@bob-1.2) check `a < b && @noop`:\n```python\nprint('<script>alert(1)</script>')\n```\ndone\nline2");
+ok("feedHtml: fenced code blocks render pre.pbm-code", h.includes('<pre class="pbm-code" data-lang="python" data-src="1"><code>print(&#39;&lt;script&gt;alert(1)&lt;/script&gt;&#39;)</code></pre>'));
+ok("feedHtml: inline backticks render <code> without @mention inside", h.includes("<code>a &lt; b &amp;&amp; @noop</code>") && !h.includes("@noop</span>"));
+ok("feedHtml: @mentions render <span class=\"at\"> and line breaks become <br>", h.includes('<span class="at">@alice</span>') && h.includes('(<span class="at">@bob-1.2</span>)') && h.includes("done<br>line2"));
+ctx.DOMPurify = {sanitize: s => s};
+h = feedHtml("# NotHeading\n<script>alert(1)</script> <img src=x onerror=alert(1)> [click](javascript:alert(1)) [ok](https://example.com) ```\n<img onerror=alert(2)>\n```");
+ok("feedHtml: never produces <a>, <img>, <script> or headings inside or outside code blocks",
+   !/<(a|img|script|h[1-6])\b/i.test(h) && !/<[^>]*\bonerror\b/i.test(h) && h.includes("&lt;script&gt;") && h.includes("&lt;img src=x onerror=alert(1)&gt;"));
+delete ctx.DOMPurify;
+h = feedHtml("streaming\n```js\nconst y = 1 < 2;");
+ok("feedHtml: unclosed streaming fence still renders safely as code", h.includes('<pre class="pbm-code" data-lang="js" data-src="1"><code>const y = 1 &lt; 2;</code></pre>'));
+ctx.PBShiki = {html: (s, l) => `<pre class="shiki" data-l="${l}"><span>${ctx.PBMd.esc(s)}</span></pre>`};
+h = feedHtml("```rust\nfn main() {}\n```");
+ok("feedHtml: uses PBShiki when already loaded", h.includes('<div class="pbm-code" data-lang="rust"><pre class="shiki"'));
+delete ctx.PBShiki;
+
 console.log("all passed");

@@ -30,10 +30,14 @@
     if (!k) return `<span class="pbm-math" data-tex="${esc(tex)}" data-display="${display ? 1 : 0}">${esc(display ? "$$" + tex + "$$" : "$" + tex + "$")}</span>`;
     try { return T(k.renderToString(tex, {displayMode: display, throwOnError: false, trust: false, strict: "ignore", maxExpand: 200})); } catch { return esc(tex); }
   }
-  function code(src, lang, streamingOpen) {
+  function codeHtml(src, lang) {
     const colored = window.PBShiki && lang ? window.PBShiki.html(src, lang) : null;
-    if (colored) return T(`<div class="pbm-code" data-lang="${esc(lang)}">${colored}</div>`);
+    if (colored) return `<div class="pbm-code" data-lang="${esc(lang)}">${colored}</div>`;
     return `<pre class="pbm-code" data-lang="${esc(lang || "")}" data-src="${lang ? 1 : 0}"><code>${esc(src)}</code></pre>`;
+  }
+  function code(src, lang, streamingOpen) {
+    const h = codeHtml(src, lang);
+    return h.startsWith("<div ") ? T(h) : h;
   }
   function inline(t, o) {
     const hold = [];
@@ -117,9 +121,35 @@
     el.innerHTML = render(src, o);
     need(src).then(() => { if (el.isConnected) { el.innerHTML = render(src, o); upgrade(el); } });
   }
+  function feedLine(ln) {
+    return ln.split(/(`[^`\n]+`)/g).map((part, idx) => {
+      if (idx % 2 === 1) return `<code>${esc(part.slice(1, -1))}</code>`;
+      return esc(part).replace(/(^|[\s(])@([\w.\-]{1,40})/g, '$1<span class="at">@$2</span>');
+    }).join("");
+  }
+  /** Safe renderer for untrusted Feed chat messages: 100% HTML-escaped, fenced & inline code + @mentions only; never links, images or headings. */
+  function feedHtml(src) {
+    const lines = String(src == null ? "" : src).replace(/\r\n?/g, "\n").split("\n"), out = [];
+    let text = [], i = 0;
+    const flushText = () => { if (text.length) { out.push(text.map(feedLine).join("<br>")); text = []; } };
+    while (i < lines.length) {
+      const ln = lines[i], m = ln.match(/^\s*```\s*([\w+-]*)\s*$/);
+      if (m) {
+        flushText();
+        const body = []; i++;
+        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) body.push(lines[i++]);
+        if (i < lines.length) i++;
+        out.push(codeHtml(body.join("\n"), (m[1] || "").toLowerCase()));
+        continue;
+      }
+      text.push(ln); i++;
+    }
+    flushText();
+    return out.join("");
+  }
   /** Highlight a diff or any code block of known language, plain text when the language is not loaded. Returns a promise of HTML. */
   function highlight(src, lang) {
     return load("shiki").then(ok => (ok && window.PBShiki.html(src, lang)) || `<pre class="pbm-code"><code>${esc(src)}</code></pre>`);
   }
-  window.PBMd = {render, upgrade, need, into, highlight, esc};
+  window.PBMd = {render, feedHtml, upgrade, need, into, highlight, esc};
 })();
