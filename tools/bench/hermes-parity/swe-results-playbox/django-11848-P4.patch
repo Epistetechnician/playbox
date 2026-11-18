@@ -1,0 +1,84 @@
+diff --git a/django/utils/.hermes-tmp.3682 b/django/utils/.hermes-tmp.3682
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/utils/http.py b/django/utils/http.py
+index 572cfb4..62c1003 100644
+--- a/django/utils/http.py
++++ b/django/utils/http.py
+@@ -176,10 +176,16 @@ def parse_http_date(date):
+     try:
+         year = int(m.group('year'))
+         if year < 100:
+-            if year < 70:
+-                year += 2000
++            # RFC 7231: two-digit years should be interpreted relative to the
++            # current year. If the year appears to be more than 50 years in
++            # the future, interpret it as the most recent year in the past
++            # with the same last two digits.
++            current_year = datetime.datetime.utcnow().year
++            year_as_2000s = year + 2000
++            if year_as_2000s - current_year > 50:
++                year = year + 1900
+             else:
+-                year += 1900
++                year = year_as_2000s
+         month = MONTHS.index(m.group('mon').lower()) + 1
+         day = int(m.group('day'))
+         hour = int(m.group('hour'))
+diff --git a/test_fix.py b/test_fix.py
+new file mode 100644
+index 0000000..88e5e04
+--- /dev/null
++++ b/test_fix.py
+@@ -0,0 +1,51 @@
++import datetime
++from django.utils.http import parse_http_date
++
++# Current year as an example - let's say we're in 2024
++# If we see year 76 in RFC850, it should be:
++# - 2076 would be 52 years in the future (more than 50), so it's 1976
++# - 2074 would be 50 years in the future (exactly 50), so it stays 2074
++
++# Let's test the current behavior
++print("Testing current behavior:")
++try:
++    # This is year 94 in RFC850 format
++    parsed = parse_http_date('Sunday, 06-Nov-94 08:49:37 GMT')
++    dt = datetime.datetime.utcfromtimestamp(parsed)
++    print(f"RFC850 94 -> {dt.year}")  # Currently should be 1994
++    
++    # This is year 06 in RFC850 format
++    parsed = parse_http_date('Sunday, 06-Nov-06 08:49:37 GMT')
++    dt = datetime.datetime.utcfromtimestamp(parsed)
++    print(f"RFC850 06 -> {dt.year}")  # Currently should be 2006
++except Exception as e:
++    print(f"Error: {e}")
++
++# The issue is: what happens if we get year 76 in the future?
++# If we're in 2024, year 76 should be:
++# - 2076? No, that's 52 years in future (more than 50), so it's 1976
++# 
++# But the current code would make it 1976 (70-99 range)
++# So that's correct by coincidence.
++#
++# The issue is with the 00-69 range. If we get year 25:
++# - 2025 is only 1 year in future (from 2024), so it's 2025
++# This is correct.
++#
++# But if we get year 76:
++# - 2076 is 52 years in future, so it should be 1976
++# Current code makes it 1976 (70-99 range), which is correct by coincidence.
++#
++# The real issue: if we're in 2075, and we get year 25:
++# - 2025 would be -50 years in past (or 50 years before), not more than 50 in future
++# - So it should stay 2025
++# But current code would make it 2025 (00-69 range), which is correct.
++#
++# Wait, let's think about this more carefully...
++# If we're in 2075 and get year 76:
++# - 2076 is 1 year in future (less than 50), so it's 2076
++# But current code makes it 1976 (70-99 range), which is WRONG!
++
++print("\nTesting the edge case:")
++print("Current implementation: 70-99 -> 1970-1999, 00-69 -> 2000-2069")
++print("RFC 7231 requirement: should be dynamic based on current year ± 50 years")

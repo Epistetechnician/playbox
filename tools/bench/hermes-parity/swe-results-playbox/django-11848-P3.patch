@@ -1,0 +1,26 @@
+diff --git a/django/utils/.hermes-tmp.4694 b/django/utils/.hermes-tmp.4694
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/utils/http.py b/django/utils/http.py
+index 572cfb4..88234bd 100644
+--- a/django/utils/http.py
++++ b/django/utils/http.py
+@@ -176,10 +176,15 @@ def parse_http_date(date):
+     try:
+         year = int(m.group('year'))
+         if year < 100:
+-            if year < 70:
+-                year += 2000
++            # RFC 7231 two-digit year handling: if the year appears to be more
++            # than 50 years in the future, interpret it as the most recent year
++            # in the past that had the same last two digits.
++            year_2000 = 2000 + year
++            current_year = datetime.datetime.utcnow().year
++            if (year_2000 - current_year) > 50:
++                year = 1900 + year
+             else:
+-                year += 1900
++                year = year_2000
+         month = MONTHS.index(m.group('mon').lower()) + 1
+         day = int(m.group('day'))
+         hour = int(m.group('hour'))

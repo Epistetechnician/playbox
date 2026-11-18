@@ -1,0 +1,28 @@
+diff --git a/django/db/models/.hermes-tmp.17593 b/django/db/models/.hermes-tmp.17593
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979..afec542 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -462,6 +462,20 @@ class IsNull(BuiltinLookup):
+     lookup_name = 'isnull'
+     prepare_rhs = False
+ 
++    def __init__(self, lhs, rhs):
++        super().__init__(lhs, rhs)
++        # Validate that rhs is a boolean or an expression with resolve_expression
++        # unless can_use_none_as_rhs is True (which allows None)
++        if not (
++            isinstance(self.rhs, bool) or
++            (self.rhs is None and self.can_use_none_as_rhs) or
++            hasattr(self.rhs, 'resolve_expression')
++        ):
++            raise TypeError(
++                '%s requires a boolean value or an expression that can be resolved.'
++                % self.lookup_name
++            )
++
+     def as_sql(self, compiler, connection):
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:

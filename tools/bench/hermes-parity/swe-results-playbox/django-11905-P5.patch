@@ -1,0 +1,62 @@
+diff --git a/django/db/models/.hermes-tmp.9009 b/django/db/models/.hermes-tmp.9009
+new file mode 100644
+index 0000000..e69de29
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979..9328ab9 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -462,6 +462,18 @@ class IsNull(BuiltinLookup):
+     lookup_name = 'isnull'
+     prepare_rhs = False
+ 
++    def __init__(self, lhs, rhs):
++        super().__init__(lhs, rhs)
++        # Validate that rhs is a boolean or an expression
++        if (
++            not hasattr(self.rhs, 'as_sql')
++            and self.rhs is not None
++            and not isinstance(self.rhs, bool)
++        ):
++            raise TypeError(
++                "isnull lookup value must be True or False."
++            )
++
+     def as_sql(self, compiler, connection):
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+diff --git a/test_isnull_non_bool.py b/test_isnull_non_bool.py
+new file mode 100644
+index 0000000..47929b2
+--- /dev/null
++++ b/test_isnull_non_bool.py
+@@ -0,0 +1,30 @@
++import os
++import django
++os.environ['DJANGO_SETTINGS_MODULE'] = 'tests.test_sqlite'
++django.setup()
++
++from tests.lookup.models import Season
++
++# Try using isnull with an integer
++try:
++    q = Season.objects.filter(nulled_text_field__isnull=1)
++    print('isnull=1 works (should fail)')
++    print(f'Query: {q.query}')
++except Exception as e:
++    print(f'isnull=1 raises: {type(e).__name__}: {e}')
++
++try:
++    q = Season.objects.filter(nulled_text_field__isnull='True')
++    print('isnull="True" works (should fail)')
++    print(f'Query: {q.query}')
++except Exception as e:
++    print(f'isnull="True" raises: {type(e).__name__}: {e}')
++
++try:
++    q = Season.objects.filter(nulled_text_field__isnull=True)
++    print('isnull=True works (should work)')
++    # Try to execute it
++    list(q)
++    print('Successfully executed')
++except Exception as e:
++    print(f'isnull=True raises: {type(e).__name__}: {e}')

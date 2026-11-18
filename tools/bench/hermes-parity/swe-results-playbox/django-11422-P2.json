@@ -1,0 +1,72 @@
+{
+ "inst": "django-11422",
+ "arm": "P",
+ "n": "2",
+ "wall_s": 613.1,
+ "rc": 0,
+ "attempts": 1,
+ "patch_lines": 20,
+ "usage": {
+  "estimated_cost_usd": 0.22745404999999996,
+  "cost_status": "estimated",
+  "cost_source": "provider_models_api",
+  "input_tokens": 1325306,
+  "output_tokens": 9756,
+  "cache_read_tokens": 1285123,
+  "cache_write_tokens": 39915,
+  "reasoning_tokens": 0,
+  "total_tokens": 1335062,
+  "api_calls": 54,
+  "model": "claude-haiku-4-5-20251001",
+  "provider": "anthropic",
+  "session_id": "local-c51950caf014c29f2fbafd27d08176113ebc95148ee247d90f052900829dc31b",
+  "completed": true,
+  "partial": false,
+  "interrupted": false,
+  "turn_exit_reason": "text_response(finish_reason=stop)",
+  "failed": false,
+  "service_tier": null,
+  "auxiliary": {
+   "api_calls": 0,
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0,
+   "reasoning_tokens": 0,
+   "estimated_cost_usd": 0,
+   "total_tokens": 0,
+   "by_task": {}
+  },
+  "total_including_auxiliary": {
+   "estimated_cost_usd": 0.22745404999999996,
+   "total_tokens": 1335062,
+   "api_calls": 54
+  }
+ },
+ "setup_s": 16.0,
+ "playbox": {
+  "delegates": 61,
+  "refused": 1,
+  "edits": 21,
+  "rate_waited_s": 0.0,
+  "taint_advisories": 41,
+  "median_cmd_s": 7.28,
+  "total_cmd_s": 489.1,
+  "audit_verifies": true,
+  "patch_truncated": false,
+  "refusal_msgs": [
+   "task refused: uploading the workspace failed: tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'\ntar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'\ntar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenan"
+  ],
+  "admissions": [
+   "advisory: this playbox_delegate contains text that came from task:01a1ec3e-efc6-712d-bf55-cbd4b7d34638; set PLAYBOX_APPROVERS to require approval",
+   "advisory: this playbox_delegate contains text that came from task:01a1ec3e-efc6-712d-bf55-cbd4b7d34638; set PLAYBOX_APPROVERS to require approval"
+  ]
+ },
+ "note": "",
+ "f2p": 1,
+ "f2p_total": 1,
+ "p2p": 44,
+ "p2p_total": 44,
+ "resolved": true,
+ "applied": true
+}
