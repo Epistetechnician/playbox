@@ -122,6 +122,24 @@ class _Session:
             os.replace(tmp, self.stats_path.replace(".jsonl", "") + ".final.json")
 
 
+def with_stdin(command, data):
+    """Give `command` the text `data` on stdin, byte for byte, in the current shell (so `cd` / `$PWD` changes survive).
+    A heredoc on a brace group wraps the whole command so multi-statement scripts (`...; cat > "$tmp"; ...; mv ...`) read stdin at
+    the right statement, with a collision-free delimiter. A heredoc always ends in a newline, so data without one is staged to an
+    immediately-unlinked temp descriptor decoded from base64 (never a pipeline, which would run the brace group in a subshell)."""
+    if data.endswith("\n"):
+        delim = "__PBX_STDIN__"
+        while delim in data:
+            delim += "_X"
+        return f"{{\n{command}\n}} <<'{delim}'\n{data}{delim}"
+    import base64
+    b64 = base64.b64encode(data.encode("utf-8", "surrogateescape")).decode()
+    return (
+        f'__pbx_in="$(mktemp /tmp/.pbx_in.XXXXXX)" && printf %s {b64} | base64 -d > "$__pbx_in" '
+        f'&& exec 9< "$__pbx_in" && rm -f "$__pbx_in" && {{\n{command}\n}} <&9 9<&-'
+    )
+
+
 class PlayboxEnvironment(BaseEnvironment):
     is_local = False
     uses_host_filesystem = False
@@ -149,7 +167,7 @@ class PlayboxEnvironment(BaseEnvironment):
     def execute(self, command, cwd="", *, timeout=None, stdin_data=None, **_):
         cwd = cwd or self.cwd or SANDBOX_CWD
         if stdin_data:
-            command = f"{command} <<'__PBX_STDIN__'\n{stdin_data}\n__PBX_STDIN__"
+            command = with_stdin(command, stdin_data)
         script, mark = self._script(command, cwd)
         t_req = time.time()
         with self.s.lock:
