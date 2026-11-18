@@ -1,0 +1,94 @@
+{
+ "ckpt": "/home/dev/tp/ckpt/q4l3_blind_s2.pt",
+ "draw_seeds": [
+  5,
+  6,
+  7
+ ],
+ "draws_per_topic": 15,
+ "topics": 16,
+ "n_items": 720,
+ "retention_pooled": {
+  "other_own": 0.5956,
+  "mapped": 0.7636,
+  "mapped_wrong": 0.2306,
+  "mapped_edge": 0.7342,
+  "other_own_edge": 0.5886,
+  "edge_only": 0.0738
+ },
+ "B_edge_mapped_minus_unrelated_real": {
+  "point": 0.1386,
+  "ci95": [
+   0.1197,
+   0.1568
+  ],
+  "n_items": 720,
+  "n_topics": 16
+ },
+ "B_edge_mapped_minus_unrelated_real_edge": {
+  "point": 0.1457,
+  "ci95": [
+   0.1287,
+   0.1629
+  ],
+  "n_items": 720,
+  "n_topics": 16
+ },
+ "B_edge_mapped_minus_edge_only": {
+  "point": 0.6605,
+  "ci95": [
+   0.6457,
+   0.674
+  ],
+  "n_items": 720,
+  "n_topics": 16
+ },
+ "B_mapped_minus_unrelated_real": {
+  "point": 0.168,
+  "ci95": [
+   0.1475,
+   0.1879
+  ],
+  "n_items": 720,
+  "n_topics": 16
+ },
+ "specificity_mapped_minus_mapped_wrong": {
+  "point": 0.5331,
+  "ci95": [
+   0.4963,
+   0.5693
+  ],
+  "n_items": 720,
+  "n_topics": 16
+ },
+ "by_draw_seed": {
+  "5": {
+   "B": 0.1748
+  },
+  "6": {
+   "B": 0.1565
+  },
+  "7": {
+   "B": 0.1725
+  }
+ },
+ "B_by_topic": {
+  "city": 0.166,
+  "family": 0.132,
+  "farm": 0.121,
+  "festival": 0.192,
+  "garden": 0.119,
+  "hospital": 0.194,
+  "kitchen": 0.134,
+  "library": 0.142,
+  "market": 0.207,
+  "mountain": 0.173,
+  "office": 0.185,
+  "river": 0.238,
+  "school": 0.124,
+  "travel": 0.114,
+  "weather": 0.242,
+  "workshop": 0.19
+ },
+ "seconds": 276
+}
