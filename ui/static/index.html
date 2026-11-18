@@ -129,7 +129,7 @@ main{min-width:0;padding:0 14px calc(var(--nav-h) + 24px + env(safe-area-inset-b
 /* controls */
 label{display:block;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin:14px 0 6px}
 label:first-child{margin-top:0}
-input[type=text],textarea,select,input[type=number]{width:100%;background:var(--field);border:1px solid var(--line-2);border-radius:var(--r);padding:10px 11px;font-size:16px}
+input[type=text],input[type=search],textarea,select,input[type=number]{width:100%;background:var(--field);border:1px solid var(--line-2);border-radius:var(--r);padding:10px 11px;font-size:16px}
 textarea{resize:vertical;min-height:84px}
 textarea.mono,input.mono{font-size:14px}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-offset:0;border-color:var(--edge)}
@@ -277,7 +277,7 @@ const ICONS = {
 };
 const TABS = [["room", "Room"], ["timeline", "Timeline"], ["notes", "Notes"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["harnesses", "Harnesses"], ["proof", "Proof"]];
 
-const S = {tab: "room", status: null, ok: false, feed: [], seq: 0, invite: null, hostArgs: {}, running: false, runInfo: null, runTimer: null, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
+const S = {tab: "room", status: null, ok: false, feed: [], feedQ: "", seq: 0, invite: null, hostArgs: {}, running: false, runInfo: null, runTimer: null, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 const hasSelectionIn = el => { const sel = window.getSelection?.(); return !!(el && sel && !sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode)); };
 
 /* ---------- api ---------- */
@@ -341,6 +341,11 @@ window.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && window.PBShell && PBShell.openPalette) {
     e.preventDefault();
     PBShell.openPalette(cockpitPaletteItems());
+    return;
+  }
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && S.tab === "feed" && !document.querySelector("dialog[open]") && !e.target.matches?.("input,textarea,select,[contenteditable=true]")) {
+    const fq = $("#feedq");
+    if (fq) { e.preventDefault(); fq.focus(); fq.select(); }
   }
 });
 
@@ -588,7 +593,7 @@ function paintNoteDoc() {
   if (window.PBMd) PBMd.into(el, src); else el.textContent = src;
 }
 function hlPatch() {
-  const pre = $("#patchpre"); if (!pre || !window.PBMd || pre.dataset.hl) return;
+  const pre = $("#patchpre"); if (!pre || pre.closest(".diff-file") || !window.PBMd || pre.dataset.hl) return;
   pre.dataset.hl = "1";
   PBMd.highlight(pre.textContent, "diff").then(h => { if (pre.isConnected && h && h.includes("shiki")) { pre.outerHTML = h.replace("<pre ", '<pre id="patchpre-hl" '); } });
 }
@@ -832,6 +837,7 @@ const VIEWS = {
   feed() {
     if (mode() === "none") return emptyCard("Join or host a room to see its feed.");
     return `<div class="legend"><span><i style="background:var(--ink)"></i>You</span><span><i style="background:var(--sig)"></i>Other members: untrusted text, the witness watches it</span></div>
+      <div class="row" style="gap:8px;margin:0 0 10px"><input type="search" id="feedq" value="${esc(S.feedQ || "")}" placeholder="Filter messages or @member…  (/)" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;width:auto;margin:0;padding:6px 10px;font-size:12.5px"><span class="mut mono" id="feedqmeta" style="font-size:11.5px"></span><button type="button" class="btn sm" id="feedqclear" ${S.feedQ ? "" : "hidden"}>Clear</button></div>
       <div class="feed" id="feedlist"></div>
       <div class="quick" role="group" aria-label="Quick replies">${QUICK.map(q => `<button type="button" data-act="quick" data-text="${esc(q)}">${esc(q)}</button>`).join("")}</div>
       <div class="tags" id="tags" role="group" aria-label="Tag someone"></div>
@@ -938,18 +944,75 @@ function renderVerify(v) {
     ${v.error ? `<pre style="margin-top:10px">${esc(v.error)}</pre>` : ""}`;
 }
 
-function renderResult(w) {
-  const lines = (w.patch || "").split("\n").map(l => {
-    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+function colorDiffLines(lines) {
+  return lines.map(l => {
+    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") || l.startsWith("@@") || l.startsWith("index ") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
     return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
   }).join("\n");
+}
+function parseDiffSections(src) {
+  const lines = src.split("\n"), secs = [];
+  let cur = null, pre = [];
+  for (const l of lines) {
+    if (l.startsWith("diff --git ")) {
+      if (cur) secs.push(cur);
+      cur = pre.length ? [...pre, l] : [l];
+      pre = [];
+    } else if (cur) cur.push(l);
+    else if (l) pre.push(l);
+  }
+  if (cur) secs.push(cur);
+  return secs.map(sec => {
+    const hdr = sec.find(l => l.startsWith("diff --git ")) || sec[0] || "";
+    const plus = sec.find(l => l.startsWith("+++ b/"));
+    const minus = sec.find(l => l.startsWith("--- a/"));
+    const m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(hdr);
+    const filePath = plus ? plus.slice(6) : m ? m[2] : minus ? minus.slice(6) : hdr.replace(/^diff --git\s+/, "");
+    let adds = 0, dels = 0;
+    for (const l of sec) {
+      if (l.startsWith("+") && !l.startsWith("+++")) adds++;
+      else if (l.startsWith("-") && !l.startsWith("---")) dels++;
+    }
+    return {filePath, adds, dels, lines: sec};
+  });
+}
+function renderPatchView(patchText, patchBytes, truncated) {
+  const src = String(patchText || "").replace(/\r\n?/g, "\n");
+  S._patchRaw = patchText || "";
+  const bytes = `${patchBytes ?? (patchText || "").length} bytes${truncated ? " (truncated)" : ""}`;
+  if (/(?:^|\n)diff --git /.test(src)) {
+    const secs = parseDiffSections(src);
+    const totAdds = secs.reduce((a, s) => a + s.adds, 0), totDels = secs.reduce((a, s) => a + s.dels, 0);
+    return `<div class="row" style="justify-content:space-between;margin:14px 0 6px;gap:8px">
+      <span class="row" style="gap:6px"><span class="lbl" style="margin:0">Patch · ${secs.length} file${secs.length === 1 ? "" : "s"}</span><span class="chip ok">+${totAdds}</span><span class="chip bad">-${totDels}</span><span class="mut mono" style="font-size:11.5px">${bytes}</span></span>
+      <button type="button" class="btn sm" data-act="copypatch">Copy patch</button></div>`
+      + secs.map((s, idx) => `<details class="diff-file" id="df-${idx}" ${idx < 5 ? "open" : ""} style="border:1px solid var(--line-2);margin-top:8px;background:var(--field)">
+        <summary class="row" style="cursor:pointer;justify-content:space-between;padding:8px 10px;background:var(--panel-2);user-select:none">
+          <span class="mono" style="font-size:12px;font-weight:600;word-break:break-all">${esc(s.filePath)}</span>
+          <span class="row" style="gap:6px"><span class="chip ok">+${s.adds}</span><span class="chip bad">-${s.dels}</span></span>
+        </summary>
+        <pre${idx === 0 ? ' id="patchpre"' : ""} class="patchpre" style="margin:0;border:0;border-radius:0;border-top:1px solid var(--line-2);max-height:320px;overflow:auto">${colorDiffLines(s.lines)}</pre>
+      </details>`).join("");
+  }
+  const lines = src.split("\n");
+  let adds = 0, dels = 0;
+  for (const l of lines) {
+    if (l.startsWith("+") && !l.startsWith("+++")) adds++;
+    else if (l.startsWith("-") && !l.startsWith("---")) dels++;
+  }
+  return `<div class="row" style="justify-content:space-between;margin:14px 0 6px;gap:8px">
+    <span class="row" style="gap:6px"><span class="lbl" style="margin:0">Patch · ${bytes}</span>${adds || dels ? `<span class="chip ok">+${adds}</span><span class="chip bad">-${dels}</span>` : ""}</span>
+    <button type="button" class="btn sm" data-act="copypatch">Copy patch</button></div>
+    <div class="diff-file"><pre id="patchpre" class="patchpre">${colorDiffLines(lines)}</pre></div>`;
+}
+function renderResult(w) {
   const ok = w.exit_code === 0 && !w.timed_out;
   return `<div class="card"><h2>Result</h2>
     <div class="row"><span class="chip ${ok ? "ok" : "bad"}">${w.timed_out ? "timed out" : "exit " + w.exit_code}</span>
       ${w.runner ? `<span class="chip">${esc(w.runner)}</span>` : ""}${w.patch_applied ? '<span class="chip ok">patch applied</span>' : ""}</div>
     ${w.stdout ? `<label>Output</label><pre>${esc(w.stdout)}</pre>` : ""}
     ${w.stderr ? `<label>Errors</label><pre>${esc(w.stderr)}</pre>` : ""}
-    ${w.patch ? `<label>Patch · ${w.patch_bytes ?? w.patch.length} bytes${w.patch_truncated ? " (truncated)" : ""}</label><pre id="patchpre">${lines}</pre>` : ""}</div>`;
+    ${w.patch ? renderPatchView(w.patch, w.patch_bytes, w.patch_truncated) : ""}</div>`;
 }
 
 /* ---------- feed ---------- */
@@ -1006,17 +1069,30 @@ function feedItemHtml(it) {
   const body = window.PBMd && PBMd.feedHtml ? PBMd.feedHtml(it.text) : fallbackFeedHtml(it.text);
   return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div><div class="msg-body">${body}</div></div>`;
 }
+function feedMatch(it, q) {
+  const needle = q.toLowerCase(), bare = needle.startsWith("@") ? needle.slice(1) : needle;
+  const fromHost = it.from === "host";
+  const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
+  const who = it.name || (fromHost ? "host" : short(it.from)) || "";
+  const hay = `${it.text || ""} ${it.name || ""} ${it.name ? "@" + tagOf(it.name) : ""} ${it.from || ""} ${who} ${me ? "you" : ""}`.toLowerCase();
+  return hay.includes(needle) || (bare && hay.includes(bare));
+}
 function paintFeed(fresh) {
-  const el = $("#feedlist");
+  const el = $("#feedlist"), rawQ = S.feedQ || "", q = rawQ.trim();
+  const shown = q ? S.feed.filter(it => feedMatch(it, q)) : S.feed;
+  const meta = $("#feedqmeta"), clr = $("#feedqclear");
+  if (meta) meta.textContent = q ? `${shown.length} of ${S.feed.length}` : "";
+  if (clr) clr.hidden = !rawQ;
   if (el) {
     const stick = innerHeight + scrollY > document.documentElement.scrollHeight - 160;
-    if (hasSelectionIn(el)) {
-      if (fresh && fresh.length) {
+    if (fresh && hasSelectionIn(el)) {
+      const freshShown = q ? fresh.filter(it => feedMatch(it, q)) : fresh;
+      if (freshShown.length) {
         el.querySelector(".empty")?.remove();
         const startIdx = el.children.length;
-        el.insertAdjacentHTML("beforeend", fresh.map(feedItemHtml).join(""));
+        el.insertAdjacentHTML("beforeend", freshShown.map(feedItemHtml).join(""));
         if (window.PBMd && PBMd.need && PBMd.upgrade) {
-          const joinedText = fresh.filter(i => i.kind === "say" && typeof i.text === "string" && i.text.includes("```")).map(i => i.text).join("\n");
+          const joinedText = freshShown.filter(i => i.kind === "say" && typeof i.text === "string" && i.text.includes("```")).map(i => i.text).join("\n");
           if (joinedText) Promise.resolve(PBMd.need(joinedText)).then(() => {
             if (!el.isConnected) return;
             for (let i = startIdx; i < el.children.length; i++) PBMd.upgrade(el.children[i]);
@@ -1024,9 +1100,9 @@ function paintFeed(fresh) {
         }
       }
     } else {
-      el.innerHTML = S.feed.length ? S.feed.map(feedItemHtml).join("") : `<div class="empty">No messages yet. Say hello.</div>`;
-      upgradeFeedCode(el, S.feed);
-      if (stick) scrollTo({top: document.documentElement.scrollHeight});
+      el.innerHTML = shown.length ? shown.map(feedItemHtml).join("") : q ? `<div class="empty">No messages match "${esc(S.feedQ)}".</div>` : `<div class="empty">No messages yet. Say hello.</div>`;
+      upgradeFeedCode(el, shown);
+      if (stick && fresh !== false) scrollTo({top: document.documentElement.scrollHeight});
     }
   }
   paintTags(); paintPulse();
@@ -1302,6 +1378,13 @@ async function act(name, btn) {
       pollFeed();
       break;
     }
+    case "copypatch": {
+      const p = (S.lastWork && S.lastWork.patch) || S._patchRaw || "";
+      if (!p) break;
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(p).then(() => toast("Patch copied"), () => copyText(p));
+      else copyText(p);
+      break;
+    }
     case "copy-invite": copyText(S.invite); break;
     case "share-invite": navigator.share({title: "Playbox invite", text: S.invite}).catch(() => {}); break;
     case "save-invite": {
@@ -1342,6 +1425,13 @@ function confirmRevoke(id) {
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
+  if (e.target.closest("#feedqclear")) {
+    S.feedQ = "";
+    const fq = $("#feedq");
+    if (fq) { fq.value = ""; fq.focus(); }
+    paintFeed(false);
+    return;
+  }
   if (e.target.closest('a[href$="/canvas"]')) window.PBShell?.setRoomView?.("canvas");
   const t = e.target.closest("[data-tab],[data-act],[data-reach]");
   if (!t) return;
@@ -1354,7 +1444,10 @@ document.addEventListener("click", e => {
   if (t.dataset.act === "settings") { window.PBTheme && PBTheme.open(); return; }
   act(t.dataset.act, t);
 });
-document.addEventListener("input", e => { if (e.target.id === "saytext") paintTags(); });
+document.addEventListener("input", e => {
+  if (e.target.id === "saytext") paintTags();
+  else if (e.target.id === "feedq") { S.feedQ = e.target.value; paintFeed(false); }
+});
 document.addEventListener("keyup", e => { if (e.target.id === "saytext" && /Arrow|Home|End/.test(e.key)) paintTags(); });
 document.addEventListener("submit", async e => {
   if (e.target.id !== "say") return;

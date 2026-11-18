@@ -205,9 +205,19 @@ fn install(app: &AppHandle, rel: &Release) -> Result<(), String> {
     let zip = update::download(&Source::github_latest(), rel, &dl).map_err(|e| e.to_string())?;
 
     // 2. Unpack next to the installed app (same volume, so the swap is a rename). Refuse if we cannot write there.
-    let stage = parent.join(format!(".Playbox-update-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&stage);
-    std::fs::create_dir(&stage)
+    let mut rnd = [0u8; 8];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        let _ = std::io::Read::read_exact(&mut f, &mut rnd);
+    }
+    let hex_rnd: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
+    let stage = parent.join(format!(".Playbox-update-{}-{hex_rnd}", std::process::id()));
+    let mut db = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        db.mode(0o700);
+    }
+    db.create(&stage)
         .map_err(|e| format!("cannot write next to the app ({e}); move Playbox to Applications"))?;
     let result = (|| {
         run(Command::new("ditto")

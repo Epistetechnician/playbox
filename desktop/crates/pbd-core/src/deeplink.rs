@@ -92,11 +92,24 @@ where
 
 #[cfg(unix)]
 fn ensure_private_queue(dir: &Path) -> io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(dir)
+        .create(dir)?;
+    let meta = std::fs::symlink_metadata(dir)?;
+    if !meta.file_type().is_dir() {
+        return Err(io::Error::other("deeplinks path is not a directory"));
+    }
+    if meta.uid() != rustix::process::getuid().as_raw() {
+        return Err(io::Error::other(
+            "deeplinks directory owned by another user",
+        ));
+    }
+    if meta.permissions().mode() & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 #[cfg(not(unix))]
@@ -196,7 +209,20 @@ pub fn linux_desktop_entry_path(home: &Path) -> PathBuf {
 }
 
 pub fn render_linux_desktop_entry(exe: &Path) -> String {
-    let escaped = exe.to_string_lossy().replace('"', "\\\"");
+    let mut escaped = String::new();
+    for ch in exe.to_string_lossy().chars() {
+        if ch.is_control() {
+            continue;
+        }
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '$' => escaped.push_str("\\$"),
+            '`' => escaped.push_str("\\`"),
+            '%' => escaped.push_str("%%"),
+            other => escaped.push(other),
+        }
+    }
     format!(
         "[Desktop Entry]\nType=Application\nName=Playbox\nComment=Rooms where people and their agents work together\nExec=\"{escaped}\" %u\nTerminal=false\nCategories=Development;Utility;\nMimeType=x-scheme-handler/playbox;x-scheme-handler/web+playbox;\n"
     )
@@ -291,5 +317,12 @@ mod tests {
         assert!(s.contains("Exec=\"/opt/Playbox/playbox-desktop\" %u"));
         assert!(s.contains("MimeType=x-scheme-handler/playbox;x-scheme-handler/web+playbox;"));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn linux_desktop_entry_escapes_specials_and_strips_newlines() {
+        let s = render_linux_desktop_entry(Path::new("/opt/Play%box\nEvil=1/app\"$`\\bin"));
+        assert!(!s.contains("\nEvil=1"));
+        assert!(s.contains("Exec=\"/opt/Play%%boxEvil=1/app\\\"\\$\\`\\\\bin\" %u"));
     }
 }

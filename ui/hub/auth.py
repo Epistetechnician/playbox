@@ -345,6 +345,25 @@ class Auth:
             self.s.save()
         return self.new_session(cred["id"], False, ua, ip, name or "Device")
 
+    def upgrade_begin(self, session_key: str, rp_id: str, ip: str):
+        with self.s.lock:
+            if session_key not in self.s.d["sessions"]:
+                raise AuthError(401, "session ended")
+        code = self.mint_code(note="session upgrade")
+        return self.register_begin(code, rp_id, ip)
+
+    def upgrade_finish(self, session_key: str, ticket: str, resp: dict, name: str, ua: str, ip: str) -> str:
+        with self.s.lock:
+            if session_key not in self.s.d["sessions"]:
+                raise AuthError(401, "session ended")
+        tok = self.register_finish(ticket, resp, name, ua, ip)
+        new_key = sha(tok)
+        with self.s.lock:
+            if session_key != new_key and session_key in self.s.d["sessions"]:
+                del self.s.d["sessions"][session_key]
+                self.s.save()
+        return tok
+
     # ---- passkey login / step-up ----
     def login_begin(self, rp_id, kind="login", cred_id=None):
         with self.s.lock:
@@ -413,3 +432,7 @@ class Auth:
     def enrolled(self):
         with self.s.lock:
             return bool(self.s.d["creds"])
+
+    def has_passkey(self, rp_id: str) -> bool:
+        with self.s.lock:
+            return any(c.get("rp_id") == rp_id for c in self.s.d["creds"])

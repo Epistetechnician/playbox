@@ -132,6 +132,7 @@ svg.ch{width:100%;display:block;overflow:hidden}
 .insp header h2{margin:0;font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .insp .body{padding:16px;overflow:auto;flex:1}.insp h3{margin:18px 0 6px;font:700 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--t-mut)}
 .insp pre{background:var(--field);border:1px solid var(--line-2);padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--mono);margin:0}
+pre .add{color:var(--t-ok)}pre .del{color:var(--t-bad)}pre .hdr{color:var(--t-sig)}
 .chk{display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--dim);font:12px var(--mono)}.chk .ok{color:var(--t-ok)}.chk .no{color:var(--t-bad)}
 .rev{position:relative;padding:0 0 12px 18px;border-left:2px solid var(--line-2);margin-left:5px}.rev::before{content:"";position:absolute;left:-6px;top:3px;width:10px;height:10px;background:var(--panel);border:2px solid var(--ink)}
 .rev.verified::before{border-color:var(--t-ok);background:var(--t-ok)}.rev.failed::before{border-color:var(--t-bad)}.rev small{color:var(--t-mut);font:10.5px var(--mono)}
@@ -184,7 +185,7 @@ const RID = location.pathname.split("/")[2];
 const W = 2500, H = 1950;
 const rel = ms => { if (!ms) return "never"; const s = Math.max(0, (Date.now() - ms) / 1000 | 0); return s < 45 ? "now" : s < 3600 ? `${Math.max(1, s / 60 | 0)}m` : s < 86400 ? `${s / 3600 | 0}h` : `${s / 86400 | 0}d`; };
 const hhmm = ms => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
-let M = null, seenKeys = new Set(), first = true, focus = null, sel = null, view = {x: 0, y: 0, k: 1}, filt = {feed: "all", art: "all", log: "all"};
+let M = null, seenKeys = new Set(), first = true, focus = null, sel = null, view = {x: 0, y: 0, k: 1}, filt = {feed: "all", feedQ: "", art: "all", log: "all"};
 
 /* ---------- identicon ---------- */
 function sig(id, size = 22) {
@@ -250,15 +251,26 @@ R.pulse = d => {
 };
 
 function feedParts(d) {
-  const typed = M.changelog.filter(e => e.type !== "member").slice(0, 60).map(e => ({seq: e.seq, from: e.who, ms: e.ms, work: e.text, ref: e.ref, type: e.type}));
-  let list = M.feed.map(m => ({...m, work: null}));
-  if (filt.feed !== "work") list = list.concat([]);
-  const all = [...(filt.feed === "work" ? [] : list), ...(filt.feed === "msgs" ? [] : typed)].sort((a, b) => a.ms - b.ms).slice(d ? -120 : -12);
-  const bar = d ? `<div class="row" style="margin:0 0 8px">${[["all", "All"], ["msgs", "Messages"], ["work", "Work"]].map(([k, l]) => `<button class="btn sm ${filt.feed === k ? "primary" : ""}" data-act="ff" data-v="${k}">${l}</button>`).join("")}</div>` : "";
+  const q = d ? (filt.feedQ || "").trim().toLowerCase() : "", bare = q.startsWith("@") ? q.slice(1) : q;
+  const matchFeed = (txt, from) => {
+    if (!q) return true;
+    const w = who(from || "");
+    const hay = `${txt || ""} ${w} @${w} ${from || ""}`.toLowerCase();
+    return hay.includes(q) || (bare && hay.includes(bare));
+  };
+  const baseTyped = M.changelog.filter(e => e.type !== "member").slice(0, 60).map(e => ({seq: e.seq, from: e.who, ms: e.ms, work: e.text, ref: e.ref, type: e.type}));
+  const typed = baseTyped.filter(e => matchFeed(`${e.type} ${e.work}`, e.from));
+  const list = M.feed.filter(m => matchFeed(m.text, m.from)).map(m => ({...m, work: null}));
+  const allFull = [...(filt.feed === "work" ? [] : list), ...(filt.feed === "msgs" ? [] : typed)].sort((a, b) => a.ms - b.ms);
+  const totalBase = (filt.feed === "work" ? 0 : M.feed.length) + (filt.feed === "msgs" ? 0 : baseTyped.length);
+  const all = allFull.slice(d ? -120 : -12);
+  const metaTxt = q ? `${allFull.length} of ${totalBase}` : "";
+  const bar = d ? `<div class="row" style="margin:0 0 8px">${[["all", "All"], ["msgs", "Messages"], ["work", "Work"]].map(([k, l]) => `<button type="button" class="btn sm ${filt.feed === k ? "primary" : ""}" data-act="ff" data-v="${k}">${l}</button>`).join("")}<input type="search" data-cfeedq value="${esc(filt.feedQ)}" placeholder="Filter feed…" autocomplete="off" spellcheck="false" style="flex:1;min-width:110px;width:auto;padding:4px 8px;font-size:12px"><span class="mut mono" data-cfeedmeta style="font-size:10.5px">${esc(metaTxt)}</span><button type="button" class="btn sm" data-act="ffclear"${filt.feedQ ? "" : " hidden"}>Clear</button></div>` : "";
   const mdOk = !!(window.PBMd && PBMd.feedHtml);
-  const msgs = (all.length ? all.map(m => `<div class="msg ${m.from === M.me ? "me" : ""} ${isNew("m" + m.seq + (m.work ? "w" : ""))}" ${m.work ? `data-sel="${m.type}:${esc(m.ref)}" style="cursor:pointer"` : ""}>${sig(m.from)}<div><span class="w">${esc(who(m.from))}</span>${m.work ? `<div class="t"><span class="chip blue">${esc(m.type)}</span> ${esc(m.work)}</div>` : `<div class="t${mdOk ? " md" : ""}">${mdOk ? PBMd.feedHtml(m.text) : esc(m.text)}</div>`}</div><span class="tm">${hhmm(m.ms)}</span></div>`).join("") : '<p class="empty">The room is quiet. Messages appear here the moment anyone posts.</p>')
+  const emptyHtml = q ? `<p class="empty">No messages match "${esc(filt.feedQ)}".</p>` : '<p class="empty">The room is quiet. Messages appear here the moment anyone posts.</p>';
+  const msgs = (all.length ? all.map(m => `<div class="msg ${m.from === M.me ? "me" : ""} ${isNew("m" + m.seq + (m.work ? "w" : ""))}" ${m.work ? `data-sel="${m.type}:${esc(m.ref)}" style="cursor:pointer"` : ""}>${sig(m.from)}<div><span class="w">${esc(who(m.from))}</span>${m.work ? `<div class="t"><span class="chip blue">${esc(m.type)}</span> ${esc(m.work)}</div>` : `<div class="t${mdOk ? " md" : ""}">${mdOk ? PBMd.feedHtml(m.text) : esc(m.text)}</div>`}</div><span class="tm">${hhmm(m.ms)}</span></div>`).join("") : emptyHtml)
     + '<p class="mut" style="font-size:11px;margin:10px 0 0">Text from other members is untrusted and shown as plain text.</p>';
-  return {bar, msgs};
+  return {bar, msgs, metaTxt};
 }
 R.feed = d => {
   const {bar, msgs} = feedParts(d), dis = M.offline ? " disabled" : "";
@@ -343,9 +355,16 @@ function drawWorld() {
     $(".n", el).textContent = count === "" ? "" : count;
     $(".far", el).innerHTML = FAR[id] ? FAR[id]() : "";
     if (id === "feed" && $(".c-feed", pb)) {
-      const {bar, msgs} = feedParts(open), msgsEl = $(".c-msgs", pb);
+      const {bar, msgs, metaTxt} = feedParts(open), msgsEl = $(".c-msgs", pb), fbar = $(".c-fbar", pb);
       const mTop = msgsEl.scrollTop, nearBot = msgsEl.scrollHeight - mTop - msgsEl.clientHeight < 36;
-      $(".c-fbar", pb).innerHTML = bar;
+      const fq = open && $("[data-cfeedq]", fbar);
+      if (fq) {
+        $$('[data-act="ff"]', fbar).forEach(b => b.classList.toggle("primary", b.dataset.v === filt.feed));
+        if (document.activeElement !== fq && fq.value !== filt.feedQ) fq.value = filt.feedQ;
+        const fm = $("[data-cfeedmeta]", fbar), fc = $('[data-act="ffclear"]', fbar);
+        if (fm) fm.textContent = metaTxt || "";
+        if (fc) fc.hidden = !filt.feedQ;
+      } else fbar.innerHTML = bar;
       msgsEl.innerHTML = msgs;
       const sayForm = $("[data-csay]", pb), sayInp = $("[data-csay] input", pb), sayBtn = $("[data-csay] button", pb);
       if (sayForm) sayForm.hidden = !!M.offline;
@@ -462,7 +481,17 @@ function openCanvasPalette() {
 
 addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && window.PBShell && PBShell.openPalette) { e.preventDefault(); openCanvasPalette(); return; }
+  if (e.target.matches?.("[data-cfeedq]") && e.key === "Escape" && !document.querySelector("dialog[open]")) {
+    e.preventDefault();
+    if (filt.feedQ) { filt.feedQ = ""; e.target.value = ""; drawWorld(); }
+    else e.target.blur();
+    return;
+  }
   if (e.target.matches?.("input,textarea,select") || e.target.closest?.(".c-say")) return;
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && focus === "feed" && !document.querySelector("dialog[open]")) {
+    const fq = $("[data-cfeedq]");
+    if (fq) { e.preventDefault(); fq.focus(); fq.select(); return; }
+  }
   if (e.key === "Escape") { if (document.querySelector("dialog[open]")) return; back(); }
   else if (!e.metaKey && !e.ctrlKey && !e.altKey && !document.querySelector("dialog[open]") && /^[1-9]$/.test(e.key)) {
     const keys = Object.keys(M ? layout() : LAYOUT), k = keys[+e.key - 1];
@@ -478,6 +507,49 @@ addEventListener("resize", () => { if (focus) fitRect(layout()[focus], .96, fals
 function selTitle() { const [t, id] = [sel.t, sel.id]; if (t === "artifact") return (M.artifacts.find(a => a.id === id) || {}).title || id; if (t === "card") return (M.cards.find(a => a.id === id) || {}).title || id; if (t === "agent") return who(id); return id; }
 function openSel(t, id) { sel = {t, id}; focus = focus || ({artifact: "artifacts", card: "kanban", agent: "agents", metric: "pulse"}[t]); drawWorld(); renderInsp(); $("#insp").classList.add("on"); fitRect(layout()[focus], .96); }
 function closeInsp() { $("#insp").classList.remove("on"); }
+let lastInspPatch = "";
+function renderPatchBody(src) {
+  const norm = String(src || "").replace(/\r\n?/g, "\n");
+  lastInspPatch = src || "";
+  const colorLines = ls => ls.map(l => {
+    const c = l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff") || l.startsWith("@@") || l.startsWith("index ") ? "hdr" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+    return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
+  }).join("\n");
+  const lines = norm.split("\n"), rawSecs = [];
+  const hasGit = /(?:^|\n)diff --git /.test(norm);
+  let cur = null, pre = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const startNew = hasGit ? l.startsWith("diff --git ") : (l.startsWith("--- ") && (lines[i + 1] || "").startsWith("+++ "));
+    if (startNew) {
+      if (cur) rawSecs.push(cur);
+      cur = pre.length ? [...pre, l] : [l];
+      pre = [];
+    } else if (cur) cur.push(l);
+    else if (l) pre.push(l);
+  }
+  if (cur) rawSecs.push(cur);
+  else if (lines.length) rawSecs.push(lines);
+  const secs = rawSecs.map(sec => {
+    const hdr = sec.find(l => l.startsWith("diff --git ")) || "";
+    const plus = sec.find(l => l.startsWith("+++ "));
+    const minus = sec.find(l => l.startsWith("--- "));
+    const m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(hdr);
+    const cleanRef = (s, pfx) => s ? s.slice(4).split("\t")[0].replace(pfx, "") : "";
+    const pPath = plus && !plus.startsWith("+++ /dev/null") ? cleanRef(plus, /^b\//) : "";
+    const mPath = minus && !minus.startsWith("--- /dev/null") ? cleanRef(minus, /^a\//) : "";
+    const filePath = pPath || (m && m[2]) || mPath || hdr.replace(/^diff --git\s+/, "") || "patch";
+    let adds = 0, dels = 0;
+    for (const l of sec) {
+      if (l.startsWith("+") && !l.startsWith("+++")) adds++;
+      else if (l.startsWith("-") && !l.startsWith("---")) dels++;
+    }
+    return {filePath, adds, dels, lines: sec};
+  });
+  const totAdds = secs.reduce((a, s) => a + s.adds, 0), totDels = secs.reduce((a, s) => a + s.dels, 0);
+  return `<div class="row" style="justify-content:space-between;margin:0 0 6px;gap:6px"><span class="row" style="gap:6px"><span class="mono mut" style="font-size:11px">${secs.length} file${secs.length === 1 ? "" : "s"}</span><span class="chip ok">+${totAdds}</span><span class="chip bad">-${totDels}</span></span><button type="button" class="btn sm" data-act="copypatch">Copy patch</button></div>`
+    + secs.map((s, idx) => `<details class="diff-file" ${idx < 5 ? "open" : ""} style="border:1px solid var(--line-2);margin-top:8px;background:var(--field)"><summary class="row" style="cursor:pointer;justify-content:space-between;padding:7px 10px;background:var(--panel-2);user-select:none"><span class="mono" style="font-size:11.5px;font-weight:600;word-break:break-all">${esc(s.filePath)}</span><span class="row" style="gap:5px"><span class="chip ok">+${s.adds}</span><span class="chip bad">-${s.dels}</span></span></summary><pre class="patchpre" style="margin:0;border:0;border-top:1px solid var(--line-2);max-height:280px;overflow:auto">${colorLines(s.lines)}</pre></details>`).join("");
+}
 function renderInsp() {
   if (!sel) return; const el = $("#insp"); let html = "", title = sel.t;
   if (sel.t === "artifact") {
@@ -485,7 +557,7 @@ function renderInsp() {
       title = `${a.kind} · ${a.title}`;
       html = `<div class="row"><span class="chip st-${a.status}">${esc(a.status)}</span><span class="chip">${ICON[a.kind] || "·"} ${esc(a.kind)}</span><span class="chip">rev ${a.revs.length}</span></div><h2 style="font:700 20px var(--sans);margin:14px 0 6px">${esc(a.title)}</h2><p class="mut" style="margin:0">${esc(a.summary)}</p>
       ${a.ref ? `<h3>Reference</h3><pre>${esc(a.ref)}</pre>` : ""}${a.checks && a.checks.length ? `<h3>Checks · ${a.checks.filter(c => c.ok).length}/${a.checks.length} pass</h3>${a.checks.map(c => `<div class="chk"><span class="${c.ok ? "ok" : "no"}">${c.ok ? "✓" : "✗"}</span><span>${esc(c.name)}</span></div>`).join("")}` : ""}
-      ${a.body ? `<h3>Content</h3><pre>${esc(a.body)}</pre>` : ""}<h3>Revision history</h3>${[...a.revs].reverse().map(r => `<div class="rev ${r.status}"><b>${esc(r.status)}</b> · ${esc(who(r.from))}<br><small>${new Date(r.ms).toLocaleString()}</small>${r.summary ? `<div style="font-size:12.5px;margin-top:3px">${esc(r.summary)}</div>` : ""}</div>`).join("")}
+      ${a.body ? `<h3>Content</h3>${a.body.startsWith("diff --git ") || a.body.startsWith("--- ") ? renderPatchBody(a.body) : `<pre>${esc(a.body)}</pre>`}` : ""}<h3>Revision history</h3>${[...a.revs].reverse().map(r => `<div class="rev ${r.status}"><b>${esc(r.status)}</b> · ${esc(who(r.from))}<br><small>${new Date(r.ms).toLocaleString()}</small>${r.summary ? `<div style="font-size:12.5px;margin-top:3px">${esc(r.summary)}</div>` : ""}</div>`).join("")}
       <h3>Linked tasks</h3>${M.cards.filter(c => c.artifact === a.id).map(c => `<div class="chk"><span>▪</span><span>${esc(c.title)} · ${esc(c.col)}</span></div>`).join("") || '<p class="empty">None.</p>'}`;
     }
   } else if (sel.t === "agent") {
@@ -554,6 +626,9 @@ document.addEventListener("submit", async e => {
     inp?.focus();
   }
 });
+document.addEventListener("input", e => {
+  if (e.target.matches?.("[data-cfeedq]")) { filt.feedQ = e.target.value; drawWorld(); }
+});
 document.addEventListener("click", async e => {
   if (e.target.closest("#switcher a")) window.PBShell?.setRoomView?.("cockpit");
   if (e.target.closest(".c-say,input,select,textarea")) return;
@@ -563,7 +638,10 @@ document.addEventListener("click", async e => {
     if (act === "drill") { if (moved > 6) return; drill(a.dataset.id); return; }
     if (act === "home") { sel = null; focus = null; closeInsp(); drawWorld(); fitAll(true); return; }
     if (act === "closeinsp") { sel = null; closeInsp(); drawWorld(); return; }
-    if (act === "ff") { filt.feed = a.dataset.v; drawWorld(); return; } if (act === "fa") { filt.art = a.dataset.v; drawWorld(); return; } if (act === "fl") { filt.log = a.dataset.v; drawWorld(); return; }
+    if (act === "ff") { filt.feed = a.dataset.v; drawWorld(); return; }
+    if (act === "ffclear") { filt.feedQ = ""; const fq = $("[data-cfeedq]"); if (fq) { fq.value = ""; fq.focus(); } drawWorld(); return; }
+    if (act === "copypatch") { if (lastInspPatch && navigator.clipboard?.writeText) navigator.clipboard.writeText(lastInspPatch).then(() => toast("Patch copied"), () => {}); return; }
+    if (act === "fa") { filt.art = a.dataset.v; drawWorld(); return; } if (act === "fl") { filt.log = a.dataset.v; drawWorld(); return; }
     if (act === "mv") { e.stopPropagation(); try { await post(enc("card", {id: a.dataset.id, col: a.dataset.col})); refresh(); } catch (er) { toast(er.message); } return; }
     if (act === "add") { modal(a.dataset.k); return; } if (act === "rename") { rename(); return; }
     if (act === "verify") { try { await gfetch("/api/system/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast("Re-verifying"); setTimeout(refresh, 1500); } catch {} return; }

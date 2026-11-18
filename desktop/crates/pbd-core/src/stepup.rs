@@ -25,6 +25,9 @@ const POLL_EVERY: Duration = Duration::from_millis(150);
 
 /// Ask the human at the screen to approve a sensitive action. Separated as a trait so every branch of the protocol is tested headless.
 pub trait Approver: Send + Sync + 'static {
+    fn available(&self) -> bool {
+        true
+    }
     fn approve(&self, reason: &str) -> Result<bool, String>;
 }
 
@@ -32,17 +35,58 @@ pub trait Approver: Send + Sync + 'static {
 pub struct OsApprover;
 
 impl Approver for OsApprover {
+    fn available(&self) -> bool {
+        os_available()
+    }
     fn approve(&self, reason: &str) -> Result<bool, String> {
         os_approve(sanitize_reason(reason))
     }
 }
 
+#[cfg(target_os = "macos")]
+fn os_available() -> bool {
+    Path::new("/usr/bin/osascript").is_file()
+}
+
+#[cfg(target_os = "linux")]
+fn os_available() -> bool {
+    Path::new("/usr/bin/pkexec").is_file()
+        || std::env::var_os("PATH")
+            .map(|paths| std::env::split_paths(&paths).any(|d| d.join("pkexec").is_file()))
+            .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn os_available() -> bool {
+    true
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn os_available() -> bool {
+    false
+}
+
+fn is_bidi_or_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2069}'
+            | '\u{FEFF}'
+            | '\u{2028}'
+            | '\u{2029}'
+    )
+}
+
 fn sanitize_reason(raw: &str) -> String {
     let cleaned: String = raw
         .chars()
+        .filter(|c| !is_bidi_or_format(*c))
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect::<String>()
-        .trim()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
         .chars()
         .take(120)
         .collect();
@@ -100,7 +144,7 @@ if (!ctx.canEvaluatePolicyError(2, err)) {
 #[cfg(target_os = "linux")]
 fn os_approve(_reason: String) -> Result<bool, String> {
     let status = std::process::Command::new("pkexec")
-        .arg("/usr/bin/true")
+        .args(["--disable-internal-agent", "/usr/bin/true"])
         .status()
         .map_err(|e| format!("Polkit (pkexec) is unavailable: {e}"))?;
     Ok(status.success())
@@ -342,7 +386,11 @@ pub struct Bridge {
 
 impl Bridge {
     pub fn start<A: Approver>(hub_home: PathBuf, approver: A) -> Self {
-        let _ = write_heartbeat(&hub_home);
+        if approver.available() {
+            let _ = write_heartbeat(&hub_home);
+        } else {
+            remove_heartbeat(&hub_home);
+        }
         let sig = Arc::new(Signal {
             stop: AtomicBool::new(false),
             wake: (Mutex::new(()), Condvar::new()),
@@ -353,10 +401,16 @@ impl Bridge {
             let mut last_beat = Instant::now();
             while !sig2.stop.load(Ordering::Acquire) {
                 if last_beat.elapsed() >= HEARTBEAT_EVERY {
-                    let _ = write_heartbeat(&home2);
+                    if approver.available() {
+                        let _ = write_heartbeat(&home2);
+                    } else {
+                        remove_heartbeat(&home2);
+                    }
                     last_beat = Instant::now();
                 }
-                let _ = poll_once(&home2, &approver);
+                if approver.available() {
+                    let _ = poll_once(&home2, &approver);
+                }
                 let (lock, cv) = &sig2.wake;
                 if let Ok(g) = lock.lock() {
                     if !sig2.stop.load(Ordering::Acquire) {
@@ -561,6 +615,33 @@ mod tests {
             assert_eq!(calls.load(Ordering::SeqCst), 0);
             assert!(!p.exists());
         }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn sanitize_reason_strips_unicode_bidi_and_control_chars() {
+        let hostile = "Revoke \u{202E}evil\u{202C}\n\tmember\u{200B}";
+        let clean = sanitize_reason(hostile);
+        assert_eq!(clean, "Revoke evil member");
+        assert!(!clean.chars().any(is_bidi_or_format));
+    }
+
+    #[test]
+    fn unavailable_approver_does_not_advertise_ready_heartbeat() {
+        struct NoApprover;
+        impl Approver for NoApprover {
+            fn available(&self) -> bool {
+                false
+            }
+            fn approve(&self, _reason: &str) -> Result<bool, String> {
+                Ok(false)
+            }
+        }
+        let home = tmp_home("noavail");
+        let _ = write_heartbeat(&home);
+        let mut b = Bridge::start(home.clone(), NoApprover);
+        assert!(!home.join(DIR).join(READY_FILE).exists());
+        b.stop();
         let _ = std::fs::remove_dir_all(&home);
     }
 }

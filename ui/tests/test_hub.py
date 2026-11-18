@@ -163,6 +163,14 @@ def test_webauthn():
     b = a.register_begin(code, rp, "1.1.1.1")
     tok = a.register_finish(b["ticket"], dev.create(b["publicKey"], origin), "Phone", "ua", "1.1.1.1")
     check("webauthn: enrollment yields a strong session", bool(a.session(tok)) and not a.session(tok)[1]["weak"])
+    check("webauthn: has_passkey checks by rp_id", a.has_passkey(rp) is True and a.has_passkey("other.example") is False)
+    wcode = a.mint_code()
+    wtok = a.weak_session(wcode, "ua", "127.0.0.1", "Local")
+    wkey, _ = a.session(wtok)
+    ub = a.upgrade_begin(wkey, rp, "127.0.0.1")
+    udev = Authenticator()
+    utok = a.upgrade_finish(wkey, ub["ticket"], udev.create(ub["publicKey"], origin), "Laptop", "ua", "127.0.0.1")
+    check("webauthn: upgrade replaces weak session with a strong session", a.session(wtok) is None and bool(a.session(utok)) and not a.session(utok)[1]["weak"])
     check("webauthn: pairing code is single use", refuses(a.register_begin, code, rp, "1.1.1.1"))
     lb = a.login_begin(rp)
     check("webauthn: no passkey for another address", refuses(a.login_begin, "other.example"))
@@ -603,6 +611,25 @@ def test_http():
         check("device removal by the weak session is blocked behind a proxy", a.req("DELETE", "/api/devices/" + b64u(dev.cid), None, {"X-Forwarded-For": "1.1.1.1"})[0] == 403)
         st, j, _ = s.req("DELETE", "/api/devices/" + b64u(dev.cid))
         check("removing a device ends its sessions", st == 200 and s.req("GET", "/api/rooms")[0] == 401)
+        # ---- inline passkey upgrade on loopback ----
+        _, pj, _ = a.req("POST", "/api/devices/pair", {})
+        w = Client(port)
+        w.req("POST", "/api/auth/weak", {"code": pj["code"], "name": "Local Browser"})
+        old_weak_tok = w.cookie
+        check("upgrade: refused behind a proxy header", w.req("POST", "/api/auth/upgrade/begin", {}, {"X-Forwarded-For": "1.2.3.4"})[0] == 403
+              and w.req("POST", "/api/auth/upgrade/finish", {"ticket": "x", "name": "x", "response": {}}, {"X-Forwarded-For": "1.2.3.4"})[0] == 403)
+        udev = Authenticator()
+        st_ub, ub, _ = w.req("POST", "/api/auth/upgrade/begin", {})
+        st_uf, uf, _ = w.req("POST", "/api/auth/upgrade/finish", {"ticket": ub["ticket"], "name": "Upgraded Mac", "response": udev.create(ub["publicKey"], origin)})
+        st_me, ume, _ = w.req("GET", "/api/me")
+        stale_w = Client(port); stale_w.cookie = old_weak_tok
+        check("upgrade: loopback weak session upgrades to a strong passkey session",
+              st_ub == 200 and st_uf == 200 and w.cookie and w.cookie != old_weak_tok
+              and st_me == 200 and ume["weak"] is False and ume["fresh"] is True and ume["enrolled_rp"] is True
+              and stale_w.req("GET", "/api/me")[0] == 401, str((st_ub, st_uf, ume)))
+        st_su, j_su, _ = a.req("POST", f"/r/{rid}/api/endorse", {"key": K}, {"X-Forwarded-For": "1.2.3.4"})
+        check("step-up response advertises enrolled_rp for weak-session passkey promotion", st_su == 403 and j_su.get("error") == "stepup" and j_su.get("enrolled_rp") is True, str(j_su))
+        w.req("DELETE", "/api/devices/" + b64u(udev.cid))
         # ---- friend invites ----
         repo = os.path.join(home, "repo")
         os.makedirs(repo)
