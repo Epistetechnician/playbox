@@ -9,6 +9,13 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-19
+
+### Changes
+
+- fix(krun, release): pass BOX-7 egress env via virtiofs and serialize release desktop job (8b2a773)
+- fmt: wrap import in krun.rs tests (2468298)
+
 ## [0.4.2] - 2026-11-19
 
 ### Added
