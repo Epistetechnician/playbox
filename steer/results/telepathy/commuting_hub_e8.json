@@ -1,0 +1,148 @@
+{
+  "claim_ceiling": "LocalDevelopmentUnreviewed",
+  "wire_bytes_per_thought": 64,
+  "models": {
+    "smollm2": 576,
+    "gpt2": 768,
+    "pythia": 768,
+    "qwen2": 896
+  },
+  "selected_hyperparams_on_val": {
+    "beta": 1.0,
+    "gamma": 2.0
+  },
+  "val_grid_scores": {
+    "beta=0.25,gamma=0.25": 0.8675,
+    "beta=0.25,gamma=0.5": 0.8678,
+    "beta=0.25,gamma=1.0": 0.868,
+    "beta=0.25,gamma=2.0": 0.8681,
+    "beta=0.5,gamma=0.25": 0.8682,
+    "beta=0.5,gamma=0.5": 0.8685,
+    "beta=0.5,gamma=1.0": 0.8687,
+    "beta=0.5,gamma=2.0": 0.8688,
+    "beta=1.0,gamma=0.25": 0.8688,
+    "beta=1.0,gamma=0.5": 0.8691,
+    "beta=1.0,gamma=1.0": 0.8693,
+    "beta=1.0,gamma=2.0": 0.8694
+  },
+  "n_ordered_pairs": 12,
+  "n_unseen_test_concepts": 5,
+  "n_paired_concept_transfers": 60,
+  "summary": {
+    "downstream_late_cos_static": 0.524,
+    "downstream_late_cos_commuting": 0.5291,
+    "downstream_late_cos_lift": 0.0051,
+    "downstream_late_cos_lift_95ci": [
+      -0.0015,
+      0.012
+    ],
+    "downstream_nn_top1_static": 0.95,
+    "downstream_nn_top1_commuting": 0.9667,
+    "lexicon_gen_acc_static": 0.3771,
+    "lexicon_gen_acc_commuting": 0.425,
+    "lexicon_gen_acc_lift": 0.0479,
+    "lexicon_gen_acc_lift_95ci": [
+      -0.0063,
+      0.1
+    ],
+    "chance_top1": 0.2
+  },
+  "per_pair": {
+    "gpt2->smollm2": {
+      "downstream_late_cos_static": 0.597,
+      "downstream_late_cos_commuting": 0.5814,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.525,
+      "lexicon_gen_acc_commuting": 0.625
+    },
+    "pythia->smollm2": {
+      "downstream_late_cos_static": 0.5041,
+      "downstream_late_cos_commuting": 0.5222,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.425,
+      "lexicon_gen_acc_commuting": 0.425
+    },
+    "qwen2->smollm2": {
+      "downstream_late_cos_static": 0.6087,
+      "downstream_late_cos_commuting": 0.6124,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.65,
+      "lexicon_gen_acc_commuting": 0.65
+    },
+    "smollm2->gpt2": {
+      "downstream_late_cos_static": 0.5365,
+      "downstream_late_cos_commuting": 0.5328,
+      "downstream_nn_top1_static": 0.8,
+      "downstream_nn_top1_commuting": 0.8,
+      "lexicon_gen_acc_static": 0.3,
+      "lexicon_gen_acc_commuting": 0.35
+    },
+    "pythia->gpt2": {
+      "downstream_late_cos_static": 0.4841,
+      "downstream_late_cos_commuting": 0.4863,
+      "downstream_nn_top1_static": 0.8,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.25,
+      "lexicon_gen_acc_commuting": 0.35
+    },
+    "qwen2->gpt2": {
+      "downstream_late_cos_static": 0.546,
+      "downstream_late_cos_commuting": 0.5401,
+      "downstream_nn_top1_static": 0.8,
+      "downstream_nn_top1_commuting": 0.8,
+      "lexicon_gen_acc_static": 0.25,
+      "lexicon_gen_acc_commuting": 0.325
+    },
+    "smollm2->pythia": {
+      "downstream_late_cos_static": 0.398,
+      "downstream_late_cos_commuting": 0.416,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.375,
+      "lexicon_gen_acc_commuting": 0.4
+    },
+    "gpt2->pythia": {
+      "downstream_late_cos_static": 0.3899,
+      "downstream_late_cos_commuting": 0.4187,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.3,
+      "lexicon_gen_acc_commuting": 0.2
+    },
+    "qwen2->pythia": {
+      "downstream_late_cos_static": 0.4032,
+      "downstream_late_cos_commuting": 0.3821,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.325,
+      "lexicon_gen_acc_commuting": 0.25
+    },
+    "smollm2->qwen2": {
+      "downstream_late_cos_static": 0.6313,
+      "downstream_late_cos_commuting": 0.6393,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.375,
+      "lexicon_gen_acc_commuting": 0.55
+    },
+    "gpt2->qwen2": {
+      "downstream_late_cos_static": 0.6211,
+      "downstream_late_cos_commuting": 0.6221,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.375,
+      "lexicon_gen_acc_commuting": 0.575
+    },
+    "pythia->qwen2": {
+      "downstream_late_cos_static": 0.5684,
+      "downstream_late_cos_commuting": 0.5956,
+      "downstream_nn_top1_static": 1.0,
+      "downstream_nn_top1_commuting": 1.0,
+      "lexicon_gen_acc_static": 0.375,
+      "lexicon_gen_acc_commuting": 0.4
+    }
+  }
+}
