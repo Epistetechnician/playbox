@@ -6,10 +6,22 @@
 #![cfg(target_os = "linux")]
 
 use playbox_runner::{
-    find_helper, netpolicy::Level, runner_with, KrunRunner, Runner, RunnerOptions, SandboxPolicy,
-    TaskSpec,
+    confine::Confinement,
+    egress::{EgressConfig, EgressUpstream},
+    find_helper,
+    netpolicy::Level,
+    runner_with,
+    secrets::SecretStore,
+    KrunRunner, Runner, RunnerOptions, SandboxPolicy, TaskSpec,
 };
-use std::{io::Write, net::TcpListener, path::PathBuf, process::Command, sync::Arc};
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+    path::PathBuf,
+    process::Command,
+    sync::{Arc, Mutex},
+};
 
 /// The tests share one cgroup root and one nftables table, and `preflight` rebuilds the table, so they run one at a time.
 static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -206,4 +218,130 @@ async fn a_confined_guest_with_a_host_list_reaches_those_hosts_by_name_and_nothi
         !out.stdout.contains("OTHER"),
         "the guest reached a host that is not on its list: {out:?}"
     );
+}
+
+// REQ: BOX-3, BOX-7
+#[tokio::test]
+async fn a_confined_guest_with_egress_reaches_proxy_only_without_leaking_token() {
+    let _one = ONE_AT_A_TIME.lock().await;
+    let Some(_) = confined(Level::None) else {
+        return;
+    };
+
+    let base = ws("egress");
+    let sec_dir = base.join("secrets");
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&sec_dir)
+        .unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(sec_dir.join("model_key"))
+        .unwrap();
+    let fixture_val = ["pbtest", "box7", "demo", "value"].join("-");
+    f.write_all(format!("{fixture_val}\n").as_bytes()).unwrap();
+    drop(f);
+    let log_path = base.join("egress.jsonl");
+
+    // Local fake model upstream on host loopback: verifies host-injected secret, refuses guest creds.
+    let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+    let up_port = upstream.local_addr().unwrap().port();
+    let seen_auth: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_clone = Arc::clone(&seen_auth);
+    std::thread::spawn(move || {
+        for mut s in upstream.incoming().flatten() {
+            let mut buf = [0u8; 4096];
+            let n = s.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            seen_clone.lock().unwrap().push(req);
+            let _ = s.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 7\r\nConnection: close\r\n\r\nOK_BOX7",
+            );
+        }
+    });
+
+    // Separate host loopback port that the guest must NOT be able to reach directly.
+    let other_host = TcpListener::bind("127.0.0.1:0").unwrap();
+    let other_port = other_host.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut s in other_host.incoming().flatten() {
+            let _ = s.write_all(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nno");
+        }
+    });
+
+    let cfg = EgressConfig {
+        upstreams: vec![EgressUpstream {
+            name: "model".into(),
+            base: format!("http://127.0.0.1:{up_port}"),
+            auth_header: "x-api-key".into(),
+            auth_prefix: String::new(),
+            secret: "model_key".into(),
+            allow_paths: vec!["/v1/models".into()],
+            pass_headers: vec!["content-type".into()],
+            env_var: None,
+            insecure_http: true,
+            allow_private: false,
+        }],
+        log_file: Some(log_path.clone()),
+        max_log_bytes: None,
+    };
+    let mut confine = Confinement::new(Level::None);
+    confine.seccomp = true;
+    confine.egress = true;
+    let r = KrunRunner::locate(SandboxPolicy::default())
+        .unwrap()
+        .with_secrets(SecretStore::new(sec_dir))
+        .with_egress(cfg)
+        .with_confinement(confine);
+    r.preflight().await.unwrap();
+
+    let script = format!(
+        "echo CMDLINE=$(cat /proc/cmdline); \
+         RESP=$(wget -q -O - \"$PLAYBOX_EGRESS_MODEL_URL/v1/models\" 2>/dev/null || true); \
+         echo PROXY=$RESP; \
+         nc -w 2 127.0.0.1 {other_port} </dev/null && echo OTHER_LOOPBACK; \
+         nc -w 2 1.1.1.1 80 </dev/null && echo INTERNET; true"
+    );
+    let spec = TaskSpec {
+        egress: vec!["model".into()],
+        ..sh(&script)
+    };
+    let out = r.run(&spec, &ws("egress-ws")).await.unwrap();
+    assert!(
+        out.stdout.contains("PROXY=OK_BOX7"),
+        "guest could not reach host BOX-7 egress proxy: {out:?}"
+    );
+    assert!(
+        !out.stdout.contains("OTHER_LOOPBACK"),
+        "guest reached an unpermitted host loopback port: {out:?}"
+    );
+    assert!(
+        !out.stdout.contains("INTERNET"),
+        "guest reached public internet at Level::None: {out:?}"
+    );
+    assert!(
+        !out.stdout.contains(&fixture_val),
+        "guest saw host secret: {out:?}"
+    );
+    let cmdline_line = out
+        .stdout
+        .lines()
+        .find(|l| l.starts_with("CMDLINE="))
+        .unwrap_or("");
+    assert!(
+        !cmdline_line.contains("/t/") && !cmdline_line.contains("PLAYBOX_EGRESS_MODEL_URL"),
+        "egress capability token leaked into guest /proc/cmdline: {cmdline_line}"
+    );
+
+    let reqs = seen_auth.lock().unwrap();
+    let expected_hdr = format!("x-api-key: {fixture_val}");
+    assert!(
+        reqs.iter()
+            .any(|req| req.to_ascii_lowercase().contains(&expected_hdr)),
+        "upstream did not receive host-injected secret: {reqs:?}"
+    );
+    let log = std::fs::read_to_string(&log_path).unwrap();
+    assert!(log.contains("/v1/models") && !log.contains(&fixture_val));
 }

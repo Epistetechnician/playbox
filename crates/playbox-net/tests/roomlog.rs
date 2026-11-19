@@ -48,6 +48,7 @@ async fn three_hosts_converge_and_a_commit_needs_two() {
     // With both replicas up, the leader commits everything.
     let committed = p.commit_room_log(&[r1.addr(), r2.addr()]).await.unwrap();
     assert_eq!(committed, s.len);
+    assert_eq!(p.room_log_status().unwrap().pq_committed, s.len);
 
     // Followers hold the same head and roster, having verified it from the root public key alone.
     for r in [&r1, &r2] {
@@ -118,6 +119,7 @@ async fn a_restarted_host_keeps_its_log_and_commit_point_and_refuses_a_tampered_
     p.commit_room_log(&[r.addr()]).await.unwrap();
     let before = p.room_log_status().unwrap();
     assert_eq!(before.committed, before.len);
+    assert_eq!(before.pq_committed, before.len);
     p.shutdown().await.unwrap();
     r.shutdown().await.unwrap();
 

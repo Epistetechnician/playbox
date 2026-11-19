@@ -3,8 +3,23 @@
 
 use anyhow::{bail, Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use playbox_core::pq;
 use playbox_core::record::{hex, unhex};
 use std::path::Path;
+
+const RELEASE_PQ_CTX: &[u8] = b"playbox.release.v1";
+
+fn unhex_vec(s: &str) -> Result<Vec<u8>> {
+    if !s.len().is_multiple_of(2) || !s.is_ascii() {
+        bail!("must be even-length hex");
+    }
+    (0..s.len() / 2)
+        .map(|i| {
+            u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+                .map_err(|_| anyhow::anyhow!("invalid hex byte"))
+        })
+        .collect()
+}
 
 pub fn keygen(out: &str) -> Result<()> {
     let k = SigningKey::from_bytes(&playbox_net::random_bytes()?);
@@ -19,6 +34,20 @@ pub fn keygen(out: &str) -> Result<()> {
     Ok(())
 }
 
+/// Generate an ML-DSA-65 release signing keypair; writes the secret key to `out` (0600) and prints the public key hex.
+pub fn pq_keygen(out: &str) -> Result<()> {
+    if Path::new(out).exists() {
+        bail!("{out} exists; not overwriting");
+    }
+    let (pk, sk) = pq::keygen_mldsa65()?;
+    std::fs::write(out, format!("{}\n", hex(&sk)))?;
+    #[cfg(unix)]
+    std::fs::set_permissions(out, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    println!("{}", hex(&pk));
+    eprintln!("ML-DSA-65 public key above: pin it in release.pq.pub / PLAYBOX_RELEASE_PQ_PUBKEY. Store {out} as PLAYBOX_RELEASE_PQ_KEY and nowhere else.");
+    Ok(())
+}
+
 fn load_key(secret_hex_or_file: &str) -> Result<SigningKey> {
     let text = if Path::new(secret_hex_or_file).exists() {
         std::fs::read_to_string(secret_hex_or_file)?
@@ -29,11 +58,30 @@ fn load_key(secret_hex_or_file: &str) -> Result<SigningKey> {
     Ok(SigningKey::from_bytes(&bytes))
 }
 
-/// Sign a file; writes `<file>.sig` (hex).
-pub fn sign(file: &str, key: &str) -> Result<()> {
+fn load_pq_key(secret_hex_or_file: &str) -> Result<Vec<u8>> {
+    let text = if Path::new(secret_hex_or_file).exists() {
+        std::fs::read_to_string(secret_hex_or_file)?
+    } else {
+        secret_hex_or_file.to_string()
+    };
+    let bytes = unhex_vec(text.trim()).context("release PQ key")?;
+    if bytes.len() != pq::MLDSA65_SK_LEN {
+        bail!("release PQ key must be {} bytes", pq::MLDSA65_SK_LEN);
+    }
+    Ok(bytes)
+}
+
+/// Sign a file with Ed25519 (writing `<file>.sig`) and optionally ML-DSA-65 (writing `<file>.pq.sig`).
+pub fn sign(file: &str, key: &str, pq_key: Option<&str>) -> Result<()> {
+    let data = std::fs::read(file)?;
     let k = load_key(key)?;
-    let sig = k.sign(&std::fs::read(file)?);
+    let sig = k.sign(&data);
     std::fs::write(format!("{file}.sig"), format!("{}\n", hex(&sig.to_bytes())))?;
+    if let Some(pqk) = pq_key.filter(|s| !s.trim().is_empty()) {
+        let sk = load_pq_key(pqk)?;
+        let pq_sig = pq::sign_mldsa65(&sk, &data, RELEASE_PQ_CTX)?;
+        std::fs::write(format!("{file}.pq.sig"), format!("{}\n", hex(&pq_sig)))?;
+    }
     println!(
         "signed {file} with key {}",
         hex(&k.verifying_key().to_bytes())
@@ -41,9 +89,18 @@ pub fn sign(file: &str, key: &str) -> Result<()> {
     Ok(())
 }
 
-/// Check `<file>.sig` (or `--sig`) against a public key.
-pub fn verify(file: &str, sig: Option<&str>, pubkey: &str) -> Result<()> {
+/// Check `<file>.sig` (or `--sig`) against an Ed25519 public key, and optionally `<file>.pq.sig` against an ML-DSA-65 public key.
+pub fn verify(
+    file: &str,
+    sig: Option<&str>,
+    pubkey: &str,
+    pq_sig: Option<&str>,
+    pq_pubkey: Option<&str>,
+) -> Result<()> {
     verify_quiet(file, sig, pubkey)?;
+    if let Some(pq_pk) = pq_pubkey.filter(|s| !s.trim().is_empty()) {
+        verify_pq_quiet(file, pq_sig, pq_pk)?;
+    }
     println!("signature ok: {file}");
     Ok(())
 }
@@ -61,6 +118,22 @@ pub fn verify_quiet(file: &str, sig: Option<&str>, pubkey: &str) -> Result<()> {
     let sig = Signature::from_bytes(&sig);
     pk.verify(&std::fs::read(file)?, &sig)
         .map_err(|_| anyhow::anyhow!("BAD SIGNATURE: {file} was not signed by that key"))?;
+    Ok(())
+}
+
+pub fn verify_pq_quiet(file: &str, pq_sig: Option<&str>, pq_pubkey: &str) -> Result<()> {
+    let pk = unhex_vec(pq_pubkey.trim()).context("ML-DSA-65 public key")?;
+    let sig_path = pq_sig.map_or_else(|| format!("{file}.pq.sig"), String::from);
+    let sig = unhex_vec(
+        std::fs::read_to_string(&sig_path)
+            .with_context(|| format!("reading {sig_path}"))?
+            .trim(),
+    )
+    .context("ML-DSA-65 signature")?;
+    let data = std::fs::read(file)?;
+    if !pq::verify_mldsa65(&pk, &data, &sig, RELEASE_PQ_CTX) {
+        bail!("BAD PQ SIGNATURE: {file} did not verify under that ML-DSA-65 key");
+    }
     Ok(())
 }
 

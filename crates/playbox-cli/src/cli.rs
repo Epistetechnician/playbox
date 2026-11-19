@@ -456,6 +456,9 @@ pub enum Cmd {
         /// Verify against this release public key instead of the one built in
         #[arg(long, value_name = "HEX")]
         pubkey: Option<String>,
+        /// Verify against this ML-DSA-65 release public key (hybrid PQ check)
+        #[arg(long, value_name = "HEX")]
+        pq_pubkey: Option<String>,
     },
     /// Sign and verify releases (maintainers; the installer uses `verify`)
     #[command(subcommand, hide = true)]
@@ -660,11 +663,15 @@ pub enum SteerCmd {
 pub enum ReleaseCmd {
     /// Make a release key; prints the public half
     Keygen { out: String },
-    /// Sign FILE, writing FILE.sig. KEY is a key file or the hex itself
+    /// Make an ML-DSA-65 release keypair; writes secret to OUT and prints the public key hex
+    PqKeygen { out: String },
+    /// Sign FILE, writing FILE.sig (and FILE.pq.sig when --pq-key is given)
     Sign {
         file: String,
         #[arg(long, env = "PLAYBOX_RELEASE_KEY", hide_env_values = true)]
         key: String,
+        #[arg(long, env = "PLAYBOX_RELEASE_PQ_KEY", hide_env_values = true)]
+        pq_key: Option<String>,
     },
     /// Print the changelog entries for a version
     Notes {
@@ -697,13 +704,17 @@ pub enum ReleaseCmd {
         #[arg(long, default_value = "release.json")]
         out: String,
     },
-    /// Check FILE.sig against a public key
+    /// Check FILE.sig against a public key (and optional FILE.pq.sig against --pq-pubkey)
     Verify {
         file: String,
         #[arg(long)]
         pubkey: String,
         #[arg(long)]
         sig: Option<String>,
+        #[arg(long)]
+        pq_pubkey: Option<String>,
+        #[arg(long)]
+        pq_sig: Option<String>,
     },
 }
 

@@ -8,7 +8,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{os::unix::fs::MetadataExt, path::Path, process::Stdio, time::Duration};
-use tokio::{io::AsyncReadExt, process::Command};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 
 #[cfg(target_os = "linux")]
 pub mod cgroup;
@@ -527,12 +530,30 @@ async fn read_capped<R: tokio::io::AsyncRead + Unpin>(mut r: R) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-async fn run_child(mut cmd: Command, timeout: Duration) -> Result<(TaskOutput, bool)> {
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
+async fn run_child(cmd: Command, timeout: Duration) -> Result<(TaskOutput, bool)> {
+    run_child_with_stdin(cmd, timeout, None).await
+}
+
+async fn run_child_with_stdin(
+    mut cmd: Command,
+    timeout: Duration,
+    stdin_bytes: Option<Vec<u8>>,
+) -> Result<(TaskOutput, bool)> {
+    cmd.stdin(if stdin_bytes.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .kill_on_drop(true);
     let mut child = cmd.spawn().context("spawn")?;
+    if let (Some(bytes), Some(mut child_in)) = (stdin_bytes, child.stdin.take()) {
+        tokio::spawn(async move {
+            let _ = child_in.write_all(&bytes).await;
+            let _ = child_in.shutdown().await;
+        });
+    }
     let stdout = child.stdout.take().context("child stdout was not piped")?;
     let stderr = child.stderr.take().context("child stderr was not piped")?;
     let out = tokio::spawn(read_capped(stdout));

@@ -264,6 +264,30 @@ fn a_tampered_archive_or_manifest_is_refused_and_nothing_changes() {
         "{}",
         text(&o)
     );
+
+    // Even --check must verify SHA256SUMS + sig + release.json hash before displaying untrusted manifest notes.
+    let c = run(&exe, &rel, &["--check"]);
+    assert!(!c.status.success());
+    assert!(!text(&c).contains("something else"), "{}", text(&c));
+
+    // Omitting release.json from SHA256SUMS (even when re-signed) must fail closed, not skip the check.
+    let omit_root = fresh("omit_manifest");
+    let omit_rel = release(&omit_root, "9.9.9");
+    let filtered: String = std::fs::read_to_string(omit_rel.join("SHA256SUMS"))
+        .unwrap()
+        .lines()
+        .filter(|l| !l.ends_with("release.json"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    std::fs::write(omit_rel.join("SHA256SUMS"), filtered).unwrap();
+    sign(&omit_root, &omit_rel);
+    let o = run(&exe, &omit_rel, &[]);
+    assert!(!o.status.success());
+    assert!(
+        text(&o).contains("release.json is not in SHA256SUMS"),
+        "{}",
+        text(&o)
+    );
 }
 
 // REQ: REL-2, REL-3
@@ -410,4 +434,96 @@ fn prepare_and_check_agree_on_a_fresh_workspace() {
         .output()
         .unwrap();
     assert!(!again.status.success(), "going backwards is refused");
+}
+
+#[test]
+fn hybrid_mldsa65_release_signing_and_update_verification() {
+    let root = fresh("pq");
+    let exe = install(&root);
+    let rel = release(&root, "9.9.9");
+    let (ed_keyfile, ed_pub) = test_key(&root);
+
+    let pq_keyfile = root.join("testkey.pq");
+    let pk_out = Command::new(BIN)
+        .args(["release", "pq-keygen", pq_keyfile.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        pk_out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&pk_out.stderr)
+    );
+    let pq_pub = String::from_utf8_lossy(&pk_out.stdout).trim().to_string();
+
+    // Requiring --pq-pubkey before SHA256SUMS.pq.sig exists fails closed.
+    let missing = run(&exe, &rel, &["--pubkey", &ed_pub, "--pq-pubkey", &pq_pub]);
+    assert!(!missing.status.success());
+    assert!(
+        text(&missing).contains("ML-DSA-65 signature"),
+        "{}",
+        text(&missing)
+    );
+
+    // Dual-sign SHA256SUMS with Ed25519 + ML-DSA-65.
+    let signed = Command::new(BIN)
+        .args([
+            "release",
+            "sign",
+            rel.join("SHA256SUMS").to_str().unwrap(),
+            "--key",
+            ed_keyfile.to_str().unwrap(),
+            "--pq-key",
+            pq_keyfile.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        signed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&signed.stderr)
+    );
+
+    // Offline `release verify` succeeds for valid hybrid signatures and rejects tampered PQ sig.
+    let ver = Command::new(BIN)
+        .args([
+            "release",
+            "verify",
+            rel.join("SHA256SUMS").to_str().unwrap(),
+            "--pubkey",
+            &ed_pub,
+            "--pq-pubkey",
+            &pq_pub,
+        ])
+        .output()
+        .unwrap();
+    assert!(ver.status.success(), "{}", text(&ver));
+
+    // Tampered ML-DSA-65 signature is rejected even when Ed25519 signature is valid.
+    let pq_sig_path = rel.join("SHA256SUMS.pq.sig");
+    let orig_pq_sig = std::fs::read_to_string(&pq_sig_path).unwrap();
+    let flipped = if let Some(rest) = orig_pq_sig.strip_prefix('0') {
+        format!("f{rest}")
+    } else if let Some(rest) = orig_pq_sig.get(1..) {
+        format!("0{rest}")
+    } else {
+        "0".to_string()
+    };
+    std::fs::write(&pq_sig_path, flipped).unwrap();
+    let bad = run(&exe, &rel, &["--pubkey", &ed_pub, "--pq-pubkey", &pq_pub]);
+    assert!(!bad.status.success());
+    assert!(text(&bad).contains("BAD PQ SIGNATURE"), "{}", text(&bad));
+
+    // Restored signature updates cleanly.
+    std::fs::write(&pq_sig_path, orig_pq_sig).unwrap();
+    let ok = run(&exe, &rel, &["--pubkey", &ed_pub, "--pq-pubkey", &pq_pub]);
+    assert!(ok.status.success(), "{}", text(&ok));
+    assert!(version_of(&exe).contains("9.9.9"), "{}", version_of(&exe));
+
+    // Explicit --pubkey without --pq-pubkey overrides built-in maintainer pins (even when release.pq.pub is pinned).
+    let root2 = fresh("pq_override");
+    let exe2 = install(&root2);
+    let rel2 = release(&root2, "9.9.9");
+    let (_, ed_pub2) = test_key(&root2);
+    let ok2 = run(&exe2, &rel2, &["--pubkey", &ed_pub2]);
+    assert!(ok2.status.success(), "{}", text(&ok2));
 }

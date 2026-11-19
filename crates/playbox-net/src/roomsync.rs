@@ -17,7 +17,7 @@ use iroh::{
 };
 use playbox_core::promotion::{Promotion, Receipt, Register};
 use playbox_core::roomlog::{
-    self, text, Checkpoint, Config, Entry, Equivocation, Proposal, RoomLog, SignedCheckpoint,
+    self, text, Checkpoint, Config, Entry, Equivocation, PqSig, Proposal, RoomLog, SignedCheckpoint,
 };
 use serde_json::{json, Value};
 use std::{
@@ -58,6 +58,7 @@ pub struct RoomLogNode {
     measuring: tokio::sync::Mutex<()>,
     allowed: Arc<Mutex<HashSet<EndpointId>>>,
     store: Option<std::path::PathBuf>,
+    save_mu: Mutex<()>,
 }
 
 impl std::fmt::Debug for RoomLogNode {
@@ -72,6 +73,7 @@ pub struct Status {
     pub len: u64,
     pub head: String,
     pub committed: u64,
+    pub pq_committed: u64,
     pub epoch: u64,
     pub leader: String,
     pub hosts: Vec<String>,
@@ -108,6 +110,7 @@ fn status_of(l: &RoomLog, certs: &[SignedCheckpoint], proofs: &[Equivocation]) -
         len: l.len(),
         head: roomlog::hex(&l.head()),
         committed: l.committed(certs),
+        pq_committed: l.committed_pq(certs),
         epoch: l.config().epoch,
         leader: roomlog::hex(&l.config().leader),
         hosts: l.config().hosts.iter().map(|h| roomlog::hex(h)).collect(),
@@ -167,6 +170,7 @@ impl RoomLogNode {
             measuring: tokio::sync::Mutex::new(()),
             allowed,
             store,
+            save_mu: Mutex::new(()),
         }))
     }
 
@@ -174,33 +178,45 @@ impl RoomLogNode {
         self.key.verifying_key().to_bytes()
     }
 
-    /// Write the log, certificates, promises and proofs next to each other, atomically. A failed write is
-    /// reported, not fatal: the state in memory stays right and the next change writes it again.
+    /// Write the log, certificates, promises and proofs next to each other, atomically and fsynced.
+    fn save_strict(&self) -> Result<()> {
+        let Some(p) = &self.store else {
+            return Ok(());
+        };
+        let _save = self.save_mu.lock_recover();
+        let out = {
+            let g = self.log.lock_recover();
+            let Some(l) = g.as_ref() else {
+                return Ok(());
+            };
+            let mut out = text::to_text(l);
+            for c in self.certs.lock_recover().iter() {
+                out.push_str(&json!({ "cert": cert_json(c) }).to_string());
+                out.push('\n');
+            }
+            let loc = self.local.lock_recover();
+            out.push_str(
+                &json!({ "state": {
+                    "promised": loc.promised.as_ref().map(proposal_json),
+                    "last": loc.last.as_ref().map(cp_json),
+                } })
+                .to_string(),
+            );
+            out.push('\n');
+            for q in &loc.proofs {
+                out.push_str(&json!({ "proof": text::equivocation_to_json(q) }).to_string());
+                out.push('\n');
+            }
+            out
+        };
+        crate::write_atomic(p, out.as_bytes())
+            .with_context(|| format!("room log not saved to {}", p.display()))
+    }
+
+    /// Best-effort save: failures are logged and retried on the next state change.
     fn save(&self) {
-        let Some(p) = &self.store else { return };
-        let g = self.log.lock_recover();
-        let Some(l) = g.as_ref() else { return };
-        let mut out = text::to_text(l);
-        for c in self.certs.lock_recover().iter() {
-            out.push_str(&json!({ "cert": cert_json(c) }).to_string());
-            out.push('\n');
-        }
-        let loc = self.local.lock_recover();
-        out.push_str(
-            &json!({ "state": {
-                "promised": loc.promised.as_ref().map(proposal_json),
-                "last": loc.last.as_ref().map(cp_json),
-            } })
-            .to_string(),
-        );
-        out.push('\n');
-        for q in &loc.proofs {
-            out.push_str(&json!({ "proof": text::equivocation_to_json(q) }).to_string());
-            out.push('\n');
-        }
-        let tmp = p.with_extension("tmp");
-        if let Err(e) = std::fs::write(&tmp, out).and_then(|()| std::fs::rename(&tmp, p)) {
-            eprintln!("room log not saved to {}: {e}", p.display());
+        if let Err(e) = self.save_strict() {
+            eprintln!("{e:#}");
         }
     }
 
@@ -502,13 +518,28 @@ impl RoomLogNode {
                 continue;
             };
             sc.add(&self.room, &cfg, who, sig);
+            if let (Some(pq_pk), Some(pq_sig)) = (
+                reply["pq_pk"].as_str().and_then(text::unhex_vec),
+                reply["pq_sig"].as_str().and_then(text::unhex_vec),
+            ) {
+                sc.add_pq(
+                    &self.room,
+                    &cfg,
+                    who,
+                    PqSig {
+                        pk: pq_pk,
+                        sig: pq_sig,
+                    },
+                );
+            }
         }
         {
             let mut certs = self.certs.lock_recover();
+            let log_g = self.log.lock_recover();
             match certs.iter_mut().find(|c| c.cp == sc.cp) {
                 Some(have) => {
-                    for (k, s) in &sc.sigs {
-                        have.add(&self.room, &cfg, *k, *s);
+                    if let Some(l) = log_g.as_ref() {
+                        l.merge(have, &sc);
                     }
                 }
                 None => certs.push(sc),
@@ -590,7 +621,9 @@ impl RoomLogNode {
                 if loc.promised.as_ref().is_some_and(|p| p.epoch > cp.epoch) {
                     bail!("this host has signed a bid for a later epoch");
                 }
-                let (who, sig) = l.cosign(&self.key, &cp).map_err(|e| anyhow!("{e}"))?;
+                let (who, sig, pq) = l
+                    .cosign_hybrid(&self.key, &cp)
+                    .map_err(|e| anyhow!("{e}"))?;
                 if loc
                     .last
                     .as_ref()
@@ -601,8 +634,13 @@ impl RoomLogNode {
                 drop(loc);
                 drop(g);
                 *self.heard.lock_recover() = Instant::now();
-                self.save();
-                Ok(json!({ "signer": roomlog::hex(&who), "sig": roomlog::hex(&sig) }))
+                self.save_strict()?;
+                Ok(json!({
+                    "signer": roomlog::hex(&who),
+                    "sig": roomlog::hex(&sig),
+                    "pq_pk": roomlog::hex(&pq.pk),
+                    "pq_sig": roomlog::hex(&pq.sig),
+                }))
             }
             Some("pull") => {
                 let g = self.log.lock_recover();
@@ -644,7 +682,7 @@ impl RoomLogNode {
                 drop(loc);
                 drop(g);
                 // The promise is on disk before the signature leaves this host.
-                self.save();
+                self.save_strict()?;
                 Ok(json!({ "signer": roomlog::hex(&who), "sig": roomlog::hex(&sig) }))
             }
             _ => bail!("unknown op"),
@@ -728,7 +766,7 @@ impl RoomLogNode {
             sigs.insert(who, sig);
             (l.entries().to_vec(), sigs)
         };
-        self.save();
+        self.save_strict()?;
         let req = json!({
             "op": "propose",
             "entries": entries.iter().map(text::entry_to_json).collect::<Vec<_>>(),
@@ -943,10 +981,34 @@ fn cp_from_json(v: &Value) -> Option<Checkpoint> {
 }
 
 fn cert_json(c: &SignedCheckpoint) -> Value {
-    json!({
-        "cp": cp_json(&c.cp),
-        "sigs": c.sigs.iter().map(|(k, s)| (roomlog::hex(k), Value::from(roomlog::hex(s)))).collect::<serde_json::Map<_, _>>(),
-    })
+    let mut obj = serde_json::Map::new();
+    obj.insert("cp".into(), cp_json(&c.cp));
+    obj.insert(
+        "sigs".into(),
+        Value::Object(
+            c.sigs
+                .iter()
+                .map(|(k, s)| (roomlog::hex(k), Value::from(roomlog::hex(s))))
+                .collect(),
+        ),
+    );
+    if !c.pq_sigs.is_empty() {
+        obj.insert(
+            "pq_sigs".into(),
+            Value::Object(
+                c.pq_sigs
+                    .iter()
+                    .map(|(k, pq)| {
+                        (
+                            roomlog::hex(k),
+                            json!({ "pk": roomlog::hex(&pq.pk), "sig": roomlog::hex(&pq.sig) }),
+                        )
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    Value::Object(obj)
 }
 
 pub(crate) fn cert_from_json(v: &Value) -> Option<SignedCheckpoint> {
@@ -955,6 +1017,17 @@ pub(crate) fn cert_from_json(v: &Value) -> Option<SignedCheckpoint> {
         // Stored unchecked here; `RoomLog::merge` re-verifies each signature before keeping it.
         sc.sigs
             .insert(roomlog::unhex(k)?, roomlog::unhex(s.as_str()?)?);
+    }
+    if let Some(pq_map) = v.get("pq_sigs").and_then(Value::as_object) {
+        for (k, entry) in pq_map {
+            if let (Some(who), Some(pk), Some(sig)) = (
+                roomlog::unhex(k),
+                entry["pk"].as_str().and_then(text::unhex_vec),
+                entry["sig"].as_str().and_then(text::unhex_vec),
+            ) {
+                sc.pq_sigs.insert(who, PqSig { pk, sig });
+            }
+        }
     }
     Some(sc)
 }
@@ -1131,5 +1204,60 @@ mod tests {
 
     fn hosts_of(keys: &[SigningKey], i: usize) -> [u8; 32] {
         keys[i].verifying_key().to_bytes()
+    }
+
+    #[test]
+    fn save_strict_writes_privately_and_fails_closed_before_promising() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("pbx-roomsync-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("roomlog.jsonl");
+
+        let root = SigningKey::from_bytes(&[7; 32]);
+        let keys: Vec<SigningKey> = (20..22).map(|i| SigningKey::from_bytes(&[i; 32])).collect();
+        let room = root.verifying_key().to_bytes();
+        let hosts: Vec<[u8; 32]> = keys.iter().map(|k| k.verifying_key().to_bytes()).collect();
+
+        let leader =
+            RoomLogNode::new(room, keys[0].clone(), Arc::default(), Some(store.clone())).unwrap();
+        leader.start(&root, hosts, 2, 10).unwrap();
+        assert_eq!(
+            std::fs::metadata(&store).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(!store.with_extension("tmp").exists());
+        assert!(read_status(room, &store).unwrap().is_some());
+
+        // If the store's parent is not writable (e.g., an existing file), propose fails closed
+        // instead of emitting a proposal signature whose promise cannot survive restart.
+        let blocked_parent = dir.join("not-a-dir");
+        std::fs::write(&blocked_parent, b"x").unwrap();
+        let bad_store = blocked_parent.join("roomlog.jsonl");
+        let follower =
+            RoomLogNode::new(room, keys[1].clone(), Arc::default(), Some(bad_store)).unwrap();
+        let entries = leader
+            .log
+            .lock_recover()
+            .as_ref()
+            .unwrap()
+            .entries()
+            .to_vec();
+        let _ = follower.adopt(entries.clone());
+        let p = leader
+            .log
+            .lock_recover()
+            .as_ref()
+            .unwrap()
+            .proposal(hosts_of(&keys, 1));
+        let req = json!({
+            "op": "propose",
+            "entries": entries.iter().map(text::entry_to_json).collect::<Vec<_>>(),
+            "proposal": proposal_json(&p),
+        });
+        assert!(follower.handle(&req).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
