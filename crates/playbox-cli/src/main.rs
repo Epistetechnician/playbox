@@ -98,6 +98,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             force,
             json,
             pubkey,
+            pq_pubkey,
         } => {
             let code = update::run(&update::Opts {
                 check,
@@ -106,6 +107,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 force,
                 json,
                 pubkey,
+                pq_pubkey,
             })?;
             if code != 0 {
                 return Ok(std::process::ExitCode::from(code));
@@ -114,7 +116,8 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
         Cmd::Release(r) => match r {
             ReleaseCmd::Keygen { out } => release::keygen(&out),
-            ReleaseCmd::Sign { file, key } => release::sign(&file, &key),
+            ReleaseCmd::PqKeygen { out } => release::pq_keygen(&out),
+            ReleaseCmd::Sign { file, key, pq_key } => release::sign(&file, &key, pq_key.as_deref()),
             ReleaseCmd::Notes { version, changelog } => release::notes(&version, &changelog),
             ReleaseCmd::Check {
                 version,
@@ -132,9 +135,19 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 changelog,
                 out,
             } => release::manifest(&version, &dir, &changelog, &out),
-            ReleaseCmd::Verify { file, pubkey, sig } => {
-                release::verify(&file, sig.as_deref(), &pubkey)
-            }
+            ReleaseCmd::Verify {
+                file,
+                pubkey,
+                sig,
+                pq_pubkey,
+                pq_sig,
+            } => release::verify(
+                &file,
+                sig.as_deref(),
+                &pubkey,
+                pq_sig.as_deref(),
+                pq_pubkey.as_deref(),
+            ),
         },
         Cmd::Setup {
             dry_run,

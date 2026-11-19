@@ -10,12 +10,15 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
+- Stateless FIPS 204 `ML-DSA-65` hybrid dual-signing alongside `Ed25519` on `RoomLog` checkpoints (`pq_committed` in `Status` and `playbox room-log`) and `playbox release` / `playbox update` (`release.pq.pub`, `release pq-keygen`, `--pq-key`, `--pq-pubkey`, `SHA256SUMS.pq.sig`).
+- Linux KVM + `BOX-7` egress confinement test in `confine_guest` and CI's `krun` job, plus `docs/v0.4-strategy.md` (Attested Gate wedge, scope freeze, and 5-gate compliance boundary).
 - A running host's control socket answers `members` and `revoke MEMBER ID` (the same action as the console's `revoke`; the socket is private to the user), so a host started as a service can have a member removed. In the hub, Revoke on an adopted room goes through it (passkey step-up).
 - `playbox up --grant-ttl SECS`: how long each member's grant lasts (default one hour, at most 30 days). The MCP `playbox_create` tool already had this;
   the command-line host did not, so agents that ran past an hour were refused ("not authorized") with no way to lengthen the grant.
 - `playbox up --allow-image IMAGE`: let members' tasks use a container image besides the default `alpine:3` (repeatable). Until now a host owner could not choose any other image from the command line.
 
 ### Fixed
+- Harden `worktree_add` and `merge_ff_only` against hostile `.gitattributes` filters (`filter_overrides_repo`), fail closed in replica `has_standing()` and capability standing checks, sandbox `challenge/gate.py` candidate evaluation (`docker`, `bwrap`, `sandbox-exec`), pass `BOX-7` egress capability URLs via `--env-stdin` instead of helper argv, bound/rotate `BOX-7` egress logs, persist `RoomLogNode` with `fsync` before releasing quorum promises/cosignatures, and enforce `SHA256SUMS` + signature verification before trusting or parsing `release.json` in `playbox update`.
 - A host whose state directory is called `state` is named after the folder around it (`~/.playbox-rooms/gpu-lab/state` is `gpu-lab`), not `state`, in the hub's list of hosted rooms.
 
 ## [0.3.6] - 2026-11-16

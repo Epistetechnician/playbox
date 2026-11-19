@@ -55,8 +55,10 @@ Do not run autonomous agents against live production or high-consequence systems
 
 ## Roadmap
 
-**Now**
-- Run the escape drill on a bare-metal Linux/KVM host. Done 2026-11-14 on macOS and on nested arm64 KVM ([tested-on.md](tested-on.md)).
+**Now (2026-11-19 P0 hardening + v0.4 Attested Gate wedge)**
+- Shipped P0 hardening across git checkout/worktree/merge filters (`worktree_add`, `merge_ff_only`), fail-closed replica `has_standing()`, sandboxed `challenge/gate.py`, BOX-7 stdin-delivered egress capability URLs + bounded/rotating logs, `fsync`-durable `RoomLogNode::save()`, and pre-trust signed `release.json` manifest enforcement (`update.rs`).
+- Added KVM + BOX-7 egress integration coverage in `confine_guest.rs` / CI `krun` job and stateless FIPS 204 `ML-DSA-65` hybrid dual-signing on `RoomLog` checkpoints and releases.
+- `v0.4` scope & compliance boundary documented in [v0.4-strategy.md](v0.4-strategy.md) (`world/`, `steer/`, `desktop/` polish, and networked `FROST DKG` frozen; claims limited to the 5 runtime-native gates).
 
 **Next**
 - BOX-7: a host-side egress proxy (model API only, key injected from outside the guest) with a per-task egress log. It replaces TSI as the way a guest reaches anything.

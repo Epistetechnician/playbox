@@ -17,8 +17,8 @@
 #[cfg(target_os = "linux")]
 use super::{cgroup::Limits, confine::Confinement, netpolicy::Level};
 use super::{
-    check_spec, egress::EgressConfig, guestnames, quota_exceeded, run_child, secrets::SecretStore,
-    Isolation, Quota, Runner, SandboxPolicy, TaskOutput, TaskSpec,
+    check_spec, egress::EgressConfig, guestnames, quota_exceeded, run_child_with_stdin,
+    secrets::SecretStore, Isolation, Quota, Runner, SandboxPolicy, TaskOutput, TaskSpec,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -421,10 +421,12 @@ impl Runner for KrunRunner {
         if !spec.secrets.is_empty() {
             cmd.arg("--secrets").arg(staged.path());
         }
-        if let Some(proxy) = &egress_proxy {
-            for (k, v) in proxy.env_vars() {
-                cmd.args(["--env", &format!("{k}={v}")]);
-            }
+        let env_stdin = egress_proxy
+            .as_ref()
+            .and_then(|proxy| env_stdin_payload(proxy.env_vars()));
+        if env_stdin.is_some() {
+            // Pass capability-bearing egress URLs over stdin rather than --env argv so host /proc/cmdline never sees the token.
+            cmd.arg("--env-stdin");
         }
         #[cfg(target_os = "linux")]
         let egress_port = egress_proxy.as_ref().map(super::egress::Proxy::port);
@@ -474,7 +476,7 @@ impl Runner for KrunRunner {
         // The guest's root is a clone on the host's disk, so a guest writing outside /workspace fills the host.
         // Watch it; stopping the race kills the helper and so the VM.
         let result = tokio::select! {
-            r = run_child(cmd, Duration::from_secs(spec.timeout_secs)) => r,
+            r = run_child_with_stdin(cmd, Duration::from_secs(spec.timeout_secs), env_stdin) => r,
             why = quota_exceeded(&clone, self.quota) => Err(why),
         };
         let _ = tokio::fs::remove_dir_all(&clone).await;
@@ -610,9 +612,23 @@ async fn resolve_hosts(hosts: &[String]) -> Result<Vec<(String, std::net::Socket
     Ok(out)
 }
 
+fn env_stdin_payload(vars: &[(String, String)]) -> Option<Vec<u8>> {
+    if vars.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for (k, v) in vars {
+        out.push_str(k);
+        out.push('=');
+        out.push_str(v);
+        out.push('\n');
+    }
+    Some(out.into_bytes())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::unfiltered_network_refusal as refusal;
+    use super::{env_stdin_payload, unfiltered_network_refusal as refusal};
 
     // REQ: BOX-5
     #[test]
@@ -621,5 +637,20 @@ mod tests {
         assert!(refusal(true, false, true).is_none());
         assert!(refusal(true, true, false).is_none());
         assert!(refusal(false, false, false).is_none());
+    }
+
+    // REQ: BOX-7
+    #[test]
+    fn egress_env_vars_travel_on_stdin_not_cmdline() {
+        let vars = vec![(
+            "PLAYBOX_EGRESS_MODEL_URL".to_string(),
+            "http://127.0.0.1:41234/t/secret_tok/model".to_string(),
+        )];
+        let payload = String::from_utf8(env_stdin_payload(&vars).unwrap()).unwrap();
+        assert_eq!(
+            payload,
+            "PLAYBOX_EGRESS_MODEL_URL=http://127.0.0.1:41234/t/secret_tok/model\n"
+        );
+        assert!(env_stdin_payload(&[]).is_none());
     }
 }

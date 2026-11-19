@@ -39,9 +39,16 @@ conformance/trace.py` (a CI step) fails when a shipped promise has no check. A r
 
 ## Keys
 
-`release.pub` (repository root) lists the public keys users trust, one hex key per line, newest first. It is read at build time into the
+`release.pub` (repository root) lists the ed25519 public keys users trust, one hex key per line, newest first. It is read at build time into the
 binary (`playbox update`) and mirrored in `install.sh` (`RELEASE_PUBKEY`). The secret half is the `PLAYBOX_RELEASE_KEY` Actions secret and
 a 0600 copy in `~/.playbox-release/` on the maintainer's machine; nothing else holds it.
+
+`release.pq.pub` (repository root) optionally lists stateless FIPS 204 `ML-DSA-65` public keys (hex, one per line) for hybrid dual-signing. When
+non-empty (or overridden by `PLAYBOX_RELEASE_PQ_PUBKEY`), `playbox update` verifies `SHA256SUMS.pq.sig` alongside `SHA256SUMS.sig`, and the
+release workflow requires `PLAYBOX_RELEASE_PQ_KEY` (with a 0600 backup at `~/.playbox-release/release.pq.key`).
+
+Generate a PQ keypair: `playbox release pq-keygen ~/.playbox-release/release.pq.key` and pin the printed hex public key in `release.pq.pub`,
+`PLAYBOX_RELEASE_PQ_PUBKEY`, and `PLAYBOX_RELEASE_PQ_KEY`.
 
 Rotate: `playbox release keygen new.key`; add the new public key as the first line of `release.pub`; set the secret to the new key; release.
 Binaries built from then on trust both keys, so installs signed with the old one still update. Once no supported release is signed with the

@@ -153,6 +153,8 @@ jobs:
           LIBRARY_PATH=$LIB LIBKRUN_LIB_DIR=$LIB cargo build -p playbox-runner --features krun --bin playbox-krun-helper
           echo "PLAYBOX_KRUN_HELPER=$PWD/target/debug/playbox-krun-helper" >> "$GITHUB_ENV"
       - run: docker pull alpine:3
+      - run: cargo test -p playbox-runner --lib egress
+      - run: cargo test -p playbox-runner --features krun --lib
       - run: cargo test -p playbox-runner --test krun --test escape
       - name: the confinement around a real guest, as root
         run: |

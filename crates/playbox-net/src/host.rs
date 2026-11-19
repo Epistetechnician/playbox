@@ -351,7 +351,6 @@ impl Host {
         );
         let memory = cfg.memory.clone();
         let standing_state = state.clone();
-        let is_primary = auth.can_issue();
         let caps = Arc::new(
             capabilities::Engine::new(
                 capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
@@ -369,8 +368,7 @@ impl Host {
                     return Err("the member was revoked".into());
                 }
                 match st.members.get(&id) {
-                    None if is_primary => Err("the member is no longer in the room".into()),
-                    None => Ok(()),
+                    None => Err("the member is no longer in the room".into()),
                     Some(grant) if st.revoked.contains(grant) => {
                         Err("the member's grant was revoked".into())
                     }

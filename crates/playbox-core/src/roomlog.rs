@@ -36,6 +36,7 @@ use thiserror::Error;
 
 const ENTRY_DOMAIN: &[u8] = b"playbox.roomlog.entry.v1";
 const CHECKPOINT_DOMAIN: &[u8] = b"playbox.roomlog.checkpoint.v1";
+const CHECKPOINT_PQ_CTX: &[u8] = b"playbox.roomlog.checkpoint.pq.v1";
 
 /// Most bytes one entry's payload may hold.
 pub const MAX_PAYLOAD: usize = 16 * 1024;
@@ -219,6 +220,19 @@ impl Checkpoint {
         b.extend_from_slice(&self.head);
         b
     }
+
+    fn pq_signing_bytes(&self, room: &Key, signer: &Key) -> Vec<u8> {
+        let mut b = self.signing_bytes(room);
+        b.extend_from_slice(signer);
+        b
+    }
+}
+
+/// Stateless FIPS 204 ML-DSA-65 cosignature attached to a [`SignedCheckpoint`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PqSig {
+    pub pk: Vec<u8>,
+    pub sig: Vec<u8>,
 }
 
 /// A checkpoint with the cosignatures collected for it, by host key.
@@ -226,6 +240,7 @@ impl Checkpoint {
 pub struct SignedCheckpoint {
     pub cp: Checkpoint,
     pub sigs: BTreeMap<Key, [u8; 64]>,
+    pub pq_sigs: BTreeMap<Key, PqSig>,
 }
 
 impl SignedCheckpoint {
@@ -234,6 +249,7 @@ impl SignedCheckpoint {
         Self {
             cp,
             sigs: BTreeMap::new(),
+            pq_sigs: BTreeMap::new(),
         }
     }
 
@@ -251,6 +267,19 @@ impl SignedCheckpoint {
         ok
     }
 
+    /// Add `signer`'s ML-DSA-65 cosignature if `signer` is a host of `cfg` and it verifies.
+    pub fn add_pq(&mut self, room: &Key, cfg: &Config, signer: Key, pq: PqSig) -> bool {
+        if !cfg.hosts.contains(&signer) || self.pq_sigs.contains_key(&signer) {
+            return false;
+        }
+        let msg = self.cp.pq_signing_bytes(room, &signer);
+        let ok = crate::pq::verify_mldsa65(&pq.pk, &msg, &pq.sig, CHECKPOINT_PQ_CTX);
+        if ok {
+            self.pq_sigs.insert(signer, pq);
+        }
+        ok
+    }
+
     /// Valid distinct host cosignatures.
     #[must_use]
     pub fn count(&self, room: &Key, cfg: &Config) -> usize {
@@ -263,6 +292,36 @@ impl SignedCheckpoint {
                             k.verify(&self.cp.signing_bytes(room), &Signature::from_bytes(sig))
                         })
                         .is_ok()
+            })
+            .count()
+    }
+
+    /// Valid distinct host cosignatures carrying BOTH valid Ed25519 and valid ML-DSA-65 signatures.
+    #[must_use]
+    pub fn pq_count(&self, room: &Key, cfg: &Config) -> usize {
+        self.sigs
+            .iter()
+            .filter(|(s, sig)| {
+                if !cfg.hosts.contains(*s) {
+                    return false;
+                }
+                let ed_ok = VerifyingKey::from_bytes(s)
+                    .and_then(|k| {
+                        k.verify(&self.cp.signing_bytes(room), &Signature::from_bytes(sig))
+                    })
+                    .is_ok();
+                if !ed_ok {
+                    return false;
+                }
+                let Some(pq) = self.pq_sigs.get(*s) else {
+                    return false;
+                };
+                crate::pq::verify_mldsa65(
+                    &pq.pk,
+                    &self.cp.pq_signing_bytes(room, s),
+                    &pq.sig,
+                    CHECKPOINT_PQ_CTX,
+                )
             })
             .count()
     }
@@ -903,19 +962,48 @@ impl RoomLog {
         Ok((me, key.sign(&cp.signing_bytes(&self.room)).to_bytes()))
     }
 
-    /// Make a [`SignedCheckpoint`] for `cp` carrying `key`'s own cosignature.
+    /// Cosign `cp` with both Ed25519 and deterministic ML-DSA-65 derived from `key`'s seed.
     ///
     /// # Errors
     ///
-    /// As [`RoomLog::cosign`].
+    /// As [`RoomLog::cosign`], or if ML-DSA-65 signing fails.
+    pub fn cosign_hybrid(
+        &self,
+        key: &SigningKey,
+        cp: &Checkpoint,
+    ) -> Result<(Key, [u8; 64], PqSig), LogError> {
+        let (me, sig) = self.cosign(key, cp)?;
+        let (pq_pk, pq_sk) = crate::pq::derive_mldsa65_from_ed25519_seed(&key.to_bytes());
+        let pq_sig = crate::pq::sign_mldsa65(
+            &pq_sk,
+            &cp.pq_signing_bytes(&self.room, &me),
+            CHECKPOINT_PQ_CTX,
+        )
+        .map_err(|e| LogError::BadCheckpoint(e.to_string()))?;
+        Ok((
+            me,
+            sig,
+            PqSig {
+                pk: pq_pk,
+                sig: pq_sig,
+            },
+        ))
+    }
+
+    /// Make a [`SignedCheckpoint`] for `cp` carrying `key`'s own hybrid (Ed25519 + ML-DSA-65) cosignature.
+    ///
+    /// # Errors
+    ///
+    /// As [`RoomLog::cosign_hybrid`].
     pub fn sign_checkpoint(
         &self,
         key: &SigningKey,
         cp: Checkpoint,
     ) -> Result<SignedCheckpoint, LogError> {
-        let (me, sig) = self.cosign(key, &cp)?;
+        let (me, sig, pq) = self.cosign_hybrid(key, &cp)?;
         let mut sc = SignedCheckpoint::new(cp);
         sc.add(&self.room, &self.cfg, me, sig);
+        sc.add_pq(&self.room, &self.cfg, me, pq);
         Ok(sc)
     }
 
@@ -927,11 +1015,17 @@ impl RoomLog {
         if into.cp != other.cp {
             return 0;
         }
-        other
+        let ed = other
             .sigs
             .iter()
             .filter(|(s, sig)| into.add(&self.room, cfg, **s, **sig))
-            .count()
+            .count();
+        let pq = other
+            .pq_sigs
+            .iter()
+            .filter(|(s, pq)| into.add_pq(&self.room, cfg, **s, (*pq).clone()))
+            .count();
+        ed + pq
     }
 
     /// How many entries are committed: the largest checkpoint size, among `certs`, that has `k` valid host
@@ -946,6 +1040,23 @@ impl RoomLog {
                     .iter()
                     .find(|cfg| cfg.epoch == c.cp.epoch)
                     .is_some_and(|cfg| c.count(&self.room, cfg) >= cfg.k)
+            })
+            .map(|c| c.cp.size)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Largest checkpoint size backed by `k` hybrid (Ed25519 + ML-DSA-65) host cosignatures.
+    #[must_use]
+    pub fn committed_pq(&self, certs: &[SignedCheckpoint]) -> u64 {
+        certs
+            .iter()
+            .filter(|c| self.head_at(c.cp.size) == Some(c.cp.head))
+            .filter(|c| {
+                self.hist
+                    .iter()
+                    .find(|cfg| cfg.epoch == c.cp.epoch)
+                    .is_some_and(|cfg| c.pq_count(&self.room, cfg) >= cfg.k)
             })
             .map(|c| c.cp.size)
             .max()
@@ -1108,7 +1219,7 @@ pub mod text {
     use super::{hex, unhex, Entry, FollowerLog, Key, LogError, RoomLog};
     use serde_json::{json, Value};
 
-    fn unhex_vec(s: &str) -> Option<Vec<u8>> {
+    pub fn unhex_vec(s: &str) -> Option<Vec<u8>> {
         if !s.len().is_multiple_of(2) || !s.is_ascii() {
             return None;
         }
@@ -2490,5 +2601,30 @@ mod tests {
             Equivocation { a, b: alt_sig }.verify(&l.room()),
             Err(LogError::NotEquivocation(_))
         ));
+    }
+
+    #[test]
+    fn checkpoint_hybrid_ed25519_and_mldsa65_dual_signing_verifies_and_rejects_tamper() {
+        let (r, mut l) = room(3, 2);
+        join(&mut l, &r, "a");
+        let mut sc = l.sign_checkpoint(&r.hosts[0], l.checkpoint()).unwrap();
+        assert_eq!(sc.count(&l.room(), l.config()), 1);
+        assert_eq!(sc.pq_count(&l.room(), l.config()), 1);
+        assert_eq!(l.committed_pq(std::slice::from_ref(&sc)), 0);
+
+        let f1 = copy(&l);
+        let (who, sig, pq) = f1.cosign_hybrid(&r.hosts[1], &sc.cp).unwrap();
+        assert!(sc.add(&l.room(), l.config(), who, sig));
+        let mut bad_pq = pq.clone();
+        bad_pq.sig[0] ^= 1;
+        assert!(!sc.add_pq(&l.room(), l.config(), who, bad_pq));
+        assert_eq!(l.committed_pq(std::slice::from_ref(&sc)), 0);
+
+        // Wrong signer binding (Ed25519 key 2 with host 1's ML-DSA-65 sig) is rejected.
+        assert!(!sc.add_pq(&l.room(), l.config(), pk(&r.hosts[2]), pq.clone()));
+
+        assert!(sc.add_pq(&l.room(), l.config(), who, pq));
+        assert_eq!(sc.pq_count(&l.room(), l.config()), 2);
+        assert_eq!(l.committed_pq(std::slice::from_ref(&sc)), 2);
     }
 }

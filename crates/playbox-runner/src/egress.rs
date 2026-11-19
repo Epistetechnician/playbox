@@ -12,10 +12,11 @@ use crate::secrets::{self, SecretStore, SecretUse};
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::Write as _;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -24,6 +25,8 @@ use tokio::sync::{oneshot, Semaphore};
 
 pub const MAX_HEADER_BYTES: usize = 16 * 1024;
 pub const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_MEMORY_LOG_ENTRIES: usize = 4096;
+pub const DEFAULT_MAX_LOG_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_CONCURRENT: usize = 16;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(15);
 const TOTAL_REQ_TIMEOUT: Duration = Duration::from_secs(120);
@@ -79,6 +82,9 @@ pub struct EgressConfig {
     pub upstreams: Vec<EgressUpstream>,
     #[serde(default)]
     pub log_file: Option<PathBuf>,
+    /// Maximum size in bytes of `log_file` before rotating to `<log_file>.1`. Defaults to 16 MiB.
+    #[serde(default)]
+    pub max_log_bytes: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +108,7 @@ impl EgressConfig {
             RawEgressConfig::List(upstreams) => Self {
                 upstreams,
                 log_file: None,
+                max_log_bytes: None,
             },
             RawEgressConfig::Full(c) => c,
         };
@@ -125,6 +132,9 @@ impl EgressConfig {
     ///
     /// Fails on duplicate/invalid upstream names, empty `allow_paths`, `http://` without `insecure_http`, or invalid header/env names.
     pub fn validate(&self) -> Result<()> {
+        if self.max_log_bytes == Some(0) {
+            bail!("max_log_bytes must be positive");
+        }
         let mut seen = BTreeSet::new();
         for u in &self.upstreams {
             if !secrets::valid_name(&u.name) {
@@ -324,38 +334,58 @@ struct SharedState {
     token_hash: blake3::Hash,
     upstreams: BTreeMap<String, PreparedUpstream>,
     log_file: Option<PathBuf>,
-    entries: Mutex<Vec<EgressLogEntry>>,
+    max_log_bytes: u64,
+    file_mu: Mutex<()>,
+    entries: Mutex<VecDeque<EgressLogEntry>>,
+    dropped_entries: AtomicU64,
     sem: Semaphore,
+}
+
+fn rotated_log_path(path: &Path) -> PathBuf {
+    let mut os = path.as_os_str().to_os_string();
+    os.push(".1");
+    PathBuf::from(os)
 }
 
 impl SharedState {
     fn record(&self, entry: EgressLogEntry) {
         if let Some(path) = &self.log_file {
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Ok(line) = serde_json::to_string(&entry) {
-                #[cfg(unix)]
-                let open = {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    std::fs::OpenOptions::new()
+            if let Ok(_fguard) = self.file_mu.lock() {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Ok(line) = serde_json::to_string(&entry) {
+                    let needed = u64::try_from(line.len() + 1).unwrap_or(u64::MAX);
+                    let cur = std::fs::metadata(path).map_or(0, |m| m.len());
+                    if cur > 0 && cur.saturating_add(needed) > self.max_log_bytes {
+                        let _ = std::fs::rename(path, rotated_log_path(path));
+                    }
+                    #[cfg(unix)]
+                    let open = {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .mode(0o600)
+                            .open(path)
+                    };
+                    #[cfg(not(unix))]
+                    let open = std::fs::OpenOptions::new()
                         .create(true)
                         .append(true)
-                        .mode(0o600)
-                        .open(path)
-                };
-                #[cfg(not(unix))]
-                let open = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path);
-                if let Ok(mut f) = open {
-                    let _ = writeln!(f, "{line}");
+                        .open(path);
+                    if let Ok(mut f) = open {
+                        let _ = writeln!(f, "{line}");
+                    }
                 }
             }
         }
         if let Ok(mut guard) = self.entries.lock() {
-            guard.push(entry);
+            if guard.len() >= MAX_MEMORY_LOG_ENTRIES {
+                guard.pop_front();
+                self.dropped_entries.fetch_add(1, Ordering::Relaxed);
+            }
+            guard.push_back(entry);
         }
     }
 }
@@ -510,7 +540,10 @@ impl Proxy {
             token_hash: blake3::hash(token.as_bytes()),
             upstreams: prepared,
             log_file: cfg.log_file.clone(),
-            entries: Mutex::new(Vec::new()),
+            max_log_bytes: cfg.max_log_bytes.unwrap_or(DEFAULT_MAX_LOG_BYTES),
+            file_mu: Mutex::new(()),
+            entries: Mutex::new(VecDeque::new()),
+            dropped_entries: AtomicU64::new(0),
             sem: Semaphore::new(MAX_CONCURRENT),
         });
         let (stop_tx, mut stop_rx) = oneshot::channel();
@@ -568,7 +601,12 @@ impl Proxy {
         self.state
             .entries
             .lock()
-            .map_or_else(|_| Vec::new(), |g| g.clone())
+            .map_or_else(|_| Vec::new(), |g| g.iter().cloned().collect())
+    }
+
+    #[must_use]
+    pub fn dropped_entries(&self) -> u64 {
+        self.state.dropped_entries.load(Ordering::Relaxed)
     }
 }
 
@@ -1087,6 +1125,7 @@ mod tests {
                 allow_private: false,
             }],
             log_file: Some(log_path.clone()),
+            max_log_bytes: None,
         };
 
         let proxy = Proxy::start(&cfg, &secrets, &["anthropic".to_string()])
@@ -1166,5 +1205,57 @@ mod tests {
         assert_eq!(entries[3].denied.as_deref(), Some("bad_capability_token"));
 
         let _ = std::fs::remove_dir_all(&sec_dir);
+    }
+
+    // REQ: BOX-7
+    #[test]
+    fn egress_logs_are_bounded_in_memory_and_rotate_on_disk() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("pb-egress-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log_path = dir.join("egress.jsonl");
+
+        let state = SharedState {
+            token_hash: blake3::hash(b"tok"),
+            upstreams: BTreeMap::new(),
+            log_file: Some(log_path.clone()),
+            max_log_bytes: 280,
+            file_mu: Mutex::new(()),
+            entries: Mutex::new(VecDeque::new()),
+            dropped_entries: AtomicU64::new(0),
+            sem: Semaphore::new(1),
+        };
+        let total = MAX_MEMORY_LOG_ENTRIES + 25;
+        for i in 0..total {
+            state.record(EgressLogEntry {
+                ts_ms: i as u64,
+                upstream: "anthropic".into(),
+                method: "POST".into(),
+                path: "/v1/messages".into(),
+                status: 200,
+                req_bytes: 10,
+                resp_bytes: 20,
+                duration_ms: 1,
+                denied: None,
+            });
+        }
+
+        assert_eq!(state.entries.lock().unwrap().len(), MAX_MEMORY_LOG_ENTRIES);
+        assert_eq!(state.dropped_entries.load(Ordering::Relaxed), 25);
+        assert_eq!(state.entries.lock().unwrap().front().unwrap().ts_ms, 25);
+
+        let cur_len = std::fs::metadata(&log_path).unwrap().len();
+        let rot_path = rotated_log_path(&log_path);
+        let rot_len = std::fs::metadata(&rot_path).unwrap().len();
+        assert!(cur_len <= 280, "active log exceeded cap: {cur_len}");
+        assert!(rot_len <= 280, "rotated log exceeded cap: {rot_len}");
+        assert_eq!(
+            std::fs::metadata(&log_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

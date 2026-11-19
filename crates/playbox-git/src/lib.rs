@@ -263,7 +263,14 @@ pub async fn worktree_add(repo: &Path, commit: &str) -> Result<Worktree> {
     let dir = parent.join("ws");
     let dir_s = dir.to_str().context("temp path is not utf-8")?;
     let made = async {
-        git(repo, &["worktree", "add", "--detach", dir_s, commit], None).await?;
+        let mut args = filter_overrides_repo(repo).await?;
+        args.extend(
+            ["worktree", "add", "--detach", dir_s, commit]
+                .into_iter()
+                .map(str::to_string),
+        );
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        git(repo, &refs, None).await?;
         // Safe to ask now: nothing has run in the directory yet.
         let gitdir = git(&dir, &["rev-parse", "--absolute-git-dir"], None).await?;
         Ok::<_, anyhow::Error>(PathBuf::from(String::from_utf8(gitdir)?.trim()))
@@ -574,7 +581,14 @@ pub async fn head_branch(repo: &Path) -> Result<(Option<String>, bool)> {
 /// Returns an error if `git` cannot be run or exits with a failure status.
 pub async fn merge_ff_only(repo: &Path, target: &str) -> Result<()> {
     let target = check_name(target)?;
-    git(repo, &["merge", "--ff-only", "-q", target], None).await?;
+    let mut args = filter_overrides_repo(repo).await?;
+    args.extend(
+        ["merge", "--ff-only", "-q", target]
+            .into_iter()
+            .map(str::to_string),
+    );
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    git(repo, &refs, None).await?;
     Ok(())
 }
 
@@ -1088,5 +1102,77 @@ mod tests {
 
         let _ = tokio::fs::remove_dir_all(&victim).await;
         let _ = tokio::fs::remove_dir_all(&src).await;
+    }
+
+    #[tokio::test]
+    async fn hostile_gitattributes_filters_are_neutralized_on_worktree_add_and_merge_ff_only() {
+        let victim = tempfile_dir().await.unwrap();
+        init(&victim, "main").await.unwrap();
+        sh(&victim, &["config", "user.email", "t@example.com"]);
+        sh(&victim, &["config", "user.name", "t"]);
+        std::fs::write(victim.join("base.txt"), "base\n").unwrap();
+        sh(&victim, &["add", "-A"]);
+        sh(&victim, &["commit", "-q", "-m", "base"]);
+        let base_bundle = bundle_create(&victim, "main").await.unwrap();
+
+        let peer = tempfile_dir().await.unwrap();
+        init(&peer, "main").await.unwrap();
+        bundle_import(&peer, &base_bundle, "refs/heads/main", "refs/heads/main")
+            .await
+            .unwrap();
+        sh(&peer, &["checkout", "-q", "main"]);
+        sh(&peer, &["config", "user.email", "p@example.com"]);
+        sh(&peer, &["config", "user.name", "p"]);
+        std::fs::write(peer.join(".gitattributes"), "* filter=evil\n").unwrap();
+        std::fs::write(peer.join("filtered.bin"), "raw payload\n").unwrap();
+        sh(&peer, &["add", "-A"]);
+        sh(&peer, &["commit", "-q", "-m", "peer"]);
+        let peer_bundle = bundle_create(&peer, "main").await.unwrap();
+
+        let marker = victim.join("filter-ran");
+        for key in ["filter.evil.smudge", "filter.evil.clean"] {
+            sh(
+                &victim,
+                &["config", key, &format!("touch {}; cat", marker.display())],
+            );
+        }
+        sh(&victim, &["config", "filter.evil.required", "true"]);
+
+        bundle_import(
+            &victim,
+            &peer_bundle,
+            "refs/heads/main",
+            "refs/remotes/peer/main",
+        )
+        .await
+        .unwrap();
+
+        let wt = worktree_add(&victim, "refs/remotes/peer/main")
+            .await
+            .unwrap();
+        assert!(
+            !marker.exists(),
+            "hostile .gitattributes filter executed during worktree_add"
+        );
+        assert_eq!(
+            std::fs::read_to_string(wt.path().join("filtered.bin")).unwrap(),
+            "raw payload\n"
+        );
+        worktree_remove(&victim, &wt).await.unwrap();
+
+        merge_ff_only(&victim, "refs/remotes/peer/main")
+            .await
+            .unwrap();
+        assert!(
+            !marker.exists(),
+            "hostile .gitattributes filter executed during merge_ff_only"
+        );
+        assert_eq!(
+            std::fs::read_to_string(victim.join("filtered.bin")).unwrap(),
+            "raw payload\n"
+        );
+
+        let _ = tokio::fs::remove_dir_all(&victim).await;
+        let _ = tokio::fs::remove_dir_all(&peer).await;
     }
 }

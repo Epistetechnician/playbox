@@ -23,14 +23,25 @@ const PINNED_KEYS: &str = match option_env!("PLAYBOX_RELEASE_PUBKEY") {
     Some(k) if !k.is_empty() => k,
     _ => include_str!("../../../release.pub"),
 };
+const PINNED_PQ_KEYS: &str = match option_env!("PLAYBOX_RELEASE_PQ_PUBKEY") {
+    Some(k) if !k.is_empty() => k,
+    _ => include_str!("../../../release.pq.pub"),
+};
 
-fn pinned_keys() -> Vec<String> {
-    PINNED_KEYS
-        .lines()
+fn parse_pinned(raw: &str) -> Vec<String> {
+    raw.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(String::from)
         .collect()
+}
+
+fn pinned_keys() -> Vec<String> {
+    parse_pinned(PINNED_KEYS)
+}
+
+fn pinned_pq_keys() -> Vec<String> {
+    parse_pinned(PINNED_PQ_KEYS)
 }
 /// Exit status of `--check` when a newer release exists, so scripts can branch on it.
 pub const EXIT_UPDATE_AVAILABLE: u8 = 10;
@@ -43,6 +54,7 @@ pub struct Opts {
     pub force: bool,
     pub json: bool,
     pub pubkey: Option<String>,
+    pub pq_pubkey: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,9 +279,64 @@ pub fn run(o: &Opts) -> Result<u8> {
     if o.rollback {
         return rollback();
     }
+    let exe = if o.check || o.json {
+        None
+    } else {
+        Some(target_exe()?)
+    };
     let want = o.version.as_deref().map(Version::parse).transpose()?;
     let base = base_url(want.as_ref().map(ToString::to_string).as_deref());
+    let tmp = TempDir::new()?;
+
+    // 1. Verify the signed checksum list FIRST before reading or trusting release.json.
+    let sums_raw = fetch(&format!("{base}/SHA256SUMS"))?;
+    let sums_path = tmp.0.join("SHA256SUMS");
+    std::fs::write(&sums_path, &sums_raw)?;
+    let keys = o.pubkey.clone().map_or_else(pinned_keys, |k| vec![k]);
+    if keys.is_empty() {
+        eprintln!("note: this build pins no release key, so the update is checked against SHA256SUMS only");
+    } else {
+        let sig = fetch(&format!("{base}/SHA256SUMS.sig"))
+            .context("this release is not signed, and this build requires a signature")?;
+        std::fs::write(tmp.0.join("SHA256SUMS.sig"), sig)?;
+        let ok = keys
+            .iter()
+            .any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
+        if !ok {
+            bail!("BAD SIGNATURE: SHA256SUMS was not signed by any key this build trusts ({} pinned); not updating", keys.len());
+        }
+    }
+    let pq_keys = match (&o.pq_pubkey, &o.pubkey) {
+        (Some(k), _) => vec![k.clone()],
+        // An explicit --pubkey replaces the built-in maintainer keys rather than mixing with built-in PQ pins.
+        (None, Some(_)) => Vec::new(),
+        (None, None) => pinned_pq_keys(),
+    };
+    if !pq_keys.is_empty() {
+        let pq_sig = fetch(&format!("{base}/SHA256SUMS.pq.sig"))
+            .context("this release has no ML-DSA-65 signature, and this build requires one")?;
+        std::fs::write(tmp.0.join("SHA256SUMS.pq.sig"), pq_sig)?;
+        let ok = pq_keys.iter().any(|k| {
+            crate::release::verify_pq_quiet(&sums_path.to_string_lossy(), None, k).is_ok()
+        });
+        if !ok {
+            bail!(
+                "BAD PQ SIGNATURE: SHA256SUMS was not signed by any ML-DSA-65 key this build trusts ({} pinned); not updating",
+                pq_keys.len()
+            );
+        }
+    }
+    let sums = parse_sums(&String::from_utf8_lossy(&sums_raw));
+
+    // 2. release.json must be listed in the signed SHA256SUMS and match its hash before we parse or display it.
+    let manifest_hash = sums
+        .get("release.json")
+        .ok_or_else(|| anyhow!("release.json is not in SHA256SUMS; not updating"))?;
     let (m, manifest_raw) = manifest(&base)?;
+    if &sha256_hex(&manifest_raw) != manifest_hash {
+        bail!("release.json does not match SHA256SUMS; not updating");
+    }
+
     let latest = Version::parse(&m.version)?;
     let cur = current();
     let target = want.clone().unwrap_or(latest.clone());
@@ -309,36 +376,8 @@ pub fn run(o: &Opts) -> Result<u8> {
         return Ok(0);
     }
 
-    let exe = target_exe()?;
+    let exe = exe.expect("target_exe checked when updating");
     let asset = format!("playbox-{}.tar.gz", platform()?);
-    let tmp = TempDir::new()?;
-
-    // 1. The checksum list, and its signature against the key this build trusts.
-    let sums_raw = fetch(&format!("{base}/SHA256SUMS"))?;
-    let sums_path = tmp.0.join("SHA256SUMS");
-    std::fs::write(&sums_path, &sums_raw)?;
-    let keys = o.pubkey.clone().map_or_else(pinned_keys, |k| vec![k]);
-    if keys.is_empty() {
-        eprintln!("note: this build pins no release key, so the update is checked against SHA256SUMS only");
-    } else {
-        let sig = fetch(&format!("{base}/SHA256SUMS.sig"))
-            .context("this release is not signed, and this build requires a signature")?;
-        std::fs::write(tmp.0.join("SHA256SUMS.sig"), sig)?;
-        let ok = keys
-            .iter()
-            .any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
-        if !ok {
-            bail!("BAD SIGNATURE: SHA256SUMS was not signed by any key this build trusts ({} pinned); not updating", keys.len());
-        }
-    }
-    let sums = parse_sums(&String::from_utf8_lossy(&sums_raw));
-
-    // 2. The manifest bytes already parsed above are covered by the same list, and the archive by both.
-    if let Some(h) = sums.get("release.json") {
-        if &sha256_hex(&manifest_raw) != h {
-            bail!("release.json does not match SHA256SUMS; not updating");
-        }
-    }
     let want_hash = sums.get(&asset).ok_or_else(|| {
         anyhow!("{asset} is not in SHA256SUMS (no prebuilt release for this platform?)")
     })?;
