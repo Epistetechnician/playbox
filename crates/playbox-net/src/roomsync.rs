@@ -856,6 +856,14 @@ fn load(
 ) -> Result<(Option<RoomLog>, Vec<SignedCheckpoint>, Local)> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    load_text(room, &path.display().to_string(), &raw)
+}
+
+fn load_text(
+    room: [u8; 32],
+    source: &str,
+    raw: &str,
+) -> Result<(Option<RoomLog>, Vec<SignedCheckpoint>, Local)> {
     let (mut entries, mut cert_lines, mut local) = (String::new(), Vec::new(), Local::default());
     let mut proofs = Vec::new();
     for line in raw.lines().filter(|l| !l.trim().is_empty()) {
@@ -876,12 +884,8 @@ fn load(
             }
         }
     }
-    let log = text::from_text(room, &entries).map_err(|e| {
-        anyhow!(
-            "{}: {e}; refusing to start on a log that does not check",
-            path.display()
-        )
-    })?;
+    let log = text::from_text(room, &entries)
+        .map_err(|e| anyhow!("{source}: {e}; refusing to start on a log that does not check"))?;
     // A saved proof is believed no more than one heard from a peer.
     local.proofs = proofs
         .into_iter()
@@ -907,6 +911,16 @@ fn load(
 /// Fails if the file is unreadable or any entry or certificate does not check.
 pub fn read_status(room: [u8; 32], path: &std::path::Path) -> Result<Option<Status>> {
     let (log, certs, local) = load(room, path)?;
+    Ok(log.map(|l| status_of(&l, &certs, &local.proofs)))
+}
+
+/// Check an in-memory room log text from scratch (for offline bundle verification).
+///
+/// # Errors
+///
+/// Fails if any entry or certificate does not check.
+pub fn read_status_text(room: [u8; 32], raw: &str) -> Result<Option<Status>> {
+    let (log, certs, local) = load_text(room, "roomlog", raw)?;
     Ok(log.map(|l| status_of(&l, &certs, &local.proofs)))
 }
 

@@ -47,19 +47,29 @@ pub fn identity_key(path: &std::path::Path) -> Result<SecretKey> {
     }
 }
 
+/// Read an existing 32-byte hex seed file without creating one if missing.
+///
+/// # Errors
+///
+/// Fails if the file cannot be read or does not contain 64 hex characters.
+pub fn load_seed_hex(path: &std::path::Path) -> Result<[u8; 32]> {
+    let t = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let t = t.trim();
+    if t.len() != 64 || !t.is_ascii() {
+        bail!("{} must hold 64 hex characters", path.display());
+    }
+    let mut out = [0u8; 32];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = u8::from_str_radix(&t[i * 2..i * 2 + 2], 16).context("key file is not hex")?;
+    }
+    Ok(out)
+}
+
 /// A 32-byte secret stored as hex in a file readable only by the owner; created if missing.
 pub(crate) fn load_or_create_seed(path: &std::path::Path) -> Result<[u8; 32]> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
-    if let Ok(t) = std::fs::read_to_string(path) {
-        let t = t.trim();
-        if t.len() != 64 || !t.is_ascii() {
-            bail!("{} must hold 64 hex characters", path.display());
-        }
-        let mut out = [0u8; 32];
-        for (i, o) in out.iter_mut().enumerate() {
-            *o = u8::from_str_radix(&t[i * 2..i * 2 + 2], 16).context("key file is not hex")?;
-        }
-        return Ok(out);
+    if path.exists() {
+        return load_seed_hex(path);
     }
     let seed = random_bytes()?;
     let hex: String = seed.iter().map(|b| format!("{b:02x}")).collect();

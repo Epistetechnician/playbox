@@ -25,6 +25,7 @@ mod gen;
 mod http;
 mod live;
 mod machine;
+pub(crate) use agents::hermes_cmd;
 use agents::{agent_checks, binary_checks, history_checks};
 pub use fuzz::fuzz_hub;
 use live::live_checks;

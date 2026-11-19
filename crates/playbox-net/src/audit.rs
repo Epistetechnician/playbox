@@ -263,13 +263,33 @@ pub fn verify(path: &Path) -> Result<Summary> {
 /// Panics only if an internal invariant is broken, which indicates a bug.
 pub fn verify_with(path: &Path, expected_key: Option<&[u8; 32]>) -> Result<Summary> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let lines: Vec<String> = BufReader::new(file)
+        .lines()
+        .collect::<std::io::Result<_>>()?;
+    let (summary, _) = verify_lines(&lines, expected_key)?;
+    Ok(summary)
+}
+
+/// Check an audit log's chain and signatures from in-memory lines, returning the summary and parsed bodies.
+///
+/// # Errors
+///
+/// Returns an error if the log is empty, malformed, out of sequence, tampered, or fails signature verification.
+///
+/// # Panics
+///
+/// Panics only if an internal invariant is broken, which indicates a bug.
+pub fn verify_lines(
+    lines: &[String],
+    expected_key: Option<&[u8; 32]>,
+) -> Result<(Summary, Vec<Value>)> {
     let (mut prev, mut seq) = (ZERO.to_string(), 0u64);
     let mut key: Option<VerifyingKey> = expected_key
         .map(VerifyingKey::from_bytes)
         .transpose()
         .map_err(|e| anyhow!("bad key: {e}"))?;
-    for (i, line) in BufReader::new(file).lines().enumerate() {
-        let line = line?;
+    let mut entries = Vec::with_capacity(lines.len());
+    for (i, line) in lines.iter().enumerate() {
         let at = |why: &str| anyhow!("line {}: {why}", i + 1);
         let (body, sig) = line
             .rsplit_once('\t')
@@ -300,13 +320,17 @@ pub fn verify_with(path: &Path, expected_key: Option<&[u8; 32]>) -> Result<Summa
             .map_err(|_| at("the signature does not verify (forged or edited)"))?;
         prev = hex(hash.as_bytes());
         seq += 1;
+        entries.push(v);
     }
     let key = key.ok_or_else(|| anyhow!("the log is empty"))?;
-    Ok(Summary {
-        entries: seq,
-        head: prev,
-        host_key: hex(&key.to_bytes()),
-    })
+    Ok((
+        Summary {
+            entries: seq,
+            head: prev,
+            host_key: hex(&key.to_bytes()),
+        },
+        entries,
+    ))
 }
 
 /// The last `n` entries, parsed (without re-verifying; call [`verify`] first).
