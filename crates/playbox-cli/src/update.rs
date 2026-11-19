@@ -36,11 +36,11 @@ fn parse_pinned(raw: &str) -> Vec<String> {
         .collect()
 }
 
-fn pinned_keys() -> Vec<String> {
+pub(crate) fn pinned_keys() -> Vec<String> {
     parse_pinned(PINNED_KEYS)
 }
 
-fn pinned_pq_keys() -> Vec<String> {
+pub(crate) fn pinned_pq_keys() -> Vec<String> {
     parse_pinned(PINNED_PQ_KEYS)
 }
 /// Exit status of `--check` when a newer release exists, so scripts can branch on it.

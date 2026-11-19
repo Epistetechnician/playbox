@@ -476,6 +476,9 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Export and offline-verify v0.4 Attested Gate compliance receipt bundles
+    #[command(subcommand)]
+    Gate(GateCmd),
     /// Hub latent messages (docs/latent-channels.md): relay signed vectors for an agent that holds its own key
     #[command(subcommand)]
     Latent(LatentCmd),
@@ -593,6 +596,69 @@ pub enum Cmd {
     Demo,
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },
+}
+
+#[derive(Subcommand)]
+pub enum GateCmd {
+    /// Export an offline-verifiable Attested Gate compliance receipt bundle for the 5 runtime-native gates
+    Export {
+        /// Host state directory (`--state DIR`): discovers audit.log, roomlog.jsonl, root.key, and endpoint.key
+        #[arg(long, value_name = "DIR")]
+        state: Option<String>,
+        /// Host audit log file (default: STATE/audit.log if present)
+        #[arg(long, value_name = "FILE")]
+        audit: Option<String>,
+        /// Replicated room log file (default: STATE/roomlog.jsonl if present)
+        #[arg(long, value_name = "FILE")]
+        room_log: Option<String>,
+        /// Room root public key (64 hex chars; default: derived from STATE/root.key if present)
+        #[arg(long, value_name = "HEX")]
+        root: Option<String>,
+        /// BOX-7 egress proxy JSONL log file
+        #[arg(long, value_name = "FILE")]
+        egress_log: Option<String>,
+        /// Challenge gate receipts JSONL file (from challenge/gate.py or room_eval.py)
+        #[arg(long, value_name = "FILE")]
+        challenge_log: Option<String>,
+        /// Signed host attestation statement file (from `playbox attest`)
+        #[arg(long, value_name = "FILE")]
+        attestation: Option<String>,
+        /// Host/custodian 32-byte Ed25519 hex seed file to sign the bundle (default: STATE/endpoint.key if present)
+        #[arg(long, value_name = "FILE")]
+        sign_key: Option<String>,
+        /// Optional FIPS 204 ML-DSA-65 private key hex file for hybrid PQ bundle signing
+        #[arg(long, value_name = "FILE")]
+        pq_key: Option<String>,
+        /// Omit bundle signature even if STATE/endpoint.key is present
+        #[arg(long)]
+        no_sign: bool,
+        /// Write bundle JSON to this file (default: stdout)
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+    },
+    /// Verify an Attested Gate compliance receipt bundle offline
+    Verify {
+        /// Path to the compliance bundle JSON file (or `-` for stdin)
+        bundle: String,
+        /// Require bundle signature by this 64-hex Ed25519 public key
+        #[arg(long, value_name = "HEX")]
+        pubkey: Option<String>,
+        /// Require hybrid ML-DSA-65 signature by this hex public key
+        #[arg(long, value_name = "HEX")]
+        pq_pubkey: Option<String>,
+        /// Fail if the bundle itself carries no Ed25519 signature
+        #[arg(long)]
+        require_signature: bool,
+        /// Require ML-DSA-65 post-quantum enforcement (bundle pq_sig and/or PQ-committed RoomLog checkpoints)
+        #[arg(long)]
+        require_pq: bool,
+        /// Require verified host attestation reaching at least this tier (t0..t3)
+        #[arg(long, value_name = "TIER")]
+        require_tier: Option<String>,
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

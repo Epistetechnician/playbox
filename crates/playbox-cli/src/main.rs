@@ -3,6 +3,7 @@
 mod cli;
 mod control;
 mod doctor;
+mod gate;
 mod hub;
 mod latent;
 mod launch;
@@ -20,7 +21,7 @@ mod wizard;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use cli::{Cli, Cmd, LatentCmd, ReleaseCmd, SteerCmd};
+use cli::{Cli, Cmd, GateCmd, LatentCmd, ReleaseCmd, SteerCmd};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -88,6 +89,50 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         Cmd::Mcp => session::mcp().await,
         Cmd::Id => rooms::guest_id(),
         Cmd::RoomLog { state, root, json } => rooms::room_log_cmd(&state, &root, json),
+        Cmd::Gate(g) => match g {
+            GateCmd::Export {
+                state,
+                audit,
+                room_log,
+                root,
+                egress_log,
+                challenge_log,
+                attestation,
+                sign_key,
+                pq_key,
+                no_sign,
+                out,
+            } => gate::export(gate::ExportOpts {
+                state,
+                audit,
+                room_log,
+                root,
+                egress_log,
+                challenge_log,
+                attestation,
+                sign_key,
+                pq_key,
+                no_sign,
+                out,
+            }),
+            GateCmd::Verify {
+                bundle,
+                pubkey,
+                pq_pubkey,
+                require_signature,
+                require_pq,
+                require_tier,
+                json,
+            } => gate::verify(gate::VerifyOpts {
+                bundle,
+                pubkey,
+                pq_pubkey,
+                require_signature,
+                require_pq,
+                require_tier,
+                json,
+            }),
+        },
         Cmd::Latent(LatentCmd::Session {
             link,
             transport,

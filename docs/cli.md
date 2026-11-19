@@ -28,8 +28,8 @@ if it is not set, publishes an unsigned release that `install.sh` and `playbox u
 |---|---|
 | Start | `init`, `secure`, `setup [--dry-run] [--remove] [--only AGENT]`, `doctor`, `id`, `hub`, `update [--check] [--rollback]` |
 | Rooms | `up` (host; `--console` for live `link / members / audit / revoke / calls / approve / deny`, or `--tui` for a full-screen chat), `join LINK [--task CMD]`, `chat LINK`, `shell [LINK]`, `bridge LINK`, `call TOOL k=v…`, `mcp`, `latent session LINK` |
-| Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE` |
-| Trust | `verify LOG`, `attest`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
+| Review | `review REPO [list\|show\|accept\|reject]`, `audit FILE`, `room-log STATE --root HEX` |
+| Trust | `verify LOG`, `attest`, `gate export\|verify`, `pin list\|add\|remove`, `approver-key`, `approve`, `record` |
 | Memory | `memory remember\|recall\|export\|ingest\|review` |
 | Steering | `steer extract\|random\|manifest\|run\|probe`, `experiment e1\|e1-merge\|e6\|e6b\|audit-e6\|cache-audit`, `world demo\|test` |
 | Other | `demo`, `completions bash\|zsh\|fish` (a hidden `release` command is for maintainers) |

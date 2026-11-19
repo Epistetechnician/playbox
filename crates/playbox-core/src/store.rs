@@ -135,6 +135,28 @@ pub fn append_kept(
     append(path, key, kind, payload, time_ms)
 }
 
+/// Verify the history log at `path` and return the latest verified `attestation` or `host_attestation` payload.
+///
+/// # Errors
+///
+/// Returns an I/O error if reading, log verification, payload lookup, hash verification, or UTF-8 decoding fails.
+pub fn read_latest_attestation(path: &Path) -> io::Result<String> {
+    let log = load(path)?;
+    log.verify()
+        .map_err(|e| bad(format!("history log failed verification: {e}")))?;
+    let entry = log
+        .entries
+        .iter()
+        .rev()
+        .find(|e| matches!(e.kind.as_str(), "attestation" | "host_attestation"))
+        .ok_or_else(|| bad("history log contains no attestation entry"))?;
+    let body = fs::read(payload_dir(path).join(text::hex(&entry.payload_hash)))?;
+    if blake3::hash(&body).as_bytes() != &entry.payload_hash {
+        return Err(bad("attestation payload does not match log hash"));
+    }
+    String::from_utf8(body).map_err(|e| bad(e.to_string()))
+}
+
 /// What a deep check of a history found.
 #[derive(Debug, Default)]
 pub struct Report {

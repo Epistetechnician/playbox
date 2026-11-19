@@ -32,7 +32,7 @@ pub mod ws;
 pub use client::{join_link, Client, RoomHosts, TaskRun};
 pub(crate) use handler::{finish, refuse, unauthorized, RoomHandler};
 pub use host::{Host, HostConfig};
-pub use keys::{identity_key, new_secret_key, random_bytes};
+pub use keys::{identity_key, load_seed_hex, new_secret_key, random_bytes};
 pub use link::{decode_peer, encode_peer, key_for_link, Link, LinkOpts};
 pub use revoke::{Notice, SYNC_ALPN};
 pub use state::Admit;

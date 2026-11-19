@@ -57,6 +57,17 @@ pub fn sign_mldsa65(sk_bytes: &[u8], msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, 
     Ok(sig.to_vec())
 }
 
+/// Extract the serialized ML-DSA-65 public key corresponding to `sk_bytes`.
+///
+/// # Errors
+///
+/// Fails on invalid secret key length or encoding.
+pub fn pk_from_sk_mldsa65(sk_bytes: &[u8]) -> Result<Vec<u8>, PqError> {
+    let arr: [u8; MLDSA65_SK_LEN] = sk_bytes.try_into().map_err(|_| PqError::BadSecretLen)?;
+    let sk = ml_dsa_65::PrivateKey::try_from_bytes(arr).map_err(PqError::BadSecret)?;
+    Ok(sk.get_public_key().into_bytes().to_vec())
+}
+
 /// Verify an ML-DSA-65 signature over `msg` and context `ctx`. Returns `false` on any malformed key, signature, or mismatch.
 #[must_use]
 pub fn verify_mldsa65(pk_bytes: &[u8], msg: &[u8], sig_bytes: &[u8], ctx: &[u8]) -> bool {

@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use playbox_core::store;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -44,15 +45,35 @@ fn out(prog: &str, args: &[&str]) -> Option<String> {
 }
 
 fn run(dry: bool, prog: &str, args: &[&str]) -> Result<(), String> {
+    run_with_stdin(dry, prog, args, None)
+}
+
+fn run_with_stdin(
+    dry: bool,
+    prog: &str,
+    args: &[&str],
+    stdin_bytes: Option<&[u8]>,
+) -> Result<(), String> {
     if dry {
         println!("    would run: {prog} {}", args.join(" "));
         return Ok(());
     }
-    let o = Command::new(prog)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(prog);
+    cmd.args(args)
+        .stdin(if stdin_bytes.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    if let Some(bytes) = stdin_bytes {
+        if let Some(mut child_in) = child.stdin.take() {
+            let _ = child_in.write_all(bytes);
+        }
+    }
+    let o = child.wait_with_output().map_err(|e| e.to_string())?;
     if o.status.success() {
         Ok(())
     } else {
@@ -176,11 +197,33 @@ fn opencode(o: &Opts, exe: &str) -> Outcome {
     }
 }
 
+fn hermes_config_path() -> PathBuf {
+    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".hermes/config.yaml")
+}
+
+fn hermes_matches_exe(config_yaml: Option<&str>, exe: &str) -> bool {
+    let Some(cmd) = config_yaml.and_then(crate::secure::hermes_cmd) else {
+        return false;
+    };
+    if cmd == exe {
+        return true;
+    }
+    let exe_canon = std::fs::canonicalize(exe).unwrap_or_else(|_| PathBuf::from(exe));
+    std::fs::canonicalize(&cmd).is_ok_and(|p| p == exe_canon)
+}
+
 fn hermes(o: &Opts, exe: &str) -> Outcome {
+    let cfg_path = hermes_config_path();
+    let cfg_text = std::fs::read_to_string(&cfg_path).ok();
+    let configured = cfg_text
+        .as_deref()
+        .and_then(crate::secure::hermes_cmd)
+        .is_some();
     let listed = out("hermes", &["mcp", "list"])
         .is_some_and(|t| t.lines().any(|l| l.split_whitespace().next() == Some(NAME)));
+    let ours = hermes_matches_exe(cfg_text.as_deref(), exe);
     if o.remove {
-        if !listed {
+        if !listed && !configured {
             return Outcome::Absent;
         }
         return match run(o.dry_run, "hermes", &["mcp", "remove", NAME]) {
@@ -188,12 +231,36 @@ fn hermes(o: &Opts, exe: &str) -> Outcome {
             Err(e) => Outcome::Failed(e),
         };
     }
-    if listed {
+    if listed && ours {
         return Outcome::Already;
     }
-    match run(o.dry_run, "hermes", &["mcp", "add", NAME, "--command", exe, "--args", "mcp"]) {
-        Ok(()) => Outcome::Done(format!("hermes will start `{exe} mcp`")),
-        Err(e) => Outcome::Manual(format!("`hermes mcp add` did not finish ({e}); add to ~/.hermes/config.yaml:\n  mcp_servers:\n    playbox:\n      command: \"{exe}\"\n      args: [\"mcp\"]")),
+    if listed || configured {
+        // Registered with another binary path (an older install, say): replace it.
+        if let Err(e) = run(o.dry_run, "hermes", &["mcp", "remove", NAME]) {
+            return Outcome::Failed(e);
+        }
+    }
+    let snippet = format!(
+        "add to ~/.hermes/config.yaml:\n  mcp_servers:\n    playbox:\n      command: \"{exe}\"\n      args: [\"mcp\"]"
+    );
+    match run_with_stdin(
+        o.dry_run,
+        "hermes",
+        &["mcp", "add", NAME, "--command", exe, "--args", "mcp"],
+        Some(b"Y\n"),
+    ) {
+        Ok(()) if o.dry_run => Outcome::Done(format!("hermes will start `{exe} mcp`")),
+        Ok(()) => {
+            let updated = std::fs::read_to_string(&cfg_path).ok();
+            if hermes_matches_exe(updated.as_deref(), exe) {
+                Outcome::Done(format!("hermes will start `{exe} mcp`"))
+            } else {
+                Outcome::Manual(format!(
+                    "`hermes mcp add` did not save `~/.hermes/config.yaml`; {snippet}"
+                ))
+            }
+        }
+        Err(e) => Outcome::Manual(format!("`hermes mcp add` did not finish ({e}); {snippet}")),
     }
 }
 
@@ -284,4 +351,45 @@ pub fn run_setup(o: Opts) -> Result<()> {
     println!("to host one:\n  Use the playbox MCP tools. Create a room sharing <repo path> with docker true, then give me the link.");
     println!("run `playbox doctor` to see what this machine can host (docker, libkrun).");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hermes_matches_exe, run_with_stdin};
+
+    #[test]
+    fn hermes_matches_exe_detects_stale_and_matching_commands() {
+        let yaml_match = "\
+mcp_servers:
+  playbox:
+    command: /Users/example/.local/bin/playbox
+    args: [\"mcp\"]
+";
+        assert!(hermes_matches_exe(
+            Some(yaml_match),
+            "/Users/example/.local/bin/playbox"
+        ));
+        assert!(!hermes_matches_exe(
+            Some(yaml_match),
+            "/opt/homebrew/bin/playbox"
+        ));
+        assert!(!hermes_matches_exe(
+            Some("mcp_servers:\n"),
+            "/Users/example/.local/bin/playbox"
+        ));
+        assert!(!hermes_matches_exe(
+            None,
+            "/Users/example/.local/bin/playbox"
+        ));
+    }
+
+    #[test]
+    fn run_with_stdin_delivers_confirmation_line() {
+        let out = std::env::temp_dir().join(format!("pbx-setup-stdin-{}", std::process::id()));
+        let _ = std::fs::remove_file(&out);
+        let script = format!("read line && printf '%s' \"$line\" > {:?}", out);
+        run_with_stdin(false, "sh", &["-c", &script], Some(b"Y\n")).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "Y");
+        let _ = std::fs::remove_file(&out);
+    }
 }
