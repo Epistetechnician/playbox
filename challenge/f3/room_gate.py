@@ -19,6 +19,9 @@ The harness is imported unchanged, so a run through this gate verifies with chal
 from __future__ import annotations
 
 import argparse
+import ast
+import hashlib
+import json
 import subprocess
 import sys
 import tempfile
@@ -32,6 +35,38 @@ import harness  # noqa: E402
 CANDIDATE = "candidate.py"
 PENDING = "refs/playbox/members/"
 MAX_BYTES = 200_000
+SEEN_AST_FILE = "seen_ast.json"
+
+
+def ast_equivalence_key(py_bytes: bytes) -> str | None:
+    """Canonical Python AST digest modulo comments, whitespace, and docstrings (`None` on SyntaxError)."""
+    try:
+        tree = ast.parse(py_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, SyntaxError):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if (
+                node.body
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and isinstance(node.body[0].value.value, str)
+            ):
+                node.body = node.body[1:] or [ast.Pass()]
+    canon = ast.dump(tree, include_attributes=False)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def _load_seen_ast(work: Path) -> set[str]:
+    p = work / SEEN_AST_FILE
+    if not p.is_file():
+        return set()
+    return set(json.loads(p.read_text(encoding="utf-8")))
+
+
+def _save_seen_ast(work: Path, seen: set[str]) -> None:
+    if work.is_dir():
+        (work / SEEN_AST_FILE).write_text(json.dumps(sorted(seen), indent=1) + "\n", encoding="utf-8")
 
 
 def git(repo: Path, *a: str, check: bool = True) -> str:
@@ -50,7 +85,7 @@ def pending(repo: Path) -> list[tuple[str, str]]:
     return [tuple(line.split(" ", 1)) for line in out.splitlines() if line]
 
 
-def screen(repo: Path, ref: str) -> str | None:
+def screen(repo: Path, ref: str, seen_ast: set[str] | None = None) -> str | None:
     """Why this push cannot be scored at all, or None. These are refusals, not verdicts: no receipt."""
     if subprocess.run(["git", "merge-base", "--is-ancestor", "refs/heads/main", ref], cwd=repo).returncode != 0:
         return "not built on the tip of main (pull the frontier and rebase)"
@@ -60,6 +95,14 @@ def screen(repo: Path, ref: str) -> str | None:
     size = int(git(repo, "cat-file", "-s", f"{ref}:{CANDIDATE}"))
     if size > MAX_BYTES:
         return f"{CANDIDATE} is {size} bytes (limit {MAX_BYTES})"
+    cand_key = ast_equivalence_key(blob(repo, f"{ref}:{CANDIDATE}"))
+    if cand_key is None:
+        return f"{CANDIDATE} has a Python syntax error"
+    front_key = ast_equivalence_key(blob(repo, f"refs/heads/main:{CANDIDATE}"))
+    if front_key is not None and cand_key == front_key:
+        return f"{CANDIDATE} is AST-equivalent to the current frontier (comments/docstrings/formatting only)"
+    if seen_ast is not None and cand_key in seen_ast:
+        return f"{CANDIDATE} is AST-equivalent to an already-evaluated candidate"
     return None
 
 
@@ -72,15 +115,21 @@ def review(playbox: str, repo: Path, verb: str, ref: str) -> None:
 def handle(work: Path, repo: Path, playbox: str, ref: str, head: str, log) -> dict | None:
     member, branch = ref[len(PENDING):].split("/", 1)
     author = f"{member[:8]}/{branch}"
-    why = screen(repo, ref)
+    seen = _load_seen_ast(work)
+    why = screen(repo, ref, seen_ast=seen)
     if why:
         log(f"refused {author}: {why}")
         review(playbox, repo, "reject", ref)
         return None
+    cand_bytes = blob(repo, f"{ref}:{CANDIDATE}")
+    cand_key = ast_equivalence_key(cand_bytes)
     with tempfile.TemporaryDirectory() as tmp:
         cand = Path(tmp) / "candidate.py"
-        cand.write_bytes(blob(repo, f"{ref}:{CANDIDATE}"))
+        cand.write_bytes(cand_bytes)
         body = harness.submit(work, cand, author, log=log)
+    if cand_key is not None:
+        seen.add(cand_key)
+        _save_seen_ast(work, seen)
     if body["verdict"] == "promote":
         review(playbox, repo, "accept", ref)
         front = harness._state(work)["frontier"][-1]["sha256"]

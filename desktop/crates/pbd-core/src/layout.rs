@@ -97,13 +97,26 @@ pub fn resources_for_exe(exe: &std::path::Path) -> Option<PathBuf> {
     } else if cfg!(windows) {
         &["."]
     } else {
-        // AppImage and .deb both put resources under <prefix>/lib/<productName>.
-        &["../lib/Playbox", "../lib/playbox-desktop"]
+        // AppImage and .deb put resources under <prefix>/lib/<productName> (case varies across bundler versions).
+        &["../lib/Playbox", "../lib/playbox", "../lib/playbox-desktop"]
     };
-    candidates
+    if let Some(found) = candidates
         .iter()
         .filter_map(|c| dir.join(c).canonicalize().ok())
         .find(|p| p.is_dir())
+    {
+        return Some(found);
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Ok(entries) = std::fs::read_dir(dir.join("../lib")) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.join("hub/playbox_hub.py").is_file() {
+                return p.canonicalize().ok().or(Some(p));
+            }
+        }
+    }
+    None
 }
 
 /// What to register for launch-at-login and to relaunch: inside an AppImage the running executable lives in a temporary mount, so the

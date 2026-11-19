@@ -50,6 +50,19 @@ fn the_real_hub_starts_is_healthy_and_stops_cleanly() {
     let mut spec = hub::spec(&cfg, &dirs);
     spec.args.push("--mcp".into());
     spec.args.push("/usr/bin/true".into()); // the hub needs a path to a sidecar; this test never opens a room
+
+    // Simulate AppImage's AppRun poisoning PYTHONHOME / PYTHONPATH in the parent process environment: without `spec.env_remove`,
+    // CPython immediately aborts with `ModuleNotFoundError: No module named 'encodings'`.
+    std::env::set_var("PYTHONHOME", "/nonexistent/appimage/usr");
+    std::env::set_var("PYTHONPATH", "/nonexistent/appimage/usr/share/pyshared");
+    let poisoned = std::process::Command::new(&spec.program)
+        .args(["-c", "import encodings"])
+        .output()
+        .unwrap();
+    assert!(
+        !poisoned.status.success(),
+        "sanity check: poisoned PYTHONHOME should break an uncleaned child"
+    );
     let (tx, rx) = mpsc::channel();
     let sup = Supervisor::start(spec, move |e| {
         let _ = tx.send(e.state);

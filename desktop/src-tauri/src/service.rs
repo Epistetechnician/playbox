@@ -47,6 +47,10 @@ pub fn start(app: &AppHandle) -> Supervisor {
             .extend(extra.split_whitespace().map(Into::into));
     }
     let mut spec = hub::spec(&cfg, &state.dirs);
+    if std::env::var_os("APPDIR").is_some() || std::env::var_os("APPIMAGE").is_some() {
+        // AppRun prepends $APPDIR/usr/lib to LD_LIBRARY_PATH, overriding python-build-standalone's DT_RUNPATH and host git/ssh libs.
+        spec.env_remove.push("LD_LIBRARY_PATH".into());
+    }
     spec.env.extend(env);
     let (handle, port) = (app.clone(), cfg.port);
     Supervisor::start(spec, move |e: Event| on_event(&handle, port, &e))
