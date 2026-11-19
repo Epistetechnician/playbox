@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-19
+
 ### Added
 - Stateless FIPS 204 `ML-DSA-65` hybrid dual-signing alongside `Ed25519` on `RoomLog` checkpoints (`pq_committed` in `Status` and `playbox room-log`) and `playbox release` / `playbox update` (`release.pq.pub`, `release pq-keygen`, `--pq-key`, `--pq-pubkey`, `SHA256SUMS.pq.sig`).
 - Linux KVM + `BOX-7` egress confinement test in `confine_guest` and CI's `krun` job, plus `docs/v0.4-strategy.md` (Attested Gate wedge, scope freeze, and 5-gate compliance boundary).
