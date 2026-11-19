@@ -628,7 +628,9 @@ fn env_stdin_payload(vars: &[(String, String)]) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{env_stdin_payload, unfiltered_network_refusal as refusal, KrunRunner, SandboxPolicy};
+    use super::{
+        env_stdin_payload, unfiltered_network_refusal as refusal, KrunRunner, SandboxPolicy,
+    };
     use std::path::PathBuf;
 
     // REQ: BOX-5
