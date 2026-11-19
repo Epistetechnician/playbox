@@ -257,3 +257,50 @@ fn only_the_root_key_can_make_a_notice_and_notices_are_bound_to_their_room() {
     assert!(Notice::parse("hello", &verifier).is_err());
     assert!(Notice::parse(&format!("{text}extra\n"), &verifier).is_err());
 }
+
+#[tokio::test]
+async fn a_replica_fails_closed_on_standing_for_strangers_and_unseen_revoked_members() {
+    let p = primary(&dir("standing-p")).await;
+    let r = replica(&dir("standing-r"), p.root_public()).await;
+    let m1 = Member::join(&p).await;
+    let m2 = Member::join(&p).await;
+    let at_r = m1.at(&r).await;
+    assert_eq!(at_r.echo("hi").await.unwrap(), "hi");
+
+    // Stranger (never joined) cannot be treated as a room member on a replica.
+    let stranger = new_secret_key().unwrap().public().to_string();
+    assert!(at_r.conv_new("stranger", &[stranger]).await.is_err());
+
+    // Member who never authenticated to the replica cannot be invited without a room log,
+    // and once revoked cannot gain standing on the replica even if never seen there.
+    assert!(at_r
+        .conv_new("unseen", &[m2.id().to_string()])
+        .await
+        .is_err());
+    assert!(p.revoke_member(&m2.id()));
+    assert!(at_r
+        .conv_new("revoked", &[m2.id().to_string()])
+        .await
+        .is_err());
+
+    // When a room log is active and synced, verified roster members are recognized and revocations take effect.
+    let p2 = primary(&dir("standing-log-p")).await;
+    let r2 = replica(&dir("standing-log-r"), p2.root_public()).await;
+    let a = Member::join(&p2).await;
+    let b = Member::join(&p2).await;
+    p2.start_room_log(&[r2.addr().id], 2).unwrap();
+    r2.pull_room_log(&p2.addr()).await.unwrap();
+    let a_at_r2 = a.at(&r2).await;
+    assert_eq!(a_at_r2.echo("hi").await.unwrap(), "hi");
+    assert!(a_at_r2
+        .conv_new("synced-roster", &[b.id().to_string()])
+        .await
+        .is_ok());
+
+    assert!(p2.revoke_member(&b.id()));
+    r2.pull_room_log(&p2.addr()).await.unwrap();
+    assert!(a_at_r2
+        .conv_new("after-revoke", &[b.id().to_string()])
+        .await
+        .is_err());
+}

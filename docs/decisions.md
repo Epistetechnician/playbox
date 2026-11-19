@@ -112,3 +112,11 @@ A task with an open network (`internet`) and no host list gets `/etc/resolv.conf
 - *What the owner can do.* `PLAYBOX_GUEST_DNS=ip[,ip]` chooses the resolvers; an empty value gives the guest none (names then resolve only from a `--allow-host` list). `docs/libkrun.md` and `docs/cli.md` say which names a guest is given.
 - *What this does not cover.* An owner who runs a filtering resolver (a Pi-hole, a corporate one) on a private address gets no filtering for tasks, because the task is not allowed to reach private addresses. They should set `PLAYBOX_GUEST_DNS` to a resolver on a public address, or give no network.
 
+## v0.4 Attested Gate wedge, scope freeze, and ML-DSA-65 boundary (2026-11-19)
+
+| # | Decision | Why | Revisit when |
+|---|---|---|---|
+| 46 | Focus `v0.4` on **Playbox Attested Gate** (compliance receipts + anti-reward-hacking eval gate) and freeze `world/`, `steer/` telepathy, `desktop/` polish, and networked `FROST DKG` | Concentrates engineering on verifiable execution & evaluation gates while keeping existing `RoomLog` epoch failover and research artifacts intact | `v0.4` design-partner wedge is live in production |
+| 47 | Use stateless FIPS 204 `ML-DSA-65` (`fips204`) hybrid dual-signing with `Ed25519` on `RoomLog` checkpoints and `playbox release`/`update`; keep stateful `WOTS+-BLAKE2b` in `permf` research profiles | Stateless PQ avoids catastrophic key-state reuse across crashes, restarts, or replica failover, while staying additive over existing wire/log schemas | Post-quantum migration expands to Biscuit grants (`v0.5+`) |
+| 48 | Restrict `v0.4` executable `permf` enforcement claims to the 5 runtime-native gates (grants/capabilities, sandbox/BOX-7, hash-chained/RoomLog receipts, sealed eval gates, attestation/release integrity) | Matches verified runtime enforcement (`docs/audit-claims.md` rule: never claim more than code and tests enforce) | Additional `permf` controls are enforced in runtime code |
+

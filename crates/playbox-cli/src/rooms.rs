@@ -471,15 +471,17 @@ pub fn room_log_cmd(state: &str, root: &str, json: bool) -> Result<()> {
         println!(
             "{}",
             serde_json::json!({ "len": st.len, "head": st.head, "committed": st.committed,
+                "pq_committed": st.pq_committed,
                 "epoch": st.epoch, "leader": st.leader, "hosts": st.hosts, "k": st.k,
                 "problems": st.problems.iter().map(|p| serde_json::json!({"problem": p.problem, "candidate": p.candidate, "metric": p.metric, "strength": p.strength, "j": p.j})).collect::<Vec<_>>(), "equivocators": st.equivocators,
                 "members": st.members, "banned": st.banned })
         );
     } else {
         println!(
-            "room log OK: {} entries, {} committed, epoch {} led by {}; {} of {} hosts needed",
+            "room log OK: {} entries, {} committed ({} PQ-committed), epoch {} led by {}; {} of {} hosts needed",
             st.len,
             st.committed,
+            st.pq_committed,
             st.epoch,
             st.leader,
             st.k,

@@ -257,14 +257,25 @@ impl RoomHandler {
         let Ok(id) = who.parse::<EndpointId>() else {
             return false;
         };
-        let st = self.state.lock_recover();
-        if st.banned.contains(&id) {
+        let member_ok = {
+            let st = self.state.lock_recover();
+            if st.banned.contains(&id) {
+                return false;
+            }
+            st.members.get(&id).map(|grant| !st.revoked.contains(grant))
+        };
+        if let Some(false) = member_ok {
             return false;
         }
-        match st.members.get(&id) {
-            Some(grant) => !st.revoked.contains(grant),
-            None => !self.auth.can_issue(),
+        if let Some(rl) = self.roomlog.status() {
+            if rl.banned.iter().any(|b| b == who) {
+                return false;
+            }
+            if member_ok.is_none() {
+                return rl.members.iter().any(|m| m == who);
+            }
         }
+        member_ok.unwrap_or(false)
     }
 
     /// One JSON-RPC call from `from`.

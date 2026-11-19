@@ -15,10 +15,13 @@ import json
 import math
 import os
 import random
+import resource
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from fractions import Fraction
@@ -34,18 +37,199 @@ LOG = STATE / "receipts.jsonl"
 FRONT = STATE / "frontier.json"
 
 
-def scrubbed_env() -> dict[str, str]:
-    # Scrubbed minimal environment: never leak host secrets/tokens to untrusted candidate subprocesses.
+def scrubbed_env(home_dir: Path | None = None) -> dict[str, str]:
+    # Scrubbed minimal environment: never leak host secrets/tokens or host $HOME to untrusted candidate subprocesses.
     # Pinned thread count roughly halves measured run-to-run spread vs the default.
+    home = str(home_dir.resolve()) if home_dir is not None else "/nonexistent"
     return {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": str(Path.home()),
+        "HOME": home,
+        "TMPDIR": home,
         "HF_HUB_OFFLINE": "1",
         "TOKENIZERS_PARALLELISM": "false",
         "OMP_NUM_THREADS": "4",
         "MKL_NUM_THREADS": "4",
         "VECLIB_MAXIMUM_THREADS": "4",
     }
+
+
+def _sb_quote(s: str) -> str:
+    return json.dumps(s)
+
+
+def _seatbelt_profile(cand: Path, mdir: Path, tmp_home: Path) -> str:
+    exe_root = Path(sys.executable).resolve().parent.parent
+    read_paths = []
+    for p in (
+        Path(sys.prefix).resolve(),
+        Path(sys.base_prefix).resolve(),
+        exe_root,
+        B.resolve(),
+        (ROOT / "docs").resolve(),
+        mdir.resolve(),
+    ):
+        s = str(p)
+        if s not in read_paths:
+            read_paths.append(s)
+    subpaths = " ".join(f"(subpath {_sb_quote(p)})" for p in read_paths)
+    cand_resolved = str(cand.resolve())
+    tmp_resolved = str(tmp_home.resolve())
+    state_resolved = str(STATE.resolve())
+    return "\n".join(
+        [
+            "(version 1)",
+            "(deny default)",
+            "(allow process-exec process-fork signal sysctl-read mach-lookup ipc-posix-shm* file-map-executable)",
+            "(deny network*)",
+            "(allow file-read-metadata)",
+            "(allow file-read*",
+            '    (literal "/")',
+            '    (subpath "/usr")',
+            '    (subpath "/bin")',
+            '    (subpath "/sbin")',
+            '    (subpath "/System")',
+            '    (subpath "/Library")',
+            '    (subpath "/opt")',
+            '    (subpath "/private/var/db")',
+            '    (subpath "/dev")',
+            f"    {subpaths}",
+            f"    (literal {_sb_quote(cand_resolved)})",
+            f"    (subpath {_sb_quote(tmp_resolved)}))",
+            f"(deny file-read* (subpath {_sb_quote(state_resolved)}))",
+            "(allow file-read* file-write*",
+            f"    (subpath {_sb_quote(tmp_resolved)})",
+            '    (literal "/dev/null")',
+            '    (literal "/dev/urandom")',
+            '    (literal "/dev/zero"))',
+        ]
+    )
+
+
+def _bwrap_cmd(bench_cmd: list[str], cand: Path, mdir: Path, tmp_home: Path) -> list[str]:
+    cmd = [
+        "bwrap",
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--ro-bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--tmpfs",
+        "/tmp",
+    ]
+    real_home = Path.home().resolve()
+    if real_home.exists():
+        cmd.extend(["--tmpfs", str(real_home)])
+    if STATE.exists():
+        cmd.extend(["--tmpfs", str(STATE.resolve())])
+    for p in {
+        Path(sys.prefix).resolve(),
+        Path(sys.base_prefix).resolve(),
+        B.resolve(),
+        (ROOT / "docs").resolve(),
+        mdir.resolve(),
+        cand.resolve(),
+    }:
+        if p.exists():
+            cmd.extend(["--ro-bind", str(p), str(p)])
+    cmd.extend(["--dir", str(tmp_home), "--bind", str(tmp_home), str(tmp_home), "--"])
+    cmd.extend(bench_cmd)
+    return cmd
+
+
+def _docker_cmd(cand: Path, mdir: Path, seed: int, image: str) -> list[str]:
+    cand_r = cand.resolve()
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--pids-limit=64",
+        "--memory=4g",
+        "--cpus=4",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=256m",
+        "-e",
+        "HOME=/tmp",
+        "-e",
+        "TMPDIR=/tmp",
+        "-e",
+        "HF_HUB_OFFLINE=1",
+        "-e",
+        "TOKENIZERS_PARALLELISM=false",
+        "-e",
+        "OMP_NUM_THREADS=4",
+        "-e",
+        "MKL_NUM_THREADS=4",
+        "-e",
+        "VECLIB_MAXIMUM_THREADS=4",
+        "-v",
+        f"{B.resolve()}:/repo/challenge/tier_b_lm:ro",
+        "-v",
+        f"{(ROOT / 'docs').resolve()}:/repo/docs:ro",
+        "-v",
+        f"{cand_r}:/cand/{cand_r.name}:ro",
+        "-v",
+        f"{mdir.resolve()}:/model:ro",
+        image,
+        "python3",
+        "/repo/challenge/tier_b_lm/bench.py",
+        "--candidate",
+        f"/cand/{cand_r.name}",
+        "--model",
+        "/model",
+        "--seed",
+        str(seed),
+    ]
+
+
+def _apply_rlimits() -> None:
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    fsize = 64 * 1024 * 1024
+    _, hard_f = resource.getrlimit(resource.RLIMIT_FSIZE)
+    if hard_f == resource.RLIM_INFINITY or hard_f >= fsize:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (fsize, fsize))
+    soft_n, hard_n = resource.getrlimit(resource.RLIMIT_NOFILE)
+    cap_n = 512
+    if hard_n == resource.RLIM_INFINITY or hard_n >= cap_n:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(soft_n, cap_n), cap_n))
+
+
+def build_bench_invocation(cand: Path, mdir: Path, seed: int, tmp_home: Path) -> tuple[list[str], dict[str, str], bool]:
+    cand_r = cand.resolve()
+    mdir_r = mdir.resolve()
+    bench_cmd = [sys.executable, str((B / "bench.py").resolve()), "--candidate", str(cand_r), "--model", str(mdir_r), "--seed", str(seed)]
+    mode = os.environ.get("PLAYBOX_GATE_SANDBOX", "auto").strip().lower()
+    allow_unsafe = os.environ.get("PLAYBOX_ALLOW_UNSAFE_GATE", "").strip().lower() in ("1", "on", "true")
+    image = os.environ.get("PLAYBOX_GATE_IMAGE", "").strip()
+
+    if mode == "docker" or (mode == "auto" and image):
+        if not image or not shutil.which("docker"):
+            raise RuntimeError("PLAYBOX_GATE_SANDBOX=docker requires PLAYBOX_GATE_IMAGE and docker on PATH")
+        return _docker_cmd(cand_r, mdir_r, seed, image), {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}, False
+    if mode == "bwrap" or (mode == "auto" and sys.platform.startswith("linux") and shutil.which("bwrap")):
+        if not shutil.which("bwrap"):
+            raise RuntimeError("PLAYBOX_GATE_SANDBOX=bwrap requires bubblewrap (`bwrap`) on PATH")
+        return _bwrap_cmd(bench_cmd, cand_r, mdir_r, tmp_home), scrubbed_env(tmp_home), True
+    if mode == "sandbox-exec" or (mode == "auto" and sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").exists()):
+        if not Path("/usr/bin/sandbox-exec").exists():
+            raise RuntimeError("PLAYBOX_GATE_SANDBOX=sandbox-exec requires /usr/bin/sandbox-exec")
+        prof = _seatbelt_profile(cand_r, mdir_r, tmp_home)
+        return ["/usr/bin/sandbox-exec", "-p", prof, *bench_cmd], scrubbed_env(tmp_home), True
+    if allow_unsafe and mode in ("auto", "unsafe"):
+        return bench_cmd, scrubbed_env(tmp_home), True
+    raise RuntimeError(
+        "refusing unsandboxed candidate execution in challenge/gate.py "
+        "(configure PLAYBOX_GATE_IMAGE with docker, install bwrap on Linux, use macOS sandbox-exec, "
+        "or opt in explicitly with PLAYBOX_ALLOW_UNSAFE_GATE=1)"
+    )
 
 
 def model_dir() -> Path:
@@ -85,39 +269,57 @@ def save_front(f):
 
 def run_bench(cand, seed, ref=None, write_ref=None):
     # Never pass --ref into the untrusted candidate subprocess; reference comparison happens here in the parent.
-    cmd = [sys.executable, str(B / "bench.py"), "--candidate", str(cand), "--model", str(model_dir()), "--seed", str(seed)]
-    t0 = time.perf_counter()
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=scrubbed_env())
-    out_chunks: list[str] = []
-    err_lines: list[str] = []
-    t_start = t_end = None
-    timed_out = False
+    mdir = model_dir()
+    with tempfile.TemporaryDirectory(prefix="pbx-gate-") as td:
+        tmp_home = Path(td).resolve()
+        cmd, env, use_rlimits = build_bench_invocation(Path(cand), mdir, int(seed), tmp_home)
+        t0 = time.perf_counter()
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            cwd=str(tmp_home),
+            start_new_session=True,
+            preexec_fn=_apply_rlimits if use_rlimits else None,
+        )
+        out_chunks: list[str] = []
+        err_lines: list[str] = []
+        t_start = t_end = None
+        timed_out = False
 
-    def _kill():
-        nonlocal timed_out
-        timed_out = True
-        p.kill()
+        def _kill():
+            nonlocal timed_out
+            timed_out = True
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                p.kill()
 
-    timer = threading.Timer(900, _kill)
-    timer.start()
-    out_thread = threading.Thread(target=lambda: out_chunks.append(p.stdout.read()), daemon=True)
-    out_thread.start()
-    try:
-        for line in p.stderr:
-            s = line.strip()
-            if s == "BENCH_START" and t_start is None:
-                t_start = time.perf_counter()
-            elif s == "BENCH_END" and t_end is None:
-                t_end = time.perf_counter()
-            else:
-                err_lines.append(line)
-        out_thread.join(timeout=10)
-        p.wait(timeout=10)
-    finally:
-        timer.cancel()
-        if p.poll() is None:
-            p.kill()
-            p.wait()
+        timer = threading.Timer(900, _kill)
+        timer.start()
+        out_thread = threading.Thread(target=lambda: out_chunks.append(p.stdout.read()), daemon=True)
+        out_thread.start()
+        try:
+            for line in p.stderr:
+                s = line.strip()
+                if s == "BENCH_START" and t_start is None:
+                    t_start = time.perf_counter()
+                elif s == "BENCH_END" and t_end is None:
+                    t_end = time.perf_counter()
+                else:
+                    err_lines.append(line)
+            out_thread.join(timeout=10)
+            p.wait(timeout=10)
+        finally:
+            timer.cancel()
+            if p.poll() is None:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    p.kill()
+                p.wait()
     wall = time.perf_counter() - t0
     if timed_out:
         return {"verdict": "fail", "reason": "timeout"}
@@ -125,7 +327,7 @@ def run_bench(cand, seed, ref=None, write_ref=None):
     stderr = "".join(err_lines).strip()
     try:
         r = json.loads(stdout.splitlines()[-1])
-    except Exception:
+    except (ValueError, IndexError):
         return {"verdict": "fail", "reason": "harness error: " + stderr[-300:]}
     if r.get("verdict") != "pass":
         return r
@@ -198,6 +400,7 @@ def submit_b(path, author):
         seed = e[role]
         ref = ref_for(seed)
         cs, fs = [], []
+        sr = random.SystemRandom()
         for rep in range(PB["reps"]):
             order = [("cand", cand), ("front", front["path"])]
             sr.shuffle(order)  # randomized order each rep

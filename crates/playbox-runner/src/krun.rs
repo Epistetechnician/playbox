@@ -23,6 +23,8 @@ use super::{
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use std::{
+    io::Write as _,
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -410,6 +412,20 @@ impl Runner for KrunRunner {
             }
         };
 
+        let staged_env = match egress_proxy
+            .as_ref()
+            .filter(|proxy| !proxy.env_vars().is_empty())
+        {
+            Some(proxy) => match StagedEnv::stage(&self.root.join("run"), proxy.env_vars()) {
+                Ok(e) => Some(e),
+                Err(e) => {
+                    let _ = tokio::fs::remove_dir_all(&clone).await;
+                    return Err(e);
+                }
+            },
+            None => None,
+        };
+
         let vcpus = (spec.cpus.ceil() as u32).clamp(1, MAX_VCPUS);
         let mem = spec.mem_mib.max(MIN_MEM_MIB);
         let mut cmd = Command::new(&self.helper);
@@ -421,10 +437,9 @@ impl Runner for KrunRunner {
         if !spec.secrets.is_empty() {
             cmd.arg("--secrets").arg(staged.path());
         }
-        if let Some(proxy) = &egress_proxy {
-            for (k, v) in proxy.env_vars() {
-                cmd.args(["--env", &format!("{k}={v}")]);
-            }
+        if let Some(env) = &staged_env {
+            // Mount staged egress env vars via virtiofs rather than helper argv or libkrun envp (which leaks into /proc/cmdline).
+            cmd.arg("--env-dir").arg(env.path());
         }
         #[cfg(target_os = "linux")]
         let egress_port = egress_proxy.as_ref().map(super::egress::Proxy::port);
@@ -438,6 +453,7 @@ impl Runner for KrunRunner {
                     &clone,
                     workspace,
                     staged.path(),
+                    staged_env.as_ref().map(StagedEnv::path),
                     vcpus,
                     mem,
                     egress_port,
@@ -512,6 +528,7 @@ impl KrunRunner {
         clone: &Path,
         workspace: &Path,
         secrets: &Path,
+        env_dir: Option<&Path>,
         vcpus: u32,
         mem: u32,
         egress_port: Option<u16>,
@@ -564,6 +581,9 @@ impl KrunRunner {
         if !spec.secrets.is_empty() {
             cmd.arg("--ro").arg(secrets);
         }
+        if let Some(dir) = env_dir {
+            cmd.arg("--ro").arg(dir);
+        }
         if level > Level::None || egress_port.is_some() {
             cmd.arg("--network");
         }
@@ -610,9 +630,57 @@ async fn resolve_hosts(hosts: &[String]) -> Result<Vec<(String, std::net::Socket
     Ok(out)
 }
 
+struct StagedEnv {
+    dir: PathBuf,
+}
+
+impl StagedEnv {
+    fn format_exports(vars: &[(String, String)]) -> String {
+        let mut out = String::new();
+        for (k, v) in vars {
+            let escaped = v.replace('\'', "'\\''");
+            out.push_str("export ");
+            out.push_str(k);
+            out.push_str("='");
+            out.push_str(&escaped);
+            out.push_str("'\n");
+        }
+        out
+    }
+
+    fn stage(scratch: &Path, vars: &[(String, String)]) -> Result<Self> {
+        std::fs::create_dir_all(scratch)?;
+        let dir = scratch.join(format!("pbxenv-{}", random_name()?));
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+        let staged = Self { dir };
+        let body = Self::format_exports(vars);
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o444)
+            .open(staged.dir.join("env"))?;
+        f.write_all(body.as_bytes())?;
+        Ok(staged)
+    }
+
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for StagedEnv {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{unfiltered_network_refusal as refusal, KrunRunner, SandboxPolicy};
+    use super::{unfiltered_network_refusal as refusal, KrunRunner, SandboxPolicy, StagedEnv};
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
     // REQ: BOX-5
@@ -639,5 +707,33 @@ mod tests {
         std::env::remove_var("PLAYBOX_SECRETS_DIR");
         assert!(runner.secrets.has("API_KEY"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // REQ: BOX-7
+    #[test]
+    fn egress_env_is_staged_privately_and_cleaned_up_on_drop() {
+        let scratch = std::env::temp_dir().join(format!("pbx-staged-env-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let vars = vec![(
+            "PLAYBOX_EGRESS_MODEL_URL".to_string(),
+            "http://127.0.0.1:41234/t/secret_tok/model".to_string(),
+        )];
+        let path = {
+            let staged = StagedEnv::stage(&scratch, &vars).unwrap();
+            let dir_mode = std::fs::metadata(staged.path())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(dir_mode, 0o700);
+            let env_file = staged.path().join("env");
+            assert_eq!(
+                std::fs::read_to_string(&env_file).unwrap(),
+                "export PLAYBOX_EGRESS_MODEL_URL='http://127.0.0.1:41234/t/secret_tok/model'\n"
+            );
+            staged.path().to_path_buf()
+        };
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 }

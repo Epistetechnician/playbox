@@ -38,8 +38,9 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Build
         env:
-          # Pinned into the binary so `playbox update` verifies SHA256SUMS.sig. Set the repository variable to the key's public half.
+          # Pinned into the binary so `playbox update` verifies SHA256SUMS.sig (and optional ML-DSA-65 SHA256SUMS.pq.sig).
           PLAYBOX_RELEASE_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PUBKEY }}
+          PLAYBOX_RELEASE_PQ_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PQ_PUBKEY }}
         run: cargo build --release -p playbox-cli -p playbox-mcp --target ${{ matrix.target }}
       - name: Package
         run: |
@@ -53,7 +54,7 @@ jobs:
   desktop:
     # The macOS and Linux desktop apps, built by the same reusable workflow as a manual build. It is listed in the signed SHA256SUMS below, which is
     # what the app's updater trusts. If it fails the release still ships without it (the updater then says there is no desktop build).
-    needs: verify
+    needs: [verify, build]
     uses: ./.github/workflows/desktop-bundle.yml
   publish:
     needs: [build, desktop]
@@ -75,6 +76,7 @@ jobs:
       - name: Checksums and signature
         env:
           PLAYBOX_RELEASE_KEY: ${{ secrets.PLAYBOX_RELEASE_KEY }}
+          PLAYBOX_RELEASE_PQ_KEY: ${{ secrets.PLAYBOX_RELEASE_PQ_KEY }}
         run: |
           tar -czf dist/playbox-hub.tar.gz --exclude='.*' --exclude=__pycache__ --exclude='*.pyc' --exclude='ui/tests' --exclude='ui/e2e.py' --exclude='ui/service' ui     # the dashboard, for the installer's --join / --hub
           cargo install cargo-cyclonedx --locked --version 0.5.7 >/dev/null
@@ -88,6 +90,10 @@ jobs:
           cd ..
           if [ -z "$PLAYBOX_RELEASE_KEY" ]; then
             echo "PLAYBOX_RELEASE_KEY is not set; refusing to publish an unsigned release" >&2
+            exit 1
+          fi
+          if grep -Eqv '^\s*(#|$)' release.pq.pub && [ -z "$PLAYBOX_RELEASE_PQ_KEY" ]; then
+            echo "release.pq.pub pins an ML-DSA-65 key but PLAYBOX_RELEASE_PQ_KEY is not set; refusing to publish without SHA256SUMS.pq.sig" >&2
             exit 1
           fi
           cargo run --release -q -p playbox-cli -- release sign dist/SHA256SUMS

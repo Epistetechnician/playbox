@@ -132,13 +132,12 @@ enum Root {
 }
 
 /// Whether `id` may still run a capability: in the room, not banned, grant not revoked and not past its expiry.
-fn member_standing(st: &State, id: &EndpointId, is_primary: bool, now: i64) -> Result<(), String> {
+fn member_standing(st: &State, id: &EndpointId, now: i64) -> Result<(), String> {
     if st.banned.contains(id) {
         return Err("the member was revoked".into());
     }
     match st.members.get(id) {
-        None if is_primary => Err("the member is no longer in the room".into()),
-        None => Ok(()),
+        None => Err("the member is no longer in the room".into()),
         Some(grant) if st.revoked.contains(grant) => Err("the member's grant was revoked".into()),
         Some(_) if st.admits.get(id).is_some_and(|a| now >= a.expires) => {
             Err("the member's grant has expired".into())
@@ -398,7 +397,6 @@ impl Host {
         );
         let memory = cfg.memory.clone();
         let standing_state = state.clone();
-        let is_primary = auth.can_issue();
         let caps = Arc::new(
             capabilities::Engine::new(
                 capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
@@ -412,7 +410,7 @@ impl Host {
                     .parse()
                     .map_err(|_| "the member id is not valid".to_string())?;
                 let st = standing_state.lock_recover();
-                member_standing(&st, &id, is_primary, crate::grants::now_secs())
+                member_standing(&st, &id, crate::grants::now_secs())
             })),
         );
         let roomlog = crate::roomsync::RoomLogNode::new(
@@ -1002,9 +1000,9 @@ mod standing_tests {
                 allowed: vec![],
             },
         );
-        assert!(member_standing(&st, &id, true, 100).is_ok());
-        assert!(member_standing(&st, &id, true, 102).is_err());
-        assert!(member_standing(&PositionState::empty(), &id, false, 100).is_ok());
+        assert!(member_standing(&st, &id, 100).is_ok());
+        assert!(member_standing(&st, &id, 102).is_err());
+        assert!(member_standing(&PositionState::empty(), &id, 100).is_err());
     }
 
     struct PositionState;

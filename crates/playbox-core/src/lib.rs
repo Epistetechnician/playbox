@@ -9,6 +9,7 @@ pub mod gpu_cc;
 pub mod history;
 pub mod memory;
 pub mod platform;
+pub mod pq;
 pub mod promotion;
 pub mod receipt;
 pub mod record;
