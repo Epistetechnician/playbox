@@ -2,13 +2,15 @@
 
 use crate::args::{b, err_text, ok_text, s, s_arg};
 use crate::live;
-use crate::tools::{room_card_html, tool_list, ROOM_CARD_MIME, ROOM_CARD_URI};
+use crate::tools::{
+    group_tools, room_card_html, tool_list_for, GROUPS, ROOM_CARD_MIME, ROOM_CARD_URI,
+};
 use crate::{FeedSource, PendingApproval, Server, FALLBACK_PROTOCOL};
 use anyhow::{anyhow, bail, Context, Result};
 use playbox_core::{
     attest::Tier,
     memory::MemoryStore,
-    platform, store,
+    store,
     taint::{self, Broker, Decision, Policy, Source},
 };
 use playbox_net::Client;
@@ -95,12 +97,19 @@ impl Server {
             extra: Vec::new(),
             active: None,
             member_id: None,
+            room_root: None,
+            hint_hosts: Vec::new(),
+            log_hosts: Vec::new(),
+            primary_retry: None,
+            hosts_checked: None,
             join_args: None,
             workspace: None,
             log_path,
             key,
             guard,
             enforce,
+            core_tools: std::env::var("PLAYBOX_TOOLS").is_ok_and(|v| v.trim() == "core"),
+            unlocked: std::collections::BTreeSet::new(),
         })
     }
 
@@ -216,7 +225,7 @@ impl Server {
                 "instructions": "Playbox lets agents from different owners collaborate. Use playbox_create to host a room and share the link, or playbox_join to enter one."
             })),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools": tool_list()})),
+            "tools/list" => Ok(json!({"tools": tool_list_for(self.core_tools, &self.unlocked)})),
             "resources/list" => Ok(json!({"resources": [{
                 "uri": ROOM_CARD_URI, "name": "Playbox room", "mimeType": ROOM_CARD_MIME,
                 "description": "A live card for the room you are in: members, the feed, and a box to post. Shown by hosts that support MCP Apps."}]})),
@@ -247,14 +256,9 @@ impl Server {
         })
     }
 
-    /// Run one tool by name, as `tools/call` does. The CLI's `shell` and `call` commands use it directly.
-    pub async fn call(&mut self, name: &str, args: &Value) -> Value {
-        self.record(
-            "tool_call",
-            json!({"tool": name, "args": args}).to_string().as_bytes(),
-        );
-        self.refresh_connections().await;
-        let out = match name {
+    async fn dispatch(&mut self, name: &str, args: &Value) -> Result<Value> {
+        match name {
+            "playbox_more" => self.more(args),
             "playbox_create" => self.create(args).await,
             "playbox_join" => self.join(args).await,
             "playbox_leave" => self.leave(),
@@ -298,13 +302,82 @@ impl Server {
             "playbox_evaluator_issue" => self.evaluator_issue(args),
             "playbox_variant_sign" => self.variant_sign(args),
             other => Err(anyhow!("unknown tool: {other}")),
-        };
+        }
+    }
+
+    /// Run one tool by name, as `tools/call` does. The CLI's `shell` and `call` commands use it directly.
+    pub async fn call(&mut self, name: &str, args: &Value) -> Value {
+        self.record(
+            "tool_call",
+            json!({"tool": name, "args": args}).to_string().as_bytes(),
+        );
+        self.refresh_connections().await;
+        let mut out = self.dispatch(name, args).await;
+        if out.is_err()
+            && self.client.is_some()
+            && !matches!(
+                name,
+                "playbox_join" | "playbox_leave" | "playbox_create" | "playbox_use_host"
+            )
+        {
+            // A call that failed may be a host that stopped answering. Check with a short ping; if it is gone, move to
+            // another host of the room now, rather than waiting for the connection to time out. The failed call is not
+            // retried (it may have reached the host), so say what happened and let the caller decide.
+            if let Some(cur) = self.guest_arc() {
+                // Only a host that does not answer counts as gone; one that answers "no" (a revoked grant, say) is there.
+                let down = match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    cur.echo("probe"),
+                )
+                .await
+                {
+                    Ok(Ok(_)) => false,
+                    Ok(Err(e)) => {
+                        let m = format!("{e:#}");
+                        ![
+                            "revoked",
+                            "unauthorized",
+                            "grant",
+                            "not a member",
+                            "refused",
+                            "denied",
+                        ]
+                        .iter()
+                        .any(|w| m.contains(w))
+                    }
+                    Err(_) => true,
+                };
+                if down {
+                    let args = self.join_args.clone().unwrap_or(Value::Null);
+                    let before = self.guest_arc().map(|c| c.host_id());
+                    self.fail_over(&args).await;
+                    if self.guest_arc().map(|c| c.host_id()) != before {
+                        if let Err(e) = &out {
+                            out = Err(anyhow!("{e:#} (that host stopped answering; this member has moved to another host of the room, so call again)"));
+                        }
+                    }
+                }
+            }
+        }
         let result = match out {
             Ok(v) => ok_text(&v),
             Err(e) => err_text(&format!("{e:#}")),
         };
         self.record("tool_result", result.to_string().as_bytes());
         result
+    }
+
+    /// `playbox_more`: list the tool groups, or unlock one and describe its tools.
+    fn more(&mut self, args: &Value) -> Result<Value> {
+        let Some(group) = s(args, "group") else {
+            return Ok(json!({"groups": GROUPS, "unlocked": self.unlocked}));
+        };
+        if !GROUPS.contains(&group) {
+            bail!("unknown group {group:?}; groups are {}", GROUPS.join(", "));
+        }
+        self.unlocked.insert(group.to_owned());
+        Ok(json!({"group": group, "tools": group_tools(group),
+            "note": "these tools are now in your tool list; if your client does not refresh it, call them by name"}))
     }
 
     /// Reopen any host connection the host has closed (it closes authenticated ones that sat idle for 15
@@ -324,6 +397,17 @@ impl Server {
                 .filter(|(_, c)| c.is_closed())
                 .map(|(i, _)| Some(i)),
         );
+        // A primary that failed while a replica serves the calls is retried now and then, not on every call.
+        if self.active.is_some() && slots.contains(&None) {
+            let due = self
+                .primary_retry
+                .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60));
+            if due {
+                self.primary_retry = Some(std::time::Instant::now());
+            } else {
+                slots.retain(|s| s.is_some());
+            }
+        }
         for slot in slots {
             let old = match slot {
                 None => self.client.as_ref(),
@@ -350,6 +434,100 @@ impl Server {
                 b"host connection reopened after it was closed",
             );
         }
+        if self.guest().is_ok_and(|c| c.is_closed()) {
+            self.fail_over(&args).await;
+        } else if self.client.as_ref().is_some_and(|c| !c.is_closed())
+            && self
+                .hosts_checked
+                .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60))
+        {
+            self.learn_hosts().await;
+        }
+    }
+
+    /// Read the room's host set from the connected host and check it from the room key (pinned at the first
+    /// reading). Best effort: a room with no replicated log, or a host that fails, leaves what was known.
+    pub(crate) async fn learn_hosts(&mut self) {
+        let Some(c) = self.guest_arc() else {
+            return;
+        };
+        self.hosts_checked = Some(std::time::Instant::now());
+        match c.room_hosts(self.room_root).await {
+            Ok(h) => {
+                self.room_root = Some(h.root);
+                if !h.hosts.is_empty() {
+                    self.log_hosts = h
+                        .hosts
+                        .into_iter()
+                        .map(playbox_net::EndpointAddr::new)
+                        .collect();
+                }
+            }
+            Err(e) => eprintln!("playbox-mcp: could not read the room's host list: {e:#}"),
+        }
+    }
+
+    /// Where calls could go if the host in use is gone: hosts already connected, the join link's list (which
+    /// carries addresses), then the signed log's hosts (ids only, found through discovery).
+    fn failover_candidates(&self) -> Vec<playbox_net::EndpointAddr> {
+        let mut out: Vec<playbox_net::EndpointAddr> = Vec::new();
+        let all = self
+            .extra
+            .iter()
+            .map(|c| c.addr().clone())
+            .chain(self.client.iter().map(|c| c.addr().clone()))
+            .chain(self.hint_hosts.iter().cloned())
+            .chain(self.log_hosts.iter().cloned());
+        for a in all {
+            match out.iter_mut().find(|x| x.id == a.id) {
+                None => out.push(a),
+                Some(have) if have.addrs.is_empty() && !a.addrs.is_empty() => *have = a,
+                Some(_) => {}
+            }
+        }
+        out
+    }
+
+    /// The host in use is closed and could not be reopened: move to another host of the room that takes this
+    /// member's grant and passes the checks made at join. Says what it did in the history.
+    async fn fail_over(&mut self, args: &Value) {
+        let Some(cur) = self.guest_arc() else {
+            return;
+        };
+        let from = cur.host_id().to_string();
+        // A host this guest is already connected to is the quickest way out.
+        if let Some(i) = self
+            .extra
+            .iter()
+            .position(|c| !c.is_closed() && c.host_id() != cur.host_id())
+        {
+            self.active = Some(i);
+            let to = self.extra[i].host_id().to_string();
+            self.record("failover", format!("{from} -> {to}").as_bytes());
+            return;
+        }
+        let fresh = match cur.failover(&self.failover_candidates()).await {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("playbox-mcp: the host is gone and there is nowhere to go: {e:#}");
+                return;
+            }
+        };
+        if let Err(e) = self.vet_host(&fresh, args, "not failing over to it").await {
+            eprintln!("playbox-mcp: the other host does not pass the checks made at join: {e:#}");
+            return;
+        }
+        let to = fresh.host_id().to_string();
+        self.extra.push(Arc::new(fresh));
+        self.active = Some(self.extra.len() - 1);
+        self.record("failover", format!("{from} -> {to}").as_bytes());
+    }
+
+    fn guest_arc(&self) -> Option<Arc<Client>> {
+        match self.active {
+            Some(i) => self.extra.get(i).cloned(),
+            None => self.client.clone(),
+        }
     }
 
     /// The host calls go to: the primary, or the replica chosen with `playbox_use_host`.
@@ -373,52 +551,12 @@ impl Server {
         a: &Value,
         refusal: &str,
     ) -> Result<(playbox_core::attest::Verified, bool)> {
-        let min = Tier::parse(s_arg(a, "min_host_tier").unwrap_or("t0")).map_err(|e| anyhow!(e))?;
-        let pins_path = platform::pins_path(&store::home());
-        let mut pins = platform::PinStore::load(&pins_path)?;
-        let boot = platform::boot_reference_from_env().map_err(|e| anyhow!(e))?;
-        let make = |pins: &platform::PinStore| {
-            platform::verifiers(pins.clone(), boot.clone()).map_err(|e| anyhow!(e))
+        let opts = playbox_net::vet::VetOpts {
+            min_tier: Tier::parse(s_arg(a, "min_host_tier").unwrap_or("t0"))
+                .map_err(|e| anyhow!(e))?,
+            trust_device: b(a, "trust_host_device"),
         };
-        let mut vs = make(&pins)?;
-        let mut host_att = {
-            let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> =
-                vs.iter().map(|v| v.as_ref()).collect();
-            match client.verify_host(Tier::T0, &refs).await {
-                Ok(v) => v,
-                Err(e) => bail!("{refusal}: {e:#}"),
-            }
-        };
-        let mut newly_pinned = false;
-        if b(a, "trust_host_device") {
-            if let Some((kind, fp)) = host_att
-                .device
-                .clone()
-                .as_deref()
-                .and_then(|d| d.split_once(':'))
-            {
-                if !pins.contains(kind, fp) {
-                    pins.add(kind, fp)?;
-                    newly_pinned = true;
-                    vs = make(&pins)?;
-                    let refs: Vec<&dyn playbox_core::attest::PlatformVerifier> =
-                        vs.iter().map(|v| v.as_ref()).collect();
-                    host_att = match client.verify_host(Tier::T0, &refs).await {
-                        Ok(v) => v,
-                        Err(e) => bail!("{refusal}: {e:#}"),
-                    };
-                }
-            }
-        }
-        if host_att.achieved < min {
-            bail!(
-                "{refusal}: host achieves {} but {} was required ({})",
-                host_att.achieved,
-                min,
-                host_att.notes.join("; ")
-            );
-        }
-        Ok((host_att, newly_pinned))
+        playbox_net::vet::vet_host(client, &store::home(), &opts, refusal).await
     }
 
     pub(crate) fn workspace(&self) -> Result<&Path> {

@@ -16,7 +16,7 @@ def talk(host, guest, tag):
 
 def run(ctx):
     # A current host with a previous-release guest: the host's join reply carries fields the old guest ignores.
-    host, (guest,), _ = room(ctx, 1, old_guests=True)
+    host, (guest,), _ = room(ctx, 1, old_guests=True, prefix="a_")
     assert guest.ok("playbox_status")["joined"]["member_id"]
     talk(host, guest, "new host, old guest")
     assert host.ok("playbox_audit")["entries"] >= 2
@@ -26,6 +26,6 @@ def run(ctx):
     host.close()
 
     # A previous-release host with a current guest: its reply has no protocol field, which counts as protocol 1.
-    host2, (guest2,), _ = room(ctx, 1, old_host=True)
+    host2, (guest2,), _ = room(ctx, 1, old_host=True, prefix="b_")
     assert guest2.ok("playbox_status")["joined"]["member_id"]
     talk(host2, guest2, "old host, new guest")

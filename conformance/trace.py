@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCAN = ["crates", "conformance", "ui/tests", "fuzz"]
+SCAN = ["crates", "conformance", "ui/tests", "fuzz", "challenge"]
 SKIP = {"target", "node_modules", "__pycache__", ".git"}
 TAG = re.compile(r"(?://|#)\s*REQ:\s*([A-Z]+-\d+(?:\s*,\s*[A-Z]+-\d+)*)")
 ROW = re.compile(r"^\|\s*([A-Z]+-\d+)\s*\|\s*(.*?)\s*\|\s*(shipped|planned|retired[^|]*)\s*\|\s*$")

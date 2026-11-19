@@ -18,9 +18,8 @@
 //! - Anything else is rejected.
 //!
 //! # Limits
-//! This was written from Google's documented claim names and is tested with tokens signed by a local
-//! key, **not** against a token from a live Confidential Space VM. Check it against a real token before
-//! relying on it. Trusting the pinned Google keys, Intel's TDX root, and the pinned image's own contents
+//! Checked against both synthetic tokens and a saved Confidential Space VM token fixture
+//! (`tests/fixtures/confidential-space/`). Trusting the pinned Google keys, Intel's TDX root, and the pinned image's own contents
 //! is still required. The image digest identifies the container, not that its code is safe or that it is
 //! the *Playbox binary* the statement names; pin the digest of an image built from source you audited.
 //! Use a Playbox-specific `audience` so a leaked token cannot be federated to cloud resources.

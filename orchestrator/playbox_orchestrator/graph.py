@@ -91,7 +91,7 @@ def _merge(state: State):
         report["head"] = _git(work, "rev-parse", "HEAD").stdout.strip()
         report["diff"] = _git(work, "diff", "--stat", "HEAD~%d" % len(report["applied"])).stdout if report["applied"] else ""
         report["files"] = {p.relative_to(work).as_posix(): p.read_text(errors="replace")
-                           for p in sorted(work.rglob("*")) if p.is_file() and ".git" not in p.relative_to(work).parts}
+                           for p in sorted(work.rglob("*")) if p.is_file() and not p.is_symlink() and ".git" not in p.relative_to(work).parts}
     return {"merged": report}
 
 

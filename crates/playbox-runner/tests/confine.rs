@@ -330,16 +330,24 @@ mod linux {
                 let unshare =
                     errno(unsafe { libc::syscall(libc::SYS_unshare, libc::CLONE_NEWNET) });
                 let bpf = errno(unsafe { libc::syscall(libc::SYS_bpf, 0, 0, 0) });
+                let clone_ns = errno(unsafe {
+                    libc::syscall(libc::SYS_clone, libc::CLONE_NEWUSER, 0, 0, 0, 0)
+                });
+                let clone3 = errno(unsafe { libc::syscall(435, 0, 0) });
                 let mut bad = Vec::new();
                 for (name, e) in [
                     ("mount", mount),
                     ("ptrace", ptrace),
                     ("unshare", unshare),
                     ("bpf", bpf),
+                    ("clone(CLONE_NEWUSER)", clone_ns),
                 ] {
                     if e != Some(libc::EPERM) {
                         bad.push(format!("{name} gave {e:?}, not EPERM"));
                     }
+                }
+                if clone3 != Some(libc::ENOSYS) {
+                    bad.push(format!("clone3 gave {clone3:?}, not ENOSYS"));
                 }
                 // Ordinary work still works: files, threads, sockets.
                 if fs::write(

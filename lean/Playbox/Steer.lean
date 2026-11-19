@@ -34,9 +34,9 @@ def SteerGrant.le (c p : SteerGrant) : Prop :=
   (∀ m, m ∈ c.models → m ∈ p.models) ∧ p.layerMin ≤ c.layerMin ∧ c.layerMax ≤ p.layerMax ∧
   c.maxCoef ≤ p.maxCoef ∧ (∀ m, m ∈ c.modes → m ∈ p.modes) ∧ c.maxTokens ≤ p.maxTokens
 
-/-- The request fits inside the steering limits. -/
+/-- The request fits inside the steering limits (including ordered layer bounds). -/
 def steerAllows (g : SteerGrant) (r : SteerReq) : Prop :=
-  r.model ∈ g.models ∧ g.layerMin ≤ r.layerLo ∧ r.layerHi ≤ g.layerMax ∧
+  r.model ∈ g.models ∧ g.layerMin ≤ r.layerLo ∧ r.layerLo ≤ r.layerHi ∧ r.layerHi ≤ g.layerMax ∧
   r.coef ≤ g.maxCoef ∧ r.mode ∈ g.modes ∧ r.tokens ≤ g.maxTokens
 
 theorem SteerGrant.le_refl (g : SteerGrant) : SteerGrant.le g g :=
@@ -53,8 +53,8 @@ theorem SteerGrant.le_trans {a b c : SteerGrant} (h1 : SteerGrant.le a b) (h2 : 
 theorem steerAllows_mono {c p : SteerGrant} {r : SteerReq} (h : SteerGrant.le c p)
     (ha : steerAllows c r) : steerAllows p r := by
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
-  obtain ⟨a1, a2, a3, a4, a5, a6⟩ := ha
-  exact ⟨h1 _ a1, Nat.le_trans h2 a2, Nat.le_trans a3 h3, Nat.le_trans a4 h4, h5 _ a5,
+  obtain ⟨a1, a2, alo_hi, a3, a4, a5, a6⟩ := ha
+  exact ⟨h1 _ a1, Nat.le_trans h2 a2, alo_hi, Nat.le_trans a3 h3, Nat.le_trans a4 h4, h5 _ a5,
     Nat.le_trans a6 h6⟩
 
 /-- What `steer_narrowing` does: cap the top layer, the strength and the tokens, and keep only the listed
@@ -81,7 +81,8 @@ theorem narrow_cannot_widen (g : SteerGrant) (layerMax coef : Nat) (modes : List
 /-- The narrowing also never allows a mode outside the list it was given. -/
 theorem narrow_respects_modes (g : SteerGrant) (layerMax coef : Nat) (modes : List Nat) (tokens : Nat)
     {r : SteerReq} (h : steerAllows (narrow g layerMax coef modes tokens) r) : r.mode ∈ modes := by
-  have := (List.mem_filter.mp h.2.2.2.2.1).2
+  obtain ⟨_, _, _, _, _, hm, _⟩ := h
+  have := (List.mem_filter.mp hm).2
   simpa using this
 
 /-- Narrowing twice is still a narrowing of the original: no sequence of blocks widens a grant. -/

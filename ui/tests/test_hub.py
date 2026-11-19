@@ -1761,7 +1761,7 @@ def test_rehost():
         check("rehost: the hub remembers what a room hosts", r.rec.get("host", {}).get("repo") == repo and saved)
         r.rec["host"]["local"] = True        # as the hub's tool route stores it; keeps this test off the public relay (and so off the internet)
         r.sidecar.proc.kill()
-        time.sleep(1)
+        r.sidecar.proc.wait(timeout=5)
         _, st = r.ensure().call("playbox_status", {})
         check("rehost: a respawned sidecar hosts the room again", isinstance(st, dict) and (st.get("hosting") or {}).get("repo") == repo, str(r.err))
         r.close()
@@ -1772,7 +1772,7 @@ def test_rehost():
             check("rehost: a room with no repository is remembered too", r2.rec.get("host") == {}, str(r2.rec.get("host")))
             r2.rec["host"]["local"] = True       # the hub's tool route stores how the room was hosted; the test calls the sidecar directly. Hosting over the public relay would make this test depend on the internet.
             r2.sidecar.proc.kill()
-            time.sleep(1)
+            r2.sidecar.proc.wait(timeout=5)
             _, st2 = r2.ensure().call("playbox_status", {})
             check("rehost: and hosted again after a respawn", isinstance(st2, dict) and bool(st2.get("hosting")), str(r2.err))
         finally:

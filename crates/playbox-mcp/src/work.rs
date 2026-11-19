@@ -62,6 +62,12 @@ impl Server {
                 .filter_map(|h| h.as_str().map(str::to_string))
                 .collect();
         }
+        if let Some(v) = a.get("egress").and_then(Value::as_array) {
+            spec.egress = v
+                .iter()
+                .filter_map(|h| h.as_str().map(str::to_string))
+                .collect();
+        }
         let run = self
             .guest()?
             .run_task_with(base, spec, b(a, "warm"))

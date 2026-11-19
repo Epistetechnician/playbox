@@ -17,6 +17,19 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | GRANT-4 | An invite is not a grant. | shipped |
 | **Rooms** | | |
 | ROOM-1 | Members join, talk, retry a send without duplicating it, and are refused after revocation. | shipped |
+| ROOM-5 | A guest goes from a join link to a confirmed round trip (join, say, the host sees it) within the join budget (180 s), measured end to end. | shipped |
+| ROOM-6 | With `PLAYBOX_TOOLS=core` a session lists at most 7 tools, and `playbox_more` unlocks the rest by group. | shipped |
+| ROOM-7 | A guest can see what a host is (verified tier, runner, device) before joining, without spending the invite; `playbox join` shows the same and asks on a terminal. | shipped |
+| ROOM-8 | The CLI and the MCP sidecar judge a host with the same code (`playbox_net::vet`): a required tier a host does not reach refuses the join in both, and the invite stays unspent. | shipped |
+| ROOM-9 | A room's log is signed (genesis by the root key, later entries by the named leader), hash-chained and bound to the room; a follower holding only the root public key rejects forged, reordered, gapped or foreign entries and replays the same roster. | shipped |
+| ROOM-10 | A log entry counts as committed only after `k` (more than half) distinct hosts cosigned a checkpoint they replayed themselves; with no quorum nothing new commits. | shipped |
+| ROOM-11 | A host that restarts keeps its room log and commit point, re-verified on load; a log file with one changed byte stops the host from starting, and `playbox room-log` checks a saved log offline. | shipped |
+| ROOM-12 | When the leader is silent, a follower can take over with an epoch entry carrying `k` host signatures; a host signs only a bid whose log holds every checkpoint it cosigned and never two rival bids for one epoch, so nothing committed is lost and two leaders never both reach `k`. | shipped |
+| ROOM-13 | Two different entries signed by one key at one epoch and index are a proof that anyone holding the room key can check offline; a host shown the second one keeps the proof and refuses the entry. | shipped |
+| ROOM-14 | The leader can change the host set and threshold (add, remove, rotate a key) only with signatures from `k` hosts of the old set and `k` of the new one; a removed host's cosignatures count for the epochs it was in and for nothing after, and the threshold stays more than half. | shipped |
+| ROOM-15 | A guest can read the room's host set from the signed log (checked from the room key, as of the committed point, with the key pinned at join) and, when its host stops answering, moves to another host of the room that takes its grant and passes the checks made at join, with no manual host switch. | shipped |
+| ROOM-16 | A challenge promotion is a log entry valid only with receipts from at least two distinct host keys of the current epoch, each signed over the same problem, candidate and weights, agreeing within the problem's noise, with the lowest measurement beating the frontier by the stated gain; every host replaying the log re-checks this, so a leader cannot promote alone, and a promotion's strength is the lowest attestation tier among its signers. | shipped |
+| ROOM-17 | A host's promotion receipt is what its own checker measured for the exact candidate the room named (re-hashed from the host's store): a candidate that fails the exact check, or whose stored file does not hash to its name, gets no receipt rather than a low one. | shipped |
 | ROOM-2 | A host that is killed and started again keeps its room, members, talk and audit chain. | shipped |
 | ROOM-3 | A guest bound to its own key is the same member each time it rejoins. | shipped |
 | ROOM-4 | A multi-host room admits members through a replica when the primary is down. | planned |
@@ -46,7 +59,7 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | BOX-5 | A libkrun task that asks for a network is refused on a host that cannot filter it, unless the owner opts in. | shipped |
 | BOX-6 | A battery of breakout attempts run from inside a real libkrun guest all fail. | shipped |
 | BOX-8 | A libkrun task that has a network can resolve names: a task with a host list gets its pinned addresses by name, any other a resolver it is allowed to reach. | shipped |
-| BOX-7 | A task that has a network can reach only the model API through a host-side proxy, and every outbound request is logged. | planned |
+| BOX-7 | A task that has a network can reach only the model API through a host-side proxy, and every outbound request is logged. | shipped |
 | **Releases** | | |
 | REL-1 | `playbox update` installs only an archive whose SHA-256 is in `SHA256SUMS`. | shipped |
 | REL-2 | A release without a valid signature from a pinned key is refused by `update` and by `install.sh`. | shipped |

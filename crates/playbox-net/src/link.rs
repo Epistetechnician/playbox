@@ -7,6 +7,9 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use iroh::{EndpointAddr, EndpointId, SecretKey};
 use serde::{Deserialize, Serialize};
 
+/// Most other hosts a link carries.
+pub const MAX_HINTS: usize = 5;
+
 /// `playbox://<base64url(json({addr, t}))>#<invite>`, where `t` names the host's transport.
 /// Older links held just the address; those parse with no transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +20,8 @@ pub struct Link {
     /// The invite works only for the key the host was told about (see [`LinkOpts::bind_to`]). The guest
     /// then joins with its stable identity key instead of a fresh one.
     pub bound: bool,
+    /// Other hosts of the room, so a guest has somewhere to go if the first is down. Older links have none.
+    pub hosts: Vec<EndpointAddr>,
 }
 
 /// How a join link is made.
@@ -77,6 +82,8 @@ struct LinkBody {
     t: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     b: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    h: Vec<EndpointAddr>,
 }
 
 impl Link {
@@ -88,6 +95,7 @@ impl Link {
             addr: self.addr.clone(),
             t: self.transport.as_ref().map(Transport::label),
             b: self.bound,
+            h: self.hosts.iter().take(MAX_HINTS).cloned().collect(),
         };
         let json = serde_json::to_vec(&body).expect("link body serializes");
         format!("{LINK_SCHEME}{}#{}", B64.encode(json), self.invite)
@@ -104,12 +112,13 @@ impl Link {
             .split_once('#')
             .ok_or_else(|| anyhow!("link has no invite fragment"))?;
         let json = B64.decode(body).context("link is not valid base64")?;
-        let (addr, t, bound) = match serde_json::from_slice::<LinkBody>(&json) {
-            Ok(b) => (b.addr, b.t, b.b),
+        let (addr, t, bound, hosts) = match serde_json::from_slice::<LinkBody>(&json) {
+            Ok(b) => (b.addr, b.t, b.b, b.h),
             Err(_) => (
                 serde_json::from_slice(&json).context("link address is not valid")?,
                 None,
                 false,
+                Vec::new(),
             ),
         };
         if invite.is_empty() {
@@ -121,6 +130,7 @@ impl Link {
             invite: invite.to_string(),
             transport,
             bound,
+            hosts: hosts.into_iter().take(MAX_HINTS).collect(),
         })
     }
 }

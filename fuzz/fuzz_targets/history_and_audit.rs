@@ -11,9 +11,14 @@ fuzz_target!(|data: &[u8]| {
         let _ = history::text::entry_from_line(text);
     }
     // The audit log verifier reads from a file.
-    let path = std::env::temp_dir().join(format!("playbox-fuzz-audit-{}", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "playbox-fuzz-audit-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     if std::fs::write(&path, data).is_ok() {
         let _ = playbox_net::audit::verify(&path);
         let _ = playbox_net::audit::tail(&path, 5);
+        let _ = std::fs::remove_file(&path);
     }
 });

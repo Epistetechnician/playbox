@@ -383,6 +383,7 @@ async fn bare_member() -> (Host, Client) {
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };
@@ -537,6 +538,7 @@ async fn run_rejects_zero_or_negative_limits_and_slash_smuggled_hosts() {
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec!["API_KEY".into()],
+            allowed_egress: vec![],
         },
         ..Default::default()
     };

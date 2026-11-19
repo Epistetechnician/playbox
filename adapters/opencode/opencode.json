@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "playbox": { "type": "local", "command": ["playbox-mcp"], "enabled": true }
+    "playbox": { "type": "local", "command": ["playbox", "mcp"], "enabled": true }
   }
 }

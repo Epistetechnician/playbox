@@ -34,18 +34,22 @@ def merge3(base: str, current: str, cand: str) -> str | None:
         paths = []
         for name, text in (("cur", current), ("base", base), ("cand", cand)):
             p = Path(d) / name
-            p.write_text(text)
+            p.write_bytes(text.encode("utf-8"))
             paths.append(str(p))
-        r = subprocess.run(["git", "merge-file", "-p", *paths], capture_output=True, text=True)
+        r = subprocess.run(["git", "merge-file", "-p", *paths], capture_output=True)
     if r.returncode != 0:  # >0 is the conflict count, <0 an error
         return None
-    return r.stdout
+    return r.stdout.decode("utf-8")
 
 
 def compose(base: str, cands: list[tuple[str, str]], merger: Merger = merge3) -> dict:
     """Fold candidates, given as (name, text), into base. Returns text plus which parents merged or were skipped."""
-    cur, merged, skipped = base, [], []
+    cur, merged, skipped, seen = base, [], [], set()
     for name, text in cands:
+        if name in seen:
+            skipped.append({"name": name, "why": "duplicate candidate"})
+            continue
+        seen.add(name)
         if text == base:
             skipped.append({"name": name, "why": "identical to base"})
             continue
@@ -59,20 +63,38 @@ def compose(base: str, cands: list[tuple[str, str]], merger: Merger = merge3) ->
 
 
 def compose_files(base: Path, cands: list[Path], out: Path, log: Path | None = None, merger: Merger = merge3) -> dict:
-    b = base.read_text()
-    res = compose(b, [(str(p), p.read_text()) for p in cands], merger)
+    base_raw = base.read_bytes()
+    base_text = base_raw.decode("utf-8")
+    cand_raws: dict[str, bytes] = {}
+    cand_inputs: list[tuple[str, str]] = []
+    skipped_dups: list[dict] = []
+    seen_paths: set[Path] = set()
+    for p in cands:
+        rp = p.resolve()
+        key = str(p)
+        if rp in seen_paths:
+            skipped_dups.append({"name": key, "why": "duplicate candidate"})
+            continue
+        seen_paths.add(rp)
+        raw = p.read_bytes()
+        cand_raws[key] = raw
+        cand_inputs.append((key, raw.decode("utf-8")))
+    res = compose(base_text, cand_inputs, merger)
+    skipped = skipped_dups + res["skipped"]
     if not res["merged"]:
-        raise SystemExit("nothing merged: " + json.dumps(res["skipped"]))
-    out.write_text(res["text"])
+        raise SystemExit("nothing merged: " + json.dumps(skipped))
+    out_raw = res["text"].encode("utf-8")
+    out.write_bytes(out_raw)
     body = {
+        "domain": "playbox.compose.v1",
         "kind": "compose",
-        "base": sha256_bytes(b.encode()),
-        "parents": {str(p): sha256_bytes(p.read_bytes()) for p in cands if str(p) in res["merged"]},
-        "skipped": res["skipped"],
-        "candidate": sha256_bytes(res["text"].encode()),
+        "base": sha256_bytes(base_raw),
+        "parents": {name: sha256_bytes(cand_raws[name]) for name in res["merged"]},
+        "skipped": skipped,
+        "candidate": sha256_bytes(out_raw),
     }
     if log is not None:
-        log.parent.mkdir(exist_ok=True)
+        log.parent.mkdir(parents=True, exist_ok=True)
         body["receipt"] = append_receipt(log, body)["id"]
     return body
 

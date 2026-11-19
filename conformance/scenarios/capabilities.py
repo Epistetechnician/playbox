@@ -14,7 +14,6 @@ def run(ctx):
         "params": {"tag": {"allowed": ["a", "b"]}}, "approval": False, "timeout_secs": 20,
     }]
     # No isolation: this scenario is about the call protocol, so the host may use the unsafe process runner.
-    os.environ["PLAYBOX_ALLOW_UNSAFE_RUNNER"] = "1"
     host = ctx.mcp("host", PLAYBOX_ALLOW_UNSAFE_RUNNER="1")
     created = host.ok("playbox_create", transport="local", name="caps", unsafe_process_runner=True, capabilities=caps)
     guest = ctx.mcp("guest")

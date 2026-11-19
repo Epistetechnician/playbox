@@ -1,8 +1,10 @@
 """Shared pieces: hashing, host key, hash-chained signed receipts."""
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
 import platform
 import time
 from pathlib import Path
@@ -36,7 +38,15 @@ def host_key() -> Ed25519PrivateKey:
     if kp.exists():
         return serialization.load_pem_private_key(kp.read_bytes(), None)
     k = Ed25519PrivateKey.generate()
-    kp.write_bytes(k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    pem = k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    try:
+        fd = os.open(kp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return serialization.load_pem_private_key(kp.read_bytes(), None)
+    try:
+        os.write(fd, pem)
+    finally:
+        os.close(fd)
     return k
 
 
@@ -51,14 +61,21 @@ def hardware() -> dict:
 
 def append_receipt(log: Path, body: dict, key: Ed25519PrivateKey | None = None) -> dict:
     k = key or host_key()
-    prev = "0" * 64
-    if log.exists() and log.read_text().strip():
-        prev = json.loads(log.read_text().strip().splitlines()[-1])["id"]
-    body = {**body, "prev": prev, "ts": int(time.time()), "host": pubkey_hex(k), "hardware": hardware()}
-    rid = sha256_bytes(canon(body))
-    rec = {"id": rid, "body": body, "sig": k.sign(rid.encode()).hex()}
-    with open(log, "a") as f:
-        f.write(json.dumps(rec) + "\n")
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "a+") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            text = f.read().strip()
+            prev = json.loads(text.splitlines()[-1])["id"] if text else "0" * 64
+            full = {**body, "prev": prev, "ts": int(time.time()), "host": pubkey_hex(k), "hardware": hardware()}
+            rid = sha256_bytes(canon(full))
+            rec = {"id": rid, "body": full, "sig": k.sign(rid.encode()).hex()}
+            f.seek(0, os.SEEK_END)
+            f.write(json.dumps(rec) + "\n")
+            f.flush()
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     return rec
 
 

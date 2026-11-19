@@ -203,6 +203,12 @@ pub struct UpArgs {
     /// Let members' tasks read this secret from the host's secrets directory ($PLAYBOX_HOME/secrets) at /run/secrets; repeatable
     #[arg(long = "allow-secret", value_name = "NAME")]
     pub allow_secret: Vec<String>,
+    /// Named model-API upstreams for the host-side egress proxy (JSON file: array of upstreams or {upstreams, log_file})
+    #[arg(long, value_name = "FILE")]
+    pub egress: Option<String>,
+    /// Let members' tasks reach this upstream from --egress through the host-side proxy (injects secret header host-side); repeatable
+    #[arg(long = "allow-egress", value_name = "NAME")]
+    pub allow_egress: Vec<String>,
     /// Let members' tasks use this container image, besides the default (alpine:3); repeatable. Members still cannot name any other image.
     #[arg(long, value_name = "IMAGE")]
     pub allow_image: Vec<String>,
@@ -287,6 +293,24 @@ pub struct UpArgs {
     /// How many members the first invite link admits (at most 100)
     #[arg(long, value_name = "N", default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=100))]
     pub link_uses: u32,
+    /// Primary: replicate a signed room log to this host (peer address); repeatable. A log entry counts once more
+    /// than half of the hosts (these plus this one) have cosigned it. Needs --state. See docs/host-less-rooms.md
+    #[arg(long = "room-log-peer", value_name = "ADDR", requires = "state")]
+    pub room_log_peer: Vec<String>,
+    /// Replica: follow the room log of this leader (peer address) and cosign what checks out
+    #[arg(long = "room-log-leader", value_name = "ADDR", requires = "replica_of")]
+    pub room_log_leader: Option<String>,
+    /// The program this host runs to measure a candidate when the room asks for a promotion. It gets the problem
+    /// hash and the candidate hash (64 hex characters each) and prints one JSON line:
+    /// {"metric": micro-units (higher is better), "weights": hex, "env": hex, "tier": n}. Without one this host
+    /// cannot sign receipts
+    #[arg(long = "room-log-evaluator", value_name = "PROGRAM")]
+    pub room_log_evaluator: Option<String>,
+    /// A follower that has not heard from the room log's leader for this many seconds (plus a turn per place in
+    /// the host list) bids to take over, and leads once more than half of the hosts sign. Give a follower every
+    /// other host as --room-log-peer so it has someone to ask
+    #[arg(long = "room-log-failover", value_name = "SECS", default_value_t = 30)]
+    pub room_log_failover: u64,
     /// Make the link work only for this guest (their `playbox id`); a leaked link is then useless
     #[arg(long, value_name = "GUEST ID")]
     pub for_guest: Option<String>,
@@ -316,6 +340,15 @@ pub struct JoinArgs {
     /// Use another host of the room (a replica's peer address)
     #[arg(long, value_name = "ADDR")]
     pub via: Option<String>,
+    /// Join without asking, after showing what the host is
+    #[arg(short = 'y', long)]
+    pub yes: bool,
+    /// Refuse the host unless its attestation reaches this tier (t0..t3)
+    #[arg(long, value_name = "TIER")]
+    pub min_host_tier: Option<String>,
+    /// Pin the host's device key if new (trust on first use)
+    #[arg(long)]
+    pub trust_host_device: bool,
 }
 
 #[derive(Args)]
@@ -429,6 +462,17 @@ pub enum Cmd {
     Release(ReleaseCmd),
     /// Print your guest id, so a host can bind a join link to you
     Id,
+    /// Check a host's saved room log from scratch: every signature, the chain, the roster and the commit point
+    RoomLog {
+        /// The host's state directory (or the roomlog.jsonl in it)
+        state: String,
+        /// The room's root public key (64 hex characters)
+        #[arg(long, value_name = "HEX")]
+        root: String,
+        /// Print the result as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Hub latent messages (docs/latent-channels.md): relay signed vectors for an agent that holds its own key
     #[command(subcommand)]
     Latent(LatentCmd),

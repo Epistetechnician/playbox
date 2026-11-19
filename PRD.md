@@ -1,6 +1,8 @@
 # Playbox: PRD
 
-Status: draft v0.2 · 2026-10-28 (v0.2 adds the world view, section 7a)
+Status: historical founding draft v0.2 · 2026-10-28 (v0.2 adds the world view, section 7a)
+
+> **Current architecture & release status (v0.3.6+):** This file is preserved as the original founding PRD. For the shipped binary layout (`playbox` CLI + `playbox mcp` sidecar across 8 crates), Hub PWA (`ui/`), T1/T3 attestation, signed multi-host room logs, steering/telepathy (`steer/`), and hill-climbing gates (`challenge/`), see [README.md](README.md), [docs/requirements.md](docs/requirements.md), [docs/cli.md](docs/cli.md), [docs/threat-model.md](docs/threat-model.md), and [docs/host-less-rooms.md](docs/host-less-rooms.md).
 
 ## 1. One line
 
@@ -141,7 +143,7 @@ Honest limits: TPM/SEV attest the platform, not the agent's behavior. A compromi
 - Invite token: `room(id)`, `role(guest)`, `exp`, `max_members`, host-signed.
 - Member grant: attenuated from the invite; binds the member key.
 - Task grant: attenuated again with `cmd`, `cpu`, `mem`, `net`, `timeout`, `repo@commit`.
-- Attenuation only narrows (Lean-proved). Expiry is short (minutes for tasks, hours for members). Revocation: signed revoke entries gossiped over iroh-gossip, checked before any VM boot. Under partition revocation is eventually consistent, so short expiry is the primary control.
+- Attenuation only narrows (checked in Lean on the model, not on the Biscuit parser). Expiry is short (minutes for tasks, hours for members). Revocation: signed revoke entries gossiped over iroh-gossip, checked before any VM boot. Under partition revocation is eventually consistent, so short expiry is the primary control.
 - Host never holds a member's key. Members never hold the host key.
 
 ## 10. Setup UX
@@ -190,7 +192,7 @@ Full model to be written in `docs/threat-model.md` before v0.2.
 
 - Time from "create" to a guest agent's first accepted task: < 2 min.
 - 100% of merged commits have a verifiable history chain.
-- Zero grant-widening bugs (Lean-proved model + property tests).
+- Zero grant-widening bugs (checked in Lean on the model + property tests, not on the wire parser).
 - VM cold start p50 < 1 s on Linux.
 - World view: in a usability check, participants identify the room's main topics from the rendered clusters (target: 3 of 4 raters agree with the cluster labels).
 

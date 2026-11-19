@@ -184,6 +184,48 @@ class WitnessTests(unittest.TestCase):
                 os.environ["PLAYBOX_HOME"] = saved
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_additional_foreign_tools_and_exfil_guards(self):
+        for tool in ("room_recall", "conversation_read", "conversations", "browse", "capability_call"):
+            s = f"s-{tool}"
+            self.w.after_tool(s, f"mcp__playbox__playbox_{tool}", {}, "peer payload", "ok")
+            self.assertEqual(self.w.before_tool(s, "terminal", {})["action"], "block", tool)
+            self.assertEqual(self.w.before_tool(s, "web_search", {"q": "leak"})["action"], "block", tool)
+            self.assertEqual(self.w.before_tool(s, "web_extract", {"url": "https://x"})["action"], "block", tool)
+            self.assertEqual(self.w.before_tool(s, "mcp__playbox__playbox_pull", {"checkout": True})["action"], "block", tool)
+            self.assertIsNone(self.w.before_tool(s, "mcp__playbox__playbox_pull", {"checkout": False}), tool)
+        # Reading a non-workspace local file + posting to the room (`playbox_say`) in a tainted turn is blocked.
+        self.feed("exfil")
+        self.assertIsNone(self.w.before_tool("exfil", "mcp__playbox__playbox_say", {"text": "hi"}))
+        self.w.after_tool("exfil", "read_file", {"path": "/Users/a/.ssh/id_rsa"}, "SECRET", "ok")
+        self.assertEqual(self.w.before_tool("exfil", "mcp__playbox__playbox_say", {"text": "SECRET"})["action"], "block")
+        self.w.new_turn("exfil")
+        self.assertIsNone(self.w.before_tool("exfil", "mcp__playbox__playbox_say", {"text": "ok"}))
+
+    def test_hook_session_aliasing_and_mid_turn_llm_call(self):
+        import importlib.util
+        root = os.path.join(os.path.dirname(__file__), "..")
+        spec = importlib.util.spec_from_file_location("pbwitness_hook", os.path.join(root, "__init__.py"),
+                                                      submodule_search_locations=[root])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["pbwitness_hook"] = mod
+        spec.loader.exec_module(mod)
+        mod._record = lambda e: None
+        mod._event = lambda e: None
+        hooks = {}
+        class Ctx:
+            def register_hook(self, name, fn):
+                hooks[name] = fn
+        mod.register(Ctx())
+        hooks["pre_llm_call"](conversation_id="c1", session_id="s1")
+        # post_tool_call receives only session_id, followed by intra-turn pre_llm_call, then pre_tool_call with conversation_id
+        hooks["post_tool_call"](session_id="s1", tool_name="mcp__playbox__playbox_feed", args={}, result="x", status="ok")
+        hooks["pre_llm_call"](conversation_id="c1", session_id="s1")
+        res = hooks["pre_tool_call"](conversation_id="c1", tool_name="terminal", args={"command": "id"})
+        self.assertEqual(res["action"], "block")
+        # Next genuine user turn (pre_llm_call not preceded by post_tool_call) lifts hold
+        hooks["pre_llm_call"](conversation_id="c1", session_id="s1")
+        self.assertIsNone(hooks["pre_tool_call"](conversation_id="c1", tool_name="terminal", args={"command": "id"}))
+
 
 if __name__ == "__main__":
     unittest.main()

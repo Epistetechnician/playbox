@@ -1,25 +1,25 @@
 # Adapters
 
-One MCP server, `playbox-mcp`, works with any MCP-capable agent. Each agent just needs to launch it
+One MCP server (`playbox mcp`, or the standalone `playbox-mcp` binary when built from source) works with any MCP-capable agent. Each agent just needs to launch it
 over stdio. The snippets here follow each agent's documented MCP config format; **tested on 2026-10-29
 with the real agents' MCP loaders** (below) (the server itself is tested end to end over stdio, see below).
 
 ## Install
 
 ```sh
-cargo install --path crates/playbox-mcp   # the MCP server
-cargo install --path crates/playbox-cli   # `playbox record` / `playbox verify`
+curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh
+# or from source:
+cargo install --path crates/playbox-cli   # `playbox` (includes `playbox mcp`, `record`, `verify`, `setup`)
 ```
 
-The release archive from `install.sh` holds only `playbox`, not `playbox-mcp`. Use `playbox mcp` (same server) as the command in the snippets
-below, or let `playbox setup` write it for you.
+The release archive from `install.sh` ships `playbox`, so all snippets below invoke `playbox mcp` (or run `playbox setup` to write them automatically).
 
 ## Configure your agent
 
 | Agent | Where | File here |
 |---|---|---|
-| Claude Code | `.mcp.json` in your project, or `claude mcp add playbox -- playbox-mcp` | [claude-code/mcp.json](claude-code/mcp.json) |
-| Codex | `~/.codex/config.toml` or `codex mcp add playbox -- playbox-mcp` | [codex/config.toml](codex/config.toml) |
+| Claude Code | `.mcp.json` in your project, or `claude mcp add playbox -- playbox mcp` | [claude-code/mcp.json](claude-code/mcp.json) |
+| Codex | `~/.codex/config.toml` or `codex mcp add playbox -- playbox mcp` | [codex/config.toml](codex/config.toml) |
 | OpenCode | `opencode.json` in the project root, or `~/.config/opencode/opencode.json` | [opencode/opencode.json](opencode/opencode.json) |
 | Hermes | `~/.hermes/config.yaml` | [hermes/config.yaml](hermes/config.yaml) |
 
@@ -28,10 +28,10 @@ Then just ask your agent: "Create a Playbox for ~/code/myrepo and give me the li
 
 ## Tools
 
-The server lists 41 tools (`tool_list()` in `crates/playbox-mcp/src/tools.rs`; `playbox shell` then `help` prints them). The table is the
+The server lists 42 tools (`tool_list()` in `crates/playbox-mcp/src/tools.rs`; `playbox shell` then `help` prints them). The table is the
 core room set; the others are:
 
-- **Talk:** `playbox_say`, `playbox_feed`, `playbox_leave`, `playbox_live_ready`, `playbox_conversations`, `playbox_conversation_new`,
+- **Talk:** `playbox_say`, `playbox_announce`, `playbox_feed`, `playbox_leave`, `playbox_live_ready`, `playbox_conversations`, `playbox_conversation_new`,
   `playbox_conversation_invite`, `playbox_conversation_say`, `playbox_conversation_read`.
 - **Host services:** `playbox_capabilities`, `playbox_capability_call`, `playbox_browse`, `playbox_room_remember`, `playbox_room_recall`,
   `playbox_steer`, `playbox_audit`.
@@ -61,7 +61,7 @@ core room set; the others are:
   your Claude Code settings. The PostToolUse hook pipes every tool call to `playbox record`, which
   appends it to `$PLAYBOX_LOG` (default `~/.playbox/history/default.log`) signed with
   `~/.playbox/session.key`. Check any log with `playbox verify <log>`.
-- Codex, OpenCode and Hermes have no equivalent hook wired up here yet.
+- **Hermes, fuller:** install `hermes-plugin-witness` (`hermes-plugin-witness/`), which records every tool call digest and pauses write-capable calls on turns tainted by peer text. Codex and OpenCode have no equivalent hook wired up here yet.
 - Token-level fidelity (the model's actual responses) needs a recording proxy at the model API
   boundary. Not built.
 
@@ -71,7 +71,7 @@ core room set; the others are:
   microVM, `openshell` is the third option). The Docker sandbox has no network, dropped capabilities, and CPU/memory/time limits, but it is a
   container, not a microVM.
 - Treat a join link like a password until it is used or expires.
-- The session key is a plain file (mode 0600); there is no hardware binding yet (PRD tiers T1-T3).
+- The session key defaults to a mode-0600 file (T0); hosts and guests can bind device keys via macOS Secure Enclave or TPM 2.0 (T1) and verify Confidential Space TDX hosts (T3; see `docs/attestation.md`).
 
 ## Choosing a transport
 

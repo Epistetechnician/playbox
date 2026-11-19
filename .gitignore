@@ -2,11 +2,17 @@ target/
 .lake/
 lean/.lake/
 __pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.claude/
 .venv/
 .DS_Store
+*.bak
 world/docs/session_events.jsonl
 world/docs/session.png
 challenge/state/
+vendor/flashbots-images/
 
 # Raw experiment artifacts: regenerate via steer/tools; summaries (.json) stay tracked
 steer/results/**/*.prompt

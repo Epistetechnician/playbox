@@ -1076,6 +1076,8 @@ def make_handler(hub, auth, store, opts):
                 st = st if isinstance(st, dict) else {}
                 me = (st.get("joined") or {}).get("member_id") or ("host" if st.get("hosting") else st.get("guest_id"))
                 d = room.digest
+                live_mode = (("both" if st.get("joined") else "host") if st.get("hosting")
+                             else ("guest" if st.get("joined") else d.get("mode"))) if not err else d.get("mode")
                 model = board.build(feed.get("items", []), feed.get("members", []), me, int(time.time() * 1000), room=room.host_id, endorsed=room.rec.get("endorsed"), ans_checked=room.rec.get("ans"))
                 gr = {g.get("member"): g for g in ((st.get("hosting") or {}).get("grants") or []) if isinstance(g, dict)}
                 for mm in model["members"]:
@@ -1083,9 +1085,9 @@ def make_handler(hub, auth, store, opts):
                     if g:       # the delegation, host to member: what the grant allows and until when (no tokens)
                         mm["grant"] = {k: g.get(k) for k in ("issued", "expires", "invite", "cpu_milli", "mem_mib", "timeout_secs", "net", "allowed")}
                 model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
-                              "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": d.get("mode"),
+                              "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": live_mode,
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},
-                              "admin": d.get("mode") in ("host", "both")})
+                              "admin": live_mode in ("host", "both")})
                 return self.j(200, model)
             if m == "GET" and rest == "/api/witness":
                 return self.j(200, witness_state(room.home))
@@ -1613,7 +1615,7 @@ def main(argv=None):
         try:
             import webbrowser
             webbrowser.open(open_url)
-        except Exception:
+        except (OSError, ImportError):
             pass
     try:
         if cloud:

@@ -116,6 +116,8 @@ class Sidecar:
                 res = self._rpc("tools/call", {"name": name, "arguments": args}, timeout).get("result", {})
             except TimeoutError as e:
                 return True, f"timeout: {e}"
+            except (RuntimeError, BrokenPipeError, OSError) as e:
+                return True, f"sidecar exited: {e}"
         finally:
             self.lock.release()
         text = "".join(c.get("text", "") for c in res.get("content", []))

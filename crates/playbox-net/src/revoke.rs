@@ -167,6 +167,17 @@ fn topic(auth: &Authority) -> TopicId {
 pub(crate) struct SyncHandler {
     pub state: Arc<Mutex<State>>,
     pub allowed: Arc<Mutex<HashSet<EndpointId>>>,
+    pub conns: Arc<tokio::sync::Semaphore>,
+}
+
+impl SyncHandler {
+    pub(crate) fn new(state: Arc<Mutex<State>>, allowed: Arc<Mutex<HashSet<EndpointId>>>) -> Self {
+        Self {
+            state,
+            allowed,
+            conns: Arc::new(tokio::sync::Semaphore::new(16)),
+        }
+    }
 }
 
 impl std::fmt::Debug for SyncHandler {
@@ -177,14 +188,21 @@ impl std::fmt::Debug for SyncHandler {
 
 impl ProtocolHandler for SyncHandler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        const IO_TIMEOUT: Duration = Duration::from_secs(15);
         if !self.allowed.lock_recover().contains(&conn.remote_id()) {
             conn.close(1u32.into(), b"not a sync peer");
             return Ok(());
         }
-        let Ok((mut send, mut recv)) = conn.accept_bi().await else {
+        let Ok(_slot) = self.conns.clone().try_acquire_owned() else {
+            conn.close(2u32.into(), b"too many sync streams");
             return Ok(());
         };
-        let _ = recv.read_to_end(1024).await;
+        let Ok(Ok((mut send, mut recv))) = tokio::time::timeout(IO_TIMEOUT, conn.accept_bi()).await
+        else {
+            conn.close(1u32.into(), b"sync stream timed out");
+            return Ok(());
+        };
+        let _ = tokio::time::timeout(IO_TIMEOUT, recv.read_to_end(1024)).await;
         let texts: Vec<String> = self
             .state
             .lock_recover()
@@ -193,10 +211,10 @@ impl ProtocolHandler for SyncHandler {
             .cloned()
             .collect();
         if let Ok(body) = serde_json::to_vec(&texts) {
-            let _ = send.write_all(&body).await;
+            let _ = tokio::time::timeout(IO_TIMEOUT, send.write_all(&body)).await;
             let _ = send.finish();
         }
-        conn.closed().await;
+        let _ = tokio::time::timeout(IO_TIMEOUT, conn.closed()).await;
         Ok(())
     }
 }

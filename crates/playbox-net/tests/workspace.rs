@@ -28,6 +28,7 @@ async fn member_tasks_commit_to_their_own_branch() {
             network: false,
             allowed_hosts: vec![],
             allowed_secrets: vec![],
+            allowed_egress: vec![],
         },
         workspace: Some(repo.clone()),
         ..Default::default()

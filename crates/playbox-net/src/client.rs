@@ -55,6 +55,19 @@ fn hex_id(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+/// The host set of a room as a member can prove it (see [`Client::room_hosts`]). `hosts` is empty when the room
+/// keeps no replicated log.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoomHosts {
+    pub root: [u8; 32],
+    pub epoch: u64,
+    pub k: usize,
+    pub hosts: Vec<EndpointId>,
+    /// Entries committed, and entries the host holds.
+    pub committed: u64,
+    pub len: u64,
+}
+
 pub struct Client {
     pub(crate) endpoint: Endpoint,
     /// Where the host was reached, so a closed connection can be reopened.
@@ -196,6 +209,12 @@ impl Client {
         )
     }
 
+    /// Where this client reached its host.
+    #[must_use]
+    pub fn addr(&self) -> &EndpointAddr {
+        &self.addr
+    }
+
     /// The id of the host this client is connected to.
     pub fn host_id(&self) -> EndpointId {
         self.conn.remote_id()
@@ -219,6 +238,88 @@ impl Client {
             c.set_grant(g);
         }
         Ok(c)
+    }
+
+    /// Another host of the room that accepts this member's grant: the first of `candidates` (other than the host
+    /// this client is on) that can be reached and takes the grant. The caller should vet it (`verify_host`) with
+    /// the policy it used at join before sending it anything.
+    ///
+    /// # Errors
+    ///
+    /// Fails if no candidate can be reached or none accepts the grant; the error lists why.
+    pub async fn failover(&self, candidates: &[EndpointAddr]) -> Result<Client> {
+        let mut why = Vec::new();
+        for c in candidates {
+            if c.id == self.host_id() {
+                continue;
+            }
+            match self.sibling(c.clone()).await {
+                Ok(fresh) => match fresh.echo("failover").await {
+                    Ok(_) => return Ok(fresh),
+                    Err(e) => why.push(format!("{}: grant refused: {e:#}", c.id.fmt_short())),
+                },
+                Err(e) => why.push(format!("{}: {e:#}", c.id.fmt_short())),
+            }
+        }
+        bail!("no other host took over ({})", why.join("; "))
+    }
+
+    /// The room's host set as of the log's committed point, read from the connected host and checked from the
+    /// room key: every entry's signature and chain, and each certificate's `k` cosignatures. `pinned` is the room
+    /// key the caller recorded earlier; the host's reply naming another key is refused. With no `pinned` the
+    /// reply's key is trusted as far as the host is, and is returned so the caller can pin it.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the host cannot be asked, the key differs from `pinned`, or the log does not check.
+    pub async fn room_hosts(&self, pinned: Option<[u8; 32]>) -> Result<RoomHosts> {
+        use playbox_core::roomlog::{unhex, RoomLog, SignedCheckpoint};
+        let v = self.call(wire::METHOD_HOSTS, json!({})).await?;
+        let root = v["root"]
+            .as_str()
+            .and_then(unhex::<32>)
+            .ok_or_else(|| anyhow!("the host sent no room key"))?;
+        if pinned.is_some_and(|p| p != root) {
+            bail!("the host's room key is not the one this member joined with");
+        }
+        let mut entries = Vec::new();
+        for e in v["entries"].as_array().into_iter().flatten() {
+            entries.push(
+                playbox_core::roomlog::text::entry_from_json(e)
+                    .ok_or_else(|| anyhow!("malformed log entry"))?,
+            );
+        }
+        let mut f = RoomLog::follower(root);
+        f.accept_all(entries)
+            .map_err(|e| anyhow!("the host's room log does not check: {e}"))?;
+        let Some(log) = f.into_log() else {
+            return Ok(RoomHosts {
+                root,
+                ..RoomHosts::default()
+            });
+        };
+        let mut certs = Vec::new();
+        for c in v["certs"].as_array().into_iter().flatten() {
+            if let Some(sc) = crate::roomsync::cert_from_json(c) {
+                let mut fresh = SignedCheckpoint::new(sc.cp.clone());
+                log.merge(&mut fresh, &sc);
+                certs.push(fresh);
+            }
+        }
+        let committed = log.committed(&certs);
+        let cfg = log.committed_config(&certs);
+        Ok(RoomHosts {
+            root,
+            epoch: cfg.epoch,
+            k: cfg.k,
+            hosts: cfg
+                .hosts
+                .iter()
+                .filter_map(|h| EndpointId::from_bytes(h).ok())
+                .collect(),
+            committed,
+            len: log.len(),
+        })
     }
 
     /// The grant this client presents, if it has joined.

@@ -86,6 +86,8 @@ pub struct HostConfig {
     pub calls_store: Option<PathBuf>,
     /// Where conversations are kept across restarts. `None`: `<state dir>/conversations.json` for a host opened with a state directory.
     pub conversations_store: Option<PathBuf>,
+    /// Where this host keeps its copy of the room log (`roomlog.jsonl` in the state directory).
+    pub roomlog_store: Option<PathBuf>,
 }
 
 impl Default for HostConfig {
@@ -114,6 +116,7 @@ impl Default for HostConfig {
             capabilities: Vec::new(),
             calls_store: None,
             conversations_store: None,
+            roomlog_store: None,
         }
     }
 }
@@ -129,12 +132,13 @@ enum Root {
 }
 
 /// Whether `id` may still run a capability: in the room, not banned, grant not revoked and not past its expiry.
-fn member_standing(st: &State, id: &EndpointId, now: i64) -> Result<(), String> {
+fn member_standing(st: &State, id: &EndpointId, is_primary: bool, now: i64) -> Result<(), String> {
     if st.banned.contains(id) {
         return Err("the member was revoked".into());
     }
     match st.members.get(id) {
-        None => Err("the member is no longer in the room".into()),
+        None if is_primary => Err("the member is no longer in the room".into()),
+        None => Ok(()),
         Some(grant) if st.revoked.contains(grant) => Err("the member's grant was revoked".into()),
         Some(_) if st.admits.get(id).is_some_and(|a| now >= a.expires) => {
             Err("the member's grant has expired".into())
@@ -152,6 +156,7 @@ pub struct Host {
     repl: Arc<revoke::Replication>,
     memory: Option<Arc<shared_memory::SharedMemory>>,
     caps: Arc<capabilities::Engine>,
+    roomlog: Arc<crate::roomsync::RoomLogNode>,
     /// Holds the exclusive lock on `<state dir>/host.lock` for as long as the host lives.
     _dir_lock: Option<std::fs::File>,
 }
@@ -226,6 +231,8 @@ impl Host {
         cfg.conversations_store
             .get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
+        cfg.roomlog_store
+            .get_or_insert_with(|| dir.join("roomlog.jsonl"));
         let mut host =
             Self::build(secret, transport.into(), cfg, Root::Seed(root_seed), state).await?;
         host._dir_lock = Some(lock);
@@ -260,6 +267,8 @@ impl Host {
         cfg.conversations_store
             .get_or_insert_with(|| dir.join("conversations.json"));
         cfg.chat_log.get_or_insert_with(|| dir.join("chat.jsonl"));
+        cfg.roomlog_store
+            .get_or_insert_with(|| dir.join("roomlog.jsonl"));
         let mut host = Self::build(
             secret,
             transport.into(),
@@ -389,6 +398,7 @@ impl Host {
         );
         let memory = cfg.memory.clone();
         let standing_state = state.clone();
+        let is_primary = auth.can_issue();
         let caps = Arc::new(
             capabilities::Engine::new(
                 capabilities::Book::new(cfg.capabilities.clone(), cfg.calls_store.clone())?,
@@ -402,10 +412,17 @@ impl Host {
                     .parse()
                     .map_err(|_| "the member id is not valid".to_string())?;
                 let st = standing_state.lock_recover();
-                member_standing(&st, &id, crate::grants::now_secs())
+                member_standing(&st, &id, is_primary, crate::grants::now_secs())
             })),
         );
+        let roomlog = crate::roomsync::RoomLogNode::new(
+            auth.public_bytes(),
+            (*attest_key).clone(),
+            repl.allowed.clone(),
+            cfg.roomlog_store.clone(),
+        )?;
         let handler = RoomHandler {
+            roomlog: roomlog.clone(),
             state: state.clone(),
             tasks: Arc::new(Semaphore::new(2)),
             limiter: limits::Limiter::new(cfg.abuse.clone()),
@@ -425,14 +442,15 @@ impl Host {
             convs: Arc::new(conversations::Book::new(cfg.conversations_store.clone())?),
             cfg,
         };
-        let sync = revoke::SyncHandler {
-            state: state.clone(),
-            allowed: repl.allowed.clone(),
-        };
+        let sync = revoke::SyncHandler::new(state.clone(), repl.allowed.clone());
         let router = Router::builder(endpoint)
             .accept(ALPN, handler)
             .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
             .accept(SYNC_ALPN, sync)
+            .accept(
+                crate::roomsync::ROOMLOG_ALPN,
+                crate::roomsync::RoomLogHandler::new(roomlog.clone()),
+            )
             .spawn();
         Ok(Self {
             audit,
@@ -443,6 +461,7 @@ impl Host {
             repl,
             memory,
             caps,
+            roomlog,
             _dir_lock: None,
         })
     }
@@ -528,6 +547,11 @@ impl Host {
             invite,
             transport: Some(self.transport.clone()),
             bound: opts.bind_to.is_some(),
+            hosts: self
+                .with_log_hosts(&[])
+                .into_iter()
+                .take(crate::link::MAX_HINTS)
+                .collect(),
         })
     }
 
@@ -675,6 +699,7 @@ impl Host {
             json!({ "grant": notice.grant_id.chars().take(8).collect::<String>(), "spread": true }),
         );
         let _ = self.repl.tx.send(text);
+        self.roomlog.record("member.revoke", &id.to_string(), now);
         // The member's entries in the room's shared memory go with their access.
         if let Some(mem) = self.memory.clone() {
             let who = id.to_string();
@@ -683,6 +708,204 @@ impl Host {
             });
         }
         true
+    }
+
+    /// Leader: start the room's replicated log naming these hosts (endpoint ids; this host is added) and a
+    /// threshold `k` of more than half of them. Needs the room's root key, so not on a replica.
+    ///
+    /// # Errors
+    ///
+    /// Fails on a replica, if a log exists, or if the host set is invalid.
+    pub fn start_room_log(&self, hosts: &[EndpointId], k: usize) -> Result<()> {
+        let root = self
+            .auth
+            .root_signing_key()
+            .ok_or_else(|| anyhow!("only the primary can start the room log"))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0);
+        let mut ids: Vec<[u8; 32]> = hosts.iter().map(|h| *h.as_bytes()).collect();
+        ids.push(*self.router.endpoint().id().as_bytes());
+        self.roomlog.start(root, ids, k, now)?;
+        self.repl
+            .allowed
+            .lock_recover()
+            .extend(hosts.iter().copied());
+        for m in self.members() {
+            self.roomlog.record("member.join", &m.to_string(), now);
+        }
+        Ok(())
+    }
+
+    /// Leader: have `peers` replay the log and cosign it. Returns how many entries are now committed.
+    ///
+    /// # Errors
+    ///
+    /// Fails if this host has no log or is not the leader.
+    pub async fn commit_room_log(&self, peers: &[EndpointAddr]) -> Result<u64> {
+        let peers = &self.with_log_hosts(peers);
+        for p in peers {
+            if !p.addrs.is_empty() {
+                self.repl.memory.add_endpoint_info(p.clone());
+            }
+            self.repl.allowed.lock_recover().insert(p.id);
+        }
+        self.roomlog.commit(self.router.endpoint(), peers).await
+    }
+
+    /// Follower: pull the log from the leader and check it.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the leader cannot be reached or sends something that does not check.
+    pub async fn pull_room_log(&self, leader: &EndpointAddr) -> Result<u64> {
+        if !leader.addrs.is_empty() {
+            self.repl.memory.add_endpoint_info(leader.clone());
+        }
+        self.repl.allowed.lock_recover().insert(leader.id);
+        self.roomlog.pull(self.router.endpoint(), leader).await
+    }
+
+    /// Follower: bid to lead the next epoch because the leader has gone quiet. `peers` are the other hosts; with
+    /// `k` signatures (this host's included) it becomes the leader. Returns the new epoch.
+    ///
+    /// # Errors
+    ///
+    /// Fails if this host has no log or already leads, or too few hosts signed.
+    pub async fn propose_room_log_epoch(&self, peers: &[EndpointAddr]) -> Result<u64> {
+        let peers = &self.with_log_hosts(peers);
+        for p in peers {
+            if !p.addrs.is_empty() {
+                self.repl.memory.add_endpoint_info(p.clone());
+            }
+            self.repl.allowed.lock_recover().insert(p.id);
+        }
+        self.roomlog.propose(self.router.endpoint(), peers).await
+    }
+
+    /// Leader: add and remove hosts (by endpoint id; `add_addrs` helps reach new ones) and set the threshold to
+    /// more than half of the result. Needs a quorum of the old set and of the new one. Returns the new epoch.
+    ///
+    /// # Errors
+    ///
+    /// Fails if this host has no log or does not lead, or a quorum did not sign.
+    pub async fn reconfigure_room_log(
+        &self,
+        peers: &[EndpointAddr],
+        add: &[EndpointAddr],
+        remove: &[EndpointId],
+    ) -> Result<u64> {
+        let mut reach: Vec<EndpointAddr> = self.with_log_hosts(peers);
+        for a in add {
+            if !reach.iter().any(|p| p.id == a.id) {
+                reach.push(a.clone());
+            }
+        }
+        for p in &reach {
+            if !p.addrs.is_empty() {
+                self.repl.memory.add_endpoint_info(p.clone());
+            }
+            self.repl.allowed.lock_recover().insert(p.id);
+        }
+        let ids = |v: &[EndpointId]| v.iter().map(|i| *i.as_bytes()).collect::<Vec<_>>();
+        let add_ids: Vec<[u8; 32]> = add.iter().map(|a| *a.id.as_bytes()).collect();
+        self.roomlog
+            .reconfigure(self.router.endpoint(), &reach, &add_ids, &ids(remove))
+            .await
+    }
+
+    /// `peers` plus every host the signed log names that is not listed (reached by id alone, so a host added by a
+    /// later epoch is found without being listed anywhere).
+    fn with_log_hosts(&self, peers: &[EndpointAddr]) -> Vec<EndpointAddr> {
+        let mut out = peers.to_vec();
+        let me = self.router.endpoint().id();
+        if let Some(st) = self.roomlog.status() {
+            for h in st.hosts {
+                let Some(id) = roomlog_id(&h) else { continue };
+                if id != me && !out.iter().any(|p| p.id == id) {
+                    out.push(EndpointAddr::new(id));
+                }
+            }
+        }
+        out
+    }
+
+    /// The program this host runs to measure a candidate for a promotion (see `RoomLogNode::set_evaluator`).
+    pub fn set_room_evaluator(&self, program: Option<PathBuf>) {
+        self.roomlog.set_evaluator(program);
+    }
+
+    /// Leader: register a challenge problem and its promotion rule in the room log.
+    ///
+    /// # Errors
+    ///
+    /// Fails if this host does not lead or the rule is refused (`j` under 2, or more than the hosts).
+    pub fn register_room_problem(
+        &self,
+        problem: [u8; 32],
+        j: usize,
+        noise_ppm: u64,
+        min_gain_ppm: u64,
+        baseline: i64,
+    ) -> Result<()> {
+        let reg = playbox_core::promotion::Register {
+            problem,
+            rule: playbox_core::promotion::Rule {
+                j,
+                noise_ppm,
+                min_gain_ppm,
+            },
+            baseline,
+        };
+        self.roomlog.register_problem(&reg, now_ms_host())
+    }
+
+    /// Leader: measure `candidate` here and on `peers`, and record a promotion if the problem's rule is met.
+    /// Returns the frontier metric.
+    ///
+    /// # Errors
+    ///
+    /// Fails if this host does not lead or has no evaluator, or the receipts do not meet the rule.
+    pub async fn promote_in_room(
+        &self,
+        peers: &[EndpointAddr],
+        problem: [u8; 32],
+        candidate: [u8; 32],
+    ) -> Result<i64> {
+        let peers = &self.with_log_hosts(peers);
+        self.roomlog
+            .promote(self.router.endpoint(), peers, problem, candidate)
+            .await
+    }
+
+    /// Whether this host leads the room log's current epoch.
+    #[must_use]
+    pub fn room_log_is_leader(&self) -> bool {
+        self.roomlog.is_leader()
+    }
+
+    /// How long since the room log's leader last asked this host to cosign.
+    #[must_use]
+    pub fn room_log_silence(&self) -> Duration {
+        self.roomlog.silence()
+    }
+
+    /// Refuse to sign another host's bid for leader until this host has not heard from the leader for `d`.
+    pub fn set_room_log_sticky(&self, d: Duration) {
+        self.roomlog.set_sticky(d);
+    }
+
+    /// This host's place among the room's hosts, for staggering bids.
+    #[must_use]
+    pub fn room_log_rank(&self) -> usize {
+        self.roomlog.rank()
+    }
+
+    /// This host's view of the room log, if it has one.
+    #[must_use]
+    pub fn room_log_status(&self) -> Option<crate::roomsync::Status> {
+        self.roomlog.status()
     }
 
     /// Where this host's audit log is, if it keeps one in a file.
@@ -746,6 +969,17 @@ impl Host {
     }
 }
 
+fn roomlog_id(hex: &str) -> Option<EndpointId> {
+    EndpointId::from_bytes(&playbox_core::roomlog::unhex::<32>(hex)?).ok()
+}
+
+fn now_ms_host() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod standing_tests {
     use super::*;
@@ -768,7 +1002,15 @@ mod standing_tests {
                 allowed: vec![],
             },
         );
-        assert!(member_standing(&st, &id, 100).is_ok());
-        assert!(member_standing(&st, &id, 102).is_err());
+        assert!(member_standing(&st, &id, true, 100).is_ok());
+        assert!(member_standing(&st, &id, true, 102).is_err());
+        assert!(member_standing(&PositionState::empty(), &id, false, 100).is_ok());
+    }
+
+    struct PositionState;
+    impl PositionState {
+        fn empty() -> State {
+            State::default()
+        }
     }
 }
