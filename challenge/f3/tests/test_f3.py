@@ -432,7 +432,10 @@ def test_protocol_file_option_verifies_without_git_history(tmp_path):
     shutil.copytree(REPO / "challenge/f3", root / "challenge/f3", ignore=shutil.ignore_patterns("tests", "__pycache__"))
     work = REPO / "docs/f3/dry_run"
     pub = (work / "host.pub").read_text().strip()
-    pin = V.read_receipts(work / "receipts.jsonl")[0]["body"]["protocol_sha256"]
+    gen = V.read_receipts(work / "receipts.jsonl")[0]["body"]
+    for name, h in gen["code_sha256"].items():
+        (root / "challenge/f3" / name).write_bytes(subprocess_show(h, f"challenge/f3/{name}"))
+    pin = gen["protocol_sha256"]
     good = tmp_path / "PROTOCOL.md"
     good.write_bytes(subprocess_show(pin))
     rep, _ = V.verify(work, pub, root, "none", protocol_file=good, strict_git=False)
@@ -443,10 +446,10 @@ def test_protocol_file_option_verifies_without_git_history(tmp_path):
     assert any("protocol hash" in n for n in failed_names(rep))
 
 
-def subprocess_show(pin: str) -> bytes:
+def subprocess_show(pin: str, rel: str = "docs/f3/PROTOCOL.md") -> bytes:
     import subprocess
-    for c in subprocess.run(["git", "log", "--format=%H", "--", "docs/f3/PROTOCOL.md"], cwd=REPO, capture_output=True, text=True).stdout.split():
-        b = subprocess.run(["git", "show", f"{c}:docs/f3/PROTOCOL.md"], cwd=REPO, capture_output=True).stdout
+    for c in subprocess.run(["git", "log", "--format=%H", "--", rel], cwd=REPO, capture_output=True, text=True).stdout.split():
+        b = subprocess.run(["git", "show", f"{c}:{rel}"], cwd=REPO, capture_output=True).stdout
         if V.sha(b) == pin:
             return b
-    pytest.skip("pinned protocol text not in git history")
+    pytest.skip(f"pinned {rel} not in git history")
