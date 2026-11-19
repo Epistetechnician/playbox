@@ -297,28 +297,33 @@ async fn a_confined_guest_with_egress_reaches_proxy_only_without_leaking_token()
         .with_confinement(confine);
     r.preflight().await.unwrap();
 
-    let script = format!(
-        "echo CMDLINE=$(cat /proc/cmdline); \
-         RESP=$(wget -q -O - \"$PLAYBOX_EGRESS_MODEL_URL/v1/models\" 2>/dev/null || true); \
-         echo PROXY=$RESP; \
-         nc -w 2 127.0.0.1 {other_port} </dev/null && echo OTHER_LOOPBACK; \
-         nc -w 2 1.1.1.1 80 </dev/null && echo INTERNET; true"
+    let ws_dir = ws("egress-ws");
+    let probe_script = format!(
+        "echo CMDLINE=$(cat /proc/cmdline)\n\
+         RESP=$(wget -q -O - \"$PLAYBOX_EGRESS_MODEL_URL/v1/models\" 2>/dev/null || true)\n\
+         echo PROXY=$RESP\n\
+         nc -w 2 127.0.0.1 {other_port} </dev/null && echo OTHER_LOOPBACK\n\
+         nc -w 2 1.1.1.1 80 </dev/null && echo INTERNET\n\
+         true\n"
     );
+    std::fs::write(ws_dir.join("probe.sh"), probe_script).unwrap();
     let spec = TaskSpec {
         egress: vec!["model".into()],
-        ..sh(&script)
+        timeout_secs: 90,
+        mem_mib: 256,
+        ..TaskSpec::new(&["sh", "/workspace/probe.sh"])
     };
-    let out = r.run(&spec, &ws("egress-ws")).await.unwrap();
+    let out = r.run(&spec, &ws_dir).await.unwrap();
     assert!(
-        out.stdout.contains("PROXY=OK_BOX7"),
+        out.stdout.lines().any(|l| l == "PROXY=OK_BOX7"),
         "guest could not reach host BOX-7 egress proxy: {out:?}"
     );
     assert!(
-        !out.stdout.contains("OTHER_LOOPBACK"),
+        !out.stdout.lines().any(|l| l == "OTHER_LOOPBACK"),
         "guest reached an unpermitted host loopback port: {out:?}"
     );
     assert!(
-        !out.stdout.contains("INTERNET"),
+        !out.stdout.lines().any(|l| l == "INTERNET"),
         "guest reached public internet at Level::None: {out:?}"
     );
     assert!(

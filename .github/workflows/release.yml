@@ -54,7 +54,7 @@ jobs:
   desktop:
     # The macOS and Linux desktop apps, built by the same reusable workflow as a manual build. It is listed in the signed SHA256SUMS below, which is
     # what the app's updater trusts. If it fails the release still ships without it (the updater then says there is no desktop build).
-    needs: verify
+    needs: [verify, build]
     uses: ./.github/workflows/desktop-bundle.yml
   publish:
     needs: [build, desktop]
