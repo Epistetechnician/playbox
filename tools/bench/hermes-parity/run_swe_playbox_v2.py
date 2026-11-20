@@ -214,6 +214,8 @@ def estimate_usage_cost_usd(u: dict, model: str = "") -> float:
         return 0.0
     uncached = max(0, inp - cached)
     m = (model or str(u.get("model") or "")).lower()
+    if m.startswith("swe-2") and "lightning" not in m:
+        return 0.0
     if "opus-5-5" in m or "opus-5.5" in m:
         in_rate, cache_rate, out_rate = 4.00, 0.20, 20.00
     elif "neon" in m:
@@ -261,13 +263,23 @@ def _prepare_worker_home(hh: str, *, enable_atlas_plugin: bool, use_aiproxy: boo
     real_auth = os.path.expanduser("~/.hermes/auth.json")
     hh_auth = os.path.join(hh, "auth.json")
     if use_aiproxy:
-        # Never inherit personal OAuth pool when routing through playbox-aiproxy; workers use
-        # short-lived, hard-capped gateway tokens via ANTHROPIC_BASE_URL / OPENAI_BASE_URL.
+        # Never inherit personal OAuth pool or custom provider blocks when routing through playbox-aiproxy;
+        # workers use short-lived, hard-capped gateway tokens via ANTHROPIC_BASE_URL / CUSTOM_BASE_URL.
         if os.path.lexists(hh_auth):
             try:
                 os.remove(hh_auth)
             except OSError:
                 pass
+        subprocess.run(
+            [
+                R.HVENV_PY, "-c",
+                "import yaml,sys; p=sys.argv[1]; c=yaml.safe_load(open(p)); "
+                "c.pop('providers',None); c.pop('custom_providers',None); "
+                "open(p,'w').write(yaml.safe_dump(c))",
+                os.path.join(hh, "config.yaml"),
+            ],
+            check=True,
+        )
     elif os.path.exists(real_auth) and not os.path.islink(hh_auth):
         try:
             os.remove(hh_auth)
@@ -298,6 +310,36 @@ DEVIN_BIN = os.environ.get(
     if os.path.exists(os.path.expanduser("~/.local/bin/devin"))
     else "/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin/devin",
 )
+AGY_BIN = os.environ.get("AGY_BIN", os.path.expanduser("~/.local/bin/agy"))
+
+
+def _parse_agy_usage(stdout: str, model: str, rc: int = 0, stderr: str = "") -> dict:
+    lines = [ln.strip() for ln in (stdout or "").splitlines() if ln.strip().startswith("{")]
+    if not lines:
+        return {"model": model, "provider": "agy", "failed": rc != 0, "failure": (stderr or "no_json_output")[:200]}
+    try:
+        aj = json.loads(lines[-1])
+    except ValueError:
+        return {"model": model, "provider": "agy", "failed": rc != 0, "failure": "invalid_json"}
+    au = aj.get("usage") or {}
+    u = {
+        "model": model,
+        "provider": "agy",
+        "session_id": str(aj.get("conversation_id") or ""),
+        "api_calls": int(aj.get("num_turns") or 1),
+        "input_tokens": int(au.get("input_tokens") or 0),
+        "output_tokens": int(au.get("output_tokens") or 0),
+        "thinking_tokens": int(au.get("thinking_tokens") or 0),
+        "cache_read_tokens": int(au.get("cache_read_tokens") or 0),
+        "cache_write_tokens": 0,
+        "total_tokens": int(au.get("total_tokens") or 0),
+        "completed": aj.get("status") == "SUCCESS",
+    }
+    if aj.get("status") not in ("SUCCESS", None) and rc != 0:
+        u["failed"] = True
+        u["failure"] = str(aj.get("error") or stderr or aj.get("status"))[:200]
+    u["estimated_cost_usd"] = estimate_usage_cost_usd(u, model)
+    return u
 
 
 class _DevinPlayboxBridge:
@@ -311,6 +353,8 @@ class _DevinPlayboxBridge:
       the host path; the ONLY way to inspect or modify `/sandbox` is through the governed `pbx` bridge.
     """
 
+    _ENV_LOCK = __import__("threading").Lock()
+
     def __init__(self, *, wdir: str, env_vars: dict[str, str]):
         import socket
         import threading
@@ -322,40 +366,41 @@ class _DevinPlayboxBridge:
             os.remove(self.sock_path)
 
         # Ensure Hermes base stubs exist if importing playbox_terminal outside Hermes venv.
-        if "agent.terminal_env_provider" not in sys.modules:
-            agent_mod = types.ModuleType("agent")
-            tep_mod = types.ModuleType("agent.terminal_env_provider")
-            tep_mod.TerminalEnvironmentProvider = type("TerminalEnvironmentProvider", (), {})
-            tools_mod = types.ModuleType("tools")
-            envs_mod = types.ModuleType("tools.environments")
-            base_mod = types.ModuleType("tools.environments.base")
+        with _DevinPlayboxBridge._ENV_LOCK:
+            if "agent.terminal_env_provider" not in sys.modules:
+                agent_mod = types.ModuleType("agent")
+                tep_mod = types.ModuleType("agent.terminal_env_provider")
+                tep_mod.TerminalEnvironmentProvider = type("TerminalEnvironmentProvider", (), {})
+                tools_mod = types.ModuleType("tools")
+                envs_mod = types.ModuleType("tools.environments")
+                base_mod = types.ModuleType("tools.environments.base")
 
-            class _BaseEnv:
-                def __init__(self, cwd="/sandbox", timeout=120):
-                    self.cwd = cwd
-                    self.timeout = timeout
+                class _BaseEnv:
+                    def __init__(self, cwd="/sandbox", timeout=120):
+                        self.cwd = cwd
+                        self.timeout = timeout
 
-            base_mod.BaseEnvironment = _BaseEnv
-            sys.modules["agent"] = agent_mod
-            sys.modules["agent.terminal_env_provider"] = tep_mod
-            sys.modules["tools"] = tools_mod
-            sys.modules["tools.environments"] = envs_mod
-            sys.modules["tools.environments.base"] = base_mod
+                base_mod.BaseEnvironment = _BaseEnv
+                sys.modules["agent"] = agent_mod
+                sys.modules["agent.terminal_env_provider"] = tep_mod
+                sys.modules["tools"] = tools_mod
+                sys.modules["tools.environments"] = envs_mod
+                sys.modules["tools.environments.base"] = base_mod
 
-        import playbox_terminal as pt
+            import playbox_terminal as pt
 
-        old_env = os.environ.copy()
-        try:
-            os.environ.update(env_vars)
-            # Create a fresh isolated _Session instance for this worker (do not share class singleton across workers).
-            sess = pt._Session()
-            self.pbx_env = pt.PlayboxEnvironment.__new__(pt.PlayboxEnvironment)
-            self.pbx_env.s = sess
-            self.pbx_env.cwd = "/sandbox"
-            self.pbx_env.timeout = 180
-        finally:
-            os.environ.clear()
-            os.environ.update(old_env)
+            old_env = os.environ.copy()
+            try:
+                os.environ.update(env_vars)
+                # Create a fresh isolated _Session instance for this worker (do not share class singleton across workers).
+                sess = pt._Session()
+                self.pbx_env = pt.PlayboxEnvironment.__new__(pt.PlayboxEnvironment)
+                self.pbx_env.s = sess
+                self.pbx_env.cwd = "/sandbox"
+                self.pbx_env.timeout = 180
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
 
         self._srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._srv.bind(self.sock_path)
@@ -726,7 +771,7 @@ def run_repro_generator(
     )
     with lease_cm as lease:
         gw_env = lease.env_overrides() if lease is not None else {}
-        if harness == "devin":
+        if harness in ("devin", "agy"):
             devin_ws = os.path.join(wdir, "devin_ws")
             os.makedirs(os.path.join(devin_ws, ".devin"), exist_ok=True)
             Path(devin_ws, ".devin", "mcp_config.local.json").write_text(
@@ -740,22 +785,32 @@ def run_repro_generator(
                 f"Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` using "
                 f"`pbx --write /sandbox/_pbx_repro.py <<'EOF' ... EOF` (do NOT fix the bug or edit any existing repository files).\n"
                 f"{rules_body}"
-                f"4. Run `pbx \"PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py\"` and verify it fails with `AssertionError` "
+                f"4. Run `pbx \"PYTHONPATH=/sandbox/src:/sandbox {py} /sandbox/_pbx_repro.py\"` and verify it fails with `AssertionError` "
                 f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
                 f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
             )
             devin_env = {**os.environ, **gw_env, "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", "PLAYBOX_ATLAS_INDEX": atlas_index_path}
-            cmd = [
-                DEVIN_BIN, "--model", model, "--permission-mode", "dangerous",
-                "--respect-workspace-trust", "false", "--process-model", "in-process", "--verbosity", "1", "-p", prompt,
-            ]
+            devin_env.pop("ACP_BACKEND", None)
+            if harness == "agy":
+                cmd = [
+                    AGY_BIN, "--model", model, "--output-format", "json",
+                    "--dangerously-skip-permissions", "--disable-slash-commands", "-p", prompt,
+                ]
+            else:
+                cmd = [
+                    DEVIN_BIN, "--model", model, "--permission-mode", "dangerous",
+                    "--respect-workspace-trust", "false", "--process-model", "in-process", "--verbosity", "1", "-p", prompt,
+                ]
             t0 = time.time()
+            rc_rep, out_rep, err_rep = 0, "", ""
             try:
-                subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=min(timeout, 300))
+                p_rep = subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=min(timeout, 300))
+                rc_rep, out_rep, err_rep = p_rep.returncode, p_rep.stdout, p_rep.stderr
             except subprocess.TimeoutExpired as exc:
+                rc_rep = 124
                 Path(wdir, "repro.timeout").write_text(str(exc), encoding="utf-8")
             bridge.close_and_export()
-            u = _extract_devin_usage(devin_ws, t0, model)
+            u = _parse_agy_usage(out_rep, model, rc_rep, err_rep) if harness == "agy" else _extract_devin_usage(devin_ws, t0, model)
             Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
         else:
             hh = os.path.join(R.D, f"home-P2-s{worker_slot}-repro")
@@ -909,7 +964,7 @@ def run_worker(
     )
     with lease_cm as lease:
         gw_env = lease.env_overrides() if lease is not None else {}
-        if harness == "devin":
+        if harness in ("devin", "agy"):
             devin_ws = os.path.join(wdir, "devin_ws")
             os.makedirs(os.path.join(devin_ws, ".devin"), exist_ok=True)
             # Disable global third-party MCP servers inside this isolated workspace so Devin starts immediately.
@@ -922,7 +977,7 @@ def run_worker(
             prompt = (
                 f"{prefix}The target repository is inside a governed Playbox OpenShell microVM at `{repo}` (it is NOT in your local directory). "
                 f"Run EVERY shell command inside the microVM via `pbx \"<command>\"` (e.g. `pbx \"sed -n '100,160p' /sandbox/path.py\"`, "
-                f"`pbx \"rg -n pattern /sandbox/django\"`), write/update files in `/sandbox` via `pbx --write /sandbox/path.py <<'EOF' ... EOF` "
+                f"`pbx \"rg -n pattern /sandbox\"`), write/update files in `/sandbox` via `pbx --write /sandbox/path.py <<'EOF' ... EOF` "
                 f"or inline python (`pbx \"{py} -c '...'\"`), and query the 3-hop call-graph index via `atlas_query \"<symbol or symptom>\"`. "
                 f"{diversity}Fix the bug in the source code under `{repo}` so the behaviour described in the issue is correct, "
                 f"without breaking existing behaviour. "
@@ -936,26 +991,39 @@ def run_worker(
                 "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
                 "PLAYBOX_ATLAS_INDEX": atlas_index_path,
             }
-            cmd = [
-                DEVIN_BIN,
-                "--model", model,
-                "--permission-mode", "dangerous",
-                "--respect-workspace-trust", "false",
-                "--process-model", "in-process",
-                "--verbosity", "1",
-                "-p", prompt,
-            ]
+            devin_env.pop("ACP_BACKEND", None)
+            if harness == "agy":
+                cmd = [
+                    AGY_BIN,
+                    "--model", model,
+                    "--output-format", "json",
+                    "--dangerously-skip-permissions",
+                    "--disable-slash-commands",
+                    "-p", prompt,
+                ]
+            else:
+                cmd = [
+                    DEVIN_BIN,
+                    "--model", model,
+                    "--permission-mode", "dangerous",
+                    "--respect-workspace-trust", "false",
+                    "--process-model", "in-process",
+                    "--verbosity", "1",
+                    "-p", prompt,
+                ]
             t0 = time.time()
+            rc_sol = 0
             try:
                 p = subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=timeout)
-                stdout, stderr = p.stdout, p.stderr
+                rc_sol, stdout, stderr = p.returncode, p.stdout, p.stderr
             except subprocess.TimeoutExpired as e:
+                rc_sol = 124
                 stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
                 stderr = "timeout"
             wall = time.time() - t0
             bridge.close_and_export()
             Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
-            u = _extract_devin_usage(devin_ws, t0, model)
+            u = _parse_agy_usage(stdout, model, rc_sol, stderr) if harness == "agy" else _extract_devin_usage(devin_ws, t0, model)
             Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
         else:
             hh = os.path.join(R.D, f"home-P2-s{worker_slot}-{worker_label}")
@@ -1020,7 +1088,7 @@ def main() -> None:
     ap.add_argument("n")
     ap.add_argument("outdir")
     ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
-    ap.add_argument("--harness", default="hermes", choices=["hermes", "devin"], help="Agent CLI harness driving the Playbox room worker")
+    ap.add_argument("--harness", default="hermes", choices=["hermes", "devin", "agy"], help="Agent CLI harness driving the Playbox room worker")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--provider", default="anthropic")
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
@@ -1080,22 +1148,36 @@ def main() -> None:
                     "atlas:embed",
                     f"atlas-{tag[:20]}",
                     hard_usd_cap=max(0.05, args.budget * 0.1),
-                    failover_policy="same_model_only",
-                    cache_mode="off",
+                    failover_policy=args.aiproxy_failover_policy,
+                    cache_mode=args.aiproxy_cache_mode,
+                    run_id=tag,
+                    member_id="atlas",
                 )
-                cache_db = os.path.join(R.D, "atlas-embed-cache.sqlite")
+                cache_db = (
+                    None
+                    if args.aiproxy_cache_mode == "off"
+                    else os.path.join(R.D, "atlas-embed-cache.sqlite")
+                )
+                req_hdrs = {
+                    "X-Playbox-Run-Id": tag,
+                    "X-Playbox-Member-Id": "atlas",
+                    "X-Playbox-Cache-Mode": args.aiproxy_cache_mode,
+                    "X-Playbox-Failover-Policy": args.aiproxy_failover_policy,
+                }
                 if args.atlas_embed_model:
                     atlas_embedder = AiproxyEmbedder(
                         args.aiproxy_url,
                         atlas_embed_tok.key,
                         model=args.atlas_embed_model,
                         cache_path=cache_db,
+                        extra_headers=req_hdrs,
                     )
                 if args.atlas_rerank_model:
                     atlas_reranker = AiproxyReranker(
                         args.aiproxy_url,
                         atlas_embed_tok.key,
                         model=args.atlas_rerank_model,
+                        extra_headers=req_hdrs,
                     )
 
     atlas_idx_path = "" if args.no_atlas else os.path.join(run_dir, "atlas.json")
@@ -1280,12 +1362,18 @@ def main() -> None:
         host_audit_ok, _ = host.audit()
 
         host_ledger = None
+        gateway_total_cost: float | None = None
         if aiproxy_client is not None:
             try:
-                host_ledger = aiproxy_client.fetch_ledger(run_id=tag, group=args.aiproxy_group)
+                host_ledger = aiproxy_client.fetch_ledger(run_id=tag)
                 Path(args.outdir, f"{tag}.llm_ledger.json").write_text(
                     json.dumps(host_ledger, indent=2), encoding="utf-8"
                 )
+                gateway_total_cost = round(float((host_ledger.get("totals") or {}).get("cost_usd", 0.0) or 0.0), 6)
+                atlas_cost = round(max(0.0, gateway_total_cost - float(decision.total_cost_usd)), 6)
+                decision.provenance["atlas_embed_cost_usd"] = atlas_cost
+                decision.provenance["total_cost_usd"] = gateway_total_cost
+                decision.total_cost_usd = gateway_total_cost
             except Exception as exc:  # noqa: BLE001
                 host_ledger = {"source": "client_unverified", "aiproxy_error": str(exc)[:200]}
 

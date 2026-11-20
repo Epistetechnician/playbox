@@ -87,6 +87,7 @@ def _sample_ledger(*, cost_usd: float = 0.0425, failovers: int = 1, budget_cutof
     return doc
 
 
+# REQ: PROXY-3
 def test_receipt_binds_host_ledger_and_rejects_tampering():
     with tempfile.TemporaryDirectory() as td:
         key = load_or_create_signing_key(Path(td) / "host.key")
@@ -135,6 +136,7 @@ def test_receipt_binds_host_ledger_and_rejects_tampering():
         assert not ok_unv_m
 
 
+# REQ: PROXY-1, PROXY-2, PROXY-4
 def test_budget_cap_and_aiproxy_client_lifecycle():
     state = {"tokens": {}, "revoked": []}
     ledger = _sample_ledger(cost_usd=0.031, failovers=1, budget_cutoffs=1)
@@ -244,6 +246,7 @@ def test_budget_cap_and_aiproxy_client_lifecycle():
         srv.server_close()
 
 
+# REQ: PROXY-6
 def test_atlas_hybrid_dense_rerank_and_quarantine_gate():
     seen_embed_inputs: list[str] = []
     seen_rerank_docs: list[str] = []
@@ -359,6 +362,7 @@ def test_atlas_hybrid_dense_rerank_and_quarantine_gate():
         srv.server_close()
 
 
+# REQ: PROXY-3, PROXY-7
 def test_live_hardened_aiproxy_binary_smoke():
     """Boot the compiled `-tags playbox_hardened` binary if present and verify live HTTP invariants."""
     bin_path = ROOT / "target" / "playbox-aiproxy"
@@ -405,6 +409,14 @@ def test_live_hardened_aiproxy_binary_smoke():
             ledger = client.fetch_ledger(run_id="smoke-run")
             ok_l, why_l = verify_ledger(ledger)
             assert ok_l, f"Go/Python canonical ledger SHA-256 mismatch: {why_l}"
+
+            # Sub-millidollar `< 1e-4` floats serialize in fixed-point decimal (never `8.2e-05`) matching Go `encoding/json`.
+            micro = _sample_ledger(cost_usd=0.000082)
+            from playbox_router.aiproxy import canonical_ledger_bytes
+
+            assert b"0.000082" in canonical_ledger_bytes(micro)
+            assert b"8.2e-05" not in canonical_ledger_bytes(micro)
+            assert verify_ledger(micro)[0]
 
             # Hardened build must return 404 on compiled-out MCP and Swagger routes.
             import urllib.error

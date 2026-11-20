@@ -50,9 +50,29 @@
 .pbs table.kt{width:100%;border-collapse:collapse;font:13px var(--sans)}.pbs table.kt td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}.pbs table.kt td:first-child{width:34%;font:12.5px var(--mono);color:var(--mut)}
 .pbs .li{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.pbs .li:last-child{border:0}.pbs .li .snm{flex:1;min-width:0;display:block}.pbs .li small{display:block;color:var(--mut);font-size:12px}
 .pbs kbd{font:12px var(--mono);border:1px solid var(--line-2);padding:1px 7px;background:var(--bg-2)}
+.pbs .ov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin:14px 0}
+.pbs .ov-card{display:grid;gap:6px;padding:14px;border:1px solid var(--line-2);background:var(--bg-2);text-align:left;cursor:pointer;color:var(--ink);font:inherit;transition:border-color .12s}
+.pbs .ov-card:hover{border-color:var(--blue-edge)}
+.pbs .ov-card .ov-top{display:flex;align-items:center;gap:8px;font:600 13.5px var(--sans)}
+.pbs .ov-card .ov-top svg{width:16px;height:16px;stroke:var(--mut);fill:none;stroke-width:1.6}
+.pbs .ov-card .ov-stat{margin-left:auto;font:600 11px var(--mono);padding:2px 7px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink-2)}
+.pbs .ov-card .ov-desc{font:12.5px/1.45 var(--sans);color:var(--mut)}
+.pbs .ov-qa{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px}
+.pbs .cls-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;font:12px var(--mono);color:var(--mut)}
+.pbs .cls-pill{padding:2px 8px;border:1px solid var(--blue-edge);background:var(--blue-grad);color:var(--blue);font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.pbs .cls-list{display:grid;gap:8px}
+.pbs .cls-hit{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--line-2);background:var(--bg-2);text-align:left;cursor:pointer;color:var(--ink);font:inherit}
+.pbs .cls-hit:hover{border-color:var(--blue-edge)}
+.pbs .cls-hit .ch-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font:600 13.5px var(--sans)}
+.pbs .cls-hit .ch-tier{font:600 10.5px var(--mono);padding:1px 6px;border:1px solid var(--line-2);color:var(--mut)}
+.pbs .cls-hit .ch-tier.step{border-color:color-mix(in srgb,var(--warn,#E5A33D) 55%,var(--line-2));color:var(--warn,#E5A33D)}
+.pbs .cls-hit .ch-live{font:600 10.5px var(--mono);padding:1px 6px;border:1px solid var(--blue-edge);color:var(--blue)}
+.pbs .cls-hit .ch-sum{font:12.5px/1.4 var(--sans);color:var(--ink-2)}
+.pbs .cls-hit .ch-fix{font:11.5px/1.4 var(--mono);color:var(--mut)}
 @media (max-width:760px){.pbs[open]{grid-template-columns:1fr;grid-template-rows:auto 1fr}.pbs nav{max-height:190px;border-right:0;border-bottom:1px solid var(--line)}.pbs .row{grid-template-columns:1fr}.pbs .row .c{grid-row:auto;grid-column:1;justify-self:start}}`;
 
   const IC = {
+    overview: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
     appearance: '<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2s0-2 1.5-2h2a3 3 0 0 0 3-3c0-6-4-11-8-11z"/>', interface: '<rect x="3" y="4" width="18" height="16"/><path d="M3 9h18M9 9v11"/>',
     hub: '<rect x="3" y="4" width="18" height="6"/><rect x="3" y="14" width="18" height="6"/><path d="M7 7h.01M7 17h.01"/>', safety: '<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.100-8-4.500-8-9V6z"/>',
     notifications: '<path d="M6 17V11a6 6 0 0 1 12 0v6l1.500 2h-15z"/><path d="M10 21h4"/>', keys: '<rect x="2" y="6" width="20" height="12"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>', about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.500v.01"/>'};
@@ -110,6 +130,27 @@
   /* ---------- pages ---------- */
   const THEME_PREVIEW = (t, dark) => { const p = dark ? t.dark : t.light; return `<button type="button" class="tc" data-k="skin" data-v="${esc(t.id)}" aria-pressed="${T().state().skin === t.id}"><div class="pv" style="background:${p.bg};color:${p.ink};border:1px solid ${T().mix(p.bg, p.ink, .2)}"><span style="color:${p.mut}">~ playbox up</span><span><span style="color:${p.ok}">●</span> <span style="color:${p.sig}">gpu-lab</span> <span style="color:${p.mut}">3 in room</span></span><span style="color:${p.blue}">&gt; TRY score=6300</span></div><b>${esc(t.label)}</b><span class="d">${esc(t.desc || "Your theme")}</span><span class="sw">${[p.sig, p.blue, p.ok, p.warn, p.bad, p.violet].map(c => `<i style="background:${c}"></i>`).join("")}</span></button>`; };
   const PAGES = {
+    overview: {label: "Overview", group: "overview", needsHub: true, words: "home settings dashboard quick fix status", render() {
+      const s = T().state(), skin = (T().find(s.skin) || {}).label || s.skin;
+      const net = hub.net, me = hub.me, n = nt.n;
+      const netMode = net ? (net.effective_mode || net.mode || "local") : "…";
+      const devs = me && Array.isArray(me.devices) ? `${me.devices.length} passkey${me.devices.length === 1 ? "" : "s"}` : "…";
+      const apCnt = nt.ap ? nt.ap.length : 0;
+      const pushStat = n ? `${n.push_subs} device${n.push_subs === 1 ? "" : "s"}` : "…";
+      return `<p class="lead">Everything you can configure on this hub and browser. Use the search bar on the left (<kbd>⌘K</kbd>) to jump to any setting or troubleshoot an issue with the built-in classifier.</p>
+        <div class="ov-qa">
+          <button type="button" class="act" data-p="network">Network (${esc(netMode)})</button>
+          <button type="button" class="act" data-p="theme">Theme (${esc(skin)})</button>
+          <button type="button" class="act" data-p="approvals">Approvals${apCnt ? ` (${apCnt})` : ""}</button>
+          <button type="button" class="act" data-pair>Pair device</button>
+          <button type="button" class="act" data-p="keys">Shortcuts</button>
+        </div>
+        <div class="ov-grid">
+          <button type="button" class="ov-card" data-p="network"><div class="ov-top"><svg viewBox="0 0 24 24">${IC.hub}</svg>Network &amp; access<span class="ov-stat">${esc(netMode)}</span></div><div class="ov-desc">Switch between Local only, Tailscale tailnet, or Cloudflare Access tunnel.</div></button>
+          <button type="button" class="ov-card" data-p="devices"><div class="ov-top"><svg viewBox="0 0 24 24">${IC.safety}</svg>Security &amp; passkeys<span class="ov-stat">${esc(devs)}</span></div><div class="ov-desc">Manage enrolled passkeys, active browser sessions, and capability approvals.</div></button>
+          <button type="button" class="ov-card" data-p="push"><div class="ov-top"><svg viewBox="0 0 24 24">${IC.notifications}</svg>Notifications &amp; alerts<span class="ov-stat">${esc(pushStat)}</span></div><div class="ov-desc">Configure web push, down-alert thresholds, and per-room muting.</div></button>
+          <button type="button" class="ov-card" data-p="theme"><div class="ov-top"><svg viewBox="0 0 24 24">${IC.appearance}</svg>Appearance &amp; layout<span class="ov-stat">${esc(skin)} · ${esc(T().mode())}</span></div><div class="ov-desc">Pick a colour theme, accent, typography, dark/light mode, and room view.</div></button>
+        </div><p class="note" id="pbs-msg"></p>`; }},
     theme: {label: "Theme", group: "appearance", words: "colour palette dark light catppuccin nord solarized", render() {
       const dark = T().mode() === "dark";
       return `<p class="lead">Each theme has a dark and a light side; the mode is chosen under Layout. Text colours are adjusted automatically so they stay readable.</p><div class="themes">${T().themes().map(t => THEME_PREVIEW(T().find(t.id), dark)).join("")}</div>`; }},
@@ -212,24 +253,37 @@
         <p class="lead" style="margin-top:18px">Playbox is the connecting layer for people, agents and tools that already have their own interfaces: it does not replace them, it lets them work in one room under limits the host sets, with a signed record.</p>
         <table class="kt"><tr><td>KaTeX 0.16.11</td><td>maths in notes · MIT</td></tr><tr><td>Shiki 1.29.2</td><td>code colours · MIT</td></tr><tr><td>DOMPurify 3.2.4</td><td>link sanitiser · Apache-2.0 or MPL-2.0</td></tr><tr><td>Hermes Agent desktop</td><td>theme model and settings layout · MIT</td></tr><tr><td>mlsweep, Inspect log viewer</td><td>layout ideas for panels and run views</td></tr></table>`; }},
   };
-  const GROUPS = [["appearance", "Appearance"], ["interface", "Interface"], ["hub", "Hub"], ["notifications", "Notifications"], ["safety", "Safety"], ["keys", "Keyboard shortcuts"], ["about", "About"]];
+  const GROUPS = [["overview", "Overview"], ["appearance", "Appearance"], ["interface", "Interface"], ["hub", "Hub"], ["notifications", "Notifications"], ["safety", "Safety"], ["keys", "Keyboard shortcuts"], ["about", "About"]];
   const ids = Object.keys(PAGES), first = g => ids.find(i => PAGES[i].group === g);
 
   /* ---------- dialog ---------- */
-  let dlg, cur = "theme", q = "", openG = new Set(["appearance"]), open_ = false;
-  const page = () => PAGES[cur];
+  let dlg, cur = "overview", q = "", openG = new Set(["overview", "appearance", "hub"]), open_ = false;
+  let clsRes = null, clsTimer = null, clsSeq = 0;
+  const page = () => PAGES[cur] || PAGES.overview;
+  function renderClassifier() {
+    if (!q) return "";
+    const r = clsRes && clsRes.query && clsRes.query.toLowerCase() === q ? clsRes : null;
+    if (!r) return `<p class="lead">Searching settings for “${esc(q)}”…</p>`;
+    const tierLbl = t => t === "step_up" ? "passkey step-up" : t === "read_only" ? "read-only" : "local pref";
+    const hits = (r.results || []).map(h => `<button type="button" class="cls-hit" data-p="${esc(h.page)}" data-clearq="1"><div class="ch-top"><span>${esc(h.title)}</span><span class="ch-tier ${h.security_tier === "step_up" ? "step" : ""}">${esc(tierLbl(h.security_tier))}</span>${h.live_status ? `<span class="ch-live">${esc(h.live_status)}</span>` : ""}</div><div class="ch-sum">${esc(h.summary)}</div><div class="ch-fix">${esc(h.fix_hint)}${h.api ? ` · ${esc(h.api.method)} ${esc(h.api.path)}` : ""}</div></button>`).join("");
+    return `<div class="cls-hd"><span class="cls-pill">${esc((r.intent || "search").replace(/_/g, " "))}</span><span>${Math.round((r.confidence || 0) * 100)}% confidence</span><span>· ${esc(r.security_note || "")}</span></div>
+      <div class="cls-list">${hits || `<p class="note">No matching settings for “${esc(q)}”.</p>`}</div>`;
+  }
   function paint() {
     if (!dlg) return;
-    const p = page(), g = GROUPS.find(x => x[0] === p.group), body = dlg.querySelector(".body"), keep = body ? body.scrollTop : 0;
+    const p = page(), g = GROUPS.find(x => x[0] === p.group) || GROUPS[0], body = dlg.querySelector(".body"), keep = body ? body.scrollTop : 0;
     const match = id => !q || (PAGES[id].label + " " + PAGES[id].words + " " + PAGES[id].group).toLowerCase().includes(q);
     const nav = GROUPS.map(([gid, gl]) => {
       const pages = ids.filter(i => PAGES[i].group === gid && match(i));
       if (!pages.length) return "";
-      const single = ids.filter(i => PAGES[i].group === gid).length === 1, expanded = q ? true : openG.has(gid);
-      return `<button type="button" class="gh" data-g="${gid}" aria-expanded="${expanded}"><svg viewBox="0 0 24 24">${IC[gid]}</svg>${esc(gl)}<span class="ch">›</span></button>` + (expanded ? pages.map(i => `<button type="button" class="pg" data-p="${i}" ${i === cur ? 'aria-current="page"' : ""}>${esc(PAGES[i].label)}</button>`).join("") : "");
+      const single = ids.filter(i => PAGES[i].group === gid).length === 1;
+      if (single && gid === "overview") return `<button type="button" class="gh" data-p="overview" aria-current="${cur === "overview" && !q ? "page" : "false"}"><svg viewBox="0 0 24 24">${IC[gid]}</svg>${esc(gl)}</button>`;
+      const expanded = q ? true : openG.has(gid);
+      return `<button type="button" class="gh" data-g="${gid}" aria-expanded="${expanded}"><svg viewBox="0 0 24 24">${IC[gid]}</svg>${esc(gl)}<span class="ch">›</span></button>` + (expanded ? pages.map(i => `<button type="button" class="pg" data-p="${i}" ${i === cur && !q ? 'aria-current="page"' : ""}>${esc(PAGES[i].label)}</button>`).join("") : "");
     }).join("");
-    dlg.innerHTML = `<nav aria-label="Settings"><label class="sq" for="pbs-q">⌕<input id="pbs-q" type="text" placeholder="Search settings" value="${esc(q)}" autocomplete="off"><kbd>⌘K</kbd></label>${nav || '<p class="note" style="padding:8px">No match.</p>'}</nav>
-      <div class="main"><header>Settings <span>›</span> ${esc(g[1])} <span>›</span> <b>${esc(p.label)}</b><button type="button" class="x" data-close aria-label="Close">×</button></header><div class="body">${p.render()}</div></div>`;
+    const mainHtml = q ? renderClassifier() : p.render();
+    dlg.innerHTML = `<nav aria-label="Settings"><label class="sq" for="pbs-q">⌕<input id="pbs-q" type="text" placeholder="Search or fix a setting…" value="${esc(q)}" autocomplete="off"><kbd>⌘K</kbd></label>${nav || '<p class="note" style="padding:8px">No match.</p>'}</nav>
+      <div class="main"><header>Settings <span>›</span> ${q ? `<b>Search: ${esc(q)}</b>` : `${esc(g[1])} <span>›</span> <b>${esc(p.label)}</b>`}<button type="button" class="x" data-close aria-label="Close">×</button></header><div class="body">${mainHtml}</div></div>`;
     const nb = dlg.querySelector(".body"); if (nb) nb.scrollTop = keep;
     if (q) { const i = dlg.querySelector("#pbs-q"); i.focus(); i.setSelectionRange(q.length, q.length); }
   }
@@ -244,7 +298,7 @@
         if (t === dlg || c("[data-close]")) return dlg.close();
         let b;
         if ((b = c("[data-g]"))) { openG.has(b.dataset.g) ? openG.delete(b.dataset.g) : openG.add(b.dataset.g); const f = first(b.dataset.g); if (openG.has(b.dataset.g) && PAGES[cur].group !== b.dataset.g) cur = f; return paint(); }
-        if ((b = c("[data-p]"))) { cur = b.dataset.p; openG.add(PAGES[cur].group); if (page().needsHub) loadHub(true); return paint(); }
+        if ((b = c("[data-p]"))) { cur = b.dataset.p; if (b.dataset.clearq) { q = ""; clsRes = null; } openG.add(PAGES[cur].group); if (page().needsHub) loadHub(true); return paint(); }
         if ((b = c("[data-k]"))) { T().set(b.dataset.k, b.dataset.v); return paint(); }
         if ((b = c("[data-set]"))) { T().set(b.dataset.set, b.dataset.v); return paint(); }
         if ((b = c('[data-net="mode"]'))) {
@@ -278,7 +332,20 @@
         if (c("[data-pair]")) { dlg.close(); if (window.pairDevice) window.pairDevice(); else location.href = "/?view=hub"; return; }
       });
       dlg.addEventListener("input", e => {
-        if (e.target.id === "pbs-q") { q = e.target.value.trim().toLowerCase(); const hit = ids.find(i => (PAGES[i].label + " " + PAGES[i].words).toLowerCase().includes(q)); if (q && hit && !(PAGES[cur].label + " " + PAGES[cur].words).toLowerCase().includes(q)) cur = hit; return paint(); }
+        if (e.target.id === "pbs-q") {
+          q = e.target.value.trim().toLowerCase();
+          clearTimeout(clsTimer);
+          if (!q) { clsRes = null; return paint(); }
+          const seq = ++clsSeq;
+          paint();
+          clsTimer = setTimeout(async () => {
+            try {
+              const res = await call("GET", "/api/settings/search?q=" + encodeURIComponent(q));
+              if (seq === clsSeq && open_) { clsRes = res; paint(); }
+            } catch {}
+          }, 110);
+          return;
+        }
         if (e.target.id === "pbs-css") { T().set("css", e.target.value.slice(0, 20000)); const n = dlg.querySelector("#pbs-cssn"); if (n) n.textContent = `${e.target.value.length} of 20000 characters`; }
         if (e.target.id === "pbs-color") T().set("accent", "custom:" + e.target.value);
       });
@@ -288,10 +355,11 @@
         if (d.alertSel) { call("POST", "/api/settings/notify", {down_alert_s: Number(e.target.value)}).then(j => { nt.n = j; paint(); }).catch(er => { say(er.message); loadNotif().then(paint); }); return; }
         if (d.prefSel) { T().setPref(d.prefSel, e.target.value); paint(); }
       });
-      dlg.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); const i = dlg.querySelector("#pbs-q"); i && i.focus(); } });
+      dlg.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); e.stopPropagation(); const i = dlg.querySelector("#pbs-q"); i && i.focus(); } });
     }
     if (path) { const id = path.includes("/") ? path.split("/")[1] : path; if (PAGES[id]) cur = id; else if (first(path)) cur = first(path); }
-    q = ""; openG.add(PAGES[cur].group); open_ = true;
+    else { cur = "overview"; }
+    q = ""; clsRes = null; openG.add(PAGES[cur].group); open_ = true;
     paint();
     if (!dlg.open) dlg.showModal();
     if (page().needsHub || true) loadHub(false);

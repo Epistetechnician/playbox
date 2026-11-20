@@ -1,0 +1,4 @@
+repo: https://github.com/labring/aiproxy
+commit: 61e7e8d41b5cb18706113f248a866dd95a58d1c8
+license: MIT
+hardened_tag: playbox_hardened

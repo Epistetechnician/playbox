@@ -293,15 +293,16 @@
       document.body.appendChild(sb); document.body.classList.add("has-sb");
       sb.addEventListener("click", e => {
         const b = e.target.closest("[data-sb]"); if (!b) return;
-        if (b.dataset.sb === "theme" && window.PBTheme) PBTheme.open("appearance");
-        if (b.dataset.sb === "settings" && window.PBTheme) PBTheme.open();
-        if (b.dataset.sb === "palette") openPalette();
+        if (b.dataset.sb === "theme" && window.PBTheme) PBTheme.open("theme");
+        if (b.dataset.sb === "palette") { if (typeof window.openPalette === "function") window.openPalette(); else openPalette(); }
         if (b.dataset.sb === "health") location.href = "/?view=system";
+        if (b.dataset.sb === "reload") location.reload();
       });
     }
     return sb;
   }
 
+  let seenBuild = null, updateReady = false;
   function paintBar() {
     if (!ensure()) return;
     const rooms = last.rooms, live = rooms.filter(r => r.state === "live").length, h = health;
@@ -310,11 +311,22 @@
     sb.innerHTML = `<button class="it" data-sb="health" title="${esc(h && h.problems.length ? h.problems.join("\n") : "Open the System view")}"><i class="led ${hub[0]}"></i>${esc(hub[1])}</button>
       ${t && t.configured ? `<span class="it" title="${esc(t.url || "")}"><i class="led ${t.up ? "ok" : "bad"}"></i>${t.up ? "Public address up" : "Public address down"}</span>` : ""}
       <span class="it">${rooms.length} room${rooms.length === 1 ? "" : "s"}${live ? ` · ${live} live` : ""}</span><span class="sp"></span>
-      ${theme ? `<button class="it" data-sb="theme" title="Appearance settings">${esc(theme)}</button>` : ""}<button class="it" data-sb="settings" title="Settings (⌘,)">Settings</button><button class="it mono" data-sb="palette" title="Command palette (⌘K)">⌘K</button>${h && h.build ? `<span class="it mono" title="hub build">${esc(h.build)}</span>` : ""}`;
+      ${updateReady ? `<button class="it" data-sb="reload" style="color:var(--sig-ink);font-weight:600" title="A newer hub build is live">Hub updated · Reload</button>` : ""}
+      ${theme ? `<button class="it" data-sb="theme" title="Change theme">Theme: ${esc(theme)}</button>` : ""}<button class="it mono" data-sb="palette" title="Command palette (⌘K)">⌘K</button>${h && h.build ? `<span class="it mono" title="hub build">${esc(h.build)}</span>` : ""}`;
   }
 
   async function pull() {
-    try { const r = await fetch("/api/system", {credentials: "same-origin"}); if (r.ok) { health = (await r.json()).health || null; paintBar(); } } catch {}
+    try {
+      const r = await fetch("/api/system", {credentials: "same-origin"});
+      if (r.ok) {
+        health = (await r.json()).health || null;
+        if (health && health.build) {
+          if (seenBuild && seenBuild !== health.build) updateReady = true;
+          seenBuild = health.build;
+        }
+        paintBar();
+      }
+    } catch {}
   }
 
   /** Call whenever the page has fresh rooms: paints the sidebar into `el` (if given), updates drawer/palette, and paints the status bar. */

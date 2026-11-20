@@ -92,6 +92,13 @@ try:
     big = f2.tail(1)[0]
     check("unknown fields are dropped and huge text is cut", "evil" not in big and len(big["text"]) <= 8000)
     check("text is stored as given (data, never interpreted)", Archive(d).append([item(11, '<img src=x onerror=alert(1)>')]) == 1 and Archive(d).tail(1)[0]["text"] == '<img src=x onerror=alert(1)>')
+    f2.append([{"seq": 12, "kind": "event", "from": "p1", "text": "task ok sh exit 0", "time_ms": 2,
+                "meta": {"event": "task", "ok": True, "runner": "openshell", "ms": 140, "egress": ["openai"], "secrets": ["API_KEY"],
+                         "secret_value": "sk-never", "nested": {"x": 1}}}])
+    ev = f2.tail(1)[0]
+    check("event meta keeps allowlisted telemetry and drops unknown/nested keys",
+          ev.get("meta", {}).get("runner") == "openshell" and ev["meta"].get("ms") == 140 and ev["meta"].get("secrets") == ["API_KEY"]
+          and "secret_value" not in ev["meta"] and "nested" not in ev["meta"])
 
     f2.delete()
     check("delete removes the archive", not os.path.exists(os.path.join(d, "archive")) and f2.info()["items"] == 0)

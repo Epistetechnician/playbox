@@ -50,6 +50,12 @@ const FORBIDDEN_GUEST_HEADERS: &[&str] = &[
     "x-real-ip",
 ];
 
+/// Returns true for headers a guest must never control (auth, hop-by-hop, forwarding, and host-owned `x-playbox-*` correlation headers).
+#[must_use]
+pub fn is_forbidden_guest_header(lower_name: &str) -> bool {
+    FORBIDDEN_GUEST_HEADERS.contains(&lower_name) || lower_name.starts_with("x-playbox-")
+}
+
 fn default_pass_headers() -> Vec<String> {
     vec!["content-type".into(), "accept".into(), "user-agent".into()]
 }
@@ -66,15 +72,67 @@ pub struct EgressUpstream {
     pub allow_paths: Vec<String>,
     #[serde(default = "default_pass_headers")]
     pub pass_headers: Vec<String>,
+    /// Host-injected headers added after stripping guest headers (e.g. `X-Playbox-Room-Id`, `X-Playbox-Cache-Mode`).
+    #[serde(default)]
+    pub extra_headers: BTreeMap<String, String>,
     /// Environment variable passed to the guest (defaults to `PLAYBOX_EGRESS_<NAME>_URL`).
     #[serde(default)]
     pub env_var: Option<String>,
-    /// Allow plain `http://` upstreams (for local tests only; `https://` required otherwise).
+    /// Allow plain `http://` upstreams (for local tests or loopback `playbox-aiproxy`; `https://` required otherwise).
     #[serde(default)]
     pub insecure_http: bool,
     /// Allow upstream hostnames resolving to RFC1918/private addresses when `https://` is used.
     #[serde(default)]
     pub allow_private: bool,
+}
+
+impl EgressUpstream {
+    /// Fail-closed BOX-7 upstream preset targeting a host-side `playbox-aiproxy` gateway.
+    ///
+    /// Allows only model inference, embedding, and rerank endpoints (never `/api/*`, `/mcp/*`, or `/swagger/*`).
+    /// Plain `http://` is permitted only when `base` targets loopback (`127.0.0.1`, `[::1]`, or `localhost`).
+    #[must_use]
+    pub fn aiproxy_preset(
+        name: impl Into<String>,
+        base: impl Into<String>,
+        secret: impl Into<String>,
+    ) -> Self {
+        let base_s = base.into();
+        let is_loopback_http = url::Url::parse(&base_s).ok().is_some_and(|u| {
+            u.scheme() == "http"
+                && matches!(
+                    u.host_str(),
+                    Some("127.0.0.1" | "localhost" | "::1" | "[::1]")
+                )
+        });
+        Self {
+            name: name.into(),
+            base: base_s,
+            auth_header: "authorization".into(),
+            auth_prefix: "Bearer ".into(),
+            secret: secret.into(),
+            allow_paths: vec![
+                "/v1/messages".into(),
+                "/v1/chat/completions".into(),
+                "/v1/responses".into(),
+                "/v1/embeddings".into(),
+                "/v1/rerank".into(),
+                "/v1beta/models/*".into(),
+            ],
+            pass_headers: vec![
+                "content-type".into(),
+                "accept".into(),
+                "user-agent".into(),
+                "anthropic-version".into(),
+                "anthropic-beta".into(),
+                "openai-beta".into(),
+            ],
+            extra_headers: BTreeMap::new(),
+            env_var: Some("PLAYBOX_AIPROXY_URL".into()),
+            insecure_http: is_loopback_http,
+            allow_private: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -201,12 +259,35 @@ impl EgressConfig {
                         u.name
                     )
                 })?;
-                if FORBIDDEN_GUEST_HEADERS.contains(&lower.as_str()) {
+                if is_forbidden_guest_header(&lower) {
                     bail!(
                         "header {h:?} cannot be forwarded from the guest in egress upstream {:?}",
                         u.name
                     );
                 }
+            }
+            let auth_lower = u.auth_header.trim().to_ascii_lowercase();
+            for (k, v) in &u.extra_headers {
+                let lower = k.trim().to_ascii_lowercase();
+                if lower == auth_lower {
+                    bail!(
+                        "extra_headers in egress upstream {:?} cannot override auth_header {:?}",
+                        u.name,
+                        u.auth_header
+                    );
+                }
+                HeaderName::from_bytes(lower.as_bytes()).with_context(|| {
+                    format!(
+                        "bad extra_headers key {k:?} in egress upstream {:?}",
+                        u.name
+                    )
+                })?;
+                HeaderValue::from_str(v).with_context(|| {
+                    format!(
+                        "bad extra_headers value for {k:?} in egress upstream {:?}",
+                        u.name
+                    )
+                })?;
             }
             if let Some(ev) = &u.env_var {
                 if !valid_env_name(ev) {
@@ -326,6 +407,7 @@ struct PreparedUpstream {
     client: reqwest::Client,
     auth_header: HeaderName,
     auth_value: HeaderValue,
+    extra_headers: Vec<(HeaderName, HeaderValue)>,
     allow_paths: Vec<String>,
     pass_headers: BTreeSet<String>,
 }
@@ -448,6 +530,33 @@ impl Proxy {
         bind_ip: Ipv4Addr,
         guest_host: &str,
     ) -> Result<Self> {
+        Self::start_with_host_and_headers(
+            cfg,
+            secrets,
+            names,
+            bind_ip,
+            guest_host,
+            &BTreeMap::new(),
+        )
+        .await
+    }
+
+    /// Like [`Proxy::start_with_host`], injecting additional host-trusted correlation headers
+    /// (e.g. `X-Playbox-Room-Id`, `X-Playbox-Member-Id`, `X-Playbox-Task-Id`, `X-Playbox-Run-Id`)
+    /// after stripping guest headers and before injecting the upstream credential.
+    ///
+    /// # Errors
+    ///
+    /// Fails if any requested upstream is unknown, duplicated, missing its secret, resolves to a forbidden address,
+    /// contains invalid correlation headers, or cannot bind.
+    pub async fn start_with_host_and_headers(
+        cfg: &EgressConfig,
+        secrets: &SecretStore,
+        names: &[String],
+        bind_ip: Ipv4Addr,
+        guest_host: &str,
+        correlation_headers: &BTreeMap<String, String>,
+    ) -> Result<Self> {
         cfg.validate()?;
         if guest_host.is_empty()
             || guest_host.contains(['/', '?', '#', '@', ':', '\r', '\n'])
@@ -525,8 +634,31 @@ impl Proxy {
                 .pass_headers
                 .iter()
                 .map(|h| h.trim().to_ascii_lowercase())
-                .filter(|h| !FORBIDDEN_GUEST_HEADERS.contains(&h.as_str()))
+                .filter(|h| !is_forbidden_guest_header(h))
                 .collect();
+            let mut merged_extra: BTreeMap<String, String> = u
+                .extra_headers
+                .iter()
+                .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.clone()))
+                .collect();
+            for (k, v) in correlation_headers {
+                merged_extra.insert(k.trim().to_ascii_lowercase(), v.clone());
+            }
+            let auth_lower = u.auth_header.trim().to_ascii_lowercase();
+            let mut extra_headers = Vec::with_capacity(merged_extra.len());
+            for (k, v) in merged_extra {
+                if k == auth_lower {
+                    bail!(
+                        "correlation header {k:?} cannot override auth_header {:?}",
+                        u.auth_header
+                    );
+                }
+                let hn = HeaderName::from_bytes(k.as_bytes())
+                    .with_context(|| format!("bad extra/correlation header name {k:?}"))?;
+                let hv = HeaderValue::from_str(&v)
+                    .with_context(|| format!("bad extra/correlation header value for {k:?}"))?;
+                extra_headers.push((hn, hv));
+            }
             let base_prefix = base_url.path().trim_end_matches('/').to_string();
             let env_key = u
                 .env_var
@@ -542,6 +674,7 @@ impl Proxy {
                     client,
                     auth_header,
                     auth_value,
+                    extra_headers,
                     allow_paths: u.allow_paths.clone(),
                     pass_headers,
                 },
@@ -940,7 +1073,7 @@ async fn serve_one(mut stream: TcpStream, state: &SharedState) {
 
     let mut out_headers = HeaderMap::new();
     for (k, v) in &req.headers {
-        if up.pass_headers.contains(k) && !FORBIDDEN_GUEST_HEADERS.contains(&k.as_str()) {
+        if up.pass_headers.contains(k) && !is_forbidden_guest_header(k) {
             if let (Ok(hn), Ok(hv)) = (
                 HeaderName::from_bytes(k.as_bytes()),
                 HeaderValue::from_str(v),
@@ -948,6 +1081,10 @@ async fn serve_one(mut stream: TcpStream, state: &SharedState) {
                 out_headers.append(hn, hv);
             }
         }
+    }
+    // Host-trusted correlation/policy headers injected after stripping guest headers.
+    for (hn, hv) in &up.extra_headers {
+        out_headers.insert(hn.clone(), hv.clone());
     }
     // Host-held credential injected last: guest headers can never override or coexist with it.
     out_headers.insert(up.auth_header.clone(), up.auth_value.clone());
@@ -985,7 +1122,13 @@ async fn serve_one(mut stream: TcpStream, state: &SharedState) {
         let n = hn.as_str();
         if matches!(
             n,
-            "content-type" | "cache-control" | "x-request-id" | "request-id" | "retry-after"
+            "content-type"
+                | "cache-control"
+                | "x-request-id"
+                | "request-id"
+                | "retry-after"
+                | "x-playbox-stop-reason"
+                | "x-aiproxy-request-id"
         ) {
             if let Ok(s) = hv.to_str() {
                 if !s.contains(['\r', '\n']) {
@@ -1142,6 +1285,7 @@ mod tests {
                 secret: "anthropic_key".into(),
                 allow_paths: vec!["/v1/messages".into(), "/v1/redirect".into()],
                 pass_headers: vec!["content-type".into(), "anthropic-version".into()],
+                extra_headers: BTreeMap::new(),
                 env_var: Some("ANTHROPIC_BASE_URL".into()),
                 insecure_http: true,
                 allow_private: false,
@@ -1279,5 +1423,121 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // REQ: BOX-7, PROXY-4
+    #[tokio::test]
+    async fn aiproxy_preset_strips_guest_correlation_headers_and_injects_host_headers() {
+        let (sec_dir, secrets) = temp_secret_store("aiproxy_tok", "pbx-worker-tok-123\n");
+        let listener = match TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await {
+            Ok(l) => l,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                let _ = std::fs::remove_dir_all(&sec_dir);
+                return;
+            }
+            Err(e) => panic!("bind fake aiproxy: {e}"),
+        };
+        let up_port = listener.local_addr().unwrap().port();
+        let seen_headers: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_clone = Arc::clone(&seen_headers);
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = listener.accept().await {
+                let seen = Arc::clone(&seen_clone);
+                tokio::spawn(async move {
+                    let Ok(req) = read_http_request(&mut s).await else {
+                        return;
+                    };
+                    seen.lock()
+                        .unwrap()
+                        .extend(req.headers.iter().map(|(k, v)| format!("{k}:{v}")));
+                    let _ = s
+                        .write_all(
+                            b"HTTP/1.1 402 Payment Required\r\nContent-Type: application/json\r\nX-Playbox-Stop-Reason: budget_exhausted\r\nContent-Length: 27\r\nConnection: close\r\n\r\n{\"error\":\"budget_exhausted\"}",
+                        )
+                        .await;
+                    let _ = s.shutdown().await;
+                });
+            }
+        });
+
+        // Fail closed: pass_headers may never forward guest `x-playbox-*` headers.
+        let spoof_cfg = br#"[{"name":"llm","base":"https://api.example.com","auth_header":"authorization","secret":"k","allow_paths":["/v1/messages"],"pass_headers":["x-playbox-run-id"]}]"#;
+        assert!(EgressConfig::from_json_bytes(spoof_cfg).is_err());
+
+        let preset = EgressUpstream::aiproxy_preset(
+            "llm",
+            format!("http://127.0.0.1:{up_port}"),
+            "aiproxy_tok",
+        );
+        assert!(preset.insecure_http);
+        assert!(preset.allow_private);
+
+        let cfg = EgressConfig {
+            upstreams: vec![preset],
+            log_file: None,
+            max_log_bytes: None,
+        };
+        let mut corr = BTreeMap::new();
+        corr.insert("X-Playbox-Room-Id".into(), "room-alpha".into());
+        corr.insert("X-Playbox-Run-Id".into(), "run-42".into());
+        corr.insert("X-Playbox-Cache-Mode".into(), "off".into());
+
+        let proxy = Proxy::start_with_host_and_headers(
+            &cfg,
+            &secrets,
+            &["llm".to_string()],
+            Ipv4Addr::LOCALHOST,
+            "127.0.0.1",
+            &corr,
+        )
+        .await
+        .unwrap();
+
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+
+        // Disallowed admin/MCP paths are blocked at BOX-7 before reaching aiproxy.
+        for blocked in [
+            "/api/playbox/ledger",
+            "/mcp/public/1",
+            "/swagger/index.html",
+        ] {
+            let r = client
+                .get(format!("{}{blocked}", proxy.base_url("llm")))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(r.status().as_u16(), 403, "expected 403 for {blocked}");
+        }
+
+        // Allowed inference path strips guest-forged X-Playbox-* headers and injects host correlation + Bearer token.
+        let r = client
+            .post(format!("{}/v1/messages", proxy.base_url("llm")))
+            .header("content-type", "application/json")
+            .header("x-playbox-run-id", "SPOOFED-RUN")
+            .header("x-playbox-cache-mode", "replay")
+            .body(r#"{"model":"claude-sonnet-4-6"}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status().as_u16(), 402);
+        assert_eq!(
+            r.headers()
+                .get("x-playbox-stop-reason")
+                .and_then(|v| v.to_str().ok()),
+            Some("budget_exhausted")
+        );
+
+        let got = seen_headers.lock().unwrap().clone();
+        assert!(got.contains(&"authorization:Bearer pbx-worker-tok-123".to_string()));
+        assert!(got.contains(&"x-playbox-room-id:room-alpha".to_string()));
+        assert!(got.contains(&"x-playbox-run-id:run-42".to_string()));
+        assert!(got.contains(&"x-playbox-cache-mode:off".to_string()));
+        assert!(!got.iter().any(|h| h.contains("SPOOFED-RUN")));
+        assert!(!got.iter().any(|h| h.contains("replay")));
+
+        let _ = std::fs::remove_dir_all(&sec_dir);
     }
 }

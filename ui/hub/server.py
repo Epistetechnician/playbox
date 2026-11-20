@@ -19,10 +19,11 @@ import urllib.parse
 from pathlib import Path
 
 from . import push as webpush
-from .local import ask_host, decide_call, hosting_dir, local_hosts, pending_calls
+from .local import ask_host, decide_call, host_handoffs, host_memory, host_memory_act, host_policy, host_replay, host_set_policy, hosting_dir, local_hosts, pending_calls
 from .access import Access, AccessError
 from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from . import agents as agentmod
+from .aiproxy import AiproxyHub, AiproxyHubError
 from .integrations import Integrations, IntegError
 from .invites import Invites, InviteError
 from .knock import KnockError, Knocks, Outgoing, LINK_TTL
@@ -31,6 +32,8 @@ from playbox_ui import discover_repos, witness_decide, witness_state
 from .sec import SecLog, STAGES, posture
 from . import board
 from . import ans as ans_mod
+from . import settings_search
+from . import archive_search
 from .machine import Machine
 from .store import Store
 
@@ -59,6 +62,7 @@ STARTED = time.time()
 def make_handler(hub, auth, store, opts):
     invites = Invites(store)
     integ = Integrations(store)
+    aiproxy = AiproxyHub(store)
     machine = Machine(opts.get("port") or 7717)
     if not os.environ.get("PLAYBOX_HUB_NO_MACHINE"):      # the fuzzer's throwaway hub and the tests don't schedule it
         machine.schedule()
@@ -213,8 +217,14 @@ def make_handler(hub, auth, store, opts):
             fresh = auth.is_fresh(rec, local)
             knocks = len(hub.knocks.pending())
             rooms = [{k: d.get(k) for k in ("id", "label", "mode", "members", "state", "holds", "chain", "last", "unread", "kind")} for d in digests]
+            aiproxy_posture = None
+            if aiproxy.configured():
+                try:
+                    aiproxy_posture = aiproxy.posture()
+                except AiproxyHubError:
+                    aiproxy_posture = {"configured": True, "playbox_hardened": False, "loopback_only": False}
             checks = posture(public=public, access=bool(opts.get("access")), creds=n_creds, weak_sessions=weak, invites=inv, knocks=knocks,
-                             push=n_push, rooms=rooms, fresh=fresh, tailnet=tailnet)
+                             push=n_push, rooms=rooms, fresh=fresh, tailnet=tailnet, aiproxy=aiproxy_posture)
             return {"health": self.health(), "machine": machine.view(), "now": int(time.time() * 1000), "stages": STAGES, "live": hub.sec.stages(), "events": hub.sec.recent(80), "posture": checks,
                     "facts": {"public": public, "tailnet": tailnet, "access": bool(opts.get("access")), "passkeys": n_creds, "sessions": n_sess, "weak_sessions": weak,
                               "fresh": fresh, "invites": inv, "knocks": knocks, "push": n_push, "host": self.headers.get("Host", "")},
@@ -365,7 +375,15 @@ def make_handler(hub, auth, store, opts):
                     return self.j(404, {"error": "not found"})
                 if p in PUBLIC_FILES:
                     f, ct = PUBLIC_FILES[p]
-                    return self.send(200, (STATIC / f).read_bytes(), ct, {"Service-Worker-Allowed": "/"} if f == "sw.js" else None)
+                    fp = STATIC / f
+                    st = fp.stat()
+                    etag = f'W/"{st.st_mtime_ns:x}-{st.st_size:x}"'
+                    hdrs = {"ETag": etag}
+                    if f == "sw.js":
+                        hdrs["Service-Worker-Allowed"] = "/"
+                    if self.headers.get("If-None-Match") == etag:
+                        return self.send(304, b"", ct, hdrs, cache="no-cache")
+                    return self.send(200, fp.read_bytes(), ct, hdrs, cache="no-cache")
                 if p == "/manifest.webmanifest":
                     return self.send(200, json.dumps(MANIFEST), "application/manifest+json")
                 if p in BRAND_FILES:
@@ -689,6 +707,8 @@ def make_handler(hub, auth, store, opts):
                                     "push_subs": psubs, "rp": self.rp_id(), "version": 1})
             if m == "GET" and p == "/api/rooms":
                 return self.j(200, {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()})
+            if m == "GET" and p == "/api/templates":
+                return self.j(200, {"templates": board.TEMPLATES})
             if m == "GET" and p == "/api/attention":
                 return self.j(200, {"items": hub.attention()})
             if m == "GET" and p == "/api/events":
@@ -748,6 +768,11 @@ def make_handler(hub, auth, store, opts):
                     room = hub.add(str(b.get("label", "")), str(b.get("machine", "")), str(b.get("kind", "shared")), b.get("home") or None)
                 except ValueError as e:
                     raise AuthError(400, str(e))
+                tpl = str(b.get("template") or "").strip().lower()
+                if tpl in ("swe", "research", "review", "ops"):
+                    with store.lock:
+                        room.rec["template"] = tpl
+                        store.save()
                 link = str(b.get("link", "")).strip()
                 if link:
                     sc = room.ensure()
@@ -845,6 +870,33 @@ def make_handler(hub, auth, store, opts):
                 if ok:
                     hub.sec.add("invite", "An invite was withdrawn", "info")
                 return self.j(200, {"ok": ok})
+            if m == "GET" and p == "/api/aiproxy/posture":
+                try:
+                    return self.j(200, aiproxy.posture())
+                except AiproxyHubError as e:
+                    return self.j(e.status, {"error": e.msg})
+            if m == "GET" and p.startswith("/api/rooms/") and "/llm/" in p:
+                parts = [seg for seg in p.split("/") if seg]
+                # /api/rooms/<rid>/llm/<kind>[/<req_id>/body]
+                if len(parts) >= 5 and parts[0] == "api" and parts[1] == "rooms" and parts[3] == "llm":
+                    rid, kind = parts[2], parts[4]
+                    if not hub.get(rid):
+                        return self.j(404, {"error": "no such room"})
+                    qs = urllib.parse.parse_qs(url.query)
+                    try:
+                        if kind == "stats" and len(parts) == 5:
+                            return self.j(200, aiproxy.room_stats(rid, (qs.get("window") or ["1h"])[0]))
+                        if kind == "activity" and len(parts) == 5:
+                            return self.j(200, aiproxy.room_activity(rid, (qs.get("window") or ["1h"])[0]))
+                        if kind == "logs" and len(parts) == 5:
+                            return self.j(200, aiproxy.room_logs(rid, (qs.get("limit") or ["50"])[0]))
+                        if kind == "logs" and len(parts) == 7 and parts[6] == "body":
+                            if not self.need_fresh(rec):
+                                return
+                            return self.j(200, aiproxy.room_log_body(rid, urllib.parse.unquote(parts[5])))
+                    except AiproxyHubError as e:
+                        return self.j(e.status, {"error": e.msg})
+                    return self.j(404, {"error": "unknown llm endpoint"})
             if m == "POST" and p.startswith("/api/rooms/") and p.endswith("/invite"):
                 return self.make_invite(p.split("/")[3], rec)
             if p.startswith("/api/rooms/"):
@@ -884,6 +936,20 @@ def make_handler(hub, auth, store, opts):
                     return
                 ok = auth.revoke_session(prefix)
                 return self.j(200 if ok else 404, {"ok": ok})
+            if p == "/api/search" and m == "GET":
+                q = (urllib.parse.parse_qs(url.query).get("q") or [""])[0]
+                return self.j(200, archive_search.search_rooms(list(hub.rooms.values()), q))
+            if p == "/api/settings/search" and m == "GET":
+                q = (urllib.parse.parse_qs(url.query).get("q") or [""])[0]
+                digs = hub.digests()
+                net = self.network_view()
+                live_state = {
+                    "network_mode": net.get("effective_mode") or net.get("mode"),
+                    "offline_rooms": sum(1 for r in digs if r.get("offline") or r.get("state") == "down"),
+                    "push_subs": len(store.d.get("push") or []),
+                    "weak_sessions": auth.weak_session_count() if hasattr(auth, "weak_session_count") else 0,
+                }
+                return self.j(200, settings_search.classify(q, live_state=live_state))
             if p == "/api/settings/notify":
                 if m == "GET":
                     return self.j(200, self.notify_view())
@@ -1084,11 +1150,159 @@ def make_handler(hub, auth, store, opts):
                     g = gr.get(mm["id"])
                     if g:       # the delegation, host to member: what the grant allows and until when (no tokens)
                         mm["grant"] = {k: g.get(k) for k in ("issued", "expires", "invite", "cpu_milli", "mem_mib", "timeout_secs", "net", "allowed")}
+                pol = (st.get("hosting") or {}).get("policy")
+                if not pol and room.rec.get("adopted_host"):
+                    pol = host_policy(room.rec["adopted_host"])
+                if not pol and live_mode != "none":
+                    perr, pdata = sc.call("playbox_policy", {}, wait=1, timeout=4)
+                    if not perr and isinstance(pdata, dict):
+                        pol = pdata
+                mem_snap = None
+                if room.rec.get("adopted_host"):
+                    mem_snap = host_memory(room.rec["adopted_host"])
+                elif live_mode != "none":
+                    merr, mdata = sc.call("playbox_room_memory", {"action": "list"}, wait=1, timeout=4)
+                    if not merr and isinstance(mdata, dict):
+                        mem_snap = mdata
+                if isinstance(mem_snap, dict) and isinstance(mem_snap.get("entries"), list):
+                    names_by_id = {m["id"]: m.get("name") for m in model["members"] if m.get("id")}
+                    for e in mem_snap["entries"]:
+                        if isinstance(e, dict):
+                            e["author_name"] = "host" if e.get("author") == "host" else (names_by_id.get(e.get("author")) or (str(e.get("author") or "")[:6]))
+                is_admin = live_mode in ("host", "both") or bool(room.rec.get("adopted_host"))
                 model.update({"now": int(time.time() * 1000), "me": me, "next": feed.get("next", 0), "archive": room.archive.info(),
+                              "policy": pol, "memory": mem_snap, "templates": board.TEMPLATES,
                               "room": {"id": room.id, "label": room.rec["label"], "machine": room.rec.get("machine", ""), "kind": room.rec.get("kind"), "mode": live_mode,
+                                       "template": room.rec.get("template") or (room.rec.get("host") or {}).get("template"),
                                        "state": d.get("state"), "chain": d.get("chain"), "holds": d.get("holds"), "created": room.rec.get("created")},
-                              "admin": live_mode in ("host", "both")})
+                              "admin": is_admin})
                 return self.j(200, model)
+            if rest == "/api/policy":
+                if m == "GET":
+                    if room.rec.get("adopted_host"):
+                        pol = host_policy(room.rec["adopted_host"])
+                        if pol:
+                            return self.j(200, pol)
+                    sc = room.ensure()
+                    if not sc:
+                        return self.j(502, {"error": room.err or "sidecar unavailable"})
+                    err, data = sc.call("playbox_policy", {}, wait=2, timeout=6)
+                    if err:
+                        return self.j(400, {"error": str(data)})
+                    return self.j(200, data)
+                if m == "POST":
+                    if not self.need_fresh(rec):
+                        return
+                    b = self.body()
+                    if room.rec.get("adopted_host"):
+                        ok, out = host_set_policy(room.rec["adopted_host"], b)
+                        if not ok:
+                            raise AuthError(400, str(out))
+                        hub.sec.add("approve", f"Updated live policy guardrails in {room.rec.get('label', room.id)}", "ok", room.id)
+                        hub.wake.set()
+                        return self.j(200, out)
+                    sc = room.ensure()
+                    if not sc:
+                        raise AuthError(502, room.err or "sidecar unavailable")
+                    err, data = sc.call("playbox_policy", b, wait=3, timeout=8)
+                    if err:
+                        raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
+                    with store.lock:
+                        if isinstance(room.rec.get("host"), dict):
+                            for k in ("cpus", "mem_mib", "timeout_secs", "network", "allowed_hosts", "allowed_secrets",
+                                      "allowed_egress", "task_budget", "max_members", "max_concurrent", "max_tasks_per_minute", "memory_review"):
+                                if k in b and b[k] is not None:
+                                    room.rec["host"][k] = b[k]
+                            store.save()
+                    hub.sec.add("approve", f"Updated live policy guardrails in {room.rec.get('label', room.id)}", "ok", room.id)
+                    hub.wake.set()
+                    return self.j(200, data)
+            if rest == "/api/memory":
+                if m == "GET":
+                    if room.rec.get("adopted_host"):
+                        mem_snap = host_memory(room.rec["adopted_host"])
+                        if mem_snap is not None:
+                            return self.j(200, mem_snap)
+                    sc = room.ensure()
+                    if not sc:
+                        return self.j(502, {"error": room.err or "sidecar unavailable"})
+                    err, data = sc.call("playbox_room_memory", {"action": "list"}, wait=2, timeout=6)
+                    if err:
+                        return self.j(200, {"enabled": False, "review": False, "entries": [], "error": str(data)})
+                    return self.j(200, data)
+                if m == "POST":
+                    b = self.body()
+                    act = str(b.get("action") or "list")
+                    if act in ("endorse", "unendorse", "accept", "quarantine") or (act == "remember" and b.get("endorsed", True)):
+                        if not self.need_fresh(rec):
+                            return
+                    if room.rec.get("adopted_host"):
+                        ok, out = host_memory_act(room.rec["adopted_host"], b)
+                        if not ok:
+                            raise AuthError(400, str(out))
+                        hub.sec.add("feed", f"Room memory {act} in {room.rec.get('label', room.id)}", "ok", room.id)
+                        hub.wake.set()
+                        return self.j(200, out)
+                    sc = room.ensure()
+                    if not sc:
+                        raise AuthError(502, room.err or "sidecar unavailable")
+                    err, data = sc.call("playbox_room_memory", b, wait=3, timeout=8)
+                    if err:
+                        raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
+                    hub.sec.add("feed", f"Room memory {act} in {room.rec.get('label', room.id)}", "ok", room.id)
+                    hub.wake.set()
+                    return self.j(200, data)
+            if m == "POST" and rest == "/api/replay":
+                b = self.body()
+                run_flag = bool(b.get("run"))
+                if run_flag and not self.need_fresh(rec):
+                    return
+                tid = b.get("task_id")
+                if room.rec.get("adopted_host") and not b.get("apply"):
+                    ok, out = host_replay(room.rec["adopted_host"], tid, run_flag)
+                    if ok:
+                        if run_flag:
+                            hub.sec.add("history", f"Replayed task {str(tid or '')[:12]} in {room.rec.get('label', room.id)}", "ok", room.id)
+                            hub.wake.set()
+                        return self.j(200, out)
+                sc = room.ensure()
+                if not sc:
+                    raise AuthError(502, room.err or "sidecar unavailable")
+                err, data = sc.call("playbox_replay", {"task_id": tid, "run": run_flag, "apply": bool(b.get("apply"))}, wait=3, timeout=60 if run_flag else 8)
+                if err:
+                    raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
+                if run_flag:
+                    hub.sec.add("history", f"Replayed task {str(tid or '')[:12]} in {room.rec.get('label', room.id)}", "ok", room.id)
+                    hub.wake.set()
+                return self.j(200, data)
+            if rest == "/api/handoffs":
+                if m == "GET":
+                    q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                    cid = (q.get("id") or [None])[0]
+                    if room.rec.get("adopted_host"):
+                        hh = host_handoffs(room.rec["adopted_host"], cid)
+                        if hh is not None:
+                            return self.j(200, hh)
+                    sc = room.ensure()
+                    if not sc:
+                        return self.j(502, {"error": room.err or "sidecar unavailable"})
+                    err, data = sc.call("playbox_handoffs", {"id": cid} if cid else {}, wait=2, timeout=6)
+                    if err:
+                        return self.j(400, {"error": str(data)})
+                    return self.j(200, data)
+                if m == "POST":
+                    b = self.body()
+                    sc = room.ensure()
+                    if not sc:
+                        raise AuthError(502, room.err or "sidecar unavailable")
+                    if b.get("resume"):
+                        err, data = sc.call("playbox_handoffs", {"id": b.get("id") or "latest", "resume": True}, wait=3, timeout=15)
+                    else:
+                        err, data = sc.call("playbox_handoff", b, wait=3, timeout=15)
+                    if err:
+                        raise AuthError(400, data if isinstance(data, str) else json.dumps(data))
+                    hub.wake.set()
+                    return self.j(200, data)
             if m == "GET" and rest == "/api/witness":
                 return self.j(200, witness_state(room.home))
             if m == "POST" and rest == "/api/witness/decide":
@@ -1213,7 +1427,10 @@ def make_handler(hub, auth, store, opts):
                 if name not in sc.tools:
                     return self.j(400, {"error": f"unknown tool {name}"})
                 # minting a join link / replicating (playbox_create) or running a command/capability on the host is as strong as an invite: same passkey touch
-                if (name in SENSITIVE_TOOLS or name == "playbox_create") and not self.need_fresh(rec):
+                mutating_policy = name == "playbox_policy" and any(k in args for k in ("cpus", "mem_mib", "timeout_secs", "network", "allowed_hosts", "allowed_secrets", "allowed_egress", "task_budget", "max_members", "max_concurrent", "max_tasks_per_minute", "memory_review", "capability_approvals"))
+                mutating_memory = name == "playbox_room_memory" and args.get("action") in ("endorse", "unendorse", "accept", "quarantine")
+                replaying_run = name == "playbox_replay" and bool(args.get("run"))
+                if (name in SENSITIVE_TOOLS or name == "playbox_create" or mutating_policy or mutating_memory or replaying_run) and not self.need_fresh(rec):
                     return
                 if name == "playbox_revoke" and room.rec.get("adopted_host"):
                     # This hub is a guest of that host, so it cannot revoke itself: ask the host over its private control socket (the same action as the host's console).
@@ -1240,11 +1457,13 @@ def make_handler(hub, auth, store, opts):
                     room.seen()
                     hub.bus.publish("room", {**room.digest, "unread": 0})
                 if name == "playbox_create" and not err and not args.get("replica_of"):
-                    keep = {k: args[k] for k in ("repo", "local", "docker") if args.get(k)}       # what a restart must host again
+                    keep = {k: args[k] for k in ("repo", "local", "docker", "template", "runtime", "cpus", "mem_mib", "timeout_secs",
+                                                 "network", "allowed_hosts", "allowed_secrets", "allowed_egress", "task_budget",
+                                                 "max_members", "max_concurrent", "max_tasks_per_minute", "memory_review") if args.get(k) is not None}       # what a restart must host again
                     if room.rec.get("host") != keep:
                         room.rec["host"] = keep
                         room.on_change and room.on_change()
-                if name in ("playbox_create", "playbox_join", "playbox_leave", "playbox_revoke"):
+                if name in ("playbox_create", "playbox_join", "playbox_leave", "playbox_revoke", "playbox_policy", "playbox_handoff", "playbox_room_memory", "playbox_room_remember", "playbox_replay"):
                     hub.wake.set()
                 return self.j(200, {"error": err, "data": data})
             if m == "POST" and rest == "/api/tamper":

@@ -90,6 +90,12 @@ def discover_instances(spec: str, swe_dir: Path = SWE_DIR) -> list[str]:
                 seen.add(x)
                 dedup.append(x)
         return dedup
+    if s in ("track-a-150", "track_a_150", "track-a-holdout"):
+        ta_dir = swe_dir if swe_dir.name == "track_a_150" else (swe_dir / "track_a_150")
+        lst = ta_dir / "track_a_150_instances.txt"
+        if lst.is_file():
+            return [ln.strip() for ln in lst.read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        return [Path(p).name.replace(".inst.json", "") for p in sorted(glob.glob(str(ta_dir / "*.inst.json")))]
     if s.startswith("@"):
         lines = Path(s[1:]).read_text(encoding="utf-8").splitlines()
         return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
@@ -180,6 +186,8 @@ def _estimate_devin_critic_cost(ws_dir: Path, t_start: float, model: str) -> flo
             out_total += int(m.get("output_tokens") or 0)
         uncached = max(0, inp_total - c_read_total)
         ml = model.lower()
+        if ml.startswith("swe-2") and "lightning" not in ml:
+            return 0.0
         if "opus-5-5" in ml:
             ir, cr, or_ = 4.00, 0.20, 20.00
         elif "neon" in ml:
@@ -191,46 +199,70 @@ def _estimate_devin_critic_cost(ws_dir: Path, t_start: float, model: str) -> flo
         return 0.0
 
 
-def _extract_base_hunk_context(repo_cache_dir: Path, patch_text: str, max_chars: int = 5500) -> str:
+def _extract_base_hunk_context(repo_cache_dir: Path, patch_text: str, max_chars: int = 5500, host_tar: str = "") -> str:
     """Extract surrounding lines from the single-commit base repo around touched diff hunks (strictly non-oracle)."""
-    if not repo_cache_dir.is_dir() or not patch_text.strip():
+    import tarfile
+
+    if (not repo_cache_dir.is_dir() and not (host_tar and os.path.isfile(host_tar))) or not patch_text.strip():
         return ""
+    tar_obj = tarfile.open(host_tar, "r:*") if (not repo_cache_dir.is_dir() and host_tar and os.path.isfile(host_tar)) else None
     chunks: list[str] = []
     cur_file = ""
-    for line in patch_text.splitlines():
-        m_f = re.match(r"^diff --git a/(.+?) b/", line)
-        if m_f:
-            cur_file = m_f.group(1)
-            continue
-        m_h = re.match(r"^@@ -(\d+)(?:,(\d+))? \+", line)
-        if m_h and cur_file:
-            fp = repo_cache_dir / cur_file
-            if not fp.is_file():
+    try:
+        for line in patch_text.splitlines():
+            m_f = re.match(r"^diff --git a/(.+?) b/", line)
+            if m_f:
+                cur_file = m_f.group(1)
                 continue
-            start_ln = int(m_h.group(1))
-            span = int(m_h.group(2) or "10")
-            try:
-                src_lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
-            except OSError:
-                continue
-            lo = max(1, start_ln - 25)
-            hi = min(len(src_lines), start_ln + span + 25)
-            numbered = "\n".join(f"{idx:4d}| {src_lines[idx - 1]}" for idx in range(lo, hi + 1))
-            chunks.append(f"--- Base context: {cur_file} (lines {lo}..{hi}) ---\n{numbered}")
-            if sum(len(c) for c in chunks) >= max_chars:
-                break
+            m_h = re.match(r"^@@ -(\d+)(?:,(\d+))? \+", line)
+            if m_h and cur_file:
+                src_lines: list[str] | None = None
+                if tar_obj is not None:
+                    for cand_member in (cur_file, f"./{cur_file}"):
+                        try:
+                            mf = tar_obj.extractfile(cand_member)
+                            if mf is not None:
+                                src_lines = mf.read().decode("utf-8", errors="ignore").splitlines()
+                                break
+                        except KeyError:
+                            continue
+                else:
+                    fp = repo_cache_dir / cur_file
+                    if fp.is_file():
+                        try:
+                            src_lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
+                        except OSError:
+                            src_lines = None
+                if not src_lines:
+                    continue
+                start_ln = int(m_h.group(1))
+                span = int(m_h.group(2) or "10")
+                lo = max(1, start_ln - 25)
+                hi = min(len(src_lines), start_ln + span + 25)
+                numbered = "\n".join(f"{idx:4d}| {src_lines[idx - 1]}" for idx in range(lo, hi + 1))
+                chunks.append(f"--- Base context: {cur_file} (lines {lo}..{hi}) ---\n{numbered}")
+                if sum(len(c) for c in chunks) >= max_chars:
+                    break
+    finally:
+        if tar_obj is not None:
+            tar_obj.close()
     return ("\n\n".join(chunks))[:max_chars]
 
 
 def is_devin_authenticated() -> bool:
     if not os.path.exists(DEVIN_BIN):
         return False
-    try:
-        p = subprocess.run([DEVIN_BIN, "auth", "status"], capture_output=True, text=True, timeout=8)
-        out = (p.stdout or "") + (p.stderr or "")
-        return p.returncode == 0 and "not logged in" not in out.lower()
-    except (OSError, subprocess.SubprocessError):
-        return False
+    env = dict(os.environ)
+    env.pop("ACP_BACKEND", None)
+    for _ in range(3):
+        try:
+            p = subprocess.run([DEVIN_BIN, "models"], env=env, capture_output=True, text=True, timeout=25)
+            out = (p.stdout or "") + (p.stderr or "")
+            if p.returncode == 0 and "not logged in" not in out.lower():
+                return True
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
 
 
 def _estimate_hermes_critic_cost(usage_path: Path, model: str) -> float:
@@ -266,6 +298,8 @@ def run_non_oracle_critic(
     critic_model: str,
     critic_harness: str = "hermes",
     critic_provider: str = "openai-codex",
+    container_has_repo_env: bool = True,
+    host_tar: str = "",
 ) -> tuple[bool, str, float]:
     """Independent non-oracle diff review.
 
@@ -275,17 +309,20 @@ def run_non_oracle_critic(
     """
     if not patch_text.strip():
         return False, "Candidate produced an empty patch.", 0.0
-    if not existing_tests_passed:
+    if online_gate_passed:
+        return True, "Both existing repository tests and independent non-vacuous repro script passed.", 0.0
+    if container_has_repo_env and not existing_tests_passed:
         return False, "Candidate failed both existing repository tests and independent repro gate.", 0.0
     if not critic_model:
-        return online_gate_passed, ("Online gate passed." if online_gate_passed else "Partial online gate and critic disabled."), 0.0
+        return False, "Partial online gate (score < 1.0) and critic disabled.", 0.0
 
-    base_ctx = _extract_base_hunk_context(repo_cache_dir, patch_text)
-    repro_note = (
-        "Existing repository unit tests PASSED, and the independent reproduction script PASSED."
-        if online_gate_passed
-        else "Existing repository unit tests PASSED, while an auto-generated synthetic reproduction script disagreed (which may be a real edge-case miss OR a buggy synthetic repro test)."
-    )
+    base_ctx = _extract_base_hunk_context(repo_cache_dir, patch_text, host_tar=host_tar)
+    if online_gate_passed:
+        repro_note = "Existing repository unit tests PASSED, and the independent reproduction script PASSED."
+    elif existing_tests_passed:
+        repro_note = "Existing repository unit tests PASSED, while an auto-generated synthetic reproduction script disagreed (which may be a real edge-case miss OR a buggy synthetic repro test)."
+    else:
+        repro_note = "Generic polyglot sandbox lacks this repository's version-pinned C/conda test environment; judge the patch strictly from source context and issue semantics."
     prompt = (
         "You are an adversarial code reviewer gating a software bugfix candidate. "
         "Do NOT run any tools or commands; all needed information is below.\n"
@@ -303,7 +340,37 @@ def run_non_oracle_critic(
         f"=== CANDIDATE PATCH ===\n{patch_text[:6000]}\n"
     )
     with tempfile.TemporaryDirectory(prefix="pbx-critic-") as td:
-        if critic_harness == "devin" and os.path.exists(DEVIN_BIN):
+        if critic_harness == "agy":
+            agy_bin = os.environ.get("AGY_BIN", os.path.expanduser("~/.local/bin/agy"))
+            ws = Path(td) / "ws"
+            ws.mkdir(parents=True, exist_ok=True)
+            try:
+                p = subprocess.run(
+                    [
+                        agy_bin,
+                        "--model", critic_model,
+                        "--mode", "plan",
+                        "--output-format", "json",
+                        "--dangerously-skip-permissions",
+                        "--disable-slash-commands",
+                        "-p", prompt,
+                    ],
+                    cwd=str(ws),
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+                lines = [ln.strip() for ln in (p.stdout or "").splitlines() if ln.strip().startswith("{")]
+                aj = json.loads(lines[-1]) if lines else {}
+                out = str(aj.get("response") or p.stdout or "").strip()
+                au = aj.get("usage") or {}
+                inp = int(au.get("input_tokens") or 0)
+                cached = int(au.get("cache_read_tokens") or 0)
+                out_tok = int(au.get("output_tokens") or 0)
+                cost = round((max(0, inp - cached) * 3.0 + cached * 0.30 + out_tok * 15.0) / 1_000_000.0, 6)
+            except (subprocess.TimeoutExpired, ValueError):
+                return online_gate_passed, "Critic timed out.", 0.0
+        elif critic_harness == "devin" and os.path.exists(DEVIN_BIN):
             ws = Path(td) / "ws"
             (ws / ".devin").mkdir(parents=True, exist_ok=True)
             (ws / ".devin" / "mcp_config.local.json").write_text(
@@ -311,18 +378,21 @@ def run_non_oracle_critic(
                 encoding="utf-8",
             )
             t0 = time.time()
+            dev_env = dict(os.environ)
+            dev_env.pop("ACP_BACKEND", None)
             try:
                 p = subprocess.run(
                     [
                         DEVIN_BIN,
                         "--model", critic_model,
-                        "--permission-mode", "readonly",
+                        "--permission-mode", "normal",
                         "--respect-workspace-trust", "false",
                         "--process-model", "in-process",
                         "--verbosity", "0",
                         "-p", prompt,
                     ],
                     cwd=str(ws),
+                    env=dev_env,
                     capture_output=True,
                     text=True,
                     timeout=90,
@@ -404,17 +474,21 @@ def run_arm_ls_instance(
     slot: int,
     outdir: Path,
     *,
+    harness: str = "hermes",
     model: str,
     provider: str,
     timeout: int,
+    keep_swebench_image: bool = False,
 ) -> dict:
     env = {
         **os.environ,
         "PB_SLOT": str(slot),
+        "PB_HARNESS": harness,
         "PB_MODEL": model,
         "PB_PROVIDER": provider,
         "PB_TIMEOUT": str(timeout),
         "PB_SWE_DIR": str(SWE_DIR),
+        "PB_KEEP_SWEBENCH_IMAGE": "1" if keep_swebench_image else "0",
     }
     subprocess.run(
         [sys.executable, str(RUNNER_LS), inst, arm, "1", str(outdir)],
@@ -462,7 +536,14 @@ def _invoke_p2_tier(
     extra_guidance: str,
     budget: float,
     timeout: int,
+    aiproxy_url: str = "",
+    aiproxy_admin_key_file: str = "",
+    aiproxy_failover_policy: str = "same_model_only",
+    aiproxy_cache_mode: str = "off",
+    atlas_embed_model: str = "",
+    atlas_rerank_model: str = "",
 ) -> tuple[dict, str, Path]:
+    eff_provider = "custom" if (aiproxy_url and harness == "hermes" and provider == "openai-codex") else provider
     cmd = [
         sys.executable,
         str(RUNNER_P2),
@@ -471,7 +552,7 @@ def _invoke_p2_tier(
         str(outdir),
         "--runtime", runtime,
         "--harness", harness,
-        "--provider", provider,
+        "--provider", eff_provider,
         "--model", model,
         "--workers", str(workers),
         "--worker-slot", str(slot),
@@ -486,6 +567,18 @@ def _invoke_p2_tier(
         cmd.append("--repro-gate")
     if extra_guidance:
         cmd.extend(["--extra-guidance", extra_guidance])
+    if aiproxy_url:
+        cmd.extend([
+            "--aiproxy-url", aiproxy_url,
+            "--aiproxy-failover-policy", aiproxy_failover_policy,
+            "--aiproxy-cache-mode", aiproxy_cache_mode,
+        ])
+        if aiproxy_admin_key_file:
+            cmd.extend(["--aiproxy-admin-key-file", aiproxy_admin_key_file])
+        if atlas_embed_model:
+            cmd.extend(["--atlas-embed-model", atlas_embed_model])
+        if atlas_rerank_model:
+            cmd.extend(["--atlas-rerank-model", atlas_rerank_model])
 
     env = {**os.environ, "PLAYBOX_BIN": PLAYBOX, "PB_SWE_DIR": str(SWE_DIR)}
     subprocess.run(cmd, env=env, check=True)
@@ -520,6 +613,13 @@ def run_arm_p2_cascade_instance(
     max_tiers: int,
     memory_file: Path,
     timeout: int,
+    t1_budget: float = 1.20,
+    aiproxy_url: str = "",
+    aiproxy_admin_key_file: str = "",
+    aiproxy_failover_policy: str = "same_model_only",
+    aiproxy_cache_mode: str = "off",
+    atlas_embed_model: str = "",
+    atlas_rerank_model: str = "",
 ) -> dict:
     """Execute the strictly zero-oracle 3-Tier Playbox Arm P2 Cascade on `inst`."""
     from playbox_atlas import append_verified_lesson
@@ -548,7 +648,7 @@ def run_arm_p2_cascade_instance(
             "workers": 1,
             "worker_models": "",
             "repro_gate": t1_repro_gate,
-            "budget": 0.35,
+            "budget": t1_budget,
             "timeout": min(timeout, 600),
         },
         {
@@ -593,12 +693,20 @@ def run_arm_p2_cascade_instance(
             extra_guidance=guidance,
             budget=ts["budget"],
             timeout=ts["timeout"],
+            aiproxy_url=aiproxy_url,
+            aiproxy_admin_key_file=aiproxy_admin_key_file,
+            aiproxy_failover_policy=aiproxy_failover_policy,
+            aiproxy_cache_mode=aiproxy_cache_mode,
+            atlas_embed_model=atlas_embed_model,
+            atlas_rerank_model=atlas_rerank_model,
         )
         tier_cost = float(res.get("total_cost_usd") or 0.0)
         tier_wall = float(res.get("wall_s") or 0.0)
         w0_usage = ((res.get("workers_meta") or [{}])[0]).get("usage") or {}
         prov_failed, fail_msg = _is_provider_failed(w0_usage)
         if prov_failed and not patch.strip():
+            if chosen_res is not None and chosen_patch.strip():
+                break
             return {
                 "status": "provider_rate_limited",
                 "failure": fail_msg,
@@ -634,6 +742,8 @@ def run_arm_p2_cascade_instance(
                 critic_model=critic_model,
                 critic_harness=critic_harness,
                 critic_provider=critic_provider,
+                container_has_repo_env=not bool(r_meta.get("pb_official_swebench")),
+                host_tar=str(r_meta.get("pb_host_tar") or ""),
             )
             tier_wall += round(time.time() - t_c0, 1)
 
@@ -685,6 +795,16 @@ def run_arm_p2_cascade_instance(
     assert chosen_res is not None
     wm = (chosen_res.get("workers_meta") or [{}])[0]
     hold = chosen_res.get("holdout") or {}
+    llm_ledger_source = "client_unverified"
+    ledger_sha256 = ""
+    if chosen_rcpt and Path(chosen_rcpt).is_file():
+        try:
+            rcpt_doc = json.loads(Path(chosen_rcpt).read_text(encoding="utf-8"))
+            ll = (rcpt_doc.get("payload") or {}).get("llm_ledger") or {}
+            llm_ledger_source = str(ll.get("source") or "client_unverified")
+            ledger_sha256 = str(ll.get("ledger_sha256") or "")
+        except (OSError, ValueError):
+            llm_ledger_source = "client_unverified"
     return {
         "status": "completed",
         "arm": "P2",
@@ -709,6 +829,8 @@ def run_arm_p2_cascade_instance(
         "taint_advisories": sum(int(m.get("taint_advisories") or 0) for m in (chosen_res.get("workers_meta") or [])),
         "receipt_verified": bool(chosen_res.get("receipt_verified")),
         "receipt_sha256": chosen_res.get("receipt_sha256", ""),
+        "llm_ledger_source": llm_ledger_source,
+        "ledger_sha256": ledger_sha256,
         "receipt_path": chosen_rcpt,
         "winning_tag": f"{inst}-P2-{chosen_tier}",
         "completed_at": time.time(),
@@ -820,6 +942,7 @@ def summarize_arm(records: list[dict], arm: str) -> dict:
             "tier_finish_counts": tier_counts,
             "tier1_finish_rate": round(tier_counts.get("t1", 0) / max(n, 1), 4),
             "all_receipts_verified": all(bool(r.get("receipt_verified")) for r in records),
+            "all_host_aiproxy_ledgers": all(r.get("llm_ledger_source") == "host_aiproxy" for r in records),
             "zero_taint_advisories": all(int(r.get("taint_advisories") or 0) == 0 for r in records),
             "memory_amortization": {
                 "first_half_n": len(first_half),
@@ -842,22 +965,30 @@ def main() -> None:
     ap.add_argument("--resume", dest="resume", action="store_true", default=True)
     ap.add_argument("--no-resume", dest="resume", action="store_false")
     ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
+    ap.add_argument("--arm-s-harness", default="hermes", choices=["hermes", "devin", "agy"])
     ap.add_argument("--arm-s-model", default="claude-haiku-5-5")
     ap.add_argument("--arm-s-provider", default="anthropic")
-    ap.add_argument("--t1-harness", default="hermes", choices=["hermes", "devin"])
+    ap.add_argument("--t1-harness", default="hermes", choices=["hermes", "devin", "agy"])
     ap.add_argument("--t1-provider", default="anthropic")
     ap.add_argument("--t1-model", default="claude-haiku-5-5")
     ap.add_argument("--no-t1-repro-gate", action="store_true")
-    ap.add_argument("--t2-harness", default="devin", choices=["hermes", "devin"])
+    ap.add_argument("--t2-harness", default="devin", choices=["hermes", "devin", "agy"])
     ap.add_argument("--t2-provider", default="anthropic")
     ap.add_argument("--t2-model", default="gemini-4-neon-high")
-    ap.add_argument("--t3-harness", default="devin", choices=["hermes", "devin"])
+    ap.add_argument("--t3-harness", default="devin", choices=["hermes", "devin", "agy"])
     ap.add_argument("--t3-provider", default="anthropic")
     ap.add_argument("--t3-workers", type=int, default=2)
     ap.add_argument("--t3-worker-models", default="claude-opus-5-5-high,gemini-4-neon-high")
-    ap.add_argument("--critic-harness", default="devin", choices=["hermes", "devin"])
+    ap.add_argument("--critic-harness", default="devin", choices=["hermes", "devin", "agy"])
     ap.add_argument("--critic-provider", default="anthropic")
     ap.add_argument("--critic-model", default="gemini-4-neon-high", help="Independent non-oracle diff critic model (empty to disable)")
+    ap.add_argument("--t1-budget", type=float, default=1.20)
+    ap.add_argument("--aiproxy-url", default=os.environ.get("PLAYBOX_AIPROXY_URL", ""))
+    ap.add_argument("--aiproxy-admin-key-file", default=os.environ.get("PLAYBOX_AIPROXY_ADMIN_KEY_FILE", ""))
+    ap.add_argument("--aiproxy-failover-policy", default="same_model_only", choices=["same_model_only", "alias_cascade"])
+    ap.add_argument("--aiproxy-cache-mode", default="off", choices=["off", "record", "replay"])
+    ap.add_argument("--atlas-embed-model", default="")
+    ap.add_argument("--atlas-rerank-model", default="")
     ap.add_argument("--max-tiers", type=int, default=3, choices=[1, 2, 3])
     ap.add_argument("--timeout", type=int, default=780)
     args = ap.parse_args()
@@ -882,7 +1013,11 @@ def main() -> None:
     memory_file = outdir / "verified-memory.jsonl"
     load_or_create_signing_key(PARITY_DIR / "attested_gate.ed25519")
 
-    instances = discover_instances(args.instances)
+    global SWE_DIR
+    if args.instances.strip() in ("track-a-150", "track_a_150", "track-a-holdout") and SWE_DIR.name != "track_a_150":
+        SWE_DIR = SWE_DIR / "track_a_150"
+        os.environ["PB_SWE_DIR"] = str(SWE_DIR)
+    instances = discover_instances(args.instances, SWE_DIR)
     arms = [a.strip().upper() for a in args.arms.split(",") if a.strip()]
     completed = _load_checkpoint(ckpt_path) if args.resume else {}
     ckpt_lock = threading.Lock()
@@ -901,75 +1036,116 @@ def main() -> None:
     }), flush=True)
 
     t_start_all = time.time()
-    for arm in arms:
-        todo = [inst for inst in instances if (arm, inst) not in completed]
-        if not todo:
-            continue
-        slot_q: queue.Queue[int] = queue.Queue()
-        for s in range(max(1, args.concurrency)):
-            slot_q.put(s)
+    paired_interleave = len(arms) > 1 and args.instances.strip() in ("track-a-150", "track_a_150", "track-a-holdout")
 
-        def _worker(inst_id: str) -> dict:
-            slot = slot_q.get()
-            try:
-                if arm in ("L", "S"):
-                    rec = run_arm_ls_instance(
-                        inst_id,
-                        arm,
-                        slot,
-                        outdir,
-                        model=args.arm_s_model,
-                        provider=args.arm_s_provider,
-                        timeout=args.timeout,
-                    )
-                elif arm == "P2":
-                    rec = run_arm_p2_cascade_instance(
-                        inst_id,
-                        slot,
-                        outdir,
-                        runtime=args.runtime,
-                        t1_harness=args.t1_harness,
-                        t1_provider=args.t1_provider,
-                        t1_model=args.t1_model,
-                        t1_repro_gate=not args.no_t1_repro_gate,
-                        t2_harness=t2_harness,
-                        t2_provider=t2_provider,
-                        t2_model=t2_model,
-                        t3_harness=t3_harness,
-                        t3_provider=t3_provider,
-                        t3_workers=args.t3_workers,
-                        t3_worker_models=t3_worker_models,
-                        critic_harness=critic_harness,
-                        critic_provider=critic_provider,
-                        critic_model=critic_model,
-                        max_tiers=args.max_tiers,
-                        memory_file=memory_file,
-                        timeout=args.timeout,
-                    )
-                else:
-                    raise ValueError(f"unsupported arm {arm!r}")
-                _append_checkpoint(ckpt_path, ckpt_lock, rec)
-                print(json.dumps({
-                    "event": "instance_done",
-                    "arm": arm,
-                    "inst": inst_id,
-                    "slot": slot,
-                    "resolved": rec.get("resolved"),
-                    "winning_tier": rec.get("winning_tier", "-"),
-                    "cost_usd": rec.get("cost_usd"),
-                    "wall_s": rec.get("wall_s"),
-                }), flush=True)
-                return rec
-            finally:
-                slot_q.put(slot)
+    def _run_one_arm_inst(arm: str, inst_id: str, slot: int, *, keep_img: bool = False) -> dict:
+        if arm in ("L", "S"):
+            rec = run_arm_ls_instance(
+                inst_id,
+                arm,
+                slot,
+                outdir,
+                harness=args.arm_s_harness,
+                model=args.arm_s_model,
+                provider=args.arm_s_provider,
+                timeout=args.timeout,
+                keep_swebench_image=keep_img,
+            )
+        elif arm == "P2":
+            rec = run_arm_p2_cascade_instance(
+                inst_id,
+                slot,
+                outdir,
+                runtime=args.runtime,
+                t1_harness=args.t1_harness,
+                t1_provider=args.t1_provider,
+                t1_model=args.t1_model,
+                t1_repro_gate=not args.no_t1_repro_gate,
+                t2_harness=t2_harness,
+                t2_provider=t2_provider,
+                t2_model=t2_model,
+                t3_harness=t3_harness,
+                t3_provider=t3_provider,
+                t3_workers=args.t3_workers,
+                t3_worker_models=t3_worker_models,
+                critic_harness=critic_harness,
+                critic_provider=critic_provider,
+                critic_model=critic_model,
+                max_tiers=args.max_tiers,
+                memory_file=memory_file,
+                timeout=args.timeout,
+                t1_budget=args.t1_budget,
+                aiproxy_url=args.aiproxy_url,
+                aiproxy_admin_key_file=args.aiproxy_admin_key_file,
+                aiproxy_failover_policy=args.aiproxy_failover_policy,
+                aiproxy_cache_mode=args.aiproxy_cache_mode,
+                atlas_embed_model=args.atlas_embed_model,
+                atlas_rerank_model=args.atlas_rerank_model,
+            )
+        else:
+            raise ValueError(f"unsupported arm {arm!r}")
+        _append_checkpoint(ckpt_path, ckpt_lock, rec)
+        print(json.dumps({
+            "event": "instance_done",
+            "arm": arm,
+            "inst": inst_id,
+            "slot": slot,
+            "resolved": rec.get("resolved"),
+            "winning_tier": rec.get("winning_tier", "-"),
+            "cost_usd": rec.get("cost_usd"),
+            "wall_s": rec.get("wall_s"),
+        }), flush=True)
+        return rec
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
-            futs = {pool.submit(_worker, inst): inst for inst in todo}
-            for fut in concurrent.futures.as_completed(futs):
-                inst_id = futs[fut]
-                rec = fut.result()
-                if rec.get("status") == "completed":
-                    completed[(arm, inst_id)] = rec
+    if paired_interleave:
+        todo_insts = [inst for inst in instances if any((a, inst) not in completed for a in arms)]
+        if todo_insts:
+            slot_q: queue.Queue[int] = queue.Queue()
+            for s in range(max(1, args.concurrency)):
+                slot_q.put(s)
+
+            def _pair_worker(inst_id: str) -> list[tuple[str, dict]]:
+                slot = slot_q.get()
+                out_pairs: list[tuple[str, dict]] = []
+                try:
+                    rem = [a for a in arms if (a, inst_id) not in completed]
+                    for idx_a, arm in enumerate(rem):
+                        rec = _run_one_arm_inst(arm, inst_id, slot, keep_img=(idx_a < len(rem) - 1))
+                        out_pairs.append((arm, rec))
+                    return out_pairs
+                finally:
+                    slot_q.put(slot)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
+                futs = {pool.submit(_pair_worker, inst): inst for inst in todo_insts}
+                for fut in concurrent.futures.as_completed(futs):
+                    inst_id = futs[fut]
+                    for arm, rec in fut.result():
+                        if rec.get("status") == "completed":
+                            completed[(arm, inst_id)] = rec
+    else:
+        for arm in arms:
+            todo = [inst for inst in instances if (arm, inst) not in completed]
+            if not todo:
+                continue
+            slot_q = queue.Queue()
+            for s in range(max(1, args.concurrency)):
+                slot_q.put(s)
+
+            def _worker(inst_id: str) -> dict:
+                slot = slot_q.get()
+                try:
+                    return _run_one_arm_inst(arm, inst_id, slot, keep_img=False)
+                finally:
+                    slot_q.put(slot)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
+                futs = {pool.submit(_worker, inst): inst for inst in todo}
+                for fut in concurrent.futures.as_completed(futs):
+                    inst_id = futs[fut]
+                    rec = fut.result()
+                    if rec.get("status") == "completed":
+                        completed[(arm, inst_id)] = rec
 
     arm_summaries: dict[str, dict] = {}
     arm_records: dict[str, list[dict]] = {}

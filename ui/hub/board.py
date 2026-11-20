@@ -14,13 +14,59 @@ import math
 from . import card as idcard
 
 PREFIX = "::pbx "
-KINDS = ("artifact", "card", "metric", "agent", "comment")
+KINDS = ("artifact", "card", "metric", "agent", "comment", "handoff")
 ANCHORS = ("note", "event", "artifact")
 ART_KINDS = ("proof", "code", "doc", "dataset", "chart", "note")
 ART_STATUS = ("draft", "checking", "verified", "failed", "retired")
 COLS = ("todo", "doing", "review", "done")
 BUCKET_MS = 5 * 60 * 1000
 MAX_BODY = 4000
+
+TEMPLATES = [
+    {
+        "id": "swe",
+        "label": "SWE · Multi-Agent Coding",
+        "summary": "Sandboxed coding & test runner, package-registry egress allowlist, diff replay, and handoff board.",
+        "runtime": "docker",
+        "limits": {"cpus": 2.0, "mem_mib": 2048, "timeout_secs": 600, "network": False,
+                   "allowed_hosts": ["github.com", "api.github.com", "crates.io", "index.crates.io", "pypi.org", "files.pythonhosted.org", "registry.npmjs.org"]},
+        "budget": {"task_budget": 500, "max_members": 16, "max_concurrent": 4, "max_tasks_per_minute": 30},
+        "memory_review": False,
+        "capabilities": [{"name": "test_suite", "approval": False, "timeout_secs": 300}, {"name": "git_status", "approval": False, "timeout_secs": 30}],
+    },
+    {
+        "id": "research",
+        "label": "Research · Empirical & ML",
+        "summary": "High-budget compute limits (4 CPU / 4 GiB), ML hub allowlist, live metric tracking, and reproducible evaluation.",
+        "runtime": "docker",
+        "limits": {"cpus": 4.0, "mem_mib": 4096, "timeout_secs": 1800, "network": False,
+                   "allowed_hosts": ["huggingface.co", "cdn-lfs.huggingface.co", "pypi.org", "files.pythonhosted.org", "arxiv.org"]},
+        "budget": {"task_budget": 1000, "max_members": 24, "max_concurrent": 4, "max_tasks_per_minute": 40},
+        "memory_review": False,
+        "capabilities": [{"name": "run_benchmark", "approval": False, "timeout_secs": 600}, {"name": "promote_candidate", "approval": True, "timeout_secs": 60}],
+    },
+    {
+        "id": "review",
+        "label": "Review · Security & Code Audit",
+        "summary": "Zero-egress audit sandbox, owner-gated memory review, secret scanning capability, and deterministic diff verification.",
+        "runtime": "docker",
+        "limits": {"cpus": 1.0, "mem_mib": 1024, "timeout_secs": 180, "network": False, "allowed_hosts": []},
+        "budget": {"task_budget": 200, "max_members": 12, "max_concurrent": 2, "max_tasks_per_minute": 20},
+        "memory_review": True,
+        "capabilities": [{"name": "secret_scan", "approval": False, "timeout_secs": 60}, {"name": "approve_release", "approval": True, "timeout_secs": 30}],
+    },
+    {
+        "id": "ops",
+        "label": "Ops · Incident & Runbook",
+        "summary": "Diagnostics + owner-approved remediation capabilities, curated status egress, and shift handoff checkpoints.",
+        "runtime": "docker",
+        "limits": {"cpus": 2.0, "mem_mib": 2048, "timeout_secs": 300, "network": False,
+                   "allowed_hosts": ["status.github.com", "api.github.com"]},
+        "budget": {"task_budget": 300, "max_members": 16, "max_concurrent": 2, "max_tasks_per_minute": 20},
+        "memory_review": True,
+        "capabilities": [{"name": "health_check", "approval": False, "timeout_secs": 30}, {"name": "remediate", "approval": True, "timeout_secs": 120}],
+    },
+]
 
 
 def _s(v, n):
@@ -74,7 +120,11 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None, ans_check
     launches = {}                                              # host-signed launch records by member key
     idcards, pinned, claims, rejected = {}, {}, {}, set()     # verified cards by key, the first verified card per key, unsigned claims, (key, reason) already reported
     arts, cards, series, log, comments = {}, {}, {}, [], []
-    msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0, "comment": 0}
+    handoffs, tasks_list = {}, []
+    msgs, per, buckets, typed = [], {}, {}, {"artifact": 0, "card": 0, "metric": 0, "agent": 0, "comment": 0, "handoff": 0}
+    telem = {"tasks": 0, "ok": 0, "failed": 0, "timed_out": 0, "ms_sum": 0, "ms_count": 0, "ms_max": 0,
+             "replays": 0, "reproducible": 0,
+             "runners": {}, "images": {}, "programs": {}, "egress": {}, "secrets": {}, "policies": set(), "host": None}
 
     def who(i):
         return names.get(i) or _short(i)
@@ -87,8 +137,73 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None, ans_check
             names.setdefault(frm, _s(it["name"], 30))
         if kind == "event":
             t = str(text).lower()
+            m = it.get("meta") if isinstance(it.get("meta"), dict) else {}
+            ev = str(m.get("event") or "").lower()
             if t in ("join ok", "join failed") or t.startswith("refused"):
                 log.append({"ms": ms, "type": "member", "who": frm, "text": ("joined" if t == "join ok" else "failed to join" if t == "join failed" else "was refused"), "seq": it.get("seq")})
+            elif ev == "host_start" or t == "host_start":
+                if m:
+                    telem["host"] = {k: m[k] for k in ("runner", "isolation", "transport", "version", "repo", "replica") if k in m}
+                bits = [str(m[k]) for k in ("runner", "isolation", "transport") if m.get(k)]
+                log.append({"ms": ms, "type": "event", "who": frm, "text": f"host started ({' · '.join(bits)})" if bits else "host started", "seq": it.get("seq")})
+            elif ev == "task" or t.startswith("task "):
+                telem["tasks"] += 1
+                ok = m.get("ok") if "ok" in m else t.startswith("task ok")
+                if ok:
+                    telem["ok"] += 1
+                else:
+                    telem["failed"] += 1
+                if m.get("timed_out"):
+                    telem["timed_out"] += 1
+                dur = m.get("ms")
+                if isinstance(dur, (int, float)) and not isinstance(dur, bool) and math.isfinite(dur) and dur >= 0:
+                    telem["ms_sum"] += dur
+                    telem["ms_count"] += 1
+                    telem["ms_max"] = max(telem["ms_max"], int(dur))
+                for key, bag in (("runner", "runners"), ("image", "images"), ("program", "programs")):
+                    val = _s(m.get(key), 60)
+                    if val:
+                        telem[bag][val] = telem[bag].get(val, 0) + 1
+                for key, bag in (("egress", "egress"), ("secrets", "secrets")):
+                    for val in (m.get(key) or [])[:8] if isinstance(m.get(key), list) else []:
+                        sv = _s(val, 40)
+                        if sv:
+                            telem[bag][sv] = telem[bag].get(sv, 0) + 1
+                pd = _s(m.get("policy_digest"), 64)
+                if pd:
+                    telem["policies"].add(pd)
+                tasks_list.append({
+                    "seq": it.get("seq"),
+                    "ms": ms,
+                    "from": frm,
+                    "ok": bool(ok),
+                    "task_id": _s(m.get("task_id"), 64),
+                    "runner": _s(m.get("runner"), 32),
+                    "program": _s(m.get("program"), 60),
+                    "cmd_hash": _s(m.get("cmd_hash"), 16),
+                    "base": _s(m.get("base"), 60),
+                    "base_commit": _s(m.get("base_commit") or m.get("commit"), 40),
+                    "commit": _s(m.get("commit"), 40),
+                    "branch": _s(m.get("branch"), 60),
+                    "policy_digest": pd,
+                    "patch_hash": _s(m.get("patch_hash"), 64),
+                    "stdout_hash": _s(m.get("stdout_hash"), 64),
+                    "patch_bytes": m.get("patch_bytes") if isinstance(m.get("patch_bytes"), int) else 0,
+                    "changed_files": m.get("changed_files") if isinstance(m.get("changed_files"), int) else 0,
+                    "exit_code": m.get("exit_code") if isinstance(m.get("exit_code"), int) else None,
+                    "timed_out": bool(m.get("timed_out")),
+                    "dur_ms": int(dur) if isinstance(dur, (int, float)) and not isinstance(dur, bool) and math.isfinite(dur) else None,
+                })
+                if not ok:
+                    log.append({"ms": ms, "type": "task", "who": frm, "text": _s(text, 120), "seq": it.get("seq")})
+            elif ev == "replay":
+                telem["replays"] += 1
+                rep_ok = bool(m.get("reproducible", m.get("ok")))
+                if rep_ok:
+                    telem["reproducible"] += 1
+                log.append({"ms": ms, "type": "task", "who": frm, "text": f"replayed task {_s(m.get('task_id'), 16)}: {'reproducible ✓' if rep_ok else 'diverged ✕'}", "seq": it.get("seq")})
+            elif ev == "policy_update":
+                log.append({"ms": ms, "type": "event", "who": frm or "host", "text": f"updated live policy guardrails (digest {_s(m.get('policy_digest'), 12)})", "seq": it.get("seq")})
             continue
         if kind != "say":
             continue
@@ -183,6 +298,37 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None, ans_check
                 s["pts"] = s["pts"][-200:]
                 if len(s["pts"]) in (1,):
                     log.append({"ms": ms, "type": "metric", "who": frm, "text": f"started tracking {nm}", "ref": nm, "seq": it.get("seq")})
+        elif k == "handoff":
+            hid = _s(d.get("id"), 48) or f"h-{it.get('seq') or len(handoffs) + 1}"
+            br = _s(d.get("branch"), 120) or "main"
+            bc = _s(d.get("base_commit"), 64)
+            sm = _s(d.get("summary"), 600)
+            oc = [_s(x, 60) for x in (d.get("open_cards") or [])[:16] if _s(x, 60)] if isinstance(d.get("open_cards"), list) else []
+            va = [_s(x, 80) for x in (d.get("verified_artifacts") or [])[:16] if _s(x, 80)] if isinstance(d.get("verified_artifacts"), list) else []
+            fc = [_s(x, 120) for x in (d.get("failed_checks") or [])[:16] if _s(x, 120)] if isinstance(d.get("failed_checks"), list) else []
+            bud = d.get("budget_remaining") if isinstance(d.get("budget_remaining"), dict) else {}
+            clean_bud = {str(bk)[:40]: bv for bk, bv in list(bud.items())[:12] if isinstance(bv, (int, float, str, bool))}
+            sig = _s(d.get("sig"), 128)
+            h_obj = {
+                "id": hid,
+                "from": frm,
+                "to": _s(d.get("to"), 64),
+                "summary": sm,
+                "branch": br,
+                "base_commit": bc,
+                "open_cards": oc,
+                "verified_artifacts": va,
+                "failed_checks": fc,
+                "budget_remaining": clean_bud,
+                "policy_digest": _s(d.get("policy_digest"), 64),
+                "issued_ms": d.get("issued_ms") if isinstance(d.get("issued_ms"), int) else ms,
+                "ms": ms,
+                "seq": it.get("seq"),
+                "sig": sig,
+                "signed": bool(len(sig) == 128),
+            }
+            handoffs[hid] = h_obj
+            log.append({"ms": ms, "type": "handoff", "who": frm, "text": f"handed off branch {br}" + (f" @ {bc[:8]}" if bc else "") + (f": {sm[:80]}" if sm else ""), "ref": hid, "seq": it.get("seq")})
     mem = {}
     for m in members or []:
         mid = m.get("id") or ""
@@ -222,10 +368,21 @@ def build(items, members, me=None, now_ms=0, room=None, endorsed=None, ans_check
             ev_comments.setdefault(c["ref"], []).append(c)
     for m in msgs:
         m["name"] = who(m["from"])
+    for h in handoffs.values():
+        h["from_name"] = who(h["from"])
+    for tk in tasks_list:
+        tk["from_name"] = who(tk["from"])
     log.sort(key=lambda e: (e["ms"], e.get("seq") or 0), reverse=True)
     nb = int(now_ms // BUCKET_MS) if now_ms else (max(buckets) if buckets else 0)
     activity = [{"b": b, "n": buckets.get(b, 0)} for b in range(nb - 35, nb + 1)]
     return {"members": sorted(mem.values(), key=lambda m: (not m["present"], -m["msgs"])), "feed": msgs[-200:], "artifacts": sorted(arts.values(), key=lambda a: -a["updated"]),
             "cards": sorted(cards.values(), key=lambda c: -c["updated"]), "cols": list(COLS), "metrics": list(series.values()), "changelog": log[:200], "comments": comments[-500:], "event_comments": ev_comments,
+            "handoffs": sorted(handoffs.values(), key=lambda h: -(h.get("ms") or 0)),
+            "tasks": tasks_list[-100:][::-1],
+            "telemetry": {"tasks": telem["tasks"], "ok": telem["ok"], "failed": telem["failed"], "timed_out": telem["timed_out"],
+                          "replays": telem["replays"], "reproducible": telem["reproducible"],
+                          "avg_ms": int(telem["ms_sum"] / telem["ms_count"]) if telem["ms_count"] else None, "max_ms": telem["ms_max"] if telem["ms_count"] else None,
+                          "runners": telem["runners"], "images": telem["images"], "programs": telem["programs"],
+                          "egress": telem["egress"], "secrets": telem["secrets"], "policies": len(telem["policies"]), "host": telem["host"]},
             "stats": {"messages": sum(per.values()), "typed": typed, "per_member": per, "activity": activity, "bucket_ms": BUCKET_MS,
                       "artifacts": {s: len([a for a in arts.values() if a["status"] == s]) for s in ART_STATUS}, "cards": {c: len([x for x in cards.values() if x["col"] == c]) for c in COLS}}}

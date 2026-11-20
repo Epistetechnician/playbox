@@ -163,6 +163,56 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--sig);outline-off
 .msg code{font:12px var(--mono);padding:1px 4px;background:var(--field);border:1px solid var(--line-2);color:var(--ink)}
 .msg pre code{padding:0;background:none;border:0;color:inherit}
 .sys{text-align:center;font:500 11px var(--mono);color:var(--mut)}
+.sys-ev,.sys-grp{background:var(--panel-2,var(--field));border:1px solid var(--line-2);border-radius:var(--r);font:500 11.5px/1.45 var(--mono);color:var(--ink-2)}
+.sys-ev>summary,.sys-grp>summary{list-style:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 10px;cursor:pointer;user-select:none}
+.sys-ev>summary::-webkit-details-marker,.sys-grp>summary::-webkit-details-marker{display:none}
+.sys-ev>summary:hover,.sys-grp>summary:hover{color:var(--ink)}
+.ev-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--c-ev,#A78BFA)}
+.ev-dot.ok{background:var(--ok-led,var(--ok))}
+.ev-dot.bad{background:var(--bad)}
+.ev-dot.warn{background:var(--warn,#E5A33D)}
+.ev-cnt{padding:1px 6px;border-radius:999px;background:var(--ink);color:var(--bg);font:700 10.5px var(--mono)}
+.ev-chip{padding:1px 6px;border-radius:4px;border:1px solid var(--line-2);background:var(--panel);color:var(--ink-2);font:500 10.5px var(--mono)}
+.ev-chip.sec{border-color:color-mix(in srgb,var(--warn,#E5A33D) 45%,var(--line-2))}
+.ev-tm{margin-left:auto;color:var(--mut);font-size:10.5px;white-space:nowrap}
+.ev-body{border-top:1px dashed var(--line-2);padding:8px 10px;display:grid;gap:8px;background:var(--panel)}
+.ev-kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:4px 12px;font:11px var(--mono)}
+.ev-kv div{display:flex;justify-content:space-between;gap:8px;min-width:0}
+.ev-kv span{color:var(--mut)}
+.ev-kv b{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-runs{display:grid;gap:3px;max-height:220px;overflow:auto;border-top:1px solid var(--line);padding-top:6px;font:11px var(--mono)}
+.ev-run{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink-2)}
+.ev-run .seq{color:var(--mut)}
+.fb-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
+.fb-bar .btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.fintel{background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);margin:0 0 12px;overflow:hidden}
+.fintel>summary{list-style:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;cursor:pointer;font:600 11.5px var(--mono);color:var(--ink)}
+.fintel>summary::-webkit-details-marker{display:none}
+.fintel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;padding:10px 12px 12px;border-top:1px solid var(--line)}
+.fi-card{background:var(--panel-2,var(--field));border:1px solid var(--line);border-radius:6px;padding:9px 10px;display:grid;gap:6px}
+.fi-card .fi-h{display:flex;align-items:center;justify-content:space-between;font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+.fi-card .fi-v{font:700 18px/1.1 var(--mono);color:var(--ink)}
+.fi-card .fi-sub{font:11px/1.35 var(--mono);color:var(--ink-2)}
+.fi-svg{width:100%;height:38px;display:block}
+.ev-spark{width:64px;height:16px;vertical-align:middle;flex:none}
+.tl-drill{background:var(--panel-2,var(--field));border:1px solid var(--line-2);border-left:3px solid var(--sig);border-radius:var(--r);padding:12px;margin:0 0 12px;display:grid;gap:10px}
+.tl-drill-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font:600 12.5px var(--mono);color:var(--ink)}
+.tl-ctx{display:grid;gap:3px;border-top:1px dashed var(--line-2);padding-top:8px;font:11.5px var(--mono);color:var(--ink-2)}
+.tl-ctx .cur{color:var(--ink);font-weight:700}
+.pbx-card{background:var(--panel);border:1px solid var(--line-2);border-left:4px solid var(--c-ev,#A78BFA);border-radius:var(--r);padding:10px 12px;display:grid;gap:6px}
+.pbx-card.st-verified,.pbx-card.st-done{border-left-color:var(--ok-led,var(--ok))}
+.pbx-card.st-failed{border-left-color:var(--bad)}
+.pbx-card.st-checking,.pbx-card.st-doing{border-left-color:var(--warn,#E5A33D)}
+.pbx-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font:600 11px var(--mono);color:var(--mut)}
+.pbx-hd .pbx-ttl{font:600 13.5px var(--sans);color:var(--ink)}
+.pbx-hd .pbx-st{padding:1px 7px;border-radius:999px;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--line-2);color:var(--ink-2)}
+.pbx-hd .pbx-st.ok{border-color:var(--ok-led,var(--ok));color:var(--ok-led,var(--ok))}
+.pbx-hd .pbx-st.bad{border-color:var(--bad);color:var(--bad)}
+.pbx-hd .pbx-st.warn{border-color:var(--warn,#E5A33D);color:var(--warn,#E5A33D)}
+.pbx-stats{display:flex;flex-wrap:wrap;gap:6px}
+.pbx-metric{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;background:var(--panel-2,var(--field));border:1px solid var(--line-2);border-left:3px solid var(--c-you);border-radius:var(--r);font:500 11.5px var(--mono);color:var(--ink-2)}
+.pbx-metric b{color:var(--ink);font-size:13px}
+@media (max-width:640px){.fintel-grid,.ev-kv{grid-template-columns:1fr}.tl-drill,.pbx-card{padding:8px 10px}.ev-spark{display:none}}
 .composer{display:flex;gap:8px;position:sticky;bottom:calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));padding:10px;background:var(--panel);border:1px solid var(--edge);box-shadow:var(--hard)}
 @media (min-width:900px){.composer{bottom:16px}}
 .composer input{flex:1}
@@ -277,7 +327,7 @@ const ICONS = {
 };
 const TABS = [["room", "Room"], ["timeline", "Timeline"], ["notes", "Notes"], ["feed", "Feed"], ["work", "Work"], ["people", "People"], ["harnesses", "Harnesses"], ["proof", "Proof"]];
 
-const S = {tab: "room", status: null, ok: false, feed: [], feedQ: "", seq: 0, invite: null, hostArgs: {}, running: false, runInfo: null, runTimer: null, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
+const S = {tab: "room", status: null, ok: false, feed: [], feedQ: "", feedBucket: "all", seq: 0, invite: null, hostArgs: {}, running: false, runInfo: null, runTimer: null, unread: 0, lastWork: null, verify: null, holds: [], hold: [], tamper: null};
 const hasSelectionIn = el => { const sel = window.getSelection?.(); return !!(el && sel && !sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode)); };
 
 /* ---------- api ---------- */
@@ -342,6 +392,9 @@ window.addEventListener("keydown", e => {
     e.preventDefault();
     PBShell.openPalette(cockpitPaletteItems());
     return;
+  }
+  if (e.key === "Escape" && S.tlDrill != null && !document.querySelector("dialog[open]")) {
+    S.tlDrill = null; show("timeline"); return;
   }
   if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && S.tab === "feed" && !document.querySelector("dialog[open]") && !e.target.matches?.("input,textarea,select,[contenteditable=true]")) {
     const fq = $("#feedq");
@@ -412,9 +465,11 @@ const RECIPES = [
 ];
 const QUICK = ["On it", "Pushed my branch, ready for review", "Tests pass on the host", "Blocked, need input", "Looks good to me"];
 const PRESETS = [
-  {t: "Pair on my network", reach: "local", docker: false},
-  {t: "Open lab (anywhere + tasks)", reach: "iroh", docker: true},
-  {t: "Review room (anywhere, read only)", reach: "iroh", docker: false},
+  {t: "SWE template", reach: "iroh", docker: true, template: "swe"},
+  {t: "Research template", reach: "iroh", docker: true, template: "research"},
+  {t: "Review template", reach: "iroh", docker: true, template: "review"},
+  {t: "Ops template", reach: "iroh", docker: true, template: "ops"},
+  {t: "Pair on my network", reach: "local", docker: false, template: ""},
 ];
 
 /* ---------- rooms sidebar and status bar (hub only) ---------- */
@@ -441,8 +496,22 @@ document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.ma
 function kindOf(it) {
   if (it.kind === "say" && typeof it.text === "string" && (it.text.startsWith("::pbx identity ") || it.text.startsWith("::pbx launch "))) return "identity";
   if (it.kind === "say") return "say";
+  const ev = String((it.meta && it.meta.event) || "").toLowerCase();
   const t = String(it.text || "").toLowerCase();
-  return t === "join ok" ? "join" : t.startsWith("refused") || t === "join failed" ? "refused" : "event";
+  if (ev === "task" || t.startsWith("task ")) return "task";
+  if (ev === "join" && it.meta && it.meta.ok === false) return "refused";
+  return t === "join ok" || (ev === "join" && it.meta && it.meta.ok === true) ? "join" : ev === "refused" || t.startsWith("refused") || t === "join failed" ? "refused" : "event";
+}
+function fmtDur(ms) {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000), s = Math.round((ms % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
+function taskOk(it) {
+  if (it.meta && typeof it.meta.ok === "boolean") return it.meta.ok;
+  return String(it.text || "").toLowerCase().startsWith("task ok");
 }
 function insights() {
   if (!window.PBI || !PBI.since || mode() === "none") return "";
@@ -450,42 +519,91 @@ function insights() {
   const isMe = it => (it.from && it.from === myId()) || (it.from === "host" && !!hosting());
   const cat = it => it.kind === "say" ? (isMe(it) ? "you" : "others") : kindOf(it);
   const says = items.filter(i => i.kind === "say"), mine = says.filter(isMe), others = says.filter(i => !isMe(i));
+  const tasks = items.filter(i => kindOf(i) === "task"), tasksOk = tasks.filter(taskOk), tasksFail = tasks.filter(i => !taskOk(i));
   const joins = items.filter(i => kindOf(i) === "join"), refused = items.filter(i => kindOf(i) === "refused"), evs = items.filter(i => kindOf(i) === "event");
   const t0 = Math.min(now - 10 * 60e3, ...items.map(i => i.time_ms)), BUCKET = 300e3, N = 24;
   const series = P.buckets(says.map(i => i.time_ms), now, BUCKET, N), hour = says.filter(i => now - i.time_ms < 3600e3).length;
-  const C = {you: "var(--c-you)", peer: "var(--c-peer)", join: "var(--c-join)", bad: "var(--c-bad)", ev: "var(--c-ev)"};
+  const C = {you: "var(--c-you)", peer: "var(--c-peer)", join: "var(--c-join)", bad: "var(--c-bad)", ev: "var(--c-ev)", task: "var(--c-gen)", warn: "var(--c-warn)"};
   const h = hosting(), j = joined(), m = mode(), tot = items.length || 1;
   const pct = n => Math.round(n / tot * 100) + "%";
   const last = Math.max(0, ...says.map(i => i.time_ms)), voices = new Set(says.map(i => i.from)).size;
   const flags = [];
   if (refused.length) flags.push({k: "refused", c: C.bad, t: `${refused.length} refused`});
-  if ((S.hold || []).length) flags.push({c: "var(--c-warn)", t: "witness hold"});
+  if (tasksFail.length) flags.push({k: "task", c: C.bad, t: `${tasksFail.length} task failed`});
+  if ((S.hold || []).length) flags.push({c: C.warn, t: "witness hold"});
   if (S.verify && !S.verify.valid) flags.push({c: C.bad, t: "history failed"});
-  if (S.offline) flags.push({c: "var(--c-warn)", t: "host offline"});
-  const line = `${hour} msg/hour · ${voices} voice${voices === 1 ? "" : "s"}${last ? ` · last message ${P.span(now - last)} ago` : ""}${S.verify && S.verify.valid ? " · history verified" : ""}`;
+  if (S.offline) flags.push({c: C.warn, t: "host offline"});
+  const line = `${hour} msg/hour · ${tasks.length} task${tasks.length === 1 ? "" : "s"} · ${voices} voice${voices === 1 ? "" : "s"}${last ? ` · last message ${P.span(now - last)} ago` : ""}${S.verify && S.verify.valid ? " · history verified" : ""}`;
   const stats = P.stats({id: "stats", line, flags, kind: S.trailKind, icon: INS_ICON.stats, title: "Stats", open: S.ins.stats, meta: `${members().length + (j && !h ? 1 : 0)} in room`,
     who: ROOM ? "room" : "", name: ROOM || (h ? "You host this room" : "Joined room"),
-    bar: {label: "who spoke", right: `${items.length} events`, parts: [{c: C.you, w: mine.length, t: "you"}, {c: C.peer, w: others.length, t: "others"}, {c: C.join, w: joins.length, t: "joins"}, {c: C.bad, w: refused.length, t: "refused"}, {c: C.ev, w: evs.length, t: "other"}]},
+    bar: {label: "room activity", right: `${items.length} events`, parts: [{c: C.you, w: mine.length, t: "you"}, {c: C.peer, w: others.length, t: "others"}, {c: C.task, w: tasksOk.length, t: "tasks ok"}, {c: C.bad, w: tasksFail.length + refused.length, t: "failed/refused"}, {c: C.join, w: joins.length, t: "joins"}, {c: C.ev, w: evs.length, t: "other"}]},
     kv: [["mode", {host: "hosting", guest: "guest", both: "host + guest"}[m] || m], ["members", String(members().length)], ["you", short(myId()) || "—"], ["host", h ? "this machine" : short(j && j.active_host) || "—"],
          ["repo", h && h.repo ? h.repo.split("/").slice(-2).join("/") : "none"], ["history", S.verify ? (S.verify.valid ? "verified " + S.verify.entries : "FAILED") : "not checked"],
          ["revoked", String(h ? h.revocations ?? 0 : 0)], ["offline", S.offline ? "yes" : "no"]],
     rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / N).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
-    groups: [{title: "Events", rows: [{c: C.you, l: "you", k: "you", n: mine.length, pct: pct(mine.length)}, {c: C.peer, l: "others", k: "others", n: others.length, pct: pct(others.length)}, {c: C.join, l: "joined", k: "join", n: joins.length, pct: pct(joins.length)},
+    groups: [{title: "Events", rows: [{c: C.you, l: "you", k: "you", n: mine.length, pct: pct(mine.length)}, {c: C.peer, l: "others", k: "others", n: others.length, pct: pct(others.length)},
+      {c: C.task, l: "tasks", k: "task", n: tasks.length, pct: pct(tasks.length)}, {c: C.join, l: "joined", k: "join", n: joins.length, pct: pct(joins.length)},
       {c: C.bad, l: "refused", k: "refused", n: refused.length, pct: pct(refused.length)}, {c: C.ev, l: "other", k: "event", n: evs.length, pct: pct(evs.length), o: true}]}]});
+  let telemCard = "";
+  const hostEv = [...items].reverse().find(i => (i.meta && i.meta.event === "host_start") || i.text === "host_start");
+  if (tasks.length || (hostEv && hostEv.meta)) {
+    const runners = new Map(), images = new Map(), progs = new Map(), egress = new Set(), secrets = new Set(), policies = new Set(), syncs = new Set();
+    let msSum = 0, msN = 0, msMax = 0, timedOut = 0, kept = 0, netOn = 0;
+    for (const tk of tasks) {
+      const tm = tk.meta || {};
+      const r = tm.runner || (hostEv && hostEv.meta && hostEv.meta.runner) || "unknown";
+      runners.set(r, (runners.get(r) || 0) + 1);
+      if (tm.image) images.set(tm.image, (images.get(tm.image) || 0) + 1);
+      const pr = tm.program || (String(tk.text || "").split(" ")[2] || "unknown");
+      progs.set(pr, (progs.get(pr) || 0) + 1);
+      if (typeof tm.ms === "number" && Number.isFinite(tm.ms)) { msSum += tm.ms; msN++; if (tm.ms > msMax) msMax = tm.ms; }
+      if (tm.timed_out) timedOut++;
+      if (tm.keep) kept++;
+      if (tm.network) netOn++;
+      if (tm.sync) syncs.add(tm.sync);
+      if (tm.policy_digest) policies.add(tm.policy_digest);
+      for (const e of tm.egress || []) egress.add(e);
+      for (const s of tm.secrets || []) secrets.add(s);
+    }
+    const taskSeries = P.buckets(tasks.map(i => i.time_ms), now, BUCKET, N);
+    const taskHour = tasks.filter(i => now - i.time_ms < 3600e3).length;
+    const hm = (hostEv && hostEv.meta) || {};
+    const ttot = tasks.length || 1;
+    const tpct = n => Math.round(n / ttot * 100) + "%";
+    const tgroups = [];
+    if (progs.size) tgroups.push({title: "By program", rows: [...progs].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([l, n]) => ({c: C.task, l, n, pct: tpct(n)}))});
+    if (runners.size) tgroups.push({title: "By runner", rows: [...runners].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([l, n]) => ({c: C.you, l, n, pct: tpct(n)}))});
+    if (images.size) tgroups.push({title: "By image", rows: [...images].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([l, n]) => ({c: C.ev, l, n, pct: tpct(n)}))});
+    telemCard = P.stats({id: "telemetry", icon: INS_ICON.activity, title: "Task telemetry", open: S.ins.telemetry,
+      meta: tasks.length ? `${tasksOk.length}/${tasks.length} ok${msN ? ` · avg ${fmtDur(msSum / msN)}` : ""}` : (hm.runner || "host"),
+      bar: tasks.length ? {label: "outcomes", right: `${tasks.length} runs`, parts: [{c: C.task, w: tasksOk.length, t: "ok"}, {c: C.warn, w: timedOut, t: "timed out"}, {c: C.bad, w: Math.max(0, tasksFail.length - timedOut), t: "failed"}]} : null,
+      kv: [["runner", hm.runner || [...runners.keys()][0] || "—"], ["isolation", hm.isolation || "—"],
+           ["avg / max", msN ? `${fmtDur(msSum / msN)} / ${fmtDur(msMax)}` : "—"], ["session", kept ? `keep (${kept})${syncs.size ? " · " + [...syncs].join(",") : ""}` : "ephemeral"],
+           ["egress", egress.size ? [...egress].join(", ") : (netOn ? `network (${netOn})` : "isolated")], ["secrets", secrets.size ? [...secrets].join(", ") : "none"],
+           ["policies", policies.size ? `${policies.size} (${[...policies][0].slice(0, 12)}…)` : "—"], ["transport", hm.transport || "—"]],
+      rate: tasks.length ? {now: String(taskHour), unit: "tasks/hour", avg: (taskSeries.reduce((a, b) => a + b, 0) / N).toFixed(1) + "/5m", max: Math.max(0, ...taskSeries) + "/5m", series: taskSeries} : null,
+      groups: tgroups});
+  }
   const byWho = new Map();
   for (const i of says) { const k = isMe(i) ? "You" : i.name || (i.from === "host" ? "host" : short(i.from)) || "member"; (byWho.get(k) || byWho.set(k, {at: [], me: isMe(i)}).get(k)).at.push(i.time_ms); }
   const lanes = [{group: "Activity"},
-    {label: "All activity", head: true, tall: true, count: items.length, parts: [{c: C.you, at: mine.map(i => i.time_ms)}, {c: C.peer, at: others.map(i => i.time_ms)}, {c: C.join, at: joins.map(i => i.time_ms)}, {c: C.bad, at: refused.map(i => i.time_ms)}, {c: C.ev, at: evs.map(i => i.time_ms)}]},
+    {label: "All activity", head: true, tall: true, count: items.length, parts: [{c: C.you, at: mine.map(i => i.time_ms)}, {c: C.peer, at: others.map(i => i.time_ms)}, {c: C.task, at: tasksOk.map(i => i.time_ms)}, {c: C.bad, at: [...tasksFail, ...refused].map(i => i.time_ms)}, {c: C.join, at: joins.map(i => i.time_ms)}, {c: C.ev, at: evs.map(i => i.time_ms)}]},
     {group: "People"}, ...[...byWho].slice(0, 8).map(([k, v]) => ({label: k, c: v.me ? C.you : C.peer, at: v.at})),
-    {group: "Room"}, {label: "joined", c: C.join, at: joins.map(i => i.time_ms)}, {label: "refused", c: C.bad, at: refused.map(i => i.time_ms), bad: refused.length > 0}, {label: "other", c: C.ev, at: evs.map(i => i.time_ms)}];
+    {group: "Room"},
+    ...(tasks.length ? [{label: "tasks ok", c: C.task, at: tasksOk.map(i => i.time_ms)}, ...(tasksFail.length ? [{label: "tasks failed", c: C.bad, at: tasksFail.map(i => i.time_ms), bad: true}] : [])] : []),
+    {label: "joined", c: C.join, at: joins.map(i => i.time_ms)}, {label: "refused", c: C.bad, at: refused.map(i => i.time_ms), bad: refused.length > 0}, {label: "other", c: C.ev, at: evs.map(i => i.time_ms)}];
   const act = P.activity({id: "activity", icon: INS_ICON.activity, title: "Activity", open: S.ins.activity, meta: `${items.length} · ${P.span(now - t0)}`, range: [t0, now], lanes: items.length ? lanes : []});
-  const steps = items.filter(i => !S.trailKind || cat(i) === S.trailKind).slice(-40).reverse().map(i => { const k = kindOf(i); return {c: k === "say" ? (isMe(i) ? C.you : C.peer) : {join: C.join, refused: C.bad}[k] || C.ev, label: {say: isMe(i) ? "You" : "Say", join: "Join", refused: "Refused", event: "Event"}[k],
-    text: k === "say" ? `${i.name || short(i.from) || "member"}: ${i.text}` : i.text, ms: i.time_ms, detail: k === "say" ? i.text : ""}; });
+  const steps = items.filter(i => !S.trailKind || cat(i) === S.trailKind).slice(-40).reverse().map(i => { const k = kindOf(i); const m = i.meta || {};
+    const taskBits = k === "task" ? [m.runner, m.image, m.ms != null ? fmtDur(m.ms) : "", m.sync ? `sync:${m.sync}` : ""].filter(Boolean).join(" · ") : "";
+    return {c: k === "say" ? (isMe(i) ? C.you : C.peer) : k === "task" ? (taskOk(i) ? C.task : C.bad) : {join: C.join, refused: C.bad}[k] || C.ev,
+      label: {say: isMe(i) ? "You" : "Say", task: taskOk(i) ? "Task" : "Task fail", join: "Join", refused: "Refused", event: "Event"}[k] || "Event",
+      text: k === "say" ? `${i.name || short(i.from) || "member"}: ${i.text}` : taskBits ? `${i.text} (${taskBits})` : i.text, ms: i.time_ms,
+      detail: k === "say" ? i.text : (Object.keys(m).length > 1 ? JSON.stringify(m, null, 2) : "")}; });
   const trail = P.trail({id: "trail", icon: INS_ICON.trail, title: "Trail", open: S.ins.trail === undefined ? false : S.ins.trail, meta: `${steps.length} step${steps.length === 1 ? "" : "s"}${S.trailKind ? ` <button type="button" class="fl" data-kind="${S.trailKind}">${S.trailKind} ✕</button>` : ""}`, steps});
   const fresh = S.since ? items.filter(i => i.time_ms > S.since) : [];
-  const nOth = fresh.filter(i => i.kind === "say" && !isMe(i)).length, nJoin = fresh.filter(i => kindOf(i) === "join").length, nRef = fresh.filter(i => kindOf(i) === "refused").length, nEv = fresh.filter(i => kindOf(i) === "event").length;
-  const banner = fresh.length && (nOth || nJoin || nRef || nEv) ? P.since({title: `Since ${P.clock(S.since)}`, parts: [nOth && {c: C.peer, t: `${nOth} message${nOth === 1 ? "" : "s"}`}, nJoin && {c: C.join, t: `${nJoin} joined`}, nRef && {c: C.bad, t: `${nRef} refused`}, nEv && {c: C.ev, t: `${nEv} event${nEv === 1 ? "" : "s"}`}].filter(Boolean)}) : "";
-  return `<div id="insights" style="display:grid;gap:14px">${banner}${stats}${act}${trail}</div>`;
+  const nOth = fresh.filter(i => i.kind === "say" && !isMe(i)).length, nTask = fresh.filter(i => kindOf(i) === "task").length, nJoin = fresh.filter(i => kindOf(i) === "join").length, nRef = fresh.filter(i => kindOf(i) === "refused").length, nEv = fresh.filter(i => kindOf(i) === "event").length;
+  const banner = fresh.length && (nOth || nTask || nJoin || nRef || nEv) ? P.since({title: `Since ${P.clock(S.since)}`, parts: [nOth && {c: C.peer, t: `${nOth} message${nOth === 1 ? "" : "s"}`}, nTask && {c: C.task, t: `${nTask} task${nTask === 1 ? "" : "s"}`}, nJoin && {c: C.join, t: `${nJoin} joined`}, nRef && {c: C.bad, t: `${nRef} refused`}, nEv && {c: C.ev, t: `${nEv} event${nEv === 1 ? "" : "s"}`}].filter(Boolean)}) : "";
+  return `<div id="insights" style="display:grid;gap:14px">${banner}${stats}${telemCard}${act}${trail}</div>`;
 }
 function peopleInsights(ms) {
   if (!window.PBI) return "";
@@ -511,7 +629,7 @@ function paintInsights() {
 document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
 
 /* ---------- room header (Inspect-style: title, headline numbers, metadata strip) and the Timeline tab ---------- */
-const TL_KINDS = [["all", "All"], ["say", "Messages"], ["join", "Joins"], ["refused", "Refused"], ["identity", "Identity"], ["event", "Events"]];
+const TL_KINDS = [["all", "All"], ["say", "Messages"], ["task", "Tasks"], ["join", "Joins"], ["refused", "Refused"], ["identity", "Identity"], ["event", "Events"]];
 function roomHeader() {
   if (!window.PBI || mode() === "none") return "";
   if (!S.cm && !S.cmLoading) { S.cmLoading = true; loadNotes().finally(() => { S.cmLoading = false; }); }
@@ -530,30 +648,139 @@ function idText(i) {
   const ch = (S.hx && S.hx.changelog || []).find(c => c.type === "identity" && c.seq === i.seq);
   return ch ? ch.text : `identity card posted${n ? ": " + n : ""}`;
 }
+function synthGraphSvg(vals, color, h) {
+  if (!vals || !vals.length) return "";
+  const H = h || 38, mx = Math.max(1, ...vals), n = vals.length;
+  if (n === 1) return `<svg class="fi-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none"><rect x="44" y="4" width="12" height="${H - 6}" rx="2" fill="${color}" opacity=".85"/></svg>`;
+  const bw = Math.max(1.2, 96 / n - 0.8);
+  const bars = vals.map((v, i) => {
+    const bh = Math.max(2, (v / mx) * (H - 6)), x = (2 + (i / n) * 96).toFixed(2), y = (H - bh - 2).toFixed(2);
+    return `<rect x="${x}" y="${y}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" rx="1" fill="${color}" opacity=".82"/>`;
+  }).join("");
+  return `<svg class="fi-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none" aria-hidden="true">${bars}</svg>`;
+}
+function feedAnalytics(items) {
+  const tasks = items.filter(i => kindOf(i) === "task"), tOk = tasks.filter(taskOk), tFail = tasks.filter(i => !taskOk(i));
+  const says = items.filter(i => i.kind === "say" && typeof i.text === "string");
+  const durs = tasks.map(i => i.meta && typeof i.meta.ms === "number" && Number.isFinite(i.meta.ms) ? i.meta.ms : null).filter(v => v !== null);
+  const avgMs = durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : null;
+  const sortedD = durs.slice().sort((a, b) => a - b);
+  const p95Ms = sortedD.length ? sortedD[Math.min(sortedD.length - 1, Math.floor(sortedD.length * 0.95))] : null;
+  let changedFiles = 0, codeBlocks = 0, reasoningMsgs = 0, artifacts = 0, metrics = 0;
+  const commits = new Set(), langs = new Map(), runners = new Map();
+  for (const tk of tasks) {
+    const m = tk.meta || {};
+    if (typeof m.changed_files === "number") changedFiles += m.changed_files;
+    if (m.commit) commits.add(m.commit);
+    if (m.runner) runners.set(m.runner, (runners.get(m.runner) || 0) + 1);
+  }
+  for (const s of says) {
+    const t = s.text;
+    if (t.startsWith("::pbx artifact ")) artifacts++;
+    else if (t.startsWith("::pbx metric ")) metrics++;
+    const fences = [...t.matchAll(/```([a-zA-Z0-9_+-]*)/g)];
+    if (fences.length) {
+      codeBlocks += Math.ceil(fences.length / 2);
+      for (let i = 0; i < fences.length; i += 2) { const lg = (fences[i][1] || "text").toLowerCase(); langs.set(lg, (langs.get(lg) || 0) + 1); }
+    }
+    if (/(^|\n)(#{1,3}\s|[-*]\s|\d+\.\s|```|result:|verdict:|score:|pass|fail|because|therefore)/i.test(t) || t.length > 240) reasoningMsgs++;
+  }
+  return {tasks, tOk, tFail, says, durs, avgMs, p95Ms, changedFiles, commits: commits.size, codeBlocks, reasoningMsgs, artifacts, metrics, langs, runners};
+}
+function feedIntelHtml(items) {
+  if (!items || !items.length) return "";
+  const a = feedAnalytics(items);
+  const passPct = a.tasks.length ? Math.round((a.tOk.length / a.tasks.length) * 100) : null;
+  const topLangs = [...a.langs].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([l, n]) => `${l}:${n}`).join(" · ");
+  const topRunners = [...a.runners].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([r, n]) => `${r} (${n})`).join(" · ");
+  const latChart = a.durs.length ? synthGraphSvg(a.durs.slice(-36), "var(--c-you)", 38) : "";
+  const actBins = window.PBI ? PBI.buckets(items.filter(i => i.time_ms).map(i => i.time_ms), Date.now(), 300e3, 24) : [];
+  const actChart = actBins.length ? synthGraphSvg(actBins, "var(--sig)", 38) : "";
+  const pol = (hosting() && hosting().policy) || S.policy || null;
+  const bud = pol && pol.budget ? pol.budget : null;
+  const burnPct = bud && bud.task_budget ? Math.min(100, Math.round((bud.tasks_started / bud.task_budget) * 100)) : null;
+  const open = S.ins.fintel !== false;
+  return `<details class="fintel" data-ins="fintel" ${open ? "open" : ""}><summary><span>Feed intelligence</span>${passPct != null ? `<span class="ev-chip">${passPct}% pass (${a.tOk.length}/${a.tasks.length})</span>` : ""}${a.avgMs != null ? `<span class="ev-chip">avg ${esc(fmtDur(a.avgMs))}${a.p95Ms != null ? ` · p95 ${esc(fmtDur(a.p95Ms))}` : ""}</span>` : ""}${bud ? `<span class="ev-chip">budget ${bud.tasks_started}/${bud.task_budget}</span>` : ""}${a.codeBlocks || a.changedFiles ? `<span class="ev-chip">${a.codeBlocks} code · ${a.changedFiles} files</span>` : ""}<button type="button" class="btn sm" style="margin-left:auto" data-drill-kind="all">Drill into timeline →</button></summary>
+    <div class="fintel-grid">
+      <div class="fi-card"><div class="fi-h"><span>Execution &amp; Latency</span><span>${a.tasks.length} runs</span></div><div class="fi-v">${passPct != null ? `${passPct}% ok` : "No tasks"}</div>${latChart}<div class="fi-sub">${topRunners || "No runner metadata yet"}${a.tFail.length ? ` · ${a.tFail.length} failed` : ""}</div></div>
+      <div class="fi-card"><div class="fi-h"><span>Budget Burn &amp; Policy</span><span>${pol && pol.policy_digest ? "pol:" + esc(String(pol.policy_digest).slice(0, 8)) : "live"}</span></div><div class="fi-v">${bud ? `${bud.tasks_started} / ${bud.task_budget}` : `${a.tasks.length} tasks`}</div><div style="height:8px;background:var(--dim);border:1px solid var(--line-2);border-radius:3px;overflow:hidden"><div style="height:100%;width:${burnPct ?? 0}%;background:${(burnPct ?? 0) > 85 ? "var(--bad)" : "var(--ok-led)"}"></div></div><div class="fi-sub">${bud ? `${bud.tasks_remaining} remaining · max ${bud.max_concurrent} concurrent · ${bud.max_tasks_per_minute}/min` : "Host policy active"}</div></div>
+      <div class="fi-card"><div class="fi-h"><span>Reasoning &amp; Traces</span><span>${a.says.length} msgs</span></div><div class="fi-v">${a.reasoningMsgs} traces</div>${actChart}<div class="fi-sub">${a.artifacts} artifacts · ${a.metrics} metrics</div></div>
+      <div class="fi-card"><div class="fi-h"><span>Code &amp; Workspace</span><span>${a.commits} commits</span></div><div class="fi-v">${a.changedFiles} files · ${a.codeBlocks} blocks</div><div class="fi-sub">${topLangs || "No fenced code blocks yet"}</div></div>
+    </div></details>`;
+}
+function tlDrillHtml(seq) {
+  const idx = S.feed.findIndex(i => String(i.seq) === String(seq));
+  if (idx < 0) return "";
+  const it = S.feed[idx], k = kindOf(it), m = it.meta || {};
+  const ctx = S.feed.slice(Math.max(0, idx - 3), Math.min(S.feed.length, idx + 4));
+  const codeBlocks = it.kind === "say" && typeof it.text === "string" ? Math.ceil([...it.text.matchAll(/```/g)].length / 2) : 0;
+  const words = it.kind === "say" && typeof it.text === "string" ? it.text.trim().split(/\s+/).filter(Boolean).length : 0;
+  const detail = it.kind === "say"
+    ? `<div class="ev-kv"><div><span>words</span><b>${words}</b></div><div><span>code blocks</span><b>${codeBlocks}</b></div><div><span>author</span><b>${esc(it.name || short(it.from) || "member")}</b></div></div><div class="msg-body" style="padding:8px;background:var(--panel);border:1px solid var(--line)">${window.PBMd && PBMd.feedHtml ? PBMd.feedHtml(it.text) : fallbackFeedHtml(it.text)}</div>`
+    : evMetaGrid(m, [["seq", it.seq], ["kind", k], ["member", it.from ? short(it.from) : "system"]]);
+  const ctxHtml = ctx.map(c => `<div class="${c.seq === it.seq ? "cur" : ""}">#${esc(c.seq)} · ${esc(hhmm(c.time_ms))} · [${esc(kindOf(c))}] ${esc(String(c.text || "").slice(0, 100))}${c.kind === "event" && c.meta ? " " + evBadges(c.meta, true) : ""}</div>`).join("");
+  return `<div class="tl-drill"><div class="tl-drill-hd"><i class="ev-dot ${evDotClass(it)}"></i><span>Drill-in #${esc(it.seq)} · ${esc(k)}</span><span class="mut">${esc(new Date(it.time_ms).toLocaleString())}</span><button type="button" class="btn sm" style="margin-left:auto" data-tl-close>Close</button></div>${detail}<div class="tl-ctx"><span class="mut" style="font-size:10.5px;text-transform:uppercase">Surrounding trace (±3 events)</span>${ctxHtml}</div></div>`;
+}
+function llmSectionHtml() {
+  if (!HUB || !RID || !window.PBI || !PBI.llmPanels) return "";
+  if (!S.llm || S.llm.configured === false) return "";
+  if (S.llm.err) return `<div class="muted" style="font-size:12px;margin:8px 0">Model gateway telemetry unavailable (${esc(S.llm.err)}). <button type="button" class="tbtn" data-llm-refresh>Retry</button></div>`;
+  return `<div style="display:grid;gap:10px;margin:10px 0"><div style="display:flex;align-items:center;gap:8px"><span class="mut mono" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.08em">Model Gateway</span><button type="button" class="tbtn" style="margin-left:auto" data-llm-refresh>Refresh</button></div>${PBI.llmPanels({stats: S.llm.stats, activity: S.llm.activity, logs: S.llm.logs, open: S.ins.llm !== false})}</div>`;
+}
+async function loadLlm(force) {
+  if (!HUB || !RID || S.llmBusy) return;
+  if (!force && S.llm && Date.now() - (S.llmAt || 0) < 15000) return;
+  S.llmBusy = true;
+  try {
+    const base = `/api/rooms/${encodeURIComponent(RID)}/llm`;
+    const [rs, ra, rl] = await Promise.all([
+      gfetch(`${base}/stats?window=1h`),
+      gfetch(`${base}/activity?window=1h`),
+      gfetch(`${base}/logs?limit=50`)
+    ]);
+    if (rs.status === 503 || ra.status === 503 || rl.status === 503) {
+      S.llm = {configured: false};
+    } else if (!rs.ok || !ra.ok || !rl.ok) {
+      S.llm = {configured: true, err: `HTTP ${rs.status}/${ra.status}/${rl.status}`};
+    } else {
+      const [stats, activity, logs] = await Promise.all([rs.json(), ra.json(), rl.json()]);
+      S.llm = {configured: true, stats, activity, logs};
+    }
+    S.llmAt = Date.now();
+    const mount = $("#llm-mount");
+    if (mount) mount.innerHTML = llmSectionHtml();
+  } catch {
+    S.llm = {configured: true, err: "unreachable"};
+    S.llmAt = Date.now();
+  } finally {
+    S.llmBusy = false;
+  }
+}
 function timelineView() {
   if (mode() === "none") return emptyCard("Join or host a room to see its timeline.");
   const P = PBI, now = Date.now(), items = S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms);
   const cat = i => kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
   const cnt = k => k === "all" ? items.length : items.filter(i => cat(i) === k).length;
-  const rows = items.filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q))).slice(0, 300);
+  const rows = items.filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "") + " " + (i.meta ? Object.values(i.meta).flat().join(" ") : "")).toLowerCase().includes(q))).slice(0, 300);
   const by = i => i.kind === "say" ? ((i.from === myId() || (i.from === "host" && hosting())) ? "you" : i.name || short(i.from) || "member") : "system";
   const bins = P.buckets(items.map(i => i.time_ms), now, 600e3, 48), mx = Math.max(1, ...bins);
-  return `<div class="card tl"><h2>Timeline</h2><div class="tlbars" aria-label="events per 10 minutes">${bins.map(v => `<i style="height:${Math.max(2, v / mx * 100)}%"></i>`).join("")}</div>
-    <div class="tlhead"><span class="tlh">History</span>${TL_KINDS.map(([k, l]) => `<button type="button" class="tlc k-${k} ${f === k ? "on" : ""}" data-tlk="${k}">${l} ${cnt(k)}</button>`).join("")}<input type="text" id="tlq" class="tlq" placeholder="filter by text or author" value="${esc(S.tlq || "")}" aria-label="Filter"></div>
+  return `<div class="card tl"><h2>Timeline</h2>${feedIntelHtml(items)}<div id="llm-mount">${llmSectionHtml()}</div>${S.tlDrill != null ? tlDrillHtml(S.tlDrill) : ""}<div class="tlbars" aria-label="events per 10 minutes">${bins.map(v => `<i style="height:${Math.max(2, v / mx * 100)}%"></i>`).join("")}</div>
+    <div class="tlhead"><span class="tlh">History</span>${TL_KINDS.map(([k, l]) => `<button type="button" class="tlc k-${k} ${f === k ? "on" : ""}" data-tlk="${k}">${l} ${cnt(k)}</button>`).join("")}<input type="text" id="tlq" class="tlq" placeholder="filter by text, runner, image, or author" value="${esc(S.tlq || "")}" aria-label="Filter"></div>
     <div class="tlbar"><button type="button" class="tbtn" data-tlx="raw" aria-pressed="${!!S.tlraw}">Raw</button><button type="button" class="tbtn" data-tlx="copy">Copy</button><button type="button" class="tbtn" data-tlx="export">Export .jsonl</button><button type="button" class="tbtn" data-tlx="print">Print</button><span class="mut tlcount">${rows.length} of ${items.length}</span></div>
-    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(idText(i))}${i.seq != null ? ` <button type="button" class="tbtn cmx-b" data-cmev="${i.seq}" title="Comment on this event">${(S.cm?.ev?.[i.seq] || []).length ? "Comments " + S.cm.ev[i.seq].length : "Comment"}</button>` : ""}${cmtHtml(S.cm?.ev?.[i.seq])}${S.cmopen === String(i.seq) ? cmtForm("event:" + i.seq, "Comment on this event") : ""}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
+    ${S.tlraw ? `<pre class="src" style="margin:0">${esc(JSON.stringify(rows, null, 1))}</pre>` : `<div class="tlt"><div class="tlr th"><span>Time</span><span>Kind</span><span>Event</span><span>By</span></div>${rows.length ? rows.map(i => `<div class="tlr"><span>${esc(new Date(i.time_ms).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}))}</span><span><em class="kd k-${cat(i)}">${cat(i)}</em></span><span class="tx">${esc(idText(i))}${i.kind === "event" && i.meta ? " " + evBadges(i.meta, true) : ""}${i.seq != null ? ` <button type="button" class="tbtn" data-drill-seq="${i.seq}">Inspect</button> <button type="button" class="tbtn cmx-b" data-cmev="${i.seq}" title="Comment on this event">${(S.cm?.ev?.[i.seq] || []).length ? "Comments " + S.cm.ev[i.seq].length : "Comment"}</button>` : ""}${cmtHtml(S.cm?.ev?.[i.seq])}${S.cmopen === String(i.seq) ? cmtForm("event:" + i.seq, "Comment on this event") : ""}</span><span>${esc(by(i))}</span></div>`).join("") : `<div class="empty" style="padding:18px">Nothing matches.</div>`}</div>`}</div>`;
 }
 function tlRows() {
   const cat = i => kindOf(i), q = (S.tlq || "").toLowerCase(), f = S.tlk || "all";
   return S.feed.filter(i => i.time_ms).slice().sort((a, b) => b.time_ms - a.time_ms).filter(i => (f === "all" || cat(i) === f) && (!q || (String(i.text || "") + " " + String(i.name || i.from || "")).toLowerCase().includes(q)));
 }
 document.addEventListener("click", async e => {
+  if (e.target.closest("[data-llm-refresh]")) return loadLlm(true);
   let b = e.target.closest("[data-tlk]"); if (b) { S.tlk = b.dataset.tlk; return show("timeline"); }
   b = e.target.closest("[data-tlx]"); if (!b) return;
   const x = b.dataset.tlx;
   if (x === "raw") { S.tlraw = !S.tlraw; return show("timeline"); }
   if (x === "print") return window.print();
-  const lines = tlRows().map(i => JSON.stringify({seq: i.seq, time_ms: i.time_ms, kind: i.kind, from: i.from, name: i.name, text: i.text}));
+  const lines = tlRows().map(i => JSON.stringify({seq: i.seq, time_ms: i.time_ms, kind: i.kind, from: i.from, name: i.name, text: i.text, ...(i.meta ? {meta: i.meta} : {})}));
   if (x === "copy") { try { await navigator.clipboard.writeText(lines.join("\n")); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1500); } catch { b.textContent = "Blocked"; } return; }
   if (x === "export") { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], {type: "application/x-ndjson"})); a.download = `${(ROOM || "room").replace(/[^A-Za-z0-9._-]+/g, "-")}-timeline.jsonl`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
 });
@@ -581,9 +808,71 @@ document.addEventListener("click", e => {
   const i = document.querySelector(".cmx-f input"); if (i) i.focus();
 });
 async function loadNotes() {
-  try { const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"}); const m = r.ok ? await r.json() : {}; S.notes = m.artifacts || []; S.cm = {n: (m.comments || []).length, ev: m.event_comments || {}}; } catch { S.notes = S.notes || []; }
-  if (S.tab === "notes" && !document.activeElement?.closest?.(".nt")) show("notes", true);
+  try {
+    const r = await fetch(BASE + "api/canvas", {cache: "no-store", credentials: "same-origin"});
+    const m = r.ok ? await r.json() : {};
+    S.notes = m.artifacts || [];
+    S.roomMem = m.memory || S.roomMem || {enabled: true, review: false, entries: []};
+    S.handoffs = m.handoffs || S.handoffs || [];
+    S.policy = m.policy || S.policy || null;
+    S.recentTasks = m.tasks || S.recentTasks || [];
+    S.cm = {n: (m.comments || []).length, ev: m.event_comments || {}};
+  } catch { S.notes = S.notes || []; }
+  if (!HUB && mode() !== "none") {
+    const mr = await api("playbox_room_memory", {action: "list"}, true);
+    if (!mr.error && mr.data) S.roomMem = mr.data;
+    const hr = await api("playbox_handoffs", {}, true);
+    if (!hr.error && hr.data && Array.isArray(hr.data.checkpoints)) S.handoffs = hr.data.checkpoints;
+    const pr = await api("playbox_policy", {}, true);
+    if (!pr.error && pr.data) S.policy = pr.data;
+  }
+  if (S.tab === "notes" && !document.activeElement?.closest?.(".nt,.mem-card")) show("notes", true);
   else if (S.tab === "timeline" && !document.activeElement?.closest?.(".cmx-f")) show("timeline", true);
+}
+function taintBadge(e) {
+  const t = e.taint || (e.endorsed || e.author === "host" ? "owner_endorsed" : (e.task_id || e.commit) ? "verified" : "untrusted");
+  if (e.status === "quarantined") return `<span class="chip bad" title="Quarantined by the room owner; excluded from agent recall">quarantined</span>`;
+  if (e.status === "pending") return `<span class="chip warn" title="Waiting for owner review before indexing">pending review</span>`;
+  if (t === "owner_endorsed") return `<span class="chip ok" title="Endorsed by the room owner: agents can recall this fact without prompt-injection taint holds">✓ owner-endorsed</span>`;
+  if (t === "verified") return `<span class="chip" style="color:var(--c-you,#3B82F6);border-color:var(--c-you,#3B82F6)" title="Backed by task/commit provenance">✓ task-verified</span>`;
+  return `<span class="chip warn" title="Written by a peer without owner endorsement: tracked as untrusted by Witness">untrusted / tainted</span>`;
+}
+function roomMemoryCardHtml() {
+  const mem = S.roomMem || {enabled: true, review: false, entries: []};
+  const entries = mem.entries || [];
+  const isOwner = !!hosting() || (S.hx && S.hx.admin);
+  const rows = entries.length ? entries.map(e => {
+    const who = e.author_name || (e.author === "host" ? "host" : short(e.author));
+    return `<div class="stat" style="align-items:flex-start;flex-direction:column;gap:6px">
+      <div class="row" style="width:100%;justify-content:space-between;gap:8px">
+        <span class="row" style="gap:6px"><b>${esc(e.key || e.doc)}</b> ${taintBadge(e)} <span class="mono mut" style="font-size:11.5px">by ${esc(who)}</span></span>
+        <span class="row" style="gap:6px">
+          ${e.task_id ? `<button type="button" class="btn sm" data-replay-task="${esc(e.task_id)}" title="Inspect or replay the task that verified this fact">Task ${esc(short(e.task_id))}</button>` : ""}
+          ${e.commit ? `<span class="ev-chip" title="${esc(e.commit)}">commit:${esc(String(e.commit).slice(0, 8))}</span>` : ""}
+          ${isOwner ? (e.endorsed ? `<button type="button" class="btn sm" data-mem-act="unendorse" data-doc="${esc(e.doc)}">Unendorse</button>` : `<button type="button" class="btn sm primary" data-mem-act="endorse" data-doc="${esc(e.doc)}">Endorse</button>`) : ""}
+          ${isOwner && e.status === "pending" ? `<button type="button" class="btn sm" data-mem-act="accept" data-doc="${esc(e.doc)}">Accept</button>` : ""}
+          ${isOwner && e.status !== "quarantined" ? `<button type="button" class="btn sm danger" data-mem-act="quarantine" data-doc="${esc(e.doc)}">Quarantine</button>` : ""}
+        </span>
+      </div>
+      <div style="font-size:13.5px;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere">${esc(e.text)}</div>
+    </div>`;
+  }).join("") : `<p class="mut" style="margin:0">No facts in shared room memory yet. Agents add facts with <span class="mono">playbox_room_remember</span> and recall verified facts across sessions with <span class="mono">playbox_room_recall</span>.</p>`;
+  return `<div class="card mem-card" style="margin-bottom:14px">
+    <h2>Shared Room Memory · Provenance &amp; Taint <span class="mut" style="font-weight:400">· ${entries.length} fact${entries.length === 1 ? "" : "s"}${mem.review ? " · review required" : ""}</span></h2>
+    <p class="mut" style="margin:0 0 12px;font-size:13px">Facts recorded for the room with author identity, verifying task/commit provenance, and Witness taint tracking. Owner-endorsed facts can be recalled by agents with <span class="mono">trusted_only: true</span> without prompt-injection risk.</p>
+    ${rows}
+    <details style="margin-top:12px"><summary class="lbl" style="cursor:pointer">+ Add fact to Room Memory</summary>
+      <div style="margin-top:10px;display:grid;gap:8px">
+        <div class="grid2">
+          <div><label for="memkey">Key / Topic</label><input type="text" id="memkey" class="mono" placeholder="e.g. db-migrations, test-cmd"></div>
+          <div><label for="memcommit">Verifying Commit or Task ID <span class="mut">(optional)</span></label><input type="text" id="memcommit" class="mono" placeholder="commit sha or task_id"></div>
+        </div>
+        <label for="memtext">Fact / Decision</label>
+        <textarea id="memtext" rows="2" placeholder="Plain verified fact or architectural decision for agents in this room"></textarea>
+        <div class="row"><button type="button" class="btn primary sm" data-act="add-room-memory">${isOwner ? "Save & Endorse Fact" : "Remember Fact"}</button></div>
+      </div>
+    </details>
+  </div>`;
 }
 /* The open note, rendered with the strict markdown module: maths, code colours and links load on demand from the hub's own files. */
 function paintNoteDoc() {
@@ -599,8 +888,9 @@ function hlPatch() {
 }
 function notesView() {
   const arts = S.notes;
-  if (!arts) { loadNotes(); return `<div class="card"><h2>Notes</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
-  if (!arts.length) return `<div class="card empty"><h2>Notes</h2><p>No notes yet. Agents publish proofs, code and documents to the room with <span class="mono">::pbx artifact</span>, and they appear here as files.</p></div>`;
+  if (!arts) { loadNotes(); return `<div class="card"><h2>Notes &amp; Room Memory</h2><p class="mut" style="margin:0">Loading…</p></div>`; }
+  const memCard = roomMemoryCardHtml();
+  if (!arts.length) return `${memCard}<div class="card empty"><h2>Notes</h2><p>No notes yet. Agents publish proofs, code and documents to the room with <span class="mono">::pbx artifact</span>, and they appear here as files.</p></div>`;
   const q = (S.nq || "").toLowerCase(), view = S.nview || "live", cur = arts.find(a => a.id === S.nsel) || arts[0];
   const vis = arts.filter(a => !q || (a.title + " " + a.summary + " " + a.body).toLowerCase().includes(q)), kinds = Object.keys(NK).filter(k => vis.some(a => a.kind === k));
   const tree = kinds.map(k => { const open = S.nopen?.[k] !== false, fs = vis.filter(a => a.kind === k).sort((x, y) => x.title.localeCompare(y.title));
@@ -608,7 +898,7 @@ function notesView() {
   const body = view === "source" ? `<pre class="src">${esc(cur.body || cur.summary || "")}</pre>` : `<div class="doc" id="ndoc"></div>`;
   const checks = (cur.checks || []).map(c => `<span class="chip ${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✕"} ${esc(c.name)}</span>`).join(" ");
   const revs = cur.revs.slice().reverse().map(r => `<div class="rv"><i style="background:${NSTAT[r.status] || "var(--mut)"}"></i><span>${esc(r.status)}</span><span class="tx">${esc(r.summary || "revised")}</span><span class="mono">${esc(PBI.clock(r.ms))}</span></div>`).join("");
-  return `<div class="nt"><aside class="ntree"><div class="nth"><b>notes</b><span class="mono">${arts.length}</span></div><input type="text" id="nq" class="tlq" placeholder="Search notes" value="${esc(S.nq || "")}" aria-label="Search notes"><div class="nfs">${tree || '<p class="mut" style="padding:8px">No match.</p>'}</div></aside>
+  return `${memCard}<div class="nt"><aside class="ntree"><div class="nth"><b>notes</b><span class="mono">${arts.length}</span></div><input type="text" id="nq" class="tlq" placeholder="Search notes" value="${esc(S.nq || "")}" aria-label="Search notes"><div class="nfs">${tree || '<p class="mut" style="padding:8px">No match.</p>'}</div></aside>
     <section class="ndoc"><header><span class="mut">${esc(NK[cur.kind])}</span><span class="mut">/</span><b>${esc(cur.title)}</b><span class="sp"></span><span class="mono mut">${esc(short(cur.last_by || cur.by))} · ${esc(PBI.clock(cur.updated))}</span>
       <div class="seg2">${[["live", "Live"], ["source", "Source"]].map(([k, l]) => `<button data-nview="${k}" aria-pressed="${view === k}">${l}</button>`).join("")}</div></header>
       <div class="nmeta"><span class="chip ${cur.status === "verified" ? "ok" : cur.status === "failed" ? "bad" : "warn"}">${esc(cur.status)}</span>${checks}${cur.ref ? `<span class="mono mut">${esc(cur.ref)}</span>` : ""}</div>
@@ -757,6 +1047,122 @@ async function ensureRepos() {
   if (dl) dl.innerHTML = S.repos.map(x => `<option value="${esc(x.path)}">`).join("");
   if (pk) pk.innerHTML = repoPicksHtml();
 }
+function renderPolicyCard() {
+  const pol = (hosting() && hosting().policy) || S.policy;
+  if (!pol) return "";
+  const lim = pol.limits || {}, bud = pol.budget || {}, caps = Array.isArray(pol.capabilities) ? pol.capabilities : [];
+  const isOwner = !!hosting() || (S.hx && S.hx.admin);
+  const used = bud.tasks_started ?? 0, maxB = bud.task_budget ?? 100000;
+  const pct = maxB ? Math.min(100, Math.round((used / maxB) * 100)) : 0;
+  return `<div class="card"><h2>Live Policy &amp; Budget Guardrails <span class="mono mut" style="font-size:11.5px;font-weight:400">${pol.policy_digest ? `digest ${esc(String(pol.policy_digest).slice(0, 12))}` : ""}</span></h2>
+    <div class="stat"><span>Task budget burn</span><span class="mono">${used} / ${maxB} used · ${bud.tasks_remaining ?? (maxB - used)} left (${bud.inflight ?? 0} running)</span></div>
+    <div style="height:8px;background:var(--dim);border:1px solid var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 12px"><div style="height:100%;width:${pct}%;background:${pct > 85 ? "var(--bad)" : "var(--ok-led)"}"></div></div>
+    ${isOwner ? `<div class="grid2" style="margin-top:8px">
+      <div><label for="pol-cpus">Max CPUs / task</label><input type="number" id="pol-cpus" step="0.5" min="0.1" max="256" value="${esc(lim.cpus ?? 2)}"></div>
+      <div><label for="pol-mem">Max RAM (MiB)</label><input type="number" id="pol-mem" step="128" min="16" value="${esc(lim.mem_mib ?? 1024)}"></div>
+      <div><label for="pol-tmo">Max Timeout (s)</label><input type="number" id="pol-tmo" min="1" value="${esc(lim.timeout_secs ?? 300)}"></div>
+      <div><label for="pol-budget">Room Task Budget</label><input type="number" id="pol-budget" min="1" value="${esc(bud.task_budget ?? 100000)}"></div>
+      <div><label for="pol-conc">Max Concurrent / Member</label><input type="number" id="pol-conc" min="1" value="${esc(bud.max_concurrent ?? 2)}"></div>
+      <div><label for="pol-rate">Max Tasks / Min / Member</label><input type="number" id="pol-rate" min="1" value="${esc(bud.max_tasks_per_minute ?? 30)}"></div>
+    </div>
+    <label for="pol-hosts">Allowed Egress Hosts <span class="mut">(comma-separated)</span></label>
+    <input type="text" id="pol-hosts" class="mono" value="${esc((lim.allowed_hosts || []).join(", "))}" placeholder="github.com, api.github.com, pypi.org">
+    <div class="grid2">
+      <div><label for="pol-secrets">Allowed Secret Scopes</label><input type="text" id="pol-secrets" class="mono" value="${esc((lim.allowed_secrets || []).join(", "))}" placeholder="OPENAI_API_KEY"></div>
+      <div><label for="pol-egress">Allowed Egress Upstreams</label><input type="text" id="pol-egress" class="mono" value="${esc((lim.allowed_egress || []).join(", "))}" placeholder="openai, anthropic"></div>
+    </div>
+    <label class="switch"><input type="checkbox" id="pol-net" ${lim.network ? "checked" : ""}><span>Allow unrestricted task network</span></label>
+    <label class="switch"><input type="checkbox" id="pol-memrev" ${pol.memory_review ? "checked" : ""}><span>Hold member Room Memory entries for owner review</span></label>
+    ${caps.length ? `<div style="margin-top:10px"><span class="lbl">Capability Approval Rules</span><div class="row" style="gap:12px;margin-top:6px">${caps.map(c => `<label class="switch" style="margin:0"><input type="checkbox" data-pol-cap="${esc(c.name)}" ${c.approval ? "checked" : ""}><span><code class="mono">${esc(c.name)}</code> requires approval</span></label>`).join("")}</div></div>` : ""}
+    <p style="margin:14px 0 0"><button type="button" class="btn primary" data-act="save-policy">Apply Live Guardrails (Passkey Step-Up)</button></p>`
+    : `<div class="stat"><span>Task limits</span><span class="mono">${esc(lim.cpus ?? 2)} CPU · ${esc(lim.mem_mib ?? 1024)} MiB · ${esc(lim.timeout_secs ?? 300)}s</span></div>
+      <div class="stat"><span>Allowed hosts</span><span class="mono">${(lim.allowed_hosts || []).length ? esc(lim.allowed_hosts.join(", ")) : "none"}</span></div>
+      <div class="stat"><span>Memory review</span><span>${pol.memory_review ? "required" : "open"}</span></div>`}
+  </div>`;
+}
+function renderReplayCard() {
+  const rv = S.replayView;
+  const feedTasks = S.feed.filter(i => kindOf(i) === "task" && i.meta && (i.meta.task_id || i.meta.cmd_hash)).slice(-12).reverse();
+  const listHtml = feedTasks.length ? feedTasks.map(i => {
+    const m = i.meta || {}, tid = m.task_id || m.cmd_hash;
+    return `<div class="stat" style="align-items:center">
+      <span class="mono" style="font-size:12px"><b>#${esc(i.seq)}</b> · ${esc(m.program || "sh")} · ${m.cmd_hash ? `cmd:${esc(m.cmd_hash.slice(0, 8))}` : ""} ${m.base_commit || m.commit ? `@ ${esc(String(m.base_commit || m.commit).slice(0, 8))}` : ""} ${m.policy_digest ? `· pol:${esc(String(m.policy_digest).slice(0, 8))}` : ""}</span>
+      <span class="row" style="gap:6px">
+        <button type="button" class="btn sm" data-replay-task="${esc(tid)}">Inspect Diff</button>
+        <button type="button" class="btn sm primary" data-replay-task="${esc(tid)}" data-replay-run="1">Replay &amp; Verify</button>
+      </span>
+    </div>`;
+  }).join("") : `<p class="mut" style="margin:0">Run a task first; every task records <span class="mono">cmd_hash</span>, <span class="mono">policy_digest</span>, <span class="mono">base_commit</span>, and <span class="mono">patch_hash</span> for one-click diff inspection and deterministic replay.</p>`;
+  let detailHtml = "";
+  if (rv) {
+    const tk = rv.replay || rv.task || rv.original || {};
+    const vf = rv.verification;
+    detailHtml = `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <span class="row" style="gap:6px">
+          <b class="mono">Task ${esc(short(tk.task_id || ""))}</b>
+          ${vf ? `<span class="chip ${vf.reproducible ? "ok" : "bad"}">${vf.reproducible ? "✓ Reproducible" : "✕ Diverged"}</span>
+            <span class="chip ${vf.patch_match ? "ok" : "bad"}">patch ${vf.patch_match ? "✓" : "✕"}</span>
+            <span class="chip ${vf.policy_match ? "ok" : "bad"}">policy ${vf.policy_match ? "✓" : "✕"}</span>
+            <span class="chip ${vf.cmd_hash_match ? "ok" : "bad"}">cmd ${vf.cmd_hash_match ? "✓" : "✕"}</span>
+            <span class="chip ${vf.exit_match ? "ok" : "bad"}">exit ${vf.exit_match ? "✓" : "✕"}</span>` : `<span class="chip">${tk.exit_code === 0 ? "exit 0" : "exit " + (tk.exit_code ?? "—")}</span>`}
+        </span>
+        <span class="row" style="gap:6px">
+          ${tk.task_id ? `<button type="button" class="btn sm primary" data-replay-task="${esc(tk.task_id)}" data-replay-run="1">Re-run &amp; Verify</button>` : ""}
+          <button type="button" class="btn sm" data-act="close-replay">Close</button>
+        </span>
+      </div>
+      <div class="ev-kv" style="margin-bottom:8px">
+        <div><span>base_commit</span><b>${esc(short(tk.base_commit || tk.commit || "—"))}</b></div>
+        <div><span>cmd_hash</span><b>${esc(tk.cmd_hash || "—")}</b></div>
+        <div><span>policy_digest</span><b>${esc(short(tk.policy_digest || "—"))}</b></div>
+        <div><span>patch_hash</span><b>${esc(short(tk.patch_hash || "—"))}</b></div>
+      </div>
+      ${tk.stdout ? `<label>Stdout</label><pre>${esc(tk.stdout)}</pre>` : ""}
+      ${tk.patch ? renderPatchView(tk.patch, tk.patch_bytes, tk.patch_truncated) : `<p class="mut" style="margin:6px 0 0">No files modified (empty diff).</p>`}
+    </div>`;
+  }
+  return `<div class="card" id="replay-card"><h2>Diff &amp; Verifiable Run Replay</h2>${listHtml}${detailHtml}</div>`;
+}
+function renderHandoffsCard() {
+  const list = S.handoffs || [];
+  const rows = list.length ? list.slice(0, 8).map(h => {
+    const bud = h.budget_remaining || {};
+    return `<div class="stat" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div class="row" style="width:100%;justify-content:space-between">
+        <span class="row" style="gap:6px"><b class="mono">${esc(h.id)}</b> <span class="chip ok">✓ signed</span> <span class="mono">${esc(h.branch || "main")}${h.base_commit ? " @ " + esc(String(h.base_commit).slice(0, 8)) : ""}</span>${h.to ? `<span class="chip">→ ${esc(h.to)}</span>` : ""}</span>
+        ${joined() ? `<button type="button" class="btn sm primary" data-handoff-resume="${esc(h.id)}">Resume Branch</button>` : ""}
+      </div>
+      <div style="font-size:13.5px;color:var(--ink)">${esc(h.summary || "")}</div>
+      <div class="row" style="gap:6px;font-size:11.5px">
+        ${(h.open_cards || []).length ? `<span class="ev-chip">cards: ${esc(h.open_cards.join(", "))}</span>` : ""}
+        ${(h.verified_artifacts || []).length ? `<span class="ev-chip">verified: ${esc(h.verified_artifacts.join(", "))}</span>` : ""}
+        ${(h.failed_checks || []).length ? `<span class="ev-chip sec">failed: ${esc(h.failed_checks.join(", "))}</span>` : ""}
+        ${bud.tasks_remaining != null ? `<span class="ev-chip">${esc(bud.tasks_remaining)} tasks left</span>` : ""}
+      </div>
+    </div>`;
+  }).join("") : `<p class="mut" style="margin:0">No handoff checkpoints yet. Publish a structured checkpoint to hand off your branch, open cards, verified artifacts, and remaining budget to another agent or human.</p>`;
+  return `<div class="card"><h2>Cross-Agent Handoffs · Structured Checkpoints</h2>${rows}
+    <details style="margin-top:12px"><summary class="lbl" style="cursor:pointer">+ Publish Handoff Checkpoint</summary>
+      <div style="margin-top:10px;display:grid;gap:8px">
+        <div class="grid2">
+          <div><label for="ho-branch">Branch</label><input type="text" id="ho-branch" class="mono" value="main"></div>
+          <div><label for="ho-to">Target Agent / Owner <span class="mut">(optional)</span></label><input type="text" id="ho-to" placeholder="e.g. Claude, Hermes, reviewer"></div>
+        </div>
+        <label for="ho-sum">Checkpoint Summary &amp; Next Steps</label>
+        <textarea id="ho-sum" rows="2" placeholder="What was verified, what remains, and where the next agent should start"></textarea>
+        <div class="grid2">
+          <div><label for="ho-cards">Open Cards <span class="mut">(comma-separated)</span></label><input type="text" id="ho-cards" class="mono" placeholder="swe-2, swe-3"></div>
+          <div><label for="ho-arts">Verified Artifacts</label><input type="text" id="ho-arts" class="mono" placeholder="swe-charter"></div>
+        </div>
+        <label for="ho-fails">Failed Checks / Blockers <span class="mut">(optional)</span></label>
+        <input type="text" id="ho-fails" class="mono" placeholder="none">
+        ${joined() ? `<label class="switch"><input type="checkbox" id="ho-push" checked><span>Push my workspace branch to the room before publishing</span></label>` : ""}
+        <div><button type="button" class="btn primary sm" data-act="publish-handoff">Sign &amp; Publish Checkpoint</button></div>
+      </div>
+    </details>
+  </div>`;
+}
 function renderRunLive() {
   const info = S.runInfo;
   if (!info) return "";
@@ -809,6 +1215,7 @@ const VIEWS = {
       </div>`);
     }
     if (m !== "none") parts.push(insights() || '<div id="insights"></div>');
+    if (m !== "none" && (hosting() || S.policy)) parts.push(renderPolicyCard());
     if (hosting()) {
       const h = hosting();
       parts.push(`<div class="card"><h2>You host ${ROOM ? qn() : "this room"}</h2>
@@ -836,8 +1243,11 @@ const VIEWS = {
 
   feed() {
     if (mode() === "none") return emptyCard("Join or host a room to see its feed.");
+    const fb = S.feedBucket || "all";
     return `<div class="legend"><span><i style="background:var(--ink)"></i>You</span><span><i style="background:var(--sig)"></i>Other members: untrusted text, the witness watches it</span></div>
-      <div class="row" style="gap:8px;margin:0 0 10px"><input type="search" id="feedq" value="${esc(S.feedQ || "")}" placeholder="Filter messages or @member…  (/)" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;width:auto;margin:0;padding:6px 10px;font-size:12.5px"><span class="mut mono" id="feedqmeta" style="font-size:11.5px"></span><button type="button" class="btn sm" id="feedqclear" ${S.feedQ ? "" : "hidden"}>Clear</button></div>
+      <div id="feedintel"></div>
+      <div class="fb-bar" role="group" aria-label="Feed buckets">${[["all", "All"], ["say", "Messages"], ["task", "Tasks"], ["room", "Room"]].map(([k, l]) => `<button type="button" class="btn sm ${fb === k ? "on" : ""}" data-fbucket="${k}">${l}</button>`).join("")}</div>
+      <div class="row" style="gap:8px;margin:0 0 10px"><input type="search" id="feedq" value="${esc(S.feedQ || "")}" placeholder="Filter messages, runner, image, or @member…  (/)" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;width:auto;margin:0;padding:6px 10px;font-size:12.5px"><span class="mut mono" id="feedqmeta" style="font-size:11.5px"></span><button type="button" class="btn sm" id="feedqclear" ${S.feedQ ? "" : "hidden"}>Clear</button></div>
       <div class="feed" id="feedlist"></div>
       <div class="quick" role="group" aria-label="Quick replies">${QUICK.map(q => `<button type="button" data-act="quick" data-text="${esc(q)}">${esc(q)}</button>`).join("")}</div>
       <div class="tags" id="tags" role="group" aria-label="Tag someone"></div>
@@ -846,10 +1256,11 @@ const VIEWS = {
   },
 
   work() {
-    if (!joined()) return emptyCard(hosting()
-      ? "Members run tasks on your machine from their own Playbox. To run one yourself, join a room as a guest."
-      : "Join a room to pull code and run sandboxed tasks.");
+    if (mode() === "none") return emptyCard("Join or host a room to inspect diffs, replay tasks, and manage handoffs.");
     const w = S.lastWork;
+    if (!joined()) {
+      return `<div id="workhdr">${workHeader(w)}</div><div class="wk">${renderReplayCard()}${renderHandoffsCard()}</div>`;
+    }
     return `<div id="workhdr">${workHeader(w)}</div><div class="wk"><div class="card"><h2>Sync code</h2>
         <label for="ref">Branch</label><input type="text" id="ref" value="main" class="mono" autocapitalize="off" spellcheck="false">
         <label class="switch"><input type="checkbox" id="checkout" checked><span>Check it out in my folder</span></label>
@@ -865,6 +1276,7 @@ const VIEWS = {
         <label class="switch"><input type="checkbox" id="net"><span>Allow network <span class="mut">(if your grant permits)</span></span></label>
         <label class="switch"><input type="checkbox" id="apply" checked><span>Apply the resulting patch to my folder</span></label>
         <p style="margin:14px 0 0"><button class="btn primary block" data-act="run" id="runbtn">Run in sandbox</button></p></div>
+      ${renderReplayCard()}${renderHandoffsCard()}
       </div><div id="runlive">${renderRunLive()}</div><div id="result">${w ? renderResult(w) : ""}</div>`;
   },
 
@@ -1058,10 +1470,137 @@ function insertTag(tag) {
   inp.value = `${b}@${tag} ${after}`;
   const np = b.length + tag.length + 2; inp.focus(); inp.setSelectionRange(np, np); paintTags();
 }
+function evBadges(meta, compact) {
+  if (!meta || typeof meta !== "object") return "";
+  const chips = [];
+  if (meta.runner) chips.push(`<span class="ev-chip">${esc(meta.runner)}</span>`);
+  if (meta.isolation) chips.push(`<span class="ev-chip">${esc(meta.isolation)}</span>`);
+  if (meta.image) chips.push(`<span class="ev-chip">${esc(meta.image)}</span>`);
+  if (typeof meta.ms === "number" && Number.isFinite(meta.ms)) chips.push(`<span class="ev-chip">${esc(fmtDur(meta.ms))}</span>`);
+  if (meta.keep) chips.push(`<span class="ev-chip">${meta.sync ? "keep/" + esc(meta.sync) : "keep"}</span>`);
+  else if (meta.warm) chips.push(`<span class="ev-chip">warm</span>`);
+  if (!compact) {
+    if (meta.transport) chips.push(`<span class="ev-chip">${esc(meta.transport)}</span>`);
+    if (Array.isArray(meta.egress) && meta.egress.length) chips.push(`<span class="ev-chip sec">egress:${esc(meta.egress.join(","))}</span>`);
+    if (Array.isArray(meta.secrets) && meta.secrets.length) chips.push(`<span class="ev-chip sec">secrets:${esc(meta.secrets.join(","))}</span>`);
+    if (meta.policy_digest) chips.push(`<span class="ev-chip" title="${esc(meta.policy_digest)}">policy:${esc(String(meta.policy_digest).slice(0, 12))}</span>`);
+    if (meta.changed_files) chips.push(`<span class="ev-chip">${esc(meta.changed_files)} changed</span>`);
+  }
+  return chips.join(" ");
+}
+function evMetaGrid(meta, extra) {
+  const rows = [];
+  const add = (k, v) => { if (v !== undefined && v !== null && v !== "") rows.push([k, Array.isArray(v) ? v.join(", ") : String(v)]); };
+  for (const [k, v] of extra || []) add(k, v);
+  if (meta && typeof meta === "object") {
+    for (const [k, label] of [["runner", "runner"], ["isolation", "isolation"], ["image", "image"], ["program", "program"], ["args", "arg count"],
+      ["exit_code", "exit code"], ["timed_out", "timed out"], ["ms", "duration"], ["base", "base"], ["branch", "branch"], ["commit", "commit"],
+      ["keep", "session keep"], ["warm", "warm"], ["sync", "sync mode"], ["cpus", "cpus"], ["mem_mib", "mem (MiB)"], ["timeout_secs", "timeout (s)"],
+      ["network", "network"], ["egress", "egress"], ["secrets", "secrets"], ["policy_digest", "policy"], ["cmd_hash", "cmd hash"],
+      ["changed_files", "changed files"], ["transport", "transport"], ["version", "version"], ["scratch_quota_mib", "scratch (MiB)"],
+      ["bytes", "bytes"], ["reason", "reason"]]) {
+      if (meta[k] === undefined || meta[k] === null) continue;
+      if (k === "ms") add(label, fmtDur(meta[k]));
+      else if (k === "commit") add(label, String(meta[k]).slice(0, 12));
+      else add(label, meta[k]);
+    }
+  }
+  return rows.length ? `<div class="ev-kv">${rows.map(([k, v]) => `<div><span>${esc(k)}</span><b title="${esc(v)}">${esc(v)}</b></div>`).join("")}</div>` : "";
+}
+function evDotClass(it) {
+  const k = kindOf(it), m = it.meta || {};
+  if (k === "refused" || (k === "task" && !taskOk(it))) return m.timed_out ? "warn" : "bad";
+  if (k === "join" || (k === "task" && taskOk(it))) return "ok";
+  return "";
+}
+function bucketKey(it) {
+  if (it.kind !== "event") return null;
+  const m = it.meta || {};
+  return `${it.from || ""}|${it.text || ""}|${m.event || ""}|${m.runner || ""}|${m.image || ""}|${m.ok ?? ""}|${m.keep ?? ""}|${m.sync || ""}`;
+}
+function groupFeedItems(items) {
+  const out = [];
+  for (const it of items) {
+    const bk = bucketKey(it);
+    const prev = out[out.length - 1];
+    if (bk && prev && prev._grp && prev.key === bk) {
+      prev.items.push(it);
+    } else if (bk) {
+      out.push({_grp: true, key: bk, items: [it]});
+    } else {
+      out.push(it);
+    }
+  }
+  return out;
+}
+function feedGroupHtml(g) {
+  if (!g._grp) return feedItemHtml(g);
+  const items = g.items, first = items[0], last = items[items.length - 1];
+  if (items.length === 1) return feedItemHtml(first);
+  const m = first.meta || {};
+  const durs = items.map(i => i.meta && typeof i.meta.ms === "number" && Number.isFinite(i.meta.ms) ? i.meta.ms : null).filter(v => v !== null);
+  const avgMs = durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : null;
+  const maxMs = durs.length ? Math.max(...durs) : null;
+  const totMs = durs.length ? durs.reduce((a, b) => a + b, 0) : null;
+  const tSpan = hhmm(first.time_ms) === hhmm(last.time_ms) ? hhmm(first.time_ms) : `${hhmm(first.time_ms)}–${hhmm(last.time_ms)}`;
+  const badges = evBadges({...m, ms: undefined}, false);
+  const durBadge = avgMs != null ? `<span class="ev-chip">avg ${esc(fmtDur(avgMs))} · tot ${esc(fmtDur(totMs))}</span>` : "";
+  const whoChip = first.from ? `<span class="ev-chip">${esc(short(first.from))}</span>` : "";
+  const extra = [["runs", items.length], ["member", first.from ? short(first.from) : "system"],
+    ...(avgMs != null ? [["avg / max", `${fmtDur(avgMs)} / ${fmtDur(maxMs)}`], ["total time", fmtDur(totMs)]] : [])];
+  const runsHtml = items.slice(-60).reverse().map(i => {
+    const im = i.meta || {}, rtid = im.task_id || im.cmd_hash || "";
+    const bits = [im.ms != null ? fmtDur(im.ms) : "", im.cmd_hash ? `#${im.cmd_hash.slice(0, 8)}` : "", im.changed_files ? `${im.changed_files}f` : "", im.commit ? im.commit.slice(0, 8) : "", im.policy_digest ? `pol:${String(im.policy_digest).slice(0, 8)}` : ""].filter(Boolean).join(" · ");
+    return `<div class="ev-run"><span class="seq">#${esc(i.seq)}</span><span>${esc(new Date(i.time_ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"}))}</span><span>${esc(i.text)}</span>${bits ? `<span class="mut">${esc(bits)}</span>` : ""}<span style="margin-left:auto;display:inline-flex;gap:4px">${rtid ? `<button type="button" class="tbtn" data-replay-task="${esc(rtid)}">Diff &amp; Replay</button>` : ""}<button type="button" class="tbtn" data-drill-seq="${esc(i.seq)}">Timeline →</button></span></div>`;
+  }).join("");
+  const spark = durs.length > 1 ? `<span class="ev-spark">${synthGraphSvg(durs.slice(-20), "var(--c-you)", 16)}</span>` : "";
+  const bkey = `${first.seq}-${g.key}`;
+  return `<details class="sys-grp" data-bkey="${esc(bkey)}"><summary><i class="ev-dot ${evDotClass(first)}"></i><span class="ev-cnt">×${items.length}</span><span>${esc(first.text)}</span>${whoChip}${badges}${durBadge}${spark}<span class="ev-tm">${esc(tSpan)}</span></summary><div class="ev-body">${evMetaGrid(m, extra)}<div class="ev-runs">${runsHtml}${items.length > 60 ? `<div class="mut">Showing latest 60 of ${items.length} runs</div>` : ""}</div></div></details>`;
+}
+function parsePbx(text) {
+  if (typeof text !== "string" || !text.startsWith("::pbx ")) return null;
+  const rest = text.slice(6), sp = rest.indexOf(" ");
+  if (sp < 1) return null;
+  const kind = rest.slice(0, sp);
+  if (!["metric", "artifact", "card", "comment", "agent"].includes(kind)) return null;
+  try { const d = JSON.parse(rest.slice(sp + 1)); return d && typeof d === "object" && !Array.isArray(d) ? {kind, d} : null; } catch { return null; }
+}
+function pbxItemHtml(it, pbx) {
+  const {kind, d} = pbx;
+  const who = it.name || (it.from === "host" ? "host" : short(it.from)) || "member";
+  const tm = hhmm(it.time_ms);
+  const stCls = s => s === "verified" || s === "done" ? "ok" : s === "failed" ? "bad" : s === "checking" || s === "doing" || s === "review" ? "warn" : "";
+  if (kind === "metric") {
+    const val = typeof d.value === "number" && Number.isFinite(d.value) ? d.value : String(d.value ?? "");
+    return `<div class="pbx-metric"><span class="ev-chip">metric</span><span>${esc(d.name || "metric")}</span><b>${esc(val)}${d.unit ? " " + esc(d.unit) : ""}</b><span class="ev-chip">${esc(who)}</span><span class="ev-tm">${esc(tm)}</span></div>`;
+  }
+  if (kind === "artifact") {
+    const st = String(d.status || "draft"), parts = String(d.summary || "").split("·").map(s => s.trim()).filter(Boolean);
+    const checks = Array.isArray(d.checks) ? d.checks.slice(0, 8).map(c => `<span class="ev-chip">${c && c.ok ? "✓" : "✕"} ${esc(c && c.name || "check")}</span>`).join("") : "";
+    return `<div class="pbx-card st-${esc(st)}"><div class="pbx-hd"><span class="ev-chip">${esc(d.kind || "artifact")}</span><span class="pbx-ttl">${esc(d.title || d.id || "Artifact")}</span><span class="pbx-st ${stCls(st)}">${esc(st)}</span><span class="ev-chip">${esc(who)}</span><span class="ev-tm">${esc(tm)}</span></div>${parts.length ? `<div class="pbx-stats">${parts.map(p => `<span class="ev-chip">${esc(p)}</span>`).join("")}${checks}</div>` : ""}${d.body ? `<div class="msg-body">${window.PBMd && PBMd.feedHtml ? PBMd.feedHtml(String(d.body).slice(0, 1200)) : fallbackFeedHtml(String(d.body).slice(0, 1200))}</div>` : ""}</div>`;
+  }
+  if (kind === "card") {
+    const col = String(d.col || "todo");
+    return `<div class="pbx-card st-${esc(col)}"><div class="pbx-hd"><span class="ev-chip">card</span><span class="pbx-ttl">${esc(d.title || d.id || "Task")}</span><span class="pbx-st ${stCls(col)}">${esc(col)}</span>${d.owner ? `<span class="ev-chip">@${esc(d.owner)}</span>` : ""}<span class="ev-chip">${esc(who)}</span><span class="ev-tm">${esc(tm)}</span></div>${d.note ? `<div class="fi-sub">${esc(d.note)}</div>` : ""}</div>`;
+  }
+  if (kind === "comment") {
+    return `<div class="pbx-card"><div class="pbx-hd"><span class="ev-chip">comment</span><span>on ${esc(d.on || "item")}</span><span class="ev-chip">${esc(who)}</span><span class="ev-tm">${esc(tm)}</span></div><div class="msg-body">${esc(d.text || "")}</div></div>`;
+  }
+  return `<div class="pbx-card"><div class="pbx-hd"><span class="ev-chip">agent</span><span class="pbx-ttl">${esc(d.name || who)}</span>${d.harness ? `<span class="ev-chip">${esc(d.harness)}</span>` : ""}${d.model ? `<span class="ev-chip">${esc(d.model)}</span>` : ""}<span class="ev-tm">${esc(tm)}</span></div>${d.role ? `<div class="fi-sub">${esc(d.role)}</div>` : ""}</div>`;
+}
 function feedItemHtml(it) {
   if (it.kind === "say" && typeof it.text === "string" && it.text.startsWith("::pbx launch ")) return `<div class="sys">the host recorded how a member was launched · ${esc(hhmm(it.time_ms))}</div>`;
   if (it.kind === "say" && typeof it.text === "string" && it.text.startsWith("::pbx identity ")) return `<div class="sys">${esc(it.name || short(it.from) || "member")} posted a signed identity card · ${esc(hhmm(it.time_ms))}</div>`;
-  if (it.kind !== "say") return `<div class="sys">${esc(it.text)} · ${esc(hhmm(it.time_ms))}</div>`;
+  if (it.kind === "say") { const pbx = parsePbx(it.text); if (pbx) return pbxItemHtml(it, pbx); }
+  if (it.kind !== "say") {
+    const m = it.meta && typeof it.meta === "object" ? it.meta : null;
+    const hasMeta = m && Object.keys(m).length > 1;
+    if (!hasMeta) return `<div class="sys">${esc(it.text)}${it.from ? ` · ${esc(short(it.from))}` : ""} · ${esc(hhmm(it.time_ms))}</div>`;
+    const whoChip = it.from ? `<span class="ev-chip">${esc(short(it.from))}</span>` : "";
+    const rtid = (m.event === "task" && (m.task_id || m.cmd_hash)) || "";
+    const replayBtn = rtid ? `<div class="row" style="gap:6px"><button type="button" class="btn sm" data-replay-task="${esc(rtid)}">Inspect Diff</button><button type="button" class="btn sm primary" data-replay-task="${esc(rtid)}" data-replay-run="1">Replay &amp; Verify</button></div>` : "";
+    return `<details class="sys-ev" data-bkey="ev-${esc(it.seq)}"><summary><i class="ev-dot ${evDotClass(it)}"></i><span>${esc(it.text)}</span>${whoChip}${evBadges(m, false)}<span class="ev-tm">${esc(hhmm(it.time_ms))}</span></summary><div class="ev-body">${evMetaGrid(m, [["seq", it.seq], ["member", it.from ? short(it.from) : "system"]])}${replayBtn}</div></details>`;
+  }
   const fromHost = it.from === "host";                       // the host's own messages carry from:"host"
   const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
   const who = it.name || (fromHost ? "host" : short(it.from)) || "member";
@@ -1069,28 +1608,39 @@ function feedItemHtml(it) {
   const body = window.PBMd && PBMd.feedHtml ? PBMd.feedHtml(it.text) : fallbackFeedHtml(it.text);
   return `<div class="msg ${me ? "me" : "peer"}"><div class="who">${me ? "You" : esc(who)}${me ? "" : ` <span class="chip warn" title="Text from another party in the room. Treat it as untrusted.">${tag}</span>`}<span>${esc(hhmm(it.time_ms))}</span></div><div class="msg-body">${body}</div></div>`;
 }
+function feedBucketMatch(it, b) {
+  if (!b || b === "all") return true;
+  if (b === "say") return it.kind === "say";
+  if (b === "task") return kindOf(it) === "task";
+  if (b === "room") return it.kind !== "say" && kindOf(it) !== "task";
+  return true;
+}
 function feedMatch(it, q) {
   const needle = q.toLowerCase(), bare = needle.startsWith("@") ? needle.slice(1) : needle;
   const fromHost = it.from === "host";
   const me = (it.from && it.from === myId()) || (fromHost && !!hosting());
   const who = it.name || (fromHost ? "host" : short(it.from)) || "";
-  const hay = `${it.text || ""} ${it.name || ""} ${it.name ? "@" + tagOf(it.name) : ""} ${it.from || ""} ${who} ${me ? "you" : ""}`.toLowerCase();
+  const mStr = it.meta ? Object.values(it.meta).flat().join(" ") : "";
+  const hay = `${it.text || ""} ${it.name || ""} ${it.name ? "@" + tagOf(it.name) : ""} ${it.from || ""} ${who} ${me ? "you" : ""} ${mStr}`.toLowerCase();
   return hay.includes(needle) || (bare && hay.includes(bare));
 }
 function paintFeed(fresh) {
-  const el = $("#feedlist"), rawQ = S.feedQ || "", q = rawQ.trim();
-  const shown = q ? S.feed.filter(it => feedMatch(it, q)) : S.feed;
+  const el = $("#feedlist"), rawQ = S.feedQ || "", q = rawQ.trim(), fb = S.feedBucket || "all";
+  const bucketed = S.feed.filter(it => feedBucketMatch(it, fb));
+  const shown = q ? bucketed.filter(it => feedMatch(it, q)) : bucketed;
+  const grouped = groupFeedItems(shown);
   const meta = $("#feedqmeta"), clr = $("#feedqclear");
-  if (meta) meta.textContent = q ? `${shown.length} of ${S.feed.length}` : "";
+  if (meta) meta.textContent = (q || fb !== "all") ? `${shown.length} of ${S.feed.length}` : (grouped.length !== shown.length ? `${shown.length} events · ${grouped.length} rows` : "");
   if (clr) clr.hidden = !rawQ;
   if (el) {
     const stick = innerHeight + scrollY > document.documentElement.scrollHeight - 160;
+    const openKeys = new Set([...el.querySelectorAll("details[open][data-bkey]")].map(d => d.dataset.bkey));
     if (fresh && hasSelectionIn(el)) {
-      const freshShown = q ? fresh.filter(it => feedMatch(it, q)) : fresh;
+      const freshShown = fresh.filter(it => feedBucketMatch(it, fb) && (!q || feedMatch(it, q)));
       if (freshShown.length) {
         el.querySelector(".empty")?.remove();
         const startIdx = el.children.length;
-        el.insertAdjacentHTML("beforeend", freshShown.map(feedItemHtml).join(""));
+        el.insertAdjacentHTML("beforeend", groupFeedItems(freshShown).map(feedGroupHtml).join(""));
         if (window.PBMd && PBMd.need && PBMd.upgrade) {
           const joinedText = freshShown.filter(i => i.kind === "say" && typeof i.text === "string" && i.text.includes("```")).map(i => i.text).join("\n");
           if (joinedText) Promise.resolve(PBMd.need(joinedText)).then(() => {
@@ -1100,24 +1650,30 @@ function paintFeed(fresh) {
         }
       }
     } else {
-      el.innerHTML = shown.length ? shown.map(feedItemHtml).join("") : q ? `<div class="empty">No messages match "${esc(S.feedQ)}".</div>` : `<div class="empty">No messages yet. Say hello.</div>`;
+      el.innerHTML = grouped.length ? grouped.map(feedGroupHtml).join("") : q ? `<div class="empty">No messages match "${esc(S.feedQ)}".</div>` : `<div class="empty">No messages yet. Say hello.</div>`;
+      if (openKeys.size) el.querySelectorAll("details[data-bkey]").forEach(d => { if (openKeys.has(d.dataset.bkey)) d.open = true; });
       upgradeFeedCode(el, shown);
       if (stick && fresh !== false) scrollTo({top: document.documentElement.scrollHeight});
     }
   }
+  const intelEl = $("#feedintel");
+  if (intelEl) intelEl.innerHTML = feedIntelHtml(S.feed);
   paintTags(); paintPulse();
 }
 function paintPulse() {
   const p = $("#pulse");
   if (hasSelectionIn(p)) return;
-  const last = S.feed.slice(-8);
+  const last = groupFeedItems(S.feed).slice(-8);
+  const tasks = S.feed.filter(i => kindOf(i) === "task");
+  const tOk = tasks.filter(taskOk).length;
   p.innerHTML = `<div class="brand" style="margin-bottom:18px"><b></b> Pulse</div>
     <div class="card" style="margin-bottom:14px"><h2>Room</h2>
       <div class="stat"><span>State</span><span>${{none: "No room", host: "Hosting", guest: "Guest", both: "Host + guest"}[mode()]}</span></div>
       ${hosting() ? `<div class="stat"><span>Members</span><span>${members().length}</span></div>` : ""}
+      ${tasks.length ? `<div class="stat"><span>Tasks</span><span>${tOk}/${tasks.length} ok</span></div>` : ""}
       ${S.verify ? `<div class="stat"><span>History</span><span class="chip ${S.verify.valid ? "ok" : "bad"}">${S.verify.valid ? "✓ " + S.verify.entries : "✕"}</span></div>` : ""}</div>
-    <div class="card"><h2>Latest</h2><div class="feed">${last.length ? last.map(feedItemHtml).join("") : '<div class="empty" style="padding:12px">Quiet.</div>'}</div></div>`;
-  upgradeFeedCode(p, last);
+    <div class="card"><h2>Latest</h2><div class="feed">${last.length ? last.map(feedGroupHtml).join("") : '<div class="empty" style="padding:12px">Quiet.</div>'}</div></div>`;
+  upgradeFeedCode(p, S.feed.slice(-16));
 }
 /* The host cannot be reached: the hub answers from what it saved. Say so, with a way to keep the history. */
 function setOffline(d) {
@@ -1133,7 +1689,19 @@ function setOffline(d) {
   bar.textContent = "";
   const msg = document.createElement("span"); msg.textContent = `The host is offline. Showing the history this hub saved (up to ${t}). You can read it, not post.`;
   const dl = document.createElement("a"); dl.href = BASE + "api/history.jsonl"; dl.textContent = "Download history"; dl.style.cssText = "color:inherit;text-decoration:underline";
-  bar.append(msg, dl);
+  const rc = document.createElement("button"); rc.type = "button"; rc.className = "btn sm"; rc.textContent = "Reconnect"; rc.onclick = () => { setOffline(null); refresh(); pollFeed(); };
+  bar.append(msg, dl, rc);
+}
+if (HUB && typeof EventSource !== "undefined") {
+  try {
+    const rid = (BASE.match(/\/r\/([^/]+)\//) || [])[1];
+    const es = new EventSource("/api/events");
+    const wake = e => {
+      try { const d = JSON.parse(e.data); if (!rid || d.id === rid || d.room === rid) pollFeed(); } catch {}
+    };
+    es.addEventListener("room", wake);
+    es.addEventListener("activity", wake);
+  } catch {}
 }
 let feedBusy = false;
 async function pollFeed() {
@@ -1227,6 +1795,7 @@ function show(tab, soft) {
   if (tab === "notes") paintNoteDoc();
   if (tab === "work") hlPatch();
   if (tab === "room" || tab === "people" || tab === "timeline") pollFeed();
+  if (tab === "timeline") loadLlm(false);
   if (!soft && !sameTab) scrollTo({top: 0});
 }
 
@@ -1248,10 +1817,10 @@ async function act(name, btn) {
   switch (name) {
     case "create": {
       const repo = val("repo").trim();
-      const args = {docker: chk("docker"), ...(repo ? {repo} : {})};
+      const args = {docker: chk("docker"), ...(repo ? {repo} : {}), ...(S.presetTemplate ? {template: S.presetTemplate} : {})};
       if (reach && reach.dataset.reach === "local") args.local = true;
       const d = await run("playbox_create", args, "Room created");
-      if (d) { S.hostArgs = args; S.invite = d.link; await refresh(); show("room"); }
+      if (d) { S.hostArgs = args; S.invite = d.link; S.policy = d.policy || S.policy; await refresh(); show("room"); }
       break;
     }
     case "invite": {
@@ -1340,7 +1909,84 @@ async function act(name, btn) {
       const x = PRESETS[+btn.dataset.i];
       document.querySelectorAll("[data-reach]").forEach(b => b.setAttribute("aria-pressed", b.dataset.reach === x.reach));
       $("#docker").checked = x.docker;
+      S.presetTemplate = x.template || "";
       toast(x.t + ": set. Add a repository path and create.");
+      break;
+    }
+    case "save-policy": {
+      const splitCsv = id => val(id).split(",").map(s => s.trim()).filter(Boolean);
+      const capApprovals = {};
+      document.querySelectorAll("[data-pol-cap]").forEach(el => { capApprovals[el.dataset.polCap] = !!el.checked; });
+      const patch = {
+        cpus: +val("pol-cpus") || 2,
+        mem_mib: +val("pol-mem") || 1024,
+        timeout_secs: +val("pol-tmo") || 300,
+        task_budget: +val("pol-budget") || 100000,
+        max_concurrent: +val("pol-conc") || 2,
+        max_tasks_per_minute: +val("pol-rate") || 30,
+        allowed_hosts: splitCsv("pol-hosts"),
+        allowed_secrets: splitCsv("pol-secrets"),
+        allowed_egress: splitCsv("pol-egress"),
+        network: chk("pol-net"),
+        memory_review: chk("pol-memrev"),
+        capability_approvals: capApprovals,
+      };
+      busy(btn, true);
+      try {
+        if (HUB) {
+          const r = await gfetch(BASE + "api/policy", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(patch)});
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || j.error) throw new Error(j.error || "Failed to update policy");
+          S.policy = j;
+        } else {
+          const r = await api("playbox_policy", patch);
+          if (r.error) throw new Error(msgOf(r.data));
+          S.policy = r.data;
+        }
+        toast("Live policy guardrails updated");
+        await refresh();
+        show("room", true);
+      } catch (er) {
+        toast(String(er && (er.message || er)), true);
+      } finally {
+        busy(btn, false);
+      }
+      break;
+    }
+    case "publish-handoff": {
+      const summary = val("ho-sum").trim();
+      if (!summary) return toast("Enter a handoff summary.", true);
+      const splitCsv = id => val(id).split(",").map(s => s.trim()).filter(Boolean);
+      const payload = {
+        summary,
+        branch: val("ho-branch").trim() || "main",
+        to: val("ho-to").trim(),
+        open_cards: splitCsv("ho-cards"),
+        verified_artifacts: splitCsv("ho-arts"),
+        failed_checks: splitCsv("ho-fails"),
+        push: chk("ho-push"),
+      };
+      const d = await run("playbox_handoff", payload, "Handoff checkpoint signed & published");
+      if (d) { await loadNotes(); await pollFeed(); show("work"); }
+      break;
+    }
+    case "add-room-memory": {
+      const text = val("memtext").trim();
+      if (!text) return toast("Enter a fact or decision to remember.", true);
+      const key = val("memkey").trim() || undefined;
+      const ref = val("memcommit").trim();
+      const args = {text, ...(key ? {key} : {})};
+      if (ref) {
+        if (/^[0-9a-f]{7,40}$/i.test(ref)) args.commit = ref;
+        else args.task_id = ref;
+      }
+      const d = await run("playbox_room_remember", args, "Saved to Room Memory");
+      if (d) { await loadNotes(); show("notes"); }
+      break;
+    }
+    case "close-replay": {
+      S.replayView = null;
+      show("work");
       break;
     }
     case "recipe": {
@@ -1424,7 +2070,93 @@ function confirmRevoke(id) {
 }
 
 /* ---------- events ---------- */
-document.addEventListener("click", e => {
+document.addEventListener("click", async e => {
+  const repBtn = e.target.closest("[data-replay-task]");
+  if (repBtn) {
+    const tid = repBtn.dataset.replayTask, runFlag = repBtn.dataset.replayRun === "1";
+    busy(repBtn, true);
+    try {
+      let data;
+      if (HUB) {
+        const r = await gfetch(BASE + "api/replay", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({task_id: tid, run: runFlag})});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || "Replay failed");
+        data = j;
+      } else {
+        const r = await api("playbox_replay", {task_id: tid, run: runFlag});
+        if (r.error) throw new Error(msgOf(r.data));
+        data = r.data;
+      }
+      S.replayView = data;
+      toast(runFlag ? (data.reproducible ? "✓ Replay verified reproducible" : "✕ Replay diverged") : "Loaded task diff", runFlag && !data.reproducible);
+      show("work");
+      $("#replay-card")?.scrollIntoView({behavior: "smooth", block: "nearest"});
+    } catch (er) {
+      toast(String(er && (er.message || er)), true);
+    } finally {
+      busy(repBtn, false);
+    }
+    return;
+  }
+  const hoRes = e.target.closest("[data-handoff-resume]");
+  if (hoRes) {
+    busy(hoRes, true);
+    const r = await api("playbox_handoffs", {id: hoRes.dataset.handoffResume, resume: true});
+    busy(hoRes, false);
+    if (r.error) return toast(msgOf(r.data), true);
+    toast(`Resumed handoff ${hoRes.dataset.handoffResume}`);
+    await refresh();
+    show("work");
+    return;
+  }
+  const memBtn = e.target.closest("[data-mem-act]");
+  if (memBtn) {
+    const action = memBtn.dataset.memAct, doc = memBtn.dataset.doc;
+    busy(memBtn, true);
+    try {
+      if (HUB) {
+        const r = await gfetch(BASE + "api/memory", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, doc})});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || "Memory update failed");
+      } else {
+        const r = await api("playbox_room_memory", {action, doc});
+        if (r.error) throw new Error(msgOf(r.data));
+      }
+      toast(`Memory entry ${action}d`);
+      await loadNotes();
+    } catch (er) {
+      toast(String(er && (er.message || er)), true);
+    } finally {
+      busy(memBtn, false);
+    }
+    return;
+  }
+  const drillSeq = e.target.closest("[data-drill-seq]");
+  if (drillSeq) {
+    S.tlDrill = drillSeq.dataset.drillSeq;
+    S.tlk = "all";
+    show("timeline");
+    return;
+  }
+  const drillKind = e.target.closest("[data-drill-kind]");
+  if (drillKind) {
+    S.tlk = drillKind.dataset.drillKind || "all";
+    S.tlDrill = null;
+    show("timeline");
+    return;
+  }
+  if (e.target.closest("[data-tl-close]")) {
+    S.tlDrill = null;
+    show("timeline");
+    return;
+  }
+  const fbBtn = e.target.closest("[data-fbucket]");
+  if (fbBtn) {
+    S.feedBucket = fbBtn.dataset.fbucket;
+    document.querySelectorAll("[data-fbucket]").forEach(b => b.classList.toggle("on", b.dataset.fbucket === S.feedBucket));
+    paintFeed(false);
+    return;
+  }
   if (e.target.closest("#feedqclear")) {
     S.feedQ = "";
     const fq = $("#feedq");
@@ -1463,7 +2195,10 @@ document.addEventListener("submit", async e => {
 
 /* ---------- boot ---------- */
 paintRoomTools(); paintNav(); paintPulse();
-refresh().then(() => show("room")); pollWitness();
+const _qs = new URLSearchParams(location.search);
+const _initTab = TABS.some(([id]) => id === _qs.get("tab")) ? _qs.get("tab") : "room";
+if (_qs.get("drill")) S.tlDrill = _qs.get("drill");
+refresh().then(async () => { if (_initTab === "timeline") await pollFeed(); show(_initTab); }); pollWitness();
 let tick = 0;
 setInterval(() => {
   if (document.hidden) return;

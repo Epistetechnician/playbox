@@ -1,0 +1,859 @@
+package openai_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/labring/aiproxy/core/relay/adaptor/openai"
+	"github.com/labring/aiproxy/core/relay/meta"
+	relaymodel "github.com/labring/aiproxy/core/relay/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestConvertClaudeToResponsesRequest(t *testing.T) {
+	tests := []struct {
+		name             string
+		inputRequest     string
+		expectedModel    string
+		expectedMessages int
+		validateContent  bool
+	}{
+		{
+			name: "basic claude request",
+			inputRequest: `{
+				"model": "gpt-5-codex",
+				"messages": [
+					{"role": "user", "content": "Hello"}
+				],
+				"max_tokens": 1024
+			}`,
+			expectedModel:    "gpt-5-codex",
+			expectedMessages: 1,
+			validateContent:  true,
+		},
+		{
+			name: "claude request with multiple content blocks",
+			inputRequest: `{
+				"model": "gpt-5-codex",
+				"messages": [
+					{
+						"role": "user",
+						"content": [
+							{"type": "text", "text": "First part of message"},
+							{"type": "text", "text": "Second part of message"},
+							{"type": "text", "text": "Third part of message"}
+						]
+					}
+				],
+				"max_tokens": 1024
+			}`,
+			expectedModel:    "gpt-5-codex",
+			expectedMessages: 1,
+			validateContent:  true,
+		},
+		{
+			name: "claude request with string system prompt",
+			inputRequest: `{
+				"model": "gpt-5-codex",
+				"system": "You are a helpful assistant.",
+				"messages": [{"role": "user", "content": "Hello"}],
+				"max_tokens": 1024
+			}`,
+			expectedModel:    "gpt-5-codex",
+			expectedMessages: 2,
+			validateContent:  true,
+		},
+		{
+			name: "claude request with system and user messages",
+			inputRequest: `{
+				"model": "gpt-5-codex",
+				"system": [
+					{"type": "text", "text": "You are a helpful assistant."}
+				],
+				"messages": [
+					{
+						"role": "user",
+						"content": [
+							{"type": "text", "text": "Hello, how are you?"}
+						]
+					}
+				],
+				"max_tokens": 1024
+			}`,
+			expectedModel:    "gpt-5-codex",
+			expectedMessages: 2,
+			validateContent:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			httpReq, _ := http.NewRequestWithContext(context.Background(),
+				http.MethodPost,
+				"/v1/messages",
+				bytes.NewReader([]byte(tt.inputRequest)),
+			)
+			httpReq.Header.Set("Content-Type", "application/json")
+
+			m := &meta.Meta{
+				ActualModel: tt.expectedModel,
+			}
+
+			result, err := openai.ConvertClaudeToResponsesRequest(m, httpReq)
+			require.NoError(t, err)
+
+			var responsesReq relaymodel.CreateResponseRequest
+
+			err = json.NewDecoder(result.Body).Decode(&responsesReq)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedModel, responsesReq.Model)
+			assert.NotNil(t, responsesReq.Store)
+			assert.False(t, *responsesReq.Store)
+
+			// Verify input structure
+			if inputArray, ok := responsesReq.Input.([]any); ok {
+				assert.Equal(
+					t,
+					tt.expectedMessages,
+					len(inputArray),
+					"Should have expected number of messages",
+				)
+
+				// Validate that all messages have content
+				if tt.validateContent {
+					for i, item := range inputArray {
+						inputItem, ok := item.(map[string]any)
+						require.True(t, ok, "Input item %d should be a map", i)
+
+						// Every message should have a content field
+						content, hasContent := inputItem["content"]
+						assert.True(t, hasContent, "Message %d should have content field", i)
+
+						// Content should be a non-empty array
+						if contentArray, ok := content.([]any); ok {
+							assert.NotEmpty(
+								t,
+								contentArray,
+								"Message %d content should not be empty",
+								i,
+							)
+
+							// Each content item should have text
+							for j, contentItem := range contentArray {
+								if contentMap, ok := contentItem.(map[string]any); ok {
+									text, hasText := contentMap["text"]
+									assert.True(
+										t,
+										hasText,
+										"Message %d content item %d should have text",
+										i,
+										j,
+									)
+									assert.NotEmpty(
+										t,
+										text,
+										"Message %d content item %d text should not be empty",
+										i,
+										j,
+									)
+								}
+							}
+						} else {
+							t.Errorf(
+								"Message %d content is not an array, got type %T",
+								i,
+								content,
+							)
+						}
+					}
+				}
+			} else {
+				t.Errorf("Input is not an array, got type %T", responsesReq.Input)
+			}
+		})
+	}
+}
+
+func TestConvertClaudeRequestSystemPrompt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		system string
+		want   string
+	}{
+		{
+			name:   "string",
+			system: `"You are a helpful assistant."`,
+			want:   "You are a helpful assistant.",
+		},
+		{
+			name: "content blocks",
+			system: `[
+				{"type":"text","text":"First instruction"},
+				{"type":"text","text":"Second instruction"}
+			]`,
+			want: "First instruction\nSecond instruction",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/messages",
+				strings.NewReader(`{
+					"model":"claude",
+					"system":`+tt.system+`,
+					"messages":[{"role":"user","content":"Hello"}],
+					"max_tokens":128,
+					"stream":true
+				}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			result, err := openai.ConvertClaudeRequest(
+				&meta.Meta{ActualModel: "upstream-model"},
+				req,
+			)
+			require.NoError(t, err)
+
+			var request relaymodel.GeneralOpenAIRequest
+
+			require.NoError(t, json.NewDecoder(result.Body).Decode(&request))
+			require.Len(t, request.Messages, 2)
+			assert.Equal(t, relaymodel.RoleSystem, request.Messages[0].Role)
+			assert.Equal(t, tt.want, request.Messages[0].Content)
+			assert.Equal(t, relaymodel.RoleUser, request.Messages[1].Role)
+			assert.Equal(t, "Hello", request.Messages[1].Content)
+			assert.Equal(t, "upstream-model", request.Model)
+			assert.Equal(t, 128, request.MaxTokens)
+			assert.True(t, request.Stream)
+		})
+	}
+}
+
+func TestConvertClaudeToResponsesRequestPreservesImages(t *testing.T) {
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/messages",
+		strings.NewReader(`{
+			"model":"gpt-5.6",
+			"max_tokens":128,
+			"messages":[{
+				"role":"user",
+				"content":[
+					{"type":"text","text":"Describe this image"},
+					{"type":"image","source":{"type":"url","url":"https://example.com/image.png"}}
+				]
+			}]
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	result, err := openai.ConvertClaudeToResponsesRequest(&meta.Meta{
+		ActualModel: "gpt-5.6",
+	}, req)
+	require.NoError(t, err)
+
+	var responsesReq relaymodel.CreateResponseRequest
+	require.NoError(t, json.NewDecoder(result.Body).Decode(&responsesReq))
+
+	items, ok := responsesReq.Input.([]any)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	content, ok := item["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, content, 2)
+	image, ok := content[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "input_image", image["type"])
+	assert.Equal(t, "https://example.com/image.png", image["image_url"])
+}
+
+func TestConvertClaudeRequest_ReasoningEffortCompatibility(t *testing.T) {
+	t.Parallel()
+
+	requestJSON := `{
+		"model": "claude",
+		"messages": [{"role": "user", "content": "Hello"}],
+		"max_tokens": 1024,
+		"thinking": {"type": "enabled", "budget_tokens": 512}
+	}`
+	httpReq := httptest.NewRequestWithContext(t.Context(),
+		http.MethodPost,
+		"/v1/messages",
+		bytes.NewReader([]byte(requestJSON)),
+	)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	m := &meta.Meta{
+		ActualModel: "gpt-5.5",
+	}
+
+	result, err := openai.ConvertClaudeRequest(m, httpReq)
+	require.NoError(t, err)
+
+	var openAIReq relaymodel.GeneralOpenAIRequest
+	require.NoError(t, json.NewDecoder(result.Body).Decode(&openAIReq))
+	require.NotNil(t, openAIReq.ReasoningEffort)
+	assert.Equal(t, "low", *openAIReq.ReasoningEffort)
+}
+
+func TestConvertClaudeToResponsesRequest_ReasoningEffortCompatibility(t *testing.T) {
+	t.Parallel()
+
+	requestJSON := `{
+		"model": "claude",
+		"messages": [{"role": "user", "content": "Hello"}],
+		"max_tokens": 1024,
+		"thinking": {"type": "enabled"},
+		"output_config": {"effort": "max"}
+	}`
+	httpReq := httptest.NewRequestWithContext(t.Context(),
+		http.MethodPost,
+		"/v1/messages",
+		bytes.NewReader([]byte(requestJSON)),
+	)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	m := &meta.Meta{
+		ActualModel: "gpt-5.1",
+	}
+
+	result, err := openai.ConvertClaudeToResponsesRequest(m, httpReq)
+	require.NoError(t, err)
+
+	var responsesReq relaymodel.CreateResponseRequest
+	require.NoError(t, json.NewDecoder(result.Body).Decode(&responsesReq))
+	require.NotNil(t, responsesReq.Reasoning)
+	require.NotNil(t, responsesReq.Reasoning.Effort)
+	assert.Equal(t, "high", *responsesReq.Reasoning.Effort)
+}
+
+func TestConvertClaudeToResponsesRequest_WithToolsRequiredField(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   string
+		checkFunc func(*testing.T, relaymodel.CreateResponseRequest)
+	}{
+		{
+			name: "claude request with null required field should be removed",
+			request: `{
+				"model": "gpt-5-codex",
+				"messages": [{"role": "user", "content": "Test"}],
+				"max_tokens": 1024,
+				"tools": [
+					{
+						"name": "get_weather",
+						"description": "Get weather info",
+						"input_schema": {
+							"type": "object",
+							"properties": {
+								"location": {"type": "string"}
+							},
+							"required": null
+						}
+					}
+				]
+			}`,
+			checkFunc: func(t *testing.T, responsesReq relaymodel.CreateResponseRequest) {
+				t.Helper()
+				require.Len(t, responsesReq.Tools, 1)
+				assert.Equal(t, "get_weather", responsesReq.Tools[0].Name)
+
+				// Check that required field is removed
+				if params, ok := responsesReq.Tools[0].Parameters.(map[string]any); ok {
+					_, hasRequired := params["required"]
+					assert.False(t, hasRequired, "required field should be removed when it's null")
+				} else {
+					t.Errorf("Parameters should be a map, got %T", responsesReq.Tools[0].Parameters)
+				}
+			},
+		},
+		{
+			name: "claude request with empty required array should be removed",
+			request: `{
+				"model": "gpt-5-codex",
+				"messages": [{"role": "user", "content": "Test"}],
+				"max_tokens": 1024,
+				"tools": [
+					{
+						"name": "get_weather",
+						"description": "Get weather info",
+						"input_schema": {
+							"type": "object",
+							"properties": {
+								"location": {"type": "string"}
+							},
+							"required": []
+						}
+					}
+				]
+			}`,
+			checkFunc: func(t *testing.T, responsesReq relaymodel.CreateResponseRequest) {
+				t.Helper()
+				require.Len(t, responsesReq.Tools, 1)
+
+				// Check that required field is removed
+				if params, ok := responsesReq.Tools[0].Parameters.(map[string]any); ok {
+					_, hasRequired := params["required"]
+					assert.False(
+						t,
+						hasRequired,
+						"required field should be removed when it's empty array",
+					)
+				}
+			},
+		},
+		{
+			name: "claude request with valid required array should be kept",
+			request: `{
+				"model": "gpt-5-codex",
+				"messages": [{"role": "user", "content": "Test"}],
+				"max_tokens": 1024,
+				"tools": [
+					{
+						"name": "get_weather",
+						"description": "Get weather info",
+						"input_schema": {
+							"type": "object",
+							"properties": {
+								"location": {"type": "string"}
+							},
+							"required": ["location"]
+						}
+					}
+				]
+			}`,
+			checkFunc: func(t *testing.T, responsesReq relaymodel.CreateResponseRequest) {
+				t.Helper()
+				require.Len(t, responsesReq.Tools, 1)
+
+				// Check that required field is kept
+				if params, ok := responsesReq.Tools[0].Parameters.(map[string]any); ok {
+					required, hasRequired := params["required"]
+					assert.True(t, hasRequired, "required field should be kept when it has values")
+
+					if reqArray, ok := required.([]any); ok {
+						assert.Equal(t, 1, len(reqArray))
+						assert.Equal(t, "location", reqArray[0])
+					}
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			httpReq, _ := http.NewRequestWithContext(context.Background(),
+				http.MethodPost,
+				"/v1/messages",
+				bytes.NewReader([]byte(tt.request)),
+			)
+			httpReq.Header.Set("Content-Type", "application/json")
+
+			m := &meta.Meta{
+				ActualModel: "gpt-5-codex",
+			}
+
+			result, err := openai.ConvertClaudeToResponsesRequest(m, httpReq)
+			require.NoError(t, err)
+
+			var responsesReq relaymodel.CreateResponseRequest
+
+			err = json.NewDecoder(result.Body).Decode(&responsesReq)
+			require.NoError(t, err)
+
+			tt.checkFunc(t, responsesReq)
+		})
+	}
+}
+
+func TestConvertResponsesToClaudeResponse(t *testing.T) {
+	tests := []struct {
+		name             string
+		responsesResp    relaymodel.Response
+		expectedType     string
+		expectedRole     string
+		expectedContent  string
+		hasReasoning     bool
+		expectedThinking string
+	}{
+		{
+			name: "basic claude response",
+			responsesResp: relaymodel.Response{
+				ID:        "resp_789",
+				Model:     "gpt-5-codex",
+				CreatedAt: 1234567890,
+				Status:    relaymodel.ResponseStatusCompleted,
+				Output: []relaymodel.OutputItem{
+					{
+						Role: "assistant",
+						Content: []relaymodel.OutputContent{
+							{Type: "text", Text: "I'm Claude, how can I help?"},
+						},
+					},
+				},
+				Usage: &relaymodel.ResponseUsage{
+					InputTokens:  15,
+					OutputTokens: 25,
+					TotalTokens:  40,
+				},
+			},
+			expectedType:    "message",
+			expectedRole:    "assistant",
+			expectedContent: "I'm Claude, how can I help?",
+			hasReasoning:    false,
+		},
+		{
+			name: "claude response with reasoning",
+			responsesResp: relaymodel.Response{
+				ID:        "resp_reasoning_123",
+				Model:     "gpt-5-codex",
+				CreatedAt: 1234567890,
+				Status:    relaymodel.ResponseStatusCompleted,
+				Output: []relaymodel.OutputItem{
+					{
+						Type: "reasoning",
+						Content: []relaymodel.OutputContent{
+							{Type: "output_text", Text: "Let me think about this carefully..."},
+						},
+					},
+					{
+						Role: "assistant",
+						Content: []relaymodel.OutputContent{
+							{Type: "text", Text: "Here's my answer!"},
+						},
+					},
+				},
+				Usage: &relaymodel.ResponseUsage{
+					InputTokens:  20,
+					OutputTokens: 35,
+					TotalTokens:  55,
+				},
+			},
+			expectedType:     "message",
+			expectedRole:     "assistant",
+			expectedContent:  "Here's my answer!",
+			hasReasoning:     true,
+			expectedThinking: "Let me think about this carefully...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock response
+			respBody, err := json.Marshal(tt.responsesResp)
+			require.NoError(t, err)
+
+			httpResp := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       http.NoBody,
+				Header:     make(http.Header),
+			}
+			httpResp.Body = &mockReadCloser{Reader: bytes.NewReader(respBody)}
+
+			// Create gin context
+			gin.SetMode(gin.TestMode)
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+
+			m := &meta.Meta{
+				OriginModel: "client-claude",
+				ActualModel: tt.responsesResp.Model,
+			}
+
+			// Convert
+			usage, err := openai.ConvertResponsesToClaudeResponse(m, c, httpResp)
+			require.Nil(t, err)
+
+			// Parse response
+			var claudeResp relaymodel.ClaudeResponse
+
+			err = json.Unmarshal(w.Body.Bytes(), &claudeResp)
+			require.NoError(t, err)
+
+			// Verify
+			assert.Equal(t, tt.expectedType, claudeResp.Type)
+			assert.Equal(t, tt.expectedRole, claudeResp.Role)
+			assert.Equal(t, "client-claude", claudeResp.Model)
+			assert.NotEmpty(t, claudeResp.Content)
+
+			if tt.hasReasoning {
+				// Should have at least 2 content blocks (thinking + text)
+				assert.GreaterOrEqual(t, len(claudeResp.Content), 2)
+
+				// First block should be thinking
+				thinkingBlock := claudeResp.Content[0]
+				assert.Equal(t, "thinking", thinkingBlock.Type)
+				assert.Equal(t, tt.expectedThinking, thinkingBlock.Thinking)
+
+				// Second block should be text
+				textBlock := claudeResp.Content[1]
+				assert.Equal(t, "text", textBlock.Type)
+				assert.Equal(t, tt.expectedContent, textBlock.Text)
+			} else {
+				assert.Equal(t, "text", claudeResp.Content[0].Type)
+				assert.Equal(t, tt.expectedContent, claudeResp.Content[0].Text)
+			}
+
+			assert.NotNil(t, usage)
+			assert.Equal(t, tt.responsesResp.Usage.InputTokens, int64(usage.Usage.InputTokens))
+		})
+	}
+}
+
+func TestConvertClaudeToolsToOpenAI_WithRequiredField(t *testing.T) {
+	tests := []struct {
+		name      string
+		tools     []relaymodel.ClaudeTool
+		checkFunc func(*testing.T, []relaymodel.Tool)
+	}{
+		{
+			name: "null required field should be removed",
+			tools: []relaymodel.ClaudeTool{
+				{
+					Name:        "get_weather",
+					Description: "Get weather info",
+					InputSchema: &relaymodel.ClaudeInputSchema{
+						Type: "object",
+						Properties: map[string]any{
+							"location": map[string]any{"type": "string"},
+						},
+						Required: nil,
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, tools []relaymodel.Tool) {
+				t.Helper()
+				require.Len(t, tools, 1)
+				assert.Equal(t, "get_weather", tools[0].Function.Name)
+
+				// Check that required field is removed
+				if params, ok := tools[0].Function.Parameters.(map[string]any); ok {
+					_, hasRequired := params["required"]
+					assert.False(t, hasRequired, "required field should be removed when it's null")
+				} else {
+					t.Errorf("Parameters should be a map, got %T", tools[0].Function.Parameters)
+				}
+			},
+		},
+		{
+			name: "empty required array should be removed",
+			tools: []relaymodel.ClaudeTool{
+				{
+					Name:        "get_weather",
+					Description: "Get weather info",
+					InputSchema: &relaymodel.ClaudeInputSchema{
+						Type: "object",
+						Properties: map[string]any{
+							"location": map[string]any{"type": "string"},
+						},
+						Required: []string{},
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, tools []relaymodel.Tool) {
+				t.Helper()
+				require.Len(t, tools, 1)
+
+				// Check that required field is removed
+				if params, ok := tools[0].Function.Parameters.(map[string]any); ok {
+					_, hasRequired := params["required"]
+					assert.False(
+						t,
+						hasRequired,
+						"required field should be removed when it's empty array",
+					)
+				}
+			},
+		},
+		{
+			name: "valid required array should be kept",
+			tools: []relaymodel.ClaudeTool{
+				{
+					Name:        "get_weather",
+					Description: "Get weather info",
+					InputSchema: &relaymodel.ClaudeInputSchema{
+						Type: "object",
+						Properties: map[string]any{
+							"location": map[string]any{"type": "string"},
+						},
+						Required: []string{"location"},
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, tools []relaymodel.Tool) {
+				t.Helper()
+				require.Len(t, tools, 1)
+
+				// Check that required field is kept
+				if params, ok := tools[0].Function.Parameters.(map[string]any); ok {
+					required, hasRequired := params["required"]
+					assert.True(t, hasRequired, "required field should be kept when it has values")
+
+					if reqArray, ok := required.([]string); ok {
+						assert.Equal(t, 1, len(reqArray))
+						assert.Equal(t, "location", reqArray[0])
+					}
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := openai.ConvertClaudeToolsToOpenAI(tt.tools)
+			tt.checkFunc(t, result)
+		})
+	}
+}
+
+func TestConvertResponsesToClaudeStreamResponseReturnsErrorBeforeRealOutputAfterLifecycleEvents(
+	t *testing.T,
+) {
+	gin.SetMode(gin.TestMode)
+
+	stream := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_123","object":"response","created_at":1,"status":"in_progress","model":"gpt-5","output":[],"parallel_tool_calls":true,"store":false}}`,
+		"",
+		`event: response.in_progress`,
+		`data: {"type":"response.in_progress","response":{"id":"resp_123","object":"response","created_at":1,"status":"in_progress","model":"gpt-5","output":[],"parallel_tool_calls":true,"store":false}}`,
+		"",
+		`event: error`,
+		`data: {"type":"error","error":{"type":"server_error","code":"server_error","message":"stream failed"}}`,
+		"",
+	}, "\n")
+
+	httpResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader([]byte(stream))),
+		Header:     make(http.Header),
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/messages",
+		nil,
+	)
+
+	m := &meta.Meta{
+		ActualModel: "gpt-5",
+	}
+
+	result, err := openai.ConvertResponsesToClaudeStreamResponse(m, c, httpResp)
+	require.NotNil(t, err)
+	assert.Equal(t, http.StatusBadGateway, err.StatusCode())
+	assert.Equal(t, "resp_123", result.UpstreamID)
+	assert.Empty(t, w.Body.String())
+}
+
+func runResponsesToClaude(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	httpResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/messages", nil)
+
+	_, err := openai.ConvertResponsesToClaudeResponse(&meta.Meta{
+		OriginModel: "client-claude",
+		ActualModel: "gpt-5-codex",
+	}, c, httpResp)
+	require.Nil(t, err)
+
+	return w
+}
+
+func TestConvertResponsesToClaudeResponseFunctionCall(t *testing.T) {
+	w := runResponsesToClaude(
+		t,
+		`{"id":"resp_1","object":"response","status":"completed","model":"gpt-5-codex",
+"output":[{"id":"fc_1","type":"function_call","status":"completed","call_id":"call_1","name":"get_weather","arguments":"{\"city\":\"Paris\"}"}],
+"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
+	)
+
+	var resp relaymodel.ClaudeResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Content, 1)
+	assert.Equal(t, "tool_use", resp.Content[0].Type)
+	assert.Equal(t, "call_1", resp.Content[0].ID)
+	assert.Equal(t, "get_weather", resp.Content[0].Name)
+	assert.Equal(t, map[string]any{"city": "Paris"}, resp.Content[0].Input)
+	assert.Equal(t, "tool_use", resp.StopReason)
+}
+
+func TestConvertResponsesToClaudeResponseIncompleteStopReason(t *testing.T) {
+	// A truncated response containing a function_call still reports max_tokens:
+	// a cut-off tool call must not look like a complete, executable invocation.
+	w := runResponsesToClaude(
+		t,
+		`{"id":"resp_2","object":"response","status":"incomplete","model":"gpt-5-codex",
+"output":[{"id":"fc_1","type":"function_call","status":"incomplete","call_id":"call_1","name":"get_weather","arguments":"{\"ci"}],
+"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
+	)
+
+	var resp relaymodel.ClaudeResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "max_tokens", resp.StopReason)
+}
+
+func TestConvertResponsesToClaudeStreamResponseToolUseStopReason(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	stream := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_3","object":"response","status":"in_progress","model":"gpt-5","output":[]}}`,
+		"",
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":""}}`,
+		"",
+		`data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"city\":\"Paris\"}"}`,
+		"",
+		`data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}`,
+		"",
+		`data: {"type":"response.completed","response":{"id":"resp_3","object":"response","status":"completed","model":"gpt-5","output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"city\":\"Paris\"}"}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		"",
+	}, "\n")
+
+	httpResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(stream)),
+		Header:     make(http.Header),
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/messages", nil)
+
+	_, err := openai.ConvertResponsesToClaudeStreamResponse(
+		&meta.Meta{ActualModel: "gpt-5"},
+		c,
+		httpResp,
+	)
+	require.Nil(t, err)
+	assert.Contains(t, w.Body.String(), `"stop_reason":"tool_use"`)
+	assert.NotContains(t, w.Body.String(), `"stop_reason":"end_turn"`)
+}

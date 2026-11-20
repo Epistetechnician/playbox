@@ -280,6 +280,7 @@ async fn a_confined_guest_with_egress_reaches_proxy_only_without_leaking_token()
             secret: "model_key".into(),
             allow_paths: vec!["/v1/models".into()],
             pass_headers: vec!["content-type".into()],
+            extra_headers: std::collections::BTreeMap::new(),
             env_var: None,
             insecure_http: true,
             allow_private: false,

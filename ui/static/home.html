@@ -252,6 +252,35 @@ button.cell{cursor:pointer} button.cell:hover{background:var(--panel-2)}
 .att .nm b{white-space:normal}
 .att.urgent{background:color-mix(in srgb,var(--sig) 9%,var(--panel));box-shadow:inset 3px 0 0 var(--sig)}
 
+/* ---------- rooms grid & toolbar ---------- */
+.rbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+.rbar-q{flex:1;min-width:170px;max-width:340px;padding:6px 10px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--field);color:var(--ink);font:12.5px var(--mono)}
+.rbar-q:focus{outline:none;border-color:var(--sig)}
+.rbar-sort{padding:6px 10px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel);color:var(--ink);font:500 12px var(--mono);cursor:pointer}
+.rbar-ct{font:500 11.5px var(--mono);color:var(--mut);font-variant-numeric:tabular-nums}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.rcard{position:relative;display:flex;flex-direction:column;gap:10px;padding:14px 15px 12px;background:var(--panel);border:1px solid var(--line-2);border-top:3px solid var(--line-2);border-radius:var(--r);transition:border-color .14s,transform .14s,box-shadow .14s;content-visibility:auto;contain-intrinsic-size:178px}
+.rcard:hover,.rcard.sel{border-color:var(--edge);transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.08)}
+.rcard.live{border-top-color:var(--ok-led)}
+.rcard.hold{border-top-color:var(--warn,#E5A33D)}
+.rcard.bad{border-top-color:var(--bad)}
+.rcard-hd{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.rcard-hd>a{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-decoration:none;color:inherit}
+.rcard-ttl{min-width:0;flex:1}
+.rcard-ttl b{display:block;font:600 14px/1.25 var(--sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rcard-ttl .rc-sub{display:flex;align-items:center;gap:6px;margin-top:3px;font:500 11px var(--mono);color:var(--mut)}
+.rcard-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.rcard-last{font:12.5px/1.45 var(--sans);color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.8em;word-break:break-word}
+.rcard-last.warn{color:var(--warn,#E5A33D)}
+.rcard-last.bad{color:var(--bad)}
+.rcard-ft{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:8px;border-top:1px solid var(--line);font:500 11px var(--mono);color:var(--mut);font-variant-numeric:tabular-nums}
+.rcard-ft .rc-acts{margin-left:auto;display:flex;gap:6px;align-items:center}
+.rcard-ft .rc-acts a{padding:3px 7px;border:1px solid var(--line-2);border-radius:4px;color:var(--ink-2);text-decoration:none;font:600 10.5px var(--mono);letter-spacing:.03em}
+.rcard-ft .rc-acts a:hover{border-color:var(--edge);color:var(--ink);background:var(--panel-2)}
+.ledger .rw{font-variant-numeric:tabular-nums;transition:background .1s}
+.ledger .rw:hover{background:color-mix(in srgb,var(--panel-2) 65%,transparent)}
+@media (max-width:640px){.rgrid{grid-template-columns:1fr}.rbar-q{max-width:none}}
+
 /* ---------- skeleton ---------- */
 .sk{height:64px;border-top:1px solid var(--line);background:repeating-linear-gradient(135deg,var(--dim) 0 1px,transparent 1px 7px);animation:blink 1.4s steps(2) infinite}
 .sk.cell{height:104px;border:0}
@@ -696,8 +725,12 @@ function paintView(soft) {
   const selId = $(".rw.sel")?.dataset.room;
   paintChrome();
   v.innerHTML = `<div class="view ${enter ? "enter" : ""}"><div class="offline" id="offline" ${S.live || !S.loaded ? "hidden" : ""}>${navigator.onLine ? "Reconnecting to your hub. Showing the last known state." : "You're offline. Showing the last known state."}</div>` + (VIEWS[S.view] || VIEWS.rooms)() + "</div>";
-  if (openDet && openDet.size) {
+  if (openDet) {
     v.querySelectorAll("details").forEach(d => {
+      if (d.dataset.ins && S.ins && typeof S.ins[d.dataset.ins] === "boolean") {
+        d.open = S.ins[d.dataset.ins];
+        return;
+      }
       const k = d.dataset.ins ? "ins:" + d.dataset.ins : d.id ? "id:" + d.id : "sum:" + (d.querySelector("summary")?.textContent || "").trim();
       if (openDet.has(k)) d.open = true;
     });
@@ -759,20 +792,46 @@ function meter(pulse, state) {
   p.forEach((v, i) => { const lv = v ? Math.max(1, Math.ceil(v / max * 4)) : 0; for (let s = 0; s < 4; s++) { const sq = `M${i * 4} ${12 - s * 4}h3v3h-3z`; if (s < lv) on += sq; else off += sq; } });
   return `<svg class="meter" viewBox="0 0 ${p.length * 4 - 1} 15" shape-rendering="crispEdges" role="img" aria-label="Messages over the last two hours"><path class="off" d="${off}"/><path d="${on}" fill="${METER_COL[state] || "var(--mut)"}"/></svg>`;
 }
+function taskChip(r) {
+  const t = r.tasks;
+  if (!t || !t.total) return t && t.runner ? `<span class="chip">${esc(t.runner)}</span>` : "";
+  const cls = t.fail ? "warn" : "ok";
+  return `<span class="chip ${cls}" title="Tasks: ${t.ok} ok, ${t.fail} failed${t.avg_ms != null ? ", avg " + t.avg_ms + "ms" : ""}">${t.runner ? esc(t.runner) + " · " : ""}${t.ok}/${t.total} ok</span>`;
+}
+function roomLastHtml(r, cls) {
+  const c = cls || "last";
+  if (r.holds.length) return `<small class="${c} warn">Witness paused ${esc(r.holds[0].tool || "a write")}. Open to review.</small>`;
+  if (r.offline) return `<small class="${c} warn" title="${esc(r.err || "")}">Host offline · ${r.archived} archived message${r.archived === 1 ? "" : "s"} available.</small>`;
+  if (r.err) return `<small class="${c} bad">${esc(r.err)}</small>`;
+  if (r.last) return `<small class="${c}" title="Text from another party is untrusted"><i></i><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</small>`;
+  return `<small class="${c}">No messages yet</small>`;
+}
 function roomRow(r) {
   const sub = `<span class="s-st">${esc(STATE_TXT[r.state] || "")} · </span>` + esc([r.kind === "mine" ? "mine" : "shared", r.machine, r.members ? `${r.members} in room` : ""].filter(Boolean).join(" · "));
-  const last = r.holds.length ? `<small class="last warn">Witness paused ${esc(r.holds[0].tool || "a write")}. Open to review.</small>`
-    : r.offline ? `<small class="last warn" title="${esc(r.err || "")}">Host offline. This hub kept ${r.archived} saved message${r.archived === 1 ? "" : "s"}; open to read them.</small>`
-    : r.err ? `<small class="last bad">${esc(r.err)}</small>`
-    : r.last ? `<small class="last" title="Text from another party is untrusted"><i></i><b>${esc(r.last.from || "member")}</b> ${esc(r.last.text)}</small>` : `<small class="last">No messages yet</small>`;
+  const last = roomLastHtml(r, "last");
   return `<div class="rw ${r.state === "hold" ? "hold" : r.state === "bad" ? "bad" : ""}" data-room="${r.id}"><a href="${esc(roomUrl(r.id))}" aria-label="Open ${esc(r.label)}">
     <span>${sigil(r.id, 36)}</span>
     <span class="nm"><b>${esc(r.label)}</b><span class="sub">${sub}</span>${last}</span>
-    <span class="mt"><span class="chip ${r.kind}">${r.kind === "mine" ? "mine" : "shared"}</span>${r.machine ? `<span class="chip">${esc(r.machine)}</span>` : ""}${r.members ? `<span class="chip">${r.members} in</span>` : ""}${chainChip(r)}</span>
+    <span class="mt"><span class="chip ${r.kind}">${r.kind === "mine" ? "mine" : "shared"}</span>${r.machine ? `<span class="chip">${esc(r.machine)}</span>` : ""}${r.members ? `<span class="chip">${r.members} in</span>` : ""}${taskChip(r)}${chainChip(r)}</span>
     <span class="st ${r.state}"><i class="led ${r.state}"></i><span class="stt">${STATE_TXT[r.state] || ""}</span>${r.unread ? `<span class="unread">${r.unread > 99 ? "99+" : r.unread}</span>` : ""}</span>
     <span class="pl">${meter(r.pulse, r.state)}</span>
     <span class="tm" ${r.last ? `data-ms="${r.last.ms}"` : ""}>${r.last ? rel(r.last.ms) : "·"}</span></a>
     <button class="kebab" data-act="edit" data-id="${r.id}" aria-label="Room options for ${esc(r.label)}">⋯</button></div>`;
+}
+function roomCard(r) {
+  const last = roomLastHtml(r, "rcard-last");
+  return `<article class="rcard ${esc(r.state)}" data-room="${r.id}">
+    <div class="rcard-hd">
+      <a href="${esc(roomUrl(r.id))}" aria-label="Open ${esc(r.label)}">
+        ${sigil(r.id, 36)}
+        <div class="rcard-ttl"><b>${esc(r.label)}</b><div class="rc-sub"><i class="led ${r.state}"></i><span>${esc(STATE_TXT[r.state] || r.state)}</span>${r.unread ? `<span class="unread">${r.unread > 99 ? "99+" : r.unread}</span>` : ""}</div></div>
+      </a>
+      <button class="kebab" style="position:static" data-act="edit" data-id="${r.id}" aria-label="Room options for ${esc(r.label)}">⋯</button>
+    </div>
+    <div class="rcard-chips"><span class="chip ${r.kind}">${r.kind === "mine" ? "mine" : "shared"}</span>${r.machine ? `<span class="chip">${esc(r.machine)}</span>` : ""}${r.members ? `<span class="chip">${r.members} in</span>` : ""}${taskChip(r)}${chainChip(r)}</div>
+    ${last}
+    <div class="rcard-ft">${meter(r.pulse, r.state)}<span ${r.last ? `data-ms="${r.last.ms}"` : ""}>${r.last ? rel(r.last.ms) : "quiet"}</span><div class="rc-acts"><a href="${esc(roomUrl(r.id))}">Open</a><a href="/r/${encodeURIComponent(r.id)}/canvas">Canvas</a><a href="/r/${encodeURIComponent(r.id)}/?tab=timeline">Timeline</a></div></div>
+  </article>`;
 }
 function actRow(a) {
   return `<a class="lg ${a.me ? "me" : "peer"} ${a.fresh ? "new" : ""}" href="${esc(roomUrl(a.room))}">${sigil(a.room, 26)}<span class="who"><b>${esc(a.from || "member")}</b> in ${esc(a.label)}</span><span class="t" data-ms="${a.ms}">${rel(a.ms)}</span><span class="tx">${esc(a.text)}</span></a>`;
@@ -955,19 +1014,29 @@ function machineCard(y) {
     <p class="mut" style="font-size:12.5px;margin:10px 0 0">Run by the <b>playbox secure</b> command on this machine, every few hours and after each update. Fuzzing never touches this hub: it tests a throwaway copy.</p>`);
 }
 /* ---------- harness: the hub-wide Stats and Activity panels (shared look with the room cockpit) ---------- */
-S.ins = S.ins || {};
-document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) S.ins[d.dataset.ins] = d.open; }, true);
+S.ins = (() => { try { return JSON.parse(store.get("pb.ins", "{}") || "{}") || {}; } catch { return {}; } })();
+const saveIns = () => { try { store.set("pb.ins", JSON.stringify(S.ins)); } catch {} };
+document.addEventListener("click", e => {
+  const sum = e.target.closest?.("details[data-ins] > summary");
+  if (!sum) return;
+  const d = sum.parentElement;
+  if (d && d.dataset && d.dataset.ins) { S.ins[d.dataset.ins] = !d.open; saveIns(); }
+}, true);
+document.addEventListener("toggle", e => { const d = e.target; if (d && d.dataset && d.dataset.ins) { S.ins[d.dataset.ins] = d.open; saveIns(); } }, true);
 function harness() {
   if (!window.PBI || !S.rooms.length) return "";
   const P = PBI, now = Date.now(), act = S.activity || [];
   const C = {live: "var(--c-join)", idle: "var(--c-idle)", hold: "var(--c-warn)", bad: "var(--c-bad)", down: "var(--c-bad)", empty: "var(--c-ev)"};
   const by = k => S.rooms.filter(r => r.state === k).length;
   const members = S.rooms.reduce((a, r) => a + (r.members || 0), 0), hour = act.filter(a => now - a.ms < 3600e3).length;
+  const totTasks = S.rooms.reduce((a, r) => a + ((r.tasks && r.tasks.total) || 0), 0);
+  const okTasks = S.rooms.reduce((a, r) => a + ((r.tasks && r.tasks.ok) || 0), 0);
+  const runners = [...new Set(S.rooms.map(r => r.tasks && r.tasks.runner).filter(Boolean))];
   const series = P.buckets(act.map(a => a.ms), now, 300e3, 24);
   const st = P.stats({id: "h-stats", title: "Harness", icon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="color:var(--mut)"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>',
-    open: S.ins["h-stats"] ?? innerWidth >= 700, meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}`, who: "hub", name: location.host || "this hub",
+    open: S.ins["h-stats"] ?? innerWidth >= 700, meta: `${S.rooms.length} room${S.rooms.length === 1 ? "" : "s"}${totTasks ? ` · ${okTasks}/${totTasks} tasks ok` : ""}`, who: "hub", name: location.host || "this hub",
     bar: {label: "rooms", right: `${by("live")} live`, parts: Object.keys(C).map(k => ({c: C[k], w: by(k), t: k}))},
-    kv: [["rooms", String(S.rooms.length)], ["members", String(members)], ["mine", String(S.rooms.filter(r => r.kind === "mine").length)], ["shared", String(S.rooms.filter(r => r.kind === "shared").length)],
+    kv: [["rooms", String(S.rooms.length)], ["members", String(members)], ["tasks", totTasks ? `${okTasks}/${totTasks} ok` : "0"], ["runners", runners.length ? runners.join(", ") : "—"],
          ["attention", String(activeAttention().length)], ["asking to join", String((S.knocks || []).length)], ["history", S.rooms.every(r => !r.chain || r.chain.ok) ? "all verified" : "FAILED"], ["offline", String(S.rooms.filter(r => r.offline).length)]],
     rate: {now: String(hour), unit: "msg/hour", avg: (series.reduce((a, b) => a + b, 0) / series.length).toFixed(1) + "/5m", max: Math.max(0, ...series) + "/5m", series},
     groups: [{title: "Rooms", rows: [["live", "live"], ["idle", "idle"], ["hold", "held by witness"], ["bad", "history failed"], ["down", "unreachable"], ["empty", "empty"]].map(([k, l]) => ({c: C[k], l, n: by(k), pct: Math.round(by(k) / S.rooms.length * 100) + "%", o: k === "empty"}))}]});
@@ -998,17 +1067,29 @@ const VIEWS = {
   },
   rooms() {
     if (!S.loaded) return `<div class="boot">Syncing</div><div class="readout">${'<div class="cell sk"></div>'.repeat(4)}</div><div class="ledger" style="margin-top:22px">${'<div class="sk"></div>'.repeat(3)}</div>`;
-    const f = S.filter || "all";
-    const list = S.rooms.filter(r => f === "all" || (f === "mine" && r.kind === "mine") || (f === "shared" && r.kind === "shared") || (f === "attn" && (r.state === "hold" || r.state === "bad" || r.unread)));
+    const f = S.filter || "all", rq = (S.roomQ || "").trim().toLowerCase(), sort = S.roomSort || "active";
+    const STATE_RANK = {hold: 0, bad: 1, live: 2, idle: 3, down: 4, empty: 5};
+    const list = S.rooms
+      .filter(r => f === "all" || (f === "mine" && r.kind === "mine") || (f === "shared" && r.kind === "shared") || (f === "attn" && (r.state === "hold" || r.state === "bad" || r.unread)))
+      .filter(r => !rq || `${r.label} ${r.machine || ""} ${(r.tasks && r.tasks.runner) || ""} ${(r.last && r.last.text) || ""}`.toLowerCase().includes(rq))
+      .slice()
+      .sort((a, b) => {
+        if (sort === "name") return a.label.localeCompare(b.label);
+        if (sort === "recent") return ((b.last && b.last.ms) || 0) - ((a.last && a.last.ms) || 0);
+        if (sort === "tasks") return ((b.tasks && b.tasks.total) || 0) - ((a.tasks && a.tasks.total) || 0);
+        return (STATE_RANK[a.state] ?? 9) - (STATE_RANK[b.state] ?? 9) || ((b.last && b.last.ms) || 0) - ((a.last && a.last.ms) || 0);
+      });
     const flt = [["all", "All"], ["mine", "Mine"], ["shared", "Shared"], ["attn", "Attention"]];
     const bar = `<div class="sect tools"><h2 class="rule"><span class="ix">01</span>Rooms</h2></div><div class="sect tools" style="margin-top:0"><div class="filters" role="group" aria-label="Filter rooms">${flt.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
-      <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>`;
+      <div class="seg" role="group" aria-label="Layout"><button aria-pressed="${S.mode === "orbit"}" data-mode="orbit">Radar</button><button aria-pressed="${S.mode === "grid"}" data-mode="grid">Grid</button><button aria-pressed="${S.mode === "list"}" data-mode="list">List</button></div></div>
+      <div class="rbar"><input type="search" id="roomq" class="rbar-q" value="${esc(S.roomQ || "")}" placeholder="Filter rooms, runner, or latest…" autocomplete="off" spellcheck="false" aria-label="Filter rooms"><select id="roomsort" class="rbar-sort" aria-label="Sort rooms">${[["active", "Active first"], ["recent", "Most recent"], ["tasks", "Most tasks"], ["name", "Name A–Z"]].map(([k, l]) => `<option value="${k}" ${sort === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="rbar-ct">${list.length} of ${S.rooms.length}</span></div>`;
     const att = activeAttention();
     if (!S.rooms.length) return `${knockCard()}${holdCards(att)}${localRoomCards(att)}<div id="setup"></div>${tiles()}<div class="card empty" style="margin-top:26px">${sigil("start", 64)}<h2>No rooms yet</h2><p>Host one for your agents, or join a room with an invite link.</p><button class="btn primary" data-act="add">+ Add room</button></div>`;
     const main = !list.length ? `<div class="card empty">Nothing matches this filter.</div>`
       : S.mode === "orbit" ? `<div class="const-wrap" id="constwrap"><div class="space" id="space"></div><ul class="sr-only" aria-label="Rooms">${list.map(r => `<li><a href="${esc(roomUrl(r.id))}" data-wh="${r.id}">${esc(r.label)}: ${esc(STATE_TXT[r.state] || "")}</a></li>`).join("")}</ul><div class="legend"><span><i class="led live"></i>active</span><span><i class="led idle"></i>quiet</span><span><i class="led hold"></i>witness hold</span><span><i class="led bad"></i>chain failed</span><span style="margin-left:auto">inner ring: mine · outer ring: shared · drag to turn</span></div></div>`
+      : S.mode === "grid" ? `<div class="rgrid">${list.map(roomCard).join("")}</div><p class="hint">J K move · Enter open · / search</p>`
       : `<div class="ledger"><div class="lh"><span class="h-room">Room</span><span class="h-who">Who</span><span>State</span><span>Last 2 h</span><span class="h-seen">Seen</span></div>${list.map(roomRow).join("")}</div><p class="hint">J K move · Enter open · / search</p>`;
-    return `${knockCard()}${holdCards(att)}${localRoomCards(att)}<div id="setup"></div>${tiles()}${harness()}${bar}${main}<div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
+    return `${knockCard()}${holdCards(att)}${localRoomCards(att)}<div id="setup"></div>${tiles()}${harness()}${bar}<div id="roomsmain">${main}</div><div class="inline-act"><div class="sect"><h2 class="rule"><span class="ix">02</span>Activity</h2></div><div class="card" id="inlineact" style="padding:2px 16px"></div></div>`;
   },
   attention() {
     const att = activeAttention();
@@ -1138,33 +1219,75 @@ function ripple(id) { PBSpace.ping(id); }
 
 /* ---------- command palette ---------- */
 function openPalette() {
-  const items = [
+  const baseItems = [
     ...S.rooms.map(r => ({t: r.label, s: [r.machine, r.kind === "mine" ? "mine" : "shared"].filter(Boolean).join(" · "), href: roomUrl(r.id), sig: r.id})),
     {t: "Add a room", s: "join or host", act: () => openAdd(), ic: "add"}, {t: "Needs you", s: `${activeAttention().length} items`, act: () => go("attention"), ic: "attention"},
     {t: "All rooms", s: "overview", act: () => go("rooms"), ic: "rooms"}, {t: "Research", s: "autonomous runs", act: () => go("research"), ic: "research"}, {t: "Integrations", s: "agents and apps", act: () => go("integrations"), ic: "plug"}, {t: "Hub & Invites", s: "devices, push, appearance", act: () => go("hub"), ic: "hub"},
     {t: "Toggle light / dark", s: "", act: toggleTheme, ic: themeNow() === "dark" ? "sun" : "moon"},
-    ...(window.PBTheme ? [{t: "Settings", s: "appearance, interface, hub, safety  ⌘,", act: () => PBTheme.open(), ic: "settings"}, {t: "Appearance settings", s: "theme, accent, fonts", act: () => PBTheme.open("appearance"), ic: "settings"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
-  const sh = $("#sheet"); let q = "", sel = 0, list = items;
+    ...(window.PBSettings ? [{t: "Settings", s: "overview, network, safety, notifications, appearance  ⌘,", act: () => PBSettings.open("overview"), ic: "settings"}] : window.PBTheme ? [{t: "Settings", s: "appearance, interface, hub, safety  ⌘,", act: () => PBTheme.open(), ic: "settings"}] : []),
+    ...(window.PBTheme ? [{t: "Theme & appearance", s: "theme, accent, fonts", act: () => PBTheme.open("theme"), ic: "settings"}, ...PBTheme.themes().map(x => ({t: `Theme: ${x.label}`, s: "", act: () => PBTheme.set("skin", x.id), ic: "hub"}))] : [])];
+  const sh = $("#sheet"); let q = "", sel = 0, list = baseItems, clsItems = [], clsTimer = null, clsSeq = 0;
+  const rebuild = () => {
+    const local = q ? baseItems.filter(it => (it.t + " " + it.s).toLowerCase().includes(q)) : baseItems;
+    const seen = new Set(local.map(x => x.t.toLowerCase()));
+    list = [...local, ...clsItems.filter(x => !seen.has(x.t.toLowerCase()))];
+    if (sel >= list.length) sel = 0;
+  };
   const draw = () => {
     $("#pal-list").innerHTML = list.length ? list.map((it, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ph">${it.sig ? sigil(it.sig, 28) : svgi(it.ic)}</span><span>${esc(it.t)}</span><small>${esc(it.s)}</small></li>`).join("") : `<li class="mut">No match</li>`;
     $("#pal-list .ph")?.closest("ul")?.querySelector("[aria-selected=true]")?.scrollIntoView({block: "nearest"});
   };
   const run = it => { sh.close(); if (!it) return; if (it.href) location.href = it.href; else it.act(); };
-  sh.innerHTML = `<div class="pal"><div class="pal-in"><input id="pal-q" placeholder="Jump to a room or action" autocomplete="off" spellcheck="false" aria-label="Search"></div><ul id="pal-list" role="listbox"></ul></div>`;
+  sh.innerHTML = `<div class="pal"><div class="pal-in"><input id="pal-q" placeholder="Jump to a room, setting, or fix… (⌘K)" autocomplete="off" spellcheck="false" aria-label="Search"></div><ul id="pal-list" role="listbox"></ul></div>`;
   draw(); sh.showModal(); $("#pal-q").focus();
-  $("#pal-q").addEventListener("input", e => { q = e.target.value.toLowerCase().trim(); list = items.filter(it => (it.t + " " + it.s).toLowerCase().includes(q)); sel = 0; draw(); });
+  $("#pal-q").addEventListener("input", e => {
+    q = e.target.value.toLowerCase().trim(); clsItems = []; sel = 0; rebuild(); draw();
+    clearTimeout(clsTimer);
+    if (q.length >= 2) {
+      const seq = ++clsSeq;
+      clsTimer = setTimeout(async () => {
+        try {
+          const [sr, ar] = await Promise.all([
+            api("GET", "/api/settings/search?q=" + encodeURIComponent(q)).catch(() => ({results: []})),
+            api("GET", "/api/search?q=" + encodeURIComponent(q)).catch(() => ({results: []})),
+          ]);
+          if (seq !== clsSeq || !sh.open) return;
+          const setHits = (sr.results || []).slice(0, 4).map(hit => ({
+            t: `Setting: ${hit.title}`,
+            s: [hit.live_status, hit.security_tier === "step_up" ? "passkey" : "", hit.fix_hint].filter(Boolean).join(" · "),
+            act: () => window.PBSettings ? PBSettings.open(hit.page) : window.PBTheme && PBTheme.open(hit.page),
+            ic: "settings",
+          }));
+          const arcHits = (ar.results || []).slice(0, 6).map(hit => ({
+            t: `${hit.label} #${hit.seq}: ${hit.snippet.slice(0, 70)}`,
+            s: [hit.runner, hit.ms != null ? hit.ms + "ms" : "", hit.from].filter(Boolean).join(" · "),
+            href: hit.href,
+            sig: hit.room,
+          }));
+          clsItems = [...arcHits, ...setHits];
+          rebuild(); draw();
+        } catch {}
+      }, 110);
+    }
+  });
   $("#pal-q").addEventListener("keydown", e => {
-    if (e.key === "ArrowDown") { sel = Math.min(list.length - 1, sel + 1); draw(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); draw(); e.preventDefault(); }
+    if (e.key === "ArrowDown") { sel = list.length ? (sel + 1) % list.length : 0; draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = list.length ? (sel - 1 + list.length) % list.length : 0; draw(); e.preventDefault(); }
     else if (e.key === "Enter") { e.preventDefault(); run(list[sel]); }
   });
   $("#pal-list").addEventListener("click", e => { const li = e.target.closest("li[data-i]"); if (li) run(list[+li.dataset.i]); });
 }
+window.openPalette = openPalette;
 addEventListener("keydown", e => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || ""), modal = $("#sheet").open;
-  if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing && !modal)) { if (!$("#view")) return; e.preventDefault(); return openPalette(); }
-  if (typing || modal || e.metaKey || e.ctrlKey || e.altKey || S.view !== "rooms" || S.mode !== "list") return;
-  const rows = [...document.querySelectorAll(".ledger .rw")]; if (!rows.length) return;
+  if (((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") || (e.key === "/" && !typing && !modal)) {
+    if (!$("#view") || document.querySelector("dialog.pbs[open]")) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (modal) $("#sheet").close(); else openPalette();
+    return;
+  }
+  if (typing || modal || e.metaKey || e.ctrlKey || e.altKey || S.view !== "rooms" || (S.mode !== "list" && S.mode !== "grid")) return;
+  const rows = [...document.querySelectorAll(".ledger .rw, .rgrid .rcard")]; if (!rows.length) return;
   const cur = rows.findIndex(r => r.classList.contains("sel"));
   if (e.key === "j" || e.key === "ArrowDown" || e.key === "k" || e.key === "ArrowUp") {
     e.preventDefault(); const next = e.key === "j" || e.key === "ArrowDown" ? Math.min(rows.length - 1, cur + 1) : Math.max(0, cur < 0 ? 0 : cur - 1);
@@ -1193,9 +1316,17 @@ function openMore() {
   });
   sh.showModal();
 }
+const ROOM_TEMPLATES = {
+  swe: {id: "swe", name: "SWE", sub: "Multi-agent coding · docker · registry egress · test_suite", label: "SWE workspace", docker: true},
+  research: {id: "research", name: "Research", sub: "4 CPU / 4 GiB · HF/PyPI/arXiv · benchmark + promote", label: "Research lab", docker: true},
+  review: {id: "review", name: "Review", sub: "Zero-egress audit · memory review · secret_scan", label: "Security review", docker: true},
+  ops: {id: "ops", name: "Ops", sub: "Runbook diagnostics · owner-approved remediation", label: "Ops war room", docker: true},
+  custom: {id: "", name: "Custom", sub: "Configure repository, reach and sandbox manually", label: "", docker: false},
+};
 function openAdd(pre) {
   const machines = [...new Set(S.rooms.map(r => r.machine).filter(Boolean))];
   const hostFirst = !(pre && pre.link) && S.rooms.length === 0;      // nothing here yet: the common first move is to host
+  let selTpl = pre?.template || (hostFirst ? "swe" : "");
   sheet().innerHTML = `<form method="dialog" id="addform"><h2>Add a room</h2>
     <div class="radio" role="radiogroup" aria-label="How" style="margin-top:14px">
       <label><input type="radio" name="how" value="join" ${hostFirst ? "" : "checked"}>Join<small>with an invite link</small></label>
@@ -1204,6 +1335,8 @@ function openAdd(pre) {
     <div id="linkrow"><label for="alink">Invite link</label><textarea id="alink" class="mono" placeholder="playbox://…" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div>
     <label for="alabel">Name</label><input id="alabel" maxlength="60" placeholder="e.g. Lab agents, Acme review" autocomplete="off">
     <div id="hostrow" hidden>
+      <label>Room template <span class="mut">(one-command governed workspace)</span></label>
+      <div class="radio" id="tplpicks" style="grid-template-columns:repeat(auto-fit,minmax(145px,1fr))">${Object.entries(ROOM_TEMPLATES).map(([k, t]) => `<label><input type="radio" name="tpl" value="${esc(t.id)}" ${selTpl === t.id ? "checked" : ""}>${esc(t.name)}<small>${esc(t.sub)}</small></label>`).join("")}</div>
       <label>Who can reach it?</label>
       <div class="radio"><label><input type="radio" name="reach" value="iroh" checked>Anywhere<small>friends on other networks</small></label><label><input type="radio" name="reach" value="local">Same network<small>this machine or Wi-Fi only</small></label></div>
       <label for="arepo">Git repository <span class="mut">(optional)</span></label><input id="arepo" list="repolist" class="mono" placeholder="/Users/you/code/project" autocomplete="off" autocapitalize="off" spellcheck="false"><datalist id="repolist"></datalist>
@@ -1257,9 +1390,10 @@ function openAdd(pre) {
     if (e.submitter?.value === "cancel") return;
     e.preventDefault();
     const mode = how(), btn = $("#asave"), idle = mode === "host" ? "Host room" : "Join room";
-    const body = {label: $("#alabel").value.trim(), machine: $("#amachine").value.trim(), kind: document.querySelector("[name=kind]:checked").value, home: $("#ahome").value.trim() || undefined};
+    const tplVal = mode === "host" ? (document.querySelector("[name=tpl]:checked")?.value || "") : "";
+    const body = {label: $("#alabel").value.trim(), machine: $("#amachine").value.trim(), kind: document.querySelector("[name=kind]:checked").value, home: $("#ahome").value.trim() || undefined, ...(tplVal ? {template: tplVal} : {})};
     if (mode === "join" && !body.home) { body.link = $("#alink").value.trim(); if (!body.link) { $("#aerr").textContent = "Paste the invite link."; return; } }
-    if (!body.label) body.label = mode === "host" ? "New room" : "Joined room";
+    if (!body.label) body.label = mode === "host" ? (ROOM_TEMPLATES[tplVal]?.label || "New room") : "Joined room";
     btn.disabled = true; btn.textContent = mode === "join" ? "Joining…" : "Hosting…"; $("#aerr").textContent = "";
     let r;
     try {
@@ -1269,6 +1403,7 @@ function openAdd(pre) {
         // One step: the room is added and hosted here, so what you typed is all there is to do.
         const args = {}, repo = $("#arepo").value.trim();
         if (repo) args.repo = repo;
+        if (tplVal) args.template = tplVal;
         if (document.querySelector("[name=reach]:checked").value === "local") args.local = true;
         let res;
         try { res = await PB.guarded(`/r/${r.id}/api/tool`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: "playbox_create", args})}); }
@@ -1404,6 +1539,18 @@ addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = 
 addEventListener("appinstalled", () => toast("Installed"));
 
 /* ---------- events ---------- */
+document.addEventListener("input", e => {
+  if (e.target.id === "roomq") {
+    S.roomQ = e.target.value;
+    const pos = e.target.selectionStart;
+    paintView();
+    const n = $("#roomq");
+    if (n) { n.focus(); if (pos != null) n.setSelectionRange(pos, pos); }
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "roomsort") { S.roomSort = e.target.value; paintView(); }
+});
 document.addEventListener("click", async e => {
   const t = e.target.closest("[data-tab],[data-mode],[data-act],[data-filter],[data-theme]"); if (!t) return;
   if (t.dataset.tab) return go(t.dataset.tab);

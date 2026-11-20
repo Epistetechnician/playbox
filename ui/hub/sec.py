@@ -74,7 +74,7 @@ def check(cid, label, level, detail, fix=""):
     return {"id": cid, "label": label, "level": level, "detail": detail, "fix": fix}
 
 
-def posture(*, public, access, creds, weak_sessions, invites, knocks, push, rooms, fresh, tailnet=False):
+def posture(*, public, access, creds, weak_sessions, invites, knocks, push, rooms, fresh, tailnet=False, aiproxy=None):
     """Checks over the hub's current state. `level` is ok, warn or bad; bad is something that lets the wrong person in."""
     out = []
     if public and access:
@@ -118,4 +118,22 @@ def posture(*, public, access, creds, weak_sessions, invites, knocks, push, room
         out.append(check("hosted", "Rooms reachable", "warn", f"{len(unhosted)} room(s) are not hosted or joined from this hub.", "Host or re-join them."))
     out.append(check("push", "Phone alerts", "ok" if push else "warn", "A device will buzz when someone knocks." if push else "No device is subscribed, so a knock waits until you look.",
                      "" if push else "Hub, Notifications, Turn on."))
+    if isinstance(aiproxy, dict) and aiproxy.get("configured"):
+        hardened = bool(aiproxy.get("playbox_hardened") and aiproxy.get("mcp_disabled") and aiproxy.get("web_search_disabled"))
+        loopback = bool(aiproxy.get("loopback_only"))
+        ret_days = int(aiproxy.get("body_retention_days") or 0)
+        if hardened and loopback:
+            detail = (
+                "playbox-aiproxy hardened build on loopback (MCP and web search compiled out; "
+                + (f"opt-in {ret_days}d scrubbed body retention)." if ret_days > 0 else "metadata-only default).")
+            )
+            out.append(check("aiproxy", "Model gateway", "ok", detail))
+        else:
+            out.append(check(
+                "aiproxy",
+                "Model gateway",
+                "bad",
+                "aiproxy is running without playbox_hardened or off loopback; MCP/web-search plugins may bypass Playbox gates.",
+                "Rebuild with scripts/build-aiproxy.sh (-tags playbox_hardened) and bind to 127.0.0.1.",
+            ))
     return out

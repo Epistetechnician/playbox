@@ -129,3 +129,90 @@ def decide_call(hid, call, approve):
     except OSError as e:
         return False, f"the room's host did not answer: {e}"
     return r.startswith("ok"), r[:200]
+
+
+def host_policy(hid):
+    """Read live policy guardrails and budget burn from a local host socket."""
+    if not re.fullmatch(r"[0-9a-f]{16}", hid or ""):
+        return None
+    try:
+        raw = ask_host(hosting_dir() / f"{hid}.sock", "policy", 3.0)
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def host_set_policy(hid, patch):
+    """Update live policy guardrails on a local host socket. Returns (ok, dict_or_error_str)."""
+    if not re.fullmatch(r"[0-9a-f]{16}", hid or "") or not isinstance(patch, dict):
+        return False, "bad host or policy patch"
+    try:
+        raw = ask_host(hosting_dir() / f"{hid}.sock", "policy_set " + json.dumps(patch, separators=(",", ":")), 5.0)
+    except OSError as e:
+        return False, f"the room's host did not answer: {e}"
+    if raw.startswith("error:"):
+        return False, raw[6:].strip()[:200]
+    try:
+        return True, json.loads(raw)
+    except ValueError:
+        return False, raw[:200]
+
+
+def host_memory(hid):
+    """Read shared memory ledger from a local host socket."""
+    if not re.fullmatch(r"[0-9a-f]{16}", hid or ""):
+        return None
+    try:
+        raw = ask_host(hosting_dir() / f"{hid}.sock", "memory", 3.0)
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def host_memory_act(hid, req):
+    """Run a memory action (endorse, accept, quarantine, remember) on a local host socket."""
+    if not re.fullmatch(r"[0-9a-f]{16}", hid or "") or not isinstance(req, dict):
+        return False, "bad host or memory action"
+    try:
+        raw = ask_host(hosting_dir() / f"{hid}.sock", "memory_act " + json.dumps(req, separators=(",", ":")), 5.0)
+    except OSError as e:
+        return False, f"the room's host did not answer: {e}"
+    if raw.startswith("error:"):
+        return False, raw[6:].strip()[:200]
+    try:
+        return True, json.loads(raw)
+    except ValueError:
+        return False, raw[:200]
+
+
+def host_replay(hid, task_id=None, run=False):
+    """Inspect or replay a task on a local host socket."""
+    if not re.fullmatch(r"[0-9a-f]{16}", hid or ""):
+        return False, "bad host id"
+    tid = re.sub(r"[^A-Za-z0-9_.:-]", "", str(task_id or ""))[:80]
+    cmd = "replay" + (f" {tid}" + (" run" if run else "") if tid else "")
+    try:
+        raw = ask_host(hosting_dir() / f"{hid}.sock", cmd, 60.0 if run else 5.0)
+    except OSError as e:
+        return False, f"the room's host did not answer: {e}"
+    if raw.startswith("error:"):
+        return False, raw[6:].strip()[:200]
+    try:
+        return True, json.loads(raw)
+    except ValueError:
+        return False, raw[:200]
+
+
+def host_handoffs(hid, cid=None):
+    """Read structured handoff checkpoints from a local host socket."""
+    if not re.fullmatch(r"[0-9a-f]{16}", hid or ""):
+        return None
+    tid = re.sub(r"[^A-Za-z0-9_.:-]", "", str(cid or ""))[:80]
+    try:
+        raw = ask_host(hosting_dir() / f"{hid}.sock", "handoffs" + (f" {tid}" if tid else ""), 3.0)
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
