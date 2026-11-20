@@ -818,7 +818,7 @@ pub fn export(o: ExportOpts) -> Result<()> {
 
     let body = BundleBody {
         generated_at_ms: store::now_ms(),
-        tool_version: env!("CARGO_PKG_VERSION").to_string(),
+        tool_version: env!("PLAYBOX_VERSION_LONG").to_string(),
         claim_boundary: default_claim_boundary(),
         gates: GatesEvidence {
             gate_1_capability_and_grant_bounds: g1,

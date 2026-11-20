@@ -51,6 +51,7 @@ class VerifiedEvalHarnessTests(unittest.TestCase):
             repo_cache_dir=Path("/nonexistent"),
             patch_text="",
             online_gate_passed=False,
+            existing_tests_passed=False,
             critic_model="",
         )
         self.assertFalse(ok)

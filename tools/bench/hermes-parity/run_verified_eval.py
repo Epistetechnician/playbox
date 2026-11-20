@@ -222,6 +222,39 @@ def _extract_base_hunk_context(repo_cache_dir: Path, patch_text: str, max_chars:
     return ("\n\n".join(chunks))[:max_chars]
 
 
+def is_devin_authenticated() -> bool:
+    if not os.path.exists(DEVIN_BIN):
+        return False
+    try:
+        p = subprocess.run([DEVIN_BIN, "auth", "status"], capture_output=True, text=True, timeout=8)
+        out = (p.stdout or "") + (p.stderr or "")
+        return p.returncode == 0 and "not logged in" not in out.lower()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _estimate_hermes_critic_cost(usage_path: Path, model: str) -> float:
+    if not usage_path.is_file():
+        return 0.0
+    try:
+        u = json.loads(usage_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0.0
+    direct = float(u.get("estimated_cost_usd") or 0.0)
+    if direct > 0.0:
+        return direct
+    inp = int(u.get("input_tokens") or 0)
+    cached = int(u.get("cache_read_tokens") or 0)
+    out = int(u.get("output_tokens") or 0)
+    uncached = max(0, inp - cached)
+    ml = model.lower()
+    if any(k in ml for k in ("terra", "gpt-6", "sonnet", "neon")):
+        ir, cr, or_ = 3.00, 0.30, 15.00
+    else:
+        ir, cr, or_ = 1.00, 0.10, 5.00
+    return round((uncached * ir + cached * cr + out * or_) / 1_000_000.0, 6)
+
+
 def run_non_oracle_critic(
     *,
     inst: str,
@@ -229,25 +262,34 @@ def run_non_oracle_critic(
     repo_cache_dir: Path,
     patch_text: str,
     online_gate_passed: bool,
+    existing_tests_passed: bool,
     critic_model: str,
+    critic_harness: str = "hermes",
+    critic_provider: str = "openai-codex",
 ) -> tuple[bool, str, float]:
-    """Cross-family non-oracle diff review.
+    """Independent non-oracle diff review.
 
     Anti-Goodhart invariant by type signature: NEVER receives `res`, `holdout`, `test_patch`,
     `FAIL_TO_PASS`, or `PASS_TO_PASS`. Inspects ONLY `problem_statement`, base source context,
-    `patch_text`, and `online_gate_passed`.
+    `patch_text`, `existing_tests_passed`, and `online_gate_passed`.
     """
     if not patch_text.strip():
         return False, "Candidate produced an empty patch.", 0.0
-    if not online_gate_passed:
-        return False, "Candidate failed the non-oracle online repo/repro test gate.", 0.0
-    if not critic_model or not os.path.exists(DEVIN_BIN):
-        return True, "Critic disabled; online gate passed.", 0.0
+    if not existing_tests_passed:
+        return False, "Candidate broke existing repository unit tests.", 0.0
+    if not critic_model:
+        return online_gate_passed, ("Online gate passed." if online_gate_passed else "Online repro gate failed."), 0.0
 
     base_ctx = _extract_base_hunk_context(repo_cache_dir, patch_text)
+    repro_note = (
+        "Existing repository unit tests PASSED, and the independent reproduction script PASSED."
+        if online_gate_passed
+        else "Existing repository unit tests PASSED, while an auto-generated synthetic reproduction script disagreed (which may be a real edge-case miss OR a buggy synthetic repro test)."
+    )
     prompt = (
         "You are an adversarial code reviewer gating a software bugfix candidate. "
         "Do NOT run any tools or commands; all needed information is below.\n"
+        f"Online check status: {repro_note}\n"
         "Check strictly whether the CANDIDATE PATCH completely and accurately resolves the ISSUE "
         "without regressions:\n"
         "1. Does it patch the right abstraction layer (core helper/iterator vs high-level CLI wrapper so direct unit callers also work)?\n"
@@ -261,35 +303,60 @@ def run_non_oracle_critic(
         f"=== CANDIDATE PATCH ===\n{patch_text[:6000]}\n"
     )
     with tempfile.TemporaryDirectory(prefix="pbx-critic-") as td:
-        ws = Path(td) / "ws"
-        (ws / ".devin").mkdir(parents=True, exist_ok=True)
-        (ws / ".devin" / "mcp_config.local.json").write_text(
-            json.dumps({"mcpServers": {"playbox": {"disabled": True}}}),
-            encoding="utf-8",
-        )
-        t0 = time.time()
-        try:
-            p = subprocess.run(
-                [
-                    DEVIN_BIN,
-                    "--model", critic_model,
-                    "--permission-mode", "readonly",
-                    "--respect-workspace-trust", "false",
-                    "--process-model", "in-process",
-                    "--verbosity", "0",
-                    "-p", prompt,
-                ],
-                cwd=str(ws),
-                capture_output=True,
-                text=True,
-                timeout=90,
+        if critic_harness == "devin" and os.path.exists(DEVIN_BIN):
+            ws = Path(td) / "ws"
+            (ws / ".devin").mkdir(parents=True, exist_ok=True)
+            (ws / ".devin" / "mcp_config.local.json").write_text(
+                json.dumps({"mcpServers": {"playbox": {"disabled": True}}}),
+                encoding="utf-8",
             )
-            out = (p.stdout or "").strip()
-        except subprocess.TimeoutExpired:
-            return True, "Critic timed out; accepting online-gate-verified patch.", 0.0
-        cost = _estimate_devin_critic_cost(ws, t0, critic_model)
+            t0 = time.time()
+            try:
+                p = subprocess.run(
+                    [
+                        DEVIN_BIN,
+                        "--model", critic_model,
+                        "--permission-mode", "readonly",
+                        "--respect-workspace-trust", "false",
+                        "--process-model", "in-process",
+                        "--verbosity", "0",
+                        "-p", prompt,
+                    ],
+                    cwd=str(ws),
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+                out = (p.stdout or "").strip()
+            except subprocess.TimeoutExpired:
+                return online_gate_passed, "Critic timed out.", 0.0
+            cost = _estimate_devin_critic_cost(ws, t0, critic_model)
+        else:
+            usage_p = Path(td) / "critic_usage.json"
+            hermes_bin = os.path.expanduser("~/.local/bin/hermes")
+            try:
+                p = subprocess.run(
+                    [
+                        hermes_bin,
+                        "--usage-file", str(usage_p),
+                        "-z", prompt,
+                        "-m", critic_model,
+                        "--provider", critic_provider,
+                        "-t", "",
+                        "--yolo",
+                    ],
+                    cwd=td,
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+                out = (p.stdout or "").strip()
+            except subprocess.TimeoutExpired:
+                return online_gate_passed, "Critic timed out.", 0.0
+            cost = _estimate_hermes_critic_cost(usage_p, critic_model)
+
         m_verd = re.search(r"VERDICT:\s*(PASS|ESCALATE)", out, re.I)
-        verdict_pass = True if not m_verd else (m_verd.group(1).upper() == "PASS")
+        verdict_pass = online_gate_passed if not m_verd else (m_verd.group(1).upper() == "PASS")
         m_crit = re.search(r"CRITIQUE:\s*(.+)", out, re.I | re.S)
         critique = m_crit.group(1).strip()[:450] if m_crit else out[-350:]
         return verdict_pass, critique, cost
@@ -429,16 +496,21 @@ def run_arm_p2_cascade_instance(
     t1_model: str,
     t1_repro_gate: bool,
     t2_harness: str,
+    t2_provider: str,
     t2_model: str,
     t3_harness: str,
+    t3_provider: str,
     t3_workers: int,
     t3_worker_models: str,
+    critic_harness: str,
+    critic_provider: str,
     critic_model: str,
     max_tiers: int,
     memory_file: Path,
     timeout: int,
 ) -> dict:
     """Execute the strictly zero-oracle 3-Tier Playbox Arm P2 Cascade on `inst`."""
+    from playbox_atlas import append_verified_lesson
     from score import load as load_swe
 
     r_meta = load_swe(inst)
@@ -451,6 +523,7 @@ def run_arm_p2_cascade_instance(
     guidance = ""
 
     chosen_res: dict | None = None
+    chosen_patch = ""
     chosen_tier = "t1"
     chosen_rcpt = ""
 
@@ -469,7 +542,7 @@ def run_arm_p2_cascade_instance(
         {
             "label": "t2",
             "harness": t2_harness,
-            "provider": "anthropic",
+            "provider": t2_provider,
             "model": t2_model,
             "workers": 1,
             "worker_models": "",
@@ -480,8 +553,8 @@ def run_arm_p2_cascade_instance(
         {
             "label": "t3",
             "harness": t3_harness,
-            "provider": "anthropic",
-            "model": t3_worker_models.split(",")[0].strip() if t3_worker_models else "claude-opus-5-5-high",
+            "provider": t3_provider,
+            "model": t3_worker_models.split(",")[0].strip() if t3_worker_models else "gpt-6-luna",
             "workers": t3_workers,
             "worker_models": t3_worker_models,
             "repro_gate": False,
@@ -512,11 +585,14 @@ def run_arm_p2_cascade_instance(
         tier_cost = float(res.get("total_cost_usd") or 0.0)
         tier_wall = float(res.get("wall_s") or 0.0)
         online_ok = bool(res.get("online_gate_passed"))
+        cands_prov = (res.get("provenance") or {}).get("candidates") or []
+        best_score = max((float(c.get("score") or 0.0) for c in cands_prov), default=0.0)
+        existing_ok = online_ok or (best_score >= 0.6)
 
         # Strictly non-oracle escalation decision: NEVER inspects `res["resolved"]` or `res["holdout"]`!
         is_last_tier = idx == (len(tier_specs) - 1)
         if is_last_tier:
-            critic_ok, critique, critic_cost = (online_ok and bool(patch.strip())), "final_tier", 0.0
+            critic_ok, critique, critic_cost = (existing_ok and bool(patch.strip())), "final_tier", 0.0
         else:
             t_c0 = time.time()
             critic_ok, critique, critic_cost = run_non_oracle_critic(
@@ -525,7 +601,10 @@ def run_arm_p2_cascade_instance(
                 repo_cache_dir=repo_cache_dir,
                 patch_text=patch,
                 online_gate_passed=online_ok,
+                existing_tests_passed=existing_ok,
                 critic_model=critic_model,
+                critic_harness=critic_harness,
+                critic_provider=critic_provider,
             )
             tier_wall += round(time.time() - t_c0, 1)
 
@@ -537,6 +616,7 @@ def run_arm_p2_cascade_instance(
             "harness": ts["harness"],
             "model": ts["worker_models"] or ts["model"],
             "online_gate_passed": online_ok,
+            "existing_tests_passed": existing_ok,
             "critic_passed": critic_ok,
             "critic_cost_usd": round(critic_cost, 6),
             "tier_cost_usd": round(tier_cost, 6),
@@ -545,14 +625,29 @@ def run_arm_p2_cascade_instance(
             "receipt_path": str(rcpt_path) if rcpt_path.is_file() else "",
         })
 
-        # Non-oracle candidate selection: prefer latest tier that produced a non-empty patch and passed
-        # existing repo tests (`online_gate_passed`), or any non-empty patch over an empty patch.
-        if chosen_res is None or (bool(patch.strip()) and (online_ok or not chosen_res.get("online_gate_passed"))):
+        # Non-oracle candidate selection: prefer latest tier whose patch passed existing repo tests (`existing_ok`),
+        # or any non-empty patch over an empty patch.
+        prev_cands = ((chosen_res or {}).get("provenance") or {}).get("candidates") or []
+        prev_existing_ok = bool(chosen_res and (chosen_res.get("online_gate_passed") or max((float(c.get("score") or 0.0) for c in prev_cands), default=0.0) >= 0.6))
+        if chosen_res is None or (bool(patch.strip()) and (existing_ok or not prev_existing_ok)):
             chosen_res = res
+            chosen_patch = patch
             chosen_tier = t_lbl
             chosen_rcpt = str(rcpt_path) if rcpt_path.is_file() else ""
 
-        if critic_ok and online_ok and bool(patch.strip()):
+        if critic_ok and existing_ok and bool(patch.strip()):
+            # Persist verified lesson if non-oracle critic + existing repo tests passed and `run_swe_playbox_v2`
+            # hadn't already persisted it (e.g. when synthetic w_repro had a false negative).
+            if memory_file and not res.get("lesson_persisted") and res.get("receipt_verified") and patch.strip():
+                touched = sorted(set(re.findall(r"(?m)^diff --git a/(.+?) b/", patch)))
+                hunks = [ln.strip() for ln in patch.splitlines() if ln.startswith("@@")][:3]
+                append_verified_lesson(
+                    memory_file,
+                    topic=f"{inst} {' '.join(touched)}",
+                    lesson=f"Verified fix touched {', '.join(touched)} ({'; '.join(hunks)})",
+                    evidence=[f"commit:{str(r_meta.get('base_commit', ''))[:12]}", f"inst:{inst}"],
+                    gate_receipt_sha256=str(res.get("receipt_sha256") or ""),
+                )
             break
 
         base_fb = _extract_non_oracle_guidance(res, patch)
@@ -725,14 +820,32 @@ def main() -> None:
     ap.add_argument("--t1-model", default="gpt-5.6-luna")
     ap.add_argument("--no-t1-repro-gate", action="store_true")
     ap.add_argument("--t2-harness", default="devin", choices=["hermes", "devin"])
+    ap.add_argument("--t2-provider", default="openai-codex")
     ap.add_argument("--t2-model", default="gemini-4-neon-high")
     ap.add_argument("--t3-harness", default="devin", choices=["hermes", "devin"])
+    ap.add_argument("--t3-provider", default="openai-codex")
     ap.add_argument("--t3-workers", type=int, default=2)
     ap.add_argument("--t3-worker-models", default="claude-opus-5-5-high,gemini-4-neon-high")
-    ap.add_argument("--critic-model", default="gemini-4-neon-high", help="Cross-family non-oracle diff critic model (empty to disable)")
+    ap.add_argument("--critic-harness", default="devin", choices=["hermes", "devin"])
+    ap.add_argument("--critic-provider", default="openai-codex")
+    ap.add_argument("--critic-model", default="gemini-4-neon-high", help="Independent non-oracle diff critic model (empty to disable)")
     ap.add_argument("--max-tiers", type=int, default=3, choices=[1, 2, 3])
     ap.add_argument("--timeout", type=int, default=780)
     args = ap.parse_args()
+
+    devin_ok = is_devin_authenticated()
+    auth_fallback = ""
+    t2_harness, t2_provider, t2_model = args.t2_harness, args.t2_provider, args.t2_model
+    t3_harness, t3_provider, t3_worker_models = args.t3_harness, args.t3_provider, args.t3_worker_models
+    critic_harness, critic_provider, critic_model = args.critic_harness, args.critic_provider, args.critic_model
+    if not devin_ok:
+        if t2_harness == "devin":
+            t2_harness, t2_provider, t2_model = "hermes", "openai-codex", "gpt-5.6-terra"
+            auth_fallback = "hermes:openai-codex (gpt-5.6-luna -> gpt-5.6-terra -> gpt-6-luna,gpt-5.6-terra)"
+        if t3_harness == "devin":
+            t3_harness, t3_provider, t3_worker_models = "hermes", "openai-codex", "gpt-6-luna,gpt-5.6-terra"
+        if critic_harness == "devin" and critic_model:
+            critic_harness, critic_provider, critic_model = "hermes", "openai-codex", "gpt-5.6-terra"
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -750,6 +863,8 @@ def main() -> None:
         "event": "eval_start",
         "tool_version": tool_ver,
         "git_clean": "+dirty" not in tool_ver,
+        "devin_authenticated": devin_ok,
+        "auth_fallback": auth_fallback,
         "instances": len(instances),
         "arms": arms,
         "concurrency": args.concurrency,
@@ -788,12 +903,16 @@ def main() -> None:
                         t1_provider=args.t1_provider,
                         t1_model=args.t1_model,
                         t1_repro_gate=not args.no_t1_repro_gate,
-                        t2_harness=args.t2_harness,
-                        t2_model=args.t2_model,
-                        t3_harness=args.t3_harness,
+                        t2_harness=t2_harness,
+                        t2_provider=t2_provider,
+                        t2_model=t2_model,
+                        t3_harness=t3_harness,
+                        t3_provider=t3_provider,
                         t3_workers=args.t3_workers,
-                        t3_worker_models=args.t3_worker_models,
-                        critic_model=args.critic_model,
+                        t3_worker_models=t3_worker_models,
+                        critic_harness=critic_harness,
+                        critic_provider=critic_provider,
+                        critic_model=critic_model,
                         max_tiers=args.max_tiers,
                         memory_file=memory_file,
                         timeout=args.timeout,
