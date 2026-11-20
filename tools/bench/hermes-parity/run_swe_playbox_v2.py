@@ -193,7 +193,12 @@ def host_repo(dst: str, inst: str, r: dict) -> None:
 
 def strip_tests(patch: str) -> str:
     blocks = re.split(r"(?m)^(?=diff --git )", patch or "")
-    return "".join(b for b in blocks if b.strip() and not re.match(r"diff --git a/(tests?|testing)/", b))
+    return "".join(
+        b for b in blocks
+        if b.strip()
+        and not re.search(r"^diff --git a/(?:.+/)?(?:tests?|testing)/", b)
+        and "\nBinary files " not in b
+    )
 
 
 def estimate_usage_cost_usd(u: dict, model: str = "") -> float:

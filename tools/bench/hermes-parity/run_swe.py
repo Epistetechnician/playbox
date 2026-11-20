@@ -50,12 +50,13 @@ H = os.path.expanduser("~/.playbox-hermes/openshell-parity"); SWE = os.environ.g
 r = load(inst)
 _, img = _inst(inst)
 fam = r.get("pb_family") or ("django" if inst.startswith("django-") else inst)
-SB = f"parity-{fam}{slot_sfx}"; tag = f"{inst}-{arm}{n}"
+img_fam = "django" if "django" in img else ("flask" if "flask" in img else "polyglot")
+SB = f"parity-{img_fam}{slot_sfx}"; tag = f"{inst}-{arm}{n}"
 os.makedirs(out, exist_ok=True)
 work = tempfile.mkdtemp(prefix=f"pb-{tag}-")
 env = dict(os.environ)
 GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "user.name=bench", "-c", "user.email=bench@example.com"]
-home = f"{H}/home-{fam}-{arm}{slot_sfx}"
+home = f"{H}/home-{img_fam}-{arm}{slot_sfx}"
 if not os.path.isdir(home):
     os.makedirs(home, exist_ok=True)
     skip = ("tools", "hermes-agent", "installs", "bin", "node", "desktop", "bootstrap-cache", "backups", "skills", "cache", "attachments", "image_cache",
@@ -110,14 +111,16 @@ else:
         subprocess.run(["openshell", "sandbox", "create", "--name", SB, "--from", img, "--detach"], check=True, capture_output=True, text=True)
     t0 = time.time()
     if r.get("pb_host_tar"):
-        ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst}; mkdir -p {repo}")
-        with open(r["pb_host_tar"], "rb") as tf:
-            up = subprocess.run(
-                ["openshell", "sandbox", "exec", SB, "--", "sh", "-c",
-                 f"tar -xf - -C {repo} && cd {repo} && git init -q -b main && git -c user.name=bench -c user.email=bench@example.com add -A && git -c user.name=bench -c user.email=bench@example.com commit -q -m base"],
-                stdin=tf, capture_output=True, text=True,
-            )
-            assert up.returncode == 0, up.stderr
+        remote_tar = f"/tmp/pb-{arm}{n}-{inst}.tar"
+        ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst} {remote_tar}; mkdir -p {repo}")
+        subprocess.run([f"{ssh_bin}/scp", "-q", r["pb_host_tar"], f"openshell-{SB}.default:{remote_tar}"], check=True)
+        up = ex(
+            f"tar -xf {remote_tar} -C {repo} && rm -f {remote_tar} && cd {repo} "
+            "&& printf '__pycache__/\\n*.pyc\\n*.pyo\\n._*\\n.hermes-tmp.*\\ntarget/\\n' >> .gitignore "
+            "&& git init -q -b main && git -c user.name=bench -c user.email=bench@example.com add -A "
+            "&& git -c user.name=bench -c user.email=bench@example.com commit -q -m base"
+        )
+        assert up.returncode == 0, up.stderr
     else:
         if dirty_git:
             setup_cmd = (
@@ -172,8 +175,14 @@ kill_home_gateways(home)
 if arm == "S":
     subprocess.run(["pkill", "-f", f"openshell-{SB}\\.default"])
 open(f"{out}/{tag}.log", "w").write(stdout + "\n--- stderr ---\n" + stderr)
-d = sh(f"cd {repo} && git add -A -- . ':!tests' ':!test' && git diff --cached HEAD -- . ':!tests' ':!test'")
-patch = d.stdout
+d = sh(f"cd {repo} && git add -A -- . ':!tests' ':!test' ':!testing' ':!*.pyc' ':!*.so' ':!target' && git diff --cached HEAD -- . ':!tests' ':!test' ':!testing' ':!*.pyc' ':!*.so' ':!target'")
+raw_blocks = re.split(r"(?m)^(?=diff --git )", d.stdout or "")
+patch = "".join(
+    b for b in raw_blocks
+    if b.strip()
+    and not re.search(r"^diff --git a/(?:.+/)?(?:tests?|testing)/", b)
+    and "\nBinary files " not in b
+)
 u_data = json.load(open(usage)) if os.path.exists(usage) else {}
 if not float(u_data.get("estimated_cost_usd") or 0.0) and (u_data.get("input_tokens") or u_data.get("output_tokens")):
     inp = int(u_data.get("input_tokens") or 0)
