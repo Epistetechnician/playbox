@@ -663,7 +663,12 @@ pub fn export(o: ExportOpts) -> Result<()> {
             .map(|d| d.join("roomlog.jsonl"))
             .filter(|p| p.is_file())
     });
-    let egress_path = o.egress_log.as_deref().map(PathBuf::from);
+    let egress_path = o.egress_log.as_deref().map(PathBuf::from).or_else(|| {
+        state_dir
+            .as_ref()
+            .map(|d| d.join("egress.jsonl"))
+            .filter(|p| p.is_file())
+    });
     let challenge_path = o.challenge_log.as_deref().map(PathBuf::from);
     let attest_path = o.attestation.as_deref().map(PathBuf::from);
 

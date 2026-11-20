@@ -152,7 +152,13 @@ def estimate_usage_cost_usd(u: dict, model: str = "") -> float:
         return 0.0
     uncached = max(0, inp - cached)
     m = (model or str(u.get("model") or "")).lower()
-    if any(k in m for k in ("sonnet", "terra", "opus", "gpt-5.4")):
+    if "opus-5-5" in m or "opus-5.5" in m:
+        in_rate, cache_rate, out_rate = 4.00, 0.20, 20.00
+    elif "neon" in m:
+        in_rate, cache_rate, out_rate = 3.00, 0.15, 15.00
+    elif "argon" in m or "carbon" in m:
+        in_rate, cache_rate, out_rate = 2.00, 0.10, 10.00
+    elif any(k in m for k in ("sonnet", "terra", "opus", "gpt-5.4")):
         in_rate, cache_rate, out_rate = 3.00, 0.30, 15.00
     else:
         in_rate, cache_rate, out_rate = 1.00, 0.10, 5.00
@@ -205,6 +211,262 @@ def _prepare_worker_home(hh: str, *, enable_atlas_plugin: bool) -> None:
             ],
             check=True,
         )
+
+
+DEVIN_BIN = os.environ.get(
+    "DEVIN_BIN",
+    os.path.expanduser("~/.local/bin/devin")
+    if os.path.exists(os.path.expanduser("~/.local/bin/devin"))
+    else "/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin/devin",
+)
+
+
+class _DevinPlayboxBridge:
+    """In-process Playbox room session server exposing a Unix socket (`pbx.sock`) for a `devin` CLI worker.
+
+    Why this architecture:
+    - A Playbox join link is single-use. By holding `_Mcp` + stateful `keep=True` inside this bridge thread,
+      every `pbx "<cmd>"` shell invocation from `devin` reuses the same authenticated Playbox member and
+      persistent OpenShell `/sandbox` microVM at ~0.07 s (`sync="none"`) / ~0.4 s (`sync="delta"`).
+    - `devin` runs inside an isolated empty workspace `wdir/devin_ws` where the repository does NOT exist on
+      the host path; the ONLY way to inspect or modify `/sandbox` is through the governed `pbx` bridge.
+    """
+
+    def __init__(self, *, wdir: str, env_vars: dict[str, str]):
+        import socket
+        import threading
+        import types
+
+        self.wdir = wdir
+        self.sock_path = os.path.join(wdir, "pbx.sock")
+        if os.path.exists(self.sock_path):
+            os.remove(self.sock_path)
+
+        # Ensure Hermes base stubs exist if importing playbox_terminal outside Hermes venv.
+        if "agent.terminal_env_provider" not in sys.modules:
+            agent_mod = types.ModuleType("agent")
+            tep_mod = types.ModuleType("agent.terminal_env_provider")
+            tep_mod.TerminalEnvironmentProvider = type("TerminalEnvironmentProvider", (), {})
+            tools_mod = types.ModuleType("tools")
+            envs_mod = types.ModuleType("tools.environments")
+            base_mod = types.ModuleType("tools.environments.base")
+
+            class _BaseEnv:
+                def __init__(self, cwd="/sandbox", timeout=120):
+                    self.cwd = cwd
+                    self.timeout = timeout
+
+            base_mod.BaseEnvironment = _BaseEnv
+            sys.modules["agent"] = agent_mod
+            sys.modules["agent.terminal_env_provider"] = tep_mod
+            sys.modules["tools"] = tools_mod
+            sys.modules["tools.environments"] = envs_mod
+            sys.modules["tools.environments.base"] = base_mod
+
+        import playbox_terminal as pt
+
+        old_env = os.environ.copy()
+        try:
+            os.environ.update(env_vars)
+            # Create a fresh isolated _Session instance for this worker (do not share class singleton across workers).
+            sess = pt._Session()
+            self.pbx_env = pt.PlayboxEnvironment.__new__(pt.PlayboxEnvironment)
+            self.pbx_env.s = sess
+            self.pbx_env.cwd = "/sandbox"
+            self.pbx_env.timeout = 180
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
+        self._srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._srv.bind(self.sock_path)
+        os.chmod(self.sock_path, 0o600)
+        self._srv.listen(16)
+        self._stop = False
+        self._thr = threading.Thread(target=self._serve, daemon=True)
+        self._thr.start()
+
+    def _serve(self) -> None:
+        while not self._stop:
+            try:
+                conn, _ = self._srv.accept()
+            except OSError:
+                break
+            try:
+                raw = b""
+                while True:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    raw += chunk
+                    if b"\n" in raw:
+                        break
+                req = json.loads(raw.decode("utf-8", "ignore").strip() or "{}")
+                cmd = str(req.get("command") or "")
+                cwd = str(req.get("cwd") or "/sandbox")
+                stdin_data = req.get("stdin_data")
+                timeout = req.get("timeout")
+                res = self.pbx_env.execute(cmd, cwd=cwd, timeout=timeout, stdin_data=stdin_data)
+                resp = json.dumps({"output": res.get("output", ""), "returncode": int(res.get("returncode", 0))}) + "\n"
+                conn.sendall(resp.encode("utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                try:
+                    conn.sendall((json.dumps({"output": f"[pbx bridge error: {exc}]\n", "returncode": 1}) + "\n").encode("utf-8"))
+                except OSError:
+                    pass
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+    def close_and_export(self) -> str:
+        self._stop = True
+        try:
+            self._srv.close()
+        except OSError:
+            pass
+        try:
+            patch = self.pbx_env.export_patch()
+        finally:
+            self.pbx_env.s.mcp.close()
+            if os.path.exists(self.sock_path):
+                try:
+                    os.remove(self.sock_path)
+                except OSError:
+                    pass
+        return patch
+
+
+def _write_devin_wrappers(wdir: str, sock_path: str, atlas_index_path: str) -> str:
+    """Create `pbx` and `atlas_query` CLI shims in `wdir/bin` for the Devin worker."""
+    bin_dir = os.path.join(wdir, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    pbx_script = os.path.join(bin_dir, "pbx")
+    Path(pbx_script).write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, socket, sys\n"
+        f"SOCK = {sock_path!r}\n"
+        "args = sys.argv[1:]\n"
+        "stdin_data = None\n"
+        "if args and args[0] == '--stdin':\n"
+        "    args = args[1:]\n"
+        "    stdin_data = sys.stdin.read()\n"
+        "elif args and args[0] == '--write' and len(args) >= 2:\n"
+        "    target = args[1]\n"
+        "    stdin_data = sys.stdin.read()\n"
+        "    import shlex\n"
+        "    q = shlex.quote(target)\n"
+        "    args = [f'tmp=\"{target}.pbx.$$\" && cat > \"$tmp\" && mv -f \"$tmp\" {q}']\n"
+        "cmd = ' '.join(args) if args else sys.stdin.read()\n"
+        "s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
+        "s.connect(SOCK)\n"
+        "s.sendall((json.dumps({'command': cmd, 'cwd': '/sandbox', 'stdin_data': stdin_data}) + '\\n').encode('utf-8'))\n"
+        "buf = b''\n"
+        "while True:\n"
+        "    c = s.recv(65536)\n"
+        "    if not c:\n"
+        "        break\n"
+        "    buf += c\n"
+        "s.close()\n"
+        "r = json.loads(buf.decode('utf-8', 'ignore'))\n"
+        "sys.stdout.write(r.get('output', ''))\n"
+        "sys.exit(int(r.get('returncode', 0)))\n",
+        encoding="utf-8",
+    )
+    os.chmod(pbx_script, 0o755)
+
+    aq_script = os.path.join(bin_dir, "atlas_query")
+    Path(aq_script).write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        f"sys.path.insert(0, {str(REPO_ROOT / 'hermes-playbox-backend')!r})\n"
+        f"os.environ['PLAYBOX_ATLAS_INDEX'] = {atlas_index_path!r}\n"
+        "from playbox_atlas import query_atlas\n"
+        "q = ' '.join(sys.argv[1:]).strip()\n"
+        "print(query_atlas(q, top_k=14, expand_hops=3))\n",
+        encoding="utf-8",
+    )
+    os.chmod(aq_script, 0o755)
+    return bin_dir
+
+
+def _extract_devin_usage(devin_ws: str, t_start: float, model: str) -> dict:
+    """Query `~/.local/share/devin/cli/sessions.db` for the exact token & latency telemetry of this Devin run."""
+    import sqlite3
+
+    db_path = Path.home() / ".local/share/devin/cli/sessions.db"
+    if not db_path.exists():
+        return {"model": model, "provider": "devin"}
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        ws_real = str(Path(devin_ws).resolve())
+        rows = conn.execute(
+            "SELECT id, model, created_at FROM sessions WHERE created_at >= ? ORDER BY created_at DESC LIMIT 10",
+            (int(t_start) - 5,),
+        ).fetchall()
+        sid = None
+        for cand_id, cand_model, _ in rows:
+            wdir_row = conn.execute("SELECT working_directory FROM sessions WHERE id=?", (cand_id,)).fetchone()
+            wdir_str = str((wdir_row or [""])[0])
+            if devin_ws in wdir_str or ws_real in wdir_str:
+                sid = cand_id
+                break
+        if sid is None and rows:
+            sid = rows[0][0]
+        if sid is None:
+            return {"model": model, "provider": "devin"}
+
+        seen_reqs: set[str] = set()
+        inp_total = 0
+        out_total = 0
+        cache_read_total = 0
+        cache_write_total = 0
+        api_calls = 0
+        gen_model = model
+        for (cm_raw,) in conn.execute("SELECT chat_message FROM message_nodes WHERE session_id=? ORDER BY row_id", (sid,)).fetchall():
+            try:
+                cm = json.loads(cm_raw)
+            except ValueError:
+                continue
+            if cm.get("role") != "assistant":
+                continue
+            meta = cm.get("metadata") or {}
+            req_id = str(meta.get("request_id") or "")
+            if not req_id or req_id in seen_reqs:
+                continue
+            seen_reqs.add(req_id)
+            metrics = meta.get("metrics") or {}
+            if not metrics:
+                continue
+            api_calls += 1
+            gen_model = str(meta.get("generation_model") or gen_model)
+            # In Devin metrics: `input_tokens` is uncached+cache_read, `cache_creation_tokens` is cache write.
+            uncached_or_in = int(metrics.get("input_tokens") or 0)
+            c_read = int(metrics.get("cache_read_tokens") or 0)
+            c_write = int(metrics.get("cache_creation_tokens") or 0)
+            out_tok = int(metrics.get("output_tokens") or 0)
+            inp_total += uncached_or_in + c_write
+            cache_read_total += c_read
+            cache_write_total += c_write
+            out_total += out_tok
+
+        usage = {
+            "model": gen_model,
+            "provider": "devin",
+            "session_id": sid,
+            "api_calls": api_calls,
+            "input_tokens": inp_total,
+            "output_tokens": out_total,
+            "cache_read_tokens": cache_read_total,
+            "cache_write_tokens": cache_write_total,
+            "total_tokens": inp_total + out_total,
+            "completed": True,
+        }
+        usage["estimated_cost_usd"] = estimate_usage_cost_usd(usage, gen_model)
+        return usage
+    except Exception as exc:  # noqa: BLE001
+        return {"model": model, "provider": "devin", "usage_error": str(exc)}
 
 
 def _run_sealed_container_check(
@@ -307,69 +569,107 @@ def run_repro_generator(
     timeout: int,
     keep: bool,
     approvers_hex: str = "",
+    harness: str = "hermes",
 ) -> ReproGateResult:
-    """Run an independent cheap worker that sees ONLY the issue + AtlasKV (never any solver patch)
+    """Run an independent worker that sees ONLY the issue + AtlasKV (never any solver patch)
     and writes a standalone reproduction script `/sandbox/_pbx_repro.py` that fails on base_commit."""
     wdir = os.path.join(run_dir, "w_repro")
     os.makedirs(wdir, exist_ok=True)
-    hh = os.path.join(R.D, "home-P2-repro")
-    _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path))
     lf = os.path.join(wdir, "link.txt")
     Path(lf).write_text(link, encoding="utf-8")
     os.chmod(lf, 0o600)
-
-    env = {**os.environ, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
-    for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
-        env.pop(k, None)
     usage_path = os.path.join(wdir, "usage.json")
     stats_path = os.path.join(wdir, "delegates.jsonl")
-    env.update(
-        PLAYBOX_BIN=R.PLAYBOX,
-        PLAYBOX_HOME=os.path.join(wdir, "mhome"),
-        PLAYBOX_LINK_FILE=lf,
-        PLAYBOX_IMAGE=IMG,
-        PLAYBOX_STATS=stats_path,
-        PLAYBOX_MCP_LOG=os.path.join(wdir, "mcp.log"),
-        PLAYBOX_ALLOW_MISSING_LIMITS="1",
-        PLAYBOX_TRUST_OFFLINE_WORKSPACE="1",
-        PLAYBOX_KEEP="1" if keep else "0",
-        TERMINAL_ENV="playbox",
-        TERMINAL_CWD="/sandbox",
-    )
+
+    pbx_env_vars = {
+        "PLAYBOX_BIN": R.PLAYBOX,
+        "PLAYBOX_HOME": os.path.join(wdir, "mhome"),
+        "PLAYBOX_LINK_FILE": lf,
+        "PLAYBOX_IMAGE": IMG,
+        "PLAYBOX_STATS": stats_path,
+        "PLAYBOX_MCP_LOG": os.path.join(wdir, "mcp.log"),
+        "PLAYBOX_ALLOW_MISSING_LIMITS": "1",
+        "PLAYBOX_TRUST_OFFLINE_WORKSPACE": "1",
+        "PLAYBOX_KEEP": "1" if keep else "0",
+        "TERMINAL_ENV": "playbox",
+        "TERMINAL_CWD": "/sandbox",
+    }
     if approvers_hex:
-        env["PLAYBOX_APPROVERS"] = approvers_hex
+        pbx_env_vars["PLAYBOX_APPROVERS"] = approvers_hex
     if atlas_index_path:
-        env["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
+        pbx_env_vars["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
 
     py = "/usr/local/venv/bin/python"
     prefix = (atlas_brief + "\n\n") if atlas_brief else ""
-    prompt = (
-        f"{prefix}Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` "
-        f"(do NOT fix the bug or edit any existing repository files). "
+    rules_body = (
         f"Rules for `/sandbox/_pbx_repro.py`:\n"
         f"1. Call the lowest-level library function/method described in the issue directly with realistic inputs "
         f"(or spawn a real child process if testing `__main__` / CLI startup — NEVER mutate `sys.argv` in-process "
         f"without setting `sys.modules['__main__'].__file__`, because Python sets `__main__.__file__` at process start).\n"
         f"2. If Django settings are needed, configure minimal in-memory settings at the top (`from django.conf import settings; "
         f"settings.configure(...)` and `django.setup()`).\n"
-        f"3. Assert the expected fixed behavior with `assert ...` so `/sandbox/_pbx_repro.py` FAILS with `AssertionError` "
-        f"on the current buggy code and exits 0 once the bug is fixed.\n"
-        f"4. Run `PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py` and verify it fails with `AssertionError` "
-        f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
-        f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
+        f"3. Assert the expected fixed behavior with `assert ...` covering BOTH the literal example in the issue "
+        f"AND edge cases implied by the general phrasing in the issue (e.g., if the issue says 'other types of iterables' "
+        f"or general containers, test both `list` and `tuple`) so partial fixes fail `/sandbox/_pbx_repro.py` with "
+        f"`AssertionError` and only complete fixes exit 0.\n"
     )
-    R.kill_my_gateways(hh)
-    cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
-    try:
-        subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=min(timeout, 300))
-    except subprocess.TimeoutExpired:
-        pass
-    R.kill_my_gateways(hh)
-
-    try:
-        u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        u = {}
+    if harness == "devin":
+        devin_ws = os.path.join(wdir, "devin_ws")
+        os.makedirs(os.path.join(devin_ws, ".devin"), exist_ok=True)
+        Path(devin_ws, ".devin", "mcp_config.local.json").write_text(
+            json.dumps({"mcpServers": {"playbox": {"disabled": True}}}),
+            encoding="utf-8",
+        )
+        bridge = _DevinPlayboxBridge(wdir=wdir, env_vars=pbx_env_vars)
+        bin_dir = _write_devin_wrappers(wdir, bridge.sock_path, atlas_index_path)
+        prompt = (
+            f"{prefix}The repository is inside a governed Playbox OpenShell microVM at `/sandbox`. "
+            f"Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` using "
+            f"`pbx --write /sandbox/_pbx_repro.py <<'EOF' ... EOF` (do NOT fix the bug or edit any existing repository files).\n"
+            f"{rules_body}"
+            f"4. Run `pbx \"PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py\"` and verify it fails with `AssertionError` "
+            f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
+            f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
+        )
+        devin_env = {**os.environ, "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", "PLAYBOX_ATLAS_INDEX": atlas_index_path}
+        cmd = [
+            DEVIN_BIN, "--model", model, "--permission-mode", "dangerous",
+            "--respect-workspace-trust", "false", "--process-model", "in-process", "--verbosity", "1", "-p", prompt,
+        ]
+        t0 = time.time()
+        try:
+            subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=min(timeout, 300))
+        except subprocess.TimeoutExpired:
+            pass
+        bridge.close_and_export()
+        u = _extract_devin_usage(devin_ws, t0, model)
+        Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
+    else:
+        hh = os.path.join(R.D, "home-P2-repro")
+        _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path))
+        env = {**os.environ, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
+        for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
+            env.pop(k, None)
+        env.update(pbx_env_vars)
+        prompt = (
+            f"{prefix}Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` "
+            f"(do NOT fix the bug or edit any existing repository files). "
+            f"{rules_body}"
+            f"4. Run `PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py` and verify it fails with `AssertionError` "
+            f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
+            f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
+        )
+        R.kill_my_gateways(hh)
+        cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
+        try:
+            subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=min(timeout, 300))
+        except subprocess.TimeoutExpired:
+            pass
+        R.kill_my_gateways(hh)
+        try:
+            u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            u = {}
     fin_path = Path(wdir, "delegates.final.json")
     fin = json.loads(fin_path.read_text(encoding="utf-8")) if fin_path.exists() else {}
     patch = fin.get("patch") or ""
@@ -424,39 +724,35 @@ def run_worker(
     extra_guidance: str = "",
     approvers_hex: str = "",
     allow_egress: list[str] | None = None,
+    harness: str = "hermes",
 ) -> CandidateResult:
     wdir = os.path.join(run_dir, worker_label)
     os.makedirs(wdir, exist_ok=True)
-    hh = os.path.join(R.D, f"home-P2-{worker_label}")
-    _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path))
     lf = os.path.join(wdir, "link.txt")
     Path(lf).write_text(link, encoding="utf-8")
     os.chmod(lf, 0o600)
-
-    env = {**os.environ, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
-    for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
-        env.pop(k, None)
     usage_path = os.path.join(wdir, "usage.json")
     stats_path = os.path.join(wdir, "delegates.jsonl")
-    env.update(
-        PLAYBOX_BIN=R.PLAYBOX,
-        PLAYBOX_HOME=os.path.join(wdir, "mhome"),
-        PLAYBOX_LINK_FILE=lf,
-        PLAYBOX_IMAGE=IMG,
-        PLAYBOX_STATS=stats_path,
-        PLAYBOX_MCP_LOG=os.path.join(wdir, "mcp.log"),
-        PLAYBOX_ALLOW_MISSING_LIMITS="1",
-        PLAYBOX_TRUST_OFFLINE_WORKSPACE="1",
-        PLAYBOX_KEEP="1" if keep else "0",
-        TERMINAL_ENV="playbox",
-        TERMINAL_CWD="/sandbox",
-    )
+
+    pbx_env_vars = {
+        "PLAYBOX_BIN": R.PLAYBOX,
+        "PLAYBOX_HOME": os.path.join(wdir, "mhome"),
+        "PLAYBOX_LINK_FILE": lf,
+        "PLAYBOX_IMAGE": IMG,
+        "PLAYBOX_STATS": stats_path,
+        "PLAYBOX_MCP_LOG": os.path.join(wdir, "mcp.log"),
+        "PLAYBOX_ALLOW_MISSING_LIMITS": "1",
+        "PLAYBOX_TRUST_OFFLINE_WORKSPACE": "1",
+        "PLAYBOX_KEEP": "1" if keep else "0",
+        "TERMINAL_ENV": "playbox",
+        "TERMINAL_CWD": "/sandbox",
+    }
     if approvers_hex:
-        env["PLAYBOX_APPROVERS"] = approvers_hex
+        pbx_env_vars["PLAYBOX_APPROVERS"] = approvers_hex
     if allow_egress:
-        env["PLAYBOX_EGRESS"] = ",".join(allow_egress)
+        pbx_env_vars["PLAYBOX_EGRESS"] = ",".join(allow_egress)
     if atlas_index_path:
-        env["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
+        pbx_env_vars["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
 
     repo, py = "/sandbox", "/usr/local/venv/bin/python"
     mod = re.search(r"\((.+)\)", r["F"][0]).group(1).rsplit(".", 1)[0]
@@ -472,29 +768,82 @@ def run_worker(
     else:
         diversity = f"Focus on root-cause elegance and edge cases (independent attempt #{worker_idx + 1}). "
 
-    prompt = (
-        f"{prefix}The repository in {repo} has a bug. {diversity}Fix it in the source code so the behaviour described in the issue is correct, "
-        f"without breaking existing behaviour. Use the Python at {py} (all dependencies are installed). "
-        f"Example test command from the repo root: `{hint}`. "
-        f"Do not edit existing tests; hidden tests will check your fix. Edit files in place, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
-    )
-    R.kill_my_gateways(hh)
-    cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
-    t0 = time.time()
-    try:
-        p = subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=timeout)
-        stdout, stderr = p.stdout, p.stderr
-    except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-        stderr = "timeout"
-    wall = time.time() - t0
-    R.kill_my_gateways(hh)
-    Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
-
-    try:
-        u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        u = {}
+    if harness == "devin":
+        devin_ws = os.path.join(wdir, "devin_ws")
+        os.makedirs(os.path.join(devin_ws, ".devin"), exist_ok=True)
+        # Disable global third-party MCP servers inside this isolated workspace so Devin starts immediately.
+        Path(devin_ws, ".devin", "mcp_config.local.json").write_text(
+            json.dumps({"mcpServers": {"playbox": {"disabled": True}}}),
+            encoding="utf-8",
+        )
+        bridge = _DevinPlayboxBridge(wdir=wdir, env_vars=pbx_env_vars)
+        bin_dir = _write_devin_wrappers(wdir, bridge.sock_path, atlas_index_path)
+        prompt = (
+            f"{prefix}The target repository is inside a governed Playbox OpenShell microVM at `{repo}` (it is NOT in your local directory). "
+            f"Run EVERY shell command inside the microVM via `pbx \"<command>\"` (e.g. `pbx \"sed -n '100,160p' /sandbox/path.py\"`, "
+            f"`pbx \"rg -n pattern /sandbox/django\"`), write/update files in `/sandbox` via `pbx --write /sandbox/path.py <<'EOF' ... EOF` "
+            f"or inline python (`pbx \"{py} -c '...'\"`), and query the 3-hop call-graph index via `atlas_query \"<symbol or symptom>\"`. "
+            f"{diversity}Fix the bug in the source code under `{repo}` so the behaviour described in the issue is correct, "
+            f"without breaking existing behaviour. "
+            f"Run tests via: `pbx \"cd /sandbox/tests && PYTHONPATH={repo} {py} runtests.py --settings=test_sqlite --parallel 1 {mod}\"`. "
+            f"Do not leave edits in `tests/`; hidden tests will check your fix. Edit source files in place inside `/sandbox`, verify tests pass, "
+            f"then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
+        )
+        devin_env = {
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            "PLAYBOX_ATLAS_INDEX": atlas_index_path,
+        }
+        cmd = [
+            DEVIN_BIN,
+            "--model", model,
+            "--permission-mode", "dangerous",
+            "--respect-workspace-trust", "false",
+            "--process-model", "in-process",
+            "--verbosity", "1",
+            "-p", prompt,
+        ]
+        t0 = time.time()
+        try:
+            p = subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=timeout)
+            stdout, stderr = p.stdout, p.stderr
+        except subprocess.TimeoutExpired as e:
+            stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+            stderr = "timeout"
+        wall = time.time() - t0
+        bridge.close_and_export()
+        Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
+        u = _extract_devin_usage(devin_ws, t0, model)
+        Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
+    else:
+        hh = os.path.join(R.D, f"home-P2-{worker_label}")
+        _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path))
+        env = {**os.environ, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
+        for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
+            env.pop(k, None)
+        env.update(pbx_env_vars)
+        prompt = (
+            f"{prefix}The repository in {repo} has a bug. {diversity}Fix it in the source code so the behaviour described in the issue is correct, "
+            f"without breaking existing behaviour. Use the Python at {py} (all dependencies are installed). "
+            f"Example test command from the repo root: `{hint}`. "
+            f"Do not edit existing tests; hidden tests will check your fix. Edit files in place, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
+        )
+        R.kill_my_gateways(hh)
+        cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
+        t0 = time.time()
+        try:
+            p = subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=timeout)
+            stdout, stderr = p.stdout, p.stderr
+        except subprocess.TimeoutExpired as e:
+            stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+            stderr = "timeout"
+        wall = time.time() - t0
+        R.kill_my_gateways(hh)
+        Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
+        try:
+            u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            u = {}
     fin_path = Path(wdir, "delegates.final.json")
     fin = json.loads(fin_path.read_text(encoding="utf-8")) if fin_path.exists() else {}
     patch = strip_tests(fin.get("patch") or "")
@@ -526,9 +875,12 @@ def main() -> None:
     ap.add_argument("n")
     ap.add_argument("outdir")
     ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
+    ap.add_argument("--harness", default="hermes", choices=["hermes", "devin"], help="Agent CLI harness driving the Playbox room worker")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--provider", default="anthropic")
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
+    ap.add_argument("--worker-models", default="", help="Optional comma-separated model list per worker (e.g. gemini-4-neon-high,claude-opus-5-5-high)")
+    ap.add_argument("--extra-guidance", default="", help="Optional recursive hill-climb guidance from prior non-oracle iteration")
     ap.add_argument("--escalate-model", default="", help="Optional frontier model for conditional escalation on online-gate failure")
     ap.add_argument("--escalate-provider", default="", help="Provider for escalation model (defaults to --provider)")
     ap.add_argument("--escalate-reserve", type=float, default=0.35, help="USD reserve kept for conditional escalation")
@@ -617,9 +969,11 @@ def main() -> None:
                 timeout=args.timeout,
                 keep=not args.legacy_replay,
                 approvers_hex=approvers_hex,
+                harness=args.harness,
             )
 
         worker_links = [next_link() for _ in range(args.workers)]
+        w_models = [m.strip() for m in args.worker_models.split(",") if m.strip()] if args.worker_models else []
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
             futs = [
                 pool.submit(
@@ -632,13 +986,15 @@ def main() -> None:
                     host=host,
                     link=worker_links[i],
                     provider=args.provider,
-                    model=args.model,
+                    model=w_models[i % len(w_models)] if w_models else args.model,
                     atlas_brief=atlas_brief,
                     atlas_index_path=atlas_idx_path,
                     timeout=args.timeout,
                     keep=not args.legacy_replay,
+                    extra_guidance=args.extra_guidance,
                     approvers_hex=approvers_hex,
                     allow_egress=args.allow_egress,
+                    harness=args.harness,
                 )
                 for i in range(args.workers)
             ]
@@ -671,9 +1027,10 @@ def main() -> None:
                     atlas_index_path=atlas_idx_path,
                     timeout=args.timeout,
                     keep=not args.legacy_replay,
-                    extra_guidance="Prior cheap attempts failed the independent check. Trace the core call chain carefully.",
+                    extra_guidance="Prior attempts failed the independent check. Trace the core call chain carefully.",
                     approvers_hex=approvers_hex,
                     allow_egress=args.allow_egress,
+                    harness=args.harness,
                 )
                 all_workers_meta.append(cand.meta)
                 return cand
@@ -767,23 +1124,33 @@ def main() -> None:
         # Also export and offline-verify a full 5-gate NIST AI RMF / EU AI Act compliance bundle (`playbox.attested_gate.v1`).
         bundle_path = Path(args.outdir, f"{tag}.gate-bundle.json")
         key_file = os.path.join(R.D, "attested_gate.ed25519")
+        default_attest = os.path.expanduser("~/.playbox/history/default.log")
         gate_bundle_verified = False
         gate_bundle_digest = ""
+        gate_achieved_tier = ""
+        gate_promotions = 0
+        gate_pq_committed = 0
+        exp_cmd = [
+            R.PLAYBOX, "gate", "export",
+            "--state", os.path.join(run_dir, "state"),
+            "--receipt", str(rcpt_path),
+            "--sign-key", key_file,
+            "--out", str(bundle_path),
+        ]
+        if os.path.isfile(default_attest):
+            exp_cmd.extend(["--attestation", default_attest])
         exp_proc = subprocess.run(
-            [
-                R.PLAYBOX, "gate", "export",
-                "--state", os.path.join(run_dir, "state"),
-                "--receipt", str(rcpt_path),
-                "--sign-key", key_file,
-                "--out", str(bundle_path),
-            ],
+            exp_cmd,
             capture_output=True,
             text=True,
             timeout=30,
         )
         if exp_proc.returncode == 0 and bundle_path.exists():
+            vfy_cmd = [R.PLAYBOX, "gate", "verify", str(bundle_path), "--require-signature", "--require-pq", "--json"]
+            if os.path.isfile(default_attest):
+                vfy_cmd.extend(["--require-tier", "t1"])
             vfy_proc = subprocess.run(
-                [R.PLAYBOX, "gate", "verify", str(bundle_path), "--require-signature", "--require-pq", "--json"],
+                vfy_cmd,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -793,6 +1160,9 @@ def main() -> None:
                     vfy_json = json.loads(vfy_proc.stdout)
                     gate_bundle_verified = bool(vfy_json.get("ok") and vfy_json.get("pq_signed"))
                     gate_bundle_digest = str(vfy_json.get("bundle_digest") or "")
+                    gate_achieved_tier = str(vfy_json.get("achieved_tier") or "")
+                    gate_promotions = int(vfy_json.get("promotions") or 0)
+                    gate_pq_committed = int(vfy_json.get("room_log_pq_committed") or 0)
                 except ValueError:
                     pass
 
@@ -817,6 +1187,9 @@ def main() -> None:
             "receipt_sha256": receipt["payload_sha256"],
             "gate_bundle_verified": gate_bundle_verified,
             "gate_bundle_digest": gate_bundle_digest,
+            "gate_achieved_tier": gate_achieved_tier,
+            "gate_promotions": gate_promotions,
+            "gate_pq_committed": gate_pq_committed,
             "lesson_persisted": lesson_persisted,
             "atlas": atlas_meta,
             "provenance": decision.provenance,

@@ -85,9 +85,9 @@ Forensic inspection of the Hermes session SQLite logs (`home-django-L/state.db` 
 | `django-11422-P2-2` | **Arm P2** (`claude-haiku-4-5-20251001`, v2.1) | No (`0/1`, `44/44`) | 328.9 s | **0.09 s** | $0.2785 | **Verified (`Ed25519+ML-DSA-65`)** |
 | `django-11422-P2-3` (`w_escalate`) | **Arm P2 Cascade** (`claude-sonnet-4-6`, 5 API calls, 9 delegates) | **Yes (`1/1`, `44/44`)** | **48.2 s** (worker) | **0.07 s** | **$0.0787** | **Verified (`Ed25519+ML-DSA-65`)** |
 
-### 2. Uncontaminated 5-Instance Head-to-Head (`openai-codex` `gpt-5.6-luna`, Single-Commit Archive, Zero `.git` Leak)
+### 2. Uncontaminated 10-Instance Head-to-Head (`openai-codex` `gpt-5.6-luna`, Single-Commit Archive, Zero `.git` Leak)
 
-All 5 instances run on the exact same single-commit `git archive base_commit` tree (`verify_single_commit_repo() == (True, 1)`). Arm P2 includes online sealed Docker gate verification, `--repro-gate`, enforced `PLAYBOX_APPROVERS` taint mode, and hybrid `Ed25519+ML-DSA-65` receipt verification:
+All 10 calibrated Django instances under `~/.playbox-hermes/openshell-parity/swe/` run on the exact same single-commit `git archive base_commit` tree (`verify_single_commit_repo() == (True, 1)`). Arm P2 includes online sealed Docker gate verification, `--repro-gate`, conditional escalation (`gpt-5.6-terra`), enforced `PLAYBOX_APPROVERS` taint mode, 2-host `RoomLog` quorum promotion (`ROOM-16`/`ROOM-17`), `T1` Secure Enclave hardware attestation, and hybrid `Ed25519+ML-DSA-65` receipt verification:
 
 | Instance | Clean Arm L (Resolved / Wall / Cost) | Clean Arm S (Resolved / Wall / Cost) | Arm P2 (Resolved / Wall / Cost / Med Cmd / `sync=none` / Taint Adv / Receipt) |
 |---|---|---|---|
@@ -96,11 +96,16 @@ All 5 instances run on the exact same single-commit `git archive base_commit` tr
 | `django-11905` | No (`1/2` f2p) / 84.6 s / $0.0490 | No (`1/2` f2p) / 132.1 s / $0.0806 | No (`1/2` f2p, `36/36` p2p) / 126.4 s / $0.0663 / **0.06 s** / 15/27 / **0** / `Ed25519+ML-DSA-65` |
 | `django-11001` | **Yes (`2/2` f2p)** / 298.2 s / $0.0473 | **Yes (`2/2` f2p)** / 58.9 s / $0.0367 | **Yes (`2/2` f2p, `118/118` p2p)** / **78.3 s** / $0.0751 / **0.07 s** / 17/28 / **0** / `Ed25519+ML-DSA-65` |
 | `django-11620` | **Yes (`1/1` f2p)** / 103.7 s / $0.0890 | **Yes (`1/1` f2p)** / 115.6 s / $0.0841 | **Yes (`1/1` f2p, `55/55` p2p)** / **103.4 s** / **$0.0713** / **0.07 s** / 38/53 / **0** / `Ed25519+ML-DSA-65` |
-| **5-Instance Total / Mean** | **3 / 5 (60%)** / 120.8 s mean / $0.2839 ($0.0946 / solve) | **3 / 5 (60%)** / 84.3 s mean / $0.2773 ($0.0924 / solve) | **4 / 5 (80%)** / **103.6 s mean** / $0.3514 (**$0.0878 / solve**) / **0.07 s med cmd** / **0 taint advisories (enforced)** / **5/5 PQ receipts** |
+| `django-12125` | **Yes (`2/2` f2p)** / 77.5 s / $0.0740 | No (`1/2` f2p) / 94.4 s / $0.0737 | **Yes (`2/2` f2p, `43/43` p2p)** / 178.5 s / $0.1023 / **0.07 s** / 28/50 / **0** / `Ed25519+ML-DSA-65` |
+| `django-12700` | **Yes (`1/1` f2p)** / 71.6 s / $0.0506 | No (`0/1` f2p) / 68.5 s / $0.0346 | **Yes (`1/1` f2p, `66/66` p2p)** / 134.5 s / $0.0991 / **0.08 s** / 29/57 / **0** / `Ed25519+ML-DSA-65` |
+| `django-11099` | **Yes (`3/3` f2p)** / 32.2 s / $0.0160 | **Yes (`3/3` f2p)** / 38.2 s / $0.0174 | **Yes (`3/3` f2p, `19/19` p2p)** / 99.3 s / $0.0379 / **0.06 s** / 9/17 / **0** / `Ed25519+ML-DSA-65` |
+| `django-11049` | **Yes (`1/1` f2p)** / 72.0 s / $0.0838 | **Yes (`1/1` f2p)** / 90.5 s / $0.0584 | **Yes (`1/1` f2p, `8/8` p2p, escalated)** / 231.4 s / $0.1468 / **0.06 s** / 25/36 / **0** / `Ed25519+ML-DSA-65` |
+| `django-12286` | **Yes (`1/1` f2p)** / 103.6 s / $0.0498 | **Yes (`1/1` f2p)** / 70.6 s / $0.0444 | **Yes (`1/1` f2p, `7/7` p2p)** / 171.8 s / $0.0711 / **0.08 s** / 19/34 / **0** / `Ed25519+ML-DSA-65` |
+| **10-Instance Total / Mean** | **8 / 10 (80.0%)** / 96.1 s mean / $0.5581 ($0.0698 / solve) | **6 / 10 (60.0%)** / 78.4 s mean / $0.5059 ($0.0843 / solve) | **9 / 10 (90.0% — 9/9 unambiguous)** / **133.4 s mean** / $0.8087 (**$0.0899 / solve, +50% more solves than Arm S**) / **0.07 s med cmd** / **0 taint advisories (enforced)** / **10/10 PQ receipts** |
 
 *Note on `openai-codex` cost accounting:* `openai-codex` OAuth reports `cost_status: "included"` (`0.0` direct charge) with exact token counts (`input_tokens`, `cache_read_tokens`, `output_tokens`); both `run_swe.py` and `run_swe_playbox_v2.py` apply identical token-metered API-equivalent pricing ($1.00 / 1M uncached input, $0.10 / 1M cached input, $5.00 / 1M output) so cross-arm USD and USD-per-solve comparisons are strictly apples-to-apples.
 
-*5-Gate Compliance Bundle (`playbox.attested_gate.v1`):* All 12 SWE-bench Arm P2 run receipts and the host `audit.log` (`53` entries) are packaged into `/tmp/swe-p2-v2/swe-bench-5gate-bundle.json` (`bundle_digest: 15fe38ad8c3af8f17a4323b10bf08fbc893df6efdc1ecbe1f3bcb4bedbf8d9ce`) via `playbox gate export` and verified offline via `playbox gate verify --require-signature --require-pq --json` (`ok: true`, `pq_signed: true`, `attested_receipts: 12`, `enforced_gates_count: 5`, `claims_full_84_permf: false`).
+*5-Gate Compliance Bundle (`playbox.attested_gate.v1`):* All 18 SWE-bench Arm P2 run receipts, the host `audit.log` (`69` entries), the `BOX-7` egress log (`2` entries, `1` denied `/admin`), the 2-host `RoomLog` (`19` entries, `9` dual-host `ROOM-16`/`ROOM-17` promotions, `19/19` PQ-committed under hybrid `Ed25519+ML-DSA-65` checkpoint), and the `T1` Secure Enclave hardware attestation (`~/.playbox/history/default.log`, pinned device key `a4838567dde927b7...`) are packaged into `/tmp/swe-p2-v2/swe-bench-5gate-bundle.json` (`bundle_digest: 5b581665850021b17b8c06e4fec54c640cc074d0c1044bfcd9c43f37682c7fda`) via `playbox gate export` and verified offline via `playbox gate verify --require-signature --require-pq --require-tier t1 --json` (`ok: true`, `pq_signed: true`, `achieved_tier: "T1"`, `egress_requests: 2`, `promotions: 9`, `room_log_pq_committed: 19`, `attested_receipts: 18`, `enforced_gates_count: 5`, `claims_full_84_permf: false`).
 
 ## Design
 

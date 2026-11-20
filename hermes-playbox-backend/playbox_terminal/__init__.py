@@ -438,7 +438,7 @@ class PlayboxEnvironment(BaseEnvironment):
         pol = str(self.s.policy_digest or "")[:12]
         pbytes = rec.get("patch_bytes") or 0
         try:
-            self.s.mcp.call("playbox_say", {"text": "::pbx metric " + json.dumps({"name": "task_ms", "value": ms, "unit": "ms"}, separators=(",", ":"))})
+            self.s.mcp.call("playbox_say", {"text": "::pbx metric " + json.dumps({"name": "task_ms", "value": ms, "unit": "ms"}, separators=(",", ":"), ensure_ascii=False)})
             if important or (self.s._cmd_n % 10 == 0):
                 status = "failed" if (rec.get("rc") != 0 or rec.get("timed_out") or rec.get("refused")) else "checking"
                 summary = f"{self.s._cmd_n} runs ({getattr(self.s, '_ok_n', 0)} ok, {getattr(self.s, '_fail_n', 0)} fail) · last {ms}ms · sync={sync}"
@@ -447,7 +447,7 @@ class PlayboxEnvironment(BaseEnvironment):
                 if pol:
                     summary += f" · policy {pol}"
                 art = {"id": f"session-{runner}", "title": f"{runner} session", "kind": "code", "status": status, "summary": summary[:380]}
-                self.s.mcp.call("playbox_say", {"text": "::pbx artifact " + json.dumps(art, separators=(",", ":"))})
+                self.s.mcp.call("playbox_say", {"text": "::pbx artifact " + json.dumps(art, separators=(",", ":"), ensure_ascii=False)})
         except Exception as exc:  # noqa: BLE001 — telemetry must never disrupt execution
             logging.getLogger(__name__).debug("telemetry publish failed: %s", exc)
 
