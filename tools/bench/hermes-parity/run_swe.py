@@ -111,9 +111,18 @@ else:
         subprocess.run(["openshell", "sandbox", "create", "--name", SB, "--from", img, "--detach"], check=True, capture_output=True, text=True)
     t0 = time.time()
     if r.get("pb_host_tar"):
-        remote_tar = f"/tmp/pb-{arm}{n}-{inst}.tar"
+        remote_tar = f"/sandbox/pb-{arm}{n}-{inst}.tar"
         ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst} {remote_tar}; mkdir -p {repo}")
-        subprocess.run([f"{ssh_bin}/scp", "-q", r["pb_host_tar"], f"openshell-{SB}.default:{remote_tar}"], check=True)
+        with open(r["pb_host_tar"], "rb") as tf:
+            while True:
+                chunk = tf.read(3 * 1024 * 1024)
+                if not chunk:
+                    break
+                c_up = subprocess.run(
+                    ["openshell", "sandbox", "exec", SB, "--", "sh", "-c", f"cat >> {remote_tar}"],
+                    input=chunk,
+                )
+                assert c_up.returncode == 0
         up = ex(
             f"tar -xf {remote_tar} -C {repo} && rm -f {remote_tar} && cd {repo} "
             "&& printf '__pycache__/\\n*.pyc\\n*.pyo\\n._*\\n.hermes-tmp.*\\ntarget/\\n' >> .gitignore "
