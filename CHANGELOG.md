@@ -9,6 +9,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-20
+
 ### Added
 - `playbox gate export`, `playbox gate sign`, and `playbox gate verify`: unified Attested Gate CLI supporting both `playbox.attested_gate.v1` 5-gate compliance bundles (`audit.log`, hybrid `Ed25519`/`ML-DSA-65` `RoomLog` checkpoints, `BOX-7` egress logs, `--receipt` run receipts, evaluation receipts, and `T0..T3` attestations) and standalone `playbox.attested_gate_receipt.v1` run receipts (alias: `playbox receipt sign|verify`), mapped to NIST AI RMF and EU AI Act controls.
 - `playbox up --template swe|research|review|ops`: pre-configured room templates with default runtime, allowlists, capabilities, local shared memory, live policy guardrails/replay (`policy`, `replay`), and `openshell` `BOX-7` egress + stateful `keep` / `SyncMode` task sessions.
