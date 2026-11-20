@@ -11,8 +11,12 @@ ROOM_SAFE_TOOLS = {"status", "ping", "feed", "verify", "audit", "recall", "room_
                    "checkpoint_verify", "evidence_check", "lineage_check", "receipts_check"}
 # Exact names only: a prefix match would treat an MCP tool called `get_secret_and_post` as a read.
 # Network-bearing tools (`web_search`, `web_extract`) are excluded so untrusted text cannot exfiltrate over HTTP.
-READ_ONLY_TOOLS = {"read_file", "search_files", "skill_view", "skills_list",
+READ_ONLY_TOOLS = {"read_file", "search_files", "skill_view", "skills_list", "atlas_query",
                    "session_search", "tool_search", "tool_describe", "clarify", "read", "glob", "grep", "ls"}
+# External tools whose response bodies come from outside the local repo/owner boundary (closing OpenShell APF's
+# response-body blind spot). In a room session (or when `PLAYBOX_WITNESS_EXTERNAL=1`), their outputs taint the turn.
+EXTERNAL_UNTRUSTED_TOOLS = {"web_search", "web_extract", "web_fetch", "browser_navigate", "browser_snapshot",
+                            "browser_get_text", "fetch_url", "http_get"}
 LOCAL_FILE_READ_TOOLS = {"read_file", "search_files", "read", "glob", "grep", "ls"}
 WORKSPACE_MARK = "/.playbox/workspaces/"
 
@@ -63,12 +67,16 @@ def _is_workspace_args(args):
 
 
 def foreign_origin(tool_name, args, status):
-    """Return a short origin label if this finished call put another member's text in context, else None."""
+    """Return a short origin label if this finished call put untrusted external/peer text in context, else None."""
     if status not in (None, "ok"):
         return None
     server, tool = base_name(tool_name)
     if server == "playbox" and tool in FOREIGN_TEXT_TOOLS:
         return "room:" + tool
+    if server not in (None, "playbox"):
+        return "mcp:" + server + ":" + tool
+    if server is None and tool in EXTERNAL_UNTRUSTED_TOOLS:
+        return "external:" + tool
     if server != "playbox" and tool in READ_ONLY_TOOLS and _is_workspace_args(args):
         return "room workspace file"
     return None
@@ -139,7 +147,8 @@ class Witness:
         if status in (None, "ok") and server != "playbox" and tool in LOCAL_FILE_READ_TOOLS and not _is_workspace_args(args):
             self.local_read.add(session_id)
         origin = foreign_origin(tool_name, args, status)
-        if origin and session_id in self.in_room:
+        track_external = os.environ.get("PLAYBOX_WITNESS_EXTERNAL", "").lower() in ("1", "true", "on")
+        if origin and (session_id in self.in_room or track_external):
             self.tainted[session_id] = origin
         if session_id in self.in_room:
             self.record({"session": session_id, "tool": tool_name, "status": status,

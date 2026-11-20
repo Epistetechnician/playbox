@@ -15,6 +15,7 @@ use std::{path::PathBuf, sync::Arc};
 
 const FALLBACK_PROTOCOL: &str = "2025-06-18";
 const SHOWN_PATCH_BYTES: usize = 20_000;
+const MAX_FULL_PATCH_BYTES: usize = 2 * 1024 * 1024;
 
 /// What the last refused call was waiting on, for a front end that can ask a person (see `playbox-rap`).
 #[derive(Debug, Clone)]
@@ -84,6 +85,11 @@ pub struct Server {
     /// otherwise it only warns.
     guard: Broker,
     enforce: bool,
+    /// When `PLAYBOX_TRUST_OFFLINE_WORKSPACE=1`, isolated offline `playbox_delegate` tasks (`network=false`,
+    /// no `allowed_hosts`/`egress`) do not register own-repo code echoes as untrusted taint, allowing
+    /// `PLAYBOX_APPROVERS` to run in hard-blocking mode without self-taint false positives while still
+    /// tainting peer chat, web browse, memory, steer, and networked tasks.
+    trust_offline_workspace: bool,
     /// Shared memory with provenance, persisted as a JSON array of signed events in `memory_path`.
     memory: MemoryStore,
     memory_path: PathBuf,

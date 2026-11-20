@@ -32,6 +32,59 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
+pub const MAX_REPLAY_PATCH_BYTES: usize = 256 * 1024;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReplayRecord {
+    pub task_id: String,
+    pub member: String,
+    pub time_ms: u64,
+    pub runner: String,
+    pub base: String,
+    pub base_commit: String,
+    pub spec: TaskSpec,
+    pub cmd_hash: String,
+    pub policy_digest: Option<String>,
+    pub exit_code: Option<i32>,
+    pub timed_out: bool,
+    pub patch: String,
+    pub patch_bytes: usize,
+    pub patch_truncated: bool,
+    pub patch_hash: String,
+    pub stdout_hash: String,
+    pub commit: Option<String>,
+    pub branch: Option<String>,
+    pub changed_files: usize,
+}
+
+impl ReplayRecord {
+    #[must_use]
+    pub fn summary_json(&self, include_patch: bool) -> Value {
+        let mut m = serde_json::Map::new();
+        m.insert("task_id".into(), json!(self.task_id));
+        m.insert("member".into(), json!(self.member));
+        m.insert("time_ms".into(), json!(self.time_ms));
+        m.insert("runner".into(), json!(self.runner));
+        m.insert("base".into(), json!(self.base));
+        m.insert("base_commit".into(), json!(self.base_commit));
+        m.insert("cmd_hash".into(), json!(self.cmd_hash));
+        m.insert("policy_digest".into(), json!(self.policy_digest));
+        m.insert("exit_code".into(), json!(self.exit_code));
+        m.insert("timed_out".into(), json!(self.timed_out));
+        m.insert("patch_bytes".into(), json!(self.patch_bytes));
+        m.insert("patch_truncated".into(), json!(self.patch_truncated));
+        m.insert("patch_hash".into(), json!(self.patch_hash));
+        m.insert("stdout_hash".into(), json!(self.stdout_hash));
+        m.insert("commit".into(), json!(self.commit));
+        m.insert("branch".into(), json!(self.branch));
+        m.insert("changed_files".into(), json!(self.changed_files));
+        if include_patch {
+            m.insert("patch".into(), json!(self.patch));
+        }
+        Value::Object(m)
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct RoomHandler {
     pub(crate) roomlog: Arc<crate::roomsync::RoomLogNode>,
@@ -48,6 +101,13 @@ pub(crate) struct RoomHandler {
     pub(crate) auth: Arc<Authority>,
     /// Recent tasks per member, with byte payloads dropped. Not persisted.
     pub(crate) done: Arc<Mutex<HashMap<EndpointId, VecDeque<Task>>>>,
+    /// Recent replayable task records across the room (with bounded diffs).
+    pub(crate) replays: Arc<Mutex<VecDeque<ReplayRecord>>>,
+    /// Structured cross-agent handoff checkpoints posted to the room.
+    pub(crate) handoffs: Arc<Mutex<VecDeque<crate::card::HandoffCheckpoint>>>,
+    /// Live-mutable task guardrails (cpus, mem_mib, timeout_secs, network, allowed_hosts, allowed_secrets, allowed_egress).
+    pub(crate) live_limits: Arc<Mutex<playbox_runner::Limits>>,
+    pub(crate) live_policy_updated: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) card: Arc<Value>,
     /// Signs attestation statements with the host's endpoint key, so a client can bind them to the
     /// connection it already authenticated.
@@ -58,6 +118,49 @@ pub(crate) struct RoomHandler {
     pub(crate) latent: Arc<latent::Mailbox>,
     pub(crate) caps: Arc<capabilities::Engine>,
     pub(crate) convs: Arc<conversations::Book>,
+    /// Persistent per-member worktrees for stateful `keep = true` sessions, keyed by authenticated `EndpointId`.
+    pub(crate) sessions: SessionMap,
+}
+
+/// Persistent host-side worktree for a member's stateful (`keep = true`) task session.
+pub(crate) struct MemberSession {
+    pub(crate) repo: PathBuf,
+    pub(crate) base_commit: String,
+    pub(crate) wt: playbox_git::Worktree,
+    pub(crate) last_used: std::time::Instant,
+}
+
+pub(crate) type SessionMap = Arc<tokio::sync::Mutex<HashMap<EndpointId, MemberSession>>>;
+
+const SESSION_IDLE: Duration = Duration::from_secs(600);
+
+/// Tear down one member's persistent session worktree and warm sandbox (on revocation or disconnect).
+pub(crate) async fn drop_member_session(
+    sessions: &SessionMap,
+    runner: Option<&Arc<dyn playbox_runner::Runner>>,
+    id: EndpointId,
+) {
+    let taken = sessions.lock().await.remove(&id);
+    if let Some(s) = taken {
+        let _ = playbox_git::worktree_remove(&s.repo, &s.wt).await;
+    }
+    if let Some(r) = runner {
+        r.end_warm(&id.to_string()).await;
+    }
+}
+
+/// Tear down every persistent session worktree and warm sandbox (on host shutdown).
+pub(crate) async fn drop_all_sessions(
+    sessions: &SessionMap,
+    runner: Option<&Arc<dyn playbox_runner::Runner>>,
+) {
+    let all: Vec<(EndpointId, MemberSession)> = sessions.lock().await.drain().collect();
+    for (id, s) in all {
+        let _ = playbox_git::worktree_remove(&s.repo, &s.wt).await;
+        if let Some(r) = runner {
+            r.end_warm(&id.to_string()).await;
+        }
+    }
 }
 
 impl std::fmt::Debug for RoomHandler {
@@ -156,7 +259,8 @@ impl RoomHandler {
         if inv.uses_left == 0 {
             st.invites.remove(&id);
         }
-        let l = &self.cfg.limits;
+        let l = self.live_limits.lock_recover().clone();
+        let cap_names = self.caps.book.names();
         let caps = Caps {
             cpu_milli: (l.cpus * 1000.0).ceil() as i64,
             mem_mib: i64::from(l.mem_mib),
@@ -169,12 +273,7 @@ impl RoomHandler {
                 .cloned()
                 .chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}")))
                 .chain(l.allowed_egress.iter().map(|n| format!("egress/{n}")))
-                .chain(
-                    self.cfg
-                        .capabilities
-                        .iter()
-                        .map(|c| format!("cap/{}", c.name)),
-                )
+                .chain(cap_names.iter().map(|n| format!("cap/{n}")))
                 .collect(),
         };
         let ttl = self
@@ -217,6 +316,116 @@ impl RoomHandler {
         )
     }
 
+    pub(crate) fn check_live_policy(
+        &self,
+        op: &str,
+        needs: &grants::Needs,
+    ) -> Result<(), JsonRpcError> {
+        let l = self.live_limits.lock_recover().clone();
+        let max_cpu = (f64::from(l.cpus) * 1000.0).ceil() as i64;
+        let max_mem = i64::from(l.mem_mib);
+        let max_tmo = i64::try_from(l.timeout_secs).unwrap_or(i64::MAX);
+        if matches!(op, "run" | "steer" | "steer_probe") {
+            if needs.cpu_milli <= 0 || needs.cpu_milli > max_cpu {
+                return Err(unauthorized(anyhow!(
+                    "not authorized: requested cpu ({}m) exceeds room guardrail ({}m)",
+                    needs.cpu_milli,
+                    max_cpu
+                )));
+            }
+            if needs.mem_mib <= 0 || needs.mem_mib > max_mem {
+                return Err(unauthorized(anyhow!(
+                    "not authorized: requested memory ({} MiB) exceeds room guardrail ({} MiB)",
+                    needs.mem_mib,
+                    max_mem
+                )));
+            }
+            if needs.timeout_secs <= 0 || needs.timeout_secs > max_tmo {
+                return Err(unauthorized(anyhow!(
+                    "not authorized: requested timeout ({}s) exceeds room guardrail ({}s)",
+                    needs.timeout_secs,
+                    max_tmo
+                )));
+            }
+        }
+        if needs.net && !l.network {
+            return Err(unauthorized(anyhow!(
+                "not authorized: network access is disabled by room guardrail"
+            )));
+        }
+        if !needs.hosts.is_empty() {
+            let cap_names = self.caps.book.names();
+            let allowed: std::collections::HashSet<String> = l
+                .allowed_hosts
+                .iter()
+                .cloned()
+                .chain(l.allowed_secrets.iter().map(|n| format!("secret/{n}")))
+                .chain(l.allowed_egress.iter().map(|n| format!("egress/{n}")))
+                .chain(cap_names.iter().map(|n| format!("cap/{n}")))
+                .collect();
+            for h in &needs.hosts {
+                if !h.is_empty() && !allowed.contains(h) {
+                    return Err(unauthorized(anyhow!(
+                        "not authorized: {h:?} is not allowed by room policy"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn policy_digest(&self) -> String {
+        let l = self.live_limits.lock_recover().clone();
+        let u = self.limiter.usage();
+        let mem_rev = self.cfg.memory.as_ref().is_some_and(|m| m.review());
+        let doc = json!({
+            "cpus": (f64::from(l.cpus) * 1000.0).round() as i64,
+            "mem_mib": l.mem_mib,
+            "timeout_secs": l.timeout_secs,
+            "network": l.network,
+            "allowed_hosts": l.allowed_hosts,
+            "allowed_secrets": l.allowed_secrets,
+            "allowed_egress": l.allowed_egress,
+            "task_budget": u.task_budget,
+            "max_members": u.max_members,
+            "max_concurrent": u.max_concurrent_per_member,
+            "max_tasks_per_minute": u.max_tasks_per_window,
+            "memory_review": mem_rev,
+            "capabilities": self.caps.book.describe(),
+        });
+        blake3::hash(capabilities::canonical(&doc).as_bytes()).to_hex()[..32].to_string()
+    }
+
+    pub(crate) fn policy_snapshot(&self) -> Value {
+        let l = self.live_limits.lock_recover().clone();
+        let u = self.limiter.usage();
+        let mem_rev = self.cfg.memory.as_ref().is_some_and(|m| m.review());
+        json!({
+            "policy_digest": self.policy_digest(),
+            "limits": {
+                "cpus": l.cpus,
+                "mem_mib": l.mem_mib,
+                "timeout_secs": l.timeout_secs,
+                "network": l.network,
+                "allowed_hosts": l.allowed_hosts,
+                "allowed_secrets": l.allowed_secrets,
+                "allowed_egress": l.allowed_egress,
+            },
+            "budget": {
+                "tasks_started": u.tasks_started,
+                "task_budget": u.task_budget,
+                "tasks_remaining": u.tasks_remaining,
+                "inflight": u.inflight_total,
+                "max_members": u.max_members,
+                "max_concurrent": u.max_concurrent_per_member,
+                "max_tasks_per_minute": u.max_tasks_per_window,
+            },
+            "memory_review": mem_rev,
+            "has_memory": self.cfg.memory.is_some(),
+            "capabilities": self.caps.book.describe(),
+        })
+    }
+
     pub(crate) fn authorize(
         &self,
         grant: Option<&str>,
@@ -234,9 +443,33 @@ impl RoomHandler {
             }
             st.revoked.clone()
         };
+        let updated = self
+            .live_policy_updated
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if updated {
+            self.check_live_policy(op, needs)?;
+        }
+        let biscuit_needs = if updated
+            && self.auth.is_unattenuated(grant)
+            && matches!(op, "run" | "echo")
+            && needs.steer.is_none()
+            && needs.class.is_none()
+        {
+            grants::Needs {
+                cpu_milli: if op == "run" { 1 } else { 0 },
+                mem_mib: if op == "run" { 1 } else { 0 },
+                timeout_secs: if op == "run" { 1 } else { 0 },
+                net: false,
+                hosts: Vec::new(),
+                cmd: needs.cmd.clone(),
+                ..grants::Needs::default()
+            }
+        } else {
+            needs.clone()
+        };
         let grant_id = self
             .auth
-            .authorize_id(grant, &from.to_string(), op, needs, &revoked)
+            .authorize_id(grant, &from.to_string(), op, &biscuit_needs, &revoked)
             .map_err(unauthorized)?;
         // On a replica, members join at the primary rather than here; record verified, unrevoked grant
         // holders so standing checks, feed presence, capabilities and conversations recognise them.
@@ -422,6 +655,36 @@ impl RoomHandler {
                     // prompt set, so `steer_message` authorizes them before it does any work.
                     Some(Op::Steer { .. }) => ("echo", grants::Needs::default()),
                     Some(op @ Op::Handoff { .. }) => (op.name(), grants::Needs::default()),
+                    Some(Op::Replay {
+                        task_id: Some(tid),
+                        run: true,
+                    }) => {
+                        let orig = self.find_replay(tid);
+                        match orig {
+                            Some(r) => (
+                                "run",
+                                Op::Run {
+                                    base: r.base_commit.clone(),
+                                    spec: r.spec,
+                                    warm: false,
+                                    keep: false,
+                                    sync: playbox_runner::SyncMode::Full,
+                                }
+                                .needs(),
+                            ),
+                            None => (
+                                "run",
+                                Op::Run {
+                                    base: "main".into(),
+                                    spec: TaskSpec::new(&["sh"]),
+                                    warm: false,
+                                    keep: false,
+                                    sync: playbox_runner::SyncMode::Full,
+                                }
+                                .needs(),
+                            ),
+                        }
+                    }
                     Some(op) => (op.name(), op.needs()),
                     None => ("echo", grants::Needs::default()),
                 };
@@ -542,17 +805,68 @@ impl RoomHandler {
                     Err(e) => reply(OpError::failed(e).body()),
                 }
             }
-            Some(Op::Remember { text, key }) => {
+            Some(Op::Remember {
+                text,
+                key,
+                task_id,
+                commit,
+            }) => {
                 let t0 = std::time::Instant::now();
-                let Some(mem) = self.cfg.memory.clone() else { return reply(OpError::NoSharedMemory.body()) };
-                let r = mem.remember(&from.to_string(), &text, key.as_deref()).await;
+                let Some(mem) = self.cfg.memory.clone() else {
+                    return reply(OpError::NoSharedMemory.body());
+                };
+                let eff_commit = commit.clone().or_else(|| {
+                    task_id
+                        .as_deref()
+                        .and_then(|tid| self.find_replay(tid))
+                        .and_then(|r| {
+                            r.commit
+                                .or_else(|| (!r.base_commit.is_empty()).then_some(r.base_commit))
+                        })
+                });
+                let r = mem
+                    .remember_with_provenance(
+                        &from.to_string(),
+                        &text,
+                        key.as_deref(),
+                        task_id.as_deref(),
+                        eff_commit.as_deref(),
+                        false,
+                    )
+                    .await;
+                let taint = crate::shared_memory::taint_label(
+                    &from.to_string(),
+                    false,
+                    task_id.as_deref(),
+                    eff_commit.as_deref(),
+                );
                 self.audit.record(
                     "remember",
                     Some(&from.to_string()),
-                    json!({ "ok": r.is_ok(), "bytes": text.len(), "ms": t0.elapsed().as_millis() as u64, "doc": r.as_ref().ok().map(|x| x.doc.clone()), "reason": r.as_ref().err().map(|e| audit::clip(e)) }),
+                    json!({
+                        "ok": r.is_ok(),
+                        "bytes": text.len(),
+                        "ms": t0.elapsed().as_millis() as u64,
+                        "doc": r.as_ref().ok().map(|x| x.doc.clone()),
+                        "key": key,
+                        "task_id": task_id,
+                        "commit": eff_commit,
+                        "taint": taint,
+                        "reason": r.as_ref().err().map(|e| audit::clip(e)),
+                    }),
                 );
                 return match r {
-                    Ok(x) => reply(json!({ "doc": x.doc, "status": x.status }).to_string()),
+                    Ok(x) => reply(
+                        json!({
+                            "doc": x.doc,
+                            "status": x.status,
+                            "key": key,
+                            "task_id": task_id,
+                            "commit": eff_commit,
+                            "taint": taint,
+                        })
+                        .to_string(),
+                    ),
                     Err(e) => reply(OpError::failed(e).body()),
                 };
             }
@@ -631,6 +945,27 @@ impl RoomHandler {
                 let wait = Duration::from_secs(wait_secs);
                 return reply(self.audit.chat.wait_since(&me, since, 200, &ids, wait).await.to_json().to_string());
             }
+            Some(Op::PolicyGet) => {
+                return reply(self.policy_snapshot().to_string());
+            }
+            Some(Op::Replay { task_id, run }) => {
+                return match self
+                    .replay_op(Some(from), task_id.as_deref(), run)
+                    .await
+                {
+                    Ok(v) => reply(v.to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
+                };
+            }
+            Some(Op::CheckpointPut { mut checkpoint }) => {
+                return match self.checkpoint_put(&from.to_string(), &mut checkpoint) {
+                    Ok(v) => reply(v.to_string()),
+                    Err(e) => reply(OpError::failed(e).body()),
+                };
+            }
+            Some(Op::CheckpointList { id }) => {
+                return reply(self.checkpoint_list(id.as_deref()).to_string());
+            }
             // Handled in `route`, which has the grant it needs to authorize the specifics.
             Some(Op::Steer { .. } | Op::Handoff { .. }) => return reply("steering is handled by the router".into()),
             Some(Op::Latent) => {
@@ -676,7 +1011,13 @@ impl RoomHandler {
                 self.audit_op(from, "push", &r, t0, json!({ "branch": audit::clip(&branch), "bytes": bytes }));
                 finish(r)
             }
-            Some(Op::Run { base, spec, warm }) => {
+            Some(Op::Run {
+                base,
+                spec,
+                warm,
+                keep,
+                sync,
+            }) => {
                 let t0 = std::time::Instant::now();
                 // Arguments often hold secrets, so the log keeps the program, how many arguments, and a hash.
                 let mut h = blake3::Hasher::new();
@@ -684,18 +1025,32 @@ impl RoomHandler {
                     h.update(a.as_bytes());
                     h.update(&[0]);
                 }
+                let cmd_hash: String = h.finalize().to_hex().chars().take(16).collect();
                 let details = json!({
                     "base": audit::clip(&base),
                     "program": spec.cmd.first().map(|c| audit::clip(c)),
                     "args": spec.cmd.len().saturating_sub(1),
-                    "cmd_hash": h.finalize().to_hex().chars().take(16).collect::<String>(),
+                    "cmd_hash": cmd_hash,
                     "image": audit::clip(&spec.image),
                     "cpus": spec.cpus, "mem_mib": spec.mem_mib, "timeout_secs": spec.timeout_secs, "network": spec.network,
                     "secrets": spec.secrets,
                     "egress": spec.egress,
                     "warm": warm,
+                    "keep": keep,
+                    "sync": sync.as_str(),
                 });
-                let r = self.run(from, &base, spec, warm).await;
+                let spec_for_replay = spec.clone();
+                let base_for_replay = base.clone();
+                let r = self.run(from, &base, spec, warm, keep, sync).await;
+                if let Ok(ref t) = r {
+                    self.record_replay(
+                        &from.to_string(),
+                        &base_for_replay,
+                        spec_for_replay,
+                        &cmd_hash,
+                        t,
+                    );
+                }
                 self.audit_op(from, "task", &r, t0, details);
                 finish(r)
             }
@@ -723,17 +1078,28 @@ impl RoomHandler {
         match result {
             Ok(t) => {
                 obj.insert("ok".into(), json!(true));
+                obj.insert("task_id".into(), json!(t.id));
                 obj.insert("state".into(), json!(format!("{:?}", t.status.state)));
                 for (key, out) in [
                     ("exitCode", "exit_code"),
                     ("timedOut", "timed_out"),
                     ("runner", "runner"),
                     ("commit", "commit"),
+                    ("baseCommit", "base_commit"),
                     ("reference", "reference"),
+                    ("policyDigest", "policy_digest"),
+                    ("branch", "branch"),
+                    ("patchHash", "patch_hash"),
+                    ("stdoutHash", "stdout_hash"),
+                    ("patchBytes", "patch_bytes"),
+                    ("secretsUsed", "secrets_used"),
                 ] {
                     if let Some(v) = wire::meta(t, key) {
                         obj.insert(out.into(), v.clone());
                     }
+                }
+                if let Some(v) = wire::meta(t, "changed").and_then(Value::as_array) {
+                    obj.insert("changed_files".into(), json!(v.len()));
                 }
             }
             Err(e) => {
@@ -851,19 +1217,50 @@ impl RoomHandler {
 
     /// Run a member's task under the abuse limits, and stop it if the member is revoked while it runs.
     /// Stopping drops the run, which kills its sandbox.
-    async fn run(&self, from: EndpointId, base: &str, spec: TaskSpec, warm: bool) -> Result<Task> {
+    async fn run(
+        &self,
+        from: EndpointId,
+        base: &str,
+        spec: TaskSpec,
+        warm: bool,
+        keep: bool,
+        sync: playbox_runner::SyncMode,
+    ) -> Result<Task> {
         let _admission = self
             .limiter
             .admit(from)
             .map_err(|e| refuse(e.to_string()))?;
         tokio::select! {
-            r = self.run_inner(from, base, spec, warm) => r,
+            r = self.run_inner(from, base, spec, warm, keep, sync) => r,
             () = self.until_revoked(from) => {
-                if let Some(r) = &self.cfg.runner {
-                    r.end_warm(&from.to_string()).await;
-                }
+                drop_member_session(&self.sessions, self.cfg.runner.as_ref(), from).await;
                 self.audit.record("task_cancelled", Some(&from.to_string()), json!({ "reason": "member revoked" }));
                 Err(refuse("cancelled: your access to this room was revoked"))
+            }
+        }
+    }
+
+    /// Evict stateful worktree sessions idle longer than `SESSION_IDLE`.
+    async fn reap_sessions(&self) {
+        let now = std::time::Instant::now();
+        let mut stale = Vec::new();
+        {
+            let mut m = self.sessions.lock().await;
+            let keys: Vec<EndpointId> = m
+                .iter()
+                .filter(|(_, s)| now.duration_since(s.last_used) > SESSION_IDLE)
+                .map(|(k, _)| *k)
+                .collect();
+            for k in keys {
+                if let Some(s) = m.remove(&k) {
+                    stale.push((k, s));
+                }
+            }
+        }
+        for (id, s) in stale {
+            let _ = playbox_git::worktree_remove(&s.repo, &s.wt).await;
+            if let Some(r) = &self.cfg.runner {
+                r.end_warm(&id.to_string()).await;
             }
         }
     }
@@ -884,89 +1281,187 @@ impl RoomHandler {
         base: &str,
         spec: TaskSpec,
         warm: bool,
+        keep: bool,
+        sync: playbox_runner::SyncMode,
     ) -> Result<Task> {
         let runner = self
             .cfg
             .runner
             .clone()
             .ok_or_else(|| refuse("this room runs no tasks"))?;
-        let (output, patch, extra) = if let Some(ws) = &self.cfg.workspace {
-            let _permit = self.tasks.acquire().await?;
-            let short: String = from.to_string().chars().take(16).collect();
-            let branch = format!("members/{short}");
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
-                .unwrap_or(0);
-            let mut repo = ws.lock().await;
-            if repo.head(&branch).is_err() {
-                repo.fork(&branch, base)?;
-            }
-            let mut wsp = repo.workspace(&branch)?;
-            let run = playbox_runner::workspace::run_in_workspace(
-                &mut repo,
-                &mut wsp,
-                runner.as_ref(),
-                &spec,
-                &from.to_string(),
-                &format!("rpc-{now}"),
-                now,
-                self.cfg.scratch_quota,
-            )
-            .await?;
-            if !run.conflicts.is_empty() {
-                bail!("conflict on {:?}", run.conflicts);
-            }
-            // The commit stays on the host (branch `members/<id>`); the patch is empty. The commit id
-            // and the changed paths come back as task metadata.
-            let mut extra = vec![("branch", json!(branch)), ("changed", json!(run.changed))];
-            if let Some(c) = run.commit {
-                extra.push(("commit", json!(playbox_core::history::text::hex(&c))));
-            }
-            (run.output, Vec::new(), extra)
-        } else {
-            let repo = self.repo()?;
-            playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
-            let _permit = self.tasks.acquire().await?;
-            let commit = playbox_git::rev_parse(&repo, base).await?;
-            let mut guard = WorktreeGuard {
-                repo: repo.clone(),
-                wt: Some(playbox_git::worktree_add(&repo, &commit).await?),
-            };
-            let result = async {
-                let wt = guard
-                    .wt
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("the worktree was released before the run"))?;
-                // The session key is the authenticated sender, never anything the peer wrote.
-                let output = if warm {
-                    playbox_runner::run_warm_with_quota(
+        let (output, patch, extra) =
+            if let Some(ws) = &self.cfg.workspace {
+                let _permit = self.tasks.acquire().await?;
+                let short: String = from.to_string().chars().take(16).collect();
+                let branch = format!("members/{short}");
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis().try_into().unwrap_or(u64::MAX))
+                    .unwrap_or(0);
+                let mut repo = ws.lock().await;
+                if repo.head(&branch).is_err() {
+                    repo.fork(&branch, base)?;
+                }
+                let mut wsp = repo.workspace(&branch)?;
+                let run = playbox_runner::workspace::run_in_workspace(
+                    &mut repo,
+                    &mut wsp,
+                    runner.as_ref(),
+                    &spec,
+                    &from.to_string(),
+                    &format!("rpc-{now}"),
+                    now,
+                    self.cfg.scratch_quota,
+                )
+                .await?;
+                if !run.conflicts.is_empty() {
+                    bail!("conflict on {:?}", run.conflicts);
+                }
+                // The commit stays on the host (branch `members/<id>`); the patch is empty. The commit id
+                // and the changed paths come back as task metadata.
+                let mut extra = vec![
+                    ("branch", json!(branch)),
+                    ("changed", json!(run.changed)),
+                    ("base", json!(base)),
+                ];
+                if let Some(c) = run.commit {
+                    let ch = playbox_core::history::text::hex(&c);
+                    extra.push(("commit", json!(ch.clone())));
+                    extra.push(("baseCommit", json!(ch)));
+                }
+                (run.output, Vec::new(), extra)
+            } else if keep {
+                let repo = self.repo()?;
+                playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
+                let _permit = self.tasks.acquire().await?;
+                let commit = playbox_git::rev_parse(&repo, base).await?;
+                self.reap_sessions().await;
+                let prior = self.sessions.lock().await.remove(&from);
+                let wt = match prior {
+                    Some(s) if s.repo == repo && s.base_commit == commit => s.wt,
+                    Some(s) => {
+                        let _ = playbox_git::worktree_remove(&s.repo, &s.wt).await;
+                        playbox_git::worktree_add(&repo, &commit).await?
+                    }
+                    None => playbox_git::worktree_add(&repo, &commit).await?,
+                };
+                let mut guard = WorktreeGuard {
+                    repo: repo.clone(),
+                    wt: Some(wt),
+                };
+                let result = async {
+                    let wt = guard.wt.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("the worktree was released before the run")
+                    })?;
+                    // The session key is the authenticated sender, never anything the peer wrote.
+                    let output = playbox_runner::run_session_with_quota(
                         runner.as_ref(),
                         &spec,
                         wt.path(),
                         &from.to_string(),
+                        &commit,
+                        sync,
                         self.cfg.scratch_quota,
                     )
-                    .await?
-                } else {
-                    playbox_runner::run_with_quota(
-                        runner.as_ref(),
-                        &spec,
-                        wt.path(),
-                        self.cfg.scratch_quota,
-                    )
-                    .await?
+                    .await?;
+                    let patch = if sync == playbox_runner::SyncMode::None {
+                        Vec::new()
+                    } else {
+                        playbox_git::diff_patch(wt, &commit).await?
+                    };
+                    anyhow::Ok((output, patch))
+                }
+                .await;
+                match result {
+                    Ok((output, patch)) => {
+                        let base_commit_out = commit.clone();
+                        let banned = self.state.lock_recover().banned.contains(&from);
+                        if !output.timed_out && !banned {
+                            if let Some(wt) = guard.wt.take() {
+                                self.sessions.lock().await.insert(
+                                    from,
+                                    MemberSession {
+                                        repo: repo.clone(),
+                                        base_commit: commit,
+                                        wt,
+                                        last_used: std::time::Instant::now(),
+                                    },
+                                );
+                            }
+                        } else if let Some(wt) = guard.wt.take() {
+                            let _ = playbox_git::worktree_remove(&repo, &wt).await;
+                            runner.end_warm(&from.to_string()).await;
+                        }
+                        (
+                            output,
+                            patch,
+                            vec![
+                                ("keep", json!(true)),
+                                ("sync", json!(sync.as_str())),
+                                ("base", json!(base)),
+                                ("baseCommit", json!(base_commit_out.clone())),
+                                ("commit", json!(base_commit_out)),
+                            ],
+                        )
+                    }
+                    Err(e) => {
+                        if let Some(wt) = guard.wt.take() {
+                            let _ = playbox_git::worktree_remove(&repo, &wt).await;
+                        }
+                        runner.end_warm(&from.to_string()).await;
+                        return Err(e);
+                    }
+                }
+            } else {
+                let repo = self.repo()?;
+                playbox_git::check_name(base).map_err(|e| refuse(format!("{e:#}")))?;
+                let _permit = self.tasks.acquire().await?;
+                let commit = playbox_git::rev_parse(&repo, base).await?;
+                let mut guard = WorktreeGuard {
+                    repo: repo.clone(),
+                    wt: Some(playbox_git::worktree_add(&repo, &commit).await?),
                 };
-                let patch = playbox_git::diff_patch(wt, &commit).await?;
-                anyhow::Ok((output, patch))
-            }
-            .await;
-            if let Some(wt) = guard.wt.take() {
-                let _ = playbox_git::worktree_remove(&repo, &wt).await;
-            }
-            let (output, patch) = result?;
-            (output, patch, Vec::new())
-        };
+                let result = async {
+                    let wt = guard.wt.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("the worktree was released before the run")
+                    })?;
+                    // The session key is the authenticated sender, never anything the peer wrote.
+                    let output = if warm {
+                        playbox_runner::run_warm_with_quota(
+                            runner.as_ref(),
+                            &spec,
+                            wt.path(),
+                            &from.to_string(),
+                            self.cfg.scratch_quota,
+                        )
+                        .await?
+                    } else {
+                        playbox_runner::run_with_quota(
+                            runner.as_ref(),
+                            &spec,
+                            wt.path(),
+                            self.cfg.scratch_quota,
+                        )
+                        .await?
+                    };
+                    let patch = playbox_git::diff_patch(wt, &commit).await?;
+                    anyhow::Ok((output, patch))
+                }
+                .await;
+                if let Some(wt) = guard.wt.take() {
+                    let _ = playbox_git::worktree_remove(&repo, &wt).await;
+                }
+                let (output, patch) = result?;
+                (
+                    output,
+                    patch,
+                    vec![
+                        ("base", json!(base)),
+                        ("baseCommit", json!(commit.clone())),
+                        ("commit", json!(commit)),
+                    ],
+                )
+            };
         let ok = output.exit_code == Some(0);
         let text = match (ok, output.timed_out, output.exit_code) {
             (true, _, _) => None,
@@ -974,6 +1469,9 @@ impl RoomHandler {
             (_, _, Some(c)) => Some(format!("exit code {c}")),
             _ => Some("terminated by a signal".to_string()),
         };
+        let stdout_hash = blake3::hash(output.stdout.as_bytes()).to_hex().to_string();
+        let patch_hash = blake3::hash(&patch).to_hex().to_string();
+        let patch_bytes = patch.len();
         let mut artifacts = vec![
             wire::text_artifact("stdout", output.stdout),
             wire::text_artifact("stderr", output.stderr),
@@ -989,10 +1487,15 @@ impl RoomHandler {
         let mut meta = vec![
             ("runner", json!(runner.name())),
             ("timedOut", json!(output.timed_out)),
+            ("patchHash", json!(patch_hash)),
+            ("stdoutHash", json!(stdout_hash)),
+            ("patchBytes", json!(patch_bytes)),
         ];
-        if let Some(d) = &output.policy_digest {
-            meta.push(("policyDigest", json!(d)));
-        }
+        let eff_policy_digest = output
+            .policy_digest
+            .clone()
+            .unwrap_or_else(|| self.policy_digest());
+        meta.push(("policyDigest", json!(eff_policy_digest)));
         if let Some(c) = output.exit_code {
             meta.push(("exitCode", json!(c)));
         }
@@ -1010,6 +1513,320 @@ impl RoomHandler {
             artifacts,
             meta,
         ))
+    }
+
+    pub(crate) fn record_replay(
+        &self,
+        member: &str,
+        base: &str,
+        spec: TaskSpec,
+        cmd_hash: &str,
+        t: &Task,
+    ) {
+        let patch_raw = wire::artifact_bytes(t, "patch").unwrap_or_default();
+        let patch_bytes = patch_raw.len();
+        let patch_truncated = patch_bytes > MAX_REPLAY_PATCH_BYTES;
+        let patch = String::from_utf8_lossy(&patch_raw[..patch_bytes.min(MAX_REPLAY_PATCH_BYTES)])
+            .into_owned();
+        let patch_hash = wire::meta(t, "patchHash")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| blake3::hash(&patch_raw).to_hex().to_string());
+        let stdout_hash = wire::meta(t, "stdoutHash")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_default();
+        let base_commit = wire::meta(t, "baseCommit")
+            .and_then(Value::as_str)
+            .or_else(|| wire::meta(t, "commit").and_then(Value::as_str))
+            .unwrap_or(base)
+            .to_string();
+        let changed_files = wire::meta(t, "changed")
+            .and_then(Value::as_array)
+            .map_or_else(
+                || {
+                    patch
+                        .lines()
+                        .filter(|l| l.starts_with("diff --git "))
+                        .count()
+                },
+                Vec::len,
+            );
+        let rec = ReplayRecord {
+            task_id: t.id.clone(),
+            member: member.to_string(),
+            time_ms: crate::chat::now_ms(),
+            runner: wire::meta(t, "runner")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            base: base.to_string(),
+            base_commit,
+            spec,
+            cmd_hash: cmd_hash.to_string(),
+            policy_digest: wire::meta(t, "policyDigest")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            exit_code: wire::meta(t, "exitCode")
+                .and_then(Value::as_i64)
+                .map(|c| c as i32),
+            timed_out: wire::meta(t, "timedOut")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            patch,
+            patch_bytes,
+            patch_truncated,
+            patch_hash,
+            stdout_hash,
+            commit: wire::meta(t, "commit")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            branch: wire::meta(t, "branch")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            changed_files,
+        };
+        let mut q = self.replays.lock_recover();
+        q.push_back(rec);
+        while q.len() > TASKS_KEPT {
+            q.pop_front();
+        }
+    }
+
+    pub(crate) fn find_replay(&self, id_or_hash: &str) -> Option<ReplayRecord> {
+        let needle = id_or_hash.trim();
+        if needle.is_empty() {
+            return None;
+        }
+        let q = self.replays.lock_recover();
+        if needle == "latest" {
+            return q.back().cloned();
+        }
+        q.iter()
+            .rev()
+            .find(|r| {
+                r.task_id == needle
+                    || r.cmd_hash == needle
+                    || r.commit.as_deref() == Some(needle)
+                    || (needle.len() >= 6
+                        && (r.task_id.starts_with(needle)
+                            || r.cmd_hash.starts_with(needle)
+                            || r.patch_hash.starts_with(needle)))
+            })
+            .cloned()
+    }
+
+    pub(crate) async fn replay_op(
+        &self,
+        from: Option<EndpointId>,
+        task_id: Option<&str>,
+        run: bool,
+    ) -> std::result::Result<Value, String> {
+        let Some(tid) = task_id.map(str::trim).filter(|s| !s.is_empty()) else {
+            let list: Vec<Value> = self
+                .replays
+                .lock_recover()
+                .iter()
+                .rev()
+                .take(50)
+                .map(|r| r.summary_json(false))
+                .collect();
+            return Ok(json!({
+                "mode": "list",
+                "tasks": list,
+            }));
+        };
+        let orig = self
+            .find_replay(tid)
+            .ok_or_else(|| format!("no recorded task matching {tid:?}"))?;
+        if !run {
+            return Ok(json!({
+                "mode": "inspect",
+                "task": orig.summary_json(true),
+            }));
+        }
+        let caller = from
+            .unwrap_or_else(|| iroh::SecretKey::from_bytes(&self.attest_key.to_bytes()).public());
+        let base_ref = if !orig.base_commit.is_empty() {
+            orig.base_commit.as_str()
+        } else {
+            orig.base.as_str()
+        };
+        let t0 = std::time::Instant::now();
+        let replayed = self
+            .run(
+                caller,
+                base_ref,
+                orig.spec.clone(),
+                false,
+                false,
+                playbox_runner::SyncMode::Full,
+            )
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        self.record_replay(
+            &caller.to_string(),
+            base_ref,
+            orig.spec.clone(),
+            &orig.cmd_hash,
+            &replayed,
+        );
+        let replay_rec = self
+            .find_replay(&replayed.id)
+            .ok_or_else(|| "replay record missing".to_string())?;
+        let patch_match = replay_rec.patch_hash == orig.patch_hash;
+        let cmd_hash_match = replay_rec.cmd_hash == orig.cmd_hash;
+        let policy_match = match (&orig.policy_digest, &replay_rec.policy_digest) {
+            (Some(a), Some(b)) => a == b,
+            _ => true,
+        };
+        let exit_match =
+            replay_rec.exit_code == orig.exit_code && replay_rec.timed_out == orig.timed_out;
+        let stdout_match = replay_rec.stdout_hash == orig.stdout_hash;
+        let reproducible = patch_match && cmd_hash_match && policy_match && exit_match;
+        self.audit.record(
+            "replay",
+            Some(&caller.to_string()),
+            json!({
+                "ok": reproducible,
+                "ms": t0.elapsed().as_millis() as u64,
+                "task_id": orig.task_id,
+                "replay_task_id": replay_rec.task_id,
+                "base_commit": orig.base_commit,
+                "cmd_hash": orig.cmd_hash,
+                "policy_digest": replay_rec.policy_digest,
+                "patch_hash": replay_rec.patch_hash,
+                "reproducible": reproducible,
+                "patch_match": patch_match,
+                "policy_match": policy_match,
+                "exit_match": exit_match,
+            }),
+        );
+        let mut replay_json = replay_rec.summary_json(true);
+        if let Some(obj) = replay_json.as_object_mut() {
+            obj.insert(
+                "stdout".into(),
+                json!(wire::artifact_text(&replayed, "stdout").unwrap_or_default()),
+            );
+            obj.insert(
+                "stderr".into(),
+                json!(wire::artifact_text(&replayed, "stderr").unwrap_or_default()),
+            );
+        }
+        Ok(json!({
+            "mode": "replay",
+            "reproducible": reproducible,
+            "verification": {
+                "reproducible": reproducible,
+                "patch_match": patch_match,
+                "policy_match": policy_match,
+                "cmd_hash_match": cmd_hash_match,
+                "exit_match": exit_match,
+                "stdout_match": stdout_match,
+                "base_commit": orig.base_commit,
+                "cmd_hash": orig.cmd_hash,
+                "original_patch_hash": orig.patch_hash,
+                "replay_patch_hash": replay_rec.patch_hash,
+                "original_policy_digest": orig.policy_digest,
+                "replay_policy_digest": replay_rec.policy_digest,
+            },
+            "original": orig.summary_json(true),
+            "replay": replay_json,
+        }))
+    }
+
+    pub(crate) fn checkpoint_put(
+        &self,
+        sender: &str,
+        cp: &mut crate::card::HandoffCheckpoint,
+    ) -> std::result::Result<Value, String> {
+        let host_id = iroh::SecretKey::from_bytes(&self.attest_key.to_bytes())
+            .public()
+            .to_string();
+        if cp.room.is_empty() {
+            cp.room = host_id.clone();
+        }
+        cp.verify(Some(sender), Some(&host_id))?;
+        let unsigned = cp.canonical_unsigned();
+        let mut full = unsigned;
+        if let Some(obj) = full.as_object_mut() {
+            obj.insert("sig".into(), json!(cp.sig));
+        }
+        let feed_text = format!(
+            "{}{}",
+            crate::card::HANDOFF_PREFIX,
+            capabilities::canonical(&full)
+        );
+        let seq = self.audit.chat.say(sender, None, &feed_text).unwrap_or(0);
+        self.audit.record(
+            "handoff_checkpoint",
+            Some(sender),
+            json!({
+                "ok": true,
+                "id": cp.id,
+                "to": cp.to,
+                "branch": cp.branch,
+                "base_commit": cp.base_commit,
+                "policy_digest": cp.policy_digest,
+                "open_cards": cp.open_cards.len(),
+                "verified_artifacts": cp.verified_artifacts.len(),
+                "failed_checks": cp.failed_checks.len(),
+            }),
+        );
+        let mut q = self.handoffs.lock_recover();
+        if let Some(pos) = q.iter().position(|x| x.id == cp.id) {
+            q.remove(pos);
+        }
+        q.push_back(cp.clone());
+        while q.len() > 100 {
+            q.pop_front();
+        }
+        Ok(json!({
+            "checkpoint": full,
+            "seq": seq,
+            "verified": true,
+        }))
+    }
+
+    pub(crate) fn checkpoint_list(&self, id: Option<&str>) -> Value {
+        let q = self.handoffs.lock_recover();
+        let list: Vec<Value> = match id.map(str::trim).filter(|s| !s.is_empty()) {
+            Some("latest") => q
+                .back()
+                .into_iter()
+                .map(|c| {
+                    let mut v = c.canonical_unsigned();
+                    if let Some(o) = v.as_object_mut() {
+                        o.insert("sig".into(), json!(c.sig));
+                    }
+                    v
+                })
+                .collect(),
+            Some(want) => q
+                .iter()
+                .rev()
+                .filter(|c| c.id == want || c.branch == want || c.base_commit.starts_with(want))
+                .map(|c| {
+                    let mut v = c.canonical_unsigned();
+                    if let Some(o) = v.as_object_mut() {
+                        o.insert("sig".into(), json!(c.sig));
+                    }
+                    v
+                })
+                .collect(),
+            None => q
+                .iter()
+                .rev()
+                .map(|c| {
+                    let mut v = c.canonical_unsigned();
+                    if let Some(o) = v.as_object_mut() {
+                        o.insert("sig".into(), json!(c.sig));
+                    }
+                    v
+                })
+                .collect(),
+        };
+        json!({ "checkpoints": list })
     }
 
     /// Answer one request. The flag says whether the caller proved itself (a valid invite or grant),

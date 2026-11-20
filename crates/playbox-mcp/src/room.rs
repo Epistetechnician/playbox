@@ -28,6 +28,14 @@ impl Server {
         if self.host.is_some() && !self.is_replica && s(a, "replica_of").is_some() {
             bail!("this sidecar already hosts a primary room; restart it to open a replica");
         }
+        let tpl =
+            match s(a, "template") {
+                None => None,
+                Some(t) => Some(playbox_net::templates::TemplateKind::parse(t).ok_or_else(
+                    || anyhow!("unknown template {t:?}; templates are swe, research, review, ops"),
+                )?),
+            };
+        let tpl_spec = tpl.map(playbox_net::templates::TemplateKind::spec);
         if self.host.is_none() {
             let repo = s(a, "repo").map(PathBuf::from);
             if let Some(r) = &repo {
@@ -35,7 +43,8 @@ impl Server {
                     bail!("{} is not a git repository", r.display());
                 }
             }
-            let runtime = s(a, "runtime").or(b(a, "docker").then_some("docker"));
+            let explicit_runtime = s(a, "runtime").or(b(a, "docker").then_some("docker"));
+            let runtime = explicit_runtime.or_else(|| tpl_spec.as_ref().map(|s| s.default_runtime));
             let steer_image = s(a, "steer_image")
                 .unwrap_or(DEFAULT_STEER_IMAGE)
                 .to_string();
@@ -60,7 +69,12 @@ impl Server {
                         .filter_map(|h| h.as_str().map(str::to_string))
                         .collect()
                 })
-                .unwrap_or_default();
+                .unwrap_or_else(|| {
+                    tpl_spec
+                        .as_ref()
+                        .map(|s| s.limits.allowed_egress.clone())
+                        .unwrap_or_default()
+                });
             if !allowed_egress.is_empty() {
                 let Some(cfg) = &egress_cfg else {
                     bail!("allowed_egress requires `egress` defining the named upstreams");
@@ -71,24 +85,32 @@ impl Server {
                     }
                 }
             }
-            let runner: Option<Arc<dyn Runner>> = if let Some(name) = runtime {
+            let mut actual_runtime = runtime.map(str::to_string);
+            let runner: Option<Arc<dyn Runner>> = if b(a, "unsafe_process_runner")
+                && playbox_runner::env_opt_in("PLAYBOX_ALLOW_UNSAFE_RUNNER")
+            {
+                actual_runtime = Some("process".to_string());
+                Some(Arc::new(ProcessRunner))
+            } else if let Some(name) = runtime {
                 let confine = if b(a, "confine") {
                     Some((s(a, "confine_net").unwrap_or("none").parse()?, true))
                 } else {
                     None
                 };
-                Some(playbox_runner::runner_with(
+                let candidate = playbox_runner::runner_with(
                     name,
                     policy,
                     &playbox_runner::RunnerOptions {
                         confine,
                         egress: egress_cfg,
                     },
-                )?)
-            } else if b(a, "unsafe_process_runner")
-                && playbox_runner::env_opt_in("PLAYBOX_ALLOW_UNSAFE_RUNNER")
-            {
-                Some(Arc::new(ProcessRunner))
+                )?;
+                if explicit_runtime.is_none() && candidate.preflight().await.is_err() {
+                    actual_runtime = None;
+                    None
+                } else {
+                    Some(candidate)
+                }
             } else {
                 None
             };
@@ -99,7 +121,27 @@ impl Server {
                 }
                 _ => HostConfig::default().min_isolation,
             };
+            let base_limits = tpl_spec
+                .as_ref()
+                .map(|s| s.limits.clone())
+                .unwrap_or_default();
             let mut limits = playbox_runner::Limits {
+                cpus: a
+                    .get("cpus")
+                    .and_then(Value::as_f64)
+                    .map_or(base_limits.cpus, |v| v as f32),
+                mem_mib: a
+                    .get("mem_mib")
+                    .and_then(Value::as_u64)
+                    .map_or(base_limits.mem_mib, |v| v as u32),
+                timeout_secs: a
+                    .get("timeout_secs")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(base_limits.timeout_secs),
+                network: a
+                    .get("network")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(base_limits.network),
                 allowed_hosts: a
                     .get("allowed_hosts")
                     .and_then(Value::as_array)
@@ -108,7 +150,7 @@ impl Server {
                             .filter_map(|h| h.as_str().map(str::to_string))
                             .collect()
                     })
-                    .unwrap_or_default(),
+                    .unwrap_or(base_limits.allowed_hosts),
                 allowed_secrets: a
                     .get("allowed_secrets")
                     .and_then(Value::as_array)
@@ -117,9 +159,8 @@ impl Server {
                             .filter_map(|h| h.as_str().map(str::to_string))
                             .collect()
                     })
-                    .unwrap_or_default(),
+                    .unwrap_or(base_limits.allowed_secrets),
                 allowed_egress,
-                ..Default::default()
             };
             let steer = match s(a, "steer_store") {
                 None => None,
@@ -181,6 +222,23 @@ impl Server {
                     )?))
                 }
             };
+            let mut abuse = tpl_spec
+                .as_ref()
+                .map(|s| s.abuse.clone())
+                .unwrap_or_default();
+            let parsed_abuse = abuse_from_args(a);
+            if a.get("max_members").is_some() {
+                abuse.max_members = parsed_abuse.max_members;
+            }
+            if a.get("max_concurrent").is_some() {
+                abuse.max_concurrent_per_member = parsed_abuse.max_concurrent_per_member;
+            }
+            if a.get("max_tasks_per_minute").is_some() {
+                abuse.max_tasks_per_window = parsed_abuse.max_tasks_per_window;
+            }
+            if a.get("task_budget").is_some() {
+                abuse.task_budget = parsed_abuse.task_budget;
+            }
             let cfg = HostConfig {
                 repo: repo.clone(),
                 runner,
@@ -190,10 +248,10 @@ impl Server {
                 authenticated_patience: a.get("idle_patience_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs).unwrap_or(HostConfig::default().authenticated_patience),
                 grant_ttl: a.get("grant_ttl_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs),
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
-                abuse: abuse_from_args(a),
+                abuse,
                 latent: latent_from_args(a),
                 capabilities: match a.get("capabilities") {
-                    None | Some(Value::Null) => Vec::new(),
+                    None | Some(Value::Null) => tpl_spec.as_ref().map(|s| s.capabilities.clone()).unwrap_or_default(),
                     Some(v) => serde_json::from_value(v.clone()).context("capabilities must be an array of {name, argv, params, approval, image, timeout_secs}")?,
                 },
                 ..Default::default()
@@ -212,16 +270,22 @@ impl Server {
             }
             let dir = store::home().join("rooms").join(name);
             let mut cfg = cfg;
+            let review = a
+                .get("memory_review")
+                .and_then(Value::as_bool)
+                .unwrap_or_else(|| tpl_spec.as_ref().is_some_and(|s| s.memory_review));
             if let Some(url) = s(a, "memory_url") {
-                let review = a
-                    .get("memory_review")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
                 cfg.memory = Some(playbox_net::shared_memory::hindsight_memory(
                     url,
                     name,
                     review,
                     false,
+                    Some(&dir),
+                )?);
+            } else if a.get("memory") != Some(&Value::Bool(false)) {
+                cfg.memory = Some(playbox_net::shared_memory::local_memory(
+                    name,
+                    review,
                     Some(&dir),
                 )?);
             }
@@ -257,11 +321,18 @@ impl Server {
                 }
                 None => Host::open(&dir, transport, cfg).await?,
             };
+            if let Some(kind) = tpl {
+                playbox_net::templates::seed_room(&host, kind).await;
+            }
             self.is_replica = s(a, "replica_of").is_some();
             self.host = Some(Arc::new(host));
             self.host_repo = repo;
             self.room_name = Some(name.to_string());
-            self.runtime_name = runtime.map(str::to_string);
+            self.runtime_name = actual_runtime;
+        } else if let Some(kind) = tpl {
+            if let Some(host) = &self.host {
+                playbox_net::templates::seed_room(host, kind).await;
+            }
         }
         let host = self
             .host
@@ -327,6 +398,8 @@ impl Server {
             "shares_repo": self.host_repo.as_ref().map(|p| p.display().to_string()),
             "members_may_run_tasks": self.runtime_name.is_some(),
             "runtime": self.runtime_name,
+            "template": tpl.map(playbox_net::templates::TemplateKind::as_str),
+            "policy": host.policy_snapshot(),
             "next": "Send the link to the person whose agent should join. Treat it like a password: anyone holding it can join until it is used or expires."
         }))
     }
@@ -513,6 +586,7 @@ impl Server {
                 "replica": self.is_replica,
                 "host_id": h.endpoint_id().to_string(),
                 "revocations": h.revocation_notices().len(),
+                "policy": h.policy_snapshot(),
             })
         });
         let guest = self.client.as_ref().map(|_| {
@@ -531,5 +605,36 @@ impl Server {
             "history_public_key": text::hex(&self.key.verifying_key().to_bytes()),
             "guest_id": playbox_net::identity_key(&store::home().join("guest.key")).ok().map(|k| k.public().to_string()),
         }))
+    }
+
+    pub(crate) async fn policy(&mut self, a: &Value) -> Result<Value> {
+        let has_updates = [
+            "cpus",
+            "mem_mib",
+            "timeout_secs",
+            "network",
+            "allowed_hosts",
+            "allowed_secrets",
+            "allowed_egress",
+            "task_budget",
+            "max_members",
+            "max_concurrent",
+            "max_tasks_per_minute",
+            "memory_review",
+            "capability_approvals",
+        ]
+        .iter()
+        .any(|k| a.get(*k).is_some() && !a[*k].is_null());
+        if has_updates {
+            let host = self
+                .host
+                .as_ref()
+                .ok_or_else(|| anyhow!("only the room's host can update live policy guardrails"))?;
+            return host.update_policy(a);
+        }
+        if let Some(host) = &self.host {
+            return Ok(host.policy_snapshot());
+        }
+        self.guest()?.policy().await
     }
 }

@@ -358,6 +358,8 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
                     base: "main".into(),
                     spec: spec.clone(),
                     warm: false,
+                    keep: false,
+                    sync: playbox_runner::SyncMode::Full,
                 },
                 vec![],
             )),
@@ -465,6 +467,8 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
                 Op::Remember {
                     text: "the staging VPN is needed".into(),
                     key: Some("k".into()),
+                    task_id: None,
+                    commit: None,
                 },
                 vec![],
             )),

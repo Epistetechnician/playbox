@@ -43,9 +43,20 @@ struct Inner {
     started: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BudgetUsage {
+    pub tasks_started: u64,
+    pub task_budget: u64,
+    pub tasks_remaining: u64,
+    pub inflight_total: usize,
+    pub max_members: usize,
+    pub max_concurrent_per_member: usize,
+    pub max_tasks_per_window: usize,
+}
+
 #[derive(Clone)]
 pub struct Limiter {
-    cfg: AbuseLimits,
+    cfg: Arc<Mutex<AbuseLimits>>,
     inner: Arc<Mutex<Inner>>,
 }
 
@@ -103,14 +114,39 @@ impl Limiter {
     #[must_use]
     pub fn new(cfg: AbuseLimits) -> Self {
         Self {
-            cfg,
+            cfg: Arc::new(Mutex::new(cfg)),
             inner: Arc::default(),
         }
     }
 
     #[must_use]
     pub fn max_members(&self) -> usize {
-        self.cfg.max_members
+        self.cfg.lock_recover().max_members
+    }
+
+    #[must_use]
+    pub fn limits(&self) -> AbuseLimits {
+        self.cfg.lock_recover().clone()
+    }
+
+    pub fn set_limits(&self, cfg: AbuseLimits) {
+        *self.cfg.lock_recover() = cfg;
+    }
+
+    #[must_use]
+    pub fn usage(&self) -> BudgetUsage {
+        let c = self.cfg.lock_recover().clone();
+        let g = self.inner.lock_recover();
+        let inflight_total = g.inflight.values().copied().sum();
+        BudgetUsage {
+            tasks_started: g.started,
+            task_budget: c.task_budget,
+            tasks_remaining: c.task_budget.saturating_sub(g.started),
+            inflight_total,
+            max_members: c.max_members,
+            max_concurrent_per_member: c.max_concurrent_per_member,
+            max_tasks_per_window: c.max_tasks_per_window,
+        }
     }
 
     /// Admit one task from `who`, or say which limit stopped it.
@@ -123,7 +159,7 @@ impl Limiter {
     }
 
     fn admit_at(&self, who: EndpointId, now: Instant) -> Result<Admission, LimitError> {
-        let c = &self.cfg;
+        let c = self.cfg.lock_recover().clone();
         let mut g = self.inner.lock_recover();
         if g.started >= c.task_budget {
             return Err(LimitError::Budget(c.task_budget));

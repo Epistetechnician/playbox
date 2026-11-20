@@ -97,3 +97,17 @@ these experiments was used up. Replaying edit commands is unchanged, so the tain
 **Caveats.** One smoke run (P-9) reported a post-write verification mismatch that still ended at 24/24; concurrent file-tool
 calls queue behind a single delegate (queue time is logged as `queued_s`, per-command time excludes it). The `hermes` shim at
 `~/.local/bin/hermes` was broken mid-session by a sibling run, so the driver calls the Hermes Python module directly.
+
+## Stateful sessions, OpenShell hardening, AtlasKV brief & router (v0.4.3+)
+
+To close the 4–6× wall-clock gap, the 756 replay-induced taint advisories, the macOS xattr upload errors, the `/dev/null` Landlock failures, and the 20 KiB patch truncation recorded above and in [hermes-parity-swe-playbox.md](hermes-parity-swe-playbox.md):
+
+- **Stateful persistent session (`keep: true`, `PLAYBOX_KEEP=1` default):** `Op::Run` carries additive optional fields `keep` and `sync` (`full` | `delta` | `none`, keeping wire protocol version 1). The host maintains a per-member persistent worktree and (for `openshell`) keeps `/sandbox` intact across commands on `base`, eliminating both per-command full-repo uploads and edit-command replay. Works identically on `--runtime openshell` and `--runtime libkrun`.
+- **Smart sync + untruncated final export:** `playbox_terminal` automatically selects `sync="none"` for guaranteed read-only shell commands (zero host diff or download), `sync="delta"` for edits/tests (only changed/deleted paths mirrored back), and `sync="full", full_patch=true` (up to 2 MiB) on `export_patch()` / `cleanup()`.
+- **OpenShell security & reliability fixes (`crates/playbox-runner/src/openshell.rs`):**
+  - Landlock policy permits `/dev/null` read-write and `/dev/zero`, `/dev/urandom` read-only (fixing `>/dev/null 2>&1`).
+  - Workspace packing strips macOS extended attributes (`--no-xattrs --no-mac-metadata`) and excludes `.git` (preventing host worktree path leaks).
+  - Untrusted tar downloads pass through a pure-Rust tar header validator refusing absolute paths, `..`, `.git` components, device/FIFO/hardlink entries, and escaping symlinks before unpacking with `--no-same-owner --no-same-permissions`.
+  - Host-side `BOX-7` secret-injecting egress proxy (`--egress` / `--allow-egress`) and `Runner::image_digest` are wired on `OpenShellRunner`, with immediate warm-sandbox and worktree teardown on `Host::revoke_member` and `Host::shutdown`.
+- **External response-body taint (`hermes-plugin-witness/witness.py`):** extends turn-level write holds to web/browser and third-party MCP responses (closing OpenShell APF's response-body blind spot).
+- **AtlasKV-inspired hierarchical index + metered router + hybrid PQ receipts (`playbox_atlas/`, `playbox_router/`, `tools/bench/hermes-parity/run_swe_playbox_v2.py`):** builds a 3-level KG2KV + HiKVP repo/room-memory index with 3-hop call-graph expansion and Playbox quarantine filtering (see [atlaskv-integration.md](atlaskv-integration.md)), paired with hardened non-oracle reproduction gating, budget-capped cheap-worker fan-out, deterministic 3-way composition, conditional frontier escalation, enforced zero-false-positive taint (`PLAYBOX_APPROVERS` + `PLAYBOX_TRUST_OFFLINE_WORKSPACE=1`), and hybrid post-quantum `Ed25519+ML-DSA-65` (FIPS 204) Attested Gate Receipts (`playbox receipt sign` / `playbox receipt verify --require-pq`). See [hermes-parity-swe-playbox.md](hermes-parity-swe-playbox.md) for the 5-instance uncontaminated SWE-bench empirical comparison.

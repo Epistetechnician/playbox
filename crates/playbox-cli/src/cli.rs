@@ -163,6 +163,9 @@ pub struct TransportArgs {
 pub struct UpArgs {
     #[command(flatten)]
     pub transport: TransportArgs,
+    /// Zero-friction room template: swe, research, review, or ops (pre-configures runner, egress allowlist, capability approvals, memory, and Canvas board)
+    #[arg(long, value_enum, value_name = "TEMPLATE")]
+    pub template: Option<RoomTemplate>,
     /// Keep the room's identity, members and bans across restarts
     #[arg(long, value_name = "DIR")]
     pub state: Option<String>,
@@ -525,6 +528,9 @@ pub enum Cmd {
     /// Device keys you trust
     #[command(subcommand)]
     Pin(PinCmd),
+    /// Sign or verify an Attested Gate Receipt with hybrid Ed25519 + ML-DSA-65 (FIPS 204)
+    #[command(subcommand)]
+    Receipt(ReceiptCmd),
     /// Create or show your approver key
     ApproverKey(KeyArg),
     /// Approve one refused action; prints a single-use capability
@@ -620,6 +626,9 @@ pub enum GateCmd {
         /// Challenge gate receipts JSONL file (from challenge/gate.py or room_eval.py)
         #[arg(long, value_name = "FILE")]
         challenge_log: Option<String>,
+        /// Signed Attested Gate run receipt JSON (`playbox.attested_gate_receipt.v1`); repeatable
+        #[arg(long = "receipt", value_name = "FILE")]
+        receipts: Vec<String>,
         /// Signed host attestation statement file (from `playbox attest`)
         #[arg(long, value_name = "FILE")]
         attestation: Option<String>,
@@ -636,9 +645,20 @@ pub enum GateCmd {
         #[arg(long, value_name = "FILE")]
         out: Option<String>,
     },
-    /// Verify an Attested Gate compliance receipt bundle offline
+    /// Sign a Playbox Attested Gate run receipt JSON (`playbox.attested_gate_receipt.v1`) with hybrid Ed25519 + ML-DSA-65
+    Sign {
+        /// Path to the receipt JSON file (updated in place unless --out is set)
+        file: String,
+        /// 32-byte hex seed file (created if missing; default $PLAYBOX_HOME/attested_gate.key)
+        #[arg(long, value_name = "FILE")]
+        key: Option<String>,
+        /// Optional output path (defaults to updating FILE in place)
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+    },
+    /// Verify an Attested Gate compliance bundle (`playbox.attested_gate.v1`) or run receipt (`playbox.attested_gate_receipt.v1`) offline
     Verify {
-        /// Path to the compliance bundle JSON file (or `-` for stdin)
+        /// Path to the compliance bundle or run receipt JSON file (or `-` for stdin)
         bundle: String,
         /// Require bundle signature by this 64-hex Ed25519 public key
         #[arg(long, value_name = "HEX")]
@@ -808,6 +828,35 @@ pub enum PinCmd {
     Remove { kind: String, fingerprint: String },
 }
 
+#[derive(Subcommand)]
+pub enum ReceiptCmd {
+    /// Sign a Playbox Attested Gate Receipt JSON file with hybrid Ed25519 + ML-DSA-65 (FIPS 204)
+    Sign {
+        /// Path to the receipt JSON file (updated in place unless --out is set)
+        file: String,
+        /// 32-byte hex seed file (created if missing; default $PLAYBOX_HOME/attested_gate.key)
+        #[arg(long, value_name = "FILE")]
+        key: Option<String>,
+        /// Optional output path (defaults to updating FILE in place)
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+    },
+    /// Verify a Playbox Attested Gate Receipt JSON file (canonical SHA-256 + Ed25519 + ML-DSA-65)
+    Verify {
+        /// Path to the receipt JSON file
+        file: String,
+        /// Optional expected Ed25519 public key hex (64 hex chars)
+        #[arg(long, value_name = "HEX")]
+        pubkey: Option<String>,
+        /// Optional expected ML-DSA-65 public key hex (3904 hex chars)
+        #[arg(long, value_name = "HEX")]
+        pq_pubkey: Option<String>,
+        /// Require a valid ML-DSA-65 post-quantum signature (reject Ed25519-only receipts)
+        #[arg(long)]
+        require_pq: bool,
+    },
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 pub enum MemoryKind {
     Fact,
@@ -841,6 +890,26 @@ pub enum Experiment {
 pub enum WorldAction {
     Demo,
     Test,
+}
+
+/// Built-in room templates for `playbox up --template`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum RoomTemplate {
+    Swe,
+    Research,
+    Review,
+    Ops,
+}
+
+impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
+    fn from(t: RoomTemplate) -> Self {
+        match t {
+            RoomTemplate::Swe => Self::Swe,
+            RoomTemplate::Research => Self::Research,
+            RoomTemplate::Review => Self::Review,
+            RoomTemplate::Ops => Self::Ops,
+        }
+    }
 }
 
 /// Minimum task isolation accepted by `playbox up --min-isolation`.

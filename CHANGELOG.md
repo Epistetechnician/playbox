@@ -10,7 +10,8 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 ## [Unreleased]
 
 ### Added
-- `playbox gate export` and `playbox gate verify`: export and offline-verify `playbox.attested_gate.v1` compliance receipt bundles across the 5 runtime-native gates (`audit.log`, hybrid `Ed25519`/`ML-DSA-65` `RoomLog` checkpoints, `BOX-7` egress logs, evaluation receipts, and `T0..T3` attestations), mapped to NIST AI RMF and EU AI Act controls.
+- `playbox gate export`, `playbox gate sign`, and `playbox gate verify`: unified Attested Gate CLI supporting both `playbox.attested_gate.v1` 5-gate compliance bundles (`audit.log`, hybrid `Ed25519`/`ML-DSA-65` `RoomLog` checkpoints, `BOX-7` egress logs, `--receipt` run receipts, evaluation receipts, and `T0..T3` attestations) and standalone `playbox.attested_gate_receipt.v1` run receipts (alias: `playbox receipt sign|verify`), mapped to NIST AI RMF and EU AI Act controls.
+- `playbox up --template swe|research|review|ops`: pre-configured room templates with default runtime, allowlists, capabilities, local shared memory, live policy guardrails/replay (`policy`, `replay`), and `openshell` `BOX-7` egress + stateful `keep` / `SyncMode` task sessions.
 
 ### Fixed
 - `playbox setup --only hermes`: detect stale `command:` entries in `~/.hermes/config.yaml`, replace mismatches before re-adding, feed `Y\n` over stdin to `hermes mcp add`, and verify `~/.hermes/config.yaml` was saved before reporting success.

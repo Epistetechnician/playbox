@@ -255,6 +255,149 @@ pub fn verify_launch(text: &str, room: &str) -> Result<Value, String> {
     Ok(rec)
 }
 
+/// Domain for structured cross-agent handoff checkpoints.
+pub const HANDOFF_DOMAIN: &str = "playbox.handoff.v1\n";
+/// The feed message prefix of a structured handoff checkpoint.
+pub const HANDOFF_PREFIX: &str = "::pbx handoff ";
+
+/// A structured cross-agent handoff checkpoint, signed by the handing-off agent's key.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct HandoffCheckpoint {
+    pub id: String,
+    pub room: String,
+    pub from: String,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default)]
+    pub summary: String,
+    pub base_commit: String,
+    pub branch: String,
+    #[serde(default)]
+    pub open_cards: Vec<String>,
+    #[serde(default)]
+    pub verified_artifacts: Vec<String>,
+    #[serde(default)]
+    pub failed_checks: Vec<String>,
+    #[serde(default)]
+    pub budget_remaining: Value,
+    #[serde(default)]
+    pub policy_digest: String,
+    pub issued_ms: u64,
+    #[serde(default)]
+    pub sig: String,
+}
+
+impl HandoffCheckpoint {
+    /// Clean and bound all fields, returning the canonical unsigned JSON object.
+    #[must_use]
+    pub fn canonical_unsigned(&self) -> Value {
+        let clip_list = |v: &[String], max_items: usize, max_len: usize| -> Vec<String> {
+            v.iter()
+                .map(|s| clip(s.trim(), max_len))
+                .filter(|s| !s.is_empty())
+                .take(max_items)
+                .collect()
+        };
+        let mut m = Map::new();
+        m.insert("v".into(), json!(1));
+        m.insert("id".into(), json!(clip(self.id.trim(), 48)));
+        m.insert("room".into(), json!(clip(self.room.trim(), 64)));
+        m.insert("from".into(), json!(clip(self.from.trim(), 64)));
+        m.insert("to".into(), json!(clip(self.to.trim(), 64)));
+        m.insert("summary".into(), json!(clip(self.summary.trim(), 600)));
+        m.insert(
+            "base_commit".into(),
+            json!(clip(self.base_commit.trim(), 64)),
+        );
+        m.insert("branch".into(), json!(clip(self.branch.trim(), 120)));
+        m.insert(
+            "open_cards".into(),
+            json!(clip_list(&self.open_cards, 16, 60)),
+        );
+        m.insert(
+            "verified_artifacts".into(),
+            json!(clip_list(&self.verified_artifacts, 16, 80)),
+        );
+        m.insert(
+            "failed_checks".into(),
+            json!(clip_list(&self.failed_checks, 16, 120)),
+        );
+        m.insert(
+            "budget_remaining".into(),
+            if self.budget_remaining.is_null() {
+                json!({})
+            } else {
+                self.budget_remaining.clone()
+            },
+        );
+        m.insert(
+            "policy_digest".into(),
+            json!(clip(self.policy_digest.trim(), 64)),
+        );
+        m.insert("issued_ms".into(), json!(self.issued_ms));
+        Value::Object(m)
+    }
+
+    /// Normalize, sign with `sign`, and populate `self.sig`.
+    pub fn sign_with(
+        &mut self,
+        key: &[u8; 32],
+        sign: impl Fn(&[u8]) -> [u8; 64],
+    ) -> Result<String, String> {
+        self.from = hex(key);
+        if self.id.trim().is_empty() {
+            let mut h = blake3::Hasher::new();
+            h.update(self.from.as_bytes());
+            h.update(&self.issued_ms.to_le_bytes());
+            h.update(self.branch.as_bytes());
+            h.update(self.base_commit.as_bytes());
+            self.id = format!("h-{}", &h.finalize().to_hex()[..12]);
+        }
+        let unsigned = self.canonical_unsigned();
+        let payload = crate::capabilities::canonical(&unsigned);
+        let sig = sign(format!("{HANDOFF_DOMAIN}{payload}").as_bytes());
+        self.sig = hex(&sig);
+        let mut full = unsigned;
+        if let Some(obj) = full.as_object_mut() {
+            obj.insert("sig".into(), json!(self.sig));
+        }
+        let text = format!("{HANDOFF_PREFIX}{}", crate::capabilities::canonical(&full));
+        if text.len() > 4000 {
+            return Err("handoff checkpoint is too large".into());
+        }
+        Ok(text)
+    }
+
+    /// Verify the checkpoint signature and room binding.
+    pub fn verify(
+        &self,
+        expected_sender: Option<&str>,
+        expected_room: Option<&str>,
+    ) -> Result<(), String> {
+        let key: [u8; 32] = unhex(&self.from).ok_or("bad sender key")?;
+        if let Some(s) = expected_sender {
+            if s != "host" && s != self.from {
+                return Err("handoff signer is not the sender".into());
+            }
+        }
+        if let Some(r) = expected_room {
+            if !r.is_empty() && self.room != r {
+                return Err("handoff is for another room".into());
+            }
+        }
+        let sig: [u8; 64] = unhex(&self.sig).ok_or("bad signature encoding")?;
+        let unsigned = self.canonical_unsigned();
+        let payload = crate::capabilities::canonical(&unsigned);
+        VerifyingKey::from_bytes(&key)
+            .map_err(|_| "bad key")?
+            .verify(
+                format!("{HANDOFF_DOMAIN}{payload}").as_bytes(),
+                &Signature::from_bytes(&sig),
+            )
+            .map_err(|_| "handoff signature does not verify".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

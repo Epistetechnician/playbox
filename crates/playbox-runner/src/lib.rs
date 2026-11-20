@@ -94,7 +94,34 @@ pub fn env_opt_in(name: &str) -> bool {
 mod krun;
 pub use krun::{find_helper, KrunRunner};
 mod openshell;
-pub use openshell::{policy_yaml as openshell_policy_yaml, OpenShellRunner};
+pub use openshell::{
+    policy_yaml as openshell_policy_yaml,
+    policy_yaml_with_endpoints as openshell_policy_yaml_with_endpoints, OpenShellRunner,
+};
+
+/// How a stateful session task ([`Runner::run_session`]) mirrors workspace changes back to the host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncMode {
+    /// Mirror the full workspace back (authoritative snapshot; default).
+    #[default]
+    Full,
+    /// Mirror only files added, modified, or deleted since the previous step in this session.
+    Delta,
+    /// Skip mirroring changes back to the host (for read-only commands; sandbox keeps its own state).
+    None,
+}
+
+impl SyncMode {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Delta => "delta",
+            Self::None => "none",
+        }
+    }
+}
 
 pub const DEFAULT_IMAGE: &str = "alpine:3";
 
@@ -267,6 +294,22 @@ pub trait Runner: Send + Sync {
         let _ = session;
         self.run(spec, workspace).await
     }
+    /// Like [`Runner::run_warm`], but keeps the workspace state inside the sandbox across commands for
+    /// `(session, base_commit)` instead of wiping and re-uploading on every call. `sync` controls how
+    /// changes are mirrored back to the host `workspace`. Runners whose workspace is directly shared
+    /// with the host (`libkrun` via virtiofs, `docker` via bind mount) keep state on the host worktree
+    /// automatically through the default implementation.
+    async fn run_session(
+        &self,
+        spec: &TaskSpec,
+        workspace: &Path,
+        session: &str,
+        base_commit: &str,
+        sync: SyncMode,
+    ) -> Result<TaskOutput> {
+        let _ = (base_commit, sync);
+        self.run_warm(spec, workspace, session).await
+    }
     /// Drop the warm sandbox held for `session`, if any (a member was revoked or left).
     async fn end_warm(&self, session: &str) {
         let _ = session;
@@ -346,8 +389,8 @@ pub fn runner_with(
     if opts.confine.is_some() && !matches!(name, "libkrun" | "krun") {
         bail!("confinement applies to the libkrun runner only (the {name} runner has its own isolation)");
     }
-    if opts.egress.is_some() && !matches!(name, "libkrun" | "krun") {
-        bail!("egress proxy applies to the libkrun runner only (got {name})");
+    if opts.egress.is_some() && !matches!(name, "libkrun" | "krun" | "openshell") {
+        bail!("egress proxy applies to the libkrun and openshell runners only (got {name})");
     }
     match name {
         "docker" => Ok(std::sync::Arc::new(DockerRunner::new(policy))),
@@ -371,7 +414,14 @@ pub fn runner_with(
             }
             Ok(std::sync::Arc::new(r))
         }
-        "openshell" => Ok(std::sync::Arc::new(OpenShellRunner::new(policy))),
+        "openshell" => {
+            let mut r = OpenShellRunner::new(policy);
+            if let Some(eg) = &opts.egress {
+                eg.validate()?;
+                r = r.with_egress(eg.clone());
+            }
+            Ok(std::sync::Arc::new(r))
+        }
         "process" if env_opt_in("PLAYBOX_ALLOW_UNSAFE_RUNNER") => {
             Ok(std::sync::Arc::new(ProcessRunner))
         }
@@ -491,6 +541,26 @@ pub async fn run_warm_with_quota(
     }
 }
 
+/// [`run_with_quota`] for a stateful session (see [`Runner::run_session`]).
+///
+/// # Errors
+///
+/// Returns an error if the operation fails; the error carries the cause.
+pub async fn run_session_with_quota(
+    runner: &dyn Runner,
+    spec: &TaskSpec,
+    dir: &Path,
+    session: &str,
+    base_commit: &str,
+    sync: SyncMode,
+    quota: Quota,
+) -> Result<TaskOutput> {
+    tokio::select! {
+        out = runner.run_session(spec, dir, session, base_commit, sync) => out,
+        why = quota_exceeded(dir, quota) => Err(why),
+    }
+}
+
 fn check_spec(spec: &TaskSpec) -> Result<()> {
     if spec.cmd.is_empty() {
         bail!("empty command");
@@ -511,7 +581,7 @@ fn check_spec(spec: &TaskSpec) -> Result<()> {
         bail!("this runner cannot hand secrets to a task");
     }
     if !spec.egress.is_empty() {
-        bail!("this runner cannot proxy model API egress for a task; use the libkrun runner with --egress");
+        bail!("this runner cannot proxy model API egress for a task; use the libkrun or openshell runner with --egress");
     }
     if spec.image.starts_with('-') || spec.image.contains(char::is_whitespace) {
         bail!("invalid image name");
@@ -800,7 +870,7 @@ impl Runner for ProcessRunner {
 }
 
 /// `sha256:<64 hex>` as printed by `docker image inspect --format {{.Id}}`.
-fn parse_image_id(s: &str) -> Result<[u8; 32]> {
+pub(crate) fn parse_image_id(s: &str) -> Result<[u8; 32]> {
     let hex = s
         .strip_prefix("sha256:")
         .context("image id is not a sha256 digest")?;

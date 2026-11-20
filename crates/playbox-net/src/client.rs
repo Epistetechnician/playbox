@@ -640,15 +640,79 @@ impl Client {
         text: &str,
         key: Option<&str>,
     ) -> Result<shared_memory::Remembered> {
+        self.remember_with_provenance(text, key, None, None).await
+    }
+
+    /// Add an entry to the room's shared memory with optional task/commit provenance.
+    pub async fn remember_with_provenance(
+        &self,
+        text: &str,
+        key: Option<&str>,
+        task_id: Option<&str>,
+        commit: Option<&str>,
+    ) -> Result<shared_memory::Remembered> {
         let op = Op::Remember {
             text: text.to_string(),
             key: key.map(str::to_string),
+            task_id: task_id.map(str::to_string),
+            commit: commit.map(str::to_string),
         };
         let v = self.reply_json(&op, "remember").await?;
         if let Some(e) = v.get("error").and_then(Value::as_str) {
             bail!("remember refused: {e}");
         }
         Ok(serde_json::from_value(v)?)
+    }
+
+    /// Inspect a recorded task's diff/metadata (`run = false`) or re-run it against its base commit and verify reproducibility (`run = true`).
+    pub async fn replay(&self, task_id: Option<&str>, run: bool) -> Result<Value> {
+        let op = Op::Replay {
+            task_id: task_id.map(str::to_string),
+            run,
+        };
+        let v = self.reply_json(&op, "replay").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("replay refused: {e}");
+        }
+        Ok(v)
+    }
+
+    /// Sign and publish a structured cross-agent handoff checkpoint to the room.
+    pub async fn checkpoint_put(&self, mut cp: crate::card::HandoffCheckpoint) -> Result<Value> {
+        let sk = self.endpoint.secret_key().clone();
+        cp.room = self.host_id().to_string();
+        if cp.issued_ms == 0 {
+            cp.issued_ms = chat::now_ms();
+        }
+        cp.sign_with(self.id().as_bytes(), |m| sk.sign(m).to_bytes())
+            .map_err(|e| anyhow!("{e}"))?;
+        let op = Op::CheckpointPut { checkpoint: cp };
+        let v = self.reply_json(&op, "checkpoint").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("checkpoint refused: {e}");
+        }
+        Ok(v)
+    }
+
+    /// List structured cross-agent handoff checkpoints in the room.
+    pub async fn checkpoint_list(&self, id: Option<&str>) -> Result<Value> {
+        let op = Op::CheckpointList {
+            id: id.map(str::to_string),
+        };
+        let v = self.reply_json(&op, "checkpoints").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("checkpoints refused: {e}");
+        }
+        Ok(v)
+    }
+
+    /// Read the room's live policy guardrails and real-time budget burn.
+    pub async fn policy(&self) -> Result<Value> {
+        let v = self.reply_json(&Op::PolicyGet, "policy").await?;
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            bail!("policy refused: {e}");
+        }
+        Ok(v)
     }
 
     /// Ask the room's shared memory. Only entries the host accepted, by members who are still in the room.
@@ -1114,10 +1178,35 @@ impl Client {
         reason = "the value is bounded, or truncated on purpose"
     )]
     pub async fn run_task_with(&self, base: &str, spec: TaskSpec, warm: bool) -> Result<TaskRun> {
+        self.run_task_session(base, spec, warm, false, playbox_runner::SyncMode::Full)
+            .await
+    }
+
+    /// Like [`Client::run_task_with`], with optional stateful workspace persistence (`keep`) and sync mode (`sync`).
+    /// When `keep` is true, the host retains the member's sandbox and worktree across commands against `base`
+    /// instead of wiping and re-uploading on every command.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the value is bounded, or truncated on purpose"
+    )]
+    pub async fn run_task_session(
+        &self,
+        base: &str,
+        spec: TaskSpec,
+        warm: bool,
+        keep: bool,
+        sync: playbox_runner::SyncMode,
+    ) -> Result<TaskRun> {
         let op = Op::Run {
             base: base.to_string(),
             spec,
-            warm,
+            warm: warm || keep,
+            keep,
+            sync,
         };
         let t = match self
             .send(&op, vec![])

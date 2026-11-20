@@ -97,6 +97,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 root,
                 egress_log,
                 challenge_log,
+                receipts,
                 attestation,
                 sign_key,
                 pq_key,
@@ -109,12 +110,16 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 root,
                 egress_log,
                 challenge_log,
+                receipts,
                 attestation,
                 sign_key,
                 pq_key,
                 no_sign,
                 out,
             }),
+            GateCmd::Sign { file, key, out } => {
+                trust::receipt_cmd(cli::ReceiptCmd::Sign { file, key, out })
+            }
             GateCmd::Verify {
                 bundle,
                 pubkey,
@@ -210,6 +215,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         Cmd::Verify { log } => trust::verify(&log),
         Cmd::Attest { log, key, platform } => trust::attest_cmd(log, key, platform),
         Cmd::Pin(p) => trust::pin_cmd(p),
+        Cmd::Receipt(r) => trust::receipt_cmd(r),
         Cmd::ApproverKey(k) => trust::approver_key(k.key),
         Cmd::Approve {
             action,

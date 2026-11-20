@@ -300,3 +300,94 @@ fn unsigned_bundle_verifies_from_stdin_and_fails_require_signature() {
 
     let _ = std::fs::remove_dir_all(&root_dir);
 }
+
+#[test]
+fn gate_sign_verify_and_export_unify_run_receipts() {
+    let root_dir = fresh("unified_receipt");
+    let home = root_dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let rcpt = root_dir.join("run.receipt.json");
+    std::fs::write(
+        &rcpt,
+        r#"{"payload":{"schema":"playbox.attested_gate_receipt.v1","instance":"django-11848","base_commit":"f0adf3b9","runtime":"openshell"}}"#,
+    )
+    .unwrap();
+
+    // Sign directly via unified `playbox gate sign`, then verify directly via `playbox gate verify`.
+    let sign_out = run_cli(&home, &["gate", "sign", rcpt.to_str().unwrap()]);
+    assert!(
+        sign_out.status.success(),
+        "gate sign failed: {}",
+        String::from_utf8_lossy(&sign_out.stderr)
+    );
+
+    let direct_ver = run_cli(
+        &home,
+        &[
+            "gate",
+            "verify",
+            rcpt.to_str().unwrap(),
+            "--require-pq",
+            "--json",
+        ],
+    );
+    assert!(
+        direct_ver.status.success(),
+        "gate verify on run receipt failed: {}",
+        String::from_utf8_lossy(&direct_ver.stderr)
+    );
+    let dv: Value = serde_json::from_slice(&direct_ver.stdout).unwrap();
+    assert_eq!(dv["valid"], true);
+    assert_eq!(dv["pq_verified"], true);
+
+    // Export into a 5-gate compliance bundle via `playbox gate export --receipt` and verify with `--require-pq`.
+    let bundle_path = root_dir.join("bundle.json");
+    let exp = run_cli(
+        &home,
+        &[
+            "gate",
+            "export",
+            "--receipt",
+            rcpt.to_str().unwrap(),
+            "--no-sign",
+            "--out",
+            bundle_path.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        exp.status.success(),
+        "gate export --receipt failed: {}",
+        String::from_utf8_lossy(&exp.stderr)
+    );
+
+    let bundle_ver = run_cli(
+        &home,
+        &[
+            "gate",
+            "verify",
+            bundle_path.to_str().unwrap(),
+            "--require-pq",
+            "--json",
+        ],
+    );
+    assert!(
+        bundle_ver.status.success(),
+        "gate verify on receipt bundle failed: {}",
+        String::from_utf8_lossy(&bundle_ver.stderr)
+    );
+    let bv: Value = serde_json::from_slice(&bundle_ver.stdout).unwrap();
+    assert_eq!(bv["ok"], true);
+    assert_eq!(bv["attested_receipts"], 1);
+
+    // Tampering with embedded run receipt inside bundle must fail verification.
+    let mut bad_bundle: Value =
+        serde_json::from_slice(&std::fs::read(&bundle_path).unwrap()).unwrap();
+    bad_bundle["body"]["gates"]["gate_4_sealed_evaluation_gates"]["attested_receipts"][0]
+        ["receipt"]["payload"]["runtime"] = Value::String("tampered".into());
+    let bad_path = root_dir.join("bad_bundle.json");
+    std::fs::write(&bad_path, serde_json::to_vec(&bad_bundle).unwrap()).unwrap();
+    let bad_ver = run_cli(&home, &["gate", "verify", bad_path.to_str().unwrap()]);
+    assert!(!bad_ver.status.success());
+
+    let _ = std::fs::remove_dir_all(&root_dir);
+}

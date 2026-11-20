@@ -81,6 +81,14 @@ impl InMemory {
             .map(|b| b.keys().cloned().collect())
             .unwrap_or_default()
     }
+
+    pub fn insert_sync(&self, bank: &str, item: Item) {
+        self.banks
+            .lock_recover()
+            .entry(bank.to_string())
+            .or_default()
+            .insert(item.doc.clone(), item);
+    }
 }
 
 pub(super) fn words(s: &str) -> BTreeSet<String> {
@@ -102,7 +110,10 @@ impl Backend for InMemory {
     }
 
     async fn recall(&self, bank: &str, req: &RecallRequest) -> Result<Vec<RawHit>> {
-        let q = words(&req.query);
+        let raw_q = req.query.trim();
+        let wildcard = raw_q == "*";
+        let q = words(raw_q);
+        let needle = raw_q.to_lowercase();
         let g = self.banks.lock_recover();
         let mut hits: Vec<(usize, RawHit)> = g
             .get(bank)
@@ -110,7 +121,15 @@ impl Backend for InMemory {
             .flat_map(BTreeMap::values)
             .filter(|i| req.tags.iter().all(|t| i.tags.contains(t)))
             .filter_map(|i| {
-                let n = words(&i.text).intersection(&q).count();
+                let n = if wildcard {
+                    1
+                } else if !q.is_empty() {
+                    words(&i.text).intersection(&q).count()
+                } else if !needle.is_empty() && i.text.to_lowercase().contains(&needle) {
+                    1
+                } else {
+                    0
+                };
                 (n > 0).then(|| {
                     (
                         n,

@@ -47,6 +47,9 @@ pub struct Item {
     /// A label the sender chose. Not an identity: `from` is.
     pub name: Option<String>,
     pub text: String,
+    /// Safe, structured telemetry for `event` items (strictly allowlisted, never secrets or raw args).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -127,7 +130,14 @@ impl Chat {
         Self::default()
     }
 
-    fn push(inner: &mut Inner, kind: &str, from: &str, name: Option<String>, text: String) -> u64 {
+    fn push(
+        inner: &mut Inner,
+        kind: &str,
+        from: &str,
+        name: Option<String>,
+        text: String,
+        meta: Option<Value>,
+    ) -> u64 {
         inner.next += 1;
         let seq = inner.next;
         inner.items.push_back(Item {
@@ -137,6 +147,7 @@ impl Chat {
             from: from.into(),
             name,
             text,
+            meta,
         });
         trim(&mut inner.items);
         if let Some(item) = inner.items.back().cloned() {
@@ -380,7 +391,7 @@ impl Chat {
         }
         Self::mark_seen(&mut g, from, now);
         let name = name.or_else(|| g.names.get(from).cloned());
-        let seq = Self::push(&mut g, "say", from, name, text);
+        let seq = Self::push(&mut g, "say", from, name, text, None);
         if let Some(key) = key {
             let r = Request {
                 seq,
@@ -402,14 +413,15 @@ impl Chat {
         Ok(seq)
     }
 
-    /// Something happened in the room. Only a short summary is kept, never arguments or reasons in full.
+    /// Something happened in the room. Only a short summary and allowlisted telemetry are kept, never raw arguments or secret values.
     pub fn event(&self, event: &str, peer: Option<&str>, details: &Value) {
         let mut g = self.inner.lock_recover();
         if let Some(p) = peer {
             Self::mark_seen(&mut g, p, now_ms());
         }
         let text = summarize(event, details);
-        Self::push(&mut g, "event", peer.unwrap_or(""), None, text);
+        let meta = event_meta(event, details);
+        Self::push(&mut g, "event", peer.unwrap_or(""), None, text, meta);
         drop(g);
         self.notify.notify_waiters();
     }
@@ -563,6 +575,207 @@ pub fn summarize(event: &str, d: &Value) -> String {
     parts.join(" ")
 }
 
+/// Strictly allowlisted, bounded, non-secret telemetry attached to `event` items in the feed.
+/// Never copies raw command arguments, secret values, stdout/stderr, or arbitrary unvetted fields.
+#[must_use]
+pub fn event_meta(event: &str, d: &Value) -> Option<Value> {
+    let mut m = serde_json::Map::new();
+    m.insert("event".into(), json!(clip(event, 40)));
+    let add_str = |m: &mut serde_json::Map<String, Value>, k: &str, max: usize| {
+        if let Some(v) = field(d, k).and_then(Value::as_str) {
+            let c = clip(v, max);
+            if !c.is_empty() {
+                m.insert(k.into(), json!(c));
+            }
+        }
+    };
+    let add_bool = |m: &mut serde_json::Map<String, Value>, k: &str| {
+        if let Some(v) = field(d, k).and_then(Value::as_bool) {
+            m.insert(k.into(), json!(v));
+        }
+    };
+    let add_u64 = |m: &mut serde_json::Map<String, Value>, k: &str| {
+        if let Some(v) = field(d, k).and_then(Value::as_u64) {
+            m.insert(k.into(), json!(v));
+        }
+    };
+    let add_i64 = |m: &mut serde_json::Map<String, Value>, k: &str| {
+        if let Some(v) = field(d, k).and_then(Value::as_i64) {
+            m.insert(k.into(), json!(v));
+        }
+    };
+    let add_f64 = |m: &mut serde_json::Map<String, Value>, k: &str| {
+        if let Some(v) = field(d, k)
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite())
+        {
+            m.insert(k.into(), json!(v));
+        }
+    };
+    let add_str_list =
+        |m: &mut serde_json::Map<String, Value>, k: &str, max_items: usize, max_len: usize| {
+            if let Some(arr) = field(d, k).and_then(Value::as_array) {
+                let clean: Vec<String> = arr
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(|v| clip(v, max_len))
+                    .filter(|v| !v.is_empty())
+                    .take(max_items)
+                    .collect();
+                if !clean.is_empty() {
+                    m.insert(k.into(), json!(clean));
+                }
+            }
+        };
+
+    add_bool(&mut m, "ok");
+    add_u64(&mut m, "ms");
+
+    match event {
+        "host_start" => {
+            add_str(&mut m, "version", 32);
+            add_str(&mut m, "transport", 32);
+            add_str(&mut m, "runner", 32);
+            add_str(&mut m, "isolation", 32);
+            add_bool(&mut m, "repo");
+            add_bool(&mut m, "replica");
+            add_u64(&mut m, "scratch_quota_mib");
+            add_u64(&mut m, "max_push_mib");
+        }
+        "task" => {
+            add_str(&mut m, "task_id", 64);
+            add_str(&mut m, "runner", 32);
+            add_str(&mut m, "program", 60);
+            add_u64(&mut m, "args");
+            add_str(&mut m, "cmd_hash", 16);
+            add_str(&mut m, "image", 80);
+            add_str(&mut m, "base", 60);
+            add_str(&mut m, "base_commit", 40);
+            add_str(&mut m, "state", 24);
+            add_i64(&mut m, "exit_code");
+            add_bool(&mut m, "timed_out");
+            add_f64(&mut m, "cpus");
+            add_u64(&mut m, "mem_mib");
+            add_u64(&mut m, "timeout_secs");
+            add_bool(&mut m, "network");
+            add_bool(&mut m, "warm");
+            add_bool(&mut m, "keep");
+            add_str(&mut m, "sync", 16);
+            add_str(&mut m, "policy_digest", 64);
+            add_str(&mut m, "commit", 40);
+            add_str(&mut m, "branch", 60);
+            add_str(&mut m, "patch_hash", 64);
+            add_str(&mut m, "stdout_hash", 64);
+            add_u64(&mut m, "patch_bytes");
+            add_u64(&mut m, "changed_files");
+            add_str_list(&mut m, "egress", 8, 40);
+            // Secret names only (never values or digests). Prefer observed `secrets_used`, else requested `secrets`.
+            let secret_names: Vec<String> = field(d, "secrets_used")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| item.get("name").and_then(Value::as_str))
+                        .map(|v| clip(v, 40))
+                        .filter(|v| !v.is_empty())
+                        .take(8)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| {
+                    field(d, "secrets")
+                        .and_then(Value::as_array)
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(Value::as_str)
+                                .map(|v| clip(v, 40))
+                                .filter(|v| !v.is_empty())
+                                .take(8)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                });
+            if !secret_names.is_empty() {
+                m.insert("secrets".into(), json!(secret_names));
+            }
+            if field(d, "ok").and_then(Value::as_bool) == Some(false) {
+                add_str(&mut m, "reason", 80);
+            }
+        }
+        "replay" => {
+            add_str(&mut m, "task_id", 64);
+            add_str(&mut m, "replay_task_id", 64);
+            add_str(&mut m, "base_commit", 40);
+            add_str(&mut m, "cmd_hash", 16);
+            add_str(&mut m, "policy_digest", 64);
+            add_str(&mut m, "patch_hash", 64);
+            add_bool(&mut m, "reproducible");
+            add_bool(&mut m, "patch_match");
+            add_bool(&mut m, "policy_match");
+            add_bool(&mut m, "exit_match");
+        }
+        "handoff_checkpoint" => {
+            add_str(&mut m, "id", 48);
+            add_str(&mut m, "to", 64);
+            add_str(&mut m, "branch", 60);
+            add_str(&mut m, "base_commit", 40);
+            add_str(&mut m, "policy_digest", 64);
+            add_u64(&mut m, "open_cards");
+            add_u64(&mut m, "verified_artifacts");
+            add_u64(&mut m, "failed_checks");
+        }
+        "policy_update" => {
+            add_str(&mut m, "policy_digest", 64);
+            add_f64(&mut m, "cpus");
+            add_u64(&mut m, "mem_mib");
+            add_u64(&mut m, "timeout_secs");
+            add_bool(&mut m, "network");
+            add_u64(&mut m, "task_budget");
+            add_u64(&mut m, "max_concurrent");
+            add_u64(&mut m, "max_tasks_per_minute");
+            add_bool(&mut m, "memory_review");
+        }
+        "remember" => {
+            add_str(&mut m, "doc", 48);
+            add_str(&mut m, "key", 64);
+            add_str(&mut m, "task_id", 64);
+            add_str(&mut m, "commit", 40);
+            add_str(&mut m, "taint", 24);
+            add_u64(&mut m, "bytes");
+        }
+        "pull" => {
+            add_str(&mut m, "ref", 60);
+            add_str(&mut m, "reference", 60);
+            add_str(&mut m, "reason", 80);
+        }
+        "push" => {
+            add_str(&mut m, "branch", 60);
+            add_u64(&mut m, "bytes");
+            add_str(&mut m, "commit", 40);
+            add_str(&mut m, "reason", 80);
+        }
+        "join" | "refused" | "task_cancelled" => {
+            add_str(&mut m, "reason", 80);
+        }
+        "steer" => {
+            add_str(&mut m, "kind", 32);
+            add_str(&mut m, "model", 60);
+        }
+        "request_dropped" => {
+            add_str(&mut m, "why", 60);
+            add_u64(&mut m, "limit_bytes");
+            add_bool(&mut m, "authenticated");
+        }
+        "conv_new" | "conv_invite" | "conv_post" => {
+            add_str(&mut m, "conv", 40);
+            add_u64(&mut m, "roster");
+            add_u64(&mut m, "bytes");
+        }
+        _ => {}
+    }
+
+    Some(Value::Object(m))
+}
+
 impl Feed {
     #[must_use]
     pub fn to_json(&self) -> Value {
@@ -680,8 +893,57 @@ mod tests {
             Some("p"),
             &json!({"ok": true, "program": "sh", "exit_code": 0, "cmd_hash": "secret", "args": 2}),
         );
-        let t = &c.since(0, 10, &[]).items[0].text;
-        assert_eq!(t, "task ok sh exit 0");
+        let item = &c.since(0, 10, &[]).items[0];
+        assert_eq!(item.text, "task ok sh exit 0");
+        let meta = item.meta.as_ref().expect("event carries allowlisted meta");
+        assert_eq!(meta["event"], "task");
+        assert_eq!(meta["ok"], true);
+        assert_eq!(meta["program"], "sh");
+        assert_eq!(meta["exit_code"], 0);
+        assert_eq!(meta["args"], 2);
+    }
+
+    #[test]
+    fn event_meta_allowlists_safe_telemetry_and_drops_secrets_or_unknown_fields() {
+        let c = Chat::new();
+        c.event(
+            "task",
+            Some("peer1"),
+            &json!({
+                "ok": true,
+                "ms": 142,
+                "runner": "openshell",
+                "program": "sh",
+                "args": 2,
+                "cmd_hash": "0123456789abcdef",
+                "image": "python:3.12",
+                "base": "main",
+                "exit_code": 0,
+                "timed_out": false,
+                "cpus": 2.0,
+                "mem_mib": 1024,
+                "network": false,
+                "keep": true,
+                "sync": "delta",
+                "policy_digest": "sha256:abcd1234",
+                "egress": ["openai", "anthropic"],
+                "secrets_used": [{"name": "OPENAI_API_KEY", "blake3": "deadbeef"}],
+                "raw_args": ["-c", "echo supersecret"],
+                "secret_value": "sk-live-never",
+            }),
+        );
+        let meta = c.since(0, 10, &[]).items[0].meta.clone().unwrap();
+        assert_eq!(meta["runner"], "openshell");
+        assert_eq!(meta["image"], "python:3.12");
+        assert_eq!(meta["ms"], 142);
+        assert_eq!(meta["keep"], true);
+        assert_eq!(meta["sync"], "delta");
+        assert_eq!(meta["policy_digest"], "sha256:abcd1234");
+        assert_eq!(meta["egress"], json!(["openai", "anthropic"]));
+        assert_eq!(meta["secrets"], json!(["OPENAI_API_KEY"]));
+        assert!(meta.get("raw_args").is_none());
+        assert!(meta.get("secret_value").is_none());
+        assert!(meta.get("secrets_used").is_none());
     }
 
     #[test]

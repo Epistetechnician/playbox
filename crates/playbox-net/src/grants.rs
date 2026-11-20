@@ -429,6 +429,11 @@ impl Authority {
             .map(|_| ())
     }
 
+    #[must_use]
+    pub fn is_unattenuated(&self, grant: &str) -> bool {
+        Biscuit::from_base64(grant, self.public()).is_ok_and(|b| b.block_count() == 1)
+    }
+
     pub(crate) fn authorize_id(
         &self,
         grant: &str,
@@ -672,6 +677,8 @@ mod refusal_tests {
                 base: "main".into(),
                 spec: bad.clone(),
                 warm: false,
+                keep: false,
+                sync: playbox_runner::SyncMode::Full,
             }
             .needs();
             assert!(
@@ -694,6 +701,8 @@ mod refusal_tests {
                     ..TaskSpec::new(&["true"])
                 },
                 warm: false,
+                keep: false,
+                sync: playbox_runner::SyncMode::Full,
             }
             .needs();
             assert!(auth

@@ -120,11 +120,18 @@ pub enum Op {
     ///
     /// `warm` asks the host to keep this member's sandbox running between its tasks when the runner can (the
     /// workspace is replaced each time, so file state is unchanged). The host keys it by the authenticated sender.
+    ///
+    /// `keep` asks the host to preserve workspace state across commands for `(member, base)` without wiping
+    /// or re-uploading on every call, and `sync` controls how changes mirror back (`full`, `delta`, `none`).
     Run {
         base: String,
         spec: TaskSpec,
         #[serde(default)]
         warm: bool,
+        #[serde(default)]
+        keep: bool,
+        #[serde(default)]
+        sync: playbox_runner::SyncMode,
     },
     /// Apply a signed steering spec (`playbox.steer-spec.v1`) to a hosted model. The message carries two
     /// raw parts: the direction file, then the prompt set. With `probe`, nothing is edited: the host
@@ -218,6 +225,10 @@ pub enum Op {
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        commit: Option<String>,
     },
     /// Ask the room's shared memory. Answers with entries by current members that the host accepted.
     Recall {
@@ -228,6 +239,24 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         author: Option<String>,
     },
+    /// Inspect a task's diff and metadata (`run = false`) or re-run it against its base commit and verify reproducibility (`run = true`).
+    Replay {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        #[serde(default)]
+        run: bool,
+    },
+    /// Publish a signed structured cross-agent handoff checkpoint to the room.
+    CheckpointPut {
+        checkpoint: crate::card::HandoffCheckpoint,
+    },
+    /// List structured cross-agent handoff checkpoints in the room.
+    CheckpointList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+    },
+    /// Read the room's live policy guardrails and real-time budget burn.
+    PolicyGet,
 }
 
 impl Op {
@@ -238,7 +267,7 @@ impl Op {
             Op::Echo { .. } => "echo",
             Op::Pull { .. } => "pull",
             Op::Push { .. } => "push",
-            Op::Run { .. } => "run",
+            Op::Run { .. } | Op::Replay { run: true, .. } => "run",
             Op::Steer { probe: false, .. } => "steer",
             Op::Steer { probe: true, .. } => "steer_probe",
             Op::Handoff { .. } => "handoff",
@@ -258,7 +287,11 @@ impl Op {
             | Op::LatentPull { .. }
             | Op::LatentReveal { .. }
             | Op::Remember { .. }
-            | Op::Recall { .. } => "echo",
+            | Op::Recall { .. }
+            | Op::Replay { run: false, .. }
+            | Op::CheckpointPut { .. }
+            | Op::CheckpointList { .. }
+            | Op::PolicyGet => "echo",
         }
     }
 
@@ -630,10 +663,20 @@ mod tests {
             base: "main".into(),
             spec: TaskSpec::new(&["sh", "-c", "true"]),
             warm: false,
+            keep: true,
+            sync: playbox_runner::SyncMode::Delta,
         };
         let m = op.message(vec![]);
         let back = Op::from_message(&m).unwrap().unwrap();
         assert_eq!(back.name(), "run");
+        assert!(matches!(
+            back,
+            Op::Run {
+                keep: true,
+                sync: playbox_runner::SyncMode::Delta,
+                ..
+            }
+        ));
         assert!(
             Op::from_message(&Message::new(Role::User, vec![Part::text("hello")]))
                 .unwrap()
@@ -677,6 +720,8 @@ mod tests {
                 base: "main".into(),
                 spec: bad.clone(),
                 warm: false,
+                keep: false,
+                sync: playbox_runner::SyncMode::Full,
             }
             .message(vec![]);
             assert!(Op::from_message(&m).is_err(), "{bad:?} must be rejected");
