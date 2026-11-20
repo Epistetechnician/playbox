@@ -62,7 +62,9 @@ def score(name, patch):
     out = p.stdout + p.stderr
     ok = set()
     cur = None
-    for ln in out.splitlines():
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    for raw_ln in out.splitlines():
+        ln = ansi_re.sub("", raw_ln)
         if parser == "pytest":
             m = re.match(r"PASSED (\S+)", ln.strip())
             if m: ok.add(m.group(1))

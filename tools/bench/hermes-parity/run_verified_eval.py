@@ -391,6 +391,15 @@ def _append_checkpoint(ckpt_path: Path, lock: threading.Lock, rec: dict) -> None
             f.flush()
 
 
+def _is_provider_failed(usage_obj: dict | None) -> tuple[bool, str]:
+    if not isinstance(usage_obj, dict):
+        return False, ""
+    if usage_obj.get("failed") is True:
+        reason = str(usage_obj.get("failure") or "provider_failed")
+        return True, reason[:240]
+    return False, ""
+
+
 def run_arm_ls_instance(
     inst: str,
     arm: str,
@@ -416,9 +425,12 @@ def run_arm_ls_instance(
     )
     tag = f"{inst}-{arm}1"
     res = json.loads((outdir / f"{tag}.json").read_text(encoding="utf-8"))
-    cost = float((res.get("usage") or {}).get("estimated_cost_usd") or 0.0)
+    u = res.get("usage") or {}
+    prov_failed, fail_msg = _is_provider_failed(u)
+    cost = float(u.get("estimated_cost_usd") or 0.0)
     return {
-        "status": "completed",
+        "status": "provider_rate_limited" if prov_failed else "completed",
+        "failure": fail_msg,
         "arm": arm,
         "inst": inst,
         "model": model,
@@ -586,6 +598,21 @@ def run_arm_p2_cascade_instance(
         )
         tier_cost = float(res.get("total_cost_usd") or 0.0)
         tier_wall = float(res.get("wall_s") or 0.0)
+        w0_usage = ((res.get("workers_meta") or [{}])[0]).get("usage") or {}
+        prov_failed, fail_msg = _is_provider_failed(w0_usage)
+        if prov_failed and not patch.strip():
+            return {
+                "status": "provider_rate_limited",
+                "failure": fail_msg,
+                "arm": "P2",
+                "inst": inst,
+                "winning_tier": t_lbl,
+                "tiers_executed": len(tiers_run) + 1,
+                "resolved": False,
+                "cost_usd": round(total_cost_usd + tier_cost, 6),
+                "wall_s": round(total_wall_s + tier_wall, 1),
+                "completed_at": time.time(),
+            }
         online_ok = bool(res.get("online_gate_passed"))
         cands_prov = (res.get("provenance") or {}).get("candidates") or []
         best_score = max((float(c.get("score") or 0.0) for c in cands_prov), default=0.0)
@@ -943,7 +970,8 @@ def main() -> None:
             for fut in concurrent.futures.as_completed(futs):
                 inst_id = futs[fut]
                 rec = fut.result()
-                completed[(arm, inst_id)] = rec
+                if rec.get("status") == "completed":
+                    completed[(arm, inst_id)] = rec
 
     arm_summaries: dict[str, dict] = {}
     arm_records: dict[str, list[dict]] = {}
