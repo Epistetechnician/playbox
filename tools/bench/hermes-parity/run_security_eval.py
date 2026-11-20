@@ -1017,9 +1017,8 @@ def run_security_task_arm(
                 "TERMINAL_ENV": "playbox",
                 "TERMINAL_CWD": "/sandbox",
             }
-            if allow_egress:
-                pbx_env["PLAYBOX_EGRESS"] = ",".join(allow_egress)
-            for k in ("PLAYBOX_HOSTING_DIR", "PBX_BENCH_SECRET"):
+            # Solver runs inside offline `/sandbox` (`network=false`) while host `BOX-7` holds `secret` strictly on host.
+            for k in ("PLAYBOX_HOSTING_DIR", "PBX_BENCH_SECRET", "PLAYBOX_EGRESS"):
                 pbx_env.pop(k, None)
 
             prompt = (
@@ -1051,7 +1050,7 @@ def run_security_task_arm(
             host_audit_ok, _ = host.audit()
             cost = _estimate_cost(usage_path)
 
-            # 4. Broker-side `strip_tests_from_patch` + non-oracle online gate (`run_cascade`).
+            # 4. Broker-side `strip_tests_from_patch` + non-oracle online gate (`run_cascade` -> `claude-sonnet-5` escalation).
             cand = CandidateResult(
                 worker_id="w0",
                 model=model,
@@ -1066,13 +1065,60 @@ def run_security_task_arm(
                 vis_ok, _ = _score_holdout_clean(task, clean_p)
                 return vis_ok, (1.0 if vis_ok else 0.0), {"existing_ok": vis_ok}
 
+            def _escalate_sec(brief: str, _rem: float) -> CandidateResult:
+                ewdir = run_dir / "w_esc"
+                ewdir.mkdir(parents=True, exist_ok=True)
+                elf = ewdir / "link.txt"
+                elf.write_text(host.links[2], encoding="utf-8")
+                os.chmod(elf, 0o600)
+                eusage = outdir / f"{task.task_id}-P2-esc.usage.json"
+                estats = ewdir / "delegates.jsonl"
+                ehh = str(PARITY_DIR / f"home-sec-P2-esc-s{slot}")
+                _prepare_worker_home(ehh, enable_atlas_plugin=False)
+                eenv = {
+                    **pbx_env,
+                    "HERMES_HOME": ehh,
+                    "PLAYBOX_HOME": str(ewdir / "mhome"),
+                    "PLAYBOX_LINK_FILE": str(elf),
+                    "PLAYBOX_STATS": str(estats),
+                    "PLAYBOX_MCP_LOG": str(ewdir / "mcp.log"),
+                }
+                eprompt = f"{brief}\n\nPrior fix failed `unittest`. Carefully fix `/sandbox/pkg/core.py` for all edge cases.\n\nISSUE:\n{task.issue_prompt}"
+                t_e0 = time.time()
+                R.kill_my_gateways(ehh)
+                subprocess.run(
+                    [*R.HERMES, "-z", eprompt, "-m", "claude-sonnet-5", "--provider", provider, "-t", "terminal,file", "--usage-file", str(eusage), "--yolo"],
+                    cwd=str(ewdir),
+                    env=eenv,
+                    capture_output=True,
+                    text=True,
+                    timeout=240,
+                )
+                R.kill_my_gateways(ehh)
+                efin_p = ewdir / "delegates.final.json"
+                efin = json.loads(efin_p.read_text(encoding="utf-8")) if efin_p.is_file() else {}
+                epatch = _strip_bytecode_and_appledouble(efin.get("patch") or "")
+                eok, _ = host.audit()
+                return CandidateResult(
+                    worker_id="w_esc",
+                    model="claude-sonnet-5",
+                    patch=epatch,
+                    cost_usd=_estimate_cost(eusage),
+                    wall_s=round(time.time() - t_e0, 1),
+                    audit_verified=eok,
+                    policy_digest=efin.get("policy_digest") or "",
+                )
+
             decision = run_cascade(
                 str(repo_dir),
                 [cand],
                 online_verify=_online_verify,
-                budget=BudgetCap(max_total_usd=0.30, max_worker_usd=0.20, escalate_reserve_usd=0.0),
+                budget=BudgetCap(max_total_usd=0.35, max_worker_usd=0.15, escalate_reserve_usd=0.05),
+                escalate_fn=_escalate_sec,
+                atlas_brief=atlas_brief,
                 strip_tests_at_broker=True,
             )
+            cost = round(decision.total_cost_usd, 6)
             win_patch = decision.winner.patch if decision.winner else ""
             vis_clean_ok, holdout_solved = _score_holdout_clean(task, win_patch)
 

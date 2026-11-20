@@ -120,9 +120,12 @@ def _start_host_with_runtime(
         def __init__(self, d_path: str):
             self.d = d_path
             self.home = os.path.join(d_path, "phome")
-            os.makedirs(self.home)
+            os.makedirs(self.home, exist_ok=True)
+            sec_dir = os.path.join(self.home, "secrets")
+            os.makedirs(sec_dir, mode=0o700, exist_ok=True)
+            os.chmod(sec_dir, 0o700)
             self.hosting = os.path.join(d_path, "hosting")
-            os.makedirs(self.hosting)
+            os.makedirs(self.hosting, exist_ok=True)
             self.env = {
                 **os.environ,
                 "PLAYBOX_HOME": self.home,
