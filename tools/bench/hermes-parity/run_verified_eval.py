@@ -844,21 +844,21 @@ def main() -> None:
     ap.add_argument("--resume", dest="resume", action="store_true", default=True)
     ap.add_argument("--no-resume", dest="resume", action="store_false")
     ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
-    ap.add_argument("--arm-s-model", default="gpt-5.6-luna")
-    ap.add_argument("--arm-s-provider", default="openai-codex")
+    ap.add_argument("--arm-s-model", default="claude-haiku-5-5")
+    ap.add_argument("--arm-s-provider", default="anthropic")
     ap.add_argument("--t1-harness", default="hermes", choices=["hermes", "devin"])
-    ap.add_argument("--t1-provider", default="openai-codex")
-    ap.add_argument("--t1-model", default="gpt-5.6-luna")
+    ap.add_argument("--t1-provider", default="anthropic")
+    ap.add_argument("--t1-model", default="claude-haiku-5-5")
     ap.add_argument("--no-t1-repro-gate", action="store_true")
     ap.add_argument("--t2-harness", default="devin", choices=["hermes", "devin"])
-    ap.add_argument("--t2-provider", default="openai-codex")
+    ap.add_argument("--t2-provider", default="anthropic")
     ap.add_argument("--t2-model", default="gemini-4-neon-high")
     ap.add_argument("--t3-harness", default="devin", choices=["hermes", "devin"])
-    ap.add_argument("--t3-provider", default="openai-codex")
+    ap.add_argument("--t3-provider", default="anthropic")
     ap.add_argument("--t3-workers", type=int, default=2)
     ap.add_argument("--t3-worker-models", default="claude-opus-5-5-high,gemini-4-neon-high")
     ap.add_argument("--critic-harness", default="devin", choices=["hermes", "devin"])
-    ap.add_argument("--critic-provider", default="openai-codex")
+    ap.add_argument("--critic-provider", default="anthropic")
     ap.add_argument("--critic-model", default="gemini-4-neon-high", help="Independent non-oracle diff critic model (empty to disable)")
     ap.add_argument("--max-tiers", type=int, default=3, choices=[1, 2, 3])
     ap.add_argument("--timeout", type=int, default=780)
@@ -871,12 +871,12 @@ def main() -> None:
     critic_harness, critic_provider, critic_model = args.critic_harness, args.critic_provider, args.critic_model
     if not devin_ok:
         if t2_harness == "devin":
-            t2_harness, t2_provider, t2_model = "hermes", "openai-codex", "gpt-5.6-terra"
-            auth_fallback = "hermes:openai-codex (gpt-5.6-luna -> gpt-5.6-terra -> gpt-6-luna,gpt-5.6-terra)"
+            t2_harness, t2_provider, t2_model = "hermes", "anthropic", "claude-sonnet-5"
+            auth_fallback = "hermes:anthropic (claude-haiku-5-5 -> claude-sonnet-5 -> claude-sonnet-5-5,claude-sonnet-5)"
         if t3_harness == "devin":
-            t3_harness, t3_provider, t3_worker_models = "hermes", "openai-codex", "gpt-6-luna,gpt-5.6-terra"
+            t3_harness, t3_provider, t3_worker_models = "hermes", "anthropic", "claude-sonnet-5-5,claude-sonnet-5"
         if critic_harness == "devin" and critic_model:
-            critic_harness, critic_provider, critic_model = "hermes", "openai-codex", "gpt-5.6-terra"
+            critic_harness, critic_provider, critic_model = "hermes", "anthropic", "claude-sonnet-5"
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
