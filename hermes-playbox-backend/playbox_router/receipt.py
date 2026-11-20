@@ -115,9 +115,25 @@ def build_signed_receipt(
     atlas_summary: dict | None = None,
     router_provenance: dict | None = None,
     sealed_gate: dict | None = None,
+    llm_ledger: dict | None = None,
     signing_key=None,
 ) -> dict:
-    """Assemble and Ed25519-sign a Playbox Attested Gate Receipt."""
+    """Assemble and Ed25519-sign (+ hybrid ML-DSA-65 when `playbox` CLI is available) a Playbox Attested Gate Receipt.
+
+    When `llm_ledger` is provided (a verified `playbox.llm_ledger.v1` object from host `playbox-aiproxy`,
+    or an already-summarized `host_aiproxy` ledger block), its canonical SHA-256 digest and host-observed
+    token/cost totals are bound inside the signed payload. Otherwise, `llm_ledger.source` is explicitly
+    recorded as `"client_unverified"`.
+    """
+    from .aiproxy import LEDGER_SCHEMA, summarize_ledger_for_receipt
+
+    if llm_ledger is None:
+        ledger_block: dict = {"source": "client_unverified"}
+    elif llm_ledger.get("schema") == LEDGER_SCHEMA and "entries" in llm_ledger:
+        ledger_block = summarize_ledger_for_receipt(llm_ledger)
+    else:
+        ledger_block = dict(llm_ledger)
+
     payload = {
         "schema": RECEIPT_SCHEMA,
         "issued_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -140,6 +156,7 @@ def build_signed_receipt(
         "atlas": dict(atlas_summary or {}),
         "router": dict(router_provenance or {}),
         "sealed_gate": dict(sealed_gate or {}),
+        "llm_ledger": ledger_block,
     }
     payload_sha256 = hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
@@ -286,3 +303,21 @@ def verify_signed_receipt(
         return True, "verified (Ed25519; ML-DSA-65 structural)"
 
     return True, "verified"
+
+
+def verify_receipt_ledger(receipt: dict, ledger: dict) -> tuple[bool, str]:
+    """Verify that an external `playbox.llm_ledger.v1` file matches the `ledger_sha256` bound in `receipt`."""
+    from .aiproxy import verify_ledger
+
+    ok_l, why_l = verify_ledger(ledger)
+    if not ok_l:
+        return False, f"ledger invalid: {why_l}"
+    payload = receipt.get("payload") if isinstance(receipt, dict) else None
+    bound = payload.get("llm_ledger") if isinstance(payload, dict) else None
+    if not isinstance(bound, dict) or bound.get("source") != "host_aiproxy":
+        return False, "receipt does not bind a host_aiproxy llm_ledger"
+    bound_sha = str(bound.get("ledger_sha256") or "").lower()
+    ledger_sha = str(ledger.get("ledger_sha256") or "").lower()
+    if not bound_sha or bound_sha != ledger_sha:
+        return False, "receipt llm_ledger.ledger_sha256 does not match ledger"
+    return True, "ledger matches signed receipt"

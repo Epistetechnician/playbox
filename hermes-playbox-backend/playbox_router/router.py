@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
 
+from .trajectory_gate import strip_tests_from_patch
+
 _BROKEN_REPRO_EXC_RE = re.compile(
     r"(?m)^\s*(SyntaxError|IndentationError|TabError|ImportError|ModuleNotFoundError|NameError)\s*:"
 )
@@ -37,9 +39,16 @@ class BudgetCap:
     max_worker_usd: float = 0.15
     escalate_reserve_usd: float = 0.10
     spent_usd: float = 0.0
+    host_attested_usd: float = 0.0
+    budget_cutoffs: int = 0
+    failovers: int = 0
 
     def remaining(self) -> float:
         return max(0.0, self.max_total_usd - self.spent_usd)
+
+    def worker_ceiling(self) -> float:
+        """Hard USD ceiling for the next worker's short-lived `playbox-aiproxy` token."""
+        return round(min(self.max_worker_usd, self.remaining()), 6)
 
     def can_launch_worker(self) -> bool:
         return self.remaining() >= min(self.max_worker_usd, 0.01)
@@ -50,6 +59,17 @@ class BudgetCap:
     def charge(self, usd: float) -> None:
         if usd > 0:
             self.spent_usd += float(usd)
+
+    def reconcile_ledger(self, ledger: dict) -> float:
+        """Reconcile spent USD from a verified host `playbox.llm_ledger.v1` record."""
+        totals = dict(ledger.get("totals") or {})
+        host_cost = float(totals.get("cost_usd", 0.0) or 0.0)
+        self.host_attested_usd += host_cost
+        self.budget_cutoffs += int(totals.get("budget_cutoffs", 0) or 0)
+        self.failovers += int(totals.get("failovers", 0) or 0)
+        if host_cost > 0:
+            self.spent_usd += host_cost
+        return host_cost
 
 
 @dataclass
@@ -186,11 +206,17 @@ def select_and_compose(
     candidates: Sequence[CandidateResult],
     verify: SealedVerifier,
     budget: BudgetCap,
+    *,
+    strip_tests_at_broker: bool = True,
 ) -> RouteDecision:
     """Evaluate verified candidates through a fresh-sandbox sealed gate, try 3-way composition on
     top distinct candidates if none passes yet (or to improve score), and decide whether escalation is warranted.
 
-    Security invariant: candidates whose host `audit_verified` is False are rejected before selection.
+    Security invariants:
+    - Candidates whose host `audit_verified` is False are rejected before selection.
+    - When `strip_tests_at_broker=True` (default), repository test-file hunks (`tests/`,
+      `test_*.py`, `*_test.py`) are stripped at the host broker before verification so in-tree TDD
+      is allowed without permitting test tampering; test-only patches become empty and are dropped.
     """
     verified: list[CandidateResult] = []
     seen_hashes: set[str] = set()
@@ -198,22 +224,30 @@ def select_and_compose(
         budget.charge(c.cost_usd)
         if not c.audit_verified or not c.patch.strip():
             continue
-        h = c.patch_sha256
+        patch_for_gate, stripped_tests = (
+            strip_tests_from_patch(c.patch) if strip_tests_at_broker else (c.patch, [])
+        )
+        if not patch_for_gate.strip():
+            continue
+        h = hashlib.sha256(patch_for_gate.encode("utf-8", "ignore")).hexdigest()
         if h in seen_hashes:
             continue
         seen_hashes.add(h)
-        passed, score, meta = verify(c.patch)
+        passed, score, meta = verify(patch_for_gate)
+        eval_meta = dict(meta)
+        if stripped_tests:
+            eval_meta["stripped_test_files"] = stripped_tests
         verified.append(CandidateResult(
             worker_id=c.worker_id,
             model=c.model,
-            patch=c.patch,
+            patch=patch_for_gate,
             cost_usd=c.cost_usd,
             wall_s=c.wall_s,
             score=score,
             passed=passed,
             audit_verified=c.audit_verified,
             policy_digest=c.policy_digest,
-            meta=meta,
+            meta=eval_meta,
         ))
 
     verified.sort(key=lambda r: (r.passed, r.score, -r.cost_usd), reverse=True)
@@ -249,6 +283,7 @@ def select_and_compose(
     needs_escalation = (best is None or not best.passed) and budget.can_escalate()
     provenance = {
         "domain": "playbox.router.v1",
+        "strip_tests_at_broker": strip_tests_at_broker,
         "candidates": [
             {
                 "worker_id": r.worker_id,
@@ -258,6 +293,7 @@ def select_and_compose(
                 "score": r.score,
                 "cost_usd": round(r.cost_usd, 6),
                 "files": sorted(_touched_files(r.patch)),
+                "stripped_test_files": list(r.meta.get("stripped_test_files") or []),
                 "audit_verified": r.audit_verified,
                 "policy_digest": r.policy_digest,
             }
@@ -335,6 +371,7 @@ def run_cascade(
     escalate_fn: EscalationFn | None = None,
     atlas_brief: str = "",
     repro_gate: ReproGateResult | None = None,
+    strip_tests_at_broker: bool = True,
 ) -> RouteDecision:
     """Two-tier metered cascade: cheap parallel workers + 3-way compose -> conditional frontier escalation.
 
@@ -342,13 +379,21 @@ def run_cascade(
     - `online_verify` must ONLY use non-oracle checks (existing repo tests + optional non-vacuous
       independent repro gate), never hidden evaluation holdouts.
     - Candidates with `audit_verified=False` are dropped at both cheap and escalated stages.
+    - When `strip_tests_at_broker=True` (default), `tests/` hunks are stripped at the broker before
+      scoring at both cheap and escalated stages.
     - Escalation triggers ONLY when cheap workers + deterministic composition fail `online_verify`
       AND `budget.can_escalate()` is True.
     """
     if repro_gate is not None:
         budget.charge(repro_gate.cost_usd)
 
-    stage1 = select_and_compose(base_repo, cheap_candidates, online_verify, budget)
+    stage1 = select_and_compose(
+        base_repo,
+        cheap_candidates,
+        online_verify,
+        budget,
+        strip_tests_at_broker=strip_tests_at_broker,
+    )
     stage1.provenance["escalated"] = False
     stage1.provenance["escalation_won"] = False
     if repro_gate is not None:
@@ -378,7 +423,10 @@ def run_cascade(
         return stage1
 
     budget.charge(esc.cost_usd)
-    if not esc.audit_verified or not esc.patch.strip():
+    esc_patch, esc_stripped_tests = (
+        strip_tests_from_patch(esc.patch) if strip_tests_at_broker else (esc.patch, [])
+    )
+    if not esc.audit_verified or not esc_patch.strip():
         stage1.provenance["escalated"] = True
         stage1.provenance["escalation_rejected"] = "unverified_audit_or_empty"
         stage1.provenance["total_cost_usd"] = round(budget.spent_usd, 6)
@@ -394,18 +442,21 @@ def run_cascade(
             escalation_won=False,
         )
 
-    esc_passed, esc_score, esc_meta = online_verify(esc.patch)
+    esc_passed, esc_score, esc_meta = online_verify(esc_patch)
+    esc_eval_meta = dict(esc_meta)
+    if esc_stripped_tests:
+        esc_eval_meta["stripped_test_files"] = esc_stripped_tests
     esc_eval = CandidateResult(
         worker_id=esc.worker_id,
         model=esc.model,
-        patch=esc.patch,
+        patch=esc_patch,
         cost_usd=esc.cost_usd,
         wall_s=esc.wall_s,
         score=esc_score,
         passed=esc_passed,
         audit_verified=esc.audit_verified,
         policy_digest=esc.policy_digest,
-        meta=esc_meta,
+        meta=esc_eval_meta,
     )
 
     best = stage1.winner
@@ -454,6 +505,7 @@ def run_cascade(
         "score": esc_eval.score,
         "cost_usd": round(esc_eval.cost_usd, 6),
         "files": sorted(_touched_files(esc_eval.patch)),
+        "stripped_test_files": list(esc_eval.meta.get("stripped_test_files") or []),
         "audit_verified": esc_eval.audit_verified,
         "policy_digest": esc_eval.policy_digest,
     }]
