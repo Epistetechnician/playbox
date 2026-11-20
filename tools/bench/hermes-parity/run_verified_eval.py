@@ -275,12 +275,12 @@ def run_non_oracle_critic(
     """
     if not patch_text.strip():
         return False, "Candidate produced an empty patch.", 0.0
-    if not existing_tests_passed:
-        return False, "Candidate broke existing repository unit tests.", 0.0
     if online_gate_passed:
         return True, "Both existing repository tests and independent non-vacuous repro script passed.", 0.0
+    if not existing_tests_passed:
+        return False, "Candidate failed both existing repository tests and independent repro gate.", 0.0
     if not critic_model:
-        return False, "Online repro gate failed and critic disabled.", 0.0
+        return False, "Partial online gate (score < 1.0) and critic disabled.", 0.0
 
     base_ctx = _extract_base_hunk_context(repo_cache_dir, patch_text)
     repro_note = (
@@ -589,7 +589,9 @@ def run_arm_p2_cascade_instance(
         online_ok = bool(res.get("online_gate_passed"))
         cands_prov = (res.get("provenance") or {}).get("candidates") or []
         best_score = max((float(c.get("score") or 0.0) for c in cands_prov), default=0.0)
-        existing_ok = online_ok or (best_score >= 0.6)
+        # `best_score >= 0.4` holds when EITHER existing repo tests passed (0.6) OR independent w_repro passed (0.4,
+        # e.g. when changing a global default setting invalidates an un-updated pre-patch test in `tests/`).
+        existing_ok = online_ok or (best_score >= 0.4)
 
         # Strictly non-oracle escalation decision: NEVER inspects `res["resolved"]` or `res["holdout"]`!
         is_last_tier = idx == (len(tier_specs) - 1)
@@ -630,7 +632,7 @@ def run_arm_p2_cascade_instance(
         # Non-oracle candidate selection: prefer latest tier whose patch passed existing repo tests (`existing_ok`),
         # or any non-empty patch over an empty patch.
         prev_cands = ((chosen_res or {}).get("provenance") or {}).get("candidates") or []
-        prev_existing_ok = bool(chosen_res and (chosen_res.get("online_gate_passed") or max((float(c.get("score") or 0.0) for c in prev_cands), default=0.0) >= 0.6))
+        prev_existing_ok = bool(chosen_res and (chosen_res.get("online_gate_passed") or max((float(c.get("score") or 0.0) for c in prev_cands), default=0.0) >= 0.4))
         if chosen_res is None or (bool(patch.strip()) and (existing_ok or not prev_existing_ok)):
             chosen_res = res
             chosen_patch = patch
