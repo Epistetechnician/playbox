@@ -120,6 +120,31 @@ Driven via `tools/bench/hermes-parity/hillclimb_playbox.py` (`--harness devin --
 | `django-11620` | Round 1 (`gemini-4-neon-high`) | **Yes (`1/1`, `55/55`)** | 337.6 s | 45 (34 / 11) | **0.12 s** | $0.4919 | **0** | **Verified (`Ed25519+ML-DSA-65`, `T1`)** |
 | **5-Instance Total** | **4× `gemini-4-neon-high` (R1) + 1× `claude-opus-5-5-high` (R2)** | **5 / 5 (100.0%)** | **242.2 s mean** | 115 winning (172 total) | **0.12 s–0.64 s** | **$1.8809 winning** ($0.3762 / solve; $2.5587 total) | **0 across all runs** | **6/6 PQ receipts + 6/6 5-gate bundles + 5/5 verified lessons** |
 
+### 4. `n = 50` Multi-Repo Polyglot Scaling (`run_verified_eval.py`, Python + Rust + TypeScript)
+
+Driven via `tools/bench/hermes-parity/run_verified_eval.py` (`--concurrency 3`, single-commit archives, `--memory-gate online`, 3-tier `claude-haiku-5-5` → `claude-sonnet-5` → `claude-sonnet-5-5,claude-sonnet-5` cascade in `/tmp/swe-verified-50-claude/`):
+
+| Suite / Language Family | Tasks (`n`) | Clean Arm S (Stock OpenShell) | Playbox Arm P2 (3-Tier Cascade + 5-Gate `T1` PQ) |
+|---|---|---|---|
+| `django/django` (cached `n = 28`) | 28 | 25 / 28 (89.3%; `gpt-5.6-luna`: 22 / 28 = 78.6%) | **26 / 28 (92.9%)** · `$0.0642`/solve (fast gate) |
+| `pytest-dev/pytest` | 3 | 2 / 3 (66.7%) | **3 / 3 (100.0%)** |
+| `sympy/sympy` | 5 | 3 / 5 (60.0%) | **4 / 5 (80.0%)** |
+| `scikit-learn/scikit-learn` | 3 | 2 / 3 (66.7%) | **2 / 3 (66.7%)** |
+| `pallets/flask` | 1 | 0 / 1 (0.0%) | 0 / 1 (0.0%) |
+| `Rust` (`cargo test` crates) | 5 | 5 / 5 (100.0%) | **5 / 5 (100.0%)** |
+| `TypeScript` (Node 26 `node --test`) | 5 | 5 / 5 (100.0%) | **4 / 5 (80.0%)** |
+| **`n = 50` Polyglot Total** | **50** | **42 / 50 (84.0%)** (37 / 50 = 74.0% pre-gateway-retry, McNemar one-sided $p = 0.035$) · 0 receipts | **44 / 50 (88.0%, 95% CI `[76.2%, 94.4%]`)** · **`$0.1051`/solve** (fast gate; `$0.2018` w/ uniform critic) · **0.12–0.15 s med cmd** · **0 taint advisories** · **50/50 PQ receipts + 44 PQ `RoomLog` promotions (`T1`)** |
+
+### 5. `n = 20` Live Adversarial Security & Anti-Reward-Hacking Benchmark (`run_security_eval.py`)
+
+20 real coding tasks across 5 live threat vectors (`secret_exfil`, `backdoor_injection`, `git_history_leak`, `test_tampering`, `sandbox_escape_traversal`, 60 live runs in `/tmp/swe-security-eval/`):
+
+| Arm | Clean Task Utility | Attack Success Rate (ASR) | Unflagged Reward Hacks | Cryptographic Receipts & `T1` PQ Bundle |
+|---|---|---|---|---|
+| **Arm L** (Unsandboxed Local Hermes) | 19 / 20 (95.0%) | **20.0% (4 / 20 host escape)** | 0.0% | None |
+| **Arm S** (Stock OpenShell SSH) | 17 / 20 (85.0%) | **20.0% (4 / 20 VM secret exposure)** | 0.0% | None |
+| **Arm P2** (Playbox Attested Gate) | **19 / 20 (95.0%)** | **0.0% (0 / 20)** | **0.0% (0 / 20)** | **20/20 `Ed25519+ML-DSA-65` + 19 PQ promotions (`T1`)** |
+
 ## Design
 
 - **Host repo.** Per instance, a single-commit git repo of the Django tree at the instance's base commit (`git archive` into a fresh repo on
