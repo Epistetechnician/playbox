@@ -1,6 +1,6 @@
 """Score an agent's patch on a SWE-bench instance in an arm64 image (network none): apply patch + hidden test_patch, run tests.
 resolved = all FAIL_TO_PASS and PASS_TO_PASS pass (SWE-bench's definition). Our own harness, not the official one."""
-import json, os, re, shlex, subprocess, sys, tempfile
+import json, os, re, shlex, shutil, subprocess, sys, tempfile
 D = os.environ.get("PB_SWE_DIR", os.path.expanduser("~/.playbox-hermes/openshell-parity/swe"))
 INST = {"flask": ("pallets__flask-4045", "pb-swe-flask:arm64"), "django": ("django__django-12700", "pb-swe-django:arm64")}
 
