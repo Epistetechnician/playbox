@@ -330,8 +330,7 @@ fn synthesize_room_log_from_receipts(
             .with_context(|| format!("parsing run receipt {rpath} as JSON"))?;
         let summary = crate::trust::verify_receipt_value(&doc, None, None, false)
             .with_context(|| format!("verifying run receipt {rpath}"))?;
-        let resolved =
-            doc["payload"]["sealed_gate"]["holdout_resolved"].as_bool() == Some(true);
+        let resolved = doc["payload"]["sealed_gate"]["holdout_resolved"].as_bool() == Some(true);
         if !resolved {
             continue;
         }
@@ -343,8 +342,8 @@ fn synthesize_room_log_from_receipts(
             .filter(|s| s.len() == 64)
             .or_else(|| summary["payload_sha256"].as_str())
             .unwrap_or("");
-        let candidate = roomlog::unhex::<32>(cand_hex)
-            .unwrap_or_else(|| sha256_arr(cand_hex.as_bytes()));
+        let candidate =
+            roomlog::unhex::<32>(cand_hex).unwrap_or_else(|| sha256_arr(cand_hex.as_bytes()));
         if candidate == [0u8; 32] {
             continue;
         }
@@ -444,8 +443,7 @@ fn synthesize_room_log_from_receipts(
     out.push('\n');
 
     let out_path = state_dir.join("roomlog.jsonl");
-    std::fs::write(&out_path, out)
-        .with_context(|| format!("writing {}", out_path.display()))?;
+    std::fs::write(&out_path, out).with_context(|| format!("writing {}", out_path.display()))?;
     Ok(Some(out_path))
 }
 
