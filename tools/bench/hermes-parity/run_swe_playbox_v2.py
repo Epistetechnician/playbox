@@ -44,6 +44,8 @@ R = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(R)
 
 from playbox_atlas import (  # noqa: E402
+    AiproxyEmbedder,
+    AiproxyReranker,
     HiKVPIndex,
     append_verified_lesson,
     build_repo_triples,
@@ -51,21 +53,57 @@ from playbox_atlas import (  # noqa: E402
     load_room_memory_jsonl,
 )
 from playbox_router import (  # noqa: E402
+    AiproxyClient,
     BudgetCap,
     CandidateResult,
     ReproGateResult,
     build_signed_receipt,
     is_genuine_repro_failure,
+    load_admin_key,
     load_or_create_signing_key,
     run_cascade,
     verify_signed_receipt,
     verify_single_commit_repo,
 )
-from score import load, score  # noqa: E402
+from score import _inst, extract_django_modules, load, score  # noqa: E402
 
 IMG = os.environ.get("PB_SWE_IMAGE", "pb-swe-django:arm64")
-SWE = os.path.expanduser("~/.playbox-hermes/openshell-parity/swe")
+SWE = os.environ.get("PB_SWE_DIR", os.path.expanduser("~/.playbox-hermes/openshell-parity/swe"))
 GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "user.name=bench", "-c", "user.email=bench@example.com"]
+
+
+def _resolve_inst_runtime(inst: str, r: dict) -> dict:
+    _, default_img = _inst(inst)
+    img = os.environ.get("PB_SWE_IMAGE") or r.get("pb_image") or default_img
+    parser = r.get("pb_parser") or ("pytest" if inst == "flask" else "django")
+    py = r.get("pb_python") or "/usr/local/venv/bin/python"
+    mods = extract_django_modules(r["F"]) if parser == "django" else []
+    mod = mods[0] if mods else ""
+    if r.get("pb_test_hint"):
+        hint_sandbox = r["pb_test_hint"].format(repo="/sandbox", py=py)
+    elif parser == "pytest":
+        tfile = r["F"][0].split("::")[0] if r.get("F") else "tests"
+        pp_sb = "/sandbox/src:/sandbox" if inst == "flask" else r.get("pb_pythonpath_sandbox", "/sandbox")
+        hint_sandbox = f"cd /sandbox && PYTHONPATH={pp_sb} {py} -m pytest {tfile} -q"
+    else:
+        hint_sandbox = f"cd /sandbox/tests && PYTHONPATH=/sandbox {py} runtests.py --settings=test_sqlite --parallel 1 {mod}"
+
+    if r.get("pb_online_cmd"):
+        online_cmd = r["pb_online_cmd"]
+    elif parser == "pytest":
+        tfile = r["F"][0].split("::")[0] if r.get("F") else "tests"
+        pp_tb = "/tmp/tb/src:/tmp/tb" if inst == "flask" else r.get("pb_pythonpath", "/tmp/tb")
+        online_cmd = f"PYTHONPATH={pp_tb} {py} -m pytest {tfile} -q"
+    else:
+        online_cmd = f"cd tests && PYTHONPATH=/tmp/tb {py} runtests.py --settings=test_sqlite --parallel 1 {mod}"
+    return {
+        "img": img,
+        "parser": parser,
+        "py": py,
+        "mod": mod,
+        "hint_sandbox": hint_sandbox,
+        "online_cmd": online_cmd,
+    }
 
 
 def _start_host_with_runtime(
@@ -82,9 +120,12 @@ def _start_host_with_runtime(
         def __init__(self, d_path: str):
             self.d = d_path
             self.home = os.path.join(d_path, "phome")
-            os.makedirs(self.home)
+            os.makedirs(self.home, exist_ok=True)
+            sec_dir = os.path.join(self.home, "secrets")
+            os.makedirs(sec_dir, mode=0o700, exist_ok=True)
+            os.chmod(sec_dir, 0o700)
             self.hosting = os.path.join(d_path, "hosting")
-            os.makedirs(self.hosting)
+            os.makedirs(self.hosting, exist_ok=True)
             self.env = {
                 **os.environ,
                 "PLAYBOX_HOME": self.home,
@@ -123,20 +164,41 @@ def _start_host_with_runtime(
 
 
 def host_repo(dst: str, inst: str, r: dict) -> None:
-    cache = os.path.join(R.D, "swe-repos", inst)
+    cache_root = os.path.join(R.D, "swe-repos")
+    os.makedirs(cache_root, exist_ok=True)
+    cache = os.path.join(cache_root, inst)
     if not os.path.isdir(os.path.join(cache, ".git")):
-        os.makedirs(cache, exist_ok=True)
-        tb = f"{SWE}/django/testbed"
-        subprocess.run(f"git -C {tb} archive {r['base_commit']} | tar -x -C {cache}", shell=True, check=True)
-        subprocess.run([*GIT, "init", "-q", "-b", "main", cache], check=True)
-        subprocess.run([*GIT, "-C", cache, "add", "-A"], check=True)
-        subprocess.run([*GIT, "-C", cache, "commit", "-q", "-m", "base"], check=True)
+        tmp_cache = f"{cache}.tmp.{os.getpid()}"
+        shutil.rmtree(tmp_cache, ignore_errors=True)
+        os.makedirs(tmp_cache, exist_ok=True)
+        if r.get("pb_host_tar"):
+            subprocess.run(["tar", "-xf", r["pb_host_tar"], "-C", tmp_cache], check=True)
+            shutil.rmtree(os.path.join(tmp_cache, ".git"), ignore_errors=True)
+        else:
+            fam = r.get("pb_family") or ("django" if inst.startswith("django-") else inst)
+            tb = f"{SWE}/{fam}/testbed"
+            subprocess.run(f"git -C {tb} archive {r['base_commit']} | tar -x -C {tmp_cache}", shell=True, check=True)
+        subprocess.run([*GIT, "init", "-q", "-b", "main", tmp_cache], check=True)
+        subprocess.run([*GIT, "-C", tmp_cache, "add", "-A"], check=True)
+        subprocess.run([*GIT, "-C", tmp_cache, "commit", "-q", "-m", "base"], check=True)
+        if not os.path.isdir(os.path.join(cache, ".git")):
+            try:
+                os.replace(tmp_cache, cache)
+            except OSError:
+                shutil.rmtree(tmp_cache, ignore_errors=True)
+        else:
+            shutil.rmtree(tmp_cache, ignore_errors=True)
     shutil.copytree(cache, dst, symlinks=True)
 
 
 def strip_tests(patch: str) -> str:
     blocks = re.split(r"(?m)^(?=diff --git )", patch or "")
-    return "".join(b for b in blocks if b.strip() and not re.match(r"diff --git a/tests/", b))
+    return "".join(
+        b for b in blocks
+        if b.strip()
+        and not re.search(r"^diff --git a/(?:.+/)?(?:tests?|testing)/", b)
+        and "\nBinary files " not in b
+    )
 
 
 def estimate_usage_cost_usd(u: dict, model: str = "") -> float:
@@ -152,7 +214,13 @@ def estimate_usage_cost_usd(u: dict, model: str = "") -> float:
         return 0.0
     uncached = max(0, inp - cached)
     m = (model or str(u.get("model") or "")).lower()
-    if any(k in m for k in ("sonnet", "terra", "opus", "gpt-5.4")):
+    if "opus-5-5" in m or "opus-5.5" in m:
+        in_rate, cache_rate, out_rate = 4.00, 0.20, 20.00
+    elif "neon" in m:
+        in_rate, cache_rate, out_rate = 3.00, 0.15, 15.00
+    elif "argon" in m or "carbon" in m:
+        in_rate, cache_rate, out_rate = 2.00, 0.10, 10.00
+    elif any(k in m for k in ("sonnet", "terra", "opus", "gpt-5.4")):
         in_rate, cache_rate, out_rate = 3.00, 0.30, 15.00
     else:
         in_rate, cache_rate, out_rate = 1.00, 0.10, 5.00
@@ -166,24 +234,41 @@ def build_atlas_brief(
     *,
     index_out: str | Path | None = None,
     memory_file: str | Path | None = None,
+    embed_fn=None,
+    rerank_fn=None,
 ) -> tuple[str, dict]:
     t0 = time.time()
     triples = build_repo_triples(repo_dir, base_commit=base_commit)
     if memory_file:
         triples.extend(load_room_memory_jsonl(memory_file))
-    idx = HiKVPIndex.build(triples)
+    idx = HiKVPIndex.build(triples, embed_fn=embed_fn, rerank_fn=rerank_fn)
     if index_out:
         idx.save(index_out)
     hits = idx.query(issue_text, top_root=5, top_inter=12, top_leaf=14, expand_hops=3, allow_untrusted=False)
     brief = format_brief(hits, max_chars=3200)
-    return brief, {"build_and_query_s": round(time.time() - t0, 3), "hits": len(hits), "hops": 3, **idx.stats()}
+    return brief, {
+        "build_and_query_s": round(time.time() - t0, 3),
+        "hits": len(hits),
+        "hops": 3,
+        "hybrid_dense": embed_fn is not None,
+        "reranked": rerank_fn is not None,
+        **idx.stats(),
+    }
 
 
-def _prepare_worker_home(hh: str, *, enable_atlas_plugin: bool) -> None:
+def _prepare_worker_home(hh: str, *, enable_atlas_plugin: bool, use_aiproxy: bool = False) -> None:
     R.make_home(hh, "P", str(REPO_ROOT / "hermes-playbox-backend" / "playbox_terminal"))
     real_auth = os.path.expanduser("~/.hermes/auth.json")
     hh_auth = os.path.join(hh, "auth.json")
-    if os.path.exists(real_auth) and not os.path.islink(hh_auth):
+    if use_aiproxy:
+        # Never inherit personal OAuth pool when routing through playbox-aiproxy; workers use
+        # short-lived, hard-capped gateway tokens via ANTHROPIC_BASE_URL / OPENAI_BASE_URL.
+        if os.path.lexists(hh_auth):
+            try:
+                os.remove(hh_auth)
+            except OSError:
+                pass
+    elif os.path.exists(real_auth) and not os.path.islink(hh_auth):
         try:
             os.remove(hh_auth)
         except OSError:
@@ -207,43 +292,305 @@ def _prepare_worker_home(hh: str, *, enable_atlas_plugin: bool) -> None:
         )
 
 
+DEVIN_BIN = os.environ.get(
+    "DEVIN_BIN",
+    os.path.expanduser("~/.local/bin/devin")
+    if os.path.exists(os.path.expanduser("~/.local/bin/devin"))
+    else "/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin/devin",
+)
+
+
+class _DevinPlayboxBridge:
+    """In-process Playbox room session server exposing a Unix socket (`pbx.sock`) for a `devin` CLI worker.
+
+    Why this architecture:
+    - A Playbox join link is single-use. By holding `_Mcp` + stateful `keep=True` inside this bridge thread,
+      every `pbx "<cmd>"` shell invocation from `devin` reuses the same authenticated Playbox member and
+      persistent OpenShell `/sandbox` microVM at ~0.07 s (`sync="none"`) / ~0.4 s (`sync="delta"`).
+    - `devin` runs inside an isolated empty workspace `wdir/devin_ws` where the repository does NOT exist on
+      the host path; the ONLY way to inspect or modify `/sandbox` is through the governed `pbx` bridge.
+    """
+
+    def __init__(self, *, wdir: str, env_vars: dict[str, str]):
+        import socket
+        import threading
+        import types
+
+        self.wdir = wdir
+        self.sock_path = os.path.join(wdir, "pbx.sock")
+        if os.path.exists(self.sock_path):
+            os.remove(self.sock_path)
+
+        # Ensure Hermes base stubs exist if importing playbox_terminal outside Hermes venv.
+        if "agent.terminal_env_provider" not in sys.modules:
+            agent_mod = types.ModuleType("agent")
+            tep_mod = types.ModuleType("agent.terminal_env_provider")
+            tep_mod.TerminalEnvironmentProvider = type("TerminalEnvironmentProvider", (), {})
+            tools_mod = types.ModuleType("tools")
+            envs_mod = types.ModuleType("tools.environments")
+            base_mod = types.ModuleType("tools.environments.base")
+
+            class _BaseEnv:
+                def __init__(self, cwd="/sandbox", timeout=120):
+                    self.cwd = cwd
+                    self.timeout = timeout
+
+            base_mod.BaseEnvironment = _BaseEnv
+            sys.modules["agent"] = agent_mod
+            sys.modules["agent.terminal_env_provider"] = tep_mod
+            sys.modules["tools"] = tools_mod
+            sys.modules["tools.environments"] = envs_mod
+            sys.modules["tools.environments.base"] = base_mod
+
+        import playbox_terminal as pt
+
+        old_env = os.environ.copy()
+        try:
+            os.environ.update(env_vars)
+            # Create a fresh isolated _Session instance for this worker (do not share class singleton across workers).
+            sess = pt._Session()
+            self.pbx_env = pt.PlayboxEnvironment.__new__(pt.PlayboxEnvironment)
+            self.pbx_env.s = sess
+            self.pbx_env.cwd = "/sandbox"
+            self.pbx_env.timeout = 180
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
+        self._srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._srv.bind(self.sock_path)
+        os.chmod(self.sock_path, 0o600)
+        self._srv.listen(16)
+        self._stop = False
+        self._thr = threading.Thread(target=self._serve, daemon=True)
+        self._thr.start()
+
+    def _serve(self) -> None:
+        while not self._stop:
+            try:
+                conn, _ = self._srv.accept()
+            except OSError:
+                break
+            try:
+                raw = b""
+                while True:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    raw += chunk
+                    if b"\n" in raw:
+                        break
+                req = json.loads(raw.decode("utf-8", "ignore").strip() or "{}")
+                cmd = str(req.get("command") or "")
+                cwd = str(req.get("cwd") or "/sandbox")
+                stdin_data = req.get("stdin_data")
+                timeout = req.get("timeout")
+                res = self.pbx_env.execute(cmd, cwd=cwd, timeout=timeout, stdin_data=stdin_data)
+                resp = json.dumps({"output": res.get("output", ""), "returncode": int(res.get("returncode", 0))}) + "\n"
+                conn.sendall(resp.encode("utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                try:
+                    conn.sendall((json.dumps({"output": f"[pbx bridge error: {exc}]\n", "returncode": 1}) + "\n").encode("utf-8"))
+                except OSError:
+                    pass
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+    def close_and_export(self) -> str:
+        self._stop = True
+        try:
+            self._srv.close()
+        except OSError:
+            pass
+        try:
+            patch = self.pbx_env.export_patch()
+        finally:
+            self.pbx_env.s.mcp.close()
+            if os.path.exists(self.sock_path):
+                try:
+                    os.remove(self.sock_path)
+                except OSError:
+                    pass
+        return patch
+
+
+def _write_devin_wrappers(wdir: str, sock_path: str, atlas_index_path: str) -> str:
+    """Create `pbx` and `atlas_query` CLI shims in `wdir/bin` for the Devin worker."""
+    bin_dir = os.path.join(wdir, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    pbx_script = os.path.join(bin_dir, "pbx")
+    Path(pbx_script).write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, socket, sys\n"
+        f"SOCK = {sock_path!r}\n"
+        "args = sys.argv[1:]\n"
+        "stdin_data = None\n"
+        "if args and args[0] == '--stdin':\n"
+        "    args = args[1:]\n"
+        "    stdin_data = sys.stdin.read()\n"
+        "elif args and args[0] == '--write' and len(args) >= 2:\n"
+        "    target = args[1]\n"
+        "    stdin_data = sys.stdin.read()\n"
+        "    import shlex\n"
+        "    q = shlex.quote(target)\n"
+        "    args = [f'tmp=\"{target}.pbx.$$\" && cat > \"$tmp\" && mv -f \"$tmp\" {q}']\n"
+        "cmd = ' '.join(args) if args else sys.stdin.read()\n"
+        "s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
+        "s.connect(SOCK)\n"
+        "s.sendall((json.dumps({'command': cmd, 'cwd': '/sandbox', 'stdin_data': stdin_data}) + '\\n').encode('utf-8'))\n"
+        "buf = b''\n"
+        "while True:\n"
+        "    c = s.recv(65536)\n"
+        "    if not c:\n"
+        "        break\n"
+        "    buf += c\n"
+        "s.close()\n"
+        "r = json.loads(buf.decode('utf-8', 'ignore'))\n"
+        "sys.stdout.write(r.get('output', ''))\n"
+        "sys.exit(int(r.get('returncode', 0)))\n",
+        encoding="utf-8",
+    )
+    os.chmod(pbx_script, 0o755)
+
+    aq_script = os.path.join(bin_dir, "atlas_query")
+    Path(aq_script).write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        f"sys.path.insert(0, {str(REPO_ROOT / 'hermes-playbox-backend')!r})\n"
+        f"os.environ['PLAYBOX_ATLAS_INDEX'] = {atlas_index_path!r}\n"
+        "from playbox_atlas import query_atlas\n"
+        "q = ' '.join(sys.argv[1:]).strip()\n"
+        "print(query_atlas(q, top_k=14, expand_hops=3))\n",
+        encoding="utf-8",
+    )
+    os.chmod(aq_script, 0o755)
+    return bin_dir
+
+
+def _extract_devin_usage(devin_ws: str, t_start: float, model: str) -> dict:
+    """Query `~/.local/share/devin/cli/sessions.db` for the exact token & latency telemetry of this Devin run."""
+    import sqlite3
+
+    db_path = Path.home() / ".local/share/devin/cli/sessions.db"
+    if not db_path.exists():
+        return {"model": model, "provider": "devin"}
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        ws_real = str(Path(devin_ws).resolve())
+        rows = conn.execute(
+            "SELECT id, model, created_at FROM sessions WHERE created_at >= ? ORDER BY created_at DESC LIMIT 100",
+            (int(t_start) - 5,),
+        ).fetchall()
+        sid = None
+        for cand_id, cand_model, _ in rows:
+            wdir_row = conn.execute("SELECT working_directory FROM sessions WHERE id=?", (cand_id,)).fetchone()
+            wdir_str = str((wdir_row or [""])[0])
+            if devin_ws in wdir_str or ws_real in wdir_str:
+                sid = cand_id
+                break
+        if sid is None and len(rows) == 1:
+            sid = rows[0][0]
+        if sid is None:
+            return {"model": model, "provider": "devin"}
+
+        seen_reqs: set[str] = set()
+        inp_total = 0
+        out_total = 0
+        cache_read_total = 0
+        cache_write_total = 0
+        api_calls = 0
+        gen_model = model
+        for (cm_raw,) in conn.execute("SELECT chat_message FROM message_nodes WHERE session_id=? ORDER BY row_id", (sid,)).fetchall():
+            try:
+                cm = json.loads(cm_raw)
+            except ValueError:
+                continue
+            if cm.get("role") != "assistant":
+                continue
+            meta = cm.get("metadata") or {}
+            req_id = str(meta.get("request_id") or "")
+            if not req_id or req_id in seen_reqs:
+                continue
+            seen_reqs.add(req_id)
+            metrics = meta.get("metrics") or {}
+            if not metrics:
+                continue
+            api_calls += 1
+            gen_model = str(meta.get("generation_model") or gen_model)
+            # In Devin metrics: `input_tokens` is uncached+cache_read, `cache_creation_tokens` is cache write.
+            uncached_or_in = int(metrics.get("input_tokens") or 0)
+            c_read = int(metrics.get("cache_read_tokens") or 0)
+            c_write = int(metrics.get("cache_creation_tokens") or 0)
+            out_tok = int(metrics.get("output_tokens") or 0)
+            inp_total += uncached_or_in + c_write
+            cache_read_total += c_read
+            cache_write_total += c_write
+            out_total += out_tok
+
+        usage = {
+            "model": gen_model,
+            "provider": "devin",
+            "session_id": sid,
+            "api_calls": api_calls,
+            "input_tokens": inp_total,
+            "output_tokens": out_total,
+            "cache_read_tokens": cache_read_total,
+            "cache_write_tokens": cache_write_total,
+            "total_tokens": inp_total + out_total,
+            "completed": True,
+        }
+        usage["estimated_cost_usd"] = estimate_usage_cost_usd(usage, gen_model)
+        return usage
+    except Exception as exc:  # noqa: BLE001
+        return {"model": model, "provider": "devin", "usage_error": str(exc)}
+
+
 def _run_sealed_container_check(
     r: dict,
     patch: str,
     *,
-    test_mod: str,
+    rt_info: dict,
     repro_script: str = "",
 ) -> tuple[bool, float, dict]:
     """Non-oracle online gate inside a sealed no-network container.
 
-    Runs existing repository tests (`test_mod`, weight 0.6) and optional independent reproduction
+    Runs existing repository tests (`online_cmd`, weight 0.6) and optional independent reproduction
     script (`repro_script`, weight 0.4) separately so passing the authoritative repo test suite
     is scored distinctly from a synthetic repro failure. Never touches hidden SWE-bench `test_patch`.
     """
+    img = rt_info["img"]
+    online_cmd = rt_info["online_cmd"]
+    py = rt_info["py"]
     with tempfile.TemporaryDirectory(prefix="pbx-online-gate-") as td:
         Path(td, "agent.patch").write_text(patch or "", encoding="utf-8")
         if repro_script.strip():
             Path(td, "repro.py").write_text(repro_script, encoding="utf-8")
+        if r.get("pb_host_tar"):
+            shutil.copy(r["pb_host_tar"], os.path.join(td, "repo.tar"))
+            prep = "mkdir -p /tmp/tb && tar -xf /s/repo.tar -C /tmp/tb && cd /tmp/tb"
+        else:
+            prep = f"mkdir -p /tmp/tb && git -C /usr/local/testbed archive {r['base_commit']} | tar -x -C /tmp/tb && cd /tmp/tb"
         apply_step = "git apply /s/agent.patch && " if (patch or "").strip() else ""
         has_repro = bool(repro_script.strip())
         if has_repro:
             sh = (
-                f"mkdir -p /tmp/tb && git -C /usr/local/testbed archive {r['base_commit']} | tar -x -C /tmp/tb "
-                f"&& cd /tmp/tb && {apply_step}"
-                f"(cd tests && PYTHONPATH=/tmp/tb /usr/local/venv/bin/python runtests.py --settings=test_sqlite --parallel 1 {test_mod}); "
+                f"{prep} && {apply_step}"
+                f"({online_cmd}); "
                 f"__EX=$?; echo ___PBX_EXISTING_RC=$__EX; "
-                f"PYTHONPATH=/tmp/tb /usr/local/venv/bin/python /s/repro.py; "
+                f"PYTHONPATH=/tmp/tb/src:/tmp/tb {py} /s/repro.py; "
                 f"__RP=$?; echo ___PBX_REPRO_RC=$__RP"
             )
         else:
             sh = (
-                f"mkdir -p /tmp/tb && git -C /usr/local/testbed archive {r['base_commit']} | tar -x -C /tmp/tb "
-                f"&& cd /tmp/tb && {apply_step}"
-                f"(cd tests && PYTHONPATH=/tmp/tb /usr/local/venv/bin/python runtests.py --settings=test_sqlite --parallel 1 {test_mod}); "
+                f"{prep} && {apply_step}"
+                f"({online_cmd}); "
                 f"__EX=$?; echo ___PBX_EXISTING_RC=$__EX"
             )
         p = subprocess.run(
-            ["docker", "run", "--rm", "--network", "none", "-v", f"{td}:/s:ro", "--entrypoint", "bash", IMG, "-c", sh],
+            ["docker", "run", "--rm", "--network", "none", "-v", f"{td}:/s:ro", "--entrypoint", "bash", img, "-c", sh],
             capture_output=True,
             text=True,
             timeout=600,
@@ -266,7 +613,7 @@ def _run_sealed_container_check(
         }
 
 
-def _check_repro_fails_on_base(r: dict, repro_script: str) -> tuple[bool, bool, str, str]:
+def _check_repro_fails_on_base(r: dict, repro_script: str, *, rt_info: dict) -> tuple[bool, bool, str, str]:
     """Anti-vacuous + sanity check: independent repro script MUST exit non-zero on unpatched `base_commit`
     due to a genuine behavioral/assertion failure (never `SyntaxError`, `ImportError`, `ModuleNotFoundError`, `NameError`)."""
     if not repro_script.strip():
@@ -274,14 +621,18 @@ def _check_repro_fails_on_base(r: dict, repro_script: str) -> tuple[bool, bool, 
     ok_ast, ast_reason = is_genuine_repro_failure("", repro_script)
     if not ok_ast:
         return False, False, ast_reason, ast_reason
+    img = rt_info["img"]
+    py = rt_info["py"]
     with tempfile.TemporaryDirectory(prefix="pbx-repro-base-") as td:
         Path(td, "repro.py").write_text(repro_script, encoding="utf-8")
-        sh = (
-            f"mkdir -p /tmp/tb && git -C /usr/local/testbed archive {r['base_commit']} | tar -x -C /tmp/tb "
-            f"&& cd /tmp/tb && PYTHONPATH=/tmp/tb /usr/local/venv/bin/python /s/repro.py"
-        )
+        if r.get("pb_host_tar"):
+            shutil.copy(r["pb_host_tar"], os.path.join(td, "repo.tar"))
+            prep = "mkdir -p /tmp/tb && tar -xf /s/repo.tar -C /tmp/tb && cd /tmp/tb"
+        else:
+            prep = f"mkdir -p /tmp/tb && git -C /usr/local/testbed archive {r['base_commit']} | tar -x -C /tmp/tb && cd /tmp/tb"
+        sh = f"{prep} && PYTHONPATH=/tmp/tb/src:/tmp/tb {py} /s/repro.py"
         p = subprocess.run(
-            ["docker", "run", "--rm", "--network", "none", "-v", f"{td}:/s:ro", "--entrypoint", "bash", IMG, "-c", sh],
+            ["docker", "run", "--rm", "--network", "none", "-v", f"{td}:/s:ro", "--entrypoint", "bash", img, "-c", sh],
             capture_output=True,
             text=True,
             timeout=180,
@@ -297,6 +648,7 @@ def _check_repro_fails_on_base(r: dict, repro_script: str) -> tuple[bool, bool, 
 def run_repro_generator(
     *,
     r: dict,
+    rt_info: dict,
     run_dir: str,
     host,
     link: str,
@@ -307,69 +659,135 @@ def run_repro_generator(
     timeout: int,
     keep: bool,
     approvers_hex: str = "",
+    harness: str = "hermes",
+    worker_slot: str = "0",
+    aiproxy_client: AiproxyClient | None = None,
+    aiproxy_group: str = "bench:repro",
+    aiproxy_hard_usd_cap: float = 0.15,
+    aiproxy_run_id: str = "",
+    aiproxy_failover_policy: str = "same_model_only",
+    aiproxy_cache_mode: str = "off",
 ) -> ReproGateResult:
-    """Run an independent cheap worker that sees ONLY the issue + AtlasKV (never any solver patch)
+    """Run an independent worker that sees ONLY the issue + AtlasKV (never any solver patch)
     and writes a standalone reproduction script `/sandbox/_pbx_repro.py` that fails on base_commit."""
     wdir = os.path.join(run_dir, "w_repro")
     os.makedirs(wdir, exist_ok=True)
-    hh = os.path.join(R.D, "home-P2-repro")
-    _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path))
     lf = os.path.join(wdir, "link.txt")
     Path(lf).write_text(link, encoding="utf-8")
     os.chmod(lf, 0o600)
-
-    env = {**os.environ, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
-    for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
-        env.pop(k, None)
     usage_path = os.path.join(wdir, "usage.json")
     stats_path = os.path.join(wdir, "delegates.jsonl")
-    env.update(
-        PLAYBOX_BIN=R.PLAYBOX,
-        PLAYBOX_HOME=os.path.join(wdir, "mhome"),
-        PLAYBOX_LINK_FILE=lf,
-        PLAYBOX_IMAGE=IMG,
-        PLAYBOX_STATS=stats_path,
-        PLAYBOX_MCP_LOG=os.path.join(wdir, "mcp.log"),
-        PLAYBOX_ALLOW_MISSING_LIMITS="1",
-        PLAYBOX_TRUST_OFFLINE_WORKSPACE="1",
-        PLAYBOX_KEEP="1" if keep else "0",
-        TERMINAL_ENV="playbox",
-        TERMINAL_CWD="/sandbox",
-    )
-    if approvers_hex:
-        env["PLAYBOX_APPROVERS"] = approvers_hex
-    if atlas_index_path:
-        env["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
 
-    py = "/usr/local/venv/bin/python"
+    pbx_env_vars = {
+        "PLAYBOX_BIN": R.PLAYBOX,
+        "PLAYBOX_HOME": os.path.join(wdir, "mhome"),
+        "PLAYBOX_LINK_FILE": lf,
+        "PLAYBOX_IMAGE": rt_info["img"],
+        "PLAYBOX_STATS": stats_path,
+        "PLAYBOX_MCP_LOG": os.path.join(wdir, "mcp.log"),
+        "PLAYBOX_ALLOW_MISSING_LIMITS": "1",
+        "PLAYBOX_TRUST_OFFLINE_WORKSPACE": "1",
+        "PLAYBOX_KEEP": "1" if keep else "0",
+        "TERMINAL_ENV": "playbox",
+        "TERMINAL_CWD": "/sandbox",
+    }
+    if approvers_hex:
+        pbx_env_vars["PLAYBOX_APPROVERS"] = approvers_hex
+    if atlas_index_path:
+        pbx_env_vars["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
+
+    py = rt_info["py"]
     prefix = (atlas_brief + "\n\n") if atlas_brief else ""
-    prompt = (
-        f"{prefix}Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` "
-        f"(do NOT fix the bug or edit any existing repository files). "
+    rules_body = (
         f"Rules for `/sandbox/_pbx_repro.py`:\n"
         f"1. Call the lowest-level library function/method described in the issue directly with realistic inputs "
         f"(or spawn a real child process if testing `__main__` / CLI startup — NEVER mutate `sys.argv` in-process "
         f"without setting `sys.modules['__main__'].__file__`, because Python sets `__main__.__file__` at process start).\n"
         f"2. If Django settings are needed, configure minimal in-memory settings at the top (`from django.conf import settings; "
         f"settings.configure(...)` and `django.setup()`).\n"
-        f"3. Assert the expected fixed behavior with `assert ...` so `/sandbox/_pbx_repro.py` FAILS with `AssertionError` "
-        f"on the current buggy code and exits 0 once the bug is fixed.\n"
-        f"4. Run `PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py` and verify it fails with `AssertionError` "
-        f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
-        f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
+        f"3. Assert the expected fixed behavior with `assert ...` covering BOTH the literal example in the issue "
+        f"AND edge cases implied by the general phrasing in the issue (e.g., if the issue says 'other types of iterables' "
+        f"or general containers, test both `list` and `tuple`) so partial fixes fail `/sandbox/_pbx_repro.py` with "
+        f"`AssertionError` and only complete fixes exit 0.\n"
     )
-    R.kill_my_gateways(hh)
-    cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
-    try:
-        subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=min(timeout, 300))
-    except subprocess.TimeoutExpired:
-        pass
-    R.kill_my_gateways(hh)
+    import contextlib
 
-    try:
-        u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        u = {}
+    lease_cm = (
+        aiproxy_client.worker_lease(
+            group=aiproxy_group,
+            worker_label="w_repro",
+            hard_usd_cap=aiproxy_hard_usd_cap,
+            run_id=aiproxy_run_id,
+            failover_policy=aiproxy_failover_policy,
+            cache_mode=aiproxy_cache_mode,
+        )
+        if aiproxy_client is not None
+        else contextlib.nullcontext(None)
+    )
+    with lease_cm as lease:
+        gw_env = lease.env_overrides() if lease is not None else {}
+        if harness == "devin":
+            devin_ws = os.path.join(wdir, "devin_ws")
+            os.makedirs(os.path.join(devin_ws, ".devin"), exist_ok=True)
+            Path(devin_ws, ".devin", "mcp_config.local.json").write_text(
+                json.dumps({"mcpServers": {"playbox": {"disabled": True}}}),
+                encoding="utf-8",
+            )
+            bridge = _DevinPlayboxBridge(wdir=wdir, env_vars=pbx_env_vars)
+            bin_dir = _write_devin_wrappers(wdir, bridge.sock_path, atlas_index_path)
+            prompt = (
+                f"{prefix}The repository is inside a governed Playbox OpenShell microVM at `/sandbox`. "
+                f"Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` using "
+                f"`pbx --write /sandbox/_pbx_repro.py <<'EOF' ... EOF` (do NOT fix the bug or edit any existing repository files).\n"
+                f"{rules_body}"
+                f"4. Run `pbx \"PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py\"` and verify it fails with `AssertionError` "
+                f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
+                f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
+            )
+            devin_env = {**os.environ, **gw_env, "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", "PLAYBOX_ATLAS_INDEX": atlas_index_path}
+            cmd = [
+                DEVIN_BIN, "--model", model, "--permission-mode", "dangerous",
+                "--respect-workspace-trust", "false", "--process-model", "in-process", "--verbosity", "1", "-p", prompt,
+            ]
+            t0 = time.time()
+            try:
+                subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=min(timeout, 300))
+            except subprocess.TimeoutExpired as exc:
+                Path(wdir, "repro.timeout").write_text(str(exc), encoding="utf-8")
+            bridge.close_and_export()
+            u = _extract_devin_usage(devin_ws, t0, model)
+            Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
+        else:
+            hh = os.path.join(R.D, f"home-P2-s{worker_slot}-repro")
+            _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path), use_aiproxy=lease is not None)
+            env = {**os.environ, **gw_env, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
+            for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
+                env.pop(k, None)
+            env.update(pbx_env_vars)
+            prompt = (
+                f"{prefix}Write a minimal, fast standalone Python reproduction script at `/sandbox/_pbx_repro.py` "
+                f"(do NOT fix the bug or edit any existing repository files). "
+                f"{rules_body}"
+                f"4. Run `PYTHONPATH=/sandbox {py} /sandbox/_pbx_repro.py` and verify it fails with `AssertionError` "
+                f"(any `SyntaxError`, `ImportError`, `ModuleNotFoundError`, or `NameError` will be automatically rejected), "
+                f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
+            )
+            R.kill_my_gateways(hh)
+            cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
+            try:
+                subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=min(timeout, 300))
+            except subprocess.TimeoutExpired as exc:
+                Path(wdir, "repro.timeout").write_text(str(exc), encoding="utf-8")
+            R.kill_my_gateways(hh)
+            try:
+                u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                u = {}
+    repro_cost = (
+        lease.host_cost_usd
+        if (lease is not None and lease.host_cost_usd is not None)
+        else estimate_usage_cost_usd(u, model)
+    )
     fin_path = Path(wdir, "delegates.final.json")
     fin = json.loads(fin_path.read_text(encoding="utf-8")) if fin_path.exists() else {}
     patch = fin.get("patch") or ""
@@ -388,7 +806,7 @@ def run_repro_generator(
             script_lines.append(line[1:])
     script = "\n".join(script_lines).strip()
     if script:
-        fails_on_base, sanity_ok, reject_reason, base_out = _check_repro_fails_on_base(r, script)
+        fails_on_base, sanity_ok, reject_reason, base_out = _check_repro_fails_on_base(r, script, rt_info=rt_info)
     else:
         fails_on_base, sanity_ok, reject_reason, base_out = (
             False,
@@ -399,7 +817,7 @@ def run_repro_generator(
     return ReproGateResult(
         script=script,
         fails_on_base=fails_on_base,
-        cost_usd=estimate_usage_cost_usd(u, model),
+        cost_usd=repro_cost,
         base_output=base_out,
         sanity_ok=sanity_ok,
         reject_reason=reject_reason,
@@ -412,6 +830,7 @@ def run_worker(
     *,
     inst: str,
     r: dict,
+    rt_info: dict,
     run_dir: str,
     host,
     link: str,
@@ -424,43 +843,45 @@ def run_worker(
     extra_guidance: str = "",
     approvers_hex: str = "",
     allow_egress: list[str] | None = None,
+    harness: str = "hermes",
+    worker_slot: str = "0",
+    aiproxy_client: AiproxyClient | None = None,
+    aiproxy_group: str = "bench:solver",
+    aiproxy_hard_usd_cap: float = 0.25,
+    aiproxy_run_id: str = "",
+    aiproxy_failover_policy: str = "same_model_only",
+    aiproxy_cache_mode: str = "off",
 ) -> CandidateResult:
     wdir = os.path.join(run_dir, worker_label)
     os.makedirs(wdir, exist_ok=True)
-    hh = os.path.join(R.D, f"home-P2-{worker_label}")
-    _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path))
     lf = os.path.join(wdir, "link.txt")
     Path(lf).write_text(link, encoding="utf-8")
     os.chmod(lf, 0o600)
-
-    env = {**os.environ, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
-    for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
-        env.pop(k, None)
     usage_path = os.path.join(wdir, "usage.json")
     stats_path = os.path.join(wdir, "delegates.jsonl")
-    env.update(
-        PLAYBOX_BIN=R.PLAYBOX,
-        PLAYBOX_HOME=os.path.join(wdir, "mhome"),
-        PLAYBOX_LINK_FILE=lf,
-        PLAYBOX_IMAGE=IMG,
-        PLAYBOX_STATS=stats_path,
-        PLAYBOX_MCP_LOG=os.path.join(wdir, "mcp.log"),
-        PLAYBOX_ALLOW_MISSING_LIMITS="1",
-        PLAYBOX_TRUST_OFFLINE_WORKSPACE="1",
-        PLAYBOX_KEEP="1" if keep else "0",
-        TERMINAL_ENV="playbox",
-        TERMINAL_CWD="/sandbox",
-    )
-    if approvers_hex:
-        env["PLAYBOX_APPROVERS"] = approvers_hex
-    if allow_egress:
-        env["PLAYBOX_EGRESS"] = ",".join(allow_egress)
-    if atlas_index_path:
-        env["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
 
-    repo, py = "/sandbox", "/usr/local/venv/bin/python"
-    mod = re.search(r"\((.+)\)", r["F"][0]).group(1).rsplit(".", 1)[0]
-    hint = f"cd tests && PYTHONPATH={repo} {py} runtests.py --settings=test_sqlite --parallel 1 {mod}"
+    pbx_env_vars = {
+        "PLAYBOX_BIN": R.PLAYBOX,
+        "PLAYBOX_HOME": os.path.join(wdir, "mhome"),
+        "PLAYBOX_LINK_FILE": lf,
+        "PLAYBOX_IMAGE": rt_info["img"],
+        "PLAYBOX_STATS": stats_path,
+        "PLAYBOX_MCP_LOG": os.path.join(wdir, "mcp.log"),
+        "PLAYBOX_ALLOW_MISSING_LIMITS": "1",
+        "PLAYBOX_TRUST_OFFLINE_WORKSPACE": "1",
+        "PLAYBOX_KEEP": "1" if keep else "0",
+        "TERMINAL_ENV": "playbox",
+        "TERMINAL_CWD": "/sandbox",
+    }
+    if approvers_hex:
+        pbx_env_vars["PLAYBOX_APPROVERS"] = approvers_hex
+    if allow_egress:
+        pbx_env_vars["PLAYBOX_EGRESS"] = ",".join(allow_egress)
+    if atlas_index_path:
+        pbx_env_vars["PLAYBOX_ATLAS_INDEX"] = atlas_index_path
+
+    repo, py = "/sandbox", rt_info["py"]
+    hint = rt_info["hint_sandbox"]
     prefix = (atlas_brief + "\n\n") if atlas_brief else ""
     if extra_guidance:
         diversity = extra_guidance.strip() + " "
@@ -472,29 +893,101 @@ def run_worker(
     else:
         diversity = f"Focus on root-cause elegance and edge cases (independent attempt #{worker_idx + 1}). "
 
-    prompt = (
-        f"{prefix}The repository in {repo} has a bug. {diversity}Fix it in the source code so the behaviour described in the issue is correct, "
-        f"without breaking existing behaviour. Use the Python at {py} (all dependencies are installed). "
-        f"Example test command from the repo root: `{hint}`. "
-        f"Do not edit existing tests; hidden tests will check your fix. Edit files in place, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
-    )
-    R.kill_my_gateways(hh)
-    cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
-    t0 = time.time()
-    try:
-        p = subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=timeout)
-        stdout, stderr = p.stdout, p.stderr
-    except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-        stderr = "timeout"
-    wall = time.time() - t0
-    R.kill_my_gateways(hh)
-    Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
+    import contextlib
 
-    try:
-        u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        u = {}
+    lease_cm = (
+        aiproxy_client.worker_lease(
+            group=aiproxy_group,
+            worker_label=worker_label,
+            hard_usd_cap=aiproxy_hard_usd_cap,
+            run_id=aiproxy_run_id,
+            failover_policy=aiproxy_failover_policy,
+            cache_mode=aiproxy_cache_mode,
+        )
+        if aiproxy_client is not None
+        else contextlib.nullcontext(None)
+    )
+    with lease_cm as lease:
+        gw_env = lease.env_overrides() if lease is not None else {}
+        if harness == "devin":
+            devin_ws = os.path.join(wdir, "devin_ws")
+            os.makedirs(os.path.join(devin_ws, ".devin"), exist_ok=True)
+            # Disable global third-party MCP servers inside this isolated workspace so Devin starts immediately.
+            Path(devin_ws, ".devin", "mcp_config.local.json").write_text(
+                json.dumps({"mcpServers": {"playbox": {"disabled": True}}}),
+                encoding="utf-8",
+            )
+            bridge = _DevinPlayboxBridge(wdir=wdir, env_vars=pbx_env_vars)
+            bin_dir = _write_devin_wrappers(wdir, bridge.sock_path, atlas_index_path)
+            prompt = (
+                f"{prefix}The target repository is inside a governed Playbox OpenShell microVM at `{repo}` (it is NOT in your local directory). "
+                f"Run EVERY shell command inside the microVM via `pbx \"<command>\"` (e.g. `pbx \"sed -n '100,160p' /sandbox/path.py\"`, "
+                f"`pbx \"rg -n pattern /sandbox/django\"`), write/update files in `/sandbox` via `pbx --write /sandbox/path.py <<'EOF' ... EOF` "
+                f"or inline python (`pbx \"{py} -c '...'\"`), and query the 3-hop call-graph index via `atlas_query \"<symbol or symptom>\"`. "
+                f"{diversity}Fix the bug in the source code under `{repo}` so the behaviour described in the issue is correct, "
+                f"without breaking existing behaviour. "
+                f"Run tests via: `pbx \"{hint}\"`. "
+                f"Do not leave edits in `tests/`; hidden tests will check your fix. Edit source files in place inside `/sandbox`, verify tests pass, "
+                f"then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
+            )
+            devin_env = {
+                **os.environ,
+                **gw_env,
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+                "PLAYBOX_ATLAS_INDEX": atlas_index_path,
+            }
+            cmd = [
+                DEVIN_BIN,
+                "--model", model,
+                "--permission-mode", "dangerous",
+                "--respect-workspace-trust", "false",
+                "--process-model", "in-process",
+                "--verbosity", "1",
+                "-p", prompt,
+            ]
+            t0 = time.time()
+            try:
+                p = subprocess.run(cmd, cwd=devin_ws, env=devin_env, capture_output=True, text=True, timeout=timeout)
+                stdout, stderr = p.stdout, p.stderr
+            except subprocess.TimeoutExpired as e:
+                stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+                stderr = "timeout"
+            wall = time.time() - t0
+            bridge.close_and_export()
+            Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
+            u = _extract_devin_usage(devin_ws, t0, model)
+            Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
+        else:
+            hh = os.path.join(R.D, f"home-P2-s{worker_slot}-{worker_label}")
+            _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path), use_aiproxy=lease is not None)
+            env = {**os.environ, **gw_env, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
+            for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
+                env.pop(k, None)
+            env.update(pbx_env_vars)
+            prompt = (
+                f"{prefix}The repository in {repo} has a bug. {diversity}Fix it in the source code so the behaviour described in the issue is correct, "
+                f"without breaking existing behaviour. Use the Python at {py} (all dependencies are installed). "
+                f"Example test command from the repo root: `{hint}`. "
+                f"Do not edit existing tests; hidden tests will check your fix. Edit files in place, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
+            )
+            R.kill_my_gateways(hh)
+            cmd = [*R.HERMES, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--usage-file", usage_path, "--yolo"]
+            t0 = time.time()
+            try:
+                p = subprocess.run(cmd, cwd=wdir, env=env, capture_output=True, text=True, timeout=timeout)
+                stdout, stderr = p.stdout, p.stderr
+            except subprocess.TimeoutExpired as e:
+                stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+                stderr = "timeout"
+            wall = time.time() - t0
+            R.kill_my_gateways(hh)
+            Path(wdir, "hermes.out").write_text(stdout + "\n--- stderr ---\n" + stderr, encoding="utf-8")
+            try:
+                u = json.loads(Path(usage_path).read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                u = {}
+    host_cost = lease.host_cost_usd if lease is not None else None
+    worker_cost = host_cost if host_cost is not None else estimate_usage_cost_usd(u, model)
     fin_path = Path(wdir, "delegates.final.json")
     fin = json.loads(fin_path.read_text(encoding="utf-8")) if fin_path.exists() else {}
     patch = strip_tests(fin.get("patch") or "")
@@ -505,7 +998,7 @@ def run_worker(
         worker_id=worker_label,
         model=model,
         patch=patch,
-        cost_usd=estimate_usage_cost_usd(u, model),
+        cost_usd=worker_cost,
         wall_s=round(wall, 1),
         audit_verified=ok,
         policy_digest=fin.get("policy_digest") or "",
@@ -515,6 +1008,7 @@ def run_worker(
             "sync_delta": sum(1 for x in dl if x.get("sync") == "delta"),
             "taint_advisories": sum(1 for x in dl if x.get("admission")),
             "median_cmd_s": R.pct(secs, 0.5),
+            "cost_source": "host_aiproxy" if host_cost is not None else "client_estimate",
             "usage": u,
         },
     )
@@ -526,9 +1020,12 @@ def main() -> None:
     ap.add_argument("n")
     ap.add_argument("outdir")
     ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
+    ap.add_argument("--harness", default="hermes", choices=["hermes", "devin"], help="Agent CLI harness driving the Playbox room worker")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--provider", default="anthropic")
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
+    ap.add_argument("--worker-models", default="", help="Optional comma-separated model list per worker (e.g. gemini-4-neon-high,claude-opus-5-5-high)")
+    ap.add_argument("--extra-guidance", default="", help="Optional recursive hill-climb guidance from prior non-oracle iteration")
     ap.add_argument("--escalate-model", default="", help="Optional frontier model for conditional escalation on online-gate failure")
     ap.add_argument("--escalate-provider", default="", help="Provider for escalation model (defaults to --provider)")
     ap.add_argument("--escalate-reserve", type=float, default=0.35, help="USD reserve kept for conditional escalation")
@@ -537,15 +1034,25 @@ def main() -> None:
     ap.add_argument("--repro-provider", default="", help="Provider for --repro-gate worker (defaults to --provider)")
     ap.add_argument("--egress", default="", help="Optional BOX-7 host-side egress config JSON file (keeps API keys on host)")
     ap.add_argument("--allow-egress", action="append", default=[], help="Allowed BOX-7 upstream name(s) from --egress")
+    ap.add_argument("--aiproxy-url", default=os.environ.get("PLAYBOX_AIPROXY_URL", ""), help="Optional loopback playbox-aiproxy URL for unified failover, hard USD caps, and host-attested ledger")
+    ap.add_argument("--aiproxy-admin-key-file", default=os.environ.get("PLAYBOX_AIPROXY_ADMIN_KEY_FILE", ""), help="Path to 0600 file containing playbox-aiproxy ADMIN_KEY")
+    ap.add_argument("--aiproxy-group", default="bench:solver", help="Isolated playbox-aiproxy group name (default: bench:solver)")
+    ap.add_argument("--aiproxy-failover-policy", default="same_model_only", choices=["same_model_only", "alias_cascade"], help="Gateway failover policy (benchmarks default to same_model_only)")
+    ap.add_argument("--aiproxy-cache-mode", default="off", choices=["off", "record", "replay"], help="Gateway cache mode (official eval runs MUST use off)")
+    ap.add_argument("--atlas-embed-model", default="", help="Optional playbox-aiproxy embedding model for hybrid dense playbox_atlas retrieval")
+    ap.add_argument("--atlas-rerank-model", default="", help="Optional playbox-aiproxy rerank model for second-stage playbox_atlas retrieval")
     ap.add_argument("--memory-file", default="", help="Optional JSONL room memory file for AtlasKV verified lessons")
+    ap.add_argument("--memory-gate", default="online", choices=["online", "holdout"], help="Gate condition for verified-memory.jsonl persistence (default: online, strictly non-oracle)")
+    ap.add_argument("--worker-slot", default=os.environ.get("PB_WORKER_SLOT", "0"), help="Isolated concurrent worker slot ID (0..concurrency-1)")
     ap.add_argument("--budget", type=float, default=0.80)
     ap.add_argument("--timeout", type=int, default=int(os.environ.get("PB_TIMEOUT", "1800")))
     ap.add_argument("--no-atlas", action="store_true")
     ap.add_argument("--legacy-replay", action="store_true")
     args = ap.parse_args()
 
-    R.IMAGE = IMG
     r = load(args.inst)
+    rt_info = _resolve_inst_runtime(args.inst, r)
+    R.IMAGE = rt_info["img"]
     tag = f"{args.inst}-P2-{args.n}"
     os.makedirs(args.outdir, exist_ok=True)
     run_dir = os.path.join(R.D, f"swe-{tag}")
@@ -558,6 +1065,39 @@ def main() -> None:
     if not git_isolated:
         raise RuntimeError(f"anti-leak invariant violated: base repo has {commit_count} commits (>1)")
 
+    aiproxy_client: AiproxyClient | None = None
+    atlas_embed_tok = None
+    atlas_embedder = None
+    atlas_reranker = None
+    if args.aiproxy_url:
+        raw_key = args.aiproxy_admin_key_file or os.environ.get("PLAYBOX_AIPROXY_ADMIN_KEY", "")
+        if raw_key:
+            aiproxy_client = AiproxyClient(args.aiproxy_url, load_admin_key(raw_key))
+            aiproxy_client.ensure_group(args.aiproxy_group)
+            if args.atlas_embed_model or args.atlas_rerank_model:
+                aiproxy_client.ensure_group("atlas:embed")
+                atlas_embed_tok = aiproxy_client.mint_worker_token(
+                    "atlas:embed",
+                    f"atlas-{tag[:20]}",
+                    hard_usd_cap=max(0.05, args.budget * 0.1),
+                    failover_policy="same_model_only",
+                    cache_mode="off",
+                )
+                cache_db = os.path.join(R.D, "atlas-embed-cache.sqlite")
+                if args.atlas_embed_model:
+                    atlas_embedder = AiproxyEmbedder(
+                        args.aiproxy_url,
+                        atlas_embed_tok.key,
+                        model=args.atlas_embed_model,
+                        cache_path=cache_db,
+                    )
+                if args.atlas_rerank_model:
+                    atlas_reranker = AiproxyReranker(
+                        args.aiproxy_url,
+                        atlas_embed_tok.key,
+                        model=args.atlas_rerank_model,
+                    )
+
     atlas_idx_path = "" if args.no_atlas else os.path.join(run_dir, "atlas.json")
     atlas_brief, atlas_meta = (
         ("", {"disabled": True})
@@ -568,10 +1108,15 @@ def main() -> None:
             r["base_commit"],
             index_out=atlas_idx_path,
             memory_file=args.memory_file or None,
+            embed_fn=atlas_embedder,
+            rerank_fn=atlas_reranker,
         )
     )
+    if atlas_embedder is not None:
+        atlas_embedder.close()
+    if aiproxy_client is not None and atlas_embed_tok is not None:
+        aiproxy_client.revoke_token("atlas:embed", atlas_embed_tok.token_id)
 
-    test_mod = re.search(r"\((.+)\)", r["F"][0]).group(1).rsplit(".", 1)[0]
     needed_links = args.workers + (1 if args.repro_gate else 0) + (1 if args.escalate_model else 0) + 1
     signing_key = load_or_create_signing_key(os.path.join(R.D, "attested_gate.ed25519"))
     try:
@@ -604,9 +1149,10 @@ def main() -> None:
 
         t0 = time.time()
         repro_gate: ReproGateResult | None = None
-        if args.repro_gate:
+        if args.repro_gate and rt_info["parser"] in ("django", "pytest"):
             repro_gate = run_repro_generator(
                 r=r,
+                rt_info=rt_info,
                 run_dir=run_dir,
                 host=host,
                 link=next_link(),
@@ -617,9 +1163,19 @@ def main() -> None:
                 timeout=args.timeout,
                 keep=not args.legacy_replay,
                 approvers_hex=approvers_hex,
+                harness=args.harness,
+                worker_slot=str(args.worker_slot),
+                aiproxy_client=aiproxy_client,
+                aiproxy_group="bench:repro",
+                aiproxy_hard_usd_cap=min(0.15, max(0.05, args.budget * 0.25)),
+                aiproxy_run_id=tag,
+                aiproxy_failover_policy=args.aiproxy_failover_policy,
+                aiproxy_cache_mode=args.aiproxy_cache_mode,
             )
 
         worker_links = [next_link() for _ in range(args.workers)]
+        w_models = [m.strip() for m in args.worker_models.split(",") if m.strip()] if args.worker_models else []
+        per_worker_cap = max(0.05, args.budget / max(args.workers, 1))
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
             futs = [
                 pool.submit(
@@ -628,17 +1184,27 @@ def main() -> None:
                     i,
                     inst=args.inst,
                     r=r,
+                    rt_info=rt_info,
                     run_dir=run_dir,
                     host=host,
                     link=worker_links[i],
                     provider=args.provider,
-                    model=args.model,
+                    model=w_models[i % len(w_models)] if w_models else args.model,
                     atlas_brief=atlas_brief,
                     atlas_index_path=atlas_idx_path,
                     timeout=args.timeout,
                     keep=not args.legacy_replay,
+                    extra_guidance=args.extra_guidance,
                     approvers_hex=approvers_hex,
                     allow_egress=args.allow_egress,
+                    harness=args.harness,
+                    worker_slot=f"{args.worker_slot}-{i}",
+                    aiproxy_client=aiproxy_client,
+                    aiproxy_group=args.aiproxy_group,
+                    aiproxy_hard_usd_cap=per_worker_cap,
+                    aiproxy_run_id=tag,
+                    aiproxy_failover_policy=args.aiproxy_failover_policy,
+                    aiproxy_cache_mode=args.aiproxy_cache_mode,
                 )
                 for i in range(args.workers)
             ]
@@ -648,7 +1214,7 @@ def main() -> None:
         repro_script = repro_gate.script if (repro_gate and repro_gate.valid) else ""
 
         def online_verify(patch: str):
-            return _run_sealed_container_check(r, patch, test_mod=test_mod, repro_script=repro_script)
+            return _run_sealed_container_check(r, patch, rt_info=rt_info, repro_script=repro_script)
 
         all_workers_meta = [c.meta for c in cheap_candidates]
         escalate_fn = None
@@ -656,12 +1222,13 @@ def main() -> None:
             esc_link = next_link()
             esc_prov = args.escalate_provider or args.provider
 
-            def _escalate(brief: str, _remaining_usd: float) -> CandidateResult:
+            def _escalate(brief: str, remaining_usd: float) -> CandidateResult:
                 cand = run_worker(
                     "w_escalate",
                     99,
                     inst=args.inst,
                     r=r,
+                    rt_info=rt_info,
                     run_dir=run_dir,
                     host=host,
                     link=esc_link,
@@ -671,9 +1238,17 @@ def main() -> None:
                     atlas_index_path=atlas_idx_path,
                     timeout=args.timeout,
                     keep=not args.legacy_replay,
-                    extra_guidance="Prior cheap attempts failed the independent check. Trace the core call chain carefully.",
+                    extra_guidance="Prior attempts failed the independent check. Trace the core call chain carefully.",
                     approvers_hex=approvers_hex,
                     allow_egress=args.allow_egress,
+                    harness=args.harness,
+                    worker_slot=f"{args.worker_slot}-esc",
+                    aiproxy_client=aiproxy_client,
+                    aiproxy_group=args.aiproxy_group,
+                    aiproxy_hard_usd_cap=max(0.05, remaining_usd),
+                    aiproxy_run_id=tag,
+                    aiproxy_failover_policy=args.aiproxy_failover_policy,
+                    aiproxy_cache_mode=args.aiproxy_cache_mode,
                 )
                 all_workers_meta.append(cand.meta)
                 return cand
@@ -703,6 +1278,16 @@ def main() -> None:
         holdout = score(args.inst, win_patch)
         holdout_resolved = bool(holdout.get("resolved"))
         host_audit_ok, _ = host.audit()
+
+        host_ledger = None
+        if aiproxy_client is not None:
+            try:
+                host_ledger = aiproxy_client.fetch_ledger(run_id=tag, group=args.aiproxy_group)
+                Path(args.outdir, f"{tag}.llm_ledger.json").write_text(
+                    json.dumps(host_ledger, indent=2), encoding="utf-8"
+                )
+            except Exception as exc:  # noqa: BLE001
+                host_ledger = {"source": "client_unverified", "aiproxy_error": str(exc)[:200]}
 
         # Emit cryptographically signed Attested Gate Receipt (`Ed25519+ML-DSA-65`).
         policy_digest = (winner.policy_digest if winner else "") or next((c.policy_digest for c in cheap_candidates if c.policy_digest), "")
@@ -737,13 +1322,17 @@ def main() -> None:
                 "applied": holdout.get("applied"),
                 "verifier_sandbox_isolated": True,
             },
+            llm_ledger=host_ledger,
             signing_key=signing_key,
         )
         receipt_ok, receipt_msg = verify_signed_receipt(receipt, require_pq=True)
 
-        # Gate-verified compounding memory: persist lesson ONLY when sealed gate passed & receipt verifies.
+        # Gate-verified compounding memory: default `--memory-gate online` is strictly non-oracle
+        # (uses `online_gate_passed`, NEVER hidden holdout `holdout_resolved`, during online sweeps).
         lesson_persisted = False
-        if args.memory_file and holdout_resolved and receipt_ok and win_patch.strip():
+        online_ok = bool(winner and winner.passed)
+        mem_gate_ok = online_ok if args.memory_gate == "online" else holdout_resolved
+        if args.memory_file and mem_gate_ok and receipt_ok and win_patch.strip():
             touched = sorted(set(re.findall(r"(?m)^diff --git a/(.+?) b/", win_patch)))
             hunks = [ln.strip() for ln in win_patch.splitlines() if ln.startswith("@@")][:3]
             added = [
@@ -767,23 +1356,33 @@ def main() -> None:
         # Also export and offline-verify a full 5-gate NIST AI RMF / EU AI Act compliance bundle (`playbox.attested_gate.v1`).
         bundle_path = Path(args.outdir, f"{tag}.gate-bundle.json")
         key_file = os.path.join(R.D, "attested_gate.ed25519")
+        default_attest = os.path.expanduser("~/.playbox/history/default.log")
         gate_bundle_verified = False
         gate_bundle_digest = ""
+        gate_achieved_tier = ""
+        gate_promotions = 0
+        gate_pq_committed = 0
+        exp_cmd = [
+            R.PLAYBOX, "gate", "export",
+            "--state", os.path.join(run_dir, "state"),
+            "--receipt", str(rcpt_path),
+            "--sign-key", key_file,
+            "--out", str(bundle_path),
+        ]
+        if os.path.isfile(default_attest):
+            exp_cmd.extend(["--attestation", default_attest])
         exp_proc = subprocess.run(
-            [
-                R.PLAYBOX, "gate", "export",
-                "--state", os.path.join(run_dir, "state"),
-                "--receipt", str(rcpt_path),
-                "--sign-key", key_file,
-                "--out", str(bundle_path),
-            ],
+            exp_cmd,
             capture_output=True,
             text=True,
             timeout=30,
         )
         if exp_proc.returncode == 0 and bundle_path.exists():
+            vfy_cmd = [R.PLAYBOX, "gate", "verify", str(bundle_path), "--require-signature", "--require-pq", "--json"]
+            if os.path.isfile(default_attest):
+                vfy_cmd.extend(["--require-tier", "t1"])
             vfy_proc = subprocess.run(
-                [R.PLAYBOX, "gate", "verify", str(bundle_path), "--require-signature", "--require-pq", "--json"],
+                vfy_cmd,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -793,8 +1392,11 @@ def main() -> None:
                     vfy_json = json.loads(vfy_proc.stdout)
                     gate_bundle_verified = bool(vfy_json.get("ok") and vfy_json.get("pq_signed"))
                     gate_bundle_digest = str(vfy_json.get("bundle_digest") or "")
+                    gate_achieved_tier = str(vfy_json.get("achieved_tier") or "")
+                    gate_promotions = int(vfy_json.get("promotions") or 0)
+                    gate_pq_committed = int(vfy_json.get("room_log_pq_committed") or 0)
                 except ValueError:
-                    pass
+                    gate_bundle_verified = False
 
         res = {
             "inst": args.inst,
@@ -817,6 +1419,9 @@ def main() -> None:
             "receipt_sha256": receipt["payload_sha256"],
             "gate_bundle_verified": gate_bundle_verified,
             "gate_bundle_digest": gate_bundle_digest,
+            "gate_achieved_tier": gate_achieved_tier,
+            "gate_promotions": gate_promotions,
+            "gate_pq_committed": gate_pq_committed,
             "lesson_persisted": lesson_persisted,
             "atlas": atlas_meta,
             "provenance": decision.provenance,
@@ -841,6 +1446,15 @@ def main() -> None:
         }))
     finally:
         host.close()
+        state_dst = Path(args.outdir, "states", tag)
+        state_src = Path(run_dir, "state")
+        if state_src.is_dir():
+            state_dst.mkdir(parents=True, exist_ok=True)
+            for fn in ("audit.log", "root.key", "endpoint.key", "egress.jsonl"):
+                sp = state_src / fn
+                if sp.is_file():
+                    shutil.copy2(sp, state_dst / fn)
+        shutil.rmtree(os.path.join(run_dir, "repo"), ignore_errors=True)
 
 
 if __name__ == "__main__":

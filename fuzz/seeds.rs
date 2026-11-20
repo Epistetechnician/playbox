@@ -29,6 +29,8 @@ fn main() {
             base: "main".into(),
             spec: playbox_runner_spec(),
             warm: false,
+            keep: false,
+            sync: Default::default(),
         },
     ]
     .iter()

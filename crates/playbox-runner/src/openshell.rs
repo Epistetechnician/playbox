@@ -248,7 +248,39 @@ fn random_name() -> Result<String> {
 }
 
 fn warm_name() -> Result<String> {
-    Ok(format!("{WARM_PREFIX}{}", random_hex(5)?))
+    // OpenShell names are at most 19 characters: `pbxw-` (5) + `<pid_hex>` (<=6) + `-` (1) + `<6hex>` (6) <= 18.
+    Ok(format!(
+        "{WARM_PREFIX}{:x}-{}",
+        std::process::id(),
+        random_hex(3)?
+    ))
+}
+
+fn warm_owner_alive(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(WARM_PREFIX) else {
+        return false;
+    };
+    let Some((pid_hex, _)) = rest.split_once('-') else {
+        return false;
+    };
+    let Ok(pid) = u32::from_str_radix(pid_hex, 16) else {
+        return false;
+    };
+    if pid == 0 {
+        return false;
+    }
+    match std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+    {
+        Ok(out) => {
+            out.status.success()
+                || String::from_utf8_lossy(&out.stderr)
+                    .to_ascii_lowercase()
+                    .contains("operation not permitted")
+        }
+        Err(_) => false,
+    }
 }
 
 async fn delete_sandbox(name: &str) {
@@ -620,11 +652,11 @@ impl Runner for OpenShellRunner {
         if out.exit_code != Some(0) {
             bail!("openshell gateway is not reachable: {}", out.stderr.trim());
         }
-        // Warm sandboxes outlive a host that stopped without cleaning up; nothing holds them now.
+        // Reap warm sandboxes whose owning host process has exited; never touch sandboxes owned by live sibling hosts.
         for name in out
             .stdout
             .split_whitespace()
-            .filter(|w| w.starts_with(WARM_PREFIX))
+            .filter(|w| w.starts_with(WARM_PREFIX) && !warm_owner_alive(w))
         {
             delete_sandbox(name).await;
         }
@@ -1537,5 +1569,15 @@ mod tests {
         let mut spec = TaskSpec::new(&["true"]);
         spec.egress = vec!["anthropic".into()];
         assert!(r.run(&spec, Path::new("/tmp")).await.is_err());
+    }
+
+    #[test]
+    fn warm_name_fits_19_chars_and_protects_live_owner_pids() {
+        let wn = warm_name().unwrap();
+        assert!(wn.starts_with(WARM_PREFIX));
+        assert!(wn.len() <= 19, "warm_name {wn:?} exceeded 19 chars");
+        assert!(warm_owner_alive(&wn), "own PID must be detected as alive");
+        assert!(!warm_owner_alive("pbxw-deadbeef01"));
+        assert!(!warm_owner_alive("pbxw-fffffff-a1b2c3"));
     }
 }

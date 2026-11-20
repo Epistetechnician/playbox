@@ -333,5 +333,18 @@ def append_verified_lesson(
         "gate_receipt_sha256": receipt_ref,
     }
     with p.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, sort_keys=True) + "\n")
+        try:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            fcntl = None  # type: ignore[assignment]
+        try:
+            f.write(json.dumps(rec, sort_keys=True) + "\n")
+            f.flush()
+        finally:
+            if fcntl is not None:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
     return rec

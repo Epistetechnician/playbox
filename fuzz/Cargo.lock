@@ -1089,6 +1089,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "fips204"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a823e139c2d539b1b735d31cdce8b0b356671585eac3d54dec79d1d15052093b"
+dependencies = [
+ "rand_core 0.6.4",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2040,6 +2051,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
+dependencies = [
+ "cpufeatures 0.2.17",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2859,13 +2879,14 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "playbox-core"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "aes 0.9.4",
  "base64 0.23.1",
  "blake3",
  "cfb-mode",
  "ed25519-dalek 2.2.0",
+ "fips204",
  "getrandom 0.4.3",
  "hmac 0.12.1",
  "p256 0.14.0",
@@ -2894,7 +2915,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-git"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "tokio",
@@ -2902,7 +2923,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-net"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "a2a-lf",
  "anyhow",
@@ -2931,7 +2952,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-runner"
-version = "0.4.0"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3768,6 +3789,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
  "digest 0.11.3",
+]
+
+[[package]]
+name = "sha3"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
+dependencies = [
+ "digest 0.10.7",
+ "keccak",
+ "zeroize",
 ]
 
 [[package]]
