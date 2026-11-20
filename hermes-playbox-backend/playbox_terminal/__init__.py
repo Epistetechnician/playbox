@@ -423,12 +423,14 @@ class PlayboxEnvironment(BaseEnvironment):
             return
         now = time.time()
         self.s._cmd_n = getattr(self.s, "_cmd_n", 0) + 1
-        if rec.get("rc") == 0 and not rec.get("timed_out") and not rec.get("refused"):
+        rc_val = rec.get("rc") or 0
+        benign_read_miss = (rec.get("sync") == "none" and rc_val in (1, 128) and not rec.get("timed_out") and not rec.get("refused"))
+        if (rc_val == 0 or benign_read_miss) and not rec.get("timed_out") and not rec.get("refused"):
             self.s._ok_n = getattr(self.s, "_ok_n", 0) + 1
         else:
             self.s._fail_n = getattr(self.s, "_fail_n", 0) + 1
         last_pub = getattr(self.s, "_last_pub", 0.0)
-        important = bool(rec.get("edited") or rec.get("rc") != 0 or rec.get("timed_out") or rec.get("refused"))
+        important = bool(rec.get("edited") or (rc_val != 0 and not benign_read_miss) or rec.get("timed_out") or rec.get("refused"))
         if not important and (now - last_pub) < 5.0 and (self.s._cmd_n % 10 != 0):
             return
         self.s._last_pub = now
@@ -440,7 +442,7 @@ class PlayboxEnvironment(BaseEnvironment):
         try:
             self.s.mcp.call("playbox_say", {"text": "::pbx metric " + json.dumps({"name": "task_ms", "value": ms, "unit": "ms"}, separators=(",", ":"), ensure_ascii=False)})
             if important or (self.s._cmd_n % 10 == 0):
-                status = "failed" if (rec.get("rc") != 0 or rec.get("timed_out") or rec.get("refused")) else "checking"
+                status = "failed" if ((rc_val != 0 and not benign_read_miss) or rec.get("timed_out") or rec.get("refused")) else "checking"
                 summary = f"{self.s._cmd_n} runs ({getattr(self.s, '_ok_n', 0)} ok, {getattr(self.s, '_fail_n', 0)} fail) · last {ms}ms · sync={sync}"
                 if pbytes:
                     summary += f" · patch {pbytes}B"

@@ -38,6 +38,18 @@ def _find_playbox_bin() -> str | None:
     return None
 
 
+def get_playbox_tool_version() -> str:
+    """Return the exact `playbox --version` string (e.g. `playbox 0.4.4 (a1b2c3d4e)`)."""
+    pb = _find_playbox_bin()
+    if not pb:
+        return "unknown"
+    try:
+        out = subprocess.check_output([pb, "--version"], text=True, stderr=subprocess.DEVNULL, timeout=5).strip()
+        return out or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
 def canonical_json_bytes(obj: dict) -> bytes:
     """Deterministic UTF-8 canonical JSON encoding for hashing and signing."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
@@ -90,9 +102,20 @@ def load_or_create_signing_key(key_path: str | Path | None = None):
         return Ed25519PrivateKey.from_private_bytes(raw)
     p.parent.mkdir(parents=True, exist_ok=True)
     seed = os.urandom(32)
-    p.write_text(seed.hex() + "\n", encoding="utf-8")
-    os.chmod(p, 0o600)
-    return Ed25519PrivateKey.from_private_bytes(seed)
+    tmp = p.parent / f".{p.name}.tmp.{os.getpid()}"
+    tmp.write_text(seed.hex() + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    if not p.exists():
+        try:
+            os.link(tmp, p)
+        except FileExistsError:
+            pass
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    raw = bytes.fromhex(p.read_text(encoding="utf-8").strip())
+    return Ed25519PrivateKey.from_private_bytes(raw)
 
 
 def _signing_message(payload_sha256: str) -> bytes:
@@ -134,9 +157,12 @@ def build_signed_receipt(
     else:
         ledger_block = dict(llm_ledger)
 
+    tool_ver = get_playbox_tool_version()
     payload = {
         "schema": RECEIPT_SCHEMA,
         "issued_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "tool_version": tool_ver,
+        "git_dirty": "+dirty" in tool_ver,
         "instance": instance,
         "base_commit": base_commit,
         "runtime": runtime,

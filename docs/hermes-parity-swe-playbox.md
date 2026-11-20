@@ -107,6 +107,19 @@ All 10 calibrated Django instances under `~/.playbox-hermes/openshell-parity/swe
 
 *5-Gate Compliance Bundle (`playbox.attested_gate.v1`):* All 18 SWE-bench Arm P2 run receipts, the host `audit.log` (`69` entries), the `BOX-7` egress log (`2` entries, `1` denied `/admin`), the 2-host `RoomLog` (`19` entries, `9` dual-host `ROOM-16`/`ROOM-17` promotions, `19/19` PQ-committed under hybrid `Ed25519+ML-DSA-65` checkpoint), and the `T1` Secure Enclave hardware attestation (`~/.playbox/history/default.log`, pinned device key `a4838567dde927b7...`) are packaged into `/tmp/swe-p2-v2/swe-bench-5gate-bundle.json` (`bundle_digest: 5b581665850021b17b8c06e4fec54c640cc074d0c1044bfcd9c43f37682c7fda`) via `playbox gate export` and verified offline via `playbox gate verify --require-signature --require-pq --require-tier t1 --json` (`ok: true`, `pq_signed: true`, `achieved_tier: "T1"`, `egress_requests: 2`, `promotions: 9`, `room_log_pq_committed: 19`, `attested_receipts: 18`, `enforced_gates_count: 5`, `claims_full_84_permf: false`).
 
+### 3. Devin Recursive Hill-Climb (`gemini-4-neon-high` → `claude-opus-5-5-high`, 5 / 5 = 100.0% Resolved, Zero `.git` Leak)
+
+Driven via `tools/bench/hermes-parity/hillclimb_playbox.py` (`--harness devin --runtime openshell --primary-model gemini-4-neon-high --opponent-model claude-opus-5-5-high`, artifacts in `/tmp/swe-devin-hc/`). Round 1 runs `gemini-4-neon-high` with 3-hop AtlasKV and compounding verified room memory (`verified-memory.jsonl`); any unsolved instance climbs in Round 2 with `claude-opus-5-5-high` using strictly non-oracle feedback:
+
+| Instance | Round & Winning Model | Resolved (`f2p` / `p2p`) | Wall (s) | Delegates (`sync=none` / `delta`) | Median Cmd (s) | Cost (USD) | Taint Adv (Enforced) | PQ Receipt & 5-Gate Bundle |
+|---|---|---|---|---|---|---|---|---|
+| `django-11848` | Round 1 (`gemini-4-neon-high`) | **Yes (`2/2`, `42/42`)** | 341.1 s | 17 (7 / 10) | 0.64 s | $0.5669 | **0** | **Verified (`Ed25519+ML-DSA-65`, `T1`)** |
+| `django-11422` | Round 1 (`gemini-4-neon-high`) | **Yes (`1/1`, `44/44`)** | 206.5 s | 24 (9 / 15) | 1.05 s | $0.3223 | **0** | **Verified (`Ed25519+ML-DSA-65`, `T1`)** |
+| `django-11905` | Round 1 (`gemini-4-neon-high`) → **Round 2 (`claude-opus-5-5-high`)** | **Yes (`2/2`, `36/36`)** | **45.3 s** (R2) | **2** (0 / 2) | 10.02 s | **$0.0496** (R2) | **0** | **Verified (`Ed25519+ML-DSA-65`, `T1`)** |
+| `django-11001` | Round 1 (`gemini-4-neon-high`) | **Yes (`2/2`, `118/118`)** | 280.6 s | 27 (15 / 12) | **0.18 s** | $0.4501 | **0** | **Verified (`Ed25519+ML-DSA-65`, `T1`)** |
+| `django-11620` | Round 1 (`gemini-4-neon-high`) | **Yes (`1/1`, `55/55`)** | 337.6 s | 45 (34 / 11) | **0.12 s** | $0.4919 | **0** | **Verified (`Ed25519+ML-DSA-65`, `T1`)** |
+| **5-Instance Total** | **4× `gemini-4-neon-high` (R1) + 1× `claude-opus-5-5-high` (R2)** | **5 / 5 (100.0%)** | **242.2 s mean** | 115 winning (172 total) | **0.12 s–0.64 s** | **$1.8809 winning** ($0.3762 / solve; $2.5587 total) | **0 across all runs** | **6/6 PQ receipts + 6/6 5-gate bundles + 5/5 verified lessons** |
+
 ## Design
 
 - **Host repo.** Per instance, a single-commit git repo of the Django tree at the instance's base commit (`git archive` into a fresh repo on

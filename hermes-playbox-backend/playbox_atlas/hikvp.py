@@ -80,6 +80,24 @@ class QueryHit:
     via: str = ""  # optional provenance edge label (e.g. `watched_files -> iter_all_python_module_files`)
 
 
+def _dense_cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        na += x * x
+        nb += y * y
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / math.sqrt(na * nb)
+
+
+RerankFn = Callable[[str, Sequence[str]], list[tuple[int, float]]]
+
+
 class HiKVPIndex:
     """Three-level hierarchical index (`Root -> Inter -> Leaf`) with multi-hop call-graph adjacency."""
 
@@ -93,6 +111,7 @@ class HiKVPIndex:
         root_centroids: dict[str, SparseVec],
         inter_centroids: dict[str, SparseVec],
         embed_fn: Callable[[str], Sequence[float]] | None = None,
+        rerank_fn: RerankFn | None = None,
     ):
         self.triples = triples
         self.idf = idf
@@ -102,6 +121,8 @@ class HiKVPIndex:
         self.root_centroids = root_centroids
         self.inter_centroids = inter_centroids
         self.embed_fn = embed_fn
+        self.rerank_fn = rerank_fn
+        self._dense_leaf_cache: dict[int, list[float]] = {}
 
         # Build fast symbol lookup for multi-hop call-graph & inheritance expansion.
         self._symbol_to_leaves: dict[str, list[int]] = defaultdict(list)
@@ -138,6 +159,7 @@ class HiKVPIndex:
         cls,
         triples: Sequence[Triple],
         embed_fn: Callable[[str], Sequence[float]] | None = None,
+        rerank_fn: RerankFn | None = None,
     ) -> HiKVPIndex:
         tlist = list(triples)
         n = max(len(tlist), 1)
@@ -183,7 +205,28 @@ class HiKVPIndex:
             root_centroids=root_centroids,
             inter_centroids=inter_centroids,
             embed_fn=embed_fn,
+            rerank_fn=rerank_fn,
         )
+
+    def _embed_trusted_indices(self, indices: Sequence[int]) -> dict[int, list[float]]:
+        """Embed ONLY already trust-gated leaf indices; degrades to empty dict on network/provider errors."""
+        if self.embed_fn is None or not indices:
+            return {}
+        missing = [i for i in indices if i not in self._dense_leaf_cache]
+        if missing:
+            texts = [f"{self.triples[i].key_text} {self.triples[i].value}" for i in missing]
+            try:
+                batch_fn = getattr(self.embed_fn, "embed_batch", None)
+                if callable(batch_fn):
+                    vecs = batch_fn(texts)
+                else:
+                    vecs = [list(self.embed_fn(tx)) for tx in texts]
+                for idx, v in zip(missing, vecs):
+                    self._dense_leaf_cache[idx] = [float(x) for x in v]
+            except Exception as exc:
+                self._last_embed_error = str(exc)
+                return {}
+        return {i: self._dense_leaf_cache[i] for i in indices if i in self._dense_leaf_cache}
 
     def _query_vec(self, text: str) -> SparseVec:
         tf = Counter(tokenize(text))
@@ -201,8 +244,10 @@ class HiKVPIndex:
         allow_untrusted: bool = False,
     ) -> list[QueryHit]:
         """Sub-linear 3-level HiKVP beam search with multi-hop call-chain expansion & trust gating."""
+        if not self.triples:
+            return []
         qvec = self._query_vec(text)
-        if not qvec or not self.triples:
+        if not qvec and self.embed_fn is None:
             return []
 
         # Level 0: Root pruning
@@ -216,14 +261,17 @@ class HiKVPIndex:
             if sc > 0.0 and r.startswith("memory/"):
                 kept_roots.append(r)
         if not kept_roots:
-            return []
+            if self.embed_fn is None:
+                return []
+            # Pure-semantic fallback when query uses synonyms absent from lexical IDF.
+            kept_roots = sorted(self.root_children.keys())[: max(top_root, 8)]
 
         # Level 1: Intermediate pruning (only children of kept roots)
         inter_scores: list[tuple[float, str]] = []
         for r in kept_roots:
             for inter in self.root_children.get(r, ()):
                 sc = _dot(qvec, self.inter_centroids.get(inter, {}))
-                if sc > 0.0:
+                if sc > 0.0 or self.embed_fn is not None:
                     inter_scores.append((sc, inter))
         inter_scores.sort(key=lambda x: x[0], reverse=True)
         kept_inters = [inter for _, inter in inter_scores[:top_inter]]
@@ -234,12 +282,14 @@ class HiKVPIndex:
             return []
 
         # Level 2: Leaf scoring + trust gate (prioritize symbol definitions & reviewed lessons over raw `calls` lists)
+        trusted_pool: list[int] = []
         leaf_scores: list[tuple[float, int]] = []
         for inter in kept_inters:
             for idx in self.inter_children.get(inter, ()):
                 t = self.triples[idx]
                 if not allow_untrusted and t.trust not in TRUSTED_TIERS:
                     continue
+                trusted_pool.append(idx)
                 sc = _dot(qvec, self.leaf_vecs[idx])
                 if sc > 0.0:
                     if t.relation in ("calls", "imports", "inherits"):
@@ -247,7 +297,68 @@ class HiKVPIndex:
                     elif t.trust == "reviewed":
                         sc *= 1.35
                     leaf_scores.append((sc, idx))
+
+        # Hybrid dense fusion (only over already trust-gated leaves; falls back cleanly to TF-IDF if offline).
+        if self.embed_fn is not None and trusted_pool:
+            try:
+                q_dense = [float(x) for x in self.embed_fn(text)]
+            except Exception as exc:
+                self._last_embed_error = str(exc)
+                q_dense = []
+            if q_dense:
+                # Cap dense candidate pool to top lexical leaves + up to 64 trusted leaves in kept_inters for speed.
+                lex_top = [idx for _, idx in sorted(leaf_scores, key=lambda x: x[0], reverse=True)[: max(top_leaf * 3, 40)]]
+                dense_pool = list(dict.fromkeys(lex_top + trusted_pool[:64]))
+                dense_vecs = self._embed_trusted_indices(dense_pool)
+                if dense_vecs:
+                    dense_ranked = sorted(
+                        ((_dense_cosine(q_dense, dense_vecs[i]), i) for i in dense_vecs),
+                        key=lambda x: x[0],
+                        reverse=True,
+                    )
+                    lex_rank = {idx: r for r, (_, idx) in enumerate(sorted(leaf_scores, key=lambda x: x[0], reverse=True), 1)}
+                    dense_rank = {idx: r for r, (_, idx) in enumerate(dense_ranked, 1)}
+                    lex_map = {idx: sc for sc, idx in leaf_scores}
+                    dense_map = {idx: sc for sc, idx in dense_ranked}
+                    k_rrf = 30.0
+                    fused: list[tuple[float, int]] = []
+                    for idx in set(lex_map) | set(dense_map):
+                        t = self.triples[idx]
+                        rrf = 0.0
+                        if idx in lex_rank:
+                            rrf += 1.0 / (k_rrf + lex_rank[idx])
+                        if idx in dense_rank and dense_map[idx] > 0.0:
+                            rrf += 1.0 / (k_rrf + dense_rank[idx])
+                        if rrf <= 0.0:
+                            continue
+                        sc = rrf * k_rrf * 0.5 + 0.35 * lex_map.get(idx, 0.0) + 0.35 * max(0.0, dense_map.get(idx, 0.0))
+                        if t.relation in ("calls", "imports", "inherits"):
+                            sc *= 0.75
+                        elif t.trust == "reviewed":
+                            sc *= 1.35
+                        fused.append((sc, idx))
+                    if fused:
+                        leaf_scores = fused
+
         leaf_scores.sort(key=lambda x: x[0], reverse=True)
+
+        # Optional second-stage rerank strictly AFTER trust gating (never sees quarantined/untrusted triples).
+        if self.rerank_fn is not None and leaf_scores:
+            rerank_k = min(len(leaf_scores), max(top_leaf * 2, 24))
+            cand_slice = leaf_scores[:rerank_k]
+            docs = [self.triples[idx].full_text for _, idx in cand_slice]
+            try:
+                reranked = self.rerank_fn(text, docs)
+                if reranked:
+                    by_pos = {pos: rsc for pos, rsc in reranked if 0 <= pos < len(cand_slice)}
+                    updated = [
+                        (0.65 * by_pos.get(pos, 0.0) + 0.35 * sc, idx)
+                        for pos, (sc, idx) in enumerate(cand_slice)
+                    ]
+                    updated.sort(key=lambda x: x[0], reverse=True)
+                    leaf_scores = updated + leaf_scores[rerank_k:]
+            except Exception as exc:
+                self._last_rerank_error = str(exc)
 
         hits: list[QueryHit] = []
         seen_idx: set[int] = set()

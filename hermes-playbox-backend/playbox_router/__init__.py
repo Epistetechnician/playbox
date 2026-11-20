@@ -20,6 +20,7 @@ from .aiproxy import (
 from .receipt import (
     RECEIPT_SCHEMA,
     build_signed_receipt,
+    get_playbox_tool_version,
     load_or_create_signing_key,
     verify_receipt_ledger,
     verify_signed_receipt,
@@ -62,6 +63,7 @@ __all__ = [
     "canonical_ledger_bytes",
     "compose_patches",
     "compute_ledger_sha256",
+    "get_playbox_tool_version",
     "is_genuine_repro_failure",
     "load_admin_key",
     "load_or_create_signing_key",
