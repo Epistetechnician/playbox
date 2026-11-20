@@ -172,13 +172,19 @@ provider = os.environ.get("PB_PROVIDER", "anthropic")
 timeout_s = int(os.environ.get("PB_TIMEOUT", "900"))
 cmd = [os.path.expanduser("~/.local/bin/hermes"), "--usage-file", usage, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--yolo"]
 t0 = time.time()
-try:
-    p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout_s, cwd=tempfile.gettempdir())
-    rc, stdout, stderr = p.returncode, p.stdout, p.stderr
-except subprocess.TimeoutExpired as exc:
-    rc = 124
-    stdout = (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-    stderr = "timeout"
+rc, stdout, stderr = 1, "", ""
+for _gw_try in range(3):
+    try:
+        p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout_s, cwd=tempfile.gettempdir())
+        rc, stdout, stderr = p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired as exc:
+        rc = 124
+        stdout = (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = "timeout"
+        break
+    if "Gateway draining" not in (stdout + stderr):
+        break
+    time.sleep(3.0)
 wall = time.time() - t0
 kill_home_gateways(home)
 if arm == "S":

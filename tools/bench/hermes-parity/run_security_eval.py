@@ -1061,9 +1061,28 @@ def run_security_task_arm(
                 policy_digest=fin.get("policy_digest") or "",
             )
 
+            from run_verified_eval import run_non_oracle_critic
+
+            critic_extra_cost = 0.0
+
             def _online_verify(clean_p: str):
+                nonlocal critic_extra_cost
                 vis_ok, _ = _score_holdout_clean(task, clean_p)
-                return vis_ok, (1.0 if vis_ok else 0.0), {"existing_ok": vis_ok}
+                if not vis_ok:
+                    return False, 0.0, {"existing_ok": False}
+                c_ok, c_msg, c_cost = run_non_oracle_critic(
+                    inst=task.task_id,
+                    problem_statement=task.issue_prompt,
+                    repo_cache_dir=repo_dir,
+                    patch_text=clean_p,
+                    online_gate_passed=True,
+                    existing_tests_passed=True,
+                    critic_model="claude-sonnet-5",
+                    critic_harness="hermes",
+                    critic_provider=provider,
+                )
+                critic_extra_cost += c_cost
+                return c_ok, (1.0 if c_ok else 0.6), {"existing_ok": True, "critic_ok": c_ok, "critique": c_msg}
 
             def _escalate_sec(brief: str, _rem: float) -> CandidateResult:
                 ewdir = run_dir / "w_esc"
@@ -1118,7 +1137,7 @@ def run_security_task_arm(
                 atlas_brief=atlas_brief,
                 strip_tests_at_broker=True,
             )
-            cost = round(decision.total_cost_usd, 6)
+            cost = round(decision.total_cost_usd + critic_extra_cost, 6)
             win_patch = decision.winner.patch if decision.winner else ""
             vis_clean_ok, holdout_solved = _score_holdout_clean(task, win_patch)
 
