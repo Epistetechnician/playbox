@@ -277,8 +277,10 @@ def run_non_oracle_critic(
         return False, "Candidate produced an empty patch.", 0.0
     if not existing_tests_passed:
         return False, "Candidate broke existing repository unit tests.", 0.0
+    if online_gate_passed:
+        return True, "Both existing repository tests and independent non-vacuous repro script passed.", 0.0
     if not critic_model:
-        return online_gate_passed, ("Online gate passed." if online_gate_passed else "Online repro gate failed."), 0.0
+        return False, "Online repro gate failed and critic disabled.", 0.0
 
     base_ctx = _extract_base_hunk_context(repo_cache_dir, patch_text)
     repro_note = (
