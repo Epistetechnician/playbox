@@ -97,3 +97,45 @@ def test_the_gate_stops_if_main_would_drift_from_the_frontier(repo, monkeypatch)
     monkeypatch.setattr(G.harness, "_state", lambda w: {"frontier": [{"sha256": "0" * 64}]})
     with pytest.raises(RuntimeError, match="not the harness frontier"):
         G.handle(Path("w"), repo, "pb", PENDING, "h", lambda s: None)
+
+
+def test_ast_equivalent_and_syntax_broken_pushes_are_refused_without_holdout(repo, tmp_path, monkeypatch):
+    # 1. Comment/docstring/formatting-only edit is AST-equivalent to main -> refused pre-holdout
+    push(repo, {"candidate.py": '"""docstring."""\n# comment\nLR = 0.001\n'})
+    assert "AST-equivalent to the current frontier" in (G.screen(repo, PENDING) or "")
+
+    # 2. Syntax-broken candidate pushed by an untrusted guest (without local hooks) is refused pre-holdout
+    git(repo, "checkout", "-q", "-b", "tmp_bad", "main")
+    (repo / "candidate.py").write_text("def broken(:\n    pass\n")
+    git(repo, "add", ".")
+    git(repo, "-c", "core.hooksPath=/dev/null", "commit", "-qm", "guest_bad_syntax")
+    git(repo, "update-ref", PENDING, "HEAD")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "-q", "-D", "tmp_bad")
+    assert "syntax error" in (G.screen(repo, PENDING) or "")
+
+    # 3. Second member pushing an AST-equivalent variant of an already-evaluated candidate is refused pre-holdout
+    work = tmp_path / "work"
+    work.mkdir()
+    scored_calls = []
+    monkeypatch.setattr(G, "review", lambda pb, r, verb, ref: None)
+    monkeypatch.setattr(
+        G.harness,
+        "submit",
+        lambda w, c, author, log: (scored_calls.append(author) or {"verdict": "reject"}),
+    )
+
+    push(repo, {"candidate.py": "def step(x):\n    return x * 2\n"}, ref="refs/playbox/members/alice/v1")
+    assert G.handle(work, repo, "pb", "refs/playbox/members/alice/v1", "h1", lambda s: None) == {
+        "verdict": "reject"
+    }
+    assert len(scored_calls) == 1
+
+    push(
+        repo,
+        {"candidate.py": 'def step(x):\n    """Same AST."""\n    # extra note\n    return (x * 2)\n'},
+        ref="refs/playbox/members/bob/v2",
+    )
+    assert G.handle(work, repo, "pb", "refs/playbox/members/bob/v2", "h2", lambda s: None) is None
+    assert len(scored_calls) == 1  # zero extra GPU or holdout evaluations spent!
+

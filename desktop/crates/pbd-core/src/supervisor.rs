@@ -87,6 +87,7 @@ pub struct Spec {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub env: Vec<(OsString, OsString)>,
+    pub env_remove: Vec<OsString>,
     pub cwd: Option<PathBuf>,
     /// Where the child's output goes (appended); `None` discards it.
     pub log: Option<PathBuf>,
@@ -103,6 +104,7 @@ impl Spec {
             program: program.into(),
             args: vec![],
             env: vec![],
+            env_remove: vec![],
             cwd: None,
             log: None,
             health: None,
@@ -372,8 +374,11 @@ impl Runner {
 
     fn spawn(&self) -> Result<Child, String> {
         let mut c = Command::new(&self.spec.program);
-        c.args(&self.spec.args)
-            .envs(self.spec.env.iter().map(|(k, v)| (k, v)))
+        c.args(&self.spec.args);
+        for k in &self.spec.env_remove {
+            c.env_remove(k);
+        }
+        c.envs(self.spec.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null());
         if let Some(d) = &self.spec.cwd {
             c.current_dir(d);

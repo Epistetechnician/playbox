@@ -16,10 +16,9 @@ use pbd_core::{
     layout::{self, Os},
     stepup,
 };
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 use tauri::{Manager, RunEvent};
 
 /// What the running app owns. Dropping it releases the claim.

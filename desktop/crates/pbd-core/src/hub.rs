@@ -139,7 +139,11 @@ pub fn spec(cfg: &HubConfig, dirs: &Dirs) -> Spec {
     s.env = vec![
         ("PYTHONUNBUFFERED".into(), "1".into()),
         ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
+        ("PYTHONNOUSERSITE".into(), "1".into()),
     ];
+    // AppImage's AppRun injects PYTHONHOME=$APPDIR/usr/ and PYTHONPATH=$APPDIR/usr/share/pyshared/, which breaks the bundled
+    // relocatable CPython (`No module named 'encodings'`) before the hub can bind its port.
+    s.env_remove = vec!["PYTHONHOME".into(), "PYTHONPATH".into()];
     s.cwd = cfg.script.parent().map(Path::to_path_buf);
     s.log = Some(dirs.logs.join("hub.log"));
     s.health = Some(probe(cfg.port));
@@ -183,6 +187,8 @@ mod tests {
         assert_eq!(a[1..5], ["--port", "7717", "--home", "/h"]);
         assert_eq!(a.last().map(String::as_str), Some("--no-weak"));
         assert!(s.attach);
+        assert!(s.env_remove.contains(&OsString::from("PYTHONHOME")));
+        assert!(s.env_remove.contains(&OsString::from("PYTHONPATH")));
         assert_eq!(s.log, Some(PathBuf::from("/l/hub.log")));
         assert_eq!(s.health.as_ref().map(|p| p.addr().port()), Some(7717));
     }
