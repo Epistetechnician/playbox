@@ -1,7 +1,7 @@
 //! Runs real tasks through `OpenShell`. Needs the `openshell` CLI and a reachable gateway
 //! (`OPENSHELL_GATEWAY_ENDPOINT`), so it only runs when `PLAYBOX_TEST_OPENSHELL` is set.
 
-use playbox_runner::{OpenShellRunner, Runner, SandboxPolicy, TaskSpec};
+use playbox_runner::{OpenShellRunner, Runner, SandboxPolicy, SyncMode, TaskSpec};
 
 fn enabled() -> bool {
     std::env::var_os("PLAYBOX_TEST_OPENSHELL").is_some()
@@ -248,4 +248,100 @@ async fn long_script_runs() {
         std::fs::read_to_string(ws.join("out.txt")).unwrap().trim(),
         "data"
     );
+}
+
+/// Stateful `run_session` preserves `/sandbox` without re-uploading, supports `/dev/null` under Landlock,
+/// skips download on `SyncMode::None`, and mirrors only changed/deleted files on `SyncMode::Delta`.
+#[tokio::test]
+async fn stateful_session_delta_none_and_dev_null_hold_on_live_vm() {
+    if !enabled() {
+        return;
+    }
+    let ws = std::env::temp_dir().join(format!("pb-osh-sess-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&ws);
+    std::fs::create_dir_all(&ws).unwrap();
+    // Seed a ~3 MiB baseline so re-upload vs stateful speedup is clearly observable.
+    let blob = vec![b'A'; 30 * 1024];
+    for i in 0..100 {
+        std::fs::write(ws.join(format!("f{i}.txt")), &blob).unwrap();
+    }
+    std::fs::write(ws.join("remove_me.txt"), "bye\n").unwrap();
+
+    let r = OpenShellRunner::new(SandboxPolicy::default());
+    let sess = "stateful-live-member";
+    let base = "commit-abc123";
+
+    // 1. Initial upload + edit + /dev/null redirection under Delta sync
+    let t0 = std::time::Instant::now();
+    let o1 = r
+        .run_session(
+            &TaskSpec::new(&[
+                "sh",
+                "-c",
+                "echo hidden >/dev/null 2>&1 && echo step1 > state.txt && rm remove_me.txt && echo OK1",
+            ]),
+            &ws,
+            sess,
+            base,
+            SyncMode::Delta,
+        )
+        .await
+        .unwrap();
+    let init_s = t0.elapsed();
+    assert_eq!(o1.exit_code, Some(0), "{o1:?}");
+    assert!(o1.stdout.contains("OK1"), "{o1:?}");
+    assert_eq!(
+        std::fs::read_to_string(ws.join("state.txt"))
+            .unwrap()
+            .trim(),
+        "step1"
+    );
+    assert!(
+        !ws.join("remove_me.txt").exists(),
+        "deleted file must disappear on host under Delta sync"
+    );
+
+    // 2. Pure read-only follow-up under SyncMode::None: sees persisted state.txt with zero upload/download!
+    let t1 = std::time::Instant::now();
+    let o2 = r
+        .run_session(
+            &TaskSpec::new(&["sh", "-c", "cat state.txt"]),
+            &ws,
+            sess,
+            base,
+            SyncMode::None,
+        )
+        .await
+        .unwrap();
+    let none_s = t1.elapsed();
+    assert_eq!(o2.exit_code, Some(0), "{o2:?}");
+    assert_eq!(o2.stdout.trim(), "step1");
+
+    // 3. Delta edit follow-up: modifies one file and mirrors only that delta back.
+    let t2 = std::time::Instant::now();
+    let o3 = r
+        .run_session(
+            &TaskSpec::new(&["sh", "-c", "echo step2 >> state.txt && echo OK3"]),
+            &ws,
+            sess,
+            base,
+            SyncMode::Delta,
+        )
+        .await
+        .unwrap();
+    let delta_s = t2.elapsed();
+    assert_eq!(o3.exit_code, Some(0), "{o3:?}");
+    let content = std::fs::read_to_string(ws.join("state.txt")).unwrap();
+    assert!(
+        content.contains("step1") && content.contains("step2"),
+        "{content:?}"
+    );
+    eprintln!("live stateful timings: init={init_s:?} none={none_s:?} delta={delta_s:?}");
+    assert!(
+        none_s < init_s && delta_s < init_s,
+        "stateful steps (none={none_s:?}, delta={delta_s:?}) should beat initial upload ({init_s:?})"
+    );
+
+    r.end_warm(sess).await;
+    let _ = std::fs::remove_dir_all(&ws);
 }

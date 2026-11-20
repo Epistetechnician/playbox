@@ -2,7 +2,7 @@
 
 use crate::bind::{bind, Bind};
 use crate::grants::Authority;
-use crate::handler::RoomHandler;
+use crate::handler::{drop_all_sessions, drop_member_session, RoomHandler, SessionMap};
 use crate::keys::load_or_create_seed;
 use crate::link::{Link, LinkOpts};
 use crate::state::{Admit, Invite, State};
@@ -156,6 +156,9 @@ pub struct Host {
     memory: Option<Arc<shared_memory::SharedMemory>>,
     caps: Arc<capabilities::Engine>,
     roomlog: Arc<crate::roomsync::RoomLogNode>,
+    runner: Option<Arc<dyn Runner>>,
+    sessions: SessionMap,
+    handler: RoomHandler,
     /// Holds the exclusive lock on `<state dir>/host.lock` for as long as the host lives.
     _dir_lock: Option<std::fs::File>,
 }
@@ -419,6 +422,9 @@ impl Host {
             repl.allowed.clone(),
             cfg.roomlog_store.clone(),
         )?;
+        let runner_ref = cfg.runner.clone();
+        let sessions: SessionMap = Arc::default();
+        let live_limits = Arc::new(Mutex::new(cfg.limits.clone()));
         let handler = RoomHandler {
             roomlog: roomlog.clone(),
             state: state.clone(),
@@ -431,6 +437,10 @@ impl Host {
             platform_calls: Arc::new(Semaphore::new(2)),
             auth: auth.clone(),
             done: Arc::default(),
+            replays: Arc::default(),
+            handoffs: Arc::default(),
+            live_limits,
+            live_policy_updated: Arc::default(),
             card: Arc::new(serde_json::to_value(card).context("agent card")?),
             attest_key,
             measurements,
@@ -438,11 +448,12 @@ impl Host {
             latent: Arc::new(latent::Mailbox::new(cfg.latent.clone())),
             caps: caps.clone(),
             convs: Arc::new(conversations::Book::new(cfg.conversations_store.clone())?),
+            sessions: sessions.clone(),
             cfg,
         };
         let sync = revoke::SyncHandler::new(state.clone(), repl.allowed.clone());
         let router = Router::builder(endpoint)
-            .accept(ALPN, handler)
+            .accept(ALPN, handler.clone())
             .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
             .accept(SYNC_ALPN, sync)
             .accept(
@@ -460,8 +471,320 @@ impl Host {
             memory,
             caps,
             roomlog,
+            runner: runner_ref,
+            sessions,
+            handler,
             _dir_lock: None,
         })
+    }
+
+    /// Live policy guardrails and real-time budget burn snapshot for this room.
+    #[must_use]
+    pub fn policy_snapshot(&self) -> serde_json::Value {
+        self.handler.policy_snapshot()
+    }
+
+    /// Update the room's live policy guardrails and budgets without restarting the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any supplied limit is out of range.
+    pub fn update_policy(&self, patch: &serde_json::Value) -> Result<serde_json::Value> {
+        let mut lim = self.handler.live_limits.lock_recover().clone();
+        let mut abuse = self.handler.limiter.limits();
+        if let Some(cpus) = patch.get("cpus").and_then(serde_json::Value::as_f64) {
+            if !cpus.is_finite() || !(0.1..=256.0).contains(&cpus) {
+                bail!("cpus must be between 0.1 and 256.0");
+            }
+            lim.cpus = cpus as f32;
+        }
+        if let Some(mem) = patch.get("mem_mib").and_then(serde_json::Value::as_u64) {
+            if !(16..=1_048_576).contains(&mem) {
+                bail!("mem_mib must be at least 16 MiB");
+            }
+            lim.mem_mib = mem as u32;
+        }
+        if let Some(tmo) = patch
+            .get("timeout_secs")
+            .and_then(serde_json::Value::as_u64)
+        {
+            if !(1..=2_592_000).contains(&tmo) {
+                bail!("timeout_secs must be between 1 and 2592000");
+            }
+            lim.timeout_secs = tmo;
+        }
+        if let Some(net) = patch.get("network").and_then(serde_json::Value::as_bool) {
+            lim.network = net;
+        }
+        let str_list = |k: &str| -> Option<Vec<String>> {
+            patch
+                .get(k)
+                .and_then(serde_json::Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && !s.contains('/'))
+                        .map(str::to_string)
+                        .collect()
+                })
+        };
+        if let Some(hosts) = str_list("allowed_hosts") {
+            lim.allowed_hosts = hosts;
+        }
+        if let Some(secs) = str_list("allowed_secrets") {
+            lim.allowed_secrets = secs;
+        }
+        if let Some(eg) = str_list("allowed_egress") {
+            lim.allowed_egress = eg;
+        }
+        if let Some(tb) = patch.get("task_budget").and_then(serde_json::Value::as_u64) {
+            if tb == 0 {
+                bail!("task_budget must be at least 1");
+            }
+            abuse.task_budget = tb;
+        }
+        if let Some(mm) = patch.get("max_members").and_then(serde_json::Value::as_u64) {
+            if mm == 0 {
+                bail!("max_members must be at least 1");
+            }
+            abuse.max_members = mm as usize;
+        }
+        if let Some(mc) = patch
+            .get("max_concurrent")
+            .and_then(serde_json::Value::as_u64)
+        {
+            if mc == 0 {
+                bail!("max_concurrent must be at least 1");
+            }
+            abuse.max_concurrent_per_member = mc as usize;
+        }
+        if let Some(mt) = patch
+            .get("max_tasks_per_minute")
+            .and_then(serde_json::Value::as_u64)
+        {
+            if mt == 0 {
+                bail!("max_tasks_per_minute must be at least 1");
+            }
+            abuse.max_tasks_per_window = mt as usize;
+        }
+        if let Some(rev) = patch
+            .get("memory_review")
+            .and_then(serde_json::Value::as_bool)
+        {
+            if let Some(mem) = &self.memory {
+                mem.set_review(rev);
+            }
+        }
+        if let Some(caps_obj) = patch
+            .get("capability_approvals")
+            .and_then(serde_json::Value::as_object)
+        {
+            for (name, val) in caps_obj {
+                if let Some(apv) = val.as_bool() {
+                    self.caps.book.set_approval(name, apv);
+                }
+            }
+        }
+        let cap_names = self.caps.book.names();
+        let allowed_summary: Vec<String> = lim
+            .allowed_hosts
+            .iter()
+            .cloned()
+            .chain(lim.allowed_secrets.iter().map(|n| format!("secret/{n}")))
+            .chain(lim.allowed_egress.iter().map(|n| format!("egress/{n}")))
+            .chain(cap_names.iter().map(|n| format!("cap/{n}")))
+            .collect();
+        *self.handler.live_limits.lock_recover() = lim.clone();
+        self.handler.limiter.set_limits(abuse.clone());
+        self.handler
+            .live_policy_updated
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        {
+            let mut st = self.state.lock_recover();
+            for admit in st.admits.values_mut() {
+                admit.cpu_milli = (f64::from(lim.cpus) * 1000.0).ceil() as i64;
+                admit.mem_mib = i64::from(lim.mem_mib);
+                admit.timeout_secs = i64::try_from(lim.timeout_secs).unwrap_or(i64::MAX);
+                admit.net = lim.network;
+                admit.allowed = allowed_summary.clone();
+            }
+            st.save();
+        }
+        let snap = self.handler.policy_snapshot();
+        self.audit.record(
+            "policy_update",
+            None,
+            json!({
+                "ok": true,
+                "policy_digest": snap["policy_digest"],
+                "cpus": lim.cpus,
+                "mem_mib": lim.mem_mib,
+                "timeout_secs": lim.timeout_secs,
+                "network": lim.network,
+                "task_budget": abuse.task_budget,
+                "max_concurrent": abuse.max_concurrent_per_member,
+                "max_tasks_per_minute": abuse.max_tasks_per_window,
+                "memory_review": self.memory.as_ref().is_some_and(|m| m.review()),
+            }),
+        );
+        Ok(snap)
+    }
+
+    /// Inspect or replay a task recorded on this host.
+    pub async fn replay(&self, task_id: Option<&str>, run: bool) -> Result<serde_json::Value> {
+        self.handler
+            .replay_op(None, task_id, run)
+            .await
+            .map_err(|e| anyhow!(e))
+    }
+
+    /// Sign (if unsigned) and store a structured cross-agent handoff checkpoint as the host.
+    pub fn checkpoint_put(
+        &self,
+        mut cp: crate::card::HandoffCheckpoint,
+    ) -> Result<serde_json::Value> {
+        let ep = self.router.endpoint();
+        let sk = ep.secret_key().clone();
+        cp.room = ep.id().to_string();
+        if cp.issued_ms == 0 {
+            cp.issued_ms = crate::chat::now_ms();
+        }
+        if cp.policy_digest.is_empty() {
+            cp.policy_digest = self.handler.policy_digest();
+        }
+        if cp.budget_remaining.is_null()
+            || cp
+                .budget_remaining
+                .as_object()
+                .is_some_and(serde_json::Map::is_empty)
+        {
+            cp.budget_remaining = json!(self.handler.limiter.usage());
+        }
+        if cp.sig.is_empty() {
+            cp.sign_with(ep.id().as_bytes(), |m| sk.sign(m).to_bytes())
+                .map_err(|e| anyhow!(e))?;
+        }
+        self.handler
+            .checkpoint_put(&ep.id().to_string(), &mut cp)
+            .map_err(|e| anyhow!(e))
+    }
+
+    /// List structured cross-agent handoff checkpoints stored on this host.
+    #[must_use]
+    pub fn checkpoint_list(&self, id: Option<&str>) -> serde_json::Value {
+        self.handler.checkpoint_list(id)
+    }
+
+    /// Shared room memory ledger snapshot and provenance/taint state.
+    #[must_use]
+    pub fn memory_snapshot(&self) -> serde_json::Value {
+        let Some(mem) = &self.memory else {
+            return json!({
+                "enabled": false,
+                "review": false,
+                "entries": [],
+            });
+        };
+        let mut entries = mem.entries();
+        entries.sort_by(|a, b| b.at_ms.cmp(&a.at_ms).then(a.doc.cmp(&b.doc)));
+        json!({
+            "enabled": true,
+            "review": mem.review(),
+            "entries": entries,
+        })
+    }
+
+    /// Owner or host actions on the room's shared memory (remember owner-endorsed fact, endorse, accept, quarantine, recall).
+    pub async fn memory_action(&self, req: &serde_json::Value) -> Result<serde_json::Value> {
+        let Some(mem) = &self.memory else {
+            bail!("this room has no shared memory configured");
+        };
+        let action = req
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("list");
+        match action {
+            "list" => Ok(self.memory_snapshot()),
+            "remember" => {
+                let text = req
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| anyhow!("missing `text`"))?;
+                let key = req.get("key").and_then(serde_json::Value::as_str);
+                let task_id = req.get("task_id").and_then(serde_json::Value::as_str);
+                let commit = req.get("commit").and_then(serde_json::Value::as_str);
+                let endorsed = req
+                    .get("endorsed")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true);
+                let r = mem
+                    .remember_with_provenance("host", text, key, task_id, commit, endorsed)
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+                Ok(json!({
+                    "doc": r.doc,
+                    "status": r.status,
+                    "endorsed": endorsed,
+                    "taint": shared_memory::taint_label("host", endorsed, task_id, commit),
+                }))
+            }
+            "endorse" | "unendorse" => {
+                let doc = req
+                    .get("doc")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| anyhow!("missing `doc`"))?;
+                let endorsed = action == "endorse"
+                    && req
+                        .get("endorsed")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(true);
+                let e = mem.set_endorsed(doc, endorsed).await?;
+                Ok(json!({ "ok": true, "entry": e }))
+            }
+            "accept" | "quarantine" => {
+                let doc = req
+                    .get("doc")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| anyhow!("missing `doc`"))?;
+                let status = if action == "accept" {
+                    shared_memory::Status::Accepted
+                } else {
+                    shared_memory::Status::Quarantined
+                };
+                mem.set_status(doc, status).await?;
+                Ok(json!({ "ok": true, "doc": doc, "status": status.as_str() }))
+            }
+            "recall" => {
+                let query = req
+                    .get("query")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("*");
+                let max_tokens = req
+                    .get("max_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n.min(u64::from(u32::MAX)) as u32);
+                let author = req.get("author").and_then(serde_json::Value::as_str);
+                let trusted_only = req
+                    .get("trusted_only")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                let mut hits = mem
+                    .recall(query, max_tokens, author, &|_| true)
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+                if trusted_only {
+                    hits.retain(|h| {
+                        h.endorsed
+                            || h.author == "host"
+                            || h.taint == "owner_endorsed"
+                            || h.taint == "verified"
+                    });
+                }
+                Ok(json!({ "hits": hits }))
+            }
+            other => bail!("unknown memory action {other:?}"),
+        }
     }
 
     /// Calls waiting for the owner's approval.
@@ -698,12 +1021,23 @@ impl Host {
         );
         let _ = self.repl.tx.send(text);
         self.roomlog.record("member.revoke", &id.to_string(), now);
-        // The member's entries in the room's shared memory go with their access.
+        // The member's entries in the room's shared memory go with their access, along with any warm
+        // sandbox or persistent session worktree held for them.
         if let Some(mem) = self.memory.clone() {
             let who = id.to_string();
             tokio::spawn(async move {
                 mem.forget_author(&who).await;
             });
+        }
+        {
+            let sessions = self.sessions.clone();
+            let runner = self.runner.clone();
+            let who = *id;
+            if let Ok(h) = tokio::runtime::Handle::try_current() {
+                h.spawn(async move {
+                    drop_member_session(&sessions, runner.as_ref(), who).await;
+                });
+            }
         }
         true
     }
@@ -963,6 +1297,7 @@ impl Host {
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn shutdown(self) -> Result<()> {
         self.repl.stop();
+        drop_all_sessions(&self.sessions, self.runner.as_ref()).await;
         self.router.shutdown().await.map_err(|e| anyhow!("{e}"))
     }
 }

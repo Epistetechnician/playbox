@@ -1,0 +1,8 @@
+name: playbox-atlas
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+description: "AtlasKV-inspired hierarchical KG2KV + HiKVP repo call-graph & verified room memory lookup (`atlas_query`), enforcing Playbox provenance quarantine."
+author: Epistetechnician
+provides_tools:
+  - atlas_query

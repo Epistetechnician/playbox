@@ -113,14 +113,20 @@ pub async fn serve(
         let mut line = String::new();
         let got = tokio::time::timeout(
             Duration::from_secs(5),
-            BufReader::new(rd.take(512)).read_line(&mut line),
+            BufReader::new(rd.take(16384)).read_line(&mut line),
         )
         .await;
         if !matches!(got, Ok(Ok(n)) if n > 0) {
             continue;
         }
-        let mut w = line.split_whitespace();
-        let reply = match (w.next(), w.next()) {
+        let trimmed = line.trim();
+        let (cmd, rest_raw) = match trimmed.split_once(char::is_whitespace) {
+            Some((c, r)) => (Some(c), r.trim()),
+            None if !trimmed.is_empty() => (Some(trimmed), ""),
+            None => (None, ""),
+        };
+        let mut w = rest_raw.split_whitespace();
+        let reply = match (cmd, w.next()) {
             (Some("ping"), _) => "ok".to_string(),
             (Some("link"), who) => match link_opts(who)
                 .and_then(|o| host.create_link_with(Duration::from_secs(3600), 1, o))
@@ -180,7 +186,31 @@ pub async fn serve(
                     Err(e) => format!("error: not a member id: {e}"),
                 }
             }
-            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID | members | revoke MEMBER ID | launch MEMBER HARNESS [MODEL [IMAGE]]".to_string(),
+            (Some("policy"), _) => host.policy_snapshot().to_string(),
+            (Some("policy_set"), _) => match serde_json::from_str::<serde_json::Value>(rest_raw) {
+                Ok(v) => match host.update_policy(&v) {
+                    Ok(snap) => snap.to_string(),
+                    Err(e) => format!("error: {e:#}").replace('\n', " "),
+                },
+                Err(e) => format!("error: bad policy json: {e}").replace('\n', " "),
+            },
+            (Some("memory"), _) => host.memory_snapshot().to_string(),
+            (Some("memory_act"), _) => match serde_json::from_str::<serde_json::Value>(rest_raw) {
+                Ok(v) => match host.memory_action(&v).await {
+                    Ok(res) => res.to_string(),
+                    Err(e) => format!("error: {e:#}").replace('\n', " "),
+                },
+                Err(e) => format!("error: bad memory json: {e}").replace('\n', " "),
+            },
+            (Some("replay"), tid) => {
+                let run = matches!(w.next(), Some("run" | "true" | "1"));
+                match host.replay(tid, run).await {
+                    Ok(res) => res.to_string(),
+                    Err(e) => format!("error: {e:#}").replace('\n', " "),
+                }
+            }
+            (Some("handoffs"), tid) => host.checkpoint_list(tid).to_string(),
+            _ => "error: ping | link [GUEST ID] | calls | approve ID | deny ID | members | revoke MEMBER ID | launch MEMBER HARNESS [MODEL [IMAGE]] | policy | policy_set JSON | memory | memory_act JSON | replay [TASK_ID [run]] | handoffs [ID]".to_string(),
         };
         let _ = wr.write_all(format!("{reply}\n").as_bytes()).await;
     }

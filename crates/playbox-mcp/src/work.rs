@@ -1,11 +1,11 @@
 //! Delegated work: pulling, delegating, steering, pushing, verifying, auditing and revoking.
 
 use crate::args::{b, req, s};
-use crate::{Server, SHOWN_PATCH_BYTES};
+use crate::{Server, MAX_FULL_PATCH_BYTES, SHOWN_PATCH_BYTES};
 use anyhow::{anyhow, bail, Context, Result};
 use playbox_core::{platform, store, taint::Source};
 use playbox_net::EndpointId;
-use playbox_runner::TaskSpec;
+use playbox_runner::{SyncMode, TaskSpec};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
@@ -68,18 +68,41 @@ impl Server {
                 .filter_map(|h| h.as_str().map(str::to_string))
                 .collect();
         }
+        let keep = b(a, "keep");
+        let sync = match s(a, "sync") {
+            None | Some("full") => SyncMode::Full,
+            Some("delta") => SyncMode::Delta,
+            Some("none") => SyncMode::None,
+            Some(other) => bail!("unknown sync mode {other:?}; use full, delta, or none"),
+        };
+        let mut h = blake3::Hasher::new();
+        for arg in &spec.cmd {
+            h.update(arg.as_bytes());
+            h.update(&[0]);
+        }
+        let cmd_hash: String = h.finalize().to_hex().chars().take(16).collect();
+        let offline_workspace_task = self.trust_offline_workspace
+            && !spec.network
+            && spec.allowed_hosts.is_empty()
+            && spec.egress.is_empty();
         let run = self
             .guest()?
-            .run_task_with(base, spec, b(a, "warm"))
+            .run_task_session(base, spec, b(a, "warm"), keep, sync)
             .await?;
         let (runner, out, patch) = (run.runner.clone(), run.output.clone(), run.patch.clone());
-        // Everything a remote task printed or changed is untrusted text from now on.
-        let origin = Source::untrusted(format!("task:{}", run.task_id));
-        self.guard.tracker.register(&out.stdout, &origin);
-        self.guard.tracker.register(&out.stderr, &origin);
-        self.guard
-            .tracker
-            .register(&String::from_utf8_lossy(&patch), &origin);
+        let patch_hash = blake3::hash(&patch).to_hex().to_string();
+        let stdout_hash = blake3::hash(out.stdout.as_bytes()).to_hex().to_string();
+        // Everything a networked task (or any task when PLAYBOX_TRUST_OFFLINE_WORKSPACE is unset)
+        // printed or changed is untrusted text from now on; isolated offline workspace tasks in
+        // single-owner coding sessions do not self-taint benign own-repo code echoes.
+        if !offline_workspace_task {
+            let origin = Source::untrusted(format!("task:{}", run.task_id));
+            self.guard.tracker.register(&out.stdout, &origin);
+            self.guard.tracker.register(&out.stderr, &origin);
+            self.guard
+                .tracker
+                .register(&String::from_utf8_lossy(&patch), &origin);
+        }
         let mut applied = false;
         if b(a, "apply") && !patch.is_empty() {
             playbox_git::apply_patch(self.workspace()?, &patch)
@@ -87,8 +110,12 @@ impl Server {
                 .context("applying patch")?;
             applied = true;
         }
-        let shown =
-            String::from_utf8_lossy(&patch[..patch.len().min(SHOWN_PATCH_BYTES)]).into_owned();
+        let patch_cap = if b(a, "full_patch") {
+            MAX_FULL_PATCH_BYTES
+        } else {
+            SHOWN_PATCH_BYTES
+        };
+        let shown = String::from_utf8_lossy(&patch[..patch.len().min(patch_cap)]).into_owned();
         Ok(json!({
             "runner": runner,
             "exit_code": out.exit_code,
@@ -97,14 +124,240 @@ impl Server {
             "stderr": out.stderr,
             "patch_bytes": patch.len(),
             "patch": shown,
-            "patch_truncated": patch.len() > SHOWN_PATCH_BYTES,
+            "patch_truncated": patch.len() > patch_cap,
             "patch_applied": applied,
+            "patch_hash": patch_hash,
+            "stdout_hash": stdout_hash,
+            "cmd_hash": cmd_hash,
+            "policy_digest": out.policy_digest,
             "task_id": run.task_id,
+            "base": base,
             "host_branch": run.branch,
             "host_commit": run.commit,
             "changed": run.changed,
+            "keep": keep,
+            "sync": sync.as_str(),
             "admission": admission,
         }))
+    }
+
+    pub(crate) async fn replay(&mut self, a: &Value) -> Result<Value> {
+        let task_id = s(a, "task_id");
+        let run = b(a, "run");
+        let mut res = if self.client.is_some() {
+            self.guest()?.replay(task_id, run).await?
+        } else if let Some(host) = &self.host {
+            host.replay(task_id, run).await?
+        } else {
+            bail!("not in a room: call playbox_join or playbox_create first");
+        };
+        // Register untrusted text from the inspected/replayed task.
+        let origin = Source::untrusted(format!("replay:{}", task_id.unwrap_or("list")));
+        let patch_text = res
+            .pointer("/replay/patch")
+            .or_else(|| res.pointer("/task/patch"))
+            .or_else(|| res.pointer("/original/patch"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if !patch_text.is_empty() {
+            self.guard.tracker.register(&patch_text, &origin);
+        }
+        for ptr in ["/replay/stdout", "/replay/stderr"] {
+            if let Some(txt) = res.pointer(ptr).and_then(Value::as_str) {
+                self.guard.tracker.register(txt, &origin);
+            }
+        }
+        if b(a, "apply") && !patch_text.is_empty() {
+            playbox_git::apply_patch(self.workspace()?, patch_text.as_bytes())
+                .await
+                .context("applying replay patch")?;
+            if let Some(obj) = res.as_object_mut() {
+                obj.insert("patch_applied".into(), json!(true));
+            }
+        }
+        Ok(res)
+    }
+
+    pub(crate) async fn handoff(&mut self, a: &Value) -> Result<Value> {
+        let summary = req(a, "summary")?.to_string();
+        let str_list = |k: &str| -> Vec<String> {
+            a.get(k)
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let mut branch = s(a, "branch").unwrap_or("main").to_string();
+        let mut base_commit = s(a, "base_commit").unwrap_or("").to_string();
+        let mut pushed_ref: Option<String> = None;
+        if let Some(ws) = &self.workspace {
+            if base_commit.is_empty() {
+                if let Ok(head) = playbox_git::rev_parse(ws, "HEAD").await {
+                    base_commit = head;
+                }
+            }
+            if b(a, "push") && self.client.is_some() {
+                let bundle = playbox_git::bundle_create(ws, &branch).await?;
+                let stored = self.guest()?.push(&branch, &bundle).await?;
+                pushed_ref = Some(stored.clone());
+                branch = stored;
+            }
+        } else if let Some(repo) = &self.host_repo {
+            if base_commit.is_empty() {
+                if let Ok(head) = playbox_git::rev_parse(repo, &branch).await {
+                    base_commit = head;
+                } else if let Ok(head) = playbox_git::rev_parse(repo, "HEAD").await {
+                    base_commit = head;
+                }
+            }
+        }
+        let policy_snap = if let Some(host) = &self.host {
+            Some(host.policy_snapshot())
+        } else if let Ok(g) = self.guest() {
+            g.policy().await.ok()
+        } else {
+            None
+        };
+        let mut budget_remaining = a
+            .get("budget_remaining")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if let (Some(obj), Some(ps)) = (budget_remaining.as_object_mut(), &policy_snap) {
+            if let Some(b_obj) = ps.get("budget").and_then(Value::as_object) {
+                for (k, v) in b_obj {
+                    obj.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+            }
+        }
+        let policy_digest = s(a, "policy_digest")
+            .map(str::to_string)
+            .or_else(|| {
+                policy_snap
+                    .as_ref()
+                    .and_then(|p| p.get("policy_digest"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+        let cp = playbox_net::card::HandoffCheckpoint {
+            id: s(a, "id").unwrap_or("").to_string(),
+            room: String::new(),
+            from: String::new(),
+            to: s(a, "to").unwrap_or("").to_string(),
+            summary,
+            base_commit,
+            branch,
+            open_cards: str_list("open_cards"),
+            verified_artifacts: str_list("verified_artifacts"),
+            failed_checks: str_list("failed_checks"),
+            budget_remaining,
+            policy_digest,
+            issued_ms: store::now_ms(),
+            sig: String::new(),
+        };
+        let mut out = if self.client.is_some() {
+            self.guest()?.checkpoint_put(cp).await?
+        } else if let Some(host) = &self.host {
+            host.checkpoint_put(cp)?
+        } else {
+            bail!("not in a room: call playbox_join or playbox_create first");
+        };
+        if let (Some(obj), Some(pr)) = (out.as_object_mut(), pushed_ref) {
+            obj.insert("pushed_ref".into(), json!(pr));
+        }
+        Ok(out)
+    }
+
+    pub(crate) async fn handoffs(&mut self, a: &Value) -> Result<Value> {
+        let id = s(a, "id");
+        let resume = b(a, "resume");
+        let target_id = if resume && id.is_none() {
+            Some("latest")
+        } else {
+            id
+        };
+        let mut res = if self.client.is_some() {
+            self.guest()?.checkpoint_list(target_id).await?
+        } else if let Some(host) = &self.host {
+            host.checkpoint_list(target_id)
+        } else {
+            bail!("not in a room: call playbox_join or playbox_create first");
+        };
+        let me = self.member_id.clone().unwrap_or_default();
+        for cp in res
+            .get("checkpoints")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let from = cp.get("from").and_then(Value::as_str).unwrap_or("");
+            if from != me {
+                let cid = cp.get("id").and_then(Value::as_str).unwrap_or("handoff");
+                let origin = Source::untrusted(format!("handoff:{cid}"));
+                if let Some(sum) = cp.get("summary").and_then(Value::as_str) {
+                    self.guard.tracker.register(sum, &origin);
+                }
+                for fc in cp
+                    .get("failed_checks")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
+                    self.guard.tracker.register(fc, &origin);
+                }
+            }
+        }
+        if resume {
+            let first = res
+                .get("checkpoints")
+                .and_then(Value::as_array)
+                .and_then(|arr| arr.first())
+                .cloned()
+                .ok_or_else(|| anyhow!("no matching handoff checkpoint to resume"))?;
+            let branch = first
+                .get("branch")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    first
+                        .get("base_commit")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                })
+                .unwrap_or("main");
+            if self.client.is_some() && self.workspace.is_some() {
+                let pulled = self
+                    .pull(&json!({ "ref": branch, "checkout": true }))
+                    .await?;
+                if let Some(obj) = res.as_object_mut() {
+                    obj.insert(
+                        "resumed".into(),
+                        json!({
+                            "checkpoint_id": first.get("id"),
+                            "branch": branch,
+                            "base_commit": first.get("base_commit"),
+                            "pull": pulled,
+                        }),
+                    );
+                }
+            } else if let Some(obj) = res.as_object_mut() {
+                obj.insert(
+                    "resumed".into(),
+                    json!({
+                        "checkpoint_id": first.get("id"),
+                        "branch": branch,
+                        "base_commit": first.get("base_commit"),
+                    }),
+                );
+            }
+        }
+        Ok(res)
     }
 
     pub(crate) async fn steer(&mut self, a: &Value) -> Result<Value> {

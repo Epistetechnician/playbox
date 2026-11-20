@@ -90,6 +90,46 @@ pub fn hindsight_memory(
     Ok(std::sync::Arc::new(SharedMemory::new(c)?))
 }
 
+/// A room's built-in shared memory backed by an in-memory semantic/keyword index and the persistent `memory.jsonl` ledger in `dir`.
+///
+/// # Errors
+///
+/// Returns an error if the bank name is invalid or the ledger cannot be opened.
+pub fn local_memory(
+    bank: &str,
+    review: bool,
+    dir: Option<&std::path::Path>,
+) -> Result<std::sync::Arc<SharedMemory>> {
+    let idx = std::sync::Arc::new(InMemory::default());
+    let mut c = MemoryConfig::new(idx.clone(), bank);
+    c.review = review;
+    c.ledger = dir.map(|d| d.join("memory.jsonl"));
+    let sm = SharedMemory::new(c)?;
+    for e in sm.entries() {
+        if e.status == Status::Accepted {
+            idx.insert_sync(&sm.cfg.room, sm.item(&e));
+        }
+    }
+    Ok(std::sync::Arc::new(sm))
+}
+
+/// Compute the trust/taint label for a room memory entry.
+#[must_use]
+pub fn taint_label(
+    author: &str,
+    endorsed: bool,
+    task_id: Option<&str>,
+    commit: Option<&str>,
+) -> String {
+    if endorsed || author == "host" {
+        "owner_endorsed".to_string()
+    } else if task_id.is_some_and(|s| !s.is_empty()) || commit.is_some_and(|s| !s.is_empty()) {
+        "verified".to_string()
+    } else {
+        "untrusted".to_string()
+    }
+}
+
 /// One entry in the ledger.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -98,6 +138,16 @@ pub struct Entry {
     pub text: String,
     pub status: Status,
     pub at_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    #[serde(default)]
+    pub endorsed: bool,
+    #[serde(default)]
+    pub taint: String,
 }
 
 /// What a recall returns for one hit.
@@ -107,6 +157,16 @@ pub struct Hit {
     pub author: String,
     pub text: String,
     pub at_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    #[serde(default)]
+    pub endorsed: bool,
+    #[serde(default)]
+    pub taint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -120,11 +180,13 @@ pub struct Remembered {
 enum Line {
     Put(Entry),
     Status { doc: String, status: Status },
+    Endorse { doc: String, endorsed: bool },
     Del { doc: String },
 }
 
 pub struct SharedMemory {
     cfg: MemoryConfig,
+    review_flag: std::sync::atomic::AtomicBool,
     ledger: Mutex<BTreeMap<String, Entry>>,
     posts: Mutex<HashMap<String, VecDeque<Instant>>>,
     /// One writer at a time to the ledger file and the index, so an entry and its deletion cannot cross.
@@ -177,12 +239,31 @@ impl SharedMemory {
                 for l in text.lines() {
                     // A damaged line is skipped, like the feed's log: one bad write must not lose the room's memory.
                     match serde_json::from_str::<Line>(l) {
-                        Ok(Line::Put(e)) => {
+                        Ok(Line::Put(mut e)) => {
+                            if e.taint.is_empty() {
+                                e.taint = taint_label(
+                                    &e.author,
+                                    e.endorsed,
+                                    e.task_id.as_deref(),
+                                    e.commit.as_deref(),
+                                );
+                            }
                             ledger.insert(e.doc.clone(), e);
                         }
                         Ok(Line::Status { doc, status }) => {
                             if let Some(e) = ledger.get_mut(&doc) {
                                 e.status = status;
+                            }
+                        }
+                        Ok(Line::Endorse { doc, endorsed }) => {
+                            if let Some(e) = ledger.get_mut(&doc) {
+                                e.endorsed = endorsed;
+                                e.taint = taint_label(
+                                    &e.author,
+                                    e.endorsed,
+                                    e.task_id.as_deref(),
+                                    e.commit.as_deref(),
+                                );
                             }
                         }
                         Ok(Line::Del { doc }) => {
@@ -193,12 +274,24 @@ impl SharedMemory {
                 }
             }
         }
+        let review_flag = std::sync::atomic::AtomicBool::new(cfg.review);
         Ok(Self {
             cfg,
+            review_flag,
             ledger: Mutex::new(ledger),
             posts: Mutex::default(),
             io: tokio::sync::Mutex::new(()),
         })
+    }
+
+    #[must_use]
+    pub fn review(&self) -> bool {
+        self.review_flag.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_review(&self, on: bool) {
+        self.review_flag
+            .store(on, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn append(&self, line: &Line) -> Result<()> {
@@ -268,6 +361,19 @@ impl SharedMemory {
         text: &str,
         key: Option<&str>,
     ) -> std::result::Result<Remembered, String> {
+        self.remember_with_provenance(author, text, key, None, None, author == "host")
+            .await
+    }
+
+    pub async fn remember_with_provenance(
+        &self,
+        author: &str,
+        text: &str,
+        key: Option<&str>,
+        task_id: Option<&str>,
+        commit: Option<&str>,
+        endorsed: bool,
+    ) -> std::result::Result<Remembered, String> {
         if text.trim().is_empty() || text.len() > MAX_TEXT_BYTES {
             return Err(format!("an entry is 1 to {MAX_TEXT_BYTES} bytes of text"));
         }
@@ -277,17 +383,36 @@ impl SharedMemory {
             }
         }
         let doc = doc_id(author, key.unwrap_or(text));
-        let status = if self.cfg.review {
-            Status::Pending
-        } else {
+        let status = if endorsed || author == "host" || !self.review() {
             Status::Accepted
+        } else {
+            Status::Pending
         };
+        let clean_opt = |v: Option<&str>, max: usize| {
+            v.map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.chars().take(max).collect::<String>())
+        };
+        let key_clean = clean_opt(key, MAX_KEY_BYTES);
+        let task_clean = clean_opt(task_id, 64);
+        let commit_clean = clean_opt(commit, 64);
+        let taint = taint_label(
+            author,
+            endorsed,
+            task_clean.as_deref(),
+            commit_clean.as_deref(),
+        );
         let entry = Entry {
             doc: doc.clone(),
             author: author.to_string(),
             text: text.to_string(),
             status,
             at_ms: now_ms(),
+            key: key_clean,
+            task_id: task_clean,
+            commit: commit_clean,
+            endorsed: endorsed || author == "host",
+            taint,
         };
         let _io = self.io.lock().await;
         let (replaces, same) = {
@@ -305,7 +430,12 @@ impl SharedMemory {
             }
             (
                 old.cloned(),
-                old.is_some_and(|o| o.text == text && o.status != Status::Quarantined),
+                old.is_some_and(|o| {
+                    o.text == text
+                        && o.task_id == entry.task_id
+                        && o.commit == entry.commit
+                        && o.status != Status::Quarantined
+                }),
             )
         };
         // A retry of the same entry is answered without work, and without using the member's post budget.
@@ -395,7 +525,7 @@ impl SharedMemory {
             let Some(doc) = h.doc else { continue };
             let Some(e) = g.get(&doc) else { continue };
             if e.status != Status::Accepted
-                || !is_member(&e.author)
+                || (e.author != "host" && !is_member(&e.author))
                 || author.is_some_and(|a| a != e.author)
             {
                 continue;
@@ -415,9 +545,56 @@ impl SharedMemory {
                 author: e.author.clone(),
                 text: h.text,
                 at_ms: e.at_ms,
+                key: e.key.clone(),
+                task_id: e.task_id.clone(),
+                commit: e.commit.clone(),
+                endorsed: e.endorsed,
+                taint: taint_label(
+                    &e.author,
+                    e.endorsed,
+                    e.task_id.as_deref(),
+                    e.commit.as_deref(),
+                ),
             });
         }
         Ok(out)
+    }
+
+    /// Mark an entry as owner-endorsed (or remove endorsement). Endorsing also accepts a pending entry.
+    pub async fn set_endorsed(&self, doc: &str, endorsed: bool) -> Result<Entry> {
+        let _io = self.io.lock().await;
+        let mut e = self
+            .ledger
+            .lock_recover()
+            .get(doc)
+            .cloned()
+            .ok_or_else(|| anyhow!("no such entry"))?;
+        e.endorsed = endorsed;
+        e.taint = taint_label(
+            &e.author,
+            e.endorsed,
+            e.task_id.as_deref(),
+            e.commit.as_deref(),
+        );
+        if endorsed && e.status != Status::Accepted {
+            e.status = Status::Accepted;
+            self.cfg
+                .backend
+                .retain(&self.cfg.room, &self.item(&e))
+                .await?;
+            self.append(&Line::Status {
+                doc: doc.to_string(),
+                status: Status::Accepted,
+            })?;
+        }
+        self.append(&Line::Endorse {
+            doc: doc.to_string(),
+            endorsed,
+        })?;
+        self.ledger
+            .lock_recover()
+            .insert(doc.to_string(), e.clone());
+        Ok(e)
     }
 
     /// Delete every document of `author` from the index and the ledger. Returns how many were removed.
@@ -449,7 +626,7 @@ impl SharedMemory {
             .ledger
             .lock_recover()
             .values()
-            .filter(|e| !is_member(&e.author))
+            .filter(|e| e.author != "host" && !is_member(&e.author))
             .map(|e| e.author.clone())
             .collect();
         let mut n = 0;

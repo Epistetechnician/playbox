@@ -26,10 +26,18 @@ pub fn join_choice(t: &TransportArgs) -> Result<TransportChoice> {
 pub async fn up(a: UpArgs) -> Result<()> {
     let transport = chosen(&a.transport)?;
     let (state, repo) = (a.state.clone(), a.repo.clone());
-    let runtime = a
+    let tpl_kind = a.template.map(playbox_net::templates::TemplateKind::from);
+    let tpl_spec = tpl_kind.map(playbox_net::templates::TemplateKind::spec);
+    if let Some(ref s) = tpl_spec {
+        println!("template: {} ({})", s.id, s.label);
+    }
+    let explicit_runtime = a
         .runtime
         .clone()
         .or_else(|| a.docker.then(|| "docker".to_string()));
+    let runtime = explicit_runtime
+        .clone()
+        .or_else(|| tpl_spec.as_ref().map(|s| s.default_runtime.to_string()));
     let min_isolation = resolve_min_isolation(a.min_isolation, runtime.as_deref())?;
     let provider: Option<std::sync::Arc<dyn attest::PlatformProvider>> =
         platform::detect(&store::home())
@@ -77,7 +85,15 @@ pub async fn up(a: UpArgs) -> Result<()> {
                     .transpose()?,
                 egress: egress_cfg,
             };
-            Some(runner_with(&name, policy, &opts)?)
+            let candidate = runner_with(&name, policy, &opts)?;
+            if explicit_runtime.is_none() && candidate.preflight().await.is_err() {
+                eprintln!(
+                    "note: template default runtime `{name}` is not available on this machine; starting room without task runner"
+                );
+                None
+            } else {
+                Some(candidate)
+            }
         }
         None => None,
     };
@@ -86,6 +102,26 @@ pub async fn up(a: UpArgs) -> Result<()> {
         runner.as_ref().map(|r| r.name()),
         runner.as_ref().is_some_and(|r| r.enforces_host_list()),
     )?;
+    let bank_name = a.memory_bank.clone().unwrap_or_else(|| {
+        state
+            .as_deref()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .map(|n| {
+                n.to_string_lossy()
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                            c
+                        } else {
+                            '-'
+                        }
+                    })
+                    .collect::<String>()
+            })
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "room".to_string())
+    });
+    let mem_review = a.memory_review || tpl_spec.as_ref().is_some_and(|s| s.memory_review);
     let cfg = HostConfig {
         min_isolation,
         // A host with a state directory logs into it; one without logs to stderr, so activity is never invisible.
@@ -97,7 +133,10 @@ pub async fn up(a: UpArgs) -> Result<()> {
         repo: repo.map(PathBuf::from),
         runner,
         capabilities: match &a.capabilities {
-            None => Vec::new(),
+            None => tpl_spec
+                .as_ref()
+                .map(|s| s.capabilities.clone())
+                .unwrap_or_default(),
             Some(file) => serde_json::from_slice(
                 &std::fs::read(file).with_context(|| format!("reading {file}"))?,
             )
@@ -140,40 +179,29 @@ pub async fn up(a: UpArgs) -> Result<()> {
             }
         },
         memory: match &a.memory_url {
-            None => None,
-            Some(url) => {
-                let bank = a.memory_bank.clone().unwrap_or_else(|| {
-                    state
-                        .as_deref()
-                        .and_then(|p| std::path::Path::new(p).file_name())
-                        .map(|n| {
-                            n.to_string_lossy()
-                                .chars()
-                                .map(|c| {
-                                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                                        c
-                                    } else {
-                                        '-'
-                                    }
-                                })
-                                .collect::<String>()
-                        })
-                        .filter(|n| !n.is_empty())
-                        .unwrap_or_else(|| "room".to_string())
-                });
-                Some(playbox_net::shared_memory::hindsight_memory(
-                    url,
-                    &bank,
-                    a.memory_review,
-                    false,
+            Some(url) => Some(playbox_net::shared_memory::hindsight_memory(
+                url,
+                &bank_name,
+                mem_review,
+                false,
+                state.as_deref().map(std::path::Path::new),
+            )?),
+            None if state.is_some() || tpl_spec.is_some() || a.memory_review => {
+                Some(playbox_net::shared_memory::local_memory(
+                    &bank_name,
+                    mem_review,
                     state.as_deref().map(std::path::Path::new),
                 )?)
             }
+            None => None,
         },
         platform: provider,
         limits,
         abuse: {
-            let mut l = playbox_net::limits::AbuseLimits::default();
+            let mut l = tpl_spec
+                .as_ref()
+                .map(|s| s.abuse.clone())
+                .unwrap_or_default();
             if let Some(v) = a.max_members {
                 l.max_members = v as usize;
             }
@@ -222,6 +250,9 @@ pub async fn up(a: UpArgs) -> Result<()> {
         (Some(dir), None) => Host::open(std::path::Path::new(dir), transport.clone(), cfg).await?,
         (None, None) => Host::start_with(new_secret_key()?, transport.clone(), cfg).await?,
     };
+    if let Some(kind) = tpl_kind {
+        playbox_net::templates::seed_room(&host, kind).await;
+    }
     let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
     println!("room root public key: {}", hex(&host.root_public()));
     println!(
@@ -374,9 +405,11 @@ fn check_flags(a: &UpArgs, runtime: Option<&str>, enforces_host_list: bool) -> R
     }
     if a.egress.is_some() || !a.allow_egress.is_empty() {
         match runtime {
-            None => bail!("--egress requires --runtime libkrun"),
-            Some("libkrun") => {}
-            Some(name) => bail!("--egress applies to the libkrun runner only (got {name})"),
+            None => bail!("--egress requires --runtime libkrun or --runtime openshell"),
+            Some("libkrun" | "openshell") => {}
+            Some(name) => {
+                bail!("--egress applies to the libkrun and openshell runners only (got {name})")
+            }
         }
     }
     Ok(())
@@ -860,11 +893,27 @@ impl From<MinIsolation> for Isolation {
 }
 
 fn build_limits(a: &UpArgs) -> playbox_runner::Limits {
+    let base = a
+        .template
+        .map(|t| playbox_net::templates::TemplateKind::from(t).spec().limits)
+        .unwrap_or_default();
     let mut limits = playbox_runner::Limits {
-        allowed_hosts: a.allow_host.clone(),
-        allowed_secrets: a.allow_secret.clone(),
-        allowed_egress: a.allow_egress.clone(),
-        ..Default::default()
+        allowed_hosts: if a.allow_host.is_empty() {
+            base.allowed_hosts
+        } else {
+            a.allow_host.clone()
+        },
+        allowed_secrets: if a.allow_secret.is_empty() {
+            base.allowed_secrets
+        } else {
+            a.allow_secret.clone()
+        },
+        allowed_egress: if a.allow_egress.is_empty() {
+            base.allowed_egress
+        } else {
+            a.allow_egress.clone()
+        },
+        ..base
     };
     if let Some(cpus) = a.task_cpus {
         limits.cpus = cpus;
@@ -1143,5 +1192,32 @@ mod tests {
         ]));
         assert_eq!(steer_keeps_higher.mem_mib, 8192);
         assert_eq!(steer_keeps_higher.timeout_secs, 1200);
+    }
+
+    #[test]
+    fn template_flag_sets_template_defaults_and_allows_cli_overrides() {
+        let swe = build_limits(&up_args(&["--template", "swe"]));
+        assert_eq!(swe.cpus, 2.0);
+        assert_eq!(swe.mem_mib, 2048);
+        assert_eq!(swe.timeout_secs, 600);
+        assert!(swe.allowed_hosts.iter().any(|h| h == "github.com"));
+
+        let res = build_limits(&up_args(&[
+            "--template",
+            "research",
+            "--task-cpus",
+            "8",
+            "--task-mem-mib",
+            "16384",
+        ]));
+        assert_eq!(res.cpus, 8.0);
+        assert_eq!(res.mem_mib, 16384);
+        assert_eq!(res.timeout_secs, 1800);
+        assert!(res.allowed_hosts.iter().any(|h| h == "huggingface.co"));
+
+        let rev = build_limits(&up_args(&["--template", "review"]));
+        assert_eq!(rev.cpus, 1.0);
+        assert_eq!(rev.mem_mib, 1024);
+        assert!(rev.allowed_hosts.is_empty());
     }
 }

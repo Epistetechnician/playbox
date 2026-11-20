@@ -334,7 +334,7 @@ struct Table {
 }
 
 pub struct Book {
-    caps: BTreeMap<String, Capability>,
+    caps: Mutex<BTreeMap<String, Capability>>,
     table: Mutex<Table>,
     store: Option<PathBuf>,
 }
@@ -401,7 +401,7 @@ impl Book {
             }
         }
         let book = Self {
-            caps: map,
+            caps: Mutex::new(map),
             table: Mutex::new(table),
             store,
         };
@@ -411,7 +411,22 @@ impl Book {
 
     #[must_use]
     pub fn names(&self) -> Vec<String> {
-        self.caps.keys().cloned().collect()
+        self.caps.lock_recover().keys().cloned().collect()
+    }
+
+    #[must_use]
+    pub fn list(&self) -> Vec<Capability> {
+        self.caps.lock_recover().values().cloned().collect()
+    }
+
+    pub fn set_approval(&self, name: &str, approval: bool) -> bool {
+        let mut g = self.caps.lock_recover();
+        if let Some(c) = g.get_mut(name) {
+            c.approval = approval;
+            true
+        } else {
+            false
+        }
     }
 
     /// What a member sees of the offer: names, parameters and whether calls need approval. Never the command.
@@ -419,6 +434,7 @@ impl Book {
     pub fn describe(&self) -> Value {
         json!(self
             .caps
+            .lock_recover()
             .values()
             .map(|c| json!({
                 "name": c.name,
@@ -460,7 +476,9 @@ impl Book {
         }
         let cap = self
             .caps
+            .lock_recover()
             .get(name)
+            .cloned()
             .with_context(|| format!("no capability named {name:?}"))?;
         cap.bind(&args)?;
         let request_hash = blake3::hash(canonical(&json!({"name": name, "args": args})).as_bytes())
@@ -616,10 +634,15 @@ impl Book {
     /// # Errors
     ///
     /// Fails if the call or its capability no longer exists.
-    pub fn plan(&self, member: &str, id: &str) -> Result<(Vec<String>, &Capability)> {
+    pub fn plan(&self, member: &str, id: &str) -> Result<(Vec<String>, Capability)> {
         let t = self.table.lock_recover();
         let c = t.calls.get(&key(member, id)).context("call vanished")?;
-        let cap = self.caps.get(&c.name).context("capability vanished")?;
+        let cap = self
+            .caps
+            .lock_recover()
+            .get(&c.name)
+            .cloned()
+            .context("capability vanished")?;
         Ok((cap.bind(&c.args)?, cap))
     }
 

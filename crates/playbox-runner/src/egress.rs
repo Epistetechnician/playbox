@@ -432,7 +432,29 @@ impl Proxy {
         secrets: &SecretStore,
         names: &[String],
     ) -> Result<Self> {
+        Self::start_with_host(cfg, secrets, names, Ipv4Addr::LOCALHOST, "127.0.0.1").await
+    }
+
+    /// Like [`Proxy::start`], binding on `bind_ip:0` and advertising `guest_host` in the generated capability URLs
+    /// (e.g. `host.docker.internal` for an `OpenShell` sandbox reaching the host proxy).
+    ///
+    /// # Errors
+    ///
+    /// Fails if any requested upstream is unknown, duplicated, missing its secret, resolves to a forbidden address, or cannot bind.
+    pub async fn start_with_host(
+        cfg: &EgressConfig,
+        secrets: &SecretStore,
+        names: &[String],
+        bind_ip: Ipv4Addr,
+        guest_host: &str,
+    ) -> Result<Self> {
         cfg.validate()?;
+        if guest_host.is_empty()
+            || guest_host.contains(['/', '?', '#', '@', ':', '\r', '\n'])
+            || guest_host.chars().any(char::is_whitespace)
+        {
+            bail!("invalid egress guest_host {guest_host:?}");
+        }
         if names.is_empty() {
             bail!("cannot start egress proxy with an empty upstream list");
         }
@@ -526,14 +548,14 @@ impl Proxy {
             );
         }
 
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        let listener = TcpListener::bind((bind_ip, 0))
             .await
-            .context("binding loopback egress proxy")?;
+            .context("binding egress proxy")?;
         let port = listener.local_addr()?.port();
         let token = random_hex_16()?;
         let envs = raw_envs
             .into_iter()
-            .map(|(k, name)| (k, format!("http://127.0.0.1:{port}/t/{token}/{name}")))
+            .map(|(k, name)| (k, format!("http://{guest_host}:{port}/t/{token}/{name}")))
             .collect();
 
         let state = Arc::new(SharedState {

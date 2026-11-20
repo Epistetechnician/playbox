@@ -55,6 +55,53 @@ unexplained (candidates, untested: the 5 to 6 times slower loop, replayed edits,
 model did elsewhere). The 15-run table above is the original set and is kept as is; with the rerun in place of the original 11422 cell P is
 5 + 0 + 0 = 5 of 15.
 
+## Addendum (2026-11-19): Root cause of the `django-11422` gap — `.git` future-history leakage in Arms L & S
+
+Forensic inspection of the Hermes session SQLite logs (`home-django-L/state.db` and `home-django-S/state.db`) resolved the `django-11422` gap:
+
+- `run_swe.py` (Arms L and S) copied the full `/usr/local/testbed/.git` history and ran `git checkout base_commit`, leaving the future gold fix commit `b2790f74d4` (*"Fixed #30479 -- Fixed detecting changes in manage.py by autoreloader when using StatReloader"*) reachable via `git log --all`.
+- **Every resolved run in Arms L and S read `b2790f74d4`:** 4/4 resolved runs in Arm L (`L1`–`L4`) and 3/3 resolved runs in Arm S (`S1`–`S3`) executed `git log --oneline --all` and `git show b2790f74d4`. Across all 56 historical `django-11422` sessions in both DBs, Haiku 4.5 inspected `b2790f74d4` in 40/56 sessions.
+- **Uncontaminated solve rate in Arms L & S was 0 / 3:** every non-leaking run (`L5`, `S4`, `S5`) patched `run_with_reloader` instead of `iter_modules_and_files` — the exact same solution Haiku 4.5 chose in Arm P and Arm P2.
+- **Playbox blocked the leak by construction:** `run_swe_playbox.py` / `run_swe_playbox_v2.py` build a single-commit `git archive base_commit`, and the OpenShell runner strips `.git` from `/sandbox`. `run_swe.py` has now been fixed to use single-commit `git archive base_commit` by default (opt-in `--dirty-git-history` to reproduce the old leak).
+
+## Arm P2 (2026-11-19): Uncontaminated 5-Instance Parity, Cascade & Hybrid Post-Quantum Receipts
+
+`tools/bench/hermes-parity/run_swe_playbox_v2.py` (Arm P2) combines:
+1. **Stateful persistent OpenShell sessions (`keep=true`, `sync="none" | "delta" | "full"`):** eliminates per-command 30 MB workspace re-uploads and edit replay; median delegate latency drops from **6.97 s** (Legacy Arm P) to **0.07 s** (**99× faster**).
+2. **3-hop AtlasKV (`playbox_atlas/`) + gate-verified compounding memory:** builds a 16k-triple KG2KV + HiKVP index in ~1.2 s on the host and injects a compact 3-hop call-chain brief + receipt-backed `reviewed` lessons (`quarantined` entries dropped).
+3. **Hardened non-oracle online gate (`run_repro_generator` + existing repo tests) & conditional cascade (`playbox_router/`):** rejects broken repro scripts (`SyntaxError` / `ImportError` / `ModuleNotFoundError` / `NameError`) on `base_commit`, evaluates candidates without ever touching hidden SWE-bench `test_patch`, and escalates only when needed.
+4. **Enforced zero-false-positive taint (`PLAYBOX_APPROVERS` + `PLAYBOX_TRUST_OFFLINE_WORKSPACE=1`):** runs `playbox-mcp` in **hard-blocking taint mode** (`0` false-positive advisories on offline own-repo delegates while hard-blocking peer chat, web browse, unreviewed memory, and networked delegates).
+5. **Hybrid post-quantum Attested Gate Receipts (`Ed25519+ML-DSA-65`, FIPS 204):** every run emits `<tag>.receipt.json` signed via `playbox receipt sign` and verified via `playbox receipt verify --require-pq` / `playbox_router.verify_signed_receipt(..., require_pq=True)`.
+
+### 1. Haiku 4.5 / Sonnet 4.6 Uncontaminated Highlights (`/tmp/swe-p2-v2/`)
+
+| Instance & Run | Arm / Model | Resolved (`f2p` / `p2p`) | Wall (s) | Median Cmd (s) | Cost (USD) | Audit & Hybrid PQ Receipt |
+|---|---|---|---|---|---|---|
+| `django-11848` | Legacy Arm L (mean of 5) | 4 / 5 | 95.0 s | — | $0.1150 | None |
+| `django-11848` | Legacy Arm S (mean of 5) | 5 / 5 | 90.0 s | — | $0.1150 | None |
+| `django-11848` | Legacy Arm P (mean of 5) | 5 / 5 | 428.0 s | ~6.97 s | $0.1480 | Audit only |
+| `django-11848-P2-1` | **Arm P2** (`claude-haiku-4-5-20251001`) | **Yes (`2/2`, `42/42`)** | **71.4 s** | **0.45 s** | **$0.0663** | **Verified (`Ed25519+ML-DSA-65`)** |
+| `django-11422` (uncontaminated `L5,S4,S5`) | Arms L & S (`claude-haiku-4-5-20251001`) | **0 / 3** | 143–175 s | — | $0.198–$0.255 | None |
+| `django-11422-P2-2` | **Arm P2** (`claude-haiku-4-5-20251001`, v2.1) | No (`0/1`, `44/44`) | 328.9 s | **0.09 s** | $0.2785 | **Verified (`Ed25519+ML-DSA-65`)** |
+| `django-11422-P2-3` (`w_escalate`) | **Arm P2 Cascade** (`claude-sonnet-4-6`, 5 API calls, 9 delegates) | **Yes (`1/1`, `44/44`)** | **48.2 s** (worker) | **0.07 s** | **$0.0787** | **Verified (`Ed25519+ML-DSA-65`)** |
+
+### 2. Uncontaminated 5-Instance Head-to-Head (`openai-codex` `gpt-5.6-luna`, Single-Commit Archive, Zero `.git` Leak)
+
+All 5 instances run on the exact same single-commit `git archive base_commit` tree (`verify_single_commit_repo() == (True, 1)`). Arm P2 includes online sealed Docker gate verification, `--repro-gate`, enforced `PLAYBOX_APPROVERS` taint mode, and hybrid `Ed25519+ML-DSA-65` receipt verification:
+
+| Instance | Clean Arm L (Resolved / Wall / Cost) | Clean Arm S (Resolved / Wall / Cost) | Arm P2 (Resolved / Wall / Cost / Med Cmd / `sync=none` / Taint Adv / Receipt) |
+|---|---|---|---|
+| `django-11848` | No (`1/2` f2p) / 56.4 s / $0.0361 | No (`1/2` f2p) / 51.4 s / $0.0296 | **Yes (`2/2` f2p, `42/42` p2p)** / 96.6 s / $0.0634 / **0.08 s** / 26/43 / **0** / `Ed25519+ML-DSA-65` |
+| `django-11422` | **Yes (`1/1` f2p)** / 61.3 s / $0.0626 | **Yes (`1/1` f2p)** / 63.7 s / $0.0464 | **Yes (`1/1` f2p, `44/44` p2p)** / 113.5 s / $0.0753 / **0.07 s** / 10/21 / **0** / `Ed25519+ML-DSA-65` |
+| `django-11905` | No (`1/2` f2p) / 84.6 s / $0.0490 | No (`1/2` f2p) / 132.1 s / $0.0806 | No (`1/2` f2p, `36/36` p2p) / 126.4 s / $0.0663 / **0.06 s** / 15/27 / **0** / `Ed25519+ML-DSA-65` |
+| `django-11001` | **Yes (`2/2` f2p)** / 298.2 s / $0.0473 | **Yes (`2/2` f2p)** / 58.9 s / $0.0367 | **Yes (`2/2` f2p, `118/118` p2p)** / **78.3 s** / $0.0751 / **0.07 s** / 17/28 / **0** / `Ed25519+ML-DSA-65` |
+| `django-11620` | **Yes (`1/1` f2p)** / 103.7 s / $0.0890 | **Yes (`1/1` f2p)** / 115.6 s / $0.0841 | **Yes (`1/1` f2p, `55/55` p2p)** / **103.4 s** / **$0.0713** / **0.07 s** / 38/53 / **0** / `Ed25519+ML-DSA-65` |
+| **5-Instance Total / Mean** | **3 / 5 (60%)** / 120.8 s mean / $0.2839 ($0.0946 / solve) | **3 / 5 (60%)** / 84.3 s mean / $0.2773 ($0.0924 / solve) | **4 / 5 (80%)** / **103.6 s mean** / $0.3514 (**$0.0878 / solve**) / **0.07 s med cmd** / **0 taint advisories (enforced)** / **5/5 PQ receipts** |
+
+*Note on `openai-codex` cost accounting:* `openai-codex` OAuth reports `cost_status: "included"` (`0.0` direct charge) with exact token counts (`input_tokens`, `cache_read_tokens`, `output_tokens`); both `run_swe.py` and `run_swe_playbox_v2.py` apply identical token-metered API-equivalent pricing ($1.00 / 1M uncached input, $0.10 / 1M cached input, $5.00 / 1M output) so cross-arm USD and USD-per-solve comparisons are strictly apples-to-apples.
+
+*5-Gate Compliance Bundle (`playbox.attested_gate.v1`):* All 12 SWE-bench Arm P2 run receipts and the host `audit.log` (`53` entries) are packaged into `/tmp/swe-p2-v2/swe-bench-5gate-bundle.json` (`bundle_digest: 15fe38ad8c3af8f17a4323b10bf08fbc893df6efdc1ecbe1f3bcb4bedbf8d9ce`) via `playbox gate export` and verified offline via `playbox gate verify --require-signature --require-pq --json` (`ok: true`, `pq_signed: true`, `attested_receipts: 12`, `enforced_gates_count: 5`, `claims_full_84_permf: false`).
+
 ## Design
 
 - **Host repo.** Per instance, a single-commit git repo of the Django tree at the instance's base commit (`git archive` into a fresh repo on

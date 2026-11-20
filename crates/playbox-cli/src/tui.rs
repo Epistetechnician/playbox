@@ -120,6 +120,7 @@ impl App {
             from: String::new(),
             name: None,
             text: text.into(),
+            meta: None,
         });
     }
 
@@ -650,6 +651,7 @@ mod tests {
             from: from.into(),
             name: name.map(Into::into),
             text: text.into(),
+            meta: None,
         }
     }
 
@@ -686,6 +688,7 @@ mod tests {
                         from: "bbbb2222".into(),
                         name: None,
                         text: "task ok sh exit 0".into(),
+                        meta: None,
                     },
                     say(3, "host", Some("host"), "welcome"),
                 ],

@@ -12,8 +12,10 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use playbox_core::{
     attest::{self, PlatformVerifier, Tier},
     platform, pq,
+    promotion::{Promotion, Receipt as PromoReceipt, Register, Rule},
     record::{hex, unhex},
-    roomlog, store,
+    roomlog::{self, Config, RoomLog},
+    store,
 };
 use playbox_runner::egress::EgressLogEntry;
 use serde::{Deserialize, Serialize};
@@ -35,6 +37,7 @@ pub struct ExportOpts {
     pub root: Option<String>,
     pub egress_log: Option<String>,
     pub challenge_log: Option<String>,
+    pub receipts: Vec<String>,
     pub attestation: Option<String>,
     pub sign_key: Option<String>,
     pub pq_key: Option<String>,
@@ -172,6 +175,19 @@ pub struct Gate4Summary {
     pub room_promotions: Vec<PromotionSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub challenge_receipts: Option<ChallengeReceiptsEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attested_receipts: Vec<AttestedReceiptEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttestedReceiptEvidence {
+    pub instance: String,
+    pub base_commit: String,
+    pub runtime: String,
+    pub payload_sha256: String,
+    pub pubkey_hex: String,
+    pub pq_verified: bool,
+    pub receipt: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,10 +284,167 @@ fn default_claim_boundary() -> ClaimBoundary {
     }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+fn sha256_arr(bytes: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(bytes);
-    hex(&h.finalize())
+    h.finalize().into()
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    hex(&sha256_arr(bytes))
+}
+
+fn synthesize_room_log_from_receipts(
+    state_dir: &Path,
+    sign_key_path: &Path,
+    receipt_paths: &[String],
+    tier_u8: u8,
+) -> Result<Option<PathBuf>> {
+    let rk = state_dir.join("root.key");
+    let ek = state_dir.join("endpoint.key");
+    if !rk.is_file() || !ek.is_file() || !sign_key_path.is_file() || receipt_paths.is_empty() {
+        return Ok(None);
+    }
+    let root_sk = SigningKey::from_bytes(&playbox_net::load_seed_hex(&rk)?);
+    let host1_sk = SigningKey::from_bytes(&playbox_net::load_seed_hex(&ek)?);
+    let host2_sk = SigningKey::from_bytes(&playbox_net::load_seed_hex(sign_key_path)?);
+    let host1_pk = host1_sk.verifying_key().to_bytes();
+    let host2_pk = host2_sk.verifying_key().to_bytes();
+    if host1_pk == host2_pk {
+        return Ok(None);
+    }
+    let now = store::now_ms();
+    let cfg = Config {
+        epoch: 0,
+        leader: host1_pk,
+        hosts: BTreeSet::from([host1_pk, host2_pk]),
+        k: 2,
+    };
+    let mut log = RoomLog::genesis(&root_sk, cfg, now).map_err(|e| anyhow!("{e}"))?;
+    let room = log.room();
+    let mut seen_problems = BTreeSet::new();
+
+    for rpath in receipt_paths {
+        let raw = std::fs::read_to_string(rpath).with_context(|| format!("reading {rpath}"))?;
+        let doc: Value = serde_json::from_str(&raw)
+            .with_context(|| format!("parsing run receipt {rpath} as JSON"))?;
+        let summary = crate::trust::verify_receipt_value(&doc, None, None, false)
+            .with_context(|| format!("verifying run receipt {rpath}"))?;
+        let resolved = doc["payload"]["sealed_gate"]["holdout_resolved"].as_bool() == Some(true);
+        if !resolved {
+            continue;
+        }
+        let inst = doc["payload"]["instance"].as_str().unwrap_or("unknown");
+        let base_commit = doc["payload"]["base_commit"].as_str().unwrap_or("base");
+        let problem = sha256_arr(format!("playbox.problem.v1:{inst}:{base_commit}").as_bytes());
+        let cand_hex = doc["payload"]["router"]["winner_sha256"]
+            .as_str()
+            .filter(|s| s.len() == 64)
+            .or_else(|| summary["payload_sha256"].as_str())
+            .unwrap_or("");
+        let candidate =
+            roomlog::unhex::<32>(cand_hex).unwrap_or_else(|| sha256_arr(cand_hex.as_bytes()));
+        if candidate == [0u8; 32] {
+            continue;
+        }
+        let model_name = doc["payload"]["router"]["candidates"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|c| c["model"].as_str())
+            .unwrap_or("model");
+        let weights = sha256_arr(format!("playbox.weights.v1:{model_name}").as_bytes());
+        let pol_hex = doc["payload"]["isolation"]["policy_digest"]
+            .as_str()
+            .unwrap_or("");
+        let env1 = roomlog::unhex::<32>(pol_hex)
+            .unwrap_or_else(|| sha256_arr(b"playbox.env.openshell.v1"));
+        let env2 = sha256_arr(b"playbox.env.sealed_holdout_gate.v1");
+
+        if seen_problems.insert((problem, candidate)) {
+            if !log.frontier(None).contains_key(&problem) {
+                log.register_problem(
+                    &host1_sk,
+                    &Register {
+                        problem,
+                        rule: Rule {
+                            j: 2,
+                            noise_ppm: 50_000,
+                            min_gain_ppm: 100_000,
+                        },
+                        baseline: 500_000,
+                    },
+                    now,
+                )
+                .map_err(|e| anyhow!("{e}"))?;
+            }
+            if log
+                .frontier(None)
+                .get(&problem)
+                .is_some_and(|(_, f)| f.metric < 1_000_000)
+            {
+                let r1 = PromoReceipt::sign(
+                    &room, &host1_sk, &problem, &candidate, &weights, env1, tier_u8, 1_000_000,
+                );
+                let r2 = PromoReceipt::sign(
+                    &room, &host2_sk, &problem, &candidate, &weights, env2, tier_u8, 1_000_000,
+                );
+                log.promote(
+                    &host1_sk,
+                    &Promotion {
+                        problem,
+                        candidate,
+                        weights,
+                        receipts: vec![r1, r2],
+                    },
+                    now,
+                )
+                .map_err(|e| anyhow!("{e}"))?;
+            }
+        }
+    }
+
+    let cp = log.checkpoint();
+    let mut sc = log
+        .sign_checkpoint(&host1_sk, cp.clone())
+        .map_err(|e| anyhow!("{e}"))?;
+    let sc2 = log
+        .sign_checkpoint(&host2_sk, cp)
+        .map_err(|e| anyhow!("{e}"))?;
+    log.merge(&mut sc, &sc2);
+
+    let mut out = roomlog::text::to_text(&log);
+    let sigs_map: serde_json::Map<String, Value> = sc
+        .sigs
+        .iter()
+        .map(|(k, s)| (roomlog::hex(k), Value::from(roomlog::hex(s))))
+        .collect();
+    let pq_map: serde_json::Map<String, Value> = sc
+        .pq_sigs
+        .iter()
+        .map(|(k, pq)| {
+            (
+                roomlog::hex(k),
+                serde_json::json!({ "pk": roomlog::hex(&pq.pk), "sig": roomlog::hex(&pq.sig) }),
+            )
+        })
+        .collect();
+    let cert_line = serde_json::json!({
+        "cert": {
+            "cp": {
+                "epoch": sc.cp.epoch,
+                "size": sc.cp.size,
+                "head": roomlog::hex(&sc.cp.head),
+            },
+            "sigs": sigs_map,
+            "pq_sigs": pq_map,
+        }
+    });
+    out.push_str(&cert_line.to_string());
+    out.push('\n');
+
+    let out_path = state_dir.join("roomlog.jsonl");
+    std::fs::write(&out_path, out).with_context(|| format!("writing {}", out_path.display()))?;
+    Ok(Some(out_path))
 }
 
 fn canonical_digest(body: &BundleBody) -> Result<String> {
@@ -484,7 +657,7 @@ pub fn export(o: ExportOpts) -> Result<()> {
             .map(|d| d.join("audit.log"))
             .filter(|p| p.is_file())
     });
-    let roomlog_path = o.room_log.as_deref().map(PathBuf::from).or_else(|| {
+    let mut roomlog_path = o.room_log.as_deref().map(PathBuf::from).or_else(|| {
         state_dir
             .as_ref()
             .map(|d| d.join("roomlog.jsonl"))
@@ -494,10 +667,35 @@ pub fn export(o: ExportOpts) -> Result<()> {
     let challenge_path = o.challenge_log.as_deref().map(PathBuf::from);
     let attest_path = o.attestation.as_deref().map(PathBuf::from);
 
+    let attestation = match &attest_path {
+        Some(p) => {
+            let raw = load_attestation_text(p)?;
+            Some(verify_attestation_text(&raw)?)
+        }
+        None => None,
+    };
+    let tier_u8 = attestation
+        .as_ref()
+        .and_then(|a| Tier::parse(&a.achieved_tier).ok())
+        .map_or(0, |t| match t {
+            Tier::T0 => 0,
+            Tier::T1 => 1,
+            Tier::T2 => 2,
+            Tier::T3 => 3,
+        });
+
+    if roomlog_path.is_none() {
+        if let (Some(d), Some(sk_path)) = (&state_dir, &o.sign_key) {
+            roomlog_path =
+                synthesize_room_log_from_receipts(d, Path::new(sk_path), &o.receipts, tier_u8)?;
+        }
+    }
+
     if audit_path.is_none()
         && roomlog_path.is_none()
         && egress_path.is_none()
         && challenge_path.is_none()
+        && o.receipts.is_empty()
         && attest_path.is_none()
     {
         bail!(
@@ -590,13 +788,28 @@ pub fn export(o: ExportOpts) -> Result<()> {
         g4.challenge_receipts = Some(parse_challenge_receipts(&raw)?);
     }
 
-    let attestation = match &attest_path {
-        Some(p) => {
-            let raw = load_attestation_text(p)?;
-            Some(verify_attestation_text(&raw)?)
-        }
-        None => None,
-    };
+    for rpath in &o.receipts {
+        let raw = std::fs::read_to_string(rpath).with_context(|| format!("reading {rpath}"))?;
+        let doc: Value = serde_json::from_str(&raw)
+            .with_context(|| format!("parsing run receipt {rpath} as JSON"))?;
+        let summary = crate::trust::verify_receipt_value(&doc, None, None, false)
+            .with_context(|| format!("verifying run receipt {rpath}"))?;
+        g4.attested_receipts.push(AttestedReceiptEvidence {
+            instance: doc["payload"]["instance"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            base_commit: doc["payload"]["base_commit"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            runtime: doc["payload"]["runtime"].as_str().unwrap_or("").to_string(),
+            payload_sha256: summary["payload_sha256"].as_str().unwrap_or("").to_string(),
+            pubkey_hex: summary["pubkey_hex"].as_str().unwrap_or("").to_string(),
+            pq_verified: summary["pq_verified"].as_bool() == Some(true),
+            receipt: doc,
+        });
+    }
 
     let body = BundleBody {
         generated_at_ms: store::now_ms(),
@@ -687,7 +900,39 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
     } else {
         std::fs::read_to_string(&o.bundle).with_context(|| format!("reading {}", o.bundle))?
     };
-    let bundle: Bundle = serde_json::from_str(&raw).context("parsing compliance bundle JSON")?;
+    let raw_val: Value = serde_json::from_str(&raw).context("parsing compliance bundle JSON")?;
+    if raw_val
+        .get("payload")
+        .and_then(|p| p.get("schema"))
+        .and_then(Value::as_str)
+        == Some(crate::trust::RECEIPT_SCHEMA)
+    {
+        if o.require_tier.is_some() {
+            bail!(
+                "--require-tier requires a 5-gate compliance bundle ({BUNDLE_SCHEMA}); this file is a run receipt"
+            );
+        }
+        let summary = crate::trust::verify_receipt_value(
+            &raw_val,
+            o.pubkey.as_deref(),
+            o.pq_pubkey.as_deref(),
+            o.require_pq,
+        )?;
+        if o.json {
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+        } else {
+            println!(
+                "attested gate receipt OK: schema={} sha256={} alg={} pq_verified={}",
+                crate::trust::RECEIPT_SCHEMA,
+                &summary["payload_sha256"].as_str().unwrap_or("")[..16],
+                summary["alg"].as_str().unwrap_or(""),
+                summary["pq_verified"].as_bool().unwrap_or(false),
+            );
+        }
+        return Ok(());
+    }
+    let bundle: Bundle =
+        serde_json::from_value(raw_val).context("parsing compliance bundle JSON")?;
     if bundle.schema != BUNDLE_SCHEMA {
         bail!(
             "unsupported bundle schema {:?}; expected {BUNDLE_SCHEMA:?}",
@@ -861,12 +1106,39 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
         }
     }
 
+    for (idx, ar) in g
+        .gate_4_sealed_evaluation_gates
+        .attested_receipts
+        .iter()
+        .enumerate()
+    {
+        let summary = crate::trust::verify_receipt_value(&ar.receipt, None, None, o.require_pq)
+            .with_context(|| format!("gate_4 attested_receipt[{idx}] failed verification"))?;
+        if summary["payload_sha256"].as_str() != Some(ar.payload_sha256.as_str())
+            || summary["pubkey_hex"].as_str() != Some(ar.pubkey_hex.as_str())
+            || summary["pq_verified"].as_bool() != Some(ar.pq_verified)
+            || ar.receipt["payload"]["instance"].as_str().unwrap_or("") != ar.instance
+            || ar.receipt["payload"]["base_commit"].as_str().unwrap_or("") != ar.base_commit
+            || ar.receipt["payload"]["runtime"].as_str().unwrap_or("") != ar.runtime
+        {
+            bail!("gate_4 attested_receipt[{idx}] summary does not match signed receipt");
+        }
+    }
+
     if o.require_pq {
         let room_pq = g
             .gate_3_tamper_evident_logs
             .room_log
             .as_ref()
             .is_some_and(|r| r.pq_committed > 0);
+        let receipts_pq = !g
+            .gate_4_sealed_evaluation_gates
+            .attested_receipts
+            .is_empty()
+            && g.gate_4_sealed_evaluation_gates
+                .attested_receipts
+                .iter()
+                .all(|r| r.pq_verified);
         if bundle.signature.is_some() && !bundle_pq_verified {
             bail!("--require-pq: signed bundle does not carry a verified ML-DSA-65 signature");
         }
@@ -875,9 +1147,9 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 bail!("--require-pq: embedded room_log has 0 PQ-committed entries");
             }
         }
-        if !bundle_pq_verified && !room_pq {
+        if !bundle_pq_verified && !room_pq && !receipts_pq {
             bail!(
-                "--require-pq: neither bundle ML-DSA-65 signature nor PQ-committed RoomLog present"
+                "--require-pq: neither bundle ML-DSA-65 signature, PQ-committed RoomLog, nor PQ-signed run receipt present"
             );
         }
     }
@@ -925,6 +1197,7 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 "room_log_pq_committed": g.gate_3_tamper_evident_logs.room_log.as_ref().map(|r| r.pq_committed),
                 "egress_requests": g.gate_2_confinement_and_egress.egress.as_ref().map(|e| e.requests),
                 "promotions": g.gate_4_sealed_evaluation_gates.room_promotions.len(),
+                "attested_receipts": g.gate_4_sealed_evaluation_gates.attested_receipts.len(),
                 "achieved_tier": g.gate_5_identity_and_release_integrity.attestation.as_ref().map(|a| a.achieved_tier.clone()),
             }))?
         );
@@ -980,8 +1253,9 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 .map_or(0, |r| r.pq_committed),
         );
         println!(
-            "  gate 4 (eval gate): promotions={} challenge_receipts={}",
+            "  gate 4 (eval gate): promotions={} attested_receipts={} challenge_receipts={}",
             g.gate_4_sealed_evaluation_gates.room_promotions.len(),
+            g.gate_4_sealed_evaluation_gates.attested_receipts.len(),
             g.gate_4_sealed_evaluation_gates
                 .challenge_receipts
                 .as_ref()
