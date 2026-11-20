@@ -1,0 +1,4 @@
+playbox_version=0.4.4 (65047a454)
+code_commit=65047a454
+swe50_bundle_digest=4dd9c186c60fb9c386a5a09208280bcda3a38c4a86316adc21c8b3a340163c25
+security20_bundle_digest=25049272279f7312416faacd8d5974d7329b3b4bada1dd7a403f4401e1bf562d
