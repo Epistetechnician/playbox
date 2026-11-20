@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install pytest
@@ -186,7 +186,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # the verifier checks that PROTOCOL.md was committed before each genesis receipt, from history
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install cryptography numpy pytest tiktoken pyarrow requests torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
