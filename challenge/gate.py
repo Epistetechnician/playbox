@@ -32,6 +32,7 @@ from common import ROOT, STATE, append_receipt, sha256_bytes, sha256_file, verif
 
 B = ROOT / "tier_b_lm"
 A = ROOT / "tier_a_matmul"
+DOCS = ROOT.parent / "docs"  # the prompt corpus tier_b_lm/bench.py samples from (repo-root docs/, not challenge/docs)
 PB = json.load(open(B / "problem.json"))
 LOG = STATE / "receipts.jsonl"
 FRONT = STATE / "frontier.json"
@@ -57,6 +58,32 @@ def _sb_quote(s: str) -> str:
     return json.dumps(s)
 
 
+def _model_read_roots(mdir: Path) -> set[Path]:
+    # A Hugging Face snapshot dir holds symlinks into ../../blobs; the sandbox must expose their targets too.
+    roots = {mdir.resolve()}
+    for f in mdir.iterdir():
+        if f.is_symlink():
+            roots.add(f.resolve().parent)
+    return roots
+
+
+def _symlink_hops(path: str) -> list[tuple[str, Path]]:
+    """Every (target, link) met while resolving path, in order, including symlinked parent directories."""
+    hops: list[tuple[str, Path]] = []
+    cur = Path("/")
+    parts = list(Path(os.path.abspath(path)).parts[1:])
+    while parts and len(hops) < 40:
+        nxt = cur / parts.pop(0)
+        if nxt.is_symlink():
+            target = os.readlink(nxt)
+            hops.append((target, nxt))
+            parts = list(Path(os.path.normpath(cur / target)).parts[1:]) + parts
+            cur = Path("/")
+        else:
+            cur = nxt
+    return hops
+
+
 def _seatbelt_profile(cand: Path, mdir: Path, tmp_home: Path) -> str:
     exe_root = Path(sys.executable).resolve().parent.parent
     read_paths = []
@@ -65,8 +92,8 @@ def _seatbelt_profile(cand: Path, mdir: Path, tmp_home: Path) -> str:
         Path(sys.base_prefix).resolve(),
         exe_root,
         B.resolve(),
-        (ROOT / "docs").resolve(),
-        mdir.resolve(),
+        DOCS.resolve(),
+        *sorted(_model_read_roots(mdir)),
     ):
         s = str(p)
         if s not in read_paths:
@@ -126,16 +153,23 @@ def _bwrap_cmd(bench_cmd: list[str], cand: Path, mdir: Path, tmp_home: Path) -> 
         cmd.extend(["--tmpfs", str(real_home)])
     if STATE.exists():
         cmd.extend(["--tmpfs", str(STATE.resolve())])
-    for p in {
+    binds = {
         Path(sys.prefix).resolve(),
         Path(sys.base_prefix).resolve(),
+        Path(sys.executable).resolve().parent.parent,
         B.resolve(),
-        (ROOT / "docs").resolve(),
-        mdir.resolve(),
+        DOCS.resolve(),
         cand.resolve(),
-    }:
+        *_model_read_roots(mdir),
+    }
+    for p in sorted(binds):
         if p.exists():
             cmd.extend(["--ro-bind", str(p), str(p)])
+    # Recreate symlinks on the interpreter path that the tmpfs mounts hid (e.g. a uv venv whose python links into ~/.local).
+    hidden = [h for h in (real_home, STATE.resolve(), Path("/tmp")) if h.exists()]
+    for target, link in _symlink_hops(sys.executable):
+        if any(link.is_relative_to(h) for h in hidden) and not any(link.is_relative_to(b) for b in binds):
+            cmd.extend(["--dir", str(link.parent), "--symlink", target, str(link)])
     cmd.extend(["--dir", str(tmp_home), "--bind", str(tmp_home), str(tmp_home), "--"])
     cmd.extend(bench_cmd)
     return cmd
@@ -143,6 +177,10 @@ def _bwrap_cmd(bench_cmd: list[str], cand: Path, mdir: Path, tmp_home: Path) -> 
 
 def _docker_cmd(cand: Path, mdir: Path, seed: int, image: str) -> list[str]:
     cand_r = cand.resolve()
+    model_src, model_arg = mdir.resolve(), "/model"
+    if model_src.parent.name == "snapshots" and any(f.is_symlink() for f in mdir.iterdir()):
+        # Mount the whole cache entry so the snapshot's ../../blobs symlinks still resolve inside the container.
+        model_src, model_arg = model_src.parent.parent, f"/model/snapshots/{model_src.name}"
     return [
         "docker",
         "run",
@@ -173,18 +211,18 @@ def _docker_cmd(cand: Path, mdir: Path, seed: int, image: str) -> list[str]:
         "-v",
         f"{B.resolve()}:/repo/challenge/tier_b_lm:ro",
         "-v",
-        f"{(ROOT / 'docs').resolve()}:/repo/docs:ro",
+        f"{DOCS.resolve()}:/repo/docs:ro",
         "-v",
         f"{cand_r}:/cand/{cand_r.name}:ro",
         "-v",
-        f"{mdir.resolve()}:/model:ro",
+        f"{model_src}:/model:ro",
         image,
         "python3",
         "/repo/challenge/tier_b_lm/bench.py",
         "--candidate",
         f"/cand/{cand_r.name}",
         "--model",
-        "/model",
+        model_arg,
         "--seed",
         str(seed),
     ]

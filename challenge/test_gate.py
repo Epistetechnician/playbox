@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -63,6 +64,74 @@ def test_bwrap_and_docker_commands_isolate_network_and_state(monkeypatch, tmp_pa
     assert bcmd[0] == "bwrap"
     assert "--unshare-all" in bcmd
     assert "--die-with-parent" in bcmd
+
+
+def _hf_style_snapshot(tmp_path):
+    blobs = tmp_path / "models--x" / "blobs"
+    snap = tmp_path / "models--x" / "snapshots" / "rev1"
+    blobs.mkdir(parents=True)
+    snap.mkdir(parents=True)
+    (blobs / "abc").write_text("WEIGHTS\n")
+    (snap / "model.safetensors").symlink_to("../../blobs/abc")
+    return snap, blobs
+
+
+def test_gate_docs_is_the_corpus_bench_reads():
+    bench_root = (Path(gate.B) / "bench.py").resolve().parent.parent.parent
+    assert gate.DOCS.resolve() == (bench_root / "docs").resolve()
+    assert any(gate.DOCS.glob("*.md"))
+
+
+def test_sandboxes_expose_docs_and_symlinked_model_blobs(monkeypatch, tmp_path):
+    cand = tmp_path / "cand.py"
+    cand.write_text("x = 1\n")
+    snap, blobs = _hf_style_snapshot(tmp_path)
+    th = tmp_path / "home"
+    th.mkdir()
+
+    bcmd = gate._bwrap_cmd(["python3", "bench.py"], cand, snap, th)
+    binds = {bcmd[i + 1] for i, a in enumerate(bcmd) if a == "--ro-bind"}
+    assert str(gate.DOCS.resolve()) in binds
+    assert str(blobs.resolve()) in binds
+
+    assert str(blobs.resolve()) in gate._seatbelt_profile(cand, snap, th)
+
+    dcmd = gate._docker_cmd(cand, snap, 3, "img")
+    assert f"{gate.DOCS.resolve()}:/repo/docs:ro" in dcmd
+    assert f"{snap.resolve().parent.parent}:/model:ro" in dcmd
+    assert dcmd[dcmd.index("--model") + 1] == "/model/snapshots/rev1"
+
+
+def test_symlink_hops_follow_symlinked_parent_dirs(tmp_path):
+    real = tmp_path / "py-3.12.1" / "bin"
+    real.mkdir(parents=True)
+    (real / "python").write_text("")
+    (tmp_path / "py-3.12").symlink_to("py-3.12.1")
+    (tmp_path / "venv").mkdir()
+    (tmp_path / "venv" / "python").symlink_to(tmp_path / "py-3.12" / "bin" / "python")
+    hops = gate._symlink_hops(str(tmp_path / "venv" / "python"))
+    assert [link for _, link in hops] == [tmp_path / "venv" / "python", tmp_path / "py-3.12"]
+
+
+@pytest.mark.skipif(not (sys.platform.startswith("linux") and shutil.which("bwrap")), reason="needs bubblewrap on Linux")
+def test_bwrap_sandbox_can_read_docs_and_symlinked_model(tmp_path):
+    cand = tmp_path / "cand.py"
+    cand.write_text("x = 1\n")
+    snap, _ = _hf_style_snapshot(tmp_path)
+    th = tmp_path / "home"
+    th.mkdir()
+    probe = (
+        "import pathlib, sys; "
+        f"assert any(pathlib.Path({str(gate.DOCS.resolve())!r}).glob('*.md')), 'docs hidden'; "
+        f"assert pathlib.Path({str(snap / 'model.safetensors')!r}).read_text() == 'WEIGHTS\\n', 'model hidden'; "
+        "print('OK')"
+    )
+    cmd = gate._bwrap_cmd([sys.executable, "-c", probe], cand, snap, th)
+    r = subprocess.run(cmd, capture_output=True, text=True, env=gate.scrubbed_env(th))
+    if r.returncode != 0 and ("Operation not permitted" in r.stderr or "No permissions" in r.stderr):
+        pytest.skip("bwrap cannot create namespaces here: " + r.stderr.strip())
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "OK"
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS sandbox-exec test")
