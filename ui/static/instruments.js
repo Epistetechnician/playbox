@@ -164,5 +164,105 @@
     return out;
   }
 
-  window.PBI = {esc, stats, activity, trail, since, buckets, span, clock, num, wrap};
+  /** Render Model & Spend + Compute/Inference swim-lanes + Model Trail from `/api/rooms/<id>/llm/*` payloads.
+      Labels data honestly as `Host-observed (aiproxy)` (or `Receipt-bound` / `T3-attested` when provided). */
+  function llmPanels(o) {
+    const prov = o.provenanceLabel || "Host-observed (aiproxy)";
+    const st = o.stats || {};
+    const tot = st.totals || {};
+    const byModel = st.by_model || {};
+    const cost = Number(tot.cost_usd || 0);
+    const cap = Number(o.budgetCapUsd || 0);
+    const inTok = Number(tot.input_tokens || 0);
+    const cacheTok = Number(tot.cached_read_tokens || 0) + Number(tot.cached_write_tokens || 0);
+    const outTok = Number(tot.output_tokens || 0);
+    const reasTok = Number(tot.reasoning_tokens || 0);
+    const cachePct = inTok > 0 ? Math.round((cacheTok / inTok) * 100) + "%" : "0%";
+    const bmap = st.buckets || {};
+    const bkeys = Object.keys(bmap).map(Number).sort((a, b) => a - b);
+    const series = bkeys.map(k => Number(bmap[k] || 0));
+    const maxB = series.length ? Math.max(...series) : 0;
+    const avgB = series.length ? (series.reduce((a, b) => a + b, 0) / series.length).toFixed(1) : "0";
+    const modelRows = Object.keys(byModel).sort().map(m => ({
+      c: "var(--c-you)",
+      l: m,
+      n: `$${Number(byModel[m].cost_usd || 0).toFixed(4)}`,
+      pct: `${num(Number(byModel[m].tokens || 0))} tok`
+    }));
+    const flags = [{c: "var(--c-ev)", t: prov}];
+    if (Number(tot.failovers || 0) > 0) flags.push({c: "var(--c-warn)", t: `${tot.failovers} failover(s)`});
+    if (Number(tot.budget_cutoffs || 0) > 0) flags.push({c: "var(--c-bad)", t: `${tot.budget_cutoffs} budget cutoff(s)`});
+
+    const statsHtml = stats({
+      id: "llm-stats",
+      title: "Model & Spend",
+      meta: `$${cost.toFixed(4)} · ${num(inTok + outTok)} tok`,
+      flags,
+      bar: cap > 0 ? {
+        label: "Budget",
+        parts: [
+          {c: cost >= cap ? "var(--c-bad)" : "var(--c-you)", w: Math.min(cost, cap), t: "spent"},
+          {c: "var(--dim)", w: Math.max(0, cap - cost), t: "remaining"}
+        ],
+        right: `$${cost.toFixed(4)} / $${cap.toFixed(2)}`
+      } : null,
+      kv: [
+        ["Requests", `${tot.requests || 0} (${tot.retries || 0} retries)`],
+        ["Cache hit", cachePct],
+        ["Median TTFT", `${tot.median_ttft_ms || 0}ms`],
+        ["Reasoning tok", num(reasTok)]
+      ],
+      rate: series.length >= 2 ? {now: String(series[series.length - 1]), unit: "req/5m", avg: avgB, max: String(maxB), series} : null,
+      groups: modelRows.length ? [{title: "By model", rows: modelRows}] : [],
+      open: o.open
+    });
+
+    const spans = (o.activity && o.activity.spans) || [];
+    const byMem = {};
+    let t0 = Infinity, t1 = -Infinity;
+    for (const sp of spans) {
+      const m = sp.member_id || "host";
+      (byMem[m] = byMem[m] || []).push(sp);
+      if (sp.start_ms < t0) t0 = sp.start_ms;
+      if (sp.end_ms > t1) t1 = sp.end_ms;
+    }
+    const lanes = Object.keys(byMem).sort().map(m => {
+      const list = byMem[m];
+      const bad = list.some(x => x.status >= 400 || x.budget_cutoff);
+      return {
+        label: m,
+        c: bad ? "var(--c-bad)" : "var(--c-ev)",
+        at: list.map(x => x.start_ms),
+        count: list.length,
+        bad
+      };
+    });
+    const actHtml = lanes.length ? activity({
+      id: "llm-activity",
+      title: "Inference Activity",
+      meta: `${spans.length} calls · ${prov}`,
+      lanes,
+      range: [t0, Math.max(t0 + 1000, t1)],
+      open: o.open
+    }) : "";
+
+    const entries = (o.logs && o.logs.entries) || [];
+    const trailHtml = trail({
+      id: "llm-trail",
+      title: "Model Trail",
+      meta: `${entries.length} recent · metadata-only`,
+      steps: entries.map(e => ({
+        c: e.budget_cutoff || e.status >= 400 ? "var(--c-bad)" : (e.failover_from ? "var(--c-warn)" : "var(--c-gen)"),
+        label: e.upstream_model || "model",
+        text: `${e.status} · ${e.ttft_ms || 0}ms ttft · $${Number(e.cost_usd || 0).toFixed(4)}${e.failover_from ? " · failover " + e.failover_from : ""}${e.budget_cutoff ? " · cutoff:" + e.budget_cutoff : ""}`,
+        ms: e.ts_ms,
+        detail: `req=${e.req_id} member=${e.member_id || "host"} task=${e.task_id || "-"} in=${e.input_tokens} cache=${(e.cached_read_tokens || 0) + (e.cached_write_tokens || 0)} out=${e.output_tokens} reas=${e.reasoning_tokens} latency=${e.latency_ms}ms`
+      })),
+      open: o.open
+    });
+
+    return statsHtml + actHtml + trailHtml;
+  }
+
+  window.PBI = {esc, stats, activity, trail, since, buckets, span, clock, num, wrap, llmPanels};
 })();

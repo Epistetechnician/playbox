@@ -99,3 +99,11 @@ IDs are never reused. A requirement that stops being true is marked `retired` wi
 | IDENT-9 | `playbox launch` starts an agent with a key the host's owner made, and the host-signed record names that key and the executable's digest; the host will not vouch for a key that is not a member. | shipped |
 | **Command line** | | |
 | CLI-1 | Arguments are typed, errors exit non-zero with a cause chain, and a closed pipe ends quietly. | shipped |
+| **Model gateway (`playbox-aiproxy`)** | | |
+| PROXY-1 | Rate-limited (`429`) upstream channels enter short clamped cooldown and fail over cleanly; `same_model_only` refuses cross-family model substitution while `alias_cascade` resolves configured aliases. | shipped |
+| PROXY-2 | Per-worker gateway tokens enforce hard pre-flight and mid-stream USD caps, cutting off runaway output with `X-Playbox-Stop-Reason: budget_exhausted`. | shipped |
+| PROXY-3 | Host-observed usage is exported as canonical `playbox.llm_ledger.v1` with deterministic SHA-256 bound into hybrid `Ed25519+ML-DSA-65` receipts; unproxied runs explicitly report `client_unverified`. | shipped |
+| PROXY-4 | `BOX-7` strips guest-supplied `x-playbox-*` headers, injects host correlation headers, and blocks `/api/*`, `/mcp/*`, and `/swagger/*` paths on the `aiproxy_preset` upstream. | shipped |
+| PROXY-5 | Gateway and Hub logs default to metadata-only; opted-in body inspection scrubs secrets and requires fresh passkey step-up in the Hub. | shipped |
+| PROXY-6 | `playbox_atlas` hybrid dense + rerank retrieval runs strictly after `TRUSTED_TIERS` quarantine gating, caches embeddings by content SHA-256, and falls back to TF-IDF when offline. | shipped |
+| PROXY-7 | Hardened `playbox-aiproxy` (`-tags playbox_hardened`) compiles out MCP servers, Web Search, Swagger, and public UI, and refuses non-loopback binds without explicit override. | shipped |

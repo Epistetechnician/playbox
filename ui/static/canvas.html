@@ -300,38 +300,50 @@ R.harnesses = d => {
 const ICON = {proof: "∎", code: "{ }", doc: "¶", dataset: "▦", chart: "◔", note: "·"};
 R.artifacts = d => {
   let l = M.artifacts; if (d && filt.art !== "all") l = l.filter(a => a.status === filt.art || a.kind === filt.art);
+  const memEntries = (M.memory && Array.isArray(M.memory.entries)) ? M.memory.entries : [];
   const bar = d ? `<div class="row" style="margin:0 0 10px">${["all", "proof", "code", "doc", "verified", "checking", "failed", "draft"].map(k => `<button class="btn sm ${filt.art === k ? "primary" : ""}" data-act="fa" data-v="${k}">${k}</button>`).join("")}</div>` : "";
-  return bar + (l.length ? `<div class="tiles">${l.slice(0, d ? 60 : 6).map(a => `<button class="tile ${a.status} ${isNew("r" + a.id + a.revs.length)}" data-sel="artifact:${esc(a.id)}"><span class="row" style="gap:6px"><span class="chip">${ICON[a.kind] || "·"} ${esc(a.kind)}</span><span class="chip st-${a.status}">${esc(a.status)}</span></span><b>${esc(a.title)}</b><small>${esc(a.summary || a.ref || "")}</small><small class="mono">rev ${a.revs.length} · ${esc(who(a.last_by))} · ${rel(a.updated)}</small></button>`).join("")}</div>`
-    : '<p class="empty">No artifacts yet. Agents publish proofs, code and docs here with <span class="mono">::pbx artifact</span>.</p>');
+  const artTiles = l.length ? `<div class="tiles">${l.slice(0, d ? 60 : 6).map(a => `<button class="tile ${a.status} ${isNew("r" + a.id + a.revs.length)}" data-sel="artifact:${esc(a.id)}"><span class="row" style="gap:6px"><span class="chip">${ICON[a.kind] || "·"} ${esc(a.kind)}</span><span class="chip st-${a.status}">${esc(a.status)}</span></span><b>${esc(a.title)}</b><small>${esc(a.summary || a.ref || "")}</small><small class="mono">rev ${a.revs.length} · ${esc(who(a.last_by))} · ${rel(a.updated)}</small></button>`).join("")}</div>`
+    : '<p class="empty">No artifacts yet. Agents publish proofs, code and docs here with <span class="mono">::pbx artifact</span>.</p>';
+  const memHtml = memEntries.length ? `<div style="margin-top:12px"><p class="lbl">Room Memory · Provenance &amp; Taint (${memEntries.length})</p><div class="tiles">${memEntries.slice(0, d ? 40 : 4).map(e => {
+    const t = e.taint || (e.endorsed || e.author === "host" ? "owner_endorsed" : (e.task_id || e.commit) ? "verified" : "untrusted");
+    const cls = t === "owner_endorsed" ? "verified" : t === "verified" ? "checking" : "draft";
+    const badge = t === "owner_endorsed" ? "✓ owner-endorsed" : t === "verified" ? "✓ task-verified" : "untrusted / tainted";
+    return `<button class="tile ${cls}" data-sel="memory:${esc(e.doc)}"><span class="row" style="gap:6px"><span class="chip">${esc(e.key || e.doc.slice(0, 10))}</span><span class="chip st-${cls}">${badge}</span></span><small>${esc(String(e.text || "").slice(0, 120))}</small><small class="mono">${esc(e.author_name || who(e.author))}${e.commit ? " · " + esc(String(e.commit).slice(0, 8)) : ""}</small></button>`;
+  }).join("")}</div></div>` : "";
+  return bar + artTiles + memHtml;
 };
 
 R.changelog = d => {
   let l = M.changelog; if (d && filt.log !== "all") l = l.filter(e => e.type === filt.log);
-  const bar = d ? `<div class="row" style="margin:0 0 8px">${["all", "artifact", "card", "member", "agent", "metric"].map(k => `<button class="btn sm ${filt.log === k ? "primary" : ""}" data-act="fl" data-v="${k}">${k}</button>`).join("")}</div>` : "";
-  return bar + (l.length ? l.slice(0, d ? 120 : 6).map(e => `<div class="ev t-${e.type} ${isNew("e" + e.seq + e.type)}" ${e.ref ? `data-sel="${e.type === "card" ? "card" : e.type === "metric" ? "metric" : "artifact"}:${esc(e.ref)}" style="cursor:pointer"` : ""}><time>${hhmm(e.ms)}</time><span class="tag">${esc(e.type)}</span><span><b>${esc(who(e.who))}</b> ${esc(e.text)}</span></div>`).join("") : '<p class="empty">Nothing has changed yet. Every publish, move and join is recorded here.</p>');
+  const bar = d ? `<div class="row" style="margin:0 0 8px">${["all", "artifact", "card", "handoff", "task", "member", "agent", "metric"].map(k => `<button class="btn sm ${filt.log === k ? "primary" : ""}" data-act="fl" data-v="${k}">${k}</button>`).join("")}</div>` : "";
+  return bar + (l.length ? l.slice(0, d ? 120 : 6).map(e => `<div class="ev t-${e.type} ${isNew("e" + e.seq + e.type)}" ${e.ref ? `data-sel="${e.type === "card" ? "card" : e.type === "metric" ? "metric" : e.type === "handoff" ? "handoff" : "artifact"}:${esc(e.ref)}" style="cursor:pointer"` : ""}><time>${hhmm(e.ms)}</time><span class="tag">${esc(e.type)}</span><span><b>${esc(who(e.who))}</b> ${esc(e.text)}</span></div>`).join("") : '<p class="empty">Nothing has changed yet. Every publish, move and join is recorded here.</p>');
 };
 
 R.kanban = d => {
   const names = {todo: "To do", doing: "Doing", review: "Review", done: "Done"};
-  return `<div class="board">${M.cols.map((c, i) => { const cs = M.cards.filter(x => x.col === c); return `<div class="col c-${c}"><h4><span>${names[c]}</span><span>${cs.length}</span></h4><div class="cs">${cs.slice(0, d ? 80 : 5).map(x => `<div class="card ${isNew("c" + x.id + x.col)}" data-sel="card:${esc(x.id)}" tabindex="0"><b>${esc(x.title)}</b><small>${esc(x.owner || who(x.last_by))}${x.artifact ? " · ∎ " + esc(x.artifact) : ""}</small>${M.admin ? `<div class="mv">${i > 0 ? `<button data-act="mv" data-id="${esc(x.id)}" data-col="${M.cols[i - 1]}">←</button>` : ""}${i < 3 ? `<button data-act="mv" data-id="${esc(x.id)}" data-col="${M.cols[i + 1]}">→</button>` : ""}</div>` : ""}</div>`).join("") || '<span class="mut" style="font-size:12px;padding:4px">empty</span>'}</div></div>`; }).join("")}</div>`;
+  const ho = (M.handoffs || []).slice(0, d ? 12 : 2);
+  const hoStrip = ho.length ? `<div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">${ho.map(h => `<button class="btn sm" data-sel="handoff:${esc(h.id)}" title="${esc(h.summary || "")}">⇄ Handoff ${esc(h.id)} · ${esc(h.branch || "main")}${h.base_commit ? "@" + esc(String(h.base_commit).slice(0, 7)) : ""}</button>`).join("")}</div>` : "";
+  return `${hoStrip}<div class="board" style="height:${ho.length ? "calc(100% - 36px)" : "100%"}">${M.cols.map((c, i) => { const cs = M.cards.filter(x => x.col === c); return `<div class="col c-${c}"><h4><span>${names[c]}</span><span>${cs.length}</span></h4><div class="cs">${cs.slice(0, d ? 80 : 5).map(x => `<div class="card ${isNew("c" + x.id + x.col)}" data-sel="card:${esc(x.id)}" tabindex="0"><b>${esc(x.title)}</b><small>${esc(x.owner || who(x.last_by))}${x.artifact ? " · ∎ " + esc(x.artifact) : ""}</small>${M.admin ? `<div class="mv">${i > 0 ? `<button data-act="mv" data-id="${esc(x.id)}" data-col="${M.cols[i - 1]}">←</button>` : ""}${i < 3 ? `<button data-act="mv" data-id="${esc(x.id)}" data-col="${M.cols[i + 1]}">→</button>` : ""}</div>` : ""}</div>`).join("") || '<span class="mut" style="font-size:12px;padding:4px">empty</span>'}</div></div>`; }).join("")}</div>`;
 };
 
 R.security = d => {
-  const r = M.room, ch = r.chain, holds = r.holds || [];
+  const r = M.room, ch = r.chain, holds = r.holds || [], pol = M.policy || {}, bud = pol.budget || {}, lim = pol.limits || {};
   const line = (ok, t, s) => `<div class="chk"><span class="${ok ? "ok" : "no"}">${ok ? "✓" : "✗"}</span><span style="flex:1"><b>${t}</b><br><span class="mut">${s}</span></span></div>`;
   const holdRows = holds.length ? `<div style="display:grid;gap:6px;margin:6px 0 8px">${holds.map(h => `<div class="row" style="justify-content:space-between;padding:6px 8px;border:1px solid var(--sig);background:var(--field)"><span class="mono" style="font-size:11.5px"><code>${esc(h.tool || "write")}</code>${h.origin ? ` <span class="mut">· ${esc(h.origin)}</span>` : ""}${h.session ? ` <span class="mut">(${esc(String(h.session).slice(0, 8))})</span>` : ""}</span><span class="row" style="gap:6px"><button type="button" class="btn primary sm" data-act="whold" data-dec="release" data-ses="${esc(h.session || "")}">Lift hold</button><button type="button" class="btn sm danger" data-act="whold" data-dec="deny" data-ses="${esc(h.session || "")}">Deny</button></span></div>`).join("")}</div>` : "";
+  const tasksRows = (M.tasks || []).slice(0, d ? 12 : 3).map(tk => tk.task_id ? `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--dim);font:11.5px var(--mono)"><span>#${esc(tk.seq)} ${esc(tk.program || "sh")} · ${esc((tk.cmd_hash || "").slice(0, 8))}</span><button type="button" class="btn sm" data-sel="task:${esc(tk.task_id)}">Diff &amp; Replay</button></div>` : "").join("");
   return line(!ch || ch.ok, ch ? (ch.ok ? "Signed history verifies" : "History FAILED verification") : "History not checked yet", ch ? `${ch.entries} signed entries, linked and re-verified by the hub` : "The hub checks every few minutes")
+    + (bud.task_budget ? line((bud.tasks_remaining ?? 1) > 0, `Budget burn: ${bud.tasks_started ?? 0} / ${bud.task_budget} tasks`, `${lim.cpus ?? 2} CPU · ${lim.mem_mib ?? 1024} MiB · ${(lim.allowed_hosts || []).length} egress hosts · policy ${String(pol.policy_digest || "").slice(0, 10)}`) : "")
     + line(!holds.length, holds.length ? `${holds.length} write(s) paused by the witness` : "No writes paused", "A witness holds risky writes until the owner decides")
     + holdRows
     + line(true, "Messages are untrusted", "Other members' text is shown as plain text and never run")
-    + line(M.members.every(m => m.id !== "" ), `${M.members.length} members, ${M.members.filter(m => m.present).length} online`, "Every member joined with a grant bound to its own key")
-    + `<div class="row" style="margin-top:12px"><a class="btn sm" href="/?view=system">Open System view</a><a class="btn sm" href="/r/${esc(RID)}/api/history.jsonl" download>Download history</a>${M.admin ? '<button class="btn sm" data-act="verify">Verify now</button>' : ""}</div>`;
+    + (tasksRows ? `<div style="margin-top:8px"><p class="lbl">Recent Sandbox Runs · Diff &amp; Replay</p>${tasksRows}</div>` : "")
+    + `<div class="row" style="margin-top:12px"><a class="btn sm" href="/?view=system">Open System view</a><a class="btn sm" href="/r/${esc(RID)}/api/history.jsonl" download>Download history</a>${M.admin ? '<button class="btn sm primary" data-act="add" data-k="policy">Live Guardrails</button><button class="btn sm" data-act="verify">Verify now</button>' : ""}</div>`;
 };
 
-R.settings = () => `<p class="lbl">Room</p><div class="row"><b style="font-size:16px">${esc(M.room.label)}</b><span class="chip">${esc(M.room.kind || "")}</span></div><p class="mut" style="font-size:12.5px">${esc(M.room.machine || "no machine set")}</p>
-  <div class="row" style="margin-top:12px"><button class="btn sm" data-act="rename">Rename / edit</button><a class="btn sm primary" href="/?invite=${esc(RID)}">Invite a friend</a><a class="btn sm" href="/r/${esc(RID)}/">Open cockpit</a><a class="btn sm" href="/?view=research">Research</a></div>
-  <p class="lbl" style="margin-top:20px">Work surface</p><div class="row"><button class="btn sm" data-act="add" data-k="card">+ Task</button><button class="btn sm" data-act="add" data-k="artifact">+ Artifact</button><button class="btn sm" data-act="add" data-k="metric">+ Metric</button><button class="btn sm" data-act="add" data-k="say">+ Message</button></div>
-  <p class="mut" style="font-size:12px;margin-top:14px">Agents add to this surface by posting <span class="mono">::pbx</span> messages. Hosts can also add and move things here.</p>`;
+R.settings = () => `<p class="lbl">Room</p><div class="row"><b style="font-size:16px">${esc(M.room.label)}</b><span class="chip">${esc(M.room.kind || "")}</span>${M.room.template ? `<span class="chip ok">template:${esc(M.room.template)}</span>` : ""}</div><p class="mut" style="font-size:12.5px">${esc(M.room.machine || "no machine set")}</p>
+  <div class="row" style="margin-top:12px"><button class="btn sm" data-act="rename">Rename / edit</button><button class="btn sm primary" data-act="add" data-k="policy">Live Policy &amp; Guardrails</button><a class="btn sm primary" href="/?invite=${esc(RID)}">Invite a friend</a><a class="btn sm" href="/r/${esc(RID)}/">Open cockpit</a></div>
+  <p class="lbl" style="margin-top:20px">Work surface</p><div class="row"><button class="btn sm" data-act="add" data-k="card">+ Task</button><button class="btn sm" data-act="add" data-k="artifact">+ Artifact</button><button class="btn sm" data-act="add" data-k="handoff">+ Handoff</button><button class="btn sm" data-act="add" data-k="memory">+ Memory Fact</button><button class="btn sm" data-act="add" data-k="metric">+ Metric</button><button class="btn sm" data-act="add" data-k="say">+ Message</button></div>
+  <p class="mut" style="font-size:12px;margin-top:14px">Agents add to this surface by posting <span class="mono">::pbx</span> messages, <span class="mono">playbox_handoff</span>, and <span class="mono">playbox_room_remember</span>.</p>`;
 
 function isNew(key) { if (first) { seenKeys.add(key); return ""; } if (seenKeys.has(key)) return ""; seenKeys.add(key); return "new"; }
 
@@ -504,8 +516,18 @@ addEventListener("keydown", e => {
 addEventListener("resize", () => { if (focus) fitRect(layout()[focus], .96, false); else fitAll(false); });
 
 /* ---------- inspector (drill into an artifact, agent, task, metric) ---------- */
-function selTitle() { const [t, id] = [sel.t, sel.id]; if (t === "artifact") return (M.artifacts.find(a => a.id === id) || {}).title || id; if (t === "card") return (M.cards.find(a => a.id === id) || {}).title || id; if (t === "agent") return who(id); return id; }
-function openSel(t, id) { sel = {t, id}; focus = focus || ({artifact: "artifacts", card: "kanban", agent: "agents", metric: "pulse"}[t]); drawWorld(); renderInsp(); $("#insp").classList.add("on"); fitRect(layout()[focus], .96); }
+function selTitle() { const [t, id] = [sel.t, sel.id]; if (t === "artifact") return (M.artifacts.find(a => a.id === id) || {}).title || id; if (t === "card") return (M.cards.find(a => a.id === id) || {}).title || id; if (t === "agent") return who(id); if (t === "memory") return "memory · " + id; if (t === "handoff") return "handoff · " + id; if (t === "task") return "task · " + id.slice(0, 12); return id; }
+function openSel(t, id) {
+  sel = {t, id};
+  focus = focus || ({artifact: "artifacts", memory: "artifacts", card: "kanban", handoff: "kanban", agent: "agents", metric: "pulse", task: "security"}[t]);
+  drawWorld(); renderInsp(); $("#insp").classList.add("on"); fitRect(layout()[focus], .96);
+  if (t === "task") {
+    gfetch(`/r/${RID}/api/replay`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({task_id: id, run: false})})
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j && sel && sel.t === "task" && sel.id === id) { sel.data = j; renderInsp(); } })
+      .catch(() => {});
+  }
+}
 function closeInsp() { $("#insp").classList.remove("on"); }
 let lastInspPatch = "";
 function renderPatchBody(src) {
@@ -573,6 +595,42 @@ function renderInsp() {
   } else if (sel.t === "metric") {
     const s = M.metrics.find(x => x.name === sel.id); title = "metric · " + sel.id;
     html = s ? `<h2 style="font:700 22px var(--mono);margin:0 0 8px">${esc(s.name)}</h2>${spark(s.pts, 380, 160, true)}<h3>Points · ${s.pts.length}</h3>${[...s.pts].reverse().slice(0, 40).map(p => `<div class="chk"><span class="mono">${+p.v.toFixed(6)}${esc(s.unit)}</span><span class="mut" style="margin-left:auto">${esc(who(p.from))} · ${hhmm(p.ms)}</span></div>`).join("")}` : '<p class="empty">Gone.</p>';
+  } else if (sel.t === "memory") {
+    const e = ((M.memory && M.memory.entries) || []).find(x => x.doc === sel.id); title = "memory · " + (e && e.key || sel.id);
+    if (!e) html = '<p class="empty">Entry not found.</p>';
+    else {
+      const t = e.taint || (e.endorsed || e.author === "host" ? "owner_endorsed" : (e.task_id || e.commit) ? "verified" : "untrusted");
+      html = `<div class="row"><span class="chip ${t === "owner_endorsed" ? "ok" : t === "verified" ? "blue" : "warn"}">${t === "owner_endorsed" ? "✓ owner-endorsed" : t === "verified" ? "✓ task-verified" : "untrusted / tainted"}</span><span class="chip">${esc(e.status || "accepted")}</span></div>
+        <h2 style="font:700 20px var(--sans);margin:14px 0 6px">${esc(e.key || e.doc)}</h2>
+        <pre>${esc(e.text)}</pre>
+        <h3>Provenance</h3>
+        <div class="chk"><span>author</span><span class="mono">${esc(e.author_name || who(e.author))}</span></div>
+        ${e.task_id ? `<div class="chk"><span>task_id</span><button class="btn sm" data-sel="task:${esc(e.task_id)}">${esc(e.task_id.slice(0, 12))}</button></div>` : ""}
+        ${e.commit ? `<div class="chk"><span>commit</span><span class="mono">${esc(e.commit)}</span></div>` : ""}
+        ${M.admin ? `<div class="row" style="margin-top:14px"><button class="btn sm primary" data-act="memact" data-op="${e.endorsed ? "unendorse" : "endorse"}" data-doc="${esc(e.doc)}">${e.endorsed ? "Remove Endorsement" : "Endorse Fact"}</button><button class="btn sm danger" data-act="memact" data-op="quarantine" data-doc="${esc(e.doc)}">Quarantine</button></div>` : ""}`;
+    }
+  } else if (sel.t === "handoff") {
+    const h = (M.handoffs || []).find(x => x.id === sel.id); title = "handoff · " + sel.id;
+    if (!h) html = '<p class="empty">Handoff not found.</p>';
+    else {
+      html = `<div class="row"><span class="chip ok">✓ signed checkpoint</span><span class="chip mono">${esc(h.branch || "main")}</span>${h.base_commit ? `<span class="chip mono">@ ${esc(h.base_commit.slice(0, 8))}</span>` : ""}</div>
+        <h2 style="font:700 18px var(--sans);margin:14px 0 6px">From ${esc(h.from_name || who(h.from))}${h.to ? ` → ${esc(h.to)}` : ""}</h2>
+        <pre>${esc(h.summary || "")}</pre>
+        ${(h.open_cards || []).length ? `<h3>Open Cards</h3><div class="row">${h.open_cards.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div>` : ""}
+        ${(h.verified_artifacts || []).length ? `<h3>Verified Artifacts</h3><div class="row">${h.verified_artifacts.map(a => `<span class="chip ok">${esc(a)}</span>`).join("")}</div>` : ""}
+        ${(h.failed_checks || []).length ? `<h3>Failed Checks</h3><div class="row">${h.failed_checks.map(f => `<span class="chip bad">${esc(f)}</span>`).join("")}</div>` : ""}`;
+    }
+  } else if (sel.t === "task") {
+    const d = sel.data || {}, tk = d.replay || d.task || d.original || (M.tasks || []).find(x => x.task_id === sel.id) || {task_id: sel.id};
+    const vf = d.verification;
+    title = "task · " + String(sel.id).slice(0, 10);
+    html = `<div class="row"><span class="chip ${tk.exit_code === 0 ? "ok" : "bad"}">exit ${esc(tk.exit_code ?? "—")}</span>${vf ? `<span class="chip ${vf.reproducible ? "ok" : "bad"}">${vf.reproducible ? "✓ Reproducible" : "✕ Diverged"}</span>` : ""}<button class="btn sm primary" data-act="replayrun" data-tid="${esc(sel.id)}">Replay &amp; Verify</button></div>
+      <h3>Provenance</h3>
+      <div class="chk"><span>base_commit</span><span class="mono">${esc((tk.base_commit || tk.commit || "—").slice(0, 12))}</span></div>
+      <div class="chk"><span>cmd_hash</span><span class="mono">${esc(tk.cmd_hash || "—")}</span></div>
+      <div class="chk"><span>policy_digest</span><span class="mono">${esc((tk.policy_digest || "—").slice(0, 12))}</span></div>
+      <div class="chk"><span>patch_hash</span><span class="mono">${esc((tk.patch_hash || "—").slice(0, 12))}</span></div>
+      ${tk.patch ? `<h3>Diff</h3>${renderPatchBody(tk.patch)}` : '<p class="empty">Loading diff or empty patch…</p>'}`;
   }
   el.innerHTML = `<header><h2>${esc(title)}</h2><button class="btn sm" data-act="closeinsp">Close ✕</button></header><div class="body">${html}</div>`;
 }
@@ -583,19 +641,39 @@ const post = async text => { const r = await gfetch(`/r/${RID}/api/tool`, {metho
 const enc = (k, o) => "::pbx " + k + " " + JSON.stringify(o);
 function toast(t) { const e = document.createElement("div"); e.className = "toast"; e.textContent = t; document.body.append(e); setTimeout(() => e.remove(), 2200); }
 function modal(kind) {
+  const pol = M && M.policy || {}, lim = pol.limits || {}, bud = pol.budget || {};
   const f = {
     card: `<h2>New task</h2><label>Title</label><input name="title" required maxlength="120" autofocus><label>Column</label><select name="col"><option value="todo">To do</option><option value="doing">Doing</option><option value="review">Review</option><option value="done">Done</option></select><label>Owner (optional)</label><input name="owner" maxlength="30"><label>Linked artifact id (optional)</label><input name="artifact" maxlength="40">`,
     artifact: `<h2>New artifact</h2><label>Title</label><input name="title" required maxlength="90" autofocus><label>Kind</label><select name="kind"><option>proof</option><option>code</option><option>doc</option><option>dataset</option><option>chart</option><option>note</option></select><label>Status</label><select name="status"><option>draft</option><option>checking</option><option>verified</option><option>failed</option></select><label>Summary</label><input name="summary" maxlength="400"><label>Reference (path, URL, hash)</label><input name="ref" maxlength="160"><label>Content (optional)</label><textarea name="body" rows="4" maxlength="3000"></textarea>`,
     metric: `<h2>Record a metric</h2><label>Name</label><input name="name" required maxlength="40" autofocus><label>Value</label><input name="value" type="number" step="any" required><label>Unit (optional)</label><input name="unit" maxlength="12">`,
     say: `<h2>Post to the room</h2><label>Message</label><textarea name="text" rows="4" required maxlength="1500" autofocus></textarea>`,
+    handoff: `<h2>Publish Handoff Checkpoint</h2><label>Branch</label><input name="branch" value="main" class="mono" required><label>Target Agent (optional)</label><input name="to" maxlength="40"><label>Summary &amp; Next Steps</label><textarea name="summary" rows="3" required maxlength="600" autofocus></textarea><label>Open Cards (comma-separated)</label><input name="open_cards" class="mono"><label>Verified Artifacts (comma-separated)</label><input name="verified_artifacts" class="mono">`,
+    memory: `<h2>Add Owner-Endorsed Memory Fact</h2><label>Key / Topic</label><input name="key" class="mono" maxlength="64" required autofocus><label>Verifying Commit or Task ID (optional)</label><input name="commit" class="mono" maxlength="64"><label>Fact / Decision</label><textarea name="text" rows="3" required maxlength="2000"></textarea>`,
+    policy: `<h2>Live Policy &amp; Budget Guardrails</h2><div class="grid2"><div><label>Max CPUs</label><input name="cpus" type="number" step="0.5" value="${esc(lim.cpus ?? 2)}"></div><div><label>Max RAM (MiB)</label><input name="mem_mib" type="number" value="${esc(lim.mem_mib ?? 1024)}"></div><div><label>Max Timeout (s)</label><input name="timeout_secs" type="number" value="${esc(lim.timeout_secs ?? 300)}"></div><div><label>Task Budget</label><input name="task_budget" type="number" value="${esc(bud.task_budget ?? 100000)}"></div></div><label>Allowed Egress Hosts (comma-separated)</label><input name="allowed_hosts" class="mono" value="${esc((lim.allowed_hosts || []).join(", "))}"><label>Allowed Secret Scopes (comma-separated)</label><input name="allowed_secrets" class="mono" value="${esc((lim.allowed_secrets || []).join(", "))}">`,
   }[kind];
-  const d = $("#dlg"); d.innerHTML = `<form method="dialog">${f}<p class="err" id="derr"></p><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Add</button></div></form>`;
+  const d = $("#dlg"); d.innerHTML = `<form method="dialog">${f}<p class="err" id="derr"></p><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Save</button></div></form>`;
   $("form", d).addEventListener("submit", async e => {
     if (e.submitter && e.submitter.value === "cancel") return; e.preventDefault();
     const o = Object.fromEntries(new FormData(e.target)); for (const k in o) if (o[k] === "") delete o[k];
-    if (kind === "card") o.id = "c" + Date.now().toString(36); if (kind === "artifact") o.id = (o.title || "a").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30) + "-" + Date.now().toString(36).slice(-3);
-    if (kind === "metric") o.value = +o.value;
-    try { await post(kind === "say" ? o.text : enc(kind, o)); d.close(); toast("Added"); refresh(); } catch (er) { $("#derr").textContent = er.message; }
+    try {
+      if (kind === "policy") {
+        const csv = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
+        const r = await gfetch(`/r/${RID}/api/policy`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({cpus: +o.cpus || 2, mem_mib: +o.mem_mib || 1024, timeout_secs: +o.timeout_secs || 300, task_budget: +o.task_budget || 100000, allowed_hosts: csv(o.allowed_hosts), allowed_secrets: csv(o.allowed_secrets)})});
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update policy");
+      } else if (kind === "memory") {
+        const r = await gfetch(`/r/${RID}/api/memory`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "remember", key: o.key, text: o.text, commit: o.commit, endorsed: true})});
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to save memory");
+      } else if (kind === "handoff") {
+        const csv = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
+        const r = await gfetch(`/r/${RID}/api/handoffs`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({branch: o.branch || "main", to: o.to || "", summary: o.summary, open_cards: csv(o.open_cards), verified_artifacts: csv(o.verified_artifacts)})});
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to publish handoff");
+      } else {
+        if (kind === "card") o.id = "c" + Date.now().toString(36); if (kind === "artifact") o.id = (o.title || "a").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30) + "-" + Date.now().toString(36).slice(-3);
+        if (kind === "metric") o.value = +o.value;
+        await post(kind === "say" ? o.text : enc(kind, o));
+      }
+      d.close(); toast("Saved"); refresh();
+    } catch (er) { $("#derr").textContent = er.message; }
   });
   d.showModal();
 }
@@ -644,6 +722,26 @@ document.addEventListener("click", async e => {
     if (act === "fa") { filt.art = a.dataset.v; drawWorld(); return; } if (act === "fl") { filt.log = a.dataset.v; drawWorld(); return; }
     if (act === "mv") { e.stopPropagation(); try { await post(enc("card", {id: a.dataset.id, col: a.dataset.col})); refresh(); } catch (er) { toast(er.message); } return; }
     if (act === "add") { modal(a.dataset.k); return; } if (act === "rename") { rename(); return; }
+    if (act === "memact") {
+      a.disabled = true;
+      try {
+        const r = await gfetch(`/r/${RID}/api/memory`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: a.dataset.op, doc: a.dataset.doc})});
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed");
+        toast("Memory updated"); await pull();
+      } catch (er) { toast(er.message || "Failed"); a.disabled = false; }
+      return;
+    }
+    if (act === "replayrun") {
+      a.disabled = true; a.textContent = "Replaying…";
+      try {
+        const r = await gfetch(`/r/${RID}/api/replay`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({task_id: a.dataset.tid, run: true})});
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || "Replay failed");
+        if (sel && sel.t === "task") { sel.data = j; renderInsp(); }
+        toast(j.reproducible ? "✓ Replay verified reproducible" : "✕ Replay diverged");
+      } catch (er) { toast(er.message || "Replay failed"); a.disabled = false; a.textContent = "Replay & Verify"; }
+      return;
+    }
     if (act === "verify") { try { await gfetch("/api/system/verify", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast("Re-verifying"); setTimeout(refresh, 1500); } catch {} return; }
     if (act === "whold") {
       e.stopPropagation();

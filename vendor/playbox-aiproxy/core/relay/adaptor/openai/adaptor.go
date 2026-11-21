@@ -1,0 +1,821 @@
+package openai
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/bytedance/sonic"
+	"github.com/gin-gonic/gin"
+	"github.com/labring/aiproxy/core/model"
+	"github.com/labring/aiproxy/core/relay/adaptor"
+	"github.com/labring/aiproxy/core/relay/adaptor/registry"
+	"github.com/labring/aiproxy/core/relay/meta"
+	"github.com/labring/aiproxy/core/relay/mode"
+	relaymodel "github.com/labring/aiproxy/core/relay/model"
+	"github.com/labring/aiproxy/core/relay/utils"
+)
+
+var _ adaptor.Adaptor = (*Adaptor)(nil)
+
+type Adaptor struct {
+	configCache utils.ChannelConfigCache[Config]
+}
+
+func init() {
+	registry.Register(model.ChannelTypeOpenAI, &Adaptor{})
+}
+
+const baseURL = "https://api.openai.com/v1"
+
+func (a *Adaptor) DefaultBaseURL() string {
+	return baseURL
+}
+
+func (a *Adaptor) SupportMode(mt *meta.Meta) bool {
+	switch adaptor.ModeFromMeta(mt) {
+	case mode.ChatCompletions,
+		mode.Completions,
+		mode.Embeddings,
+		mode.Moderations,
+		mode.ImagesGenerations,
+		mode.ImagesEdits,
+		mode.AudioSpeech,
+		mode.AudioTranscription,
+		mode.AudioTranslation,
+		mode.Rerank,
+		mode.ParsePdf,
+		mode.VideoGenerationsJobs,
+		mode.VideoGenerationsGetJobs,
+		mode.VideoGenerationsContent,
+		mode.Videos,
+		mode.VideosGet,
+		mode.VideosContent,
+		mode.VideosDelete,
+		mode.VideosRemix,
+		mode.VideosEdits,
+		mode.VideosExtensions,
+		mode.Anthropic,
+		mode.Gemini,
+		mode.Responses,
+		mode.ResponsesCompact,
+		mode.ResponsesGet,
+		mode.ResponsesDelete,
+		mode.ResponsesCancel,
+		mode.ResponsesInputItems,
+		mode.AlphaSearch,
+		mode.Decisions:
+		return true
+	default:
+		return false
+	}
+}
+
+//nolint:gocyclo
+func (a *Adaptor) GetRequestURL(
+	meta *meta.Meta,
+	_ adaptor.Store,
+	_ *gin.Context,
+) (adaptor.RequestURL, error) {
+	u := meta.Channel.BaseURL
+
+	switch meta.Mode {
+	case mode.Decisions:
+		requestURL, err := url.JoinPath(u, "/decisions")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{Method: http.MethodPost, URL: requestURL}, nil
+	case mode.AlphaSearch:
+		url, err := url.JoinPath(u, "/alpha/search")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.Responses:
+		url, err := url.JoinPath(u, "/responses")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.ResponsesCompact:
+		url, err := url.JoinPath(u, "/responses/compact")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.ResponsesGet:
+		url, err := url.JoinPath(u, "/responses", meta.ResponseID)
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodGet,
+			URL:    url,
+		}, nil
+	case mode.ResponsesDelete:
+		url, err := url.JoinPath(u, "/responses", meta.ResponseID)
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodDelete,
+			URL:    url,
+		}, nil
+	case mode.ResponsesCancel:
+		url, err := url.JoinPath(u, "/responses", meta.ResponseID, "cancel")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.ResponsesInputItems:
+		url, err := url.JoinPath(u, "/responses", meta.ResponseID, "input_items")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodGet,
+			URL:    url,
+		}, nil
+	case mode.ChatCompletions, mode.Anthropic, mode.Gemini:
+		// Select the upstream protocol using the channel override before model detection.
+		useResponses, err := ShouldUseResponsesAPI(meta)
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		if useResponses {
+			url, err := url.JoinPath(u, "/responses")
+			if err != nil {
+				return adaptor.RequestURL{}, err
+			}
+
+			return adaptor.RequestURL{
+				Method: http.MethodPost,
+				URL:    url,
+			}, nil
+		}
+
+		url, err := url.JoinPath(u, "/chat/completions")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.Completions:
+		url, err := url.JoinPath(u, "/completions")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.Embeddings:
+		url, err := url.JoinPath(u, "/embeddings")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.Moderations:
+		url, err := url.JoinPath(u, "/moderations")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.ImagesGenerations:
+		url, err := url.JoinPath(u, "/images/generations")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.ImagesEdits:
+		url, err := url.JoinPath(u, "/images/edits")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.AudioSpeech:
+		url, err := url.JoinPath(u, "/audio/speech")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.AudioTranscription:
+		url, err := url.JoinPath(u, "/audio/transcriptions")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.AudioTranslation:
+		url, err := url.JoinPath(u, "/audio/translations")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.Rerank:
+		url, err := url.JoinPath(u, "/rerank")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.ParsePdf:
+		url, err := url.JoinPath(u, "/parse/pdf")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.VideoGenerationsJobs:
+		url, err := url.JoinPath(u, "/video/generations/jobs")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.VideoGenerationsGetJobs:
+		url, err := url.JoinPath(u, "/video/generations/jobs", meta.JobID)
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodGet,
+			URL:    url,
+		}, nil
+	case mode.VideoGenerationsContent:
+		url, err := url.JoinPath(u, "/video/generations", meta.GenerationID, "content/video")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodGet,
+			URL:    url,
+		}, nil
+	case mode.Videos:
+		url, err := url.JoinPath(u, "/videos")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.VideosGet:
+		url, err := url.JoinPath(u, "/videos", meta.VideoID)
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodGet,
+			URL:    url,
+		}, nil
+	case mode.VideosContent:
+		url, err := url.JoinPath(u, "/videos", meta.VideoID, "content")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodGet,
+			URL:    url,
+		}, nil
+	case mode.VideosDelete:
+		url, err := url.JoinPath(u, "/videos", meta.VideoID)
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodDelete,
+			URL:    url,
+		}, nil
+	case mode.VideosRemix:
+		url, err := url.JoinPath(u, "/videos", meta.VideoID, "remix")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.VideosEdits:
+		url, err := url.JoinPath(u, "/videos/edits")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	case mode.VideosExtensions:
+		url, err := url.JoinPath(u, "/videos/extensions")
+		if err != nil {
+			return adaptor.RequestURL{}, err
+		}
+
+		return adaptor.RequestURL{
+			Method: http.MethodPost,
+			URL:    url,
+		}, nil
+	default:
+		return adaptor.RequestURL{}, fmt.Errorf("unsupported mode: %s", meta.Mode)
+	}
+}
+
+func (a *Adaptor) SetupRequestHeader(
+	meta *meta.Meta,
+	_ adaptor.Store,
+	c *gin.Context,
+	req *http.Request,
+) error {
+	if c != nil && c.Request != nil {
+		for _, headerName := range openAIRequestHeaderWhitelist {
+			if value := c.Request.Header.Values(headerName); len(value) > 0 {
+				req.Header[http.CanonicalHeaderKey(headerName)] = append([]string(nil), value...)
+			}
+		}
+	}
+
+	if meta.Mode == mode.ResponsesCompact || meta.Mode == mode.Decisions {
+		req.Header.Set("Accept", "application/json")
+	}
+
+	req.Header.Set("Authorization", "Bearer "+meta.Channel.Key)
+
+	if IsCodexBackend(meta.Channel.BaseURL) {
+		req.Header.Set("User-Agent", "codex_cli_rs/0.160.1")
+		req.Header.Set("Accept", "text/event-stream")
+		if accID := extractCodexAccountID(meta.Channel.Key); accID != "" {
+			req.Header.Set("ChatGPT-Account-Id", accID)
+		}
+	}
+
+	return nil
+}
+
+func IsCodexBackend(baseURL string) bool {
+	return strings.Contains(strings.ToLower(baseURL), "chatgpt.com/backend-api/codex")
+}
+
+func extractCodexAccountID(jwt string) string {
+	parts := strings.Split(jwt, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims map[string]any
+	if err := sonic.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	authMap, _ := claims["https://api.openai.com/auth"].(map[string]any)
+	accID, _ := authMap["chatgpt_account_id"].(string)
+	return accID
+}
+
+var openAIRequestHeaderWhitelist = []string{
+	"Accept",
+	"Accept-Language",
+	"OpenAI-Beta",
+	"User-Agent",
+	"Originator",
+	"conversation_id",
+	"session_id",
+	"session-id",
+	"thread-id",
+	"x-client-request-id",
+	"version",
+	"x-codex-beta-features",
+	"x-codex-installation-id",
+	"x-codex-turn-state",
+	"x-codex-turn-metadata",
+	"x-codex-window-id",
+	"x-openai-internal-codex-responses-lite",
+}
+
+func (a *Adaptor) ConvertRequest(
+	meta *meta.Meta,
+	store adaptor.Store,
+	req *http.Request,
+) (adaptor.ConvertResult, error) {
+	return ConvertRequest(meta, store, req)
+}
+
+//nolint:gocyclo
+func ConvertRequest(
+	meta *meta.Meta,
+	store adaptor.Store,
+	req *http.Request,
+) (adaptor.ConvertResult, error) {
+	if req == nil {
+		return adaptor.ConvertResult{}, errors.New("request is nil")
+	}
+
+	switch meta.Mode {
+	case mode.Decisions:
+		return ConvertDecisionsRequest(meta, req)
+	case mode.AlphaSearch:
+		return ConvertAlphaSearchRequest(meta, req)
+	case mode.Responses:
+		return ConvertResponseRequest(meta, req, patchOpenAIResponsesReasoningEffort(meta))
+	case mode.ResponsesCompact:
+		return ConvertResponseCompactRequest(meta, req)
+	case mode.ResponsesGet, mode.ResponsesDelete, mode.ResponsesCancel, mode.ResponsesInputItems:
+		// These endpoints don't need request conversion
+		return adaptor.ConvertResult{}, nil
+	case mode.Moderations:
+		return ConvertModerationsRequest(meta, req)
+	case mode.Embeddings:
+		return ConvertEmbeddingsRequest(meta, req, false)
+	case mode.Completions:
+		return ConvertCompletionsRequest(meta, req, patchOpenAIReasoningEffort(meta))
+	case mode.ChatCompletions:
+		useResponses, err := ShouldUseResponsesAPI(meta)
+		if err != nil {
+			return adaptor.ConvertResult{}, err
+		}
+
+		if useResponses {
+			return ConvertChatCompletionToResponsesRequest(meta, req)
+		}
+
+		return ConvertChatCompletionsRequest(meta, req, false, patchOpenAIReasoningEffort(meta))
+	case mode.Anthropic:
+		// Check if model requires Responses API conversion
+		if IsCodexBackend(meta.Channel.BaseURL) || IsResponsesOnlyModelAny(&meta.ModelConfig, meta.OriginModel, meta.ActualModel) {
+			return ConvertClaudeToResponsesRequest(meta, req)
+		}
+		return ConvertClaudeRequest(meta, req)
+	case mode.ImagesGenerations:
+		return ConvertImagesRequest(meta, req)
+	case mode.ImagesEdits:
+		return ConvertImagesEditsRequest(meta, req, true)
+	case mode.AudioTranscription, mode.AudioTranslation:
+		return ConvertSTTRequest(meta, req)
+	case mode.AudioSpeech:
+		return ConvertTTSRequest(meta, req, "")
+	case mode.Rerank:
+		return ConvertRerankRequest(meta, req)
+	case mode.ParsePdf:
+		return ConvertParsePdfRequest(meta, req)
+	case mode.VideoGenerationsJobs:
+		return ConvertVideoGenerationJobRequest(meta, req)
+	case mode.VideoGenerationsGetJobs:
+		return ConvertVideoGetJobsRequest(meta, req)
+	case mode.VideoGenerationsContent:
+		return ConvertVideoGetJobsContentRequest(meta, req)
+	case mode.Videos:
+		return ConvertVideosRequest(meta, req)
+	case mode.VideosRemix:
+		return ConvertVideosRemixRequest(meta, req)
+	case mode.VideosEdits:
+		return ConvertVideosEditRequest(meta, req)
+	case mode.VideosExtensions:
+		return ConvertVideosExtensionRequest(meta, req)
+	case mode.VideosGet:
+		return ConvertVideosGetRequest(meta, req)
+	case mode.VideosContent:
+		return ConvertVideosContentRequest(meta, req)
+	case mode.VideosDelete:
+		return ConvertVideoNoBodyRequest(meta, req)
+	case mode.Gemini:
+		// Check if model requires Responses API conversion
+		if IsResponsesOnlyModelAny(&meta.ModelConfig, meta.OriginModel, meta.ActualModel) {
+			return ConvertGeminiToResponsesRequest(meta, req)
+		}
+		return ConvertGeminiRequest(meta, req)
+	default:
+		return adaptor.ConvertResult{}, fmt.Errorf("unsupported mode: %s", meta.Mode)
+	}
+}
+
+func DoResponse(
+	meta *meta.Meta,
+	store adaptor.Store,
+	c *gin.Context,
+	resp *http.Response,
+	options ...DoResponseOptions,
+) (result adaptor.DoResponseResult, err adaptor.Error) {
+	responseOptions := defaultConfig().doResponseOptions()
+	if len(options) > 0 {
+		responseOptions = options[0]
+	}
+
+	return doResponse(meta, store, c, resp, responseOptions)
+}
+
+//nolint:gocyclo
+func doResponse(
+	meta *meta.Meta,
+	store adaptor.Store,
+	c *gin.Context,
+	resp *http.Response,
+	options DoResponseOptions,
+) (result adaptor.DoResponseResult, err adaptor.Error) {
+	switch meta.Mode {
+	case mode.Decisions:
+		result, err = DecisionsHandler(meta, c, resp)
+	case mode.AlphaSearch:
+		result, err = AlphaSearchHandler(meta, c, resp)
+	case mode.Responses:
+		if utils.IsStreamResponse(resp) {
+			result, err = responseStreamHandler(
+				meta,
+				store,
+				c,
+				resp,
+				options.ResponsesFirstEventTimeout,
+			)
+		} else {
+			result, err = ResponseHandler(meta, store, c, resp)
+		}
+	case mode.ResponsesCompact:
+		result, err = CompactResponseHandler(meta, c, resp)
+	case mode.ResponsesGet:
+		result, err = GetResponseHandler(meta, c, resp)
+	case mode.ResponsesDelete:
+		result, err = DeleteResponseHandler(meta, c, resp)
+	case mode.ResponsesCancel:
+		result, err = CancelResponseHandler(meta, c, resp)
+	case mode.ResponsesInputItems:
+		result, err = GetInputItemsHandler(meta, c, resp)
+	case mode.ImagesGenerations, mode.ImagesEdits:
+		if utils.IsStreamResponse(resp) {
+			result, err = ImagesStreamHandler(meta, c, resp)
+		} else {
+			result, err = ImagesHandler(meta, c, resp)
+		}
+	case mode.AudioTranscription, mode.AudioTranslation:
+		result, err = STTHandler(meta, c, resp)
+	case mode.AudioSpeech:
+		result, err = TTSHandler(meta, c, resp)
+	case mode.Rerank:
+		result, err = RerankHandler(meta, c, resp)
+	case mode.ParsePdf:
+		result, err = ParsePdfHandler(meta, c, resp)
+	case mode.Moderations:
+		result, err = ModerationsHandler(meta, c, resp)
+	case mode.Embeddings:
+		result, err = EmbeddingsHandler(meta, c, resp, nil)
+	case mode.Completions, mode.ChatCompletions:
+		var (
+			streamPreHandler  PreHandler
+			handlerPreHandler PreHandler
+		)
+
+		if meta.Mode == mode.ChatCompletions {
+			var configErr error
+
+			streamPreHandler, handlerPreHandler, configErr = getChatCompletionResponsePreHandlers(
+				meta,
+			)
+			if configErr != nil {
+				return adaptor.DoResponseResult{}, relaymodel.WrapperOpenAIError(
+					configErr,
+					"load_channel_config_failed",
+					http.StatusInternalServerError,
+				)
+			}
+		}
+
+		// Use the same protocol decision as URL and request conversion.
+		useResponses, configErr := ShouldUseResponsesAPI(meta)
+		if configErr != nil {
+			return adaptor.DoResponseResult{}, relaymodel.WrapperOpenAIError(
+				configErr, "load_channel_config_failed", http.StatusInternalServerError,
+			)
+		}
+
+		if useResponses {
+			// Convert Responses API response back to ChatCompletion format
+			if utils.IsStreamResponse(resp) {
+				result, err = ConvertResponsesToChatCompletionStreamResponse(meta, c, resp)
+			} else {
+				result, err = ConvertResponsesToChatCompletionResponse(meta, c, resp)
+			}
+		} else {
+			if utils.IsStreamResponse(resp) {
+				result, err = StreamHandler(meta, c, resp, streamPreHandler)
+			} else {
+				result, err = Handler(meta, c, resp, handlerPreHandler)
+			}
+		}
+	case mode.Anthropic:
+		// Check if model required Responses API conversion
+		if IsCodexBackend(meta.Channel.BaseURL) || IsResponsesOnlyModelAny(&meta.ModelConfig, meta.OriginModel, meta.ActualModel) {
+			// Convert Responses API response back to Claude format
+			if utils.IsStreamResponse(resp) {
+				result, err = ConvertResponsesToClaudeStreamResponse(meta, c, resp)
+			} else {
+				result, err = ConvertResponsesToClaudeResponse(meta, c, resp)
+			}
+		} else {
+			if utils.IsStreamResponse(resp) {
+				result, err = ClaudeStreamHandler(meta, c, resp)
+			} else {
+				result, err = ClaudeHandler(meta, c, resp)
+			}
+		}
+	case mode.VideoGenerationsJobs:
+		result, err = VideoHandler(meta, store, c, resp)
+	case mode.VideoGenerationsGetJobs:
+		result, err = VideoGetJobsHandler(meta, store, c, resp)
+	case mode.VideoGenerationsContent:
+		result, err = VideoGetJobsContentHandler(meta, store, c, resp)
+	case mode.Videos:
+		result, err = VideosHandler(meta, store, c, resp)
+	case mode.VideosRemix:
+		result, err = VideosRemixHandler(meta, store, c, resp)
+	case mode.VideosEdits:
+		result, err = VideosEditHandler(meta, store, c, resp)
+	case mode.VideosExtensions:
+		result, err = VideosExtensionHandler(meta, store, c, resp)
+	case mode.VideosGet:
+		result, err = VideosGetHandler(meta, c, resp)
+	case mode.VideosContent:
+		result, err = VideosContentHandler(meta, c, resp)
+	case mode.VideosDelete:
+		result, err = VideoDeleteHandler(meta, c, resp)
+	case mode.Gemini:
+		// Check if model required Responses API conversion
+		if IsResponsesOnlyModelAny(&meta.ModelConfig, meta.OriginModel, meta.ActualModel) {
+			// Convert Responses API response back to Gemini format
+			if utils.IsStreamResponse(resp) {
+				result, err = ConvertResponsesToGeminiStreamResponse(meta, c, resp)
+			} else {
+				result, err = ConvertResponsesToGeminiResponse(meta, c, resp)
+			}
+		} else {
+			if utils.IsStreamResponse(resp) {
+				result, err = GeminiStreamHandler(meta, c, resp)
+			} else {
+				result, err = GeminiHandler(meta, c, resp)
+			}
+		}
+	default:
+		return adaptor.DoResponseResult{}, relaymodel.WrapperOpenAIErrorWithMessage(
+			fmt.Sprintf("unsupported mode: %s", meta.Mode),
+			"unsupported_mode",
+			http.StatusBadRequest,
+		)
+	}
+
+	return result, err
+}
+
+const MetaResponseFormat = "response_format"
+
+func (a *Adaptor) DoRequest(
+	meta *meta.Meta,
+	_ adaptor.Store,
+	_ *gin.Context,
+	req *http.Request,
+) (*http.Response, error) {
+	resp, err := utils.DoRequestWithMeta(req, meta)
+	if err != nil || resp == nil {
+		return resp, err
+	}
+	if IsCodexBackend(meta.Channel.BaseURL) && resp.StatusCode == http.StatusOK {
+		if !meta.GetBool("codex_client_non_stream") {
+			resp.Header.Set("Content-Type", "text/event-stream")
+			return resp, nil
+		}
+		defer resp.Body.Close()
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		var completedJSON []byte
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			raw := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if raw == "" || raw == "[DONE]" {
+				continue
+			}
+			var ev struct {
+				Type     string          `json:"type"`
+				Response sonic.NoCopyRawMessage `json:"response"`
+			}
+			if sonic.UnmarshalString(raw, &ev) == nil && (ev.Type == "response.completed" || ev.Type == "response.incomplete") && len(ev.Response) > 0 {
+				completedJSON = []byte(ev.Response)
+			}
+		}
+		if len(completedJSON) > 0 {
+			resp.Header.Set("Content-Type", "application/json")
+			resp.Header.Del("Transfer-Encoding")
+			resp.ContentLength = int64(len(completedJSON))
+			resp.Body = io.NopCloser(bytes.NewReader(completedJSON))
+		}
+	}
+	return resp, nil
+}
+
+func (a *Adaptor) DoResponse(
+	meta *meta.Meta,
+	store adaptor.Store,
+	c *gin.Context,
+	resp *http.Response,
+) (result adaptor.DoResponseResult, err adaptor.Error) {
+	options := defaultConfig().doResponseOptions()
+	if meta.Mode == mode.Responses && utils.IsStreamResponse(resp) {
+		var configErr error
+
+		cfg, configErr := a.loadConfig(meta)
+		if configErr != nil {
+			return adaptor.DoResponseResult{}, relaymodel.WrapperOpenAIError(
+				configErr,
+				"load_channel_config_failed",
+				http.StatusInternalServerError,
+			)
+		}
+
+		options = cfg.doResponseOptions()
+	}
+
+	return DoResponse(meta, store, c, resp, options)
+}
+
+func (a *Adaptor) Metadata() adaptor.Metadata {
+	return adaptor.Metadata{
+		Readme:       "OpenAI native API\nSupports chat, completions, embeddings, moderations, image, audio, rerank, PDF parsing, video generation, Responses API, and Decisions API\nAlso supports Anthropic-compatible and Gemini-compatible request conversion on top of the OpenAI endpoint\nChannel config `chat_upstream_protocol` selects auto, responses, or chat_completions for incoming Chat Completions requests\nChannel config `responses_first_event_timeout` sets the maximum seconds to wait for the first effective Responses stream event\nChannel config `map_reasoning_to_reasoning_content` rewrites upstream `reasoning` fields to `reasoning_content` in chat completion responses",
+		ConfigSchema: ChatUpstreamProtocolConfigSchema(),
+		Models:       ModelList,
+	}
+}

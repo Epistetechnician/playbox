@@ -34,8 +34,11 @@ def sh(args, **kw):
 
 
 def ssh(cmd, timeout=1800):
-    return sh(["gcloud", "compute", "ssh", VM, f"--zone={ZONE}", f"--project={PROJECT}",
-               "--command", cmd], timeout=timeout)
+    try:
+        return sh(["gcloud", "compute", "ssh", VM, f"--zone={ZONE}", f"--project={PROJECT}",
+                   "--command", cmd], timeout=timeout)
+    except subprocess.TimeoutExpired:  # a hung ssh poll must not kill the climb
+        return subprocess.CompletedProcess(cmd, 255, "", "ssh timed out")
 
 
 def scp_dir(local, remote):

@@ -40,8 +40,11 @@ from .router import (
 from .trajectory_gate import (
     CertifiedTrajectoryGate,
     GateDecisionV2,
+    GateDecisionV3,
     admit_trajectory_v2,
+    admit_trajectory_v3,
     strip_tests_from_patch,
+    strip_tests_from_patch_v3,
 )
 
 __all__ = [
@@ -51,6 +54,7 @@ __all__ = [
     "CandidateResult",
     "CertifiedTrajectoryGate",
     "GateDecisionV2",
+    "GateDecisionV3",
     "LEDGER_SCHEMA",
     "MintedWorkerToken",
     "RECEIPT_SCHEMA",
@@ -58,6 +62,7 @@ __all__ = [
     "RouteDecision",
     "WorkerTokenLease",
     "admit_trajectory_v2",
+    "admit_trajectory_v3",
     "build_escalation_brief",
     "build_signed_receipt",
     "canonical_ledger_bytes",
@@ -70,6 +75,7 @@ __all__ = [
     "run_cascade",
     "select_and_compose",
     "strip_tests_from_patch",
+    "strip_tests_from_patch_v3",
     "summarize_ledger_for_receipt",
     "verify_ledger",
     "verify_receipt_ledger",

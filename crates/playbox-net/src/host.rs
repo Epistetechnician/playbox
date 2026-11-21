@@ -146,6 +146,8 @@ fn member_standing(st: &State, id: &EndpointId, now: i64) -> Result<(), String> 
     }
 }
 
+type RevokeHook = Arc<dyn Fn(&EndpointId) + Send + Sync>;
+
 pub struct Host {
     audit: Arc<audit::Audit>,
     router: Router,
@@ -159,6 +161,7 @@ pub struct Host {
     runner: Option<Arc<dyn Runner>>,
     sessions: SessionMap,
     handler: RoomHandler,
+    revoke_hooks: Arc<Mutex<Vec<RevokeHook>>>,
     /// Holds the exclusive lock on `<state dir>/host.lock` for as long as the host lives.
     _dir_lock: Option<std::fs::File>,
 }
@@ -474,6 +477,7 @@ impl Host {
             runner: runner_ref,
             sessions,
             handler,
+            revoke_hooks: Arc::new(Mutex::new(Vec::new())),
             _dir_lock: None,
         })
     }
@@ -1039,7 +1043,17 @@ impl Host {
                 });
             }
         }
+        let hooks = self.revoke_hooks.lock_recover().clone();
+        for hook in hooks {
+            hook(id);
+        }
         true
+    }
+
+    /// Register a callback invoked immediately when [`Host::revoke_member`] revokes a member
+    /// (e.g., to drop per-member `BOX-7` egress proxies and revoke scoped `playbox-aiproxy` tokens).
+    pub fn on_revoke(&self, hook: impl Fn(&EndpointId) + Send + Sync + 'static) {
+        self.revoke_hooks.lock_recover().push(Arc::new(hook));
     }
 
     /// Leader: start the room's replicated log naming these hosts (endpoint ids; this host is added) and a

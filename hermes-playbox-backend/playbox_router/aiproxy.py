@@ -33,23 +33,37 @@ class AiproxyError(RuntimeError):
         self.message = message
 
 
-def _jcs_normalize(obj: Any) -> Any:
-    """Normalize whole-number floats to ints (RFC 8785 JCS) for byte-exact Go/Python/Rust SHA-256 parity."""
-    if isinstance(obj, bool) or obj is None:
-        return obj
+def _jcs_encode(obj: Any) -> str:
+    """RFC 8785 JCS / Go `encoding/json`-compatible canonical serializer (including `[1e-6, 1e-4)` fixed-point floats)."""
+    if obj is None:
+        return "null"
+    if isinstance(obj, bool):
+        return "true" if obj else "false"
+    if isinstance(obj, int):
+        return str(obj)
     if isinstance(obj, float):
-        return int(obj) if obj.is_integer() else obj
-    if isinstance(obj, dict):
-        return {k: _jcs_normalize(v) for k, v in obj.items()}
+        if obj.is_integer():
+            return str(int(obj))
+        if 1e-6 <= abs(obj) < 1.0:
+            return f"{obj:.12f}".rstrip("0").rstrip(".")
+        return json.dumps(obj)
+    if isinstance(obj, str):
+        return json.dumps(obj, ensure_ascii=True)
     if isinstance(obj, list):
-        return [_jcs_normalize(v) for v in obj]
-    return obj
+        return "[" + ",".join(_jcs_encode(x) for x in obj) + "]"
+    if isinstance(obj, dict):
+        items = [
+            f"{json.dumps(str(k), ensure_ascii=True)}:{_jcs_encode(obj[k])}"
+            for k in sorted(obj.keys())
+        ]
+        return "{" + ",".join(items) + "}"
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def canonical_ledger_bytes(ledger: dict[str, Any]) -> bytes:
     """Deterministic UTF-8 canonical JSON encoding matching Go `playbox.CanonicalLedgerBytes`."""
-    body = _jcs_normalize({k: v for k, v in ledger.items() if k != "ledger_sha256"})
-    return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    body = {k: v for k, v in ledger.items() if k != "ledger_sha256"}
+    return _jcs_encode(body).encode("utf-8")
 
 
 def compute_ledger_sha256(ledger: dict[str, Any]) -> str:
@@ -215,16 +229,21 @@ class AiproxyClient:
         try:
             return dict(self._req("GET", f"/api/group/{urllib.parse.quote(group, safe='')}"))
         except AiproxyError as exc:
-            if exc.status not in (400, 404):
+            if exc.status not in (400, 404) and "not found" not in exc.message.lower():
                 raise
-        return dict(
-            self._req(
-                "POST",
-                f"/api/group/{urllib.parse.quote(group, safe='')}",
-                body={"rpm_ratio": rpm_ratio, "tpm_ratio": tpm_ratio},
+        try:
+            return dict(
+                self._req(
+                    "POST",
+                    f"/api/group/{urllib.parse.quote(group, safe='')}",
+                    body={"rpm_ratio": rpm_ratio, "tpm_ratio": tpm_ratio},
+                )
+                or {}
             )
-            or {}
-        )
+        except AiproxyError as exc:
+            if "duplicated" in exc.message.lower() or "exists" in exc.message.lower():
+                return dict(self._req("GET", f"/api/group/{urllib.parse.quote(group, safe='')}") or {})
+            raise
 
     def mint_worker_token(
         self,
@@ -237,6 +256,10 @@ class AiproxyClient:
         subnets: list[str] | None = None,
         failover_policy: str = "same_model_only",
         cache_mode: str = "off",
+        run_id: str = "",
+        room_id: str = "",
+        member_id: str = "",
+        task_id: str = "",
     ) -> MintedWorkerToken:
         """Mint a short-lived, hard-capped worker token locked to loopback by default."""
         if failover_policy not in VALID_FAILOVER_POLICIES:
@@ -245,8 +268,9 @@ class AiproxyClient:
             raise ValueError(f"invalid cache_mode: {cache_mode!r}")
         if hard_usd_cap <= 0:
             raise ValueError("hard_usd_cap must be positive")
+        unique_name = f"{name[:25]}-{os.urandom(3).hex()}"
         payload: dict[str, Any] = {
-            "name": name[:32],
+            "name": unique_name,
             "quota": float(hard_usd_cap),
             "subnets": list(subnets if subnets is not None else ["127.0.0.1/32", "::1/128"]),
         }
@@ -261,8 +285,26 @@ class AiproxyClient:
         )
         if not isinstance(res, dict) or not res.get("key"):
             raise AiproxyError(502, f"unexpected mint_worker_token response: {res!r}")
+        tok_id = int(res.get("id", 0))
+        if tok_id > 0:
+            try:
+                self._req(
+                    "POST",
+                    "/api/playbox/token_meta",
+                    body={
+                        "token_id": tok_id,
+                        "run_id": run_id,
+                        "room_id": room_id,
+                        "member_id": member_id or name[:32],
+                        "task_id": task_id,
+                        "cache_mode": cache_mode,
+                        "failover_policy": failover_policy,
+                    },
+                )
+            except AiproxyError:
+                pass
         return MintedWorkerToken(
-            token_id=int(res.get("id", 0)),
+            token_id=tok_id,
             key=str(res["key"]),
             name=str(res.get("name") or name[:32]),
             group=group,
@@ -478,6 +520,10 @@ class WorkerTokenLease:
             models=self.models,
             failover_policy=self.failover_policy,
             cache_mode=self.cache_mode,
+            run_id=self.run_id,
+            room_id=self.room_id,
+            member_id=self.worker_label,
+            task_id=self.task_id,
         )
         return self
 
@@ -532,6 +578,8 @@ class WorkerTokenLease:
             "OPENAI_BASE_URL": f"{base}/v1",
             "OPENAI_API_BASE": f"{base}/v1",
             "OPENAI_API_KEY": key,
+            "CUSTOM_BASE_URL": f"{base}/v1",
+            "CUSTOM_API_KEY": key,
             "GEMINI_API_BASE": base,
             "GOOGLE_GEMINI_BASE_URL": base,
             "GEMINI_API_KEY": key,

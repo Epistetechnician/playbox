@@ -1,0 +1,1099 @@
+package controller
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/labring/aiproxy/core/common/conv"
+	"github.com/labring/aiproxy/core/common/notify"
+	"github.com/labring/aiproxy/core/common/trylock"
+	"github.com/labring/aiproxy/core/middleware"
+	"github.com/labring/aiproxy/core/model"
+	"github.com/labring/aiproxy/core/monitor"
+	"github.com/labring/aiproxy/core/relay/adaptors"
+	"github.com/labring/aiproxy/core/relay/meta"
+	"github.com/labring/aiproxy/core/relay/mode"
+	"github.com/labring/aiproxy/core/relay/render"
+	"github.com/labring/aiproxy/core/relay/utils"
+	log "github.com/sirupsen/logrus"
+)
+
+const channelTestRequestID = "channel-test"
+
+var (
+	modelConfigCache     map[string]model.ModelConfig = make(map[string]model.ModelConfig)
+	modelConfigCacheOnce sync.Once
+)
+
+func guessModelConfig(modelName string) model.ModelConfig {
+	modelConfigCacheOnce.Do(func() {
+		for _, c := range adaptors.ChannelAdaptor {
+			for _, m := range c.Metadata().Models {
+				if _, ok := modelConfigCache[m.Model]; !ok {
+					modelConfigCache[m.Model] = m
+				}
+			}
+		}
+	})
+
+	if cachedConfig, ok := modelConfigCache[modelName]; ok {
+		return cachedConfig
+	}
+
+	return model.ModelConfig{}
+}
+
+// testSingleModel tests a single model in the channel
+// If saveToDB is true, the test result will be saved to database
+func testSingleModel(
+	mc *model.ModelCaches,
+	channel *model.Channel,
+	modelName string,
+	saveToDB bool,
+) (*model.ChannelTest, error) {
+	return testSingleModelWithOptions(mc, channel, modelName, saveToDB, testOptions{})
+}
+
+type testOptions struct {
+	RequestBody json.RawMessage
+	Mode        *mode.Mode
+}
+
+// TestModelOverride contains optional test settings for one model in a batch request.
+type TestModelOverride struct {
+	RequestBody json.RawMessage `json:"request_body"`
+	Mode        *mode.Mode      `json:"mode"`
+}
+
+func (r *TestChannelRequest) optionsForModel(modelName string) testOptions {
+	options := testOptions{
+		RequestBody: r.RequestBody,
+		Mode:        r.Mode,
+	}
+
+	override, ok := r.ModelOverrides[modelName]
+	if !ok {
+		return options
+	}
+
+	if len(override.RequestBody) > 0 {
+		options.RequestBody = override.RequestBody
+	}
+
+	if override.Mode != nil {
+		options.Mode = override.Mode
+	}
+
+	return options
+}
+
+func testSingleModelWithOptions(
+	mc *model.ModelCaches, channel *model.Channel, modelName string,
+	saveToDB bool, options testOptions,
+) (*model.ChannelTest, error) {
+	return executeModelTest(mc, channel, modelName, testSingleModelOptions{
+		testOptions: options,
+		SaveResult: func(testMeta *meta.Meta, success bool, response string, code int) (*model.ChannelTest, error) {
+			return channel.UpdateModelTest(
+				testMeta.RequestAt,
+				testMeta.OriginModel,
+				testMeta.ActualModel,
+				testMeta.Mode,
+				time.Since(testMeta.RequestAt).Seconds(),
+				success,
+				response,
+				code,
+			)
+		},
+	}, saveToDB)
+}
+
+// TestChannel godoc
+//
+//	@Summary		Test channel model
+//	@Description	Tests a single model in the channel
+//	@Tags			channel
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			id		path		int		true	"Channel ID"
+//	@Param			model	path		string	true	"Model name"
+//	@Success		200		{object}	middleware.APIResponse{data=model.ChannelTest}
+//	@Router			/api/channel/{id}/{model} [get]
+//
+//nolint:goconst
+func TestChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	modelName := strings.TrimPrefix(c.Param("model"), "/")
+	if modelName == "" {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: "model is required",
+		})
+
+		return
+	}
+
+	channel, err := model.LoadChannelByID(id)
+	if err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: "channel not found",
+		})
+
+		return
+	}
+
+	if !slices.Contains(channel.Models, modelName) {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: "model not supported by channel",
+		})
+
+		return
+	}
+
+	ct, err := testSingleModel(model.LoadModelCaches(), channel, modelName, true)
+	if err != nil {
+		log.Errorf(
+			"failed to test channel %s(%d) model %s: %s",
+			channel.Name,
+			channel.ID,
+			modelName,
+			err.Error(),
+		)
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: fmt.Sprintf(
+				"failed to test channel %s(%d) model %s: %s",
+				channel.Name,
+				channel.ID,
+				modelName,
+				err.Error(),
+			),
+		})
+
+		return
+	}
+
+	if c.Query("success_body") != "true" && ct.Success {
+		ct.Response = ""
+	}
+
+	c.JSON(http.StatusOK, middleware.APIResponse{
+		Success: true,
+		Data:    ct,
+	})
+}
+
+type TestResult struct {
+	Data    *model.ChannelTest `json:"data,omitempty"`
+	Message string             `json:"message,omitempty"`
+	Success bool               `json:"success"`
+}
+
+func processTestResult(
+	mc *model.ModelCaches,
+	channel *model.Channel,
+	modelName string,
+	saveToDB bool,
+	returnSuccess, successResponseBody bool,
+) *TestResult {
+	return processTestResultWithOptions(
+		mc,
+		channel,
+		modelName,
+		saveToDB,
+		returnSuccess,
+		successResponseBody,
+		testOptions{},
+	)
+}
+
+func processTestResultWithOptions(
+	mc *model.ModelCaches,
+	channel *model.Channel,
+	modelName string,
+	saveToDB bool,
+	returnSuccess, successResponseBody bool,
+	options testOptions,
+) *TestResult {
+	ct, err := testSingleModelWithOptions(mc, channel, modelName, saveToDB, options)
+
+	e := &utils.UnsupportedModelTypeError{}
+	if errors.As(err, &e) {
+		log.Errorf("model %s not supported test: %s", modelName, err.Error())
+		return nil
+	}
+
+	result := &TestResult{
+		Success: err == nil,
+	}
+	if err != nil {
+		result.Message = fmt.Sprintf(
+			"failed to test channel %s(%d) model %s: %s",
+			channel.Name,
+			channel.ID,
+			modelName,
+			err.Error(),
+		)
+
+		return result
+	}
+
+	if !ct.Success {
+		result.Data = ct
+		return result
+	}
+
+	if !returnSuccess {
+		return nil
+	}
+
+	if !successResponseBody {
+		ct.Response = ""
+	}
+
+	result.Data = ct
+
+	return result
+}
+
+// TestChannelModels godoc
+//
+//	@Summary		Test channel models
+//	@Description	Tests all models in the channel
+//	@Tags			channel
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			id				path		int		true	"Channel ID"
+//	@Param			return_success	query		bool	false	"Return success"
+//	@Param			success_body	query		bool	false	"Success body"
+//	@Param			stream			query		bool	false	"Stream"
+//	@Success		200				{object}	middleware.APIResponse{data=[]TestResult}
+//	@Router			/api/channel/{id}/test [get]
+func TestChannelModels(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	channel, err := model.LoadChannelByID(id)
+	if err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: "channel not found",
+		})
+
+		return
+	}
+
+	returnSuccess := c.Query("return_success") == "true"
+	successResponseBody := c.Query("success_body") == "true"
+	isStream := c.Query("stream") == "true"
+
+	results := make([]*TestResult, 0)
+	resultsMutex := sync.Mutex{}
+	hasError := atomic.Bool{}
+
+	var wg sync.WaitGroup
+
+	semaphore := make(chan struct{}, 5)
+
+	models := slices.Clone(channel.Models)
+	rand.Shuffle(len(models), func(i, j int) {
+		models[i], models[j] = models[j], models[i]
+	})
+
+	mc := model.LoadModelCaches()
+
+	for _, modelName := range models {
+		wg.Add(1)
+
+		semaphore <- struct{}{}
+
+		go func(model string) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			result := processTestResult(
+				mc,
+				channel,
+				model,
+				true,
+				returnSuccess,
+				successResponseBody,
+			)
+			if result == nil {
+				return
+			}
+
+			if !result.Success || (result.Data != nil && !result.Data.Success) {
+				hasError.Store(true)
+			}
+
+			resultsMutex.Lock()
+
+			if isStream {
+				err := render.OpenaiObjectData(c, result)
+				if err != nil {
+					log.Errorf("failed to render result: %s", err.Error())
+				}
+			} else {
+				results = append(results, result)
+			}
+
+			resultsMutex.Unlock()
+		}(modelName)
+	}
+
+	wg.Wait()
+
+	if !hasError.Load() {
+		err := model.ClearLastTestErrorAt(channel.ID)
+		if err != nil {
+			log.Errorf(
+				"failed to clear last test error at for channel %s(%d): %s",
+				channel.Name,
+				channel.ID,
+				err.Error(),
+			)
+		}
+	}
+
+	if !isStream {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: true,
+			Data:    results,
+		})
+	}
+}
+
+// TestAllChannels godoc
+//
+//	@Summary		Test all channels
+//	@Description	Tests all channels
+//	@Tags			channel
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			test_disabled	query		bool	false	"Test disabled"
+//	@Param			return_success	query		bool	false	"Return success"
+//	@Param			success_body	query		bool	false	"Success body"
+//	@Param			stream			query		bool	false	"Stream"
+//	@Success		200				{object}	middleware.APIResponse{data=[]TestResult}
+//
+//	@Router			/api/channels/test [get]
+func TestAllChannels(c *gin.Context) {
+	testDisabled := c.Query("test_disabled") == "true"
+
+	var (
+		channels []*model.Channel
+		err      error
+	)
+
+	if testDisabled {
+		channels, err = model.LoadChannels()
+	} else {
+		channels, err = model.LoadEnabledChannels()
+	}
+
+	if err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	returnSuccess := c.Query("return_success") == "true"
+	successResponseBody := c.Query("success_body") == "true"
+	isStream := c.Query("stream") == "true"
+
+	results := make([]*TestResult, 0)
+	resultsMutex := sync.Mutex{}
+	hasErrorMap := make(map[int]*atomic.Bool)
+
+	var wg sync.WaitGroup
+
+	semaphore := make(chan struct{}, 5)
+
+	newChannels := slices.Clone(channels)
+	rand.Shuffle(len(newChannels), func(i, j int) {
+		newChannels[i], newChannels[j] = newChannels[j], newChannels[i]
+	})
+
+	mc := model.LoadModelCaches()
+
+	for _, channel := range newChannels {
+		channelHasError := &atomic.Bool{}
+		hasErrorMap[channel.ID] = channelHasError
+
+		models := slices.Clone(channel.Models)
+		rand.Shuffle(len(models), func(i, j int) {
+			models[i], models[j] = models[j], models[i]
+		})
+
+		for _, modelName := range models {
+			wg.Add(1)
+
+			semaphore <- struct{}{}
+
+			go func(model string, ch *model.Channel, hasError *atomic.Bool) {
+				defer wg.Done()
+				defer func() { <-semaphore }()
+
+				result := processTestResult(mc, ch, model, true, returnSuccess, successResponseBody)
+				if result == nil {
+					return
+				}
+
+				if !result.Success || (result.Data != nil && !result.Data.Success) {
+					hasError.Store(true)
+				}
+
+				resultsMutex.Lock()
+
+				if isStream {
+					err := render.OpenaiObjectData(c, result)
+					if err != nil {
+						log.Errorf("failed to render result: %s", err.Error())
+					}
+				} else {
+					results = append(results, result)
+				}
+
+				resultsMutex.Unlock()
+			}(modelName, channel, channelHasError)
+		}
+	}
+
+	wg.Wait()
+
+	for id, hasError := range hasErrorMap {
+		if !hasError.Load() {
+			err := model.ClearLastTestErrorAt(id)
+			if err != nil {
+				log.Errorf("failed to clear last test error at for channel %d: %s", id, err.Error())
+			}
+		}
+	}
+
+	if !isStream {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: true,
+			Data:    results,
+		})
+	}
+}
+
+func tryTestChannel(channelID int, modelName string) bool {
+	return trylock.Lock(
+		fmt.Sprintf("channel_test_lock:%d:%s", channelID, modelName),
+		30*time.Second,
+	)
+}
+
+const defaultAutoTestBannedModelsConcurrency = 50
+
+type autoTestBannedModelsDeps struct {
+	tryTestChannel          func(channelID int, modelName string) bool
+	loadChannelByID         func(id int) (*model.Channel, error)
+	testSingleModel         func(mc *model.ModelCaches, channel *model.Channel, modelName string, saveToDB bool) (*model.ChannelTest, error)
+	clearChannelModelErrors func(ctx context.Context, modelName string, channelID int) error
+	notifyInfo              func(title, message string)
+	notifyError             func(title, message string)
+}
+
+func defaultAutoTestBannedModelsDeps() autoTestBannedModelsDeps {
+	return autoTestBannedModelsDeps{
+		tryTestChannel:          tryTestChannel,
+		loadChannelByID:         model.LoadChannelByID,
+		testSingleModel:         testSingleModel,
+		clearChannelModelErrors: monitor.ClearChannelModelErrors,
+		notifyInfo:              notify.Info,
+		notifyError:             notify.Error,
+	}
+}
+
+type autoTestBannedModelJob struct {
+	modelName string
+	channelID int64
+}
+
+func processAutoTestBannedModelJob(
+	logEntry *log.Entry,
+	mc *model.ModelCaches,
+	job autoTestBannedModelJob,
+	deps autoTestBannedModelsDeps,
+) {
+	if !deps.tryTestChannel(int(job.channelID), job.modelName) {
+		return
+	}
+
+	channel, err := deps.loadChannelByID(int(job.channelID))
+	if err != nil {
+		logEntry.Errorf("failed to get channel by model %s: %s", job.modelName, err.Error())
+		return
+	}
+
+	if channel.Status == model.ChannelStatusDisabled {
+		logEntry.Infof("channel %s (type: %d, id: %d) is disabled, skip testing",
+			channel.Name,
+			channel.Type,
+			channel.ID,
+		)
+
+		err := deps.clearChannelModelErrors(context.Background(), job.modelName, channel.ID)
+		if err != nil {
+			logEntry.Errorf("clear channel errors failed: %+v", err)
+		}
+
+		return
+	}
+
+	if !slices.Contains(channel.Models, job.modelName) {
+		logEntry.Infof(
+			"model %s is no longer configured on channel %s (type: %d, id: %d), clear banned state",
+			job.modelName,
+			channel.Name,
+			channel.Type,
+			channel.ID,
+		)
+
+		err := deps.clearChannelModelErrors(context.Background(), job.modelName, channel.ID)
+		if err != nil {
+			logEntry.Errorf("clear channel errors failed: %+v", err)
+		}
+
+		return
+	}
+
+	result, err := deps.testSingleModel(mc, channel, job.modelName, true)
+	if err != nil {
+		deps.notifyError(
+			fmt.Sprintf(
+				"channel %s (type: %d, id: %d) model %s test failed",
+				channel.Name,
+				channel.Type,
+				channel.ID,
+				job.modelName,
+			),
+			err.Error(),
+		)
+
+		return
+	}
+
+	if result.Success {
+		deps.notifyInfo(
+			fmt.Sprintf(
+				"channel %s (type: %d, id: %d) model %s test success",
+				channel.Name,
+				channel.Type,
+				channel.ID,
+				job.modelName,
+			),
+			"unban it",
+		)
+
+		err = deps.clearChannelModelErrors(context.Background(), job.modelName, channel.ID)
+		if err != nil {
+			logEntry.Errorf("clear channel errors failed: %+v", err)
+		}
+
+		return
+	}
+
+	deps.notifyError(
+		fmt.Sprintf(
+			"channel %s (type: %d, id: %d) model %s test failed",
+			channel.Name,
+			channel.Type,
+			channel.ID,
+			job.modelName,
+		),
+		fmt.Sprintf("code: %d, response: %s", result.Code, result.Response),
+	)
+}
+
+func runAutoTestBannedModels(
+	logEntry *log.Entry,
+	channels map[string][]int64,
+	mc *model.ModelCaches,
+	concurrency int,
+	deps autoTestBannedModelsDeps,
+) {
+	if len(channels) == 0 {
+		return
+	}
+
+	if concurrency <= 0 {
+		concurrency = defaultAutoTestBannedModelsConcurrency
+	}
+
+	jobs := make(chan autoTestBannedModelJob)
+
+	var wg sync.WaitGroup
+
+	for range concurrency {
+		wg.Go(func() {
+			for job := range jobs {
+				processAutoTestBannedModelJob(logEntry, mc, job, deps)
+			}
+		})
+	}
+
+	for modelName, ids := range channels {
+		for _, id := range ids {
+			jobs <- autoTestBannedModelJob{
+				modelName: modelName,
+				channelID: id,
+			}
+		}
+	}
+
+	close(jobs)
+	wg.Wait()
+}
+
+func AutoTestBannedModels() {
+	logEntry := log.WithFields(log.Fields{
+		"auto_test_banned_models": "true",
+	})
+
+	channels, err := monitor.GetAllBannedModelChannels(context.Background())
+	if err != nil {
+		logEntry.Errorf("failed to get banned channels: %s", err.Error())
+		return
+	}
+
+	if len(channels) == 0 {
+		return
+	}
+
+	mc := model.LoadModelCaches()
+	runAutoTestBannedModels(
+		logEntry,
+		channels,
+		mc,
+		defaultAutoTestBannedModelsConcurrency,
+		defaultAutoTestBannedModelsDeps(),
+	)
+}
+
+// TestChannelRequest 用于测试未保存的渠道配置
+// 尽可能接近 Channel 结构
+type TestChannelRequest struct {
+	Type           int                          `json:"type"            binding:"required"`
+	Key            string                       `json:"key"             binding:"required"`
+	BaseURL        string                       `json:"base_url"`
+	ProxyURL       string                       `json:"proxy_url"`
+	Name           string                       `json:"name"`
+	Models         []string                     `json:"models"`
+	ModelMapping   map[string]string            `json:"model_mapping"`
+	SkipTLSVerify  bool                         `json:"skip_tls_verify"`
+	Configs        map[string]any               `json:"configs"`
+	RequestBody    json.RawMessage              `json:"request_body"`
+	Mode           *mode.Mode                   `json:"mode"`
+	ModelOverrides map[string]TestModelOverride `json:"model_overrides"`
+}
+
+// TestSingleModelRequest 测试单个模型的请求
+type TestSingleModelRequest struct {
+	Type          int               `json:"type"            binding:"required"`
+	Key           string            `json:"key"             binding:"required"`
+	BaseURL       string            `json:"base_url"`
+	ProxyURL      string            `json:"proxy_url"`
+	Name          string            `json:"name"`
+	Model         string            `json:"model"           binding:"required"`
+	ModelMapping  map[string]string `json:"model_mapping"`
+	SkipTLSVerify bool              `json:"skip_tls_verify"`
+	Configs       map[string]any    `json:"configs"`
+	RequestBody   json.RawMessage   `json:"request_body"`
+	Mode          *mode.Mode        `json:"mode"`
+}
+
+// createTempChannel 创建临时 Channel 对象
+func createTempChannel(req *TestChannelRequest) *model.Channel {
+	return &model.Channel{
+		Type:          model.ChannelType(req.Type),
+		Key:           req.Key,
+		BaseURL:       req.BaseURL,
+		ProxyURL:      req.ProxyURL,
+		Name:          req.Name,
+		Models:        req.Models,
+		ModelMapping:  req.ModelMapping,
+		SkipTLSVerify: req.SkipTLSVerify,
+		Configs:       model.ChannelConfigs(req.Configs),
+	}
+}
+
+// TestChannelPreview godoc
+//
+//	@Summary		Test channel preview (single model)
+//	@Description	Test a single model in channel without saving to database
+//	@Tags			channel
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			request	body		TestSingleModelRequest	true	"Channel test request"
+//	@Success		200		{object}	middleware.APIResponse{data=model.ChannelTest}
+//	@Router			/api/channel/test-preview [post]
+func TestChannelPreview(c *gin.Context) {
+	var req TestSingleModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	// 创建临时 Channel 对象（不保存到数据库）
+	channel := &model.Channel{
+		Type:          model.ChannelType(req.Type),
+		Key:           req.Key,
+		BaseURL:       req.BaseURL,
+		ProxyURL:      req.ProxyURL,
+		Name:          req.Name,
+		Models:        []string{req.Model},
+		ModelMapping:  req.ModelMapping,
+		SkipTLSVerify: req.SkipTLSVerify,
+		Configs:       model.ChannelConfigs(req.Configs),
+	}
+
+	// 获取模型缓存
+	mc := model.LoadModelCaches()
+
+	// 测试单个模型 (不保存到数据库)
+	ct, err := testSingleModelWithOptions(mc, channel, req.Model, false, testOptions{
+		RequestBody: req.RequestBody,
+		Mode:        req.Mode,
+	})
+	if err != nil {
+		log.Errorf("failed to test channel preview: %s", err.Error())
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	// 不返回响应体中的敏感信息
+	if ct.Success {
+		ct.Response = ""
+	}
+
+	c.JSON(http.StatusOK, middleware.APIResponse{
+		Success: true,
+		Data:    ct,
+	})
+}
+
+// TestChannelPreviewAll godoc
+//
+//	@Summary		Test channel preview (all models)
+//	@Description	Test all models in channel without saving to database
+//	@Tags			channel
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			return_success	query		bool				false	"Return success"
+//	@Param			success_body	query		bool				false	"Success body"
+//	@Param			stream			query		bool				false	"Stream mode (SSE)"
+//	@Param			request			body		TestChannelRequest	true	"Channel test request"
+//	@Success		200				{object}	middleware.APIResponse{data=[]TestResult}
+//	@Router			/api/channel/test-preview-all [post]
+func TestChannelPreviewAll(c *gin.Context) {
+	var req TestChannelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	// 检查是否有模型可测试
+	if len(req.Models) == 0 {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: false,
+			Message: "no models to test",
+		})
+
+		return
+	}
+
+	// 创建临时 Channel 对象（不保存到数据库）
+	channel := createTempChannel(&req)
+
+	// 获取模型缓存
+	mc := model.LoadModelCaches()
+
+	returnSuccess := c.Query("return_success") == "true"
+	successResponseBody := c.Query("success_body") == "true"
+	isStream := c.Query("stream") == "true"
+
+	results := make([]*TestResult, 0)
+	resultsMutex := sync.Mutex{}
+	hasError := atomic.Bool{}
+
+	var wg sync.WaitGroup
+
+	semaphore := make(chan struct{}, 5)
+
+	// 随机打乱模型顺序
+	models := slices.Clone(req.Models)
+	rand.Shuffle(len(models), func(i, j int) {
+		models[i], models[j] = models[j], models[i]
+	})
+
+	for _, modelName := range models {
+		wg.Add(1)
+
+		semaphore <- struct{}{}
+
+		go func(model string) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			result := processTestResultWithOptions(
+				mc,
+				channel,
+				model,
+				false,
+				returnSuccess,
+				successResponseBody,
+				req.optionsForModel(model),
+			)
+			if result == nil {
+				return
+			}
+
+			if !result.Success || (result.Data != nil && !result.Data.Success) {
+				hasError.Store(true)
+			}
+
+			resultsMutex.Lock()
+			if isStream {
+				err := render.OpenaiObjectData(c, result)
+				if err != nil {
+					log.Errorf("failed to render result: %s", err.Error())
+				}
+			} else {
+				results = append(results, result)
+			}
+			resultsMutex.Unlock()
+		}(modelName)
+	}
+
+	wg.Wait()
+
+	if !isStream {
+		c.JSON(http.StatusOK, middleware.APIResponse{
+			Success: true,
+			Data:    results,
+		})
+	}
+}
+
+type testSingleModelOptions struct {
+	testOptions
+	Scope                   model.ChannelScope
+	GroupID                 string
+	AllowMissingModelConfig bool
+	ModelConfig             *model.ModelConfig
+	SaveResult              func(*meta.Meta, bool, string, int) (*model.ChannelTest, error)
+}
+
+func resolveTestModelConfig(
+	mc *model.ModelCaches,
+	modelName string,
+	opts testSingleModelOptions,
+) (model.ModelConfig, bool, error) {
+	if opts.ModelConfig != nil {
+		return *opts.ModelConfig, true, nil
+	}
+
+	if mc != nil && mc.ModelConfig != nil {
+		modelConfig, ok := mc.ModelConfig.GetModelConfig(modelName)
+		if ok {
+			return modelConfig, true, nil
+		}
+	}
+
+	if !opts.AllowMissingModelConfig {
+		return model.ModelConfig{}, false, errors.New(modelName + " model config not found")
+	}
+
+	return model.NewDefaultModelConfig(modelName), false, nil
+}
+
+func testRequestModelConfig(modelConfig model.ModelConfig) model.ModelConfig {
+	if modelConfig.Type != mode.Unknown {
+		return modelConfig
+	}
+
+	guessedModelConfig := guessModelConfig(modelConfig.Model)
+	if guessedModelConfig.Type == mode.Unknown {
+		return modelConfig
+	}
+
+	modelConfig.Type = guessedModelConfig.Type
+	if len(modelConfig.Config) == 0 {
+		modelConfig.Config = guessedModelConfig.Config
+	}
+
+	return modelConfig
+}
+
+func executeModelTest(
+	mc *model.ModelCaches,
+	channel *model.Channel,
+	modelName string,
+	opts testSingleModelOptions,
+	saveToDB bool,
+) (*model.ChannelTest, error) {
+	modelConfig, _, err := resolveTestModelConfig(mc, modelName, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	requestModelConfig := testRequestModelConfig(modelConfig)
+	if opts.Mode != nil {
+		requestModelConfig.Type = *opts.Mode
+	}
+
+	if requestModelConfig.Type != mode.Unknown {
+		a, ok := adaptors.GetAdaptor(channel.Type)
+		if !ok {
+			return nil, errors.New("adaptor not found")
+		}
+
+		if !a.SupportMode(meta.NewMeta(channel, requestModelConfig.Type, modelName, modelConfig)) {
+			return nil, fmt.Errorf("%s not supported by adaptor", requestModelConfig.Type)
+		}
+	}
+
+	if modelConfig.ExcludeFromTests {
+		return &model.ChannelTest{
+			TestAt:      time.Now(),
+			Model:       modelName,
+			ActualModel: modelName,
+			Success:     true,
+			Code:        http.StatusOK,
+			Mode:        requestModelConfig.Type,
+			ChannelName: channel.Name,
+			ChannelType: channel.Type,
+			ChannelID:   channel.ID,
+		}, nil
+	}
+
+	var body io.Reader
+
+	m := requestModelConfig.Type
+	if len(opts.RequestBody) > 0 {
+		body = bytes.NewReader(opts.RequestBody)
+	} else {
+		body, m, err = utils.BuildRequest(requestModelConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	w := httptest.NewRecorder()
+	newc, _ := gin.CreateTestContext(w)
+	newc.Request = &http.Request{
+		URL:    &url.URL{},
+		Body:   io.NopCloser(body),
+		Header: make(http.Header),
+	}
+	middleware.SetRequestID(newc, channelTestRequestID)
+
+	testMeta := meta.NewMeta(
+		channel,
+		m,
+		modelName,
+		modelConfig,
+		meta.WithRequestID(channelTestRequestID),
+		meta.WithChannelScope(opts.Scope, opts.GroupID),
+	)
+	result := relayHandler(newc, testMeta, mc)
+	success := result.Error == nil
+
+	var (
+		respStr string
+		code    int
+	)
+
+	if success {
+		switch testMeta.Mode {
+		case mode.AudioSpeech,
+			mode.ImagesGenerations:
+			respStr = ""
+		default:
+			respStr = w.Body.String()
+		}
+
+		code = w.Code
+	} else {
+		respBody, _ := result.Error.MarshalJSON()
+		respStr = conv.BytesToString(respBody)
+		code = result.Error.StatusCode()
+	}
+
+	ct := &model.ChannelTest{
+		TestAt:      testMeta.RequestAt,
+		Model:       testMeta.OriginModel,
+		ActualModel: testMeta.ActualModel,
+		Mode:        testMeta.Mode,
+		Took:        time.Since(testMeta.RequestAt).Seconds(),
+		Success:     success,
+		Response:    respStr,
+		Code:        code,
+		ChannelName: channel.Name,
+		ChannelType: channel.Type,
+		ChannelID:   channel.ID,
+	}
+
+	// Only save to database for saved channels (not preview tests)
+	if saveToDB && channel.ID != 0 {
+		if opts.SaveResult != nil {
+			return opts.SaveResult(testMeta, success, respStr, code)
+		}
+	}
+
+	return ct, nil
+}

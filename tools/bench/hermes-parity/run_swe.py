@@ -50,7 +50,7 @@ H = os.path.expanduser("~/.playbox-hermes/openshell-parity"); SWE = os.environ.g
 r = load(inst)
 _, img = _inst(inst)
 fam = r.get("pb_family") or ("django" if inst.startswith("django-") else inst)
-img_fam = "django" if "django" in img else ("flask" if "flask" in img else "polyglot")
+img_fam = "django" if "django" in img else ("flask" if "flask" in img else ("polyglot" if "polyglot" in img else fam))
 SB = f"parity-{img_fam}{slot_sfx}"; tag = f"{inst}-{arm}{n}"
 os.makedirs(out, exist_ok=True)
 work = tempfile.mkdtemp(prefix=f"pb-{tag}-")
@@ -71,7 +71,7 @@ for d in ("skills", "cache", "attachments"):   # the ssh backend syncs these int
 kill_home_gateways(home)
 cfg = open(os.path.expanduser("~/.hermes/config.yaml")).read()
 def setterm(cfg, **kv):
-    head, rest = cfg.split("\nterminal:\n", 1); block, tail = re.split(r"\n(?=\S)", rest, 1)
+    head, rest = cfg.split("\nterminal:\n", 1); block, tail = re.split(r"\n(?=\S)", rest, maxsplit=1)
     for k, v in kv.items():
         block, c = re.subn(rf"(?m)^  {k}:.*$", f"  {k}: {v}", block)
         if not c: block += f"\n  {k}: {v}"
@@ -103,33 +103,28 @@ if arm == "L":
     cfg = setterm(cfg, backend="local", cwd=repo)
 else:
     repo = f"/sandbox/pb/{arm}{n}-{inst}/repo"; py = r.get("pb_python") or "/usr/local/venv/bin/python"
-    ssh_bin = ensure_openshell_ssh_shim(H, SB)
-    env["PATH"] = f"{ssh_bin}:" + env["PATH"]
     ex = lambda c: subprocess.run(["openshell", "sandbox", "exec", SB, "--", "sh", "-c", c], capture_output=True, text=True)
     if ex("true").returncode != 0:
         subprocess.run(["openshell", "sandbox", "delete", SB], capture_output=True, text=True)
         subprocess.run(["openshell", "sandbox", "create", "--name", SB, "--from", img, "--detach"], check=True, capture_output=True, text=True)
+    ssh_bin = ensure_openshell_ssh_shim(H, SB)
+    env["PATH"] = f"{ssh_bin}:" + env["PATH"]
     t0 = time.time()
     if r.get("pb_host_tar"):
-        remote_tar = f"/sandbox/pb-{arm}{n}-{inst}.tar"
-        ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst} {remote_tar}; mkdir -p {repo}")
-        with open(r["pb_host_tar"], "rb") as tf:
-            while True:
-                chunk = tf.read(3 * 1024 * 1024)
-                if not chunk:
-                    break
-                c_up = subprocess.run(
-                    ["openshell", "sandbox", "exec", SB, "--", "sh", "-c", f"cat >> {remote_tar}"],
-                    input=chunk,
-                )
-                assert c_up.returncode == 0
-        up = ex(
-            f"tar -xf {remote_tar} -C {repo} && rm -f {remote_tar} && cd {repo} "
-            "&& printf '__pycache__/\\n*.pyc\\n*.pyo\\n._*\\n.hermes-tmp.*\\ntarget/\\n' >> .gitignore "
-            "&& git init -q -b main && git -c user.name=bench -c user.email=bench@example.com add -A "
-            "&& git -c user.name=bench -c user.email=bench@example.com commit -q -m base"
+        ex(f"rm -rf /sandbox/pb/{arm}{n}-{inst}; mkdir -p {repo}")
+        up_tar = f"/sandbox/pb/{arm}{n}-{inst}/base.tar"
+        up1 = subprocess.run(
+            ["openshell", "sandbox", "upload", "--no-git-ignore", SB, r["pb_host_tar"], up_tar],
+            capture_output=True, text=True,
         )
-        assert up.returncode == 0, up.stderr
+        assert up1.returncode == 0, f"upload failed: {up1.stderr or up1.stdout}"
+        up2 = ex(
+            f"tar -xf {up_tar} -C {repo} && rm -f {up_tar} && cd {repo} "
+            f"&& printf '__pycache__/\\n*.pyc\\n*.pyo\\n._*\\n.hermes-tmp.*\\ntarget/\\n' >> .gitignore "
+            f"&& git init -q -b main && git -c user.name=bench -c user.email=bench@example.com add -A "
+            f"&& git -c user.name=bench -c user.email=bench@example.com commit -q -m base"
+        )
+        assert up2.returncode == 0, f"init failed: {up2.stderr or up2.stdout}"
     else:
         if dirty_git:
             setup_cmd = (
@@ -167,25 +162,117 @@ prompt = (f"The repository in {repo} has a bug. Fix it in the source code so the
           f"Use the runtime at {py} (all dependencies are installed). Example test command from the repo root: `{test_hint}`. "
           f"Do not edit existing tests; hidden tests will check your fix. Edit files in place, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}")
 usage = f"{out}/{tag}.usage.json"
+harness = os.environ.get("PB_HARNESS", "hermes")
 model = os.environ.get("PB_MODEL", "claude-haiku-4-5-20251001")
 provider = os.environ.get("PB_PROVIDER", "anthropic")
 timeout_s = int(os.environ.get("PB_TIMEOUT", "900"))
-cmd = [os.path.expanduser("~/.local/bin/hermes"), "--usage-file", usage, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--yolo"]
-t0 = time.time()
-rc, stdout, stderr = 1, "", ""
-for _gw_try in range(3):
+if harness in ("agy", "devin"):
+    agy_ws = f"{work}/agy_ws"
+    os.makedirs(f"{agy_ws}/.devin", exist_ok=True)
+    with open(f"{agy_ws}/.devin/mcp_config.local.json", "w") as mf:
+        json.dump({"mcpServers": {"playbox": {"disabled": True}}}, mf)
+    if arm == "S":
+        osh_dir = f"{work}/osh_bin"
+        os.makedirs(osh_dir, exist_ok=True)
+        osh_path = f"{osh_dir}/osh"
+        with open(osh_path, "w") as f:
+            f.write(
+                f"#!/usr/bin/env python3\n"
+                f"import os, shlex, subprocess, sys, tempfile\n"
+                f"SB = {SB!r}\n"
+                f"REPO = {repo!r}\n"
+                f"if len(sys.argv) >= 3 and sys.argv[1] == '--write':\n"
+                f"    data = sys.stdin.buffer.read()\n"
+                f"    with tempfile.NamedTemporaryFile(delete=False) as tf:\n"
+                f"        tf.write(data)\n"
+                f"        tmp_path = tf.name\n"
+                f"    try:\n"
+                f"        p = subprocess.run(['openshell', 'sandbox', 'upload', '--no-git-ignore', SB, tmp_path, sys.argv[2]])\n"
+                f"    finally:\n"
+                f"        os.unlink(tmp_path)\n"
+                f"    raise SystemExit(p.returncode)\n"
+                f"cmd = ' '.join(sys.argv[1:])\n"
+                f"p = subprocess.run(['openshell', 'sandbox', 'exec', SB, '--', 'sh', '-c', f'cd {{shlex.quote(REPO)}} && {{cmd}}'])\n"
+                f"raise SystemExit(p.returncode)\n"
+            )
+        os.chmod(osh_path, 0o755)
+        env["PATH"] = f"{osh_dir}:" + env["PATH"]
+        agy_prompt = (
+            f"The target repository is inside an OpenShell sandbox at `{repo}` (NOT in your local directory). "
+            f"Run EVERY command inside the sandbox via `osh \"<command>\"` (which starts in `{repo}`, e.g. `osh \"rg -n pattern .\"`, "
+            f"`osh \"sed -n '100,160p' path.py\"`), and write/update files inside `{repo}` via `osh --write {repo}/path.py <<'EOF' ... EOF` "
+            f"or inline python (`osh \"{py} -c '...'\"`). "
+            f"Fix the bug in the source code under `{repo}` so the behaviour described in the issue is correct, without breaking existing behaviour. "
+            f"Use the Python runtime at `{py}` (all dependencies are installed). Example test command: `osh \"{test_hint}\"`. "
+            f"Do not edit existing tests; hidden tests will check your fix. Edit source files in place inside `{repo}`, then reply with a one-line summary.\n\nISSUE:\n{r['problem_statement']}"
+        )
+        run_cwd = agy_ws
+    else:
+        agy_prompt = prompt
+        run_cwd = repo
+    env.pop("ACP_BACKEND", None)
+    if harness == "agy":
+        agy_bin = os.environ.get("AGY_BIN", os.path.expanduser("~/.local/bin/agy"))
+        cmd = [agy_bin, "--model", model, "--output-format", "json", "--dangerously-skip-permissions", "--disable-slash-commands", "-p", agy_prompt]
+    else:
+        devin_bin = os.environ.get("DEVIN_BIN", os.path.expanduser("~/.local/bin/devin"))
+        cmd = [devin_bin, "--model", model, "--permission-mode", "dangerous", "--respect-workspace-trust", "false", "--process-model", "in-process", "--verbosity", "1", "-p", agy_prompt]
+    t0 = time.time()
     try:
-        p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout_s, cwd=tempfile.gettempdir())
+        p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout_s, cwd=run_cwd)
         rc, stdout, stderr = p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired as exc:
         rc = 124
         stdout = (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         stderr = "timeout"
-        break
-    if "Gateway draining" not in (stdout + stderr):
-        break
-    time.sleep(3.0)
-wall = time.time() - t0
+    wall = time.time() - t0
+    if harness == "devin":
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from run_swe_playbox_v2 import _extract_devin_usage
+        u_out = _extract_devin_usage(run_cwd, t0, model)
+        if rc != 0 and not u_out.get("input_tokens"):
+            u_out["failed"] = True
+            u_out["failure"] = (stderr or stdout)[-250:]
+        json.dump(u_out, open(usage, "w"), indent=2)
+    else:
+        agy_lines = [ln.strip() for ln in (stdout or "").splitlines() if ln.strip().startswith("{")]
+        if agy_lines:
+            try:
+                aj = json.loads(agy_lines[-1])
+                au = aj.get("usage") or {}
+                u_out = {
+                    "model": model,
+                    "provider": "agy",
+                    "conversation_id": aj.get("conversation_id", ""),
+                    "api_calls": int(aj.get("num_turns") or 1),
+                    "input_tokens": int(au.get("input_tokens") or 0),
+                    "output_tokens": int(au.get("output_tokens") or 0),
+                    "thinking_tokens": int(au.get("thinking_tokens") or 0),
+                    "cache_read_tokens": int(au.get("cache_read_tokens") or 0),
+                    "total_tokens": int(au.get("total_tokens") or 0),
+                    "failed": aj.get("status") not in ("SUCCESS", None) and rc != 0,
+                    "failure": str(aj.get("error") or stderr[:200]) if (aj.get("status") not in ("SUCCESS", None) and rc != 0) else "",
+                }
+                json.dump(u_out, open(usage, "w"), indent=2)
+            except ValueError:
+                pass
+else:
+    cmd = [os.path.expanduser("~/.local/bin/hermes"), "--usage-file", usage, "-z", prompt, "-m", model, "--provider", provider, "-t", "terminal,file", "--yolo"]
+    t0 = time.time()
+    rc, stdout, stderr = 1, "", ""
+    for _gw_try in range(3):
+        try:
+            p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout_s, cwd=tempfile.gettempdir())
+            rc, stdout, stderr = p.returncode, p.stdout, p.stderr
+        except subprocess.TimeoutExpired as exc:
+            rc = 124
+            stdout = (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+            stderr = "timeout"
+            break
+        if "Gateway draining" not in (stdout + stderr):
+            break
+        time.sleep(3.0)
+    wall = time.time() - t0
 kill_home_gateways(home)
 if arm == "S":
     subprocess.run(["pkill", "-f", f"openshell-{SB}\\.default"])

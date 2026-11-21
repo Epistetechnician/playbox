@@ -23,18 +23,83 @@ from .archive import Archive  # noqa: E402
 from . import board, card as idcard  # noqa: E402
 
 
-def event_note(text, who):
+def pretty_pbx(text):
+    """Turn a `::pbx <kind> {json}` feed message into a human-readable one-liner for room digests and activity."""
+    s = str(text or "")
+    if not s.startswith("::pbx "):
+        return s
+    rest = s[6:]
+    kind, _, body = rest.partition(" ")
+    if kind not in ("metric", "artifact", "card", "comment", "agent") or not body:
+        return s
+    try:
+        d = json.loads(body)
+        if not isinstance(d, dict):
+            return s
+    except ValueError:
+        return s
+    if kind == "metric":
+        unit = f" {d['unit']}" if d.get("unit") else ""
+        return f"metric · {d.get('name') or 'value'} = {d.get('value', '')}{unit}"
+    if kind == "artifact":
+        st = f" ({d['status']})" if d.get("status") else ""
+        sm = f" — {d['summary']}" if d.get("summary") else ""
+        return f"artifact · {d.get('title') or d.get('id') or 'item'}{st}{sm}"
+    if kind == "card":
+        col = f" [{d['col']}]" if d.get("col") else ""
+        return f"card · {d.get('title') or d.get('id') or 'task'}{col}"
+    if kind == "comment":
+        return f"comment · {d.get('text') or ''}"
+    return f"agent · {d.get('name') or 'intro'}"
+
+
+def event_note(text, who, meta=None):
     """Turn one room event into a (stage, sentence, level) for the System view. Ids are shortened; nothing secret is in an event."""
     who = (who or "")[:6]
     t = text.lower()
-    if t == "join ok":
-        return ("join", f"Member {who} joined with a bound grant" if who else "A member joined", "ok")
-    if t == "join failed":
+    m = meta if isinstance(meta, dict) else {}
+    ev = str(m.get("event") or "").lower()
+    if ev == "join" or t == "join ok" or t == "join failed":
+        ok = m.get("ok") if "ok" in m else (t == "join ok")
+        if ok:
+            return ("join", f"Member {who} joined with a bound grant" if who else "A member joined", "ok")
         return ("join", f"A join by {who} failed" if who else "A join failed", "warn")
-    if t.startswith("refused"):
-        return ("join", "Refused: " + text[7:].strip()[:100], "warn")
-    if t == "host_start":
-        return ("history", "Room host started; the signed log continues", "info")
+    if ev == "refused" or t.startswith("refused"):
+        why = str(m.get("reason") or text[7:]).strip()[:100]
+        return ("join", "Refused: " + (why or "request denied"), "warn")
+    if ev == "host_start" or t == "host_start":
+        bits = [str(m[k]) for k in ("runner", "isolation", "transport") if m.get(k)]
+        tail = f" ({' · '.join(bits)})" if bits else ""
+        return ("history", f"Room host started{tail}; the signed log continues", "info")
+    if ev == "task" or t.startswith("task "):
+        ok = m.get("ok") if "ok" in m else t.startswith("task ok")
+        bits = []
+        if m.get("runner"):
+            bits.append(str(m["runner"]))
+        if m.get("program"):
+            bits.append(str(m["program"]))
+        if m.get("exit_code") is not None:
+            bits.append(f"exit {m['exit_code']}")
+        if m.get("ms") is not None:
+            bits.append(f"{m['ms']}ms")
+        if m.get("timed_out"):
+            bits.append("timed out")
+        desc = " · ".join(bits) if bits else text[:80]
+        who_s = f" by {who}" if who else ""
+        return ("history", f"Task {'ok' if ok else 'failed'}{who_s} ({desc})", "ok" if ok else "warn")
+    if ev == "replay":
+        rep = m.get("reproducible", m.get("ok"))
+        tid = str(m.get("task_id") or "")[:12]
+        return ("history", f"Replay of {tid or 'task'}: {'reproducible ✓' if rep else 'diverged ✕'}", "ok" if rep else "warn")
+    if ev == "handoff_checkpoint":
+        br = str(m.get("branch") or "branch")[:40]
+        return ("feed", f"Handoff checkpoint published on {br} by {who or 'member'}", "ok")
+    if ev == "policy_update":
+        pd = str(m.get("policy_digest") or "")[:12]
+        return ("approve", f"Live room policy guardrails updated ({pd or 'new digest'})", "info")
+    if ev == "remember":
+        taint = str(m.get("taint") or "untrusted")
+        return ("feed", f"Room memory entry added by {who or 'member'} ({taint})", "ok" if taint == "owner_endorsed" else "info")
     return ("history", text[:100] or "room event", "info")
 
 LIVE_MS = 5 * 60 * 1000
@@ -97,6 +162,8 @@ class Room:
         self.hold_ids = set()
         self.archive = Archive(self.home)      # what this hub has seen of the feed, kept on disk: it outlives the host and the host's chat window
         self.archive_err = None
+        self.task_stats = {"total": 0, "ok": 0, "fail": 0, "ms_sum": 0, "ms_n": 0, "runner": ""}
+        self._task_primed = False
         self._gone, self._gone_at = False, 0.0
 
     def host_gone(self):
@@ -119,6 +186,7 @@ class Room:
         d["err"] = "The room's host is not running any more."
         d["mode"] = d.get("mode") if d.get("mode") not in (None, "none") else "guest"
         d["archived"] = self.archive.info()["items"]
+        d["tasks"] = self._task_digest()
         d["offline"] = bool(d["archived"])
         d["state"] = "idle"
         return d
@@ -137,10 +205,51 @@ class Room:
     def id(self):
         return self.rec["id"]
 
+    def _ingest_task_stats(self, items):
+        ts = self.task_stats
+        for i in items:
+            if not isinstance(i, dict) or i.get("kind") != "event":
+                continue
+            m = i.get("meta") if isinstance(i.get("meta"), dict) else {}
+            ev = str(m.get("event") or "").lower()
+            txt = str(i.get("text") or "").lower()
+            if ev == "host_start" and m.get("runner"):
+                ts["runner"] = str(m["runner"])[:32]
+                continue
+            if ev == "task" or txt.startswith("task "):
+                ts["total"] += 1
+                ok = m.get("ok") if "ok" in m else txt.startswith("task ok")
+                if ok:
+                    ts["ok"] += 1
+                else:
+                    ts["fail"] += 1
+                if m.get("runner"):
+                    ts["runner"] = str(m["runner"])[:32]
+                dur = m.get("ms")
+                if isinstance(dur, (int, float)) and not isinstance(dur, bool) and dur >= 0:
+                    ts["ms_sum"] += dur
+                    ts["ms_n"] += 1
+
+    def _task_digest(self):
+        if not getattr(self, "_task_primed", False) and hasattr(self, "archive"):
+            self._task_primed = True
+            try:
+                self._ingest_task_stats(self.archive.tail(500))
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+        ts = getattr(self, "task_stats", {"total": 0, "ok": 0, "fail": 0, "ms_sum": 0, "ms_n": 0, "runner": ""})
+        return {
+            "total": ts["total"],
+            "ok": ts["ok"],
+            "fail": ts["fail"],
+            "avg_ms": int(ts["ms_sum"] / ts["ms_n"]) if ts["ms_n"] else None,
+            "runner": ts["runner"],
+        }
+
     def blank(self):
         r = self.rec
         return {"id": r["id"], "label": r["label"], "machine": r.get("machine", ""), "kind": r.get("kind", "shared"), "mode": "none", "members": 0,
-                "state": "down", "unread": 0, "last": None, "holds": [], "chain": None, "err": None, "updated": 0}
+                "state": "down", "unread": 0, "last": None, "holds": [], "chain": None, "err": None, "updated": 0, "tasks": self._task_digest()}
 
     def ensure(self):
         with self.mu:
@@ -166,8 +275,13 @@ class Room:
         if h is None or not self.sidecar:
             return False
         self.last_rehost = time.time()
+        args = {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))}
+        for k in ("template", "runtime", "cpus", "mem_mib", "timeout_secs", "network", "allowed_hosts", "allowed_secrets",
+                  "allowed_egress", "task_budget", "max_members", "max_concurrent", "max_tasks_per_minute", "memory_review"):
+            if h.get(k) is not None:
+                args[k] = h[k]
         try:
-            err, data = self.sidecar.call("playbox_create", {**({"repo": h["repo"]} if h.get("repo") else {}), "local": bool(h.get("local")), "docker": bool(h.get("docker"))}, wait=20)
+            err, data = self.sidecar.call("playbox_create", args, wait=20)
         except Exception as e:  # noqa: BLE001
             self.err = f"could not host again: {e}"
             return False
@@ -225,6 +339,7 @@ class Room:
         if not sc:
             d["err"] = self.err
             d["archived"] = self.archive.info()["items"]
+            d["tasks"] = self._task_digest()
             d["offline"] = bool(d["archived"])
             return d
         feed_failed = False
@@ -234,6 +349,7 @@ class Room:
         if err or not isinstance(st, dict):
             d["err"] = str(st)[:200]
             d["archived"] = self.archive.info()["items"]
+            d["tasks"] = self._task_digest()
             d["offline"] = bool(d["archived"])
             return d
         host, joined = st.get("hosting"), st.get("joined")
@@ -270,7 +386,7 @@ class Room:
                 if self.primed:
                     for i in items:
                         if i.get("kind") == "event":
-                            self.notes.append(event_note(str(i.get("text", "")), str(i.get("from", ""))))
+                            self.notes.append(event_note(str(i.get("text", "")), str(i.get("from", "")), i.get("meta")))
                 for i in items:
                     t = i.get("text")
                     if self.primed and i.get("kind") == "event" and str(t).lower() == "join ok" and self.rec.get("endorsed") and i.get("from") not in self.rec["endorsed"]:
@@ -291,6 +407,7 @@ class Room:
                             else:
                                 self.idalerts.pop(i.get("from"), None)
                 if items:
+                    self._ingest_task_stats(items)
                     self.seq = max(i["seq"] for i in items)
                     says = [i for i in items if i.get("kind") == "say"]
                     for m in says:
@@ -298,12 +415,12 @@ class Room:
                         b = int(ms / 300000)
                         self.buckets[b] = self.buckets.get(b, 0) + 1
                         self.newsays.append({"room": self.id, "label": self.rec["label"], "from": (m.get("from") or "")[:12], "me": m.get("from") == d["me"],
-                                             "text": str(m.get("text", ""))[:200], "ms": int(ms)})
+                                             "text": pretty_pbx(m.get("text", ""))[:200], "ms": int(ms)})
                     if self.primed:
                         d["unread"] += len([i for i in says if i.get("from") != d["me"]])
                     if says:
                         m = says[-1]
-                        d["last"] = {"from": (m.get("from") or "")[:12], "text": str(m.get("text", ""))[:160], "ms": m.get("time_ms")}
+                        d["last"] = {"from": (m.get("from") or "")[:12], "text": pretty_pbx(m.get("text", ""))[:160], "ms": m.get("time_ms")}
             feed_failed = bool(ferr)
             if ferr and isinstance(feed, str) and not self.rec.get("adopted_host") and self.rec.get("host") is None and ("not authorized" in feed or "authorization" in feed or "not in a room" in feed):
                 d["needs_invite"] = True            # a joined room whose grant ran out: the link was single-use, so only the host can let us back in
@@ -322,8 +439,8 @@ class Room:
         if d.get("needs_invite") and self.on_needs_invite:
             try:
                 self.on_needs_invite(self)
-            except Exception:
-                pass
+            except Exception as exc:
+                self.notes.append(("invite", f"Rejoin check failed: {exc}", "warn"))
         nb = int(time.time() / 300)
         self.buckets = {k: v for k, v in self.buckets.items() if k > nb - 30}
         d["pulse"] = [self.buckets.get(nb - 23 + i, 0) for i in range(24)]
@@ -334,6 +451,7 @@ class Room:
             self.notes.append(("feed", "Witness paused a write until you decide", "warn"))
         self.hold_ids = ids
         d["archived"] = self.archive.info()["items"]
+        d["tasks"] = self._task_digest()
         d["identity_alerts"] = [{"key": k, "name": n} for k, n in self.idalerts.items()]
         d["newcomers"] = [k for k, t in self.newcomers.items() if time.time() - t < 3600]
         d["offline"] = bool(d["mode"] != "none" and feed_failed and d["archived"])
@@ -534,7 +652,7 @@ class Hub:
                 self.last_prune = time.time()
                 try:
                     prune_stale()
-                except Exception:  # noqa: BLE001
+                except (OSError, ValueError):
                     pass
             att = self.attention()
             ids = {a["id"] for a in att}

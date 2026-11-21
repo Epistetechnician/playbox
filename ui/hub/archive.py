@@ -19,14 +19,60 @@ from pathlib import Path
 SEGMENT_BYTES = 8 * 1024 * 1024
 MAX_BYTES = int(os.environ.get("PLAYBOX_HUB_ARCHIVE_MAX_MB", "256")) * 1024 * 1024
 MAX_ITEM_BYTES = 16 * 1024
-KEEP_FIELDS = ("seq", "kind", "from", "name", "text", "time_ms")
+KEEP_FIELDS = ("seq", "kind", "from", "name", "text", "time_ms", "meta")
+META_KEYS = frozenset({
+    "event", "ok", "ms", "version", "transport", "runner", "isolation", "repo", "replica",
+    "scratch_quota_mib", "max_push_mib", "program", "args", "cmd_hash", "image", "base",
+    "base_commit", "task_id", "replay_task_id", "patch_hash", "stdout_hash", "patch_bytes",
+    "reproducible", "patch_match", "policy_match", "exit_match",
+    "state", "exit_code", "timed_out", "cpus", "mem_mib", "timeout_secs", "network",
+    "warm", "keep", "sync", "policy_digest", "commit", "branch", "changed_files",
+    "egress", "secrets", "ref", "reference", "bytes", "reason", "kind", "model",
+    "why", "limit_bytes", "authenticated", "conv", "roster",
+    "id", "to", "open_cards", "verified_artifacts", "failed_checks",
+    "task_budget", "max_concurrent", "max_tasks_per_minute", "memory_review",
+    "doc", "key", "taint",
+})
+
+
+def _clean_str(v, limit):
+    return "".join(ch for ch in str(v) if ord(ch) >= 32)[:limit].strip()
+
+
+def _clean_meta(m):
+    """Allowlisted, bounded telemetry dict from an event item. Untrusted host data is clipped and never nested."""
+    if not isinstance(m, dict):
+        return None
+    out = {}
+    for k, v in m.items():
+        if k not in META_KEYS:
+            continue
+        if isinstance(v, bool):
+            out[k] = v
+        elif isinstance(v, (int, float)):
+            if v == v and abs(v) < 1e15:
+                out[k] = v
+        elif isinstance(v, str):
+            s = _clean_str(v, 120)
+            if s:
+                out[k] = s
+        elif isinstance(v, list):
+            lst = [_clean_str(x, 60) for x in v[:8] if isinstance(x, str)]
+            lst = [x for x in lst if x]
+            if lst:
+                out[k] = lst
+    return out or None
 
 
 def _clean(item):
     """The fields we keep, with an upper bound on size. Anything else the host sent is dropped."""
-    out = {k: item.get(k) for k in KEEP_FIELDS if k in item}
+    out = {k: item.get(k) for k in KEEP_FIELDS if k in item and k != "meta"}
     if isinstance(out.get("text"), str) and len(out["text"]) > 8000:
         out["text"] = out["text"][:8000]
+    if "meta" in item:
+        cm = _clean_meta(item.get("meta"))
+        if cm:
+            out["meta"] = cm
     return out
 
 

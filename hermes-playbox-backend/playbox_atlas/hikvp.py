@@ -357,8 +357,8 @@ class HiKVPIndex:
                     ]
                     updated.sort(key=lambda x: x[0], reverse=True)
                     leaf_scores = updated + leaf_scores[rerank_k:]
-            except Exception as exc:
-                self._last_rerank_error = str(exc)
+            except (OSError, ValueError, RuntimeError):
+                self._rerank_fallbacks = getattr(self, "_rerank_fallbacks", 0) + 1
 
         hits: list[QueryHit] = []
         seen_idx: set[int] = set()

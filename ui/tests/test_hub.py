@@ -693,6 +693,32 @@ def test_http():
         check("canvas: a hosted room returns its model with admin rights", st == 200 and cv["admin"] is True and {"members", "feed", "artifacts", "cards", "metrics", "changelog", "stats"} <= set(cv))
         check("canvas needs a session", anon.req("GET", f"/r/{rid}/api/canvas")[0] in (401, 303))
         check("canvas page is served", a.req("GET", f"/r/{rid}/canvas")[0] == 200)
+        # ---- templates, live policy guardrails, room memory with provenance/taint, handoffs, and replay ----
+        st_tpl, tplj, _ = a.req("GET", "/api/templates")
+        check("templates: lists swe, research, review, ops templates",
+              st_tpl == 200 and {t["id"] for t in tplj.get("templates", [])} == {"swe", "research", "review", "ops"}, str(tplj))
+        st_pol0, pol0, _ = a.req("GET", f"/r/{rid}/api/policy")
+        check("policy: GET returns live limits, budget burn, and policy_digest",
+              st_pol0 == 200 and "policy_digest" in pol0 and "limits" in pol0 and "budget" in pol0, str(pol0))
+        st_pol1, pol1, _ = a.req("POST", f"/r/{rid}/api/policy", {"cpus": 3.0, "mem_mib": 2048, "task_budget": 250, "allowed_hosts": ["github.com", "crates.io"]})
+        check("policy: POST updates live guardrails and budget without restarting host",
+              st_pol1 == 200 and pol1["limits"]["cpus"] == 3.0 and pol1["limits"]["mem_mib"] == 2048
+              and pol1["budget"]["task_budget"] == 250 and pol1["limits"]["allowed_hosts"] == ["github.com", "crates.io"]
+              and pol1["policy_digest"] != pol0["policy_digest"], str(pol1))
+        st_mem1, mem1, _ = a.req("POST", f"/r/{rid}/api/memory", {"action": "remember", "key": "arch-rule", "text": "All RPCs are authenticated via Biscuit grants", "commit": "abc1234", "endorsed": True})
+        check("memory: owner-endorsed fact saved with provenance and owner_endorsed taint",
+              st_mem1 == 200 and mem1.get("endorsed") is True and mem1.get("taint") == "owner_endorsed", str(mem1))
+        st_mem0, mem0, _ = a.req("GET", f"/r/{rid}/api/memory")
+        check("memory: GET returns entries with provenance and taint",
+              st_mem0 == 200 and mem0.get("enabled") is True and any(e.get("key") == "arch-rule" and e.get("taint") == "owner_endorsed" for e in mem0.get("entries", [])), str(mem0))
+        st_ho1, ho1, _ = a.req("POST", f"/r/{rid}/api/handoffs", {"summary": "Ready for review", "branch": "main", "open_cards": ["c1"], "verified_artifacts": ["a1"]})
+        check("handoffs: POST signs and publishes structured checkpoint",
+              st_ho1 == 200 and ho1.get("verified") is True and ho1.get("checkpoint", {}).get("branch") == "main", str(ho1))
+        st_ho0, ho0, _ = a.req("GET", f"/r/{rid}/api/handoffs")
+        check("handoffs: GET lists structured checkpoints",
+              st_ho0 == 200 and len(ho0.get("checkpoints", [])) >= 1 and ho0["checkpoints"][0]["summary"] == "Ready for review", str(ho0))
+        st_rep0, rep0, _ = a.req("POST", f"/r/{rid}/api/replay", {"run": False})
+        check("replay: listing replayable tasks succeeds", st_rep0 == 200 and rep0.get("mode") == "list" and isinstance(rep0.get("tasks"), list), str(rep0))
         # ---- adopting a room hosted on this machine ----
         pbx = shutil.which("playbox")
         if not pbx:

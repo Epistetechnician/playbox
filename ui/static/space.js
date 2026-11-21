@@ -231,7 +231,23 @@ const PBSpace = (() => {
     const head = el("div", "sp-head"); head.append(el("b", "", r.label), el("span", "chip " + (r.state === "live" ? "ok" : r.state === "hold" || r.state === "bad" ? "warn" : ""), STATE_TXT[r.state] || r.state));
     const meta = el("div", "sp-meta", `${r.kind === "mine" ? "Your agents" : "Shared"}${r.machine ? " · " + r.machine : ""} · ${r.members || 0} member${r.members === 1 ? "" : "s"}${r.unread ? " · " + r.unread + " new" : ""}${r.chain ? (r.chain.ok ? " · history verified" : " · HISTORY FAILED") : ""}`);
     p.append(head, meta);
-    if (r.last && r.last.text) p.append(el("div", "sp-last", "“" + r.last.text.slice(0, 140) + "”"));
+    if (r.last && r.last.text) {
+      let lt = String(r.last.text);
+      if (lt.startsWith("::pbx ")) {
+        const sp = lt.indexOf(" ", 6);
+        if (sp > 6) {
+          const kind = lt.slice(6, sp);
+          try {
+            const d = JSON.parse(lt.slice(sp + 1));
+            if (kind === "metric") lt = `metric · ${d.name || "value"} = ${d.value ?? ""}${d.unit ? " " + d.unit : ""}`;
+            else if (kind === "artifact") lt = `artifact · ${d.title || d.id || "item"}${d.status ? " (" + d.status + ")" : ""}${d.summary ? " — " + d.summary : ""}`;
+            else if (kind === "card") lt = `card · ${d.title || d.id || "task"}${d.col ? " [" + d.col + "]" : ""}`;
+            else if (kind === "comment") lt = `comment · ${d.text || ""}`;
+          } catch {}
+        }
+      }
+      p.append(el("div", "sp-last", "“" + lt.slice(0, 140) + "”"));
+    }
     const row = el("div", "sp-row");
     const go = el("button", "btn primary sm", "Enter room"); go.type = "button"; go.addEventListener("click", () => s.onOpen(r, s.hitRect(r)));
     const back = el("button", "btn sm", "Back"); back.type = "button"; back.addEventListener("click", () => focus(s, null));

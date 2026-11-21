@@ -1,0 +1,29 @@
+{
+  "schema": "playbox.t3_confidential_space_manifest.v1",
+  "description": "Pinned T3 Confidential Space (Intel TDX / Google Confidential Space) runtime manifest for Playbox Attested Gate + hardened playbox-aiproxy.",
+  "hardware_tier": "T3",
+  "allowed_hw_models": ["GCP_INTEL_TDX", "INTEL_TDX"],
+  "components": {
+    "playbox_aiproxy": {
+      "upstream_repo": "https://github.com/labring/aiproxy",
+      "upstream_commit": "61e7e8d41b5cb18706113f248a866dd95a58d1c8",
+      "license": "MIT",
+      "build_script": "scripts/build-aiproxy.sh",
+      "build_flags": "CGO_ENABLED=0 -tags playbox_hardened -trimpath -buildvcs=false -ldflags '-s -w'",
+      "reproducible_binary_sha256": "sha256:dab5fdf4ded67f8bc7b540467fd8f57366bb5203ef45375997debe7bbe2eb9b6",
+      "required_posture": {
+        "playbox_hardened": true,
+        "mcp_disabled": true,
+        "web_search_disabled": true,
+        "swagger_disabled": true,
+        "loopback_only": true
+      }
+    }
+  },
+  "attestation_policy": {
+    "min_host_tier": "T3",
+    "require_pq_receipts": true,
+    "receipt_algs": ["Ed25519", "ML-DSA-65"],
+    "ledger_schema": "playbox.llm_ledger.v1"
+  }
+}

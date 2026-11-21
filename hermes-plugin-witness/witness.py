@@ -11,7 +11,7 @@ ROOM_SAFE_TOOLS = {"status", "ping", "feed", "verify", "audit", "recall", "room_
                    "checkpoint_verify", "evidence_check", "lineage_check", "receipts_check"}
 # Exact names only: a prefix match would treat an MCP tool called `get_secret_and_post` as a read.
 # Network-bearing tools (`web_search`, `web_extract`) are excluded so untrusted text cannot exfiltrate over HTTP.
-READ_ONLY_TOOLS = {"read_file", "search_files", "skill_view", "skills_list", "atlas_query",
+READ_ONLY_TOOLS = {"read_file", "search_files", "skill_view", "skills_list", "atlas_query", "atlas_parametric_qa",
                    "session_search", "tool_search", "tool_describe", "clarify", "read", "glob", "grep", "ls"}
 # External tools whose response bodies come from outside the local repo/owner boundary (closing OpenShell APF's
 # response-body blind spot). In a room session (or when `PLAYBOX_WITNESS_EXTERNAL=1`), their outputs taint the turn.
