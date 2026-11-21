@@ -9,6 +9,18 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-11-21
+
+### Added
+- `playbox-aiproxy` (`PROXY-1..7`) and `BOX-7` `aiproxy_preset`: hardened loopback AI gateway with SSRF-blocked upstreams, disabled MCP/web-search surfaces, mid-stream USD/token cutoffs, sub-second `429` channel failover, immediate `host.rs` `on_revoke` token revocation, canonical `playbox.llm_ledger.v1` (`host_aiproxy`) receipts, and Hub observability (`ui/hub/aiproxy.py`).
+- Parametric AtlasKV (`playbox_atlas/parametric.py`) and `TrainedKVProjectionAdapter` (`projector_k`/`projector_v`): open-weights KV-cache injection and hybrid `Ed25519+ML-DSA-65` signed shard/adapter manifests (`playbox.atlaskv_shard.v1`, `playbox.atlaskv_adapter.v1`).
+- Resumable 3-tier polyglot SWE-bench (`run_verified_eval.py`, `prepare_multirepo_22.py`, `prepare_track_a_150.py`), 20-task adversarial security benchmark (`run_security_eval.py`), `CertifiedTrajectoryGate` (`GateDecisionV3`), `T3` Confidential Space manifest (`deploy/t3-confidential-space.json`), and signed public `T1` PQ verification bundles (`docs/reports/`).
+
+### Fixed
+- `OpenShellRunner::preflight`: scope warm sandbox names to `pbxw-<pid_hex>-<rand>` and skip live owner PIDs so concurrent Playbox rooms never reap sibling microVMs.
+- `playbox gate export`: bind `PLAYBOX_VERSION_LONG` into `playbox.attested_gate.v1` bundles and `playbox.attested_gate_receipt.v1` payloads.
+- Desktop AppImage hub environment propagation, Lean port-confluence proof, commuting hub AST gate (#71), and `ui/static/index.html` static view dispatch.
+
 ## [0.4.4] - 2026-11-20
 
 ### Added
