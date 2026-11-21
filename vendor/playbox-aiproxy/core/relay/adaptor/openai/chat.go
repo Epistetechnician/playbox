@@ -518,6 +518,10 @@ func ConvertChatCompletionsRequest(
 		return adaptor.ConvertResult{}, err
 	}
 
+	if isGeminiActualModel(meta.ActualModel) {
+		patchGeminiOpenAIChatNode(&node)
+	}
+
 	jsonData, err := node.MarshalJSON()
 	if err != nil {
 		return adaptor.ConvertResult{}, err
@@ -530,6 +534,68 @@ func ConvertChatCompletionsRequest(
 		},
 		Body: bytes.NewReader(jsonData),
 	}, nil
+}
+
+func patchGeminiOpenAIChatNode(node *ast.Node) {
+	for _, key := range []string{"max_tokens", "max_completion_tokens"} {
+		if n := node.Get(key); n != nil && n.Exists() {
+			if v, err := n.Int64(); err == nil && v > 65536 {
+				_, _ = node.Set(key, ast.NewNumber("65536"))
+			}
+		}
+	}
+	msgsNode := node.Get("messages")
+	if msgsNode == nil || !msgsNode.Exists() {
+		return
+	}
+	msgsRaw, err := msgsNode.Raw()
+	if err != nil {
+		return
+	}
+	var msgs []map[string]any
+	if err := sonic.UnmarshalString(msgsRaw, &msgs); err != nil {
+		return
+	}
+	changed := false
+	for _, msg := range msgs {
+		if role, _ := msg["role"].(string); role != relaymodel.RoleAssistant {
+			continue
+		}
+		tcsRaw, ok := msg["tool_calls"].([]any)
+		if !ok || len(tcsRaw) == 0 {
+			continue
+		}
+		anySig := false
+		for _, tcAny := range tcsRaw {
+			tc, ok := tcAny.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, hasEC := tc["extra_content"]; hasEC && tc["extra_content"] != nil {
+				anySig = true
+				continue
+			}
+			id, _ := tc["id"].(string)
+			if sig := lookupToolCallThoughtSig(id); sig != "" {
+				tc["extra_content"] = map[string]any{
+					"google": map[string]any{"thought_signature": sig},
+				}
+				anySig = true
+				changed = true
+			}
+		}
+		if !anySig {
+			if tc0, ok := tcsRaw[0].(map[string]any); ok {
+				tc0["extra_content"] = map[string]any{
+					"google": map[string]any{"thought_signature": "skip_thought_signature_validator"},
+				}
+				changed = true
+			}
+		}
+	}
+	if changed {
+		_, _ = node.Set("messages", ast.NewAny(msgs))
+	}
 }
 
 func patchStreamOptions(node *ast.Node) error {
@@ -679,6 +745,9 @@ func StreamHandler(
 		}
 
 		for _, choice := range ch {
+			for _, tc := range choice.Delta.ToolCalls {
+				recordToolCallThoughtSig(tc.ID, tc.ExtraContent)
+			}
 			if usage.TotalTokens == 0 {
 				if choice.Text != "" {
 					responseText.WriteString(choice.Text)
@@ -810,6 +879,11 @@ func Handler(
 			"unmarshal_response_body_failed",
 			http.StatusInternalServerError,
 		)
+	}
+	for _, choice := range choices {
+		for _, tc := range choice.Message.ToolCalls {
+			recordToolCallThoughtSig(tc.ID, tc.ExtraContent)
+		}
 	}
 
 	// Extract upstream ID from response if available

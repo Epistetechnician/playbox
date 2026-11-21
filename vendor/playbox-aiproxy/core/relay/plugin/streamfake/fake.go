@@ -610,10 +610,15 @@ func mergeToolCall(oldToolCall, newToolCall *relaymodel.ToolCall) *relaymodel.To
 	}
 
 	merged := &relaymodel.ToolCall{
-		Index:    oldToolCall.Index,
-		ID:       oldToolCall.ID,
-		Type:     oldToolCall.Type,
-		Function: oldToolCall.Function,
+		Index:        oldToolCall.Index,
+		ID:           oldToolCall.ID,
+		Type:         oldToolCall.Type,
+		Function:     oldToolCall.Function,
+		ExtraContent: oldToolCall.ExtraContent,
+	}
+
+	if newToolCall.ExtraContent != nil {
+		merged.ExtraContent = newToolCall.ExtraContent
 	}
 
 	// Update ID if new one is provided and old one is empty
