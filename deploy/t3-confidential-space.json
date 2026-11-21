@@ -10,7 +10,7 @@
       "license": "MIT",
       "build_script": "scripts/build-aiproxy.sh",
       "build_flags": "CGO_ENABLED=0 -tags playbox_hardened -trimpath -buildvcs=false -ldflags '-s -w'",
-      "reproducible_binary_sha256": "sha256:dab5fdf4ded67f8bc7b540467fd8f57366bb5203ef45375997debe7bbe2eb9b6",
+      "reproducible_binary_sha256": "sha256:4404c03763faab9a4e467544a0a7ddf4960719d70e20a53ace1ebbf60828093a",
       "required_posture": {
         "playbox_hardened": true,
         "mcp_disabled": true,

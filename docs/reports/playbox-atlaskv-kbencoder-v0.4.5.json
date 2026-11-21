@@ -1,0 +1,146 @@
+{
+  "schema": "playbox.parametric_atlaskv_eval.v2",
+  "model_id": "Qwen/Qwen3-1.7B-Base",
+  "device": "cpu",
+  "shard_manifest": {
+    "schema": "playbox.atlaskv_shard.v1",
+    "model_id": "Qwen/Qwen3-1.7B-Base",
+    "base_commit": "8007495e6",
+    "clusters_count": 19,
+    "total_tokens_encoded": 4384,
+    "total_kv_slots": 4384,
+    "quarantined_dropped": 3,
+    "tensors_sha256": "dbeacf312f0f7eca3a675384374165a4ed8ebd17c839aeab63f961777a81e2b8",
+    "pq_verified": true,
+    "sig_alg": "Ed25519+ML-DSA-65"
+  },
+  "adapted_shard_manifest": {
+    "schema": "playbox.atlaskv_shard.v1",
+    "model_id": "Qwen/Qwen3-1.7B-Base",
+    "base_commit": "8007495e6",
+    "clusters_count": 19,
+    "total_tokens_encoded": 4384,
+    "total_kv_slots": 4384,
+    "quarantined_dropped": 3,
+    "tensors_sha256": "fa81697f94ff392fa98b90785c5bfc783ba9e140c8b909a363245677bbd479f7",
+    "pq_verified": true,
+    "sig_alg": "Ed25519+ML-DSA-65"
+  },
+  "slot_compressed_shard_manifest": {
+    "schema": "playbox.atlaskv_shard.v1",
+    "model_id": "Qwen/Qwen3-1.7B-Base",
+    "base_commit": "8007495e6",
+    "clusters_count": 19,
+    "total_tokens_encoded": 4384,
+    "total_kv_slots": 608,
+    "quarantined_dropped": 3,
+    "tensors_sha256": "04f7fe2a87d081a2d36e881c20c99eca9a1330d9342dd1e3f1f7a1b6fda2c95c",
+    "pq_verified": true,
+    "sig_alg": "Ed25519+ML-DSA-65"
+  },
+  "kv_adapter_manifest": {
+    "schema": "playbox.atlaskv_adapter.v1",
+    "model_id": "Qwen/Qwen3-1.7B-Base",
+    "num_layers": 28,
+    "num_kv_heads": 8,
+    "head_dim": 128,
+    "rank": 32,
+    "train_meta": {
+      "rank": 32,
+      "epochs": 8,
+      "train_examples": 48,
+      "quarantined_dropped_in_train": 2,
+      "loss_first_epoch": 1.1859,
+      "loss_last_epoch": 0.2916,
+      "epoch_losses": [
+        1.1859,
+        0.7519,
+        0.6671,
+        0.4976,
+        0.3931,
+        0.3506,
+        0.3156,
+        0.2916
+      ],
+      "train_wall_s": 775.29
+    },
+    "tensors_sha256": "3b4239c024fba630b56c1cc921b43a1470610b0879cd81e95c3aac3c6b875afd",
+    "pq_verified": true,
+    "sig_alg": "Ed25519+ML-DSA-65"
+  },
+  "slot_kv_adapter_train_meta": {
+    "rank": 32,
+    "epochs": 8,
+    "train_examples": 48,
+    "quarantined_dropped_in_train": 2,
+    "loss_first_epoch": 14.1542,
+    "loss_last_epoch": 1.3717,
+    "epoch_losses": [
+      14.1542,
+      7.2207,
+      5.9837,
+      3.8468,
+      2.6348,
+      2.071,
+      1.5974,
+      1.3717
+    ],
+    "train_wall_s": 731.21
+  },
+  "shard_signature_verified": true,
+  "pq_mldsa65_verified": true,
+  "tampered_shard_rejected": true,
+  "tampered_adapter_rejected": true,
+  "train_eval_zero_overlap_verified": true,
+  "quarantined_poison_triples_dropped_pre_encode": 3,
+  "online_token_compression_vs_full_context_x": 184.43,
+  "online_token_compression_vs_text_hikvp_x": 13.1,
+  "prefill_speedup_vs_full_context_x": 36.55,
+  "arms": {
+    "full_context_text": {
+      "queries": 20,
+      "exact_recall": 9,
+      "exact_recall_rate": 0.45,
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 4407.9,
+      "median_prefill_ms": 29017.53,
+      "mean_total_ms": 30220.26
+    },
+    "hikvp_text_brief": {
+      "queries": 20,
+      "exact_recall": 6,
+      "exact_recall_rate": 0.3,
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 313.1,
+      "median_prefill_ms": 2159.47,
+      "mean_total_ms": 3270.87
+    },
+    "parametric_kv_inject": {
+      "queries": 20,
+      "exact_recall": 6,
+      "exact_recall_rate": 0.3,
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 23.9,
+      "median_prefill_ms": 793.91,
+      "mean_total_ms": 1439.49
+    },
+    "trained_parametric_kv_adapter": {
+      "queries": 20,
+      "exact_recall": 17,
+      "exact_recall_rate": 0.85,
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 23.9,
+      "median_prefill_ms": 793.99,
+      "mean_total_ms": 1481.96
+    },
+    "slot_compressed_kv_adapter": {
+      "queries": 20,
+      "exact_recall": 1,
+      "exact_recall_rate": 0.05,
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 23.9,
+      "median_prefill_ms": 761.43,
+      "mean_total_ms": 1159.27
+    }
+  }
+}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,50 @@ import (
 	"github.com/labring/aiproxy/core/relay/render"
 	"github.com/labring/aiproxy/core/relay/utils"
 )
+
+const maxThoughtSigEntries = 4096
+
+var (
+	thoughtSigMu    sync.Mutex
+	thoughtSigByID  = make(map[string]string, 256)
+	thoughtSigOrder = make([]string, 0, 256)
+)
+
+func recordToolCallThoughtSig(id string, ec *relaymodel.ExtraContent) string {
+	if ec == nil || ec.Google == nil || ec.Google.ThoughtSignature == "" {
+		return ""
+	}
+	sig := ec.Google.ThoughtSignature
+	if id == "" {
+		return sig
+	}
+	thoughtSigMu.Lock()
+	defer thoughtSigMu.Unlock()
+	if _, exists := thoughtSigByID[id]; !exists {
+		if len(thoughtSigOrder) >= maxThoughtSigEntries {
+			evict := thoughtSigOrder[0]
+			thoughtSigOrder = thoughtSigOrder[1:]
+			delete(thoughtSigByID, evict)
+		}
+		thoughtSigOrder = append(thoughtSigOrder, id)
+	}
+	thoughtSigByID[id] = sig
+	return sig
+}
+
+func lookupToolCallThoughtSig(id string) string {
+	if id == "" {
+		return ""
+	}
+	thoughtSigMu.Lock()
+	defer thoughtSigMu.Unlock()
+	return thoughtSigByID[id]
+}
+
+func isGeminiActualModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "gemini") || strings.HasPrefix(m, "google/")
+}
 
 // ConvertClaudeRequest converts Claude API request format to OpenAI format
 func ConvertClaudeRequest(
@@ -77,6 +122,34 @@ func ConvertClaudeRequestModel(
 
 	// Convert messages
 	openAIRequest.Messages = convertClaudeMessagesToOpenAI(claudeRequest)
+
+	if isGeminiActualModel(meta.ActualModel) {
+		if openAIRequest.MaxTokens > 65536 {
+			openAIRequest.MaxTokens = 65536
+		}
+		if openAIRequest.MaxCompletionTokens > 65536 {
+			openAIRequest.MaxCompletionTokens = 65536
+		}
+		for mi := range openAIRequest.Messages {
+			tcs := openAIRequest.Messages[mi].ToolCalls
+			if openAIRequest.Messages[mi].Role != relaymodel.RoleAssistant || len(tcs) == 0 {
+				continue
+			}
+			anySig := false
+			for ti := range tcs {
+				if tcs[ti].ExtraContent != nil && tcs[ti].ExtraContent.Google != nil && tcs[ti].ExtraContent.Google.ThoughtSignature != "" {
+					anySig = true
+				}
+			}
+			if !anySig {
+				tcs[0].ExtraContent = &relaymodel.ExtraContent{
+					Google: &relaymodel.GoogleExtraContent{
+						ThoughtSignature: "skip_thought_signature_validator",
+					},
+				}
+			}
+		}
+	}
 
 	// Convert tools
 	if len(claudeRequest.Tools) > 0 {
@@ -221,11 +294,15 @@ func convertClaudeContent(content any) convertClaudeContentResult {
 						Arguments: args,
 					},
 				}
-				// Preserve Gemini thought signature if present (OpenAI format)
-				if content.Signature != "" {
+				// Preserve Gemini thought signature if present (OpenAI format or cached by tool_use id)
+				sig := content.Signature
+				if sig == "" {
+					sig = lookupToolCallThoughtSig(content.ID)
+				}
+				if sig != "" {
 					toolCall.ExtraContent = &relaymodel.ExtraContent{
 						Google: &relaymodel.GoogleExtraContent{
-							ThoughtSignature: content.Signature,
+							ThoughtSignature: sig,
 						},
 					}
 				}
@@ -512,11 +589,13 @@ func ClaudeStreamHandler(
 						currentContentIndex++
 						currentContentType = relaymodel.ClaudeContentTypeToolUse
 
+						sig := recordToolCallThoughtSig(toolCall.ID, toolCall.ExtraContent)
 						toolCallsBuffer[idx] = &relaymodel.ClaudeContent{
-							Type:  relaymodel.ClaudeContentTypeToolUse,
-							ID:    toolCall.ID,
-							Name:  toolCall.Function.Name,
-							Input: make(map[string]any),
+							Type:      relaymodel.ClaudeContentTypeToolUse,
+							ID:        toolCall.ID,
+							Name:      toolCall.Function.Name,
+							Input:     make(map[string]any),
+							Signature: sig,
 						}
 
 						// Send content_block_start for tool use
@@ -525,6 +604,14 @@ func ClaudeStreamHandler(
 							Index:        currentContentIndex,
 							ContentBlock: toolCallsBuffer[idx],
 						})
+					} else if toolCall.ExtraContent != nil {
+						bufID := toolCall.ID
+						if bufID == "" {
+							bufID = toolCallsBuffer[idx].ID
+						}
+						if sig := recordToolCallThoughtSig(bufID, toolCall.ExtraContent); sig != "" {
+							toolCallsBuffer[idx].Signature = sig
+						}
 					}
 
 					// Send tool arguments delta
@@ -662,11 +749,13 @@ func ClaudeHandler(
 				_ = sonic.UnmarshalString(toolCall.Function.Arguments, &input)
 			}
 
+			sig := recordToolCallThoughtSig(toolCall.ID, toolCall.ExtraContent)
 			claudeResponse.Content = append(claudeResponse.Content, relaymodel.ClaudeContent{
-				Type:  relaymodel.ClaudeContentTypeToolUse,
-				ID:    toolCall.ID,
-				Name:  toolCall.Function.Name,
-				Input: input,
+				Type:      relaymodel.ClaudeContentTypeToolUse,
+				ID:        toolCall.ID,
+				Name:      toolCall.Function.Name,
+				Input:     input,
+				Signature: sig,
 			})
 		}
 
