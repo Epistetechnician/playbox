@@ -391,3 +391,78 @@ fn gate_sign_verify_and_export_unify_run_receipts() {
 
     let _ = std::fs::remove_dir_all(&root_dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn published_t3_confidential_space_bundle_verifies_offline() {
+    let root_dir = fresh("t3_cs_bundle");
+    let home = root_dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let gz_path = repo_root.join("docs/reports/playbox-t3-confidential-space-5gate-bundle.json.gz");
+    let jwks_path = repo_root.join("docs/reports/google-confidential-space-jwks.json");
+    let gunzip = Command::new("gzip")
+        .args(["-dc", gz_path.to_str().unwrap()])
+        .output()
+        .expect("gzip -dc");
+    assert!(gunzip.status.success(), "gzip -dc failed");
+
+    let mut verify = Command::new(BIN)
+        .env("PLAYBOX_HOME", &home)
+        .env("PLAYBOX_CS_JWKS", &jwks_path)
+        .env("PLAYBOX_CS_AUDIENCE", "playbox-t3-gate-v0.4.5")
+        .env(
+            "PLAYBOX_CS_IMAGES",
+            "sha256:67cec5f5e7189c7735f0bef95c69876fdbac00ec026195dfd985d3236be413af",
+        )
+        .env("PLAYBOX_CS_PROJECTS", "secops1219")
+        .args([
+            "gate",
+            "verify",
+            "-",
+            "--pubkey",
+            "e909cef9782c42082e7e0f8c2e2954346f3588395e33e4075fddf00938b487d2",
+            "--require-signature",
+            "--require-pq",
+            "--require-tier",
+            "t3",
+            "--json",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write as _;
+    verify
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&gunzip.stdout)
+        .unwrap();
+    let out = verify.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "T3 Confidential Space bundle verify failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["signed"], true);
+    assert_eq!(report["pq_signed"], true);
+    assert_eq!(report["achieved_tier"], "T3");
+    assert_eq!(report["enforced_gates_count"], 5);
+    assert_eq!(report["claims_full_84_permf"], false);
+    assert_eq!(
+        report["bundle_digest"],
+        "206e4ad33be0bcf42a5f7ce268d7ba504bd86b58302fd005000b51b1683f617f"
+    );
+
+    let _ = std::fs::remove_dir_all(&root_dir);
+}

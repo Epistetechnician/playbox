@@ -255,6 +255,21 @@ pub fn verifiers(
     pins: PinStore,
     boot_reference: BTreeMap<u32, String>,
 ) -> Result<Vec<Box<dyn PlatformVerifier>>, AttestError> {
+    verifiers_at(pins, boot_reference, None)
+}
+
+/// Like [`verifiers`], evaluating time-bounded remote-attestation tokens (such as Confidential
+/// Space OIDC tokens) at `at_secs` when verifying an archived compliance bundle whose signed
+/// statement `issued_ms` is already bound via `eat_nonce`.
+///
+/// # Errors
+///
+/// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
+pub fn verifiers_at(
+    pins: PinStore,
+    boot_reference: BTreeMap<u32, String>,
+    at_secs: Option<u64>,
+) -> Result<Vec<Box<dyn PlatformVerifier>>, AttestError> {
     let mut v: Vec<Box<dyn PlatformVerifier>> = vec![
         Box::new(SecureEnclaveVerifier::new(pins.clone())),
         Box::new(
@@ -264,14 +279,14 @@ pub fn verifiers(
         ),
     ];
     if let Some(gpu) = nvidia_gpu_from_env()? {
-        if let Some(cs) = confidential_space_from_env()? {
+        if let Some(cs) = confidential_space_from_env_at(at_secs)? {
             v.push(Box::new(crate::gpu_cc::CpuGpuVerifier { cpu: cs, gpu }));
         }
         if let Some(gpu) = nvidia_gpu_from_env()? {
             v.push(Box::new(gpu));
         }
     }
-    if let Some(cs) = confidential_space_from_env()? {
+    if let Some(cs) = confidential_space_from_env_at(at_secs)? {
         v.push(Box::new(cs));
     }
     Ok(v)
@@ -320,6 +335,18 @@ pub fn nvidia_gpu_from_env() -> Result<Option<crate::gpu_cc::NvidiaGpuVerifier>,
 /// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
 pub fn confidential_space_from_env(
 ) -> Result<Option<crate::confidential::ConfidentialSpaceVerifier>, AttestError> {
+    confidential_space_from_env_at(None)
+}
+
+/// Like [`confidential_space_from_env`], optionally pinning evaluation time `at_secs` (or
+/// `$PLAYBOX_CS_AT_SECS`) for historical bundle verification.
+///
+/// # Errors
+///
+/// Returns an [`AttestError`] if the evidence or statement cannot be produced or fails a check.
+pub fn confidential_space_from_env_at(
+    at_secs: Option<u64>,
+) -> Result<Option<crate::confidential::ConfidentialSpaceVerifier>, AttestError> {
     let (Some(jwks), Ok(audience)) = (
         std::env::var_os("PLAYBOX_CS_JWKS"),
         std::env::var("PLAYBOX_CS_AUDIENCE"),
@@ -328,6 +355,14 @@ pub fn confidential_space_from_env(
     };
     let text = fs::read_to_string(&jwks).map_err(|e| format!("reading PLAYBOX_CS_JWKS: {e}"))?;
     let mut v = crate::confidential::ConfidentialSpaceVerifier::new(&audience).with_jwks(&text)?;
+    let pinned_secs = at_secs.or_else(|| {
+        std::env::var("PLAYBOX_CS_AT_SECS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+    });
+    if let Some(ts) = pinned_secs {
+        v = v.with_clock(move || ts);
+    }
     for d in std::env::var("PLAYBOX_CS_IMAGES")
         .unwrap_or_default()
         .split(',')
