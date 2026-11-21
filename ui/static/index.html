@@ -1776,7 +1776,21 @@ async function refresh(poll) {
     paintPulse();
   } catch { S.ok = false; paintPill(); }
 }
+function renderTabView(tab) {
+  switch (tab) {
+    case "harnesses": return VIEWS.harnesses();
+    case "notes": return VIEWS.notes();
+    case "timeline": return VIEWS.timeline();
+    case "room": return VIEWS.room();
+    case "work": return VIEWS.work();
+    case "people": return VIEWS.people();
+    case "proof": return VIEWS.proof();
+    case "feed":
+    default: return VIEWS.feed();
+  }
+}
 function show(tab, soft) {
+  if (!Object.prototype.hasOwnProperty.call(VIEWS, tab)) tab = "feed";
   const sameTab = S.tab === tab;
   S.tab = tab;
   if (tab === "feed") { S.unread = 0; markSeen(); }
@@ -1784,7 +1798,7 @@ function show(tab, soft) {
   const v = $("#view");
   if (soft && hasSelectionIn(v)) return;
   const openDet = sameTab && v ? new Set([...v.querySelectorAll("details[open]")].map(d => d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim())) : null;
-  v.innerHTML = `<div class="view">${VIEWS[tab]()}</div>`;
+  v.innerHTML = `<div class="view">${renderTabView(tab)}</div>`;
   if (openDet && openDet.size) {
     v.querySelectorAll("details").forEach(d => {
       const k = d.dataset.ins ? "ins:" + d.dataset.ins : "sum:" + (d.querySelector("summary")?.textContent || "").trim();
