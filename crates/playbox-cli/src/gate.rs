@@ -585,10 +585,24 @@ fn load_attestation_text(path: &Path) -> Result<String> {
 }
 
 fn verify_attestation_text(text: &str) -> Result<AttestationEvidence> {
+    verify_attestation_text_mode(text, false)
+}
+
+fn verify_attestation_text_historical(text: &str) -> Result<AttestationEvidence> {
+    verify_attestation_text_mode(text, true)
+}
+
+fn verify_attestation_text_mode(text: &str, historical: bool) -> Result<AttestationEvidence> {
+    let at_secs = if historical {
+        let parsed = attest::Statement::parse(text).map_err(anyhow::Error::msg)?;
+        Some(parsed.issued_ms / 1000)
+    } else {
+        None
+    };
     let home = store::home();
     let pins = platform::PinStore::load(&platform::pins_path(&home))?;
     let boot = platform::boot_reference_from_env().map_err(anyhow::Error::msg)?;
-    let vs = platform::verifiers(pins, boot).map_err(anyhow::Error::msg)?;
+    let vs = platform::verifiers_at(pins, boot, at_secs).map_err(anyhow::Error::msg)?;
     let refs: Vec<&dyn PlatformVerifier> = vs.iter().map(|v| v.as_ref()).collect();
     let verified = attest::verify(text, &refs).map_err(anyhow::Error::msg)?;
     let m = &verified.statement.measurements;
@@ -1171,7 +1185,7 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
     ) {
         (None, Some(req)) => bail!("--require-tier {req}: bundle carries no attestation statement"),
         (Some(att), req) => {
-            let re = verify_attestation_text(&att.statement)?;
+            let re = verify_attestation_text_historical(&att.statement)?;
             if &re != att {
                 bail!("gate_5 attestation fields do not match verified statement");
             }

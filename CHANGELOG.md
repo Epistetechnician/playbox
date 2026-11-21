@@ -9,6 +9,15 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-11-21
+
+### Added
+- Native Vertex Gemini 3 `ToolCall.ExtraContent` (`thought_signature`) round-tripping in hardened `playbox-aiproxy` (`vendor/playbox-aiproxy`), eliminating external OpenAI-to-Vertex bridge shims on multi-turn tool calls.
+- Live GCP Confidential Space Intel TDX (`c3-standard-4`, `GCP_INTEL_TDX`, `CONFIDENTIAL_SPACE`) `T3` 5-gate compliance bundle (`docs/reports/playbox-t3-confidential-space-5gate-bundle.json.gz`), pinned Google Confidential Computing JWKS (`docs/reports/google-confidential-space-jwks.json`), and multi-repository `host_aiproxy` SWE-bench bundle (`docs/reports/playbox-swe-multirepo15-aiproxy-5gate-bundle.json.gz`).
+
+### Fixed
+- `playbox gate verify`: evaluate archived `ConfidentialSpaceVerifier` OIDC tokens at the `eat_nonce`-bound `statement.issued_ms` timestamp (and support `$PLAYBOX_CS_AT_SECS`) so historical `T3` compliance bundles remain offline-verifiable after the 1-hour OIDC token lifetime expires, while keeping live room-join and `gate export` freshness checks fail-closed.
+
 ## [0.4.5] - 2026-11-21
 
 ### Added

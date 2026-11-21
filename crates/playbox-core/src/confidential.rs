@@ -268,8 +268,8 @@ impl PlatformVerifier for ConfidentialSpaceVerifier {
     }
 }
 
-/// Asks the Confidential Space launcher for a token over the statement binding. Only works inside a
-/// Confidential Space VM, and has not been run on one.
+/// Asks the Confidential Space launcher for a token over the statement binding inside a GCP
+/// Confidential Space VM (verified live on `c3-standard-4` Intel TDX).
 #[cfg(unix)]
 pub struct ConfidentialSpaceProvider {
     pub socket: std::path::PathBuf,
