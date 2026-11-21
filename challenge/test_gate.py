@@ -1,7 +1,6 @@
 """Tests for sandboxed candidate execution in challenge/gate.py."""
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
