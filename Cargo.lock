@@ -1057,7 +1057,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.9",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3682,7 +3682,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "playbox-bridge",
  "playbox-core",
  "playbox-mcp",
@@ -3703,7 +3703,7 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "cfb-mode",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "fips204",
  "getrandom 0.4.3",
  "hmac 0.12.1",
@@ -3731,7 +3731,7 @@ version = "0.4.6"
 dependencies = [
  "anyhow",
  "blake3",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "playbox-core",
  "playbox-git",
  "playbox-net",
@@ -3752,7 +3752,7 @@ dependencies = [
  "blake3",
  "bytes",
  "chrono",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "iroh",
  "iroh-gossip",
  "iroh-relay",
@@ -3777,7 +3777,7 @@ dependencies = [
  "anyhow",
  "axum",
  "blake3",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "playbox-core",
  "playbox-mcp",
  "rap-client",
