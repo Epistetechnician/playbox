@@ -30,7 +30,13 @@ class HFIO:
         pkv = self.model(input_ids=ids, use_cache=True).past_key_values
         if not hasattr(pkv, "crop"):  # older model classes hand back the legacy tuple
             from transformers import DynamicCache
-            pkv = DynamicCache.from_legacy_cache(pkv)
+            if hasattr(DynamicCache, "from_legacy_cache"):
+                pkv = DynamicCache.from_legacy_cache(pkv)
+            else:
+                cache = DynamicCache()
+                for idx, (k, v) in enumerate(pkv):
+                    cache.update(k, v, idx)
+                pkv = cache
         return pkv
 
     def generate(self, ids, n: int, cache=None, vec=None, prefix_ids=None) -> str:
@@ -53,7 +59,9 @@ class HFIO:
             if h:
                 h.remove()
             if cache is not None:
-                cache.crop(prefix_ids.shape[1])  # back to the shared prefix: the next turn reuses it untouched
+                excess = cache.get_seq_length() - prefix_ids.shape[1]
+                if excess > 0:
+                    cache.crop(-excess)  # back to the shared prefix: the next turn reuses it untouched
         return self.tok.decode(out[0, full.shape[1]:], skip_special_tokens=True)
 
 

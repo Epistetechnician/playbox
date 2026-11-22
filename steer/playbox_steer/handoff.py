@@ -78,7 +78,13 @@ def unpack(data: bytes) -> tuple[ca.Record, str, DynamicCache]:
     if any(t.is_floating_point() and not bool(torch.isfinite(t).all()) for kv in layers for t in kv):
         raise HandoffError("cache holds NaN or infinite values")      # a signer can sign these; they poison every later token
     try:
-        return rec, text, DynamicCache.from_legacy_cache(tuple(layers))
+        if hasattr(DynamicCache, "from_legacy_cache"):
+            cache = DynamicCache.from_legacy_cache(tuple(layers))
+        else:
+            cache = DynamicCache()
+            for idx, (k, v) in enumerate(layers):
+                cache.update(k, v, idx)
+        return rec, text, cache
     except Exception as e:  # tensors of a shape or type a cache cannot hold
         raise HandoffError(f"malformed cache: {type(e).__name__}") from None
 
