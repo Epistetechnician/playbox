@@ -108,7 +108,7 @@ impl Config {
                 "the leader is not in the host set".into(),
             ));
         }
-        if self.k * 2 <= n || self.k > n {
+        if self.k > n || self.k * 2 <= n {
             return Err(LogError::BadConfig(format!(
                 "threshold {} must be more than half of {n} hosts and at most {n}",
                 self.k
@@ -1896,6 +1896,29 @@ mod tests {
         let mut forged = b.clone();
         forged.sig[0] ^= 1;
         assert!(Equivocation { a, b: forged }.verify(&l.room()).is_err());
+    }
+
+    #[test]
+    fn config_rejects_overflowing_k_without_panicking() {
+        let leader = pk(&key());
+        let mut hosts = BTreeSet::new();
+        hosts.insert(leader);
+        let bad = Config {
+            epoch: 0,
+            leader,
+            hosts,
+            k: usize::MAX / 2 + 1,
+        };
+        assert!(matches!(bad.check(), Err(LogError::BadConfig(_))));
+        let raw = json!({
+            "epoch": 0,
+            "leader": hex(&leader),
+            "hosts": [hex(&leader)],
+            "k": (usize::MAX / 2 + 1) as u64,
+        })
+        .to_string()
+        .into_bytes();
+        assert!(Config::from_payload(0, &raw).is_err());
     }
 
     // REQ: ROOM-13

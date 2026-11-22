@@ -172,10 +172,15 @@ impl Witness {
         }
         if cp.size == base_size {
             if cp.head != base_head {
-                return Err(Refusal::Fork(Equivocation {
-                    a: last.expect("size > 0 or head differs from zero").text,
-                    b: cp.text,
-                }));
+                return match last {
+                    Some(prev) => Err(Refusal::Fork(Equivocation {
+                        a: prev.text,
+                        b: cp.text,
+                    })),
+                    None => Err(Refusal::Inconsistent(
+                        "empty log (size 0) must have zero head".into(),
+                    )),
+                };
             }
             if !entries.is_empty() {
                 return Err(Refusal::Inconsistent(
@@ -415,6 +420,27 @@ mod tests {
         assert!(matches!(
             w.cosign("garbage", &[]),
             Err(Refusal::BadCheckpoint(_))
+        ));
+    }
+
+    #[test]
+    fn cosign_rejects_size_zero_nonzero_head_without_panicking() {
+        // A hostile checkpoint claiming size=0 with a non-zero head for an unseen origin
+        // previously panicked in `last.expect(...)`.
+        let hostile = record::sign(
+            CP,
+            &[
+                ("size", "0".into()),
+                ("head", hex(&[0xaa; 32])),
+                ("time", "1".into()),
+            ],
+            &k(HOST),
+        )
+        .unwrap();
+        let mut w = Witness::new(k(10));
+        assert!(matches!(
+            w.cosign(&hostile, &[]),
+            Err(Refusal::Inconsistent(_))
         ));
     }
 }
