@@ -106,7 +106,7 @@ def make_handler(hub, auth, store, opts):
                 vs = str(v)
                 if "\r" in k or "\n" in k or "\r" in vs or "\n" in vs:
                     raise ValueError("invalid header value")
-                self.send_header(k, vs)
+                self.send_header(k.replace("\r", "").replace("\n", ""), vs.replace("\r", "").replace("\n", ""))
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
@@ -369,12 +369,15 @@ def make_handler(hub, auth, store, opts):
                         hub.sec.add("invite", "An invite page was opened", "info", rec0.get("room") if rec0 else None)
                     return self.j(200 if v else 404, v or {"state": "unknown"})
                 if p.startswith("/vendor/"):
-                    vendor_root = (STATIC / "vendor").resolve()
+                    vendor_root = os.path.realpath(str(STATIC / "vendor"))
                     ok_path = re.fullmatch(r"/vendor/[A-Za-z0-9._/-]{1,80}\Z", p) and ".." not in p
-                    vf = Path(os.path.normpath(str(STATIC / p[1:]))).resolve() if ok_path else None
-                    vt = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}.get(vf.suffix) if vf else None
-                    if vt and vf.is_relative_to(vendor_root) and vf.is_file():
-                        return self.send(200, vf.read_bytes(), vt, {"Cache-Control": "public, max-age=86400"})
+                    if ok_path:
+                        norm = os.path.normpath(os.path.join(vendor_root, p[len("/vendor/"):]))
+                        if norm.startswith(vendor_root + os.sep):
+                            vf = Path(norm)
+                            vt = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}.get(vf.suffix)
+                            if vt and vf.is_file() and os.path.realpath(norm).startswith(vendor_root + os.sep):
+                                return self.send(200, vf.read_bytes(), vt, {"Cache-Control": "public, max-age=86400"})
                     return self.j(404, {"error": "not found"})
                 if p in PUBLIC_FILES:
                     f, ct = PUBLIC_FILES[p]
@@ -1475,14 +1478,18 @@ def make_handler(hub, auth, store, opts):
         def tamper(self, room):
             b = self.body()
             home = Path(room.home).resolve()
+            home_prefix = str(home) + os.sep
             try:
                 raw_path = str(b["path"])
                 if "\x00" in raw_path:
                     raise ValueError("null byte")
-                src = Path(os.path.normpath(os.path.expanduser(raw_path))).resolve()
+                norm = os.path.normpath(os.path.expanduser(raw_path))
             except (KeyError, OSError, ValueError):
                 raise AuthError(400, "need {path}")
-            if not (src.is_relative_to(home) and src != home and src.is_file()):
+            if not norm.startswith(home_prefix):
+                raise AuthError(400, "only logs under the room's Playbox home can be used")
+            src = Path(os.path.realpath(norm))
+            if not (str(src).startswith(home_prefix) and src.is_file()):
                 raise AuthError(400, "only logs under the room's Playbox home can be used")
             data = bytearray(src.read_bytes())
             if len(data) < 2:
