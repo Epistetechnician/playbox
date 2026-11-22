@@ -34,13 +34,40 @@ def http_req(url, *, headers=None):
         return e.code, dict(e.headers), e.read()
 
 
-def main():
+def test_hub_live_http_e2e():
     tmp = tempfile.mkdtemp(prefix="pbx-live-e2e-")
     port = free_port()
     proc = None
     try:
-        # Pre-seed an authenticated local session token in the throwaway hub store
-        env = dict(os.environ, PLAYBOX_HUB_HOME=tmp)
+        # Pre-seed an authenticated local session token + sample archived room in the throwaway hub store
+        sys.path.insert(0, str(UI_DIR))
+        from hub.archive import Archive
+        from hub.auth import Auth
+        from hub.store import Store
+
+        hub_dir = Path(tmp)
+        store = Store(hub_dir)
+        auth = Auth(store)
+        now_s = time.time()
+        rid = "live-e2e-room"
+        room_dir = hub_dir / "rooms" / rid
+        room_dir.mkdir(parents=True, exist_ok=True)
+        with store.lock:
+            store.d["creds"].append({
+                "id": "cred-e2e", "rp_id": "localhost", "name": "E2E Key", "created": now_s, "last": now_s,
+            })
+            store.d["rooms"].append({
+                "id": rid, "label": "Live E2E Room", "kind": "join",
+                "path": str(room_dir), "created": now_s, "muted": False,
+            })
+            store.save()
+        tok = auth.new_session("cred-e2e", False, "live-e2e", "127.0.0.1", "E2E Key")
+        Archive(room_dir).append([
+            {"seq": 1, "kind": "event", "from": "peer1", "text": "task ok sh exit 0", "time_ms": 1700000001000,
+             "meta": {"event": "task", "ok": True, "runner": "openshell", "image": "pb-swe-django:arm64", "ms": 42}},
+        ])
+
+        env = dict(os.environ, PLAYBOX_HUB_HOME=tmp, PLAYBOX_HUB_NO_MACHINE="1")
         proc = subprocess.Popen(
             [sys.executable, str(UI_DIR / "playbox_hub.py"), "--port", str(port), "--home", tmp],
             stdout=subprocess.PIPE,
@@ -74,7 +101,22 @@ def main():
         code_unauth2, _, _ = http_req(base + "/api/search?q=openshell")
         assert code_unauth2 == 401, f"expected 401 unauthenticated, got {code_unauth2}"
 
-        print("hub live HTTP E2E passed (ETag/304 + auth gating verified)")
+        # 3. Authenticated API endpoints with seeded session cookie return 200 + expected payloads
+        auth_hdr = {"Cookie": f"pbs={tok}"}
+        c_sys, _, b_sys = http_req(base + "/api/system", headers=auth_hdr)
+        assert c_sys == 200, f"expected 200 /api/system, got {c_sys}"
+        sys_data = json.loads(b_sys.decode("utf-8"))
+        assert "health" in sys_data and "posture" in sys_data, sys_data.keys()
+
+        c_set, _, b_set = http_req(base + "/api/settings/search?q=tailscale", headers=auth_hdr)
+        assert c_set == 200, f"expected 200 /api/settings/search, got {c_set}"
+        set_data = json.loads(b_set.decode("utf-8"))
+        assert set_data.get("results"), set_data
+
+        c_srch, _, b_srch = http_req(base + "/api/search?q=openshell", headers=auth_hdr)
+        assert c_srch == 200, f"expected 200 /api/search, got {c_srch}"
+        srch_data = json.loads(b_srch.decode("utf-8"))
+        assert srch_data.get("total", 0) >= 1 and srch_data["results"][0]["room"] == rid, srch_data
     finally:
         if proc:
             proc.terminate()
@@ -83,6 +125,11 @@ def main():
             except subprocess.TimeoutExpired:
                 proc.kill()
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main():
+    test_hub_live_http_e2e()
+    print("hub live HTTP E2E passed (ETag/304 + auth gating + authenticated API verified)")
 
 
 if __name__ == "__main__":

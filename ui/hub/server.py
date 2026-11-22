@@ -1,6 +1,5 @@
 """The Playbox hub: one PWA, many rooms, passkey auth, live events, payload-free push."""
 import argparse
-import hmac
 import http.server
 import socketserver
 import ipaddress
@@ -25,7 +24,7 @@ from .auth import Auth, AuthError, PROXY_HEADERS, hostname_of
 from . import agents as agentmod
 from .aiproxy import AiproxyHub, AiproxyHubError
 from .integrations import Integrations, IntegError
-from .invites import Invites, InviteError
+from .invites import Invites
 from .knock import KnockError, Knocks, Outgoing, LINK_TTL
 from .rooms import Hub
 from playbox_ui import discover_repos, witness_decide, witness_state
@@ -1063,7 +1062,6 @@ def make_handler(hub, auth, store, opts):
                 emit(b"retry: 3000\n\n")
                 emit(sse("hello", {"rooms": hub.digests(), "attention": hub.attention(), "activity": hub.recent()}))
                 self.wfile.flush()
-                last = time.time()
                 while True:
                     try:
                         kind, data = q.get(timeout=15)
@@ -1619,7 +1617,6 @@ class QuickBindServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
     def server_bind(self):
-        import socketserver
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]
         self.server_name = str(host)
@@ -1751,7 +1748,7 @@ def main(argv=None):
             print("Tailscale is not running or not installed; skipping --tailscale.", flush=True)
             opts["tailscale"] = False
         else:
-            r = subprocess.run([ts, "serve", "--bg", f"--https=443", f"http://127.0.0.1:{port}"], capture_output=True, text=True, timeout=30)
+            r = subprocess.run([ts, "serve", "--bg", "--https=443", f"http://127.0.0.1:{port}"], capture_output=True, text=True, timeout=30)
             if r.returncode != 0:
                 print("`tailscale serve` failed: " + (r.stderr or r.stdout).strip()[:200], flush=True)
                 ts_name = None
