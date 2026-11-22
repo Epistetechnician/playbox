@@ -28,6 +28,10 @@ use std::{
 
 pub const ROOMLOG_ALPN: &[u8] = b"playbox/roomlog/1";
 const MAX_MSG: usize = 8 * 1024 * 1024;
+/// Maximum number of distinct checkpoint certificates retained per node.
+const MAX_CERTS: usize = 256;
+/// Stream I/O timeout for peer-to-peer roomlog RPCs so a stalled peer cannot hang `ask_all`/`pull`.
+const RPC_IO_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// What this host has promised and seen, kept next to the log. A promise must survive a restart or a host could
 /// sign two rival bids for one epoch.
@@ -834,9 +838,12 @@ impl RoomLogNode {
                         l.merge(have, &sc);
                     }
                     None => {
-                        let mut fresh = SignedCheckpoint::new(sc.cp.clone());
-                        l.merge(&mut fresh, &sc);
-                        certs.push(fresh);
+                        if certs.len() < MAX_CERTS {
+                            let mut fresh = SignedCheckpoint::new(sc.cp.clone());
+                            if l.merge(&mut fresh, &sc) > 0 {
+                                certs.push(fresh);
+                            }
+                        }
                     }
                 }
             }
@@ -894,10 +901,14 @@ fn load_text(
     let mut certs = Vec::new();
     if let Some(l) = &log {
         for c in cert_lines {
+            if certs.len() >= MAX_CERTS {
+                break;
+            }
             if let Some(sc) = cert_from_json(&c) {
                 let mut fresh = SignedCheckpoint::new(sc.cp.clone());
-                l.merge(&mut fresh, &sc);
-                certs.push(fresh);
+                if l.merge(&mut fresh, &sc) > 0 {
+                    certs.push(fresh);
+                }
             }
         }
     }
@@ -1072,10 +1083,15 @@ async fn ask(endpoint: &Endpoint, peer: &EndpointAddr, req: &Value) -> Result<Va
     )
     .await
     .map_err(|_| anyhow!("timed out connecting to {}", peer.id.fmt_short()))??;
-    let (mut send, mut recv) = conn.open_bi().await?;
-    send.write_all(req.to_string().as_bytes()).await?;
-    send.finish()?;
-    let reply = recv.read_to_end(MAX_MSG).await?;
+    let reply = tokio::time::timeout(RPC_IO_TIMEOUT, async {
+        let (mut send, mut recv) = conn.open_bi().await?;
+        send.write_all(req.to_string().as_bytes()).await?;
+        send.finish()?;
+        let reply = recv.read_to_end(MAX_MSG).await?;
+        anyhow::Ok(reply)
+    })
+    .await
+    .map_err(|_| anyhow!("timed out waiting for reply from {}", peer.id.fmt_short()))??;
     conn.close(0u32.into(), b"done");
     let v: Value = serde_json::from_slice(&reply).context("bad reply")?;
     if let Some(e) = v["error"].as_str() {

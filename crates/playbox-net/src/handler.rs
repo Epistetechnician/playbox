@@ -292,7 +292,7 @@ impl RoomHandler {
             from,
             Admit {
                 issued: now,
-                expires: now + ttl,
+                expires: now.saturating_add(ttl),
                 invite: id.chars().take(8).collect(),
                 cpu_milli: caps.cpu_milli,
                 mem_mib: caps.mem_mib,

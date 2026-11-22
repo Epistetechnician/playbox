@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 
 /// Most other hosts a link carries.
 pub const MAX_HINTS: usize = 5;
+/// Maximum encoded byte length of a `playbox://...#invite` link accepted by [`Link::parse`].
+pub const MAX_LINK_BYTES: usize = 32 * 1024;
+/// Maximum encoded byte length of a copy-pasteable peer address accepted by [`decode_peer`].
+pub const MAX_PEER_BYTES: usize = 8 * 1024;
 
 /// `playbox://<base64url(json({addr, t}))>#<invite>`, where `t` names the host's transport.
 /// Older links held just the address; those parse with no transport.
@@ -66,6 +70,9 @@ pub fn encode_peer(addr: &EndpointAddr) -> String {
 /// Returns an error if the operation fails; the error carries the cause.
 pub fn decode_peer(s: &str) -> Result<EndpointAddr> {
     let s = s.trim();
+    if s.len() > MAX_PEER_BYTES {
+        bail!("encoded peer address exceeds {MAX_PEER_BYTES} bytes");
+    }
     if let Ok(id) = s.parse::<EndpointId>() {
         return Ok(EndpointAddr::new(id));
     }
@@ -105,12 +112,22 @@ impl Link {
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub fn parse(s: &str) -> Result<Self> {
+        if s.len() > MAX_LINK_BYTES {
+            bail!("link exceeds {MAX_LINK_BYTES} bytes");
+        }
         let rest = s
             .strip_prefix(LINK_SCHEME)
             .ok_or_else(|| anyhow!("link must start with {LINK_SCHEME}"))?;
         let (body, invite) = rest
             .split_once('#')
             .ok_or_else(|| anyhow!("link has no invite fragment"))?;
+        if invite.is_empty()
+            || invite
+                .bytes()
+                .any(|b| b.is_ascii_control() || b.is_ascii_whitespace())
+        {
+            bail!("empty or invalid invite");
+        }
         let json = B64.decode(body).context("link is not valid base64")?;
         let (addr, t, bound, hosts) = match serde_json::from_slice::<LinkBody>(&json) {
             Ok(b) => (b.addr, b.t, b.b, b.h),
@@ -121,9 +138,6 @@ impl Link {
                 Vec::new(),
             ),
         };
-        if invite.is_empty() {
-            bail!("empty invite");
-        }
         let transport = t.map(|t| Transport::parse(&t)).transpose()?;
         Ok(Self {
             addr,
@@ -132,5 +146,24 @@ impl Link {
             bound,
             hosts: hosts.into_iter().take(MAX_HINTS).collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn link_and_peer_parsers_enforce_size_and_invite_character_bounds() {
+        let huge_link = format!("playbox://{}#inv", "A".repeat(MAX_LINK_BYTES + 16));
+        assert!(Link::parse(&huge_link).is_err());
+
+        let huge_peer = "A".repeat(MAX_PEER_BYTES + 16);
+        assert!(decode_peer(&huge_peer).is_err());
+
+        let bad_invite = "playbox://e30#inv\nwith-newline";
+        assert!(Link::parse(bad_invite).is_err());
+        let space_invite = "playbox://e30#inv with space";
+        assert!(Link::parse(space_invite).is_err());
     }
 }

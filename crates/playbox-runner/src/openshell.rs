@@ -309,7 +309,12 @@ fn ok(out: &TaskOutput, what: &str) -> Result<()> {
 
 /// Validate a relative workspace path coming from an untrusted sandbox archive or file listing.
 /// Rejects absolute paths, `..`, NUL/control bytes, backslashes, and any `.git` component.
-fn validate_rel_path(raw: &str) -> Result<String> {
+/// Validate a relative sandbox path (public for fuzzing and security regression tests).
+///
+/// # Errors
+///
+/// Fails if the path is empty, absolute, contains `..`, NUL/control bytes, backslashes, or `.git`.
+pub fn validate_rel_path(raw: &str) -> Result<String> {
     if raw.contains(['\0', '\n', '\r', '\\']) {
         bail!("forbidden character in sandbox path {raw:?}");
     }
@@ -349,8 +354,9 @@ fn validate_rel_path(raw: &str) -> Result<String> {
 }
 
 /// Verify that a symlink at `entry_rel` pointing to `target` stays strictly inside the workspace root
-/// and does not reference `.git`.
-fn validate_symlink_target(entry_rel: &str, target: &str) -> Result<()> {
+/// and does not reference `.git`. Returns the normalized workspace-relative resolved target path
+/// (or `""` when resolving to the workspace root itself).
+fn resolve_symlink_target(entry_rel: &str, target: &str) -> Result<String> {
     if target.is_empty() || target.starts_with('/') || target.contains(['\0', '\n', '\r', '\\']) {
         bail!("unsafe symlink target {target:?} for {entry_rel:?}");
     }
@@ -372,7 +378,18 @@ fn validate_symlink_target(entry_rel: &str, target: &str) -> Result<()> {
             c => depth.push(c),
         }
     }
-    Ok(())
+    Ok(depth.join("/"))
+}
+
+/// Verify that a symlink at `entry_rel` pointing to `target` stays strictly inside the workspace root
+/// and does not reference `.git`.
+///
+/// # Errors
+///
+/// Fails if the symlink target is absolute, contains control characters or backslashes, escapes the
+/// workspace root, or references `.git`.
+pub fn validate_symlink_target(entry_rel: &str, target: &str) -> Result<()> {
+    resolve_symlink_target(entry_rel, target).map(|_| ())
 }
 
 fn cstr_field(bytes: &[u8]) -> Result<String> {
@@ -402,40 +419,73 @@ fn parse_tar_size(field: &[u8]) -> Result<u64> {
     u64::from_str_radix(t, 8).with_context(|| format!("invalid tar octal size {t:?}"))
 }
 
-fn parse_pax_records(data: &[u8], path: &mut Option<String>, linkpath: &mut Option<String>) {
+fn parse_pax_records(
+    data: &[u8],
+    path: &mut Option<String>,
+    linkpath: &mut Option<String>,
+) -> Result<()> {
     let mut i = 0;
     while i < data.len() {
-        let Some(sp) = data[i..].iter().position(|&b| b == b' ') else {
-            break;
-        };
-        let Ok(len_str) = std::str::from_utf8(&data[i..i + sp]) else {
-            break;
-        };
-        let Ok(rec_len) = len_str.parse::<usize>() else {
-            break;
-        };
-        if rec_len == 0 || i.saturating_add(rec_len) > data.len() {
-            break;
+        let sp = data[i..]
+            .iter()
+            .position(|&b| b == b' ')
+            .ok_or_else(|| anyhow!("malformed PAX record: missing length delimiter"))?;
+        let len_str = std::str::from_utf8(&data[i..i + sp])
+            .context("malformed PAX record: non-utf8 length")?;
+        let rec_len = len_str
+            .parse::<usize>()
+            .context("malformed PAX record: invalid length")?;
+        if rec_len <= sp + 1 || i.checked_add(rec_len).is_none_or(|end| end > data.len()) {
+            bail!("malformed PAX record: length out of bounds");
         }
-        let body = &data[i + sp + 1..i + rec_len];
-        let body = body.strip_suffix(b"\n").unwrap_or(body);
-        if let Ok(kv) = std::str::from_utf8(body) {
-            if let Some(v) = kv.strip_prefix("path=") {
-                *path = Some(v.to_string());
-            } else if let Some(v) = kv.strip_prefix("linkpath=") {
-                *linkpath = Some(v.to_string());
+        let raw_body = &data[i + sp + 1..i + rec_len];
+        let body = raw_body
+            .strip_suffix(b"\n")
+            .ok_or_else(|| anyhow!("malformed PAX record: missing trailing newline"))?;
+        if body.contains(&0) {
+            bail!("malformed PAX record: interior NUL byte");
+        }
+        let kv = std::str::from_utf8(body).context("malformed PAX record: non-utf8 body")?;
+        let (key, val) = kv
+            .split_once('=')
+            .ok_or_else(|| anyhow!("malformed PAX record: missing '='"))?;
+        if key.starts_with("GNU.sparse") {
+            bail!("PAX sparse header {key:?} refused");
+        }
+        if key == "path" {
+            if path.replace(val.to_string()).is_some() {
+                bail!("duplicate PAX path header refused");
             }
+        } else if key == "linkpath" && linkpath.replace(val.to_string()).is_some() {
+            bail!("duplicate PAX linkpath header refused");
         }
         i += rec_len;
     }
+    Ok(())
+}
+
+/// Maximum number of entries allowed in an untrusted workspace tar archive.
+const MAX_TAR_ENTRIES: usize = 65_536;
+
+/// Iterate over strict ancestor directory prefixes of a normalized relative path (`"a/b/c"` -> `"a"`, `"a/b"`).
+fn strict_ancestors(path: &str) -> impl Iterator<Item = &str> {
+    path.match_indices('/').map(move |(idx, _)| &path[..idx])
 }
 
 /// Validate an untrusted POSIX/ustar/PAX/GNU tar stream returned from a sandbox before unpacking it
-/// on the host. Refuses absolute paths, `..`, `.git`, hardlinks, device nodes, FIFOs, and symlinks
-/// escaping the workspace root. Returns normalized relative file/dir entries.
-fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
+/// on the host. Refuses absolute paths, `..`, `.git`, hardlinks, device nodes, FIFOs, PAX global
+/// headers, trailing data after EOF blocks, chained symlinks, symlink-ancestor traversal, and
+/// symlinks escaping the workspace root. Returns normalized relative file/dir entries.
+///
+/// # Errors
+///
+/// Fails closed if the archive is malformed, oversized, or contains any unsafe entry or symlink.
+pub fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
     let mut pos = 0usize;
     let mut entries = Vec::new();
+    let mut symlinks: Vec<(String, String)> = Vec::new();
+    let mut non_symlinks = std::collections::HashSet::new();
+    let mut total_data_bytes = 0u64;
     let mut pax_path: Option<String> = None;
     let mut pax_link: Option<String> = None;
     let mut gnu_name: Option<String> = None;
@@ -445,9 +495,21 @@ fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
         let hdr = &bytes[pos..pos + 512];
         pos += 512;
         if hdr.iter().all(|&b| b == 0) {
+            if pax_path.is_some() || pax_link.is_some() || gnu_name.is_some() || gnu_link.is_some()
+            {
+                bail!("dangling extended tar header before EOF");
+            }
+            if bytes[pos..].iter().any(|&b| b != 0) {
+                bail!("non-zero data after tar EOF block refused");
+            }
+            pos = bytes.len();
             break;
         }
         let size = parse_tar_size(&hdr[124..136])?;
+        total_data_bytes = total_data_bytes
+            .checked_add(size)
+            .filter(|&t| t <= MAX_STREAM_BYTES)
+            .ok_or_else(|| anyhow!("tar archive payload exceeds {MAX_STREAM_BYTES} bytes"))?;
         let data_len = usize::try_from(size).context("tar entry size exceeds address space")?;
         let padded = data_len
             .checked_add(511)
@@ -462,19 +524,34 @@ fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
         let kind = hdr[156];
         match kind {
             b'x' => {
-                parse_pax_records(payload, &mut pax_path, &mut pax_link);
+                parse_pax_records(payload, &mut pax_path, &mut pax_link)?;
                 continue;
             }
-            b'g' => continue,
+            b'g' => bail!("PAX global extended header refused"),
             b'L' => {
-                gnu_name = Some(cstr_field(payload)?);
+                if gnu_name.replace(cstr_field(payload)?).is_some() {
+                    bail!("duplicate GNU longname header refused");
+                }
                 continue;
             }
             b'K' => {
-                gnu_link = Some(cstr_field(payload)?);
+                if gnu_link.replace(cstr_field(payload)?).is_some() {
+                    bail!("duplicate GNU longlink header refused");
+                }
                 continue;
             }
             _ => {}
+        }
+
+        if entries.len() >= MAX_TAR_ENTRIES {
+            bail!("tar archive exceeds maximum entry count ({MAX_TAR_ENTRIES})");
+        }
+
+        if pax_path.is_some() && gnu_name.is_some() {
+            bail!("conflicting PAX and GNU path headers refused");
+        }
+        if pax_link.is_some() && gnu_link.is_some() {
+            bail!("conflicting PAX and GNU link headers refused");
         }
 
         let name = if let Some(p) = pax_path.take().or_else(|| gnu_name.take()) {
@@ -488,10 +565,10 @@ fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
                 format!("{prefix}/{base}")
             }
         };
-        let link = pax_link
-            .take()
-            .or_else(|| gnu_link.take())
-            .unwrap_or_else(|| cstr_field(&hdr[157..257]).unwrap_or_default());
+        let link = match pax_link.take().or_else(|| gnu_link.take()) {
+            Some(l) => l,
+            None => cstr_field(&hdr[157..257])?,
+        };
 
         match kind {
             0 | b'0' | b'5' => {
@@ -502,11 +579,14 @@ fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
                     }
                     bail!("regular tar entry has empty/dot name");
                 }
-                entries.push(validate_rel_path(&name)?);
+                let norm = validate_rel_path(&name)?;
+                non_symlinks.insert(norm.clone());
+                entries.push(norm);
             }
             b'2' => {
                 let norm = validate_rel_path(&name)?;
-                validate_symlink_target(&norm, &link)?;
+                let resolved = resolve_symlink_target(&norm, &link)?;
+                symlinks.push((norm.clone(), resolved));
                 entries.push(norm);
             }
             b'1' => bail!("hardlink tar entry {name:?} refused"),
@@ -517,6 +597,44 @@ fn validate_tar_bytes(bytes: &[u8]) -> Result<Vec<String>> {
             ),
         }
     }
+    if pos != bytes.len() && bytes[pos..].iter().any(|&b| b != 0) {
+        bail!("trailing non-zero bytes in tar archive refused");
+    }
+    if pax_path.is_some() || pax_link.is_some() || gnu_name.is_some() || gnu_link.is_some() {
+        bail!("dangling extended tar header at EOF");
+    }
+
+    // Second pass: ensure no archive entry traverses a symlink ancestor and no symlink chains
+    // through another symlink (preventing `a/b -> ..` + `a/b/c -> ../..` workspace escapes).
+    if !symlinks.is_empty() {
+        let mut symlink_paths = std::collections::HashSet::with_capacity(symlinks.len());
+        for (sym_path, _) in &symlinks {
+            if non_symlinks.contains(sym_path) {
+                bail!("symlink {sym_path:?} collides with regular/directory entry");
+            }
+            if !symlink_paths.insert(sym_path.as_str()) {
+                bail!("duplicate symlink entry {sym_path:?} refused");
+            }
+        }
+        for entry in &entries {
+            for anc in strict_ancestors(entry) {
+                if symlink_paths.contains(anc) {
+                    bail!("tar entry {entry:?} traverses symlink ancestor {anc:?}");
+                }
+            }
+        }
+        for (sym_path, resolved) in &symlinks {
+            if !resolved.is_empty() && symlink_paths.contains(resolved.as_str()) {
+                bail!("chained symlink {sym_path:?} -> {resolved:?} refused");
+            }
+            for anc in strict_ancestors(resolved) {
+                if symlink_paths.contains(anc) {
+                    bail!("symlink {sym_path:?} target {resolved:?} traverses symlink {anc:?}");
+                }
+            }
+        }
+    }
+
     Ok(entries)
 }
 
@@ -1181,7 +1299,15 @@ impl OpenShellRunner {
             return Ok(());
         }
         if !changed.is_empty() {
-            let list_bytes = (changed.join("\n") + "\n").into_bytes();
+            // Prefix each relative path with `./` so a filename beginning with `-` cannot be
+            // interpreted as an option by GNU `tar -T -`.
+            let mut list_text = String::new();
+            for p in &changed {
+                list_text.push_str("./");
+                list_text.push_str(p);
+                list_text.push('\n');
+            }
+            let list_bytes = list_text.into_bytes();
             let tar_res = if list_bytes.len() <= STDIN_CHUNK {
                 piped(
                     osh(&[
@@ -1544,6 +1670,74 @@ mod tests {
                 "hostile tar entry must be rejected"
             );
         }
+    }
+
+    #[test]
+    fn untrusted_tar_validator_blocks_pax_global_zero_smuggling_and_symlink_chains() {
+        // 1. PAX global extended header ('g') attempting to override path on subsequent entry.
+        let mut pax_global = Vec::new();
+        let pax_payload = b"23 path=../../.bashrc\n";
+        pax_global.extend(make_tar_entry("pax_global_header", b'g', "", pax_payload));
+        pax_global.extend(make_tar_entry("benign.txt", b'0', "", b"pwned"));
+        assert!(
+            validate_tar_bytes(&finish_tar(pax_global)).is_err(),
+            "PAX 'g' global header must be refused"
+        );
+
+        // 2. Single-zero-block EOF smuggling: 512 zero bytes followed by a malicious entry.
+        let mut smuggled = Vec::new();
+        smuggled.extend(make_tar_entry("ok.txt", b'0', "", b"hi"));
+        smuggled.extend([0u8; 512]); // only ONE zero block!
+        smuggled.extend(make_tar_entry("../../escaped.txt", b'0', "", b"pwned"));
+        smuggled.extend([0u8; 1024]);
+        assert!(
+            validate_tar_bytes(&smuggled).is_err(),
+            "single-zero-block smuggling must be refused"
+        );
+
+        // 3. Chained symlink workspace escape: `a/b -> ..`, then `a/b/c -> ../..`, then `a/b/c/pwned`.
+        let mut sym_chain = Vec::new();
+        sym_chain.extend(make_tar_entry("a/b", b'2', "..", b""));
+        sym_chain.extend(make_tar_entry("a/b/c", b'2', "../..", b""));
+        sym_chain.extend(make_tar_entry("a/b/c/pwned", b'0', "", b"escape"));
+        assert!(
+            validate_tar_bytes(&finish_tar(sym_chain)).is_err(),
+            "symlink-ancestor write / chained symlink escape must be refused"
+        );
+
+        // 4. Symlink pointing to another symlink (regardless of entry order).
+        let mut sym_to_sym = Vec::new();
+        sym_to_sym.extend(make_tar_entry("a/first", b'2', "second", b""));
+        sym_to_sym.extend(make_tar_entry("a/second", b'2', "..", b""));
+        assert!(
+            validate_tar_bytes(&finish_tar(sym_to_sym)).is_err(),
+            "chained symlink targeting another symlink must be refused"
+        );
+
+        // 5. Malformed / non-UTF-8 PAX extended header ('x') must fail closed instead of ignoring.
+        let mut bad_pax = Vec::new();
+        bad_pax.extend(make_tar_entry("pax", b'x', "", b"9999 path=ok\n"));
+        bad_pax.extend(make_tar_entry("ok.txt", b'0', "", b"x"));
+        assert!(
+            validate_tar_bytes(&finish_tar(bad_pax)).is_err(),
+            "malformed PAX record must fail closed"
+        );
+
+        let mut non_utf8_pax = Vec::new();
+        non_utf8_pax.extend(make_tar_entry("pax", b'x', "", b"14 path=\xff\xfe/a\n"));
+        non_utf8_pax.extend(make_tar_entry("ok.txt", b'0', "", b"x"));
+        assert!(
+            validate_tar_bytes(&finish_tar(non_utf8_pax)).is_err(),
+            "non-UTF-8 PAX record must fail closed"
+        );
+
+        // 6. Dangling PAX extended header at EOF must fail closed.
+        let mut dangling_pax = Vec::new();
+        dangling_pax.extend(make_tar_entry("pax", b'x', "", b"13 path=a.py\n"));
+        assert!(
+            validate_tar_bytes(&finish_tar(dangling_pax)).is_err(),
+            "dangling PAX header must fail closed"
+        );
     }
 
     #[test]

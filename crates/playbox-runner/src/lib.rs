@@ -96,7 +96,10 @@ pub use krun::{find_helper, KrunRunner};
 mod openshell;
 pub use openshell::{
     policy_yaml as openshell_policy_yaml,
-    policy_yaml_with_endpoints as openshell_policy_yaml_with_endpoints, OpenShellRunner,
+    policy_yaml_with_endpoints as openshell_policy_yaml_with_endpoints,
+    validate_rel_path as validate_openshell_rel_path,
+    validate_symlink_target as validate_openshell_symlink_target,
+    validate_tar_bytes as validate_openshell_tar_bytes, OpenShellRunner,
 };
 
 /// How a stateful session task ([`Runner::run_session`]) mirrors workspace changes back to the host.

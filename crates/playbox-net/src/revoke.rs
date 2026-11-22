@@ -34,6 +34,12 @@ use tokio::{sync::mpsc, task::JoinHandle};
 pub const SYNC_ALPN: &[u8] = b"playbox/revsync/1";
 const HEADER: &str = "playbox.revoke.v1";
 const MAX_REPLY: usize = 8 * 1024 * 1024;
+/// Maximum byte length of a single canonical revocation notice (6 short ASCII lines).
+pub const MAX_NOTICE_BYTES: usize = 2048;
+/// Maximum number of revocation notices processed from a single pull reply.
+const MAX_SYNC_NOTICES: usize = 16_384;
+/// Per-peer stream I/O timeout for pull synchronization so one stalled peer cannot block others.
+const PULL_IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A signed statement that a grant is revoked and its holder barred.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +96,9 @@ impl Notice {
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub fn parse(text: &str, auth: &Authority) -> Result<Notice> {
+        if text.len() > MAX_NOTICE_BYTES {
+            bail!("revocation notice exceeds {MAX_NOTICE_BYTES} bytes");
+        }
         let lines: Vec<&str> = text.lines().collect();
         if lines.len() != 6 || lines[0] != HEADER {
             bail!("not a revocation notice");
@@ -307,8 +316,11 @@ impl Replication {
         let hear = tokio::spawn(async move {
             while let Ok(Some(ev)) = receiver.try_next().await {
                 if let Event::Received(msg) = ev {
-                    if let Ok(text) = String::from_utf8(msg.content.to_vec()) {
-                        let _ = apply_text(&st, &au, &text);
+                    if msg.content.len() > MAX_NOTICE_BYTES {
+                        continue;
+                    }
+                    if let Ok(text) = std::str::from_utf8(&msg.content) {
+                        let _ = apply_text(&st, &au, text);
                     }
                 }
             }
@@ -369,18 +381,36 @@ pub(crate) async fn pull_from(
     )
     .await
     .map_err(|_| anyhow!("timed out connecting to {}", peer.id.fmt_short()))??;
-    let (mut send, mut recv) = conn.open_bi().await?;
-    send.write_all(b"?").await?;
-    send.finish()?;
-    let reply = recv.read_to_end(MAX_REPLY).await?;
+    let reply = tokio::time::timeout(PULL_IO_TIMEOUT, async {
+        let (mut send, mut recv) = conn.open_bi().await?;
+        send.write_all(b"?").await?;
+        send.finish()?;
+        let reply = recv.read_to_end(MAX_REPLY).await?;
+        anyhow::Ok(reply)
+    })
+    .await
+    .map_err(|_| anyhow!("timed out pulling notices from {}", peer.id.fmt_short()))??;
     conn.close(0u32.into(), b"done");
     let texts: Vec<String> = serde_json::from_slice(&reply).context("bad sync reply")?;
     let mut new = 0;
-    for t in texts {
+    for t in texts.into_iter().take(MAX_SYNC_NOTICES) {
         // A bad notice from a peer is skipped, never trusted and never fatal.
         if apply_text(state, auth, &t).unwrap_or(false) {
             new += 1;
         }
     }
     Ok(new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notice_parse_rejects_oversized_payload_before_line_split() {
+        let auth = Authority::new("test-room");
+        let huge = "\n".repeat(MAX_NOTICE_BYTES + 1);
+        let err = Notice::parse(&huge, &auth).unwrap_err();
+        assert!(err.to_string().contains("exceeds"));
+    }
 }
