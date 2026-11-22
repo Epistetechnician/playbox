@@ -35,7 +35,9 @@ pub use handler::ReplayRecord;
 pub(crate) use handler::{finish, refuse, unauthorized, RoomHandler};
 pub use host::{Host, HostConfig};
 pub use keys::{identity_key, load_seed_hex, new_secret_key, random_bytes};
-pub use link::{decode_peer, encode_peer, key_for_link, Link, LinkOpts};
+pub use link::{
+    decode_peer, encode_peer, key_for_link, Link, LinkOpts, MAX_LINK_BYTES, MAX_PEER_BYTES,
+};
 pub use revoke::{Notice, SYNC_ALPN};
 pub use state::Admit;
 pub(crate) use state::{write_atomic, State};
