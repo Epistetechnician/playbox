@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Behavioral measures for steering experiments: an independent sentiment classifier and a local pairwise judge"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "torch==2.6.0",
-    "transformers==4.53.3",
+    "torch==2.15.0",
+    "transformers==5.23.0",
     "numpy<2.2",
     "sentencepiece>=0.2",
     "protobuf>=4",

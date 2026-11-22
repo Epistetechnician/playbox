@@ -44,7 +44,14 @@ def _dev(model):
 
 
 def _cache(past):
-    return past if isinstance(past, DynamicCache) else DynamicCache.from_legacy_cache(past)
+    if isinstance(past, DynamicCache):
+        return past
+    if hasattr(DynamicCache, "from_legacy_cache"):
+        return DynamicCache.from_legacy_cache(past)
+    cache = DynamicCache()
+    for idx, (k, v) in enumerate(past):
+        cache.update(k, v, idx)
+    return cache
 
 
 def _keeps_last(model) -> bool:
@@ -155,7 +162,9 @@ def run_rows(model, tok, rows_ctx: list[str], rows_dir: torch.Tensor, scale: flo
                 toks = toks[: toks.index(tok.eos_token_id)]
             text = tok.decode(toks, skip_special_tokens=True)
             results[i].append(Result(float(tl[i]), lexicon_score(text, trait), logits[i].cpu(), text))
-        base.crop(t0)  # rewind to the end of the context for the next query (a no-op if the model did not touch `base`)
+        excess = base.get_seq_length() - t0
+        if excess > 0:
+            base.crop(-excess)  # rewind to the end of the context for the next query (a no-op if the model did not touch `base`)
     return results
 
 

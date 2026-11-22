@@ -31,7 +31,7 @@ def legacy(past) -> tuple:
     """The cache as a tuple of (key, value) tensors per layer, whatever object the model returned."""
     if hasattr(past, "to_legacy_cache"):
         past = past.to_legacy_cache()
-    return tuple((k.detach(), v.detach()) for k, v in past)
+    return tuple((item[0].detach(), item[1].detach()) for item in past)
 
 
 def cache_bytes(past) -> bytes:
