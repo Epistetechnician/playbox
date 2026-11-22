@@ -265,10 +265,14 @@
       document.body.appendChild(pal);
       const inp = pal.querySelector("input");
       inp.addEventListener("input", () => { palQ = inp.value; palSel = 0; paintPalette(); });
+      inp.addEventListener("keydown", e => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); pal.close(); }
+      });
       pal.addEventListener("keydown", e => {
         if (e.key === "ArrowDown") { e.preventDefault(); if (palItems.length) { palSel = (palSel + 1) % palItems.length; paintPalette(); } }
         else if (e.key === "ArrowUp") { e.preventDefault(); if (palItems.length) { palSel = (palSel - 1 + palItems.length) % palItems.length; paintPalette(); } }
         else if (e.key === "Enter") { e.preventDefault(); runPaletteItem(palSel); }
+        else if (e.key === "Escape") { e.preventDefault(); pal.close(); }
       });
       pal.addEventListener("click", e => {
         if (e.target === pal) { pal.close(); return; }

@@ -257,7 +257,6 @@ fn install(app: &AppHandle, rel: &Release) -> Result<(), String> {
 /// Linux: the release asset is the AppImage itself. Download (checked against the signed hash), make it runnable, ask it for its version,
 /// then swap it in with two renames, keeping the old one as `<name>.previous`.
 fn install_appimage(app: &AppHandle, rel: &Release) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
     let current = bundle().ok_or("not running from an AppImage")?;
     let parent = current.parent().ok_or("no parent directory")?;
     let dirs = &app.state::<AppState>().dirs;
@@ -266,11 +265,9 @@ fn install_appimage(app: &AppHandle, rel: &Release) -> Result<(), String> {
     let image = update::download(&Source::github_latest(), rel, &dl).map_err(|e| e.to_string())?;
 
     // Same folder as the installed file, so the swap is a rename on one volume.
-    let new = parent.join(format!(".Playbox-update-{}.AppImage", std::process::id()));
+    let new = stage_executable_exclusive(&image, parent, ".Playbox-update-", ".AppImage")
+        .map_err(|e| format!("cannot write next to the app ({e})"))?;
     let result = (|| {
-        std::fs::copy(&image, &new).map_err(|e| format!("cannot write next to the app ({e})"))?;
-        std::fs::set_permissions(&new, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
         let said = run(Command::new(&new)
             .env("APPIMAGE_EXTRACT_AND_RUN", "1") // the check must work on a machine without FUSE too
             .arg("--version"))?;
@@ -297,6 +294,42 @@ fn install_appimage(app: &AppHandle, rel: &Release) -> Result<(), String> {
     result?;
     relaunch(&current);
     Ok(())
+}
+
+fn random_suffix() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0u128, |d| d.as_nanos());
+    let mut rnd = [0u8; 8];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        let _ = std::io::Read::read_exact(&mut f, &mut rnd);
+    }
+    let hex: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{}-{nanos:x}-{hex}", std::process::id())
+}
+
+/// Stage an executable file exclusively (`create_new`, mode `0o755`) with a random name so a
+/// pre-existing symlink or colliding filename cannot be followed or clobbered.
+fn stage_executable_exclusive(
+    src: &Path,
+    dir: &Path,
+    prefix: &str,
+    suffix: &str,
+) -> Result<PathBuf, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let dst = dir.join(format!("{prefix}{}{suffix}", random_suffix()));
+    let mut input = std::fs::File::open(src).map_err(|e| e.to_string())?;
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o755)
+        .open(&dst)
+        .map_err(|e| e.to_string())?;
+    std::io::copy(&mut input, &mut output).map_err(|e| {
+        let _ = std::fs::remove_file(&dst);
+        e.to_string()
+    })?;
+    Ok(dst)
 }
 
 /// Companion `.previous` backup kept by `install`, if any.
@@ -338,8 +371,10 @@ pub fn on_rollback(app: &AppHandle) {
 fn rollback_sync() -> Result<(), String> {
     let current = bundle().ok_or("not running from a packaged app")?;
     let previous = previous_path_for(&current).ok_or("no previous bundle path")?;
-    if !previous.exists() {
-        return Err("no previous version is saved on this machine".into());
+    let prev_meta = std::fs::symlink_metadata(&previous)
+        .map_err(|_| "no previous version is saved on this machine".to_string())?;
+    if prev_meta.file_type().is_symlink() {
+        return Err("refusing to roll back to a symlink".into());
     }
     let parent = current.parent().ok_or("no parent directory")?;
     if cfg!(target_os = "linux") {
@@ -359,9 +394,7 @@ fn rollback_sync() -> Result<(), String> {
             return Err("previous app bundle failed version check".into());
         }
     }
-    let aside = parent.join(format!(".Playbox-rollback-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&aside);
-    let _ = std::fs::remove_file(&aside);
+    let aside = parent.join(format!(".Playbox-rollback-{}", random_suffix()));
     std::fs::rename(&current, &aside).map_err(|e| e.to_string())?;
     if let Err(e) = std::fs::rename(&previous, &current) {
         let _ = std::fs::rename(&aside, &current);
@@ -407,5 +440,28 @@ mod tests {
                 "/home/u/Apps/Playbox-x86_64.AppImage.previous"
             ))
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stage_executable_exclusive_creates_unique_0755_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("pbd-stage-test-{}", random_suffix()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let src = dir.join("source.bin");
+        std::fs::write(&src, b"payload").expect("write source");
+
+        let staged = stage_executable_exclusive(&src, &dir, ".Playbox-update-", ".AppImage")
+            .expect("staging succeeds");
+        assert_eq!(std::fs::read(&staged).expect("read staged"), b"payload");
+        assert_eq!(
+            std::fs::metadata(&staged)
+                .expect("stat staged")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

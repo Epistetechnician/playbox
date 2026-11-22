@@ -238,11 +238,14 @@ pub fn require(
     numerator: usize,
     denominator: usize,
 ) -> Result<(), RecordError> {
+    if denominator == 0 {
+        return Err("receipt coverage threshold denominator must be non-zero".into());
+    }
     if c.responses == 0 {
         return Ok(());
     }
     let have = c.at_least(min);
-    if have * denominator >= c.responses * numerator {
+    if (have as u128) * (denominator as u128) >= (c.responses as u128) * (numerator as u128) {
         Ok(())
     } else {
         Err(format!(
@@ -362,5 +365,35 @@ mod tests {
             "nothing to back"
         );
         assert_eq!(Level::parse("notarized").unwrap(), Level::Notarized);
+    }
+
+    #[test]
+    fn require_rejects_zero_denominator_and_avoids_overflow() {
+        let c = Coverage {
+            responses: 1,
+            provider_signed: 1,
+            ..Coverage::default()
+        };
+        assert!(
+            require(&c, Level::ProviderSigned, 0, 0).is_err(),
+            "zero denominator must be rejected"
+        );
+        assert!(
+            require(&Coverage::default(), Level::ProviderSigned, 1, 0).is_err(),
+            "zero denominator must be rejected even when responses == 0"
+        );
+        // Large values that would overflow `usize` multiplication must not panic or wrap.
+        let huge = Coverage {
+            responses: 2,
+            provider_signed: 1,
+            ..Coverage::default()
+        };
+        assert!(require(&huge, Level::ProviderSigned, usize::MAX, usize::MAX).is_err());
+        let full = Coverage {
+            responses: 2,
+            provider_signed: 2,
+            ..Coverage::default()
+        };
+        assert!(require(&full, Level::ProviderSigned, usize::MAX, usize::MAX).is_ok());
     }
 }

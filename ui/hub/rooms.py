@@ -9,15 +9,15 @@ import json
 import os
 import queue
 import secrets
+import sys
 import threading
 import time
 from collections import deque
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
-import sys
 sys.path.insert(0, str(HERE))
-from playbox_ui import Sidecar, witness_decide, witness_state  # noqa: E402
+from playbox_ui import Sidecar, witness_state  # noqa: E402
 from .local import ask_host, hosting_dir, prune_stale  # noqa: E402
 from .archive import Archive  # noqa: E402
 from . import board, card as idcard  # noqa: E402
@@ -620,8 +620,11 @@ class Hub:
     def _publish_changes(self, room, new):
         old = room.digest
         room.digest = new
-        strip = lambda x: {k: v for k, v in x.items() if k != "updated"}
-        if strip(old) != strip(new):
+
+        def _strip(x):
+            return {k: v for k, v in x.items() if k != "updated"}
+
+        if _strip(old) != _strip(new):
             self.bus.publish("room", new)
 
     def _loop(self):

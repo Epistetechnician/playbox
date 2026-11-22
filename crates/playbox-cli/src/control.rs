@@ -75,8 +75,29 @@ pub fn publish(
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64);
     let rec = serde_json::json!({"id": id, "name": name, "state": abs(state), "repo": repo.map(abs), "sock": sock.to_string_lossy(), "pid": std::process::id(), "started_ms": started_ms});
-    std::fs::write(&record, serde_json::to_vec_pretty(&rec)?)?;
-    std::fs::set_permissions(&record, std::fs::Permissions::from_mode(0o600))?;
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt;
+        let rnd = playbox_net::random_bytes()?;
+        let tmp = dir.join(format!(
+            ".{id}-{}.json.tmp",
+            playbox_core::record::hex(&rnd[..12])
+        ));
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        if let Err(e) = f.write_all(&serde_json::to_vec_pretty(&rec)?) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
+        drop(f);
+        if let Err(e) = std::fs::rename(&tmp, &record) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
+    }
     Ok((Published { sock, record }, listener))
 }
 

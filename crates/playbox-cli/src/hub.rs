@@ -62,11 +62,36 @@ pub(crate) fn save(r: &Reach) -> Result<()> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d)?;
     }
-    std::fs::write(&p, serde_json::to_string_pretty(r)?)?;
+    let data = serde_json::to_string_pretty(r)?;
+    write_private_atomic(&p, data.as_bytes())
+}
+
+fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("no parent directory for {}", path.display()))?;
+    let rnd = playbox_net::random_bytes()?;
+    let tmp = parent.join(format!(
+        ".hub-config-{}.tmp",
+        playbox_core::record::hex(&rnd[..12])
+    ));
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(&tmp)?;
+    if let Err(e) = f.write_all(bytes).and_then(|()| f.sync_all()) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    drop(f);
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
     }
     Ok(())
 }

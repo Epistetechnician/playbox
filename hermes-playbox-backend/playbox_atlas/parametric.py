@@ -452,7 +452,6 @@ class ParametricAtlasKVEngine:
 
         idx = HiKVPIndex.build(train_triples)
         raw_clusters, q_dropped = self.build_clusters(train_triples)
-        full_train_text = "".join(c.text for c in raw_clusters)
 
         adapter = self.kv_adapter if self.kv_adapter is not None else self.create_kv_adapter(rank=rank)
         adapter.to(self.device).train_mode()

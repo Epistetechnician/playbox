@@ -284,7 +284,7 @@ impl Authority {
                 params(vec![
                     ("room", s(&self.room)),
                     ("nonce", s(&nonce()?)),
-                    ("exp", i(now_secs() + ttl_secs)),
+                    ("exp", i(now_secs().saturating_add(ttl_secs))),
                 ]),
                 HashMap::new(),
             )?
@@ -335,7 +335,7 @@ impl Authority {
             ("room", s(&self.room)),
             ("nonce", s(&nonce()?)),
             ("subject", s(subject)),
-            ("exp", i(now_secs() + ttl_secs)),
+            ("exp", i(now_secs().saturating_add(ttl_secs))),
             ("cpu", i(caps.cpu_milli)),
             ("mem", i(caps.mem_mib)),
             ("timeout", i(caps.timeout_secs)),
