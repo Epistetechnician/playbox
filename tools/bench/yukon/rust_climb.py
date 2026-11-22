@@ -7,7 +7,18 @@ challenge's own ./benchmark.sh in its own checkout. Lower score is better. Nothi
 
 Env: CLIMB_DIR, VM (gcloud instance), CLIMB_CAP (USD, default 3), CLIMB_WORKERS, CLIMB_ROUNDS.
 """
-import hashlib, json, os, re, shutil, subprocess, sys, threading, time, concurrent.futures as cf
+import concurrent.futures as cf
+import contextlib
+import hashlib
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -78,6 +89,98 @@ def claude(prompt, model, cwd, tools, budget, effort="low", allowed=None):
         return r.stdout[-2000:] + r.stderr[-500:]
 
 
+def _finite_pos(val):
+    if isinstance(val, bool) or not isinstance(val, (int, float)):
+        return None
+    if not math.isfinite(val) or val <= 0:
+        return None
+    return val
+
+
+def parse_score_value(raw):
+    """Parse a positive finite integer score from evaluator output, or return None."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        v = _finite_pos(raw)
+        return int(round(v)) if v is not None else None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    if not math.isfinite(v) or v <= 0:
+        return None
+    return int(round(v))
+
+
+def parse_result_lines(stdout):
+    """Parse `<id> <exit> [score]` lines from VM RESULT output without raising on malformed lines."""
+    res = {}
+    for line in (stdout or "").splitlines():
+        t = line.split()
+        if len(t) < 2 or not t[0].startswith("r"):
+            continue
+        try:
+            rc_code = int(t[1])
+        except ValueError:
+            rc_code = None
+        sc = parse_score_value(t[2]) if len(t) > 2 else None
+        res[t[0]] = {"exit": rc_code, "score": sc}
+    return res
+
+
+@contextlib.contextmanager
+def climb_lock(out_dir):
+    """Acquire a PID lockfile in out_dir, reclaiming stale locks from dead processes."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = out_dir / ".climb.lock"
+    for _ in range(2):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.write(fd, f"{os.getpid()}\n".encode())
+            os.close(fd)
+            break
+        except FileExistsError:
+            stale = False
+            try:
+                pid = int(lock_path.read_text().strip())
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    stale = True
+                except PermissionError:
+                    stale = False
+                else:
+                    raise RuntimeError(f"climb already running in {out_dir} (pid {pid})")
+            except (ValueError, OSError):
+                stale = True
+            if stale:
+                lock_path.unlink(missing_ok=True)
+                continue
+            raise
+    else:
+        raise RuntimeError(f"could not acquire lock {lock_path}")
+    try:
+        yield lock_path
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def save_best_dir(src_dir, dst_dir):
+    """Atomically replace dst_dir with a fresh copy of src_dir (no stale files)."""
+    src_dir, dst_dir = Path(src_dir), Path(dst_dir)
+    tmp_dir = dst_dir.with_name(dst_dir.name + ".tmp")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    shutil.copytree(src_dir, tmp_dir)
+    if dst_dir.exists():
+        shutil.rmtree(dst_dir)
+    tmp_dir.rename(dst_dir)
+
+
 def advise(history, sim):
     files = sorted(p.name for p in (BASE / "src/point_add").glob("*.rs"))
     p = (f"Goal: lower the score (Toffoli count x peak qubits, now {BASELINE}: 722696 x 1227) of a reversible "
@@ -92,17 +195,20 @@ def advise(history, sim):
     out = claude(p, ADVISOR_MODEL, BASE, "Read,Grep,Glob", 0.5)
     m = re.search(r"\[.*\]", out, re.S)
     try:
-        out = []
+        parsed = []
         for h in json.loads(m.group(0))[:N]:
             if isinstance(h, dict):
-                out.append({"root_cause": str(h.get("root_cause", "unspecified")), "hypothesis": str(h.get("hypothesis", "")),
-                            "predicted": h.get("predicted_score") if isinstance(h.get("predicted_score"), int) else None})
+                parsed.append({"root_cause": str(h.get("root_cause", "unspecified")),
+                               "hypothesis": str(h.get("hypothesis", "")),
+                               "predicted": parse_score_value(h.get("predicted_score"))})
             else:
-                out.append({"root_cause": "unspecified", "hypothesis": str(h), "predicted": None})
-        return out
-    except Exception:
-        return [{"root_cause": "redundant uncompute", "predicted": None, "hypothesis":
-                 "Look for a redundant uncompute or a freeable ancilla in the largest module and remove it."}] * N
+                parsed.append({"root_cause": "unspecified", "hypothesis": str(h), "predicted": None})
+        if parsed:
+            return parsed
+    except Exception as exc:
+        print(f"advise: falling back to default hypotheses ({exc})", file=sys.stderr)
+    return [{"root_cause": "redundant uncompute", "predicted": None, "hypothesis":
+             "Look for a redundant uncompute or a freeable ancilla in the largest module and remove it."}] * N
 
 
 def worker(i, rnd, hyp, feedback):
@@ -177,54 +283,76 @@ def score(cands):
         if p.returncode:
             print(f"  poll ssh exited {p.returncode}, retrying", flush=True)
     r = p
-    res = {}
-    for line in r.stdout.splitlines():
-        t = line.split()
-        if len(t) >= 2 and t[0].startswith("r"):
-            res[t[0]] = {"exit": int(t[1]), "score": int(t[2]) if len(t) > 2 else None}
+    res = parse_result_lines(r.stdout)
     for c in cands:
         c["result"] = res.get(c["id"], {"exit": None, "score": None})
         r = c["result"]
         if r["score"] is None:
             r["reason"] = ("benchmark timed out (1500s)" if r["exit"] == 124 else
-                           f"benchmark exited {r['exit']} without a score" if r["exit"] is not None else
+                           f"benchmark exited {r['exit']} without a valid score" if r["exit"] is not None else
                            "no RESULT file: ssh dropped, VM stopped, or still running")
             t = ssh(f"cd ~/work/cand/{c['id']} 2>/dev/null && stat -c 'out.log modified %y' out.log; tail -c 600 out.log").stdout
             r["log"] = t
     return cands
 
 
+def _recover_state(sim):
+    """Recover best score and next round index from persisted Sim history."""
+    observed = [v for a in sim.attempts if (v := parse_score_value(a.get("observed"))) is not None]
+    best = min([BASELINE, *observed])
+    rounds = [r for a in sim.attempts if isinstance((r := a.get("prov", {}).get("round")), int)]
+    start_round = max(rounds, default=0) + 1
+    return best, start_round
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     log = OUT / "climb.jsonl"
-    best, history, feedback = BASELINE, "", {}
-    sim = Sim(OUT / "sim.jsonl")
-    for rnd in range(1, ROUNDS + 1):
-        if spent >= CAP:
-            print("cap reached", spent); break
-        hyps = advise(history, sim)
-        print(f"round {rnd}: spent ${spent:.2f}; hypotheses: {[h['hypothesis'] for h in hyps]}", flush=True)
-        with cf.ThreadPoolExecutor(N) as ex:
-            cands = list(ex.map(lambda ih: worker(ih[0], rnd, ih[1], feedback.get(ih[0])), enumerate(hyps)))
-        cands = [c for c in cands if c["diff_lines"] > 0]
-        if not cands:
-            history += f"round {rnd}: no edits produced\n"; continue
-        score(cands)
-        for i, c in enumerate(cands):
-            s = c["result"]["score"]
-            a = sim.record(c["root_cause"], c["hyp"], c["summary"] + (f" [score failed: {c['result'].get('reason')}]" if not s else ""), c["predicted"], s, best,
-                           model=WORKER_MODEL, round=rnd, run=c["id"])
-            line = f"{c['id']} [{a['verdict']}] score={s} exit={c['result']['exit']} hyp={c['hyp'][:90]!r}"
-            print(line, flush=True)
-            history += line + "\n"
-            feedback[int(c["id"].split("w")[1])] = (f"scored {s}" if s else f"failed ({c['result'].get('reason')}): " + c["result"].get("log", "")[-400:])
-            with open(log, "a") as f:
-                f.write(json.dumps({**c, "dir": str(c["dir"]), "spent": spent}) + "\n")
-            if s and s < best:
-                best = s
-                shutil.copytree(c["dir"] / "src/point_add", OUT / "best_point_add", dirs_exist_ok=True)
-                print(f"NEW BEST {best} ({c['id']})", flush=True)
-    print(f"done. best={best} baseline={BASELINE} spent=${spent:.2f}")
+    with climb_lock(OUT):
+        sim = Sim(OUT / "sim.jsonl")
+        best, start_round = _recover_state(sim)
+        history, feedback = "", {}
+        for rnd in range(start_round, start_round + ROUNDS):
+            if spent >= CAP:
+                print("cap reached", spent)
+                break
+            hyps = advise(history, sim)
+            print(f"round {rnd}: spent ${spent:.2f}; hypotheses: {[h['hypothesis'] for h in hyps]}", flush=True)
+            cands = []
+            with cf.ThreadPoolExecutor(N) as ex:
+                futs = {ex.submit(worker, i, rnd, h, feedback.get(i)): i for i, h in enumerate(hyps)}
+                for fut in cf.as_completed(futs):
+                    i = futs[fut]
+                    try:
+                        cands.append((i, fut.result()))
+                    except Exception as exc:
+                        print(f"  r{rnd}w{i}: worker failed: {exc}", flush=True)
+                        feedback[i] = f"worker crashed: {exc}"
+            cands = [c for _, c in sorted(cands) if c["diff_lines"] > 0]
+            if not cands:
+                history += f"round {rnd}: no edits produced\n"
+                continue
+            score(cands)
+            round_best = best
+            for c in cands:
+                s = parse_score_value(c["result"].get("score"))
+                c["result"]["score"] = s
+                rationale = c["summary"] + (f" [score failed: {c['result'].get('reason')}]" if s is None else "")
+                a = sim.record(c["root_cause"], c["hyp"], rationale, c["predicted"], s, round_best,
+                               model=WORKER_MODEL, round=rnd, run=c["id"])
+                line = f"{c['id']} [{a['verdict']}] score={s} exit={c['result']['exit']} hyp={c['hyp'][:90]!r}"
+                print(line, flush=True)
+                history += line + "\n"
+                widx = int(c["id"].split("w")[1])
+                feedback[widx] = (f"scored {s}" if s is not None else
+                                  f"failed ({c['result'].get('reason')}): " + c["result"].get("log", "")[-400:])
+                with open(log, "a") as f:
+                    f.write(json.dumps({**c, "dir": str(c["dir"]), "spent": spent}) + "\n")
+                if s is not None and s < best:
+                    best = s
+                    save_best_dir(c["dir"] / "src/point_add", OUT / "best_point_add")
+                    print(f"NEW BEST {best} ({c['id']})", flush=True)
+        print(f"done. best={best} baseline={BASELINE} spent=${spent:.2f}")
 
 
 if __name__ == "__main__":
