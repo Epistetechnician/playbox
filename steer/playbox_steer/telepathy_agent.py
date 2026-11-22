@@ -21,6 +21,7 @@ from .telepathy_data import NEUTRAL, PROMPTS
 HUB = Path(os.environ.get("HF_HUB_CACHE") or Path.home() / ".cache/huggingface/hub")
 BODIES = {"smollm2": "models--HuggingFaceTB--SmolLM2-135M", "qwen3": "models--Qwen--Qwen3-1.7B-Base"}
 STATE = Path(os.environ.get("TELEPATHY_STATE", Path(__file__).resolve().parents[1] / "results/telepathy/maps"))
+IO_ROOT = Path(os.environ.get("TELEPATHY_IO_ROOT", Path(__file__).resolve().parents[1] / "results/telepathy")).resolve()
 COEF = float(os.environ.get("TELEPATHY_COEF", "0.5"))
 FRAC = 0.45
 # Sender-side topic-ness probe (tools/telepathy_probe.py), the same gate the remote service uses: it reads the unit difference
@@ -60,8 +61,18 @@ def fit(src: str, dst: str) -> None:
     print(json.dumps(info))
 
 
+def _safe_vec_path(raw: str) -> Path:
+    if "\x00" in raw:
+        raise ValueError("invalid vector path")
+    p = Path(os.path.normpath(raw)).resolve()
+    if p.suffix != ".pt" or not p.is_relative_to(IO_ROOT):
+        raise ValueError(f"vector path must be a .pt file under {IO_ROOT}")
+    return p
+
+
 def think(src: str, dst: str, texts: list[str], out: str, resident: bool = False) -> None:
-    m = torch.load(mapfile(src, dst))
+    out_path = _safe_vec_path(out) if resident else Path(out)
+    m = torch.load(mapfile(src, dst), weights_only=True)
     ma, ta = _resident(src) if resident else T.load(path(src))
     la = T.layer_of(ma, FRAC)
     d = T.sentence_states(ma, ta, texts, la).mean(0) - m["neutral_a"]
@@ -69,16 +80,17 @@ def think(src: str, dst: str, texts: list[str], out: str, resident: bool = False
     topicness, g = probe_strength(d, probe) if probe else (None, None)
     v = (d @ m["w"])
     v = v / v.norm() * COEF * (1.0 if g is None else g) * m["norm_b"]
-    tmp = f"{out}.tmp"  # atomic: a reader never sees a half-written vector
+    tmp_path = out_path.with_name(f"{out_path.name}.tmp")  # atomic: a reader never sees a half-written vector
     # the strength travels with the vector (a number, no text); a bare tensor means "no gate" and is still readable
-    torch.save(v if g is None else {"v": v, "strength": g}, tmp)
-    os.replace(tmp, out)
-    print(f"wrote {out}: one {v.numel()}-float vector for {dst}; no text left this process"
+    torch.save(v if g is None else {"v": v, "strength": g}, tmp_path)
+    os.replace(tmp_path, out_path)
+    print(f"wrote {out_path}: one {v.numel()}-float vector for {dst}; no text left this process"
           + ("" if g is None else f"; topic-ness {topicness:.3f}, strength {g:.2f}"))
 
 
 def listen(dst: str, src: str, vec: str, gen: int = 24, resident: bool = False) -> None:
-    v = torch.load(vec)
+    vec_path = _safe_vec_path(vec) if resident else Path(vec)
+    v = torch.load(vec_path, weights_only=True)
     if isinstance(v, dict):
         print(f"signal strength {v['strength']:.2f} (0 = no thought was sent, 1 = a clear thought)")
         v = v["v"]

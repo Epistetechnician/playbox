@@ -340,8 +340,12 @@ pub fn poll_once(hub_home: &Path, approver: &dyn Approver) -> usize {
         let Ok(v) = serde_json::from_slice::<serde_json::Value>(&raw) else {
             continue;
         };
-        let id_field = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
-        let nonce = v.get("nonce").and_then(|x| x.as_str()).unwrap_or("");
+        let Some(id_field) = v.get("id").and_then(|x| x.as_str()) else {
+            continue;
+        };
+        let Some(nonce) = v.get("nonce").and_then(|x| x.as_str()) else {
+            continue;
+        };
         let reason = v
             .get("reason")
             .and_then(|x| x.as_str())
