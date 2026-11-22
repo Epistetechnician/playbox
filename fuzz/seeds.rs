@@ -2,7 +2,7 @@
 //! Run: `cd fuzz && cargo +nightly run --bin seeds`
 use base64::{engine::general_purpose::URL_SAFE, Engine};
 use ed25519_dalek::SigningKey;
-use playbox_core::{attest, history};
+use playbox_core::{attest, history, record, roomlog, witness};
 use playbox_net::{
     grants::{Authority, Caps},
     revoke::Notice,
@@ -86,7 +86,95 @@ fn main() {
         "reveal": base64::engine::general_purpose::STANDARD.encode(&reveal), "at_ms": now }] });
     put("latent_store", "mailbox", store.to_string().as_bytes());
 
+    // openshell_tar: valid archive plus adversarial seeds (PAX 'g', single-zero smuggling, symlink chain).
+    let mut tar_ok = Vec::new();
+    tar_ok.extend(tar_entry("src/app.py", b'0', "", b"print(1)\n"));
+    tar_ok.extend(tar_entry("src/link.py", b'2', "app.py", b""));
+    tar_ok.extend([0u8; 1024]);
+    put("openshell_tar", "valid.tar", &tar_ok);
+
+    let mut tar_pax_g = Vec::new();
+    tar_pax_g.extend(tar_entry("pax_global_header", b'g', "", b"23 path=../../.bashrc\n"));
+    tar_pax_g.extend(tar_entry("ok.txt", b'0', "", b"x"));
+    tar_pax_g.extend([0u8; 1024]);
+    put("openshell_tar", "adv_pax_global.tar", &tar_pax_g);
+
+    let mut tar_zero_smuggle = Vec::new();
+    tar_zero_smuggle.extend(tar_entry("ok.txt", b'0', "", b"x"));
+    tar_zero_smuggle.extend([0u8; 512]);
+    tar_zero_smuggle.extend(tar_entry("../../escape", b'0', "", b"pwn"));
+    tar_zero_smuggle.extend([0u8; 1024]);
+    put("openshell_tar", "adv_single_zero.tar", &tar_zero_smuggle);
+
+    let mut tar_sym_chain = Vec::new();
+    tar_sym_chain.extend(tar_entry("a/b", b'2', "..", b""));
+    tar_sym_chain.extend(tar_entry("a/b/c", b'2', "../..", b""));
+    tar_sym_chain.extend(tar_entry("a/b/c/pwned", b'0', "", b"x"));
+    tar_sym_chain.extend([0u8; 1024]);
+    put("openshell_tar", "adv_symlink_chain.tar", &tar_sym_chain);
+
+    // roomlog_and_witness: valid roomlog + checkpoint + adversarial size=0 nonzero head & overflow k.
+    let root = SigningKey::from_bytes(&[7u8; 32]);
+    let host = SigningKey::from_bytes(&[8u8; 32]);
+    let leader = host.verifying_key().to_bytes();
+    let mut hosts = std::collections::BTreeSet::new();
+    hosts.insert(leader);
+    let mut rl = roomlog::RoomLog::genesis(
+        &root,
+        roomlog::Config {
+            epoch: 0,
+            leader,
+            hosts,
+            k: 1,
+        },
+        1,
+    )
+    .unwrap();
+    let _ = rl.append(&host, "member.join", &serde_json::json!({"member": "abc123"}), 2);
+    put("roomlog_and_witness", "valid_roomlog", roomlog::text::to_text(&rl).as_bytes());
+
+    let cp = witness::Checkpoint::sign(&log, &key, 10).unwrap();
+    put("roomlog_and_witness", "valid_checkpoint", cp.text.as_bytes());
+
+    let hostile_cp = record::sign(
+        "playbox.checkpoint.v1",
+        &[("size", "0".into()), ("head", "aa".repeat(32)), ("time", "1".into())],
+        &key,
+    )
+    .unwrap();
+    put("roomlog_and_witness", "adv_size0_nonzero_head", hostile_cp.as_bytes());
+    put("roomlog_and_witness", "adv_overflow_k", br#"{"k":9223372036854775808}"#);
+
     println!("seeds written under fuzz/corpus/");
+}
+
+fn tar_entry(name: &str, kind: u8, link: &str, body: &[u8]) -> Vec<u8> {
+    let mut h = [0u8; 512];
+    let nb = name.as_bytes();
+    h[..nb.len().min(100)].copy_from_slice(&nb[..nb.len().min(100)]);
+    h[100..108].copy_from_slice(b"0000644\0");
+    h[108..116].copy_from_slice(b"0000000\0");
+    h[116..124].copy_from_slice(b"0000000\0");
+    let sz = format!("{:011o}\0", body.len());
+    h[124..136].copy_from_slice(sz.as_bytes());
+    h[136..148].copy_from_slice(b"00000000000\0");
+    h[148..156].fill(b' ');
+    h[156] = kind;
+    let lb = link.as_bytes();
+    h[157..157 + lb.len().min(100)].copy_from_slice(&lb[..lb.len().min(100)]);
+    h[257..263].copy_from_slice(b"ustar\0");
+    h[263..265].copy_from_slice(b"00");
+    let csum: u32 = h.iter().map(|&b| u32::from(b)).sum();
+    let cs = format!("{csum:06o}\0 ");
+    h[148..156].copy_from_slice(cs.as_bytes());
+    let mut out = Vec::with_capacity(512 + ((body.len() + 511) & !511));
+    out.extend_from_slice(&h);
+    out.extend_from_slice(body);
+    let rem = body.len() % 512;
+    if rem != 0 {
+        out.resize(out.len() + (512 - rem), 0);
+    }
+    out
 }
 
 fn playbox_runner_spec() -> playbox_runner::TaskSpec {

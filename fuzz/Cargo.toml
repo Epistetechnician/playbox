@@ -108,3 +108,17 @@ path = "fuzz_targets/latent_store.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openshell_tar"
+path = "fuzz_targets/openshell_tar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "roomlog_and_witness"
+path = "fuzz_targets/roomlog_and_witness.rs"
+test = false
+doc = false
+bench = false
