@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 impl Server {
     pub(crate) async fn pull(&mut self, a: &Value) -> Result<Value> {
-        let r = req(a, "ref")?;
+        let r = playbox_git::check_name(req(a, "ref")?)?;
         let admission = self.admit("playbox_pull", &[r], s(a, "capability"))?;
         let ws = self.workspace()?;
         let (head, bundle) = self.guest()?.pull(r).await?;
@@ -41,10 +41,14 @@ impl Server {
             spec.image = i.to_string();
         }
         if let Some(v) = a.get("cpus").and_then(Value::as_f64) {
+            if !v.is_finite() || v <= 0.0 {
+                bail!("cpus must be a positive finite number");
+            }
             spec.cpus = v as f32;
         }
         if let Some(v) = a.get("mem_mib").and_then(Value::as_u64) {
-            spec.mem_mib = v as u32;
+            spec.mem_mib = u32::try_from(v)
+                .map_err(|_| anyhow!("mem_mib must fit in a 32-bit unsigned integer"))?;
         }
         if let Some(v) = a.get("timeout_secs").and_then(Value::as_u64) {
             spec.timeout_secs = v;

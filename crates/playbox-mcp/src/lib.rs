@@ -182,4 +182,91 @@ mod tests {
             d.max_age
         );
     }
+
+    fn temp_home(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "playbox-mcp-test-{tag}-{}",
+            playbox_core::store::now_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn non_object_jsonrpc_returns_invalid_request() {
+        let home = temp_home("nonobj");
+        let mut srv = crate::Server::new(&home).unwrap();
+        for bad in [json!([1, 2]), json!(123), json!("hi"), json!(null)] {
+            let reply = srv.handle(bad).await.expect("must return error");
+            assert_eq!(reply["error"]["code"], -32600);
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[tokio::test]
+    async fn bounded_line_reader_rejects_oversized_lines() {
+        let data = b"hello\n12345678901234567890\nworld\n";
+        let mut reader = tokio::io::BufReader::new(&data[..]);
+        assert_eq!(
+            crate::Server::read_bounded_line(&mut reader, 10)
+                .await
+                .unwrap(),
+            Some(Some("hello".to_string()))
+        );
+        assert_eq!(
+            crate::Server::read_bounded_line(&mut reader, 10)
+                .await
+                .unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            crate::Server::read_bounded_line(&mut reader, 10)
+                .await
+                .unwrap(),
+            Some(Some("world".to_string()))
+        );
+        assert_eq!(
+            crate::Server::read_bounded_line(&mut reader, 10)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn integer_and_float_bounds_reject_overflow_and_sign_wrap() {
+        let home = temp_home("bounds");
+        let mut srv = crate::Server::new(&home).unwrap();
+        let err = srv
+            .delegate(
+                &json!({"base": "HEAD", "command": "true", "mem_mib": u64::from(u32::MAX) + 1}),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("mem_mib"), "{err}");
+
+        let err = srv
+            .delegate(&json!({"base": "HEAD", "command": "true", "cpus": -1.0}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("cpus"), "{err}");
+
+        let err = srv
+            .create(&json!({"uses": u64::from(u32::MAX) + 1}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("uses"), "{err}");
+
+        let err = srv
+            .create(&json!({"runtime": "docker", "steer_store": "/tmp", "steer_caps": {"max_runs": -1}}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("max_runs"), "{err}");
+
+        let err = srv.pull(&json!({"ref": "-evil"})).await.unwrap_err();
+        assert!(err.to_string().contains("invalid ref name"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

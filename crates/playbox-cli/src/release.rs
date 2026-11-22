@@ -21,14 +21,29 @@ fn unhex_vec(s: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
+fn write_private_new(path: &str, data: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            anyhow::anyhow!("{path} exists; not overwriting")
+        } else {
+            e.into()
+        }
+    })?;
+    f.write_all(data)?;
+    Ok(())
+}
+
 pub fn keygen(out: &str) -> Result<()> {
     let k = SigningKey::from_bytes(&playbox_net::random_bytes()?);
-    if Path::new(out).exists() {
-        bail!("{out} exists; not overwriting");
-    }
-    std::fs::write(out, format!("{}\n", hex(&k.to_bytes())))?;
-    #[cfg(unix)]
-    std::fs::set_permissions(out, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    write_private_new(out, format!("{}\n", hex(&k.to_bytes())).as_bytes())?;
     println!("{}", hex(&k.verifying_key().to_bytes()));
     eprintln!("public key above: pin it in install.sh and docs. The secret is in {out}; store it as the PLAYBOX_RELEASE_KEY CI secret and nowhere else.");
     Ok(())
@@ -36,13 +51,8 @@ pub fn keygen(out: &str) -> Result<()> {
 
 /// Generate an ML-DSA-65 release signing keypair; writes the secret key to `out` (0600) and prints the public key hex.
 pub fn pq_keygen(out: &str) -> Result<()> {
-    if Path::new(out).exists() {
-        bail!("{out} exists; not overwriting");
-    }
     let (pk, sk) = pq::keygen_mldsa65()?;
-    std::fs::write(out, format!("{}\n", hex(&sk)))?;
-    #[cfg(unix)]
-    std::fs::set_permissions(out, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    write_private_new(out, format!("{}\n", hex(&sk)).as_bytes())?;
     println!("{}", hex(&pk));
     eprintln!("ML-DSA-65 public key above: pin it in release.pq.pub / PLAYBOX_RELEASE_PQ_PUBKEY. Store {out} as PLAYBOX_RELEASE_PQ_KEY and nowhere else.");
     Ok(())
@@ -381,5 +391,25 @@ mod changelog_tests {
         })
         .unwrap();
         assert!(out.contains("- from git (abc)"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keygen_creates_private_0600_file_and_refuses_overwrite() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "playbox-release-key-{}",
+            playbox_core::store::now_ms()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ed = dir.join("ed.key");
+        let pq = dir.join("pq.key");
+        keygen(ed.to_str().unwrap()).unwrap();
+        pq_keygen(pq.to_str().unwrap()).unwrap();
+        assert_eq!(ed.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(pq.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        assert!(keygen(ed.to_str().unwrap()).is_err());
+        assert!(pq_keygen(pq.to_str().unwrap()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -19,7 +19,11 @@ impl Server {
             .get("invite_ttl_secs")
             .and_then(Value::as_u64)
             .unwrap_or(3600);
-        let uses = a.get("uses").and_then(Value::as_u64).unwrap_or(1) as u32;
+        let uses = match a.get("uses").and_then(Value::as_u64) {
+            Some(v) => u32::try_from(v)
+                .map_err(|_| anyhow!("uses must fit in a 32-bit unsigned integer"))?,
+            None => 1,
+        };
         if let (Some(have), Some(want)) = (&self.room_name, s(a, "name")) {
             if have != want {
                 bail!("this sidecar already hosts the room `{have}`; restart it to host `{want}`");
@@ -126,14 +130,18 @@ impl Server {
                 .map(|s| s.limits.clone())
                 .unwrap_or_default();
             let mut limits = playbox_runner::Limits {
-                cpus: a
-                    .get("cpus")
-                    .and_then(Value::as_f64)
-                    .map_or(base_limits.cpus, |v| v as f32),
-                mem_mib: a
-                    .get("mem_mib")
-                    .and_then(Value::as_u64)
-                    .map_or(base_limits.mem_mib, |v| v as u32),
+                cpus: match a.get("cpus").and_then(Value::as_f64) {
+                    Some(v) if !v.is_finite() || v <= 0.0 => {
+                        bail!("cpus must be a positive finite number");
+                    }
+                    Some(v) => v as f32,
+                    None => base_limits.cpus,
+                },
+                mem_mib: match a.get("mem_mib").and_then(Value::as_u64) {
+                    Some(v) => u32::try_from(v)
+                        .map_err(|_| anyhow!("mem_mib must fit in a 32-bit unsigned integer"))?,
+                    None => base_limits.mem_mib,
+                },
                 timeout_secs: a
                     .get("timeout_secs")
                     .and_then(Value::as_u64)
@@ -168,10 +176,12 @@ impl Server {
                     if runner.is_none() {
                         bail!("steering needs a runtime: pass runtime=docker (the engine runs in a container with the weights mounted read-only)");
                     }
-                    let mem_mib = a
-                        .get("steer_mem_mib")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(4096) as u32;
+                    let mem_mib = match a.get("steer_mem_mib").and_then(Value::as_u64) {
+                        Some(v) => u32::try_from(v).map_err(|_| {
+                            anyhow!("steer_mem_mib must fit in a 32-bit unsigned integer")
+                        })?,
+                        None => 4096,
+                    };
                     let timeout_secs = a
                         .get("steer_timeout_secs")
                         .and_then(Value::as_u64)
@@ -205,8 +215,11 @@ impl Server {
                         max_tokens_per_run: n("max_tokens_per_run", 4096),
                         classes: list("classes", &[]),
                         probe: c.get("probe").and_then(Value::as_bool).unwrap_or(true),
-                        max_runs: n("max_runs", 50) as u64,
-                        max_tokens_total: n("max_tokens_total", 100_000) as u64,
+                        max_runs: u64::try_from(n("max_runs", 50))
+                            .map_err(|_| anyhow!("steer_caps.max_runs must be non-negative"))?,
+                        max_tokens_total: u64::try_from(n("max_tokens_total", 100_000)).map_err(
+                            |_| anyhow!("steer_caps.max_tokens_total must be non-negative"),
+                        )?,
                     };
                     let sl = playbox_net::steer::SteerLimits {
                         cpus: limits.cpus,

@@ -147,6 +147,9 @@ fn eq_const_time(a: &str, b: &str) -> bool {
 }
 
 fn authorized(rap: &Rap, h: &HeaderMap) -> bool {
+    if rap.token.trim().is_empty() {
+        return false;
+    }
     h.get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
@@ -590,4 +593,24 @@ pub fn router(rap: Arc<Rap>) -> Router {
 pub async fn serve(listener: TcpListener, rap: Arc<Rap>) -> anyhow::Result<()> {
     axum::serve(listener, router(rap)).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_or_whitespace_token_never_authenticates() {
+        let dir = std::env::temp_dir().join(format!(
+            "playbox-rap-unit-{}",
+            playbox_core::store::now_ms()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let srv = Server::new(&dir).unwrap();
+        let rap = Rap::new(srv, "   ".to_string(), vec![], "http://127.0.0.1:0".into());
+        let mut h = HeaderMap::new();
+        h.insert(header::AUTHORIZATION, "Bearer    ".parse().unwrap());
+        assert!(!authorized(&rap, &h));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

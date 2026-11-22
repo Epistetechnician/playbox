@@ -217,7 +217,14 @@ pub fn install(s: &Spec) -> Result<PathBuf> {
     }
     // The log holds one-time pairing links: make it private before the service manager creates it with the default 644.
     if !s.log.exists() {
-        std::fs::write(&s.log, b"")?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let _ = opts.open(&s.log)?;
     }
     #[cfg(unix)]
     {

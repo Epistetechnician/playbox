@@ -479,7 +479,17 @@ fn publish_invite(app: &mut App, link: &str) {
     use std::io::Write;
     let path = playbox_core::store::home().join("last-invite.txt");
     let saved = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new(".")))
-        .and_then(|_| std::fs::write(&path, format!("{link}\n")));
+        .and_then(|_| {
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut f = opts.open(&path)?;
+            f.write_all(format!("{link}\n").as_bytes())
+        });
     #[cfg(unix)]
     if saved.is_ok() {
         use std::os::unix::fs::PermissionsExt;
