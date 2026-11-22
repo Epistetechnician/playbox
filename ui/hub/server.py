@@ -103,7 +103,10 @@ def make_handler(hub, auth, store, opts):
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("Cross-Origin-Opener-Policy", "same-origin")
             for k, v in (extra or {}).items():
-                self.send_header(k, v)
+                vs = str(v)
+                if "\r" in k or "\n" in k or "\r" in vs or "\n" in vs:
+                    raise ValueError("invalid header value")
+                self.send_header(k.replace("\r", "").replace("\n", ""), vs.replace("\r", "").replace("\n", ""))
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
@@ -366,11 +369,15 @@ def make_handler(hub, auth, store, opts):
                         hub.sec.add("invite", "An invite page was opened", "info", rec0.get("room") if rec0 else None)
                     return self.j(200 if v else 404, v or {"state": "unknown"})
                 if p.startswith("/vendor/"):
-                    ok_path = re.fullmatch(r"/vendor/[A-Za-z0-9._/-]{1,80}", p) and ".." not in p
-                    vf = (STATIC / p[1:]).resolve() if ok_path else None
-                    vt = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}.get(vf.suffix) if vf else None
-                    if vt and vf.is_file() and (STATIC / "vendor").resolve() in vf.parents:
-                        return self.send(200, vf.read_bytes(), vt, {"Cache-Control": "public, max-age=86400"})
+                    vendor_root = os.path.realpath(str(STATIC / "vendor"))
+                    ok_path = re.fullmatch(r"/vendor/[A-Za-z0-9._/-]{1,80}\Z", p) and ".." not in p
+                    if ok_path:
+                        norm = os.path.normpath(os.path.join(vendor_root, p[len("/vendor/"):]))
+                        if norm.startswith(vendor_root + os.sep):
+                            vf = Path(norm)
+                            vt = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}.get(vf.suffix)
+                            if vt and vf.is_file() and os.path.realpath(norm).startswith(vendor_root + os.sep):
+                                return self.send(200, vf.read_bytes(), vt, {"Cache-Control": "public, max-age=86400"})
                     return self.j(404, {"error": "not found"})
                 if p in PUBLIC_FILES:
                     f, ct = PUBLIC_FILES[p]
@@ -395,7 +402,7 @@ def make_handler(hub, auth, store, opts):
                     qs = urllib.parse.parse_qs(url.query)
                     n = qs.get("n", [""])[0]
                     nxt = qs.get("next", ["/"])[0]
-                    if not re.fullmatch(r"/(?:$|r/[A-Za-z0-9_-]{1,64}/(?:canvas)?|\?view=[a-z]+|join)", nxt):
+                    if not re.fullmatch(r"/(?:|r/[A-Za-z0-9_-]{1,64}/(?:canvas)?|\?view=[a-z]+|join)\Z", nxt):
                         nxt = "/"
                     tok = auth.local_session(n, self.headers.get("User-Agent", ""), self.peer)
                     hub.sec.add("auth", "The desktop app signed in from this machine (no passkey; local-only session)", "warn")
@@ -1471,11 +1478,18 @@ def make_handler(hub, auth, store, opts):
         def tamper(self, room):
             b = self.body()
             home = Path(room.home).resolve()
+            home_prefix = str(home) + os.sep
             try:
-                src = Path(str(b["path"])).expanduser().resolve()
-            except (KeyError, OSError):
+                raw_path = str(b["path"])
+                if "\x00" in raw_path:
+                    raise ValueError("null byte")
+                norm = os.path.normpath(os.path.expanduser(raw_path))
+            except (KeyError, OSError, ValueError):
                 raise AuthError(400, "need {path}")
-            if not (src.is_file() and str(src).startswith(str(home) + os.sep)):
+            if not norm.startswith(home_prefix):
+                raise AuthError(400, "only logs under the room's Playbox home can be used")
+            src = Path(os.path.realpath(norm))
+            if not (str(src).startswith(home_prefix) and src.is_file()):
                 raise AuthError(400, "only logs under the room's Playbox home can be used")
             data = bytearray(src.read_bytes())
             if len(data) < 2:

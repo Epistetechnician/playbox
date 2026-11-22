@@ -256,12 +256,21 @@ def make_handler(sidecar, token, page_path, home):
 
         def _tamper(self):
             """Demo: flip one byte in a COPY of a history log and verify the copy. The real log is never touched."""
+            home_prefix = str(Path(home).resolve()) + os.sep
             try:
                 n = int(self.headers.get("Content-Length", "0"))
-                src = Path(json.loads(self.rfile.read(n) or b"{}")["path"]).expanduser().resolve()
+                if n < 0 or n > MAX_BODY:
+                    return self._json(413, {"error": "too large"})
+                raw_path = str(json.loads(self.rfile.read(n) or b"{}")["path"])
+                if "\x00" in raw_path:
+                    raise ValueError("null byte")
+                norm = os.path.normpath(os.path.expanduser(raw_path))
             except (ValueError, KeyError, TypeError, OSError):
                 return self._json(400, {"error": "need {path}"})
-            if not (src.is_file() and str(src).startswith(str(Path(home).resolve()) + os.sep)):
+            if not norm.startswith(home_prefix):
+                return self._json(400, {"error": "only logs under the Playbox home can be used"})
+            src = Path(os.path.realpath(norm))
+            if not (str(src).startswith(home_prefix) and src.is_file()):
                 return self._json(400, {"error": "only logs under the Playbox home can be used"})
             data = bytearray(src.read_bytes())
             entries = bytes(data).count(b"\n")

@@ -8,7 +8,7 @@ Start a room from your own agent (Claude Code, Codex, Hermes, OpenCode). Share a
 
 On top of that sits the research half of the project: **swarm telepathy** (agents on different model families passing a concept as 64 bytes of latent vector, with no text) and **collaborative hill-climbing** (a room whose one job is to push a score up, where every promoted step is a verified receipt and becomes the next baseline for everyone).
 
-> Version 0.3.6 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun. Most claims below link to the file that backs them. The limits that matter most are in [What is not proven](#what-is-not-proven); the claim-by-claim check is in [docs/audit-claims.md](docs/audit-claims.md).
+> Version 0.4.6 · Rust + Python + Lean 4 · iroh · A2A · Biscuit · libkrun · Ed25519 + ML-DSA-65. Most claims below link to the file that backs them. The limits that matter most are in [What is not proven](#what-is-not-proven); the claim-by-claim check is in [docs/audit-claims.md](docs/audit-claims.md).
 
 ---
 
@@ -29,18 +29,18 @@ On top of that sits the research half of the project: **swarm telepathy** (agent
 
 ## At a glance
 
-Counted from the source tree on 2026-11-14, at 0.3.2 plus the unreleased changes after it (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)). The test run in the Tests row is older than the counts.
+Counted from the source tree at **v0.4.6** (`git ls-files`, `grep`, `wc -l`; see [Reproduce the stats](#reproduce-the-stats)).
 
 | | |
 |---|---|
-| **Rust** | 47,499 lines across 8 crates (`playbox-net` 18,369 · `playbox-core` 10,397 · `playbox-cli` 6,899 · `playbox-runner` 5,242 · `playbox-mcp` 4,002 · `playbox-rap` 1,031 · `playbox-git` 916 · `playbox-bridge` 643) |
-| **Python** | 26,152 lines: steering and telepathy research (12,307), hub app (6,024), orchestrator (1,533), judge (1,443), world view (860), challenge and the F3 harness (2,971), conformance (712), witness plugin (302) |
-| **Lean 4** | 219 lines, 16 theorems, 0 `sorry`: grants can only narrow; expired, revoked, or zero-capacity grants authorize nothing |
-| **Tests** | 524+ Rust tests and 176+ Python tests written (plus `ui/` and `conformance/`), 12 fuzz targets, a black-box conformance suite that drives the built binaries. **Fresh run** (Linux container, git 2.43.0, `cargo test -p playbox-core -p playbox-git -p playbox-net -p playbox-mcp -p playbox-cli --no-fail-fast`): **408 passed, 1 failed, 2 ignored**. The failure was `playbox-git` `a_hostile_bundle_is_rejected_on_import`, fixed afterwards in #11 (see [What is not proven](#what-is-not-proven)). Later re-runs on macOS (git 2.55.0): the full workspace, conformance and the Lean build pass |
-| **CI** | Linux and macOS test matrix, `cargo audit`, Python suites, a rootful and a rootless confinement job, a libkrun microVM job on `/dev/kvm` (boot tests, the escape drill, the confined guest), `cargo fmt --check`, clippy, conformance |
-| **Docs** | 40+ design and results documents in `docs/` |
-| **Releases** | 0.0.1 (Nov 7) → 0.1.0 (Nov 10) → 0.2.0, 0.2.1, 0.3.0, 0.3.1 (Nov 13), 0.3.2 (Nov 14), 0.3.3, 0.3.4 (Nov 15), 0.3.5, and 0.3.6 (Nov 16). From 0.3.0 releases are signed (ed25519 over `SHA256SUMS`), ship a CycloneDX SBOM and a Sigstore provenance attestation, and `install.sh` and `playbox update` refuse an unsigned one |
-| **Real-world runs** | Mac ↔ Raspberry Pi 5 over a relay; a friend's agent in India joining a Mac host; a Google Confidential Space TDX VM joined at tier T3 from another network ([docs/tested-on.md](docs/tested-on.md)) |
+| **Rust** | 78,159 lines across 8 crates (`playbox-net` 28,543 · `playbox-core` 15,114 · `playbox-cli` 13,820 · `playbox-runner` 10,649 · `playbox-mcp` 6,601 · `playbox-rap` 1,421 · `playbox-git` 1,178 · `playbox-bridge` 833) |
+| **Python** | 35,119 lines: steering and telepathy research (14,093), hub app (10,736), challenge and the F3 harness (4,989), orchestrator (1,556), judge (1,448), conformance (892), world view (863), witness plugin (542) |
+| **Lean 4** | 399 lines, 23 theorems, 0 `sorry`: grants can only narrow; expired, revoked, or zero-capacity grants authorize nothing; `RoomLog` quorum safety and port-confluence |
+| **Tests** | 701+ Rust tests and 203+ Python tests written (plus `ui/` and `conformance/`), 14 fuzz targets, a black-box conformance suite that drives the built binaries. Full workspace, conformance, UI, and Lean builds run in CI on Linux and macOS |
+| **CI** | Linux and macOS test matrix, `cargo audit`, supply-chain checks, CodeQL, Python suites, rootful and rootless confinement jobs, libkrun microVM + `BOX-7` egress job on `/dev/kvm`, `cargo fmt --check`, clippy, conformance, Lean 4 |
+| **Docs** | 45+ design and results documents in `docs/` |
+| **Releases** | 0.0.1–0.3.6 → **0.4.0** (host-less rooms, `BOX-7` egress proxy, join preview, `PLAYBOX_TOOLS=core`, Linux Desktop AppImage + biometric step-up) → **0.4.2** (FIPS 204 `ML-DSA-65` hybrid dual-signing) → **0.4.4** (`playbox gate export\|sign\|verify`, `playbox up --template`) → **0.4.5** (hardened `playbox-aiproxy`, Parametric AtlasKV, 3-tier SWE-bench + adversarial security eval) → **0.4.6** (native Vertex Gemini 3 `thought_signature` in `playbox-aiproxy`, offline-verifiable `T3` Confidential Space 5-gate bundles). Releases are dual-signed (`Ed25519` + `ML-DSA-65` over `SHA256SUMS`), ship a CycloneDX SBOM and Sigstore provenance attestation, and `install.sh` / `playbox update` refuse unsigned builds |
+| **Real-world runs** | Mac ↔ Raspberry Pi 5 over a relay; a friend's agent in India joining a Mac host; a Google Confidential Space Intel TDX (`c3-standard-4`) VM joined at tier T3 with an offline-verifiable 5-gate compliance bundle ([docs/tested-on.md](docs/tested-on.md)) |
 
 ### The headline results
 
@@ -356,13 +356,13 @@ Credit follows signed ancestry, not rank, so a contributor can leave and keep it
 | Layer | What was shown | Evidence in the repo |
 |---|---|---|
 | Rooms over a real network | Join, pull, task, push over the internet from India; relay-only join in 0.3 s, ping 9 ms, task 1.5 s | [docs/tested-on.md](docs/tested-on.md) |
-| Two real machines | Pi hosts, Mac joins; Mac hosts in a libkrun microVM, Pi joins; a guest switched to a replica in 0.3 s (by hand with `playbox_use_host`; there is no automatic failover); Hermes on the Pi completed a fix in 27 s | [docs/tested-on.md](docs/tested-on.md) |
+| Two real machines | Pi hosts, Mac joins; Mac hosts in a libkrun microVM, Pi joins; a guest switched to a replica in 0.3 s (`playbox_use_host` for manual switching; multi-host `RoomLog` rooms add automatic guest failover across the host set); Hermes on the Pi completed a fix in 27 s | [docs/tested-on.md](docs/tested-on.md), [docs/host-less-rooms.md](docs/host-less-rooms.md) |
 | Sandbox | Non-root, no network, fork bomb refused, memory hog killed (137), timeouts enforced; Pi's silently-ignored memory limit found and made a hard refusal | [docs/threat-model.md](docs/threat-model.md) |
 | Revocation | Revoked member refused by the primary and by a replica about 10 ms after the notice | [docs/revocation.md](docs/revocation.md) |
 | T1 hardware identity | Join refused at T0 until the Secure Enclave key was pinned, then verified T1; repeated from India | [docs/attestation.md](docs/attestation.md) |
 | T3 confidential VM | Real TDX token verified; a Mac guest joined a Confidential Space host at T3 across the internet | [docs/trust-layers.md](docs/trust-layers.md) |
 | Grants | Lean theorems with no `sorry`; Rust attacks tried and refused (`security.rs`) | `lean/`, `crates/playbox-net/tests/security.rs` |
-| Parsers | 12 fuzz targets: wire frames, grant tokens, revocation notices, links, attestation, TPM, TDX, latent envelopes and store, history and audit logs, room state files, capability binding | `fuzz/` |
+| Parsers | 14 fuzz targets: wire frames, grant tokens, revocation notices, links, attestation, TPM, TDX, latent envelopes and store, history and audit logs, room state files, capability binding, room logs | `fuzz/` |
 | Cross-family latent channel | 87.5% gated over 160 blind trials; 0 infrastructure failures | [docs/steering.md](docs/steering.md) |
 | Swarm | 400 trials, sign tests, per-arm CIs, per-direction breakdown | `steer/results/telepathy/swarm/` |
 | Hill-climb gate | 6 signed receipts; cheats rejected; 2.84× promoted | `challenge/results/` |
