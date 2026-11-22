@@ -366,6 +366,8 @@ impl Server {
 
     pub(crate) async fn steer(&mut self, a: &Value) -> Result<Value> {
         use playbox_core::steer::{Mode, Recipe, Site, SteerSpec, Tokens};
+        use std::io::Read as _;
+        const MAX_DIRECTION_BYTES: u64 = 64 * 1024 * 1024;
         let weights = playbox_core::record::unhex::<32>(req(a, "weights")?)
             .map_err(|e| anyhow!("weights: {e}"))?;
         let prompts: Vec<&str> = a
@@ -378,7 +380,14 @@ impl Server {
                     .ok_or_else(|| anyhow!("prompts must be a list of strings"))
             })
             .collect::<Result<_>>()?;
-        let admission = self.admit("playbox_steer", &prompts, s(a, "capability"))?;
+        let file = req(a, "direction_file")?;
+        let mut admit_args: Vec<&str> = Vec::with_capacity(prompts.len() + 2);
+        admit_args.extend(prompts.iter().copied());
+        admit_args.push(file);
+        if let Some(model) = s(a, "model") {
+            admit_args.push(model);
+        }
+        let admission = self.admit("playbox_steer", &admit_args, s(a, "capability"))?;
         let layers: Vec<u32> = a
             .get("layers")
             .and_then(Value::as_array)
@@ -390,8 +399,21 @@ impl Server {
                     .ok_or_else(|| anyhow!("layers must be non-negative integers"))
             })
             .collect::<Result<_>>()?;
-        let file = req(a, "direction_file")?;
-        let direction = std::fs::read(file).with_context(|| format!("reading {file}"))?;
+        let meta = std::fs::metadata(file).with_context(|| format!("reading {file}"))?;
+        if !meta.is_file() {
+            bail!("direction_file {file} must be a regular file");
+        }
+        if meta.len() > MAX_DIRECTION_BYTES {
+            bail!("direction_file {file} exceeds maximum size ({MAX_DIRECTION_BYTES} bytes)");
+        }
+        let f = std::fs::File::open(file).with_context(|| format!("reading {file}"))?;
+        let mut direction = Vec::new();
+        f.take(MAX_DIRECTION_BYTES + 1)
+            .read_to_end(&mut direction)
+            .with_context(|| format!("reading {file}"))?;
+        if direction.len() as u64 > MAX_DIRECTION_BYTES {
+            bail!("direction_file {file} exceeds maximum size ({MAX_DIRECTION_BYTES} bytes)");
+        }
         let mut set = serde_json::Map::new();
         set.insert("prompts".into(), json!(prompts));
         set.insert(

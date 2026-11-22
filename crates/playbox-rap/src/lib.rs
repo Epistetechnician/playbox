@@ -37,6 +37,8 @@ const CHOICES: [&str; 2] = ["Approve this once", "Deny"];
 const DENY: usize = 1;
 const CAPABILITY_TTL_MS: u64 = 120_000;
 const SHOWN_ARG_CHARS: usize = 500;
+const MAX_RUNNING: usize = 256;
+const MAX_SUBS: usize = 64;
 
 pub struct Rap {
     server: Mutex<Server>,
@@ -128,9 +130,15 @@ impl Rap {
         if !matches!(u.scheme(), "http" | "https") {
             return false;
         }
+        if !u.username().is_empty() || u.password().is_some() {
+            return false;
+        }
         match u.host_str() {
             Some("localhost" | "127.0.0.1" | "[::1]") => true,
-            Some(h) => self.callback_hosts.iter().any(|a| a == h),
+            Some(h) => self
+                .callback_hosts
+                .iter()
+                .any(|a| !a.trim().is_empty() && a.eq_ignore_ascii_case(h)),
             None => false,
         }
     }
@@ -233,6 +241,9 @@ async fn invoke(
         return StatusCode::BAD_REQUEST;
     }
     if inv.operation == SUBSCRIBE {
+        if rap.subs.lock().await.len() >= MAX_SUBS {
+            return StatusCode::TOO_MANY_REQUESTS;
+        }
         rap.subscribe(inv).await;
         return StatusCode::OK;
     }
@@ -246,6 +257,9 @@ async fn invoke(
     let mut running = rap.running.lock().await;
     if running.contains_key(&key) {
         return StatusCode::CONFLICT;
+    }
+    if running.len() >= MAX_RUNNING {
+        return StatusCode::TOO_MANY_REQUESTS;
     }
     let task = tokio::spawn(rap_protocol::log_panic("playbox-rap invoke", async move {
         let rap = worker;
@@ -611,6 +625,67 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert(header::AUTHORIZATION, "Bearer    ".parse().unwrap());
         assert!(!authorized(&rap, &h));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn callback_allowed_blocks_userinfo_and_matches_hosts_case_insensitively() {
+        let dir =
+            std::env::temp_dir().join(format!("playbox-rap-cb-{}", playbox_core::store::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let srv = Server::new(&dir).unwrap();
+        let rap = Rap::new(
+            srv,
+            "secret".to_string(),
+            vec!["Runtime.Example.COM".to_string(), "   ".to_string()],
+            "http://127.0.0.1:0".into(),
+        );
+        assert!(rap.callback_allowed("http://127.0.0.1:9000/cb"));
+        assert!(rap.callback_allowed("https://runtime.example.com/cb"));
+        assert!(!rap.callback_allowed("http://user:pass@127.0.0.1:9000/cb"));
+        assert!(!rap.callback_allowed("https://token@runtime.example.com/cb"));
+        assert!(!rap.callback_allowed("file:///etc/passwd"));
+        assert!(!rap.callback_allowed("https://evil.example.com/cb"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn invoke_returns_429_when_running_cap_is_reached() {
+        let dir =
+            std::env::temp_dir().join(format!("playbox-rap-cap-{}", playbox_core::store::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let srv = Server::new(&dir).unwrap();
+        let rap = Rap::new(
+            srv,
+            "secret".to_string(),
+            vec![],
+            "http://127.0.0.1:0".into(),
+        );
+        {
+            let mut running = rap.running.lock().await;
+            for i in 0..MAX_RUNNING {
+                running.insert(
+                    format!("id-{i}"),
+                    Running {
+                        group: "g".into(),
+                        call: json!({}),
+                        task: tokio::spawn(async {}).abort_handle(),
+                    },
+                );
+            }
+        }
+        let mut h = HeaderMap::new();
+        h.insert(header::AUTHORIZATION, "Bearer secret".parse().unwrap());
+        let inv: RapInvocation = serde_json::from_value(json!({
+            "id": "overflow-id",
+            "group_id": "g",
+            "operation": "playbox_whoami",
+            "arguments": {},
+            "callback_url": "http://127.0.0.1:9000/cb"
+        }))
+        .unwrap();
+        let status = invoke(State(Arc::clone(&rap)), h, Json(inv)).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -422,12 +422,30 @@ impl Server {
             bail!("already joined a room; call playbox_leave first to join another");
         }
         let from_file = match s(a, "link_file") {
-            Some(path) => Some(
-                std::fs::read_to_string(path)
-                    .with_context(|| format!("reading link_file {path}"))?
-                    .trim()
-                    .to_string(),
-            ),
+            Some(path) => {
+                use std::io::Read as _;
+                const MAX_LINK_FILE_BYTES: u64 = 64 * 1024;
+                let meta =
+                    std::fs::metadata(path).with_context(|| format!("reading link_file {path}"))?;
+                if !meta.is_file() {
+                    bail!("link_file {path} must be a regular file");
+                }
+                if meta.len() > MAX_LINK_FILE_BYTES {
+                    bail!("link_file {path} exceeds maximum size ({MAX_LINK_FILE_BYTES} bytes)");
+                }
+                let f = std::fs::File::open(path)
+                    .with_context(|| format!("reading link_file {path}"))?;
+                let mut buf = Vec::new();
+                f.take(MAX_LINK_FILE_BYTES + 1)
+                    .read_to_end(&mut buf)
+                    .with_context(|| format!("reading link_file {path}"))?;
+                if buf.len() as u64 > MAX_LINK_FILE_BYTES {
+                    bail!("link_file {path} exceeds maximum size ({MAX_LINK_FILE_BYTES} bytes)");
+                }
+                let text = String::from_utf8(buf)
+                    .with_context(|| format!("reading link_file {path}: invalid UTF-8"))?;
+                Some(text.trim().to_string())
+            }
             None => None,
         };
         let link = match (&from_file, s(a, "link")) {
