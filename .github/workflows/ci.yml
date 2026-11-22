@@ -122,7 +122,7 @@ jobs:
           ls -l /dev/kvm
       - name: libkrun and libkrunfw (cached)
         id: krun-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/krun
           key: krun-${{ runner.arch }}-${{ env.LIBKRUN_TAG }}-${{ env.LIBKRUNFW_TAG }}
