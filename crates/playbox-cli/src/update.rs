@@ -150,7 +150,10 @@ fn platform() -> Result<String> {
 
 fn base_url(version: Option<&str>) -> String {
     if let Ok(b) = std::env::var("PLAYBOX_BASE_URL") {
-        return b.trim_end_matches('/').to_string();
+        let trimmed = b.trim();
+        if !trimmed.is_empty() {
+            return trimmed.trim_end_matches('/').to_string();
+        }
     }
     match version {
         Some(v) => format!(
@@ -161,25 +164,39 @@ fn base_url(version: Option<&str>) -> String {
     }
 }
 
-fn fetch(url: &str) -> Result<Vec<u8>> {
-    // A mirror set through the environment may be plain http or a local directory; the default is https only.
-    let proto = if std::env::var_os("PLAYBOX_BASE_URL").is_some() {
+fn curl_args(url: &str, relaxed: bool) -> Result<Vec<String>> {
+    if url.is_empty() || url.starts_with('-') || url.bytes().any(|b| b.is_ascii_control()) {
+        bail!("refusing unsafe update URL: {url:?}");
+    }
+    let proto = if relaxed {
         "=https,http,file"
     } else {
         "=https"
     };
+    Ok(vec![
+        "--proto".into(),
+        proto.into(),
+        "--proto-redir".into(),
+        proto.into(),
+        "--tlsv1.2".into(),
+        "-fsSL".into(),
+        "--retry".into(),
+        "3".into(),
+        "--max-time".into(),
+        "300".into(),
+        "--".into(),
+        url.into(),
+    ])
+}
+
+fn fetch(url: &str) -> Result<Vec<u8>> {
+    // A mirror set through the environment may be plain http or a local directory; the default is https only.
+    let relaxed = std::env::var("PLAYBOX_BASE_URL")
+        .ok()
+        .is_some_and(|b| !b.trim().is_empty());
+    let args = curl_args(url, relaxed)?;
     let out = Command::new("curl")
-        .args([
-            "--proto",
-            proto,
-            "--tlsv1.2",
-            "-fsSL",
-            "--retry",
-            "3",
-            "--max-time",
-            "300",
-            url,
-        ])
+        .args(&args)
         .stdin(Stdio::null())
         .output()
         .context("running curl (the updater needs curl, as install.sh does)")?;
@@ -260,8 +277,20 @@ fn target_exe() -> Result<PathBuf> {
     let dir = exe
         .parent()
         .ok_or_else(|| anyhow!("no directory for {}", exe.display()))?;
-    let probe = dir.join(format!(".playbox-write-test-{}", std::process::id()));
-    std::fs::write(&probe, b"").map_err(|e| {
+    let rnd = playbox_net::random_bytes()?;
+    let probe = dir.join(format!(
+        ".playbox-write-test-{}-{}",
+        std::process::id(),
+        playbox_core::record::hex(&rnd[..8])
+    ));
+    let mut probe_opts = std::fs::OpenOptions::new();
+    probe_opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        probe_opts.mode(0o600);
+    }
+    probe_opts.open(&probe).map_err(|e| {
         anyhow!(
             "cannot write to {}: {e}. Reinstall with install.sh into a directory you own",
             dir.display()
@@ -269,6 +298,63 @@ fn target_exe() -> Result<PathBuf> {
     })?;
     let _ = std::fs::remove_file(probe);
     Ok(exe)
+}
+
+fn resolve_signing_keys(override_key: Option<&str>, pinned: Vec<String>) -> Result<Vec<String>> {
+    let keys = match override_key {
+        Some(k) => {
+            let trimmed = k.trim();
+            if trimmed.is_empty() {
+                bail!(
+                    "--pubkey must not be empty; refusing to update without signature verification"
+                );
+            }
+            vec![trimmed.to_string()]
+        }
+        None => pinned,
+    };
+    if keys.is_empty() {
+        bail!("this build pins no release signing key; refusing to update without signature verification");
+    }
+    Ok(keys)
+}
+
+fn ensure_regular_non_symlink(path: &Path, label: &str) -> Result<()> {
+    let meta = std::fs::symlink_metadata(path)
+        .with_context(|| format!("{label} missing at {}", path.display()))?;
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+        bail!(
+            "refusing {label} at {}: must be a regular non-symlink file",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+fn stage_executable(src: &Path, dir: &Path, prefix: &str) -> Result<PathBuf> {
+    let rnd = playbox_net::random_bytes()?;
+    let dst = dir.join(format!(
+        "{prefix}.{}-{}",
+        std::process::id(),
+        playbox_core::record::hex(&rnd[..12])
+    ));
+    let mut input =
+        std::fs::File::open(src).with_context(|| format!("opening {}", src.display()))?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o755);
+    }
+    let mut output = opts
+        .open(&dst)
+        .with_context(|| format!("creating {}", dst.display()))?;
+    if let Err(e) = std::io::copy(&mut input, &mut output) {
+        let _ = std::fs::remove_file(&dst);
+        return Err(e).with_context(|| format!("writing {}", dst.display()));
+    }
+    Ok(dst)
 }
 
 fn prev_path(exe: &Path) -> PathBuf {
@@ -292,19 +378,18 @@ pub fn run(o: &Opts) -> Result<u8> {
     let sums_raw = fetch(&format!("{base}/SHA256SUMS"))?;
     let sums_path = tmp.0.join("SHA256SUMS");
     std::fs::write(&sums_path, &sums_raw)?;
-    let keys = o.pubkey.clone().map_or_else(pinned_keys, |k| vec![k]);
-    if keys.is_empty() {
-        eprintln!("note: this build pins no release key, so the update is checked against SHA256SUMS only");
-    } else {
-        let sig = fetch(&format!("{base}/SHA256SUMS.sig"))
-            .context("this release is not signed, and this build requires a signature")?;
-        std::fs::write(tmp.0.join("SHA256SUMS.sig"), sig)?;
-        let ok = keys
-            .iter()
-            .any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
-        if !ok {
-            bail!("BAD SIGNATURE: SHA256SUMS was not signed by any key this build trusts ({} pinned); not updating", keys.len());
-        }
+    let keys = resolve_signing_keys(o.pubkey.as_deref(), pinned_keys())?;
+    let sig = fetch(&format!("{base}/SHA256SUMS.sig"))
+        .context("this release is not signed, and this build requires a signature")?;
+    std::fs::write(tmp.0.join("SHA256SUMS.sig"), sig)?;
+    let ok = keys
+        .iter()
+        .any(|k| crate::release::verify_quiet(&sums_path.to_string_lossy(), None, k).is_ok());
+    if !ok {
+        bail!(
+            "BAD SIGNATURE: SHA256SUMS was not signed by any key this build trusts ({} pinned); not updating",
+            keys.len()
+        );
     }
     let pq_keys = match (&o.pq_pubkey, &o.pubkey) {
         (Some(k), _) => vec![k.clone()],
@@ -407,9 +492,7 @@ pub fn run(o: &Opts) -> Result<u8> {
         bail!("could not unpack {asset}");
     }
     let new_bin = tmp.0.join("playbox");
-    if !new_bin.is_file() {
-        bail!("the archive has no playbox binary");
-    }
+    ensure_regular_non_symlink(&new_bin, "extracted playbox binary")?;
     #[cfg(unix)]
     std::fs::set_permissions(
         &new_bin,
@@ -427,13 +510,22 @@ pub fn run(o: &Opts) -> Result<u8> {
             ver_text.trim()
         );
     }
-    let staged = exe.with_file_name(".playbox.new");
-    std::fs::copy(&new_bin, &staged).with_context(|| format!("writing {}", staged.display()))?;
-    #[cfg(unix)]
-    std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+    let exe_dir = exe
+        .parent()
+        .ok_or_else(|| anyhow!("no directory for {}", exe.display()))?;
+    let staged = stage_executable(&new_bin, exe_dir, ".playbox.new")?;
     keep_local_signature(&staged, &exe);
-    std::fs::copy(&exe, prev_path(&exe)).context("keeping the old binary for --rollback")?;
-    std::fs::rename(&staged, &exe).context("replacing the binary")?;
+    let prev_staged = stage_executable(&exe, exe_dir, ".playbox.prev")
+        .context("keeping the old binary for --rollback")?;
+    if let Err(e) = std::fs::rename(&prev_staged, prev_path(&exe)) {
+        let _ = std::fs::remove_file(&prev_staged);
+        let _ = std::fs::remove_file(&staged);
+        return Err(e).context("keeping the old binary for --rollback");
+    }
+    if let Err(e) = std::fs::rename(&staged, &exe) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(e).context("replacing the binary");
+    }
     install_mcp(&tmp.0, &exe, &target);
 
     println!("updated playbox {cur} -> {target}");
@@ -486,10 +578,11 @@ fn same_file(a: &Path, b: &Path) -> bool {
 /// old file stays.
 fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
     let new_mcp = dir.join("playbox-mcp");
-    if !new_mcp.is_file() {
+    if !new_mcp.exists() {
         return;
     }
     let result = (|| -> Result<()> {
+        ensure_regular_non_symlink(&new_mcp, "extracted playbox-mcp binary")?;
         #[cfg(unix)]
         std::fs::set_permissions(
             &new_mcp,
@@ -517,12 +610,15 @@ fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
     }
     for dest in mcp_homes(exe) {
         let one = (|| -> Result<()> {
-            let staged = dest.with_file_name(".playbox-mcp.new");
-            std::fs::copy(&new_mcp, &staged)?;
-            #[cfg(unix)]
-            std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+            let dest_dir = dest
+                .parent()
+                .ok_or_else(|| anyhow!("no directory for {}", dest.display()))?;
+            let staged = stage_executable(&new_mcp, dest_dir, ".playbox-mcp.new")?;
             keep_local_signature(&staged, &dest);
-            std::fs::rename(&staged, &dest)?;
+            if let Err(e) = std::fs::rename(&staged, &dest) {
+                let _ = std::fs::remove_file(&staged);
+                return Err(e.into());
+            }
             Ok(())
         })();
         match one {
@@ -538,9 +634,7 @@ fn install_mcp(dir: &Path, exe: &Path, target: &Version) {
 fn rollback() -> Result<u8> {
     let exe = target_exe()?;
     let prev = prev_path(&exe);
-    if !prev.is_file() {
-        bail!("no previous version kept at {}", prev.display());
-    }
+    ensure_regular_non_symlink(&prev, "previous version")?;
     let ver = Command::new(&prev)
         .arg("--version")
         .stdin(Stdio::null())
@@ -665,5 +759,45 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn signing_keys_fail_closed_when_empty() {
+        assert!(resolve_signing_keys(None, vec![]).is_err());
+        assert!(resolve_signing_keys(Some("   "), vec!["aa".into()]).is_err());
+        assert_eq!(
+            resolve_signing_keys(None, vec!["deadbeef".into()]).unwrap(),
+            vec!["deadbeef".to_string()]
+        );
+    }
+
+    #[test]
+    fn curl_args_enforces_proto_redir_and_blocks_flag_injection() {
+        let args = curl_args("https://example.com/SHA256SUMS", false).unwrap();
+        let redir_pos = args.iter().position(|a| a == "--proto-redir").unwrap();
+        assert_eq!(args[redir_pos + 1], "=https");
+        let sep_pos = args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(args[sep_pos + 1], "https://example.com/SHA256SUMS");
+
+        assert!(curl_args("--config=/tmp/evil", false).is_err());
+        assert!(curl_args("https://example.com/\n--next", false).is_err());
+        assert!(curl_args("", false).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_and_symlink_checks_block_symlink_clobber() {
+        let tmp = TempDir::new().unwrap();
+        let victim = tmp.0.join("victim");
+        std::fs::write(&victim, b"untouched").unwrap();
+        let sym = tmp.0.join("playbox.prev");
+        std::os::unix::fs::symlink(&victim, &sym).unwrap();
+        assert!(ensure_regular_non_symlink(&sym, "previous version").is_err());
+
+        let src = tmp.0.join("new-bin");
+        std::fs::write(&src, b"new-bytes").unwrap();
+        let staged = stage_executable(&src, &tmp.0, ".playbox.new").unwrap();
+        assert_eq!(std::fs::read(&staged).unwrap(), b"new-bytes");
+        assert_eq!(std::fs::read(&victim).unwrap(), b"untouched");
     }
 }

@@ -115,26 +115,10 @@ impl Source {
     }
 
     fn curl(&self, name: &str, out: Option<&Path>) -> Result<Vec<u8>, Error> {
-        let mut c = Command::new("curl");
-        c.args([
-            "--proto",
-            if self.relaxed {
-                "=https,http,file"
-            } else {
-                "=https"
-            },
-            "--tlsv1.2",
-            "-fsSL",
-            "--retry",
-            "3",
-            "--max-time",
-            "600",
-        ]);
-        if let Some(p) = out {
-            c.arg("-o").arg(p);
-        }
-        let o = c
-            .arg(self.url(name))
+        let url = self.url(name);
+        let args = curl_args(&url, self.relaxed, out)?;
+        let o = Command::new("curl")
+            .args(&args)
             .stdin(Stdio::null())
             .output()
             .map_err(|e| Error::Fetch(format!("running curl: {e}")))?;
@@ -145,6 +129,43 @@ impl Source {
         }
         Ok(o.stdout)
     }
+}
+
+fn curl_args(
+    url: &str,
+    relaxed: bool,
+    out: Option<&Path>,
+) -> Result<Vec<std::ffi::OsString>, Error> {
+    if url.is_empty() || url.starts_with('-') || url.bytes().any(|b| b.is_ascii_control()) {
+        return Err(Error::Fetch(format!("refusing unsafe update URL: {url:?}")));
+    }
+    let proto = if relaxed {
+        "=https,http,file"
+    } else {
+        "=https"
+    };
+    let mut args: Vec<std::ffi::OsString> = [
+        "--proto",
+        proto,
+        "--proto-redir",
+        proto,
+        "--tlsv1.2",
+        "-fsSL",
+        "--retry",
+        "3",
+        "--max-time",
+        "600",
+    ]
+    .into_iter()
+    .map(std::ffi::OsString::from)
+    .collect();
+    if let Some(p) = out {
+        args.push(std::ffi::OsString::from("-o"));
+        args.push(p.as_os_str().to_os_string());
+    }
+    args.push(std::ffi::OsString::from("--"));
+    args.push(std::ffi::OsString::from(url));
+    Ok(args)
 }
 
 fn hex(b: &[u8]) -> String {
@@ -451,5 +472,22 @@ mod tests {
             check(&r.src(), v("0.3.14"), ASSET, &[pubhex(&k)]).unwrap(),
             Check::NoBuild
         );
+    }
+
+    #[test]
+    fn curl_args_enforces_proto_redir_and_blocks_flag_injection() {
+        let args = curl_args("https://example.com/SHA256SUMS", false, None).unwrap();
+        let strs: Vec<_> = args
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        let redir_pos = strs.iter().position(|a| a == "--proto-redir").unwrap();
+        assert_eq!(strs[redir_pos + 1], "=https");
+        let sep_pos = strs.iter().position(|a| a == "--").unwrap();
+        assert_eq!(strs[sep_pos + 1], "https://example.com/SHA256SUMS");
+
+        assert!(curl_args("--config=/tmp/evil", false, None).is_err());
+        assert!(curl_args("https://example.com/\n--next", false, None).is_err());
+        assert!(curl_args("", false, None).is_err());
     }
 }

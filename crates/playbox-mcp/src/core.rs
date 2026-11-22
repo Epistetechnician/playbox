@@ -20,18 +20,79 @@ use std::{
     sync::Arc,
 };
 
+const MAX_JSONRPC_LINE_BYTES: usize = 16 * 1024 * 1024;
+
 impl Server {
+    /// Read one `\n`-terminated line up to `MAX_JSONRPC_LINE_BYTES`. Returns `Ok(None)` on EOF,
+    /// `Ok(Some(None))` if the line exceeded the limit (after draining to `\n`/EOF).
+    pub(crate) async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
+        reader: &mut R,
+        max_bytes: usize,
+    ) -> Result<Option<Option<String>>> {
+        use tokio::io::AsyncBufReadExt;
+        let mut buf = Vec::new();
+        let mut too_long = false;
+        loop {
+            let chunk = reader.fill_buf().await?;
+            if chunk.is_empty() {
+                if buf.is_empty() && !too_long {
+                    return Ok(None);
+                }
+                break;
+            }
+            if let Some(pos) = chunk.iter().position(|&b| b == b'\n') {
+                if !too_long {
+                    if buf.len() + pos > max_bytes {
+                        too_long = true;
+                    } else {
+                        buf.extend_from_slice(&chunk[..pos]);
+                    }
+                }
+                reader.consume(pos + 1);
+                break;
+            }
+            let len = chunk.len();
+            if !too_long {
+                if buf.len() + len > max_bytes {
+                    too_long = true;
+                    buf.clear();
+                } else {
+                    buf.extend_from_slice(chunk);
+                }
+            }
+            reader.consume(len);
+        }
+        if too_long {
+            return Ok(Some(None));
+        }
+        if buf.ends_with(b"\r") {
+            buf.pop();
+        }
+        Ok(Some(Some(
+            String::from_utf8(buf).context("stdin line is not valid UTF-8")?,
+        )))
+    }
+
     /// Serve JSON-RPC over stdin/stdout until stdin closes. With live delivery on, the hello and new room messages are pushed
     /// between requests; otherwise the timer never ticks.
     pub async fn serve_stdio(&mut self) -> Result<()> {
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-        let mut lines = BufReader::new(tokio::io::stdin()).lines();
+        use tokio::io::{AsyncWriteExt, BufReader};
+        let mut reader = BufReader::new(tokio::io::stdin());
         let mut out = tokio::io::stdout();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             let line = tokio::select! {
-                l = lines.next_line() => match l? { Some(l) => l, None => break },
+                l = Self::read_bounded_line(&mut reader, MAX_JSONRPC_LINE_BYTES) => match l? {
+                    Some(Some(l)) => l,
+                    Some(None) => {
+                        let err = json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32600, "message": "request line too large"}});
+                        out.write_all(format!("{err}\n").as_bytes()).await?;
+                        out.flush().await?;
+                        continue;
+                    }
+                    None => break,
+                },
                 _ = tick.tick(), if self.live_enabled() => {
                     let mut pushes: Vec<Value> = self.live_hello().into_iter().collect();
                     pushes.extend(self.live_poll().await);
@@ -213,6 +274,11 @@ impl Server {
     }
 
     pub async fn handle(&mut self, msg: Value) -> Option<Value> {
+        if !msg.is_object() {
+            return Some(
+                json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32600, "message": "Invalid Request"}}),
+            );
+        }
         let id = msg.get("id").cloned();
         let method = msg
             .get("method")

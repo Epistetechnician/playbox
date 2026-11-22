@@ -150,19 +150,15 @@ pub async fn launch(a: LaunchArgs) -> Result<()> {
         .command
         .first()
         .ok_or_else(|| anyhow!("give the command to run after --"))?;
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
+    let rnd = playbox_net::random_bytes()?;
     let tag: String = harness
         .chars()
         .filter(char::is_ascii_alphanumeric)
         .collect();
-    let home = store::home()
-        .join("launched")
-        .join(format!("{tag}-{stamp:x}"));
-    std::fs::create_dir_all(&home)?;
-    #[cfg(unix)]
-    std::fs::set_permissions(&home, std::os::unix::fs::PermissionsExt::from_mode(0o700))?;
+    let launched = store::home().join("launched");
+    std::fs::create_dir_all(&launched)?;
+    let home = launched.join(format!("{tag}-{}", playbox_core::record::hex(&rnd[..16])));
+    create_private_dir(&home)?;
     let id = playbox_net::identity_key(&home.join("guest.key"))?
         .public()
         .to_string();
@@ -171,12 +167,7 @@ pub async fn launch(a: LaunchArgs) -> Result<()> {
         bail!("the host would not make a link: {link}");
     }
     let link_file = home.join("join-link");
-    std::fs::write(&link_file, &link)?;
-    #[cfg(unix)]
-    std::fs::set_permissions(
-        &link_file,
-        std::os::unix::fs::PermissionsExt::from_mode(0o600),
-    )?;
+    write_private_new(&link_file, link.as_bytes())?;
     let image = exe_digest(cmd);
     eprintln!(
         "launching {harness} in {host_name}: key {} (home {})",
@@ -220,6 +211,33 @@ pub async fn launch(a: LaunchArgs) -> Result<()> {
     Ok(())
 }
 
+fn create_private_dir(path: &Path) -> Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(path)
+        .with_context(|| format!("create {}", path.display()))
+}
+
+fn write_private_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts
+        .open(path)
+        .with_context(|| format!("create {}", path.display()))?;
+    f.write_all(bytes)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +267,37 @@ mod tests {
     fn an_executable_digest_names_the_file_and_a_missing_one_is_empty() {
         assert!(exe_digest("sh").starts_with("sha256:") && exe_digest("sh").len() == 71);
         assert_eq!(exe_digest("definitely-not-a-command-here"), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_private_new_creates_0600_and_refuses_symlink() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "playbox-launch-priv-{}",
+            playbox_core::store::now_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        create_private_dir(&dir).unwrap();
+        assert_eq!(
+            std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let f = dir.join("join-link");
+        write_private_new(&f, b"playbox://secret").unwrap();
+        assert_eq!(
+            std::fs::metadata(&f).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let victim = dir.join("victim");
+        std::fs::write(&victim, b"untouched").unwrap();
+        let sym = dir.join("sym-link");
+        std::os::unix::fs::symlink(&victim, &sym).unwrap();
+        assert!(write_private_new(&sym, b"overwrite").is_err());
+        assert_eq!(std::fs::read(&victim).unwrap(), b"untouched");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
