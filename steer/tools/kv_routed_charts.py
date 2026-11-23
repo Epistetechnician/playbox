@@ -17,6 +17,7 @@ C_CTX = "#8E9AAF"
 C_RAG = "#E07A5F"
 C_ROUTED = "#2A9D8F"
 C_CPU = "#F4A261"
+C_CONV = "#D97706"
 
 plt.rcParams.update(
     {
@@ -432,6 +433,94 @@ def make_dense_model_qwen8b() -> None:
     plt.close(fig)
 
 
+def make_crossover_curve() -> None:
+    """4K -> 48K (+64K RAG) working-set crossover curve on A100-80GB Qwen3-30B-A3B-FP8."""
+    l_routed = np.array([4.99, 9.13, 17.54, 34.17, 50.84])
+    tpm_routed = np.array([370.24, 246.62, 132.90, 56.85, 23.69])
+    acc_routed = np.array([100.0, 99.0, 100.0, 96.9, 95.8])
+    p95_routed = np.array([2.61, 4.83, 9.79, 25.44, 65.11])
+
+    l_rag = np.array([4.99, 9.13, 17.54, 34.17, 50.84, 67.5])
+    tpm_rag = np.array([271.55, 251.71, 274.29, 268.12, 270.59, 244.96])
+    tpm_conv = np.array([169.03, 163.04, 167.85, 184.11, 189.86, 156.42])
+    acc_rag = np.array([50.0, 39.6, 53.1, 40.6, 53.1, 50.0])
+    acc_conv = np.array([84.4, 54.2, 67.7, 74.0, 100.0, 64.6])
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.8, 4.5), dpi=180)
+
+    # Panel 1: Throughput vs Entity Dossier Size (L)
+    ax1.axvspan(0, 8.17, color="#2563EB", alpha=0.08, label="Routed KV dominates all (<8.2K)")
+    ax1.axvspan(8.17, 13.17, color="#10B981", alpha=0.08, label="Beats Conv-RAG (8.2K–13.2K)")
+    ax1.axvspan(48.0, 70.0, color="#DC2626", alpha=0.06, label="KV capacity wall (≥48K)")
+
+    ax1.plot(l_routed, tpm_routed, "-o", color=C_ROUTED, lw=2.5, ms=7, label="S-ROUTED (Entity KV)")
+    ax1.plot(l_rag, tpm_rag, "--s", color=C_RAG, lw=2.0, ms=5.5, label="S-RAG (GPU Dense+Rerank)")
+    ax1.plot(l_rag, tpm_conv, ":^", color=C_CONV, lw=2.0, ms=6, label="S-CONV-RAG (+ LLM Rewriter)")
+
+    ax1.axvline(8.17, color=C_RAG, ls=":", lw=1.2, alpha=0.8)
+    ax1.axvline(13.17, color=C_CONV, ls=":", lw=1.2, alpha=0.8)
+    ax1.annotate(
+        "L* vs S-RAG\n8.2K tok",
+        xy=(8.17, 267),
+        xytext=(12.0, 335),
+        fontsize=8.2,
+        fontweight="bold",
+        color=C_RAG,
+        arrowprops={"arrowstyle": "->", "color": C_RAG, "lw": 1.1},
+    )
+    ax1.annotate(
+        "L* vs Conv-RAG\n13.2K tok",
+        xy=(13.17, 175),
+        xytext=(22.0, 215),
+        fontsize=8.2,
+        fontweight="bold",
+        color=C_CONV,
+        arrowprops={"arrowstyle": "->", "color": C_CONV, "lw": 1.1},
+    )
+    for x, y in zip(l_routed, tpm_routed):
+        ax1.text(x, y + 12, f"{y:.0f}", ha="center", va="bottom", fontsize=8, fontweight="bold", color=C_ROUTED)
+
+    ax1.set_xlabel("Entity Dossier Working-Set Size (K prompt tokens)", fontsize=9.8)
+    ax1.set_ylabel("Throughput (turns / min, n=8)", fontsize=9.8)
+    ax1.set_xlim(2, 70)
+    ax1.set_ylim(0, 425)
+    ax1.set_title("Throughput Crossover Curve (4K → 64K)", fontsize=10.5, fontweight="bold")
+    ax1.legend(loc="upper right", fontsize=7.6, frameon=True)
+
+    # Panel 2: Accuracy & p95 Tail Latency across Working-Set Size
+    ax2.plot(l_routed, acc_routed, "-o", color=C_ROUTED, lw=2.4, ms=7, label="S-ROUTED Accuracy (%)")
+    ax2.plot(l_rag, acc_conv, ":^", color=C_CONV, lw=1.9, ms=6, label="S-CONV-RAG Accuracy (%)")
+    ax2.plot(l_rag, acc_rag, "--s", color=C_RAG, lw=1.9, ms=5.5, label="S-RAG Accuracy (%)")
+    ax2.set_xlabel("Entity Dossier Working-Set Size (K prompt tokens)", fontsize=9.8)
+    ax2.set_ylabel("Accuracy (%)", fontsize=9.8)
+    ax2.set_xlim(2, 70)
+    ax2.set_ylim(25, 112)
+    ax2.set_title("Accuracy Retention vs S-ROUTED p95 Tail Latency", fontsize=10.5, fontweight="bold")
+
+    ax2b = ax2.twinx()
+    ax2b.plot(l_routed, p95_routed, "-D", color="#DC2626", lw=1.8, ms=5.5, alpha=0.85, label="S-ROUTED p95 q→end (s)")
+    ax2b.set_ylabel("S-ROUTED p95 q→end (s)", fontsize=9.5, color="#DC2626")
+    ax2b.tick_params(axis="y", labelcolor="#DC2626")
+    ax2b.set_ylim(0, 78)
+    ax2b.grid(False)
+    for x, y in zip(l_routed, p95_routed):
+        ax2b.text(x, y + 2.2, f"{y:.1f}s", ha="center", va="bottom", fontsize=7.8, color="#DC2626")
+
+    lines1, labels1 = ax2.get_legend_handles_labels()
+    lines2, labels2 = ax2b.get_legend_handles_labels()
+    ax2.legend(lines1 + lines2, labels1 + labels2, loc="lower right", fontsize=7.5, frameon=True, framealpha=0.92)
+
+    fig.suptitle(
+        "Working-Set Size Crossover Law: Qwen3-30B-A3B-FP8 on A100-80GB (1,632 Turns · 0 Errors · GPU Dense+Rerank)",
+        fontsize=11.0,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "08_crossover_curve.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     make_clean_3arm()
     make_noisy_routing()
@@ -440,4 +529,5 @@ if __name__ == "__main__":
     make_latency_delta_ms()
     make_dense_rerank_sota()
     make_dense_model_qwen8b()
-    print(f"Wrote 7 charts to {OUT_DIR}")
+    make_crossover_curve()
+    print(f"Wrote 8 charts to {OUT_DIR}")
