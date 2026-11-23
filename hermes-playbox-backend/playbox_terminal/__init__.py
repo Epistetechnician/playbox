@@ -298,11 +298,16 @@ class PlayboxEnvironment(BaseEnvironment):
     # -- one delegate -----------------------------------------------------------------------------------------------
     def _script(self, command, cwd):
         mark = uuid.uuid4().hex[:10]
-        lines = ["export PYTHONDONTWRITEBYTECODE=1 GIT_PAGER=cat PAGER=cat"]
+        lines = [
+            "export PYTHONDONTWRITEBYTECODE=1 GIT_PAGER=cat PAGER=cat "
+            "NO_UPDATE_NOTIFIER=1 NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_OFFLINE=true "
+            "NPM_CONFIG_AUDIT=false NPM_CONFIG_FUND=false NPM_CONFIG_CACHE=/tmp/.npm "
+            "PIP_DISABLE_PIP_VERSION_CHECK=1"
+        ]
         if not self.s.keep:
             for ecwd, ecmd in self.edits:
                 lines.append(f"( cd {shlex.quote(ecwd)} 2>/tmp/.pbx_err; {{\n{ecmd}\n}} ) >/tmp/.pbx_replay 2>&1 0<&-")
-        lines.append(f"cd {shlex.quote(cwd)} 2>/tmp/.pbx_err || cd {SANDBOX_CWD}")
+        lines.append(f"if [ -d {shlex.quote(cwd)} ]; then cd {shlex.quote(cwd)}; elif [ -d {SANDBOX_CWD} ]; then cd {SANDBOX_CWD}; fi")
         lines.append(f"echo ___PBX_BEGIN_{mark}___")
         lines.append(f"{{\n{command}\n}} 2>&1")
         lines.append(f"__rc=$?; echo; echo ___PBX_END_{mark}___ $__rc \"$PWD\"")

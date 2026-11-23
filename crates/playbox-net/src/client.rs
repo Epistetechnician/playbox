@@ -16,7 +16,7 @@ use a2a::{
 };
 use anyhow::{anyhow, bail, Context, Result};
 use iroh::{endpoint::Connection, Endpoint, EndpointAddr, EndpointId, SecretKey};
-use playbox_core::attest::{self, PlatformVerifier, Tier, Verified};
+use playbox_core::attest::{self, PlatformProvider, PlatformVerifier, Tier, Verified};
 use playbox_runner::{TaskOutput, TaskSpec};
 use serde_json::{json, Value};
 use std::{
@@ -26,6 +26,32 @@ use std::{
     },
     time::Duration,
 };
+
+/// What the host requires from a joining guest before spending the invite.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinChallenge {
+    /// Fresh hex nonce issued by the host for this peer (empty if an older host does not support challenges).
+    pub nonce: String,
+    /// Whether the host requires a signed guest attestation statement.
+    pub required: bool,
+    /// Minimum tier required by the host, if any.
+    pub min_guest_tier: Option<Tier>,
+}
+
+/// Result of a successful `playbox.Join`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinOutcome {
+    pub member_id: String,
+    pub grant: String,
+    /// Epoch seconds when the grant expires, if reported by the host.
+    pub expires: Option<i64>,
+    /// Verified guest attestation tier reported by the host, if mutual attestation was performed.
+    pub guest_verified_tier: Option<String>,
+    /// Verified guest device (`kind:fp`) reported by the host, if any.
+    pub guest_device: Option<String>,
+    /// Whether the host newly pinned this guest's hardware device key.
+    pub guest_device_newly_pinned: bool,
+}
 
 /// The full result of a task run on the host.
 #[derive(Debug, Clone)]
@@ -207,6 +233,34 @@ impl Client {
             ttl_ms,
             |m| sk.sign(m).to_bytes(),
         )
+    }
+
+    /// Connect to `addr` and attach a previously persisted member `grant` without spending a new invite.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be reached.
+    pub async fn resume(
+        addr: EndpointAddr,
+        secret: SecretKey,
+        transport: impl Into<Transport>,
+        grant: String,
+    ) -> Result<Self> {
+        let client = Self::connect(addr, secret, transport).await?;
+        client.set_grant(grant);
+        Ok(client)
+    }
+
+    /// The transport this client uses.
+    #[must_use]
+    pub fn transport(&self) -> &Transport {
+        &self.transport
+    }
+
+    /// Where this client reached its host.
+    #[must_use]
+    pub fn host_addr(&self) -> &EndpointAddr {
+        &self.addr
     }
 
     /// Where this client reached its host.
@@ -454,14 +508,106 @@ impl Client {
         }
     }
 
-    /// Present the invite; returns this client's member id.
+    /// Ask the host whether mutual guest attestation is required before joining, and fetch a fresh nonce.
+    /// Older hosts that do not implement `playbox.JoinChallenge` are treated as requiring no guest attestation.
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails; the error carries the cause.
-    pub async fn join(&self, invite: &str) -> Result<String> {
+    /// Returns an error if the transport fails.
+    pub async fn join_challenge(&self) -> Result<JoinChallenge> {
+        match self.call(wire::METHOD_JOIN_CHALLENGE, json!({})).await {
+            Ok(r) => {
+                let nonce = r
+                    .get("nonce")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let required = r.get("required").and_then(Value::as_bool).unwrap_or(false);
+                let min_guest_tier = r
+                    .get("min_guest_tier")
+                    .and_then(Value::as_str)
+                    .and_then(|s| Tier::parse(s).ok());
+                Ok(JoinChallenge {
+                    nonce,
+                    required,
+                    min_guest_tier,
+                })
+            }
+            Err(e) => {
+                let msg = format!("{e:#}");
+                if msg.to_ascii_lowercase().contains("method not found") || msg.contains("-32601") {
+                    Ok(JoinChallenge {
+                        nonce: String::new(),
+                        required: false,
+                        min_guest_tier: None,
+                    })
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    /// Build a signed guest attestation statement for `nonce` using this client's connection key
+    /// and an optional hardware `provider`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if signing fails.
+    pub fn sign_guest_attestation(
+        &self,
+        nonce: &str,
+        provider: Option<&dyn PlatformProvider>,
+    ) -> Result<String> {
+        let key = ed25519_dalek::SigningKey::from_bytes(&self.endpoint.secret_key().to_bytes());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0);
+        let m = attest::measure_self(
+            "guest",
+            &format!(
+                "role=guest;version={};protocol={}",
+                env!("CARGO_PKG_VERSION"),
+                wire::PROTOCOL
+            ),
+        );
+        if let Some(p) = provider {
+            match attest::new_platform_statement(&key, nonce, "", now, m.clone(), p) {
+                Ok(stmt) => return Ok(stmt),
+                Err(e) => {
+                    eprintln!("playbox: guest platform attestation failed, falling back to plain statement: {e}");
+                }
+            }
+        }
+        attest::new_statement(&key, nonce, "", now, m)
+            .sign(&key)
+            .map_err(|e| anyhow!("signing guest attestation: {e}"))
+    }
+
+    /// Present the invite (and mutual guest attestation if required by the host) using an explicit
+    /// hardware `provider`. Returns the full [`JoinOutcome`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refuses the join or attestation.
+    pub async fn join_with_provider(
+        &self,
+        invite: &str,
+        provider: Option<&dyn PlatformProvider>,
+    ) -> Result<JoinOutcome> {
+        let challenge = self.join_challenge().await?;
+        let mut params = json!({
+            "invite": invite,
+            "protocol": wire::PROTOCOL,
+            "version": env!("CARGO_PKG_VERSION"),
+        });
+        if challenge.required {
+            let stmt = self.sign_guest_attestation(&challenge.nonce, provider)?;
+            params["attestation"] = json!(stmt);
+        }
         let r = self
-            .call(wire::METHOD_JOIN, json!({ "invite": invite, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }))
+            .call(wire::METHOD_JOIN, params)
             .await
             .map_err(|e| anyhow!("join refused: {e:#}"))?;
         wire::check_protocol(
@@ -472,12 +618,53 @@ impl Client {
         let grant = r
             .get("grant")
             .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("join response has no grant"))?;
-        self.set_grant(grant.to_string());
-        Ok(r.get("member")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string())
+            .ok_or_else(|| anyhow!("join response has no grant"))?
+            .to_string();
+        self.set_grant(grant.clone());
+        let ga = r.get("guest_attestation");
+        Ok(JoinOutcome {
+            member_id: r
+                .get("member")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            grant,
+            expires: r.get("expires").and_then(Value::as_i64),
+            guest_verified_tier: ga
+                .and_then(|g| g.get("verified_tier"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            guest_device: ga
+                .and_then(|g| g.get("device"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            guest_device_newly_pinned: ga
+                .and_then(|g| g.get("device_newly_pinned"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        })
+    }
+
+    /// Present the invite, auto-detecting local platform hardware if the host requires guest attestation,
+    /// and return the full [`JoinOutcome`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host refuses the join or attestation.
+    pub async fn join_details(&self, invite: &str) -> Result<JoinOutcome> {
+        let detected = playbox_core::platform::detect(&playbox_core::store::home())
+            .ok()
+            .flatten();
+        self.join_with_provider(invite, detected.as_deref()).await
+    }
+
+    /// Present the invite; returns this client's member id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails; the error carries the cause.
+    pub async fn join(&self, invite: &str) -> Result<String> {
+        Ok(self.join_details(invite).await?.member_id)
     }
 
     /// # Errors
@@ -615,6 +802,67 @@ impl Client {
             )
             .await?;
         Ok(serde_json::from_value(v)?)
+    }
+
+    /// Fetch and verify the host's signed Room Manifest (goal, `/commands`, schedules, budget).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC fails or the host's Ed25519 signature does not verify.
+    pub async fn manifest(&self) -> Result<crate::manifest::SignedManifest> {
+        let v = self.call(wire::METHOD_MANIFEST, json!({})).await?;
+        let signed: crate::manifest::SignedManifest = serde_json::from_value(v)?;
+        signed.verify(&self.addr.id)?;
+        Ok(signed)
+    }
+
+    /// Register a unique `@handle` bound to this client's verified EndpointId.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handle is invalid, reserved, or already claimed by another member.
+    pub async fn register_handle(&self, handle: &str) -> Result<String> {
+        let v = self
+            .call(wire::METHOD_REGISTER_HANDLE, json!({ "handle": handle }))
+            .await?;
+        v.get("handle")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("host did not return registered handle"))
+    }
+
+    /// Read unread feed items after this member's durable cursor on the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC fails.
+    pub async fn inbox(
+        &self,
+        only_mentions: bool,
+        limit: usize,
+        wait_ms: u64,
+    ) -> Result<chat::Feed> {
+        let v = self
+            .call(
+                wire::METHOD_INBOX,
+                json!({
+                    "only_mentions": only_mentions,
+                    "limit": limit,
+                    "wait_ms": wait_ms,
+                }),
+            )
+            .await?;
+        Ok(serde_json::from_value(v)?)
+    }
+
+    /// Advance this member's durable unread cursor on the host to `seq`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC fails.
+    pub async fn ack(&self, seq: u64) -> Result<u64> {
+        let v = self.call(wire::METHOD_ACK, json!({ "seq": seq })).await?;
+        Ok(v.get("cursor").and_then(Value::as_u64).unwrap_or(seq))
     }
 
     /// [`Client::feed`], but when nothing is new the host holds the request open for up to `wait_secs` (it caps this) and answers

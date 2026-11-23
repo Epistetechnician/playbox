@@ -72,6 +72,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
     let r: Result<()> = match cli.command {
         Cmd::Up(a) => rooms::up(a).await,
         Cmd::Join(a) => rooms::join(a).await,
+        Cmd::Watch(a) => rooms::watch(a).await,
         Cmd::Launch(a) => launch::launch(a).await,
         Cmd::Shell(a) => session::shell(a).await,
         Cmd::Chat {

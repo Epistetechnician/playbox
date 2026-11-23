@@ -15,6 +15,7 @@ pub enum TemplateKind {
     Research,
     Review,
     Ops,
+    Hillclimb,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +39,7 @@ impl TemplateKind {
         TemplateKind::Research,
         TemplateKind::Review,
         TemplateKind::Ops,
+        TemplateKind::Hillclimb,
     ];
 
     #[must_use]
@@ -47,6 +49,7 @@ impl TemplateKind {
             "research" => Some(Self::Research),
             "review" => Some(Self::Review),
             "ops" => Some(Self::Ops),
+            "hillclimb" | "hill-climb" => Some(Self::Hillclimb),
             _ => None,
         }
     }
@@ -58,6 +61,7 @@ impl TemplateKind {
             Self::Research => "research",
             Self::Review => "review",
             Self::Ops => "ops",
+            Self::Hillclimb => "hillclimb",
         }
     }
 
@@ -71,6 +75,7 @@ impl TemplateKind {
             image: None,
             timeout_secs: Some(timeout_secs),
             mem_mib: None,
+            mount_repo: false,
         };
         match self {
             Self::Swe => TemplateSpec {
@@ -346,6 +351,56 @@ impl TemplateKind {
                 starter_fact: (
                     "ops-runbook",
                     "Template: Operations & Incident room. Remediation capabilities require owner approval; record verified root causes in Room Memory.",
+                ),
+            },
+            Self::Hillclimb => TemplateSpec {
+                kind: self,
+                id: "hillclimb",
+                label: "Hillclimb · Autonomous Metric Optimization",
+                summary: "Board-driven multi-agent optimization with signed Room Manifest, deterministic `/eval` capability receipts, and event-driven schedules.",
+                default_runtime: "docker",
+                limits: Limits {
+                    cpus: 4.0,
+                    mem_mib: 4096,
+                    timeout_secs: 600,
+                    network: false,
+                    allowed_hosts: Vec::new(),
+                    allowed_secrets: Vec::new(),
+                    allowed_egress: Vec::new(),
+                },
+                abuse: AbuseLimits {
+                    max_members: 16,
+                    max_concurrent_per_member: 3,
+                    max_tasks_per_window: 30,
+                    task_budget: 1000,
+                    ..AbuseLimits::default()
+                },
+                memory_review: false,
+                capabilities: vec![cap("status", &["git", "status", "--short"], false, 30)],
+                canvas_seed: vec![
+                    (
+                        "artifact",
+                        json!({
+                            "id": "hillclimb-protocol",
+                            "title": "Hillclimb Room Protocol",
+                            "kind": "doc",
+                            "status": "verified",
+                            "summary": "Autonomous multi-agent hill-climbing via signed Room Manifest, `/eval`, and unread mention queues.",
+                            "body": "# Hillclimb Protocol\n\n1. Read the signed Room Manifest (`playbox_manifest`) for the goal, `/commands`, and budget.\n2. Pull the frontier, test a hypothesis, push to your branch, and invoke `/eval` in the feed.\n3. Record wins and failed hypotheses in Room Memory so teammates do not repeat dead ends."
+                        }),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "hc-1", "title": "Baseline evaluation", "col": "todo", "note": "Run `/eval` on main to establish baseline metric"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "hc-2", "title": "Iterate frontier", "col": "todo", "note": "Push candidate improvements and verify via `/eval`"}),
+                    ),
+                ],
+                starter_fact: (
+                    "hillclimb-protocol",
+                    "Template: Autonomous hill-climbing room. Inspect the signed Room Manifest for goal and `/commands`; post `/eval` to score candidates.",
                 ),
             },
         }

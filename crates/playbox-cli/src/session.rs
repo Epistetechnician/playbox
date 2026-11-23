@@ -92,6 +92,7 @@ fn server() -> Result<Server> {
 
 pub async fn call(tool: &str, pairs: &[String], json: Option<&str>) -> Result<()> {
     let mut s = server()?;
+    s.resume_from_store().await;
     if run(&mut s, tool, &parse_args(pairs, json)?).await {
         Ok(())
     } else {
@@ -169,6 +170,8 @@ pub async fn shell(a: ShellArgs) -> Result<()> {
         if !run(&mut s, "join", &args).await {
             bail!("could not join");
         }
+    } else {
+        s.resume_from_store().await;
     }
     let tty = std::io::stdin().is_terminal();
     if tty {
@@ -220,6 +223,7 @@ pub async fn mcp() -> Result<()> {
         server.log_path().display()
     );
     server.join_from_env().await;
+    server.resume_from_store().await;
     server.serve_stdio().await
 }
 

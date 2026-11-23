@@ -16,7 +16,9 @@ CLI usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import threading
 import time
 import urllib.error
@@ -25,9 +27,129 @@ from collections import Counter
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from playbox_steer.kv_delta import AutoCrossoverPolicy, DeltaFramedEntity
 from playbox_steer.kv_sota_bench import BM25ChunkRetriever, SotaEntityRouter
+
+
+class BoundedStickyRouter:
+    """Thread-safe multi-replica router with bounded-load spillover and Zipf hot-entity replication."""
+
+    def __init__(
+        self,
+        backends: Sequence[str],
+        policy: str = "STICKY-BOUNDED",
+        cap_factor: float = 1.25,
+        min_cap: int = 3,
+        hot_replicas: int = 2,
+        hot_share_threshold: float = 0.15,
+        hot_min_requests: int = 8,
+    ) -> None:
+        if not backends:
+            raise ValueError("backends must be non-empty")
+        if policy not in ("RR", "STICKY-HASH", "STICKY-BOUNDED"):
+            raise ValueError(f"Unknown policy: {policy}")
+        self.backends = [b.rstrip("/") for b in backends]
+        self.policy = policy
+        self.cap_factor = float(cap_factor)
+        self.min_cap = int(min_cap)
+        self.hot_replicas = max(1, min(int(hot_replicas), len(self.backends)))
+        self.hot_share_threshold = float(hot_share_threshold)
+        self.hot_min_requests = int(hot_min_requests)
+        self._lock = threading.Lock()
+        self.inflight: List[int] = [0] * len(self.backends)
+        self.routed_counts: List[int] = [0] * len(self.backends)
+        self.spills: int = 0
+        self._rr_cursor: int = 0
+        self._entity_hits: Counter[str] = Counter()
+        self._total_entity_hits: int = 0
+
+    def _pref_ring(self, key: str) -> List[int]:
+        scored = []
+        for idx in range(len(self.backends)):
+            h = hashlib.sha256(f"{key}::replica::{idx}".encode("utf-8")).digest()
+            scored.append((int.from_bytes(h[:8], "big"), idx))
+        scored.sort()
+        return [idx for _, idx in scored]
+
+    def _is_hot(self, entity_id: Optional[str]) -> bool:
+        if not entity_id or len(self.backends) < 2 or self.hot_replicas < 2:
+            return False
+        if self._total_entity_hits < self.hot_min_requests:
+            return False
+        return (self._entity_hits[entity_id] / self._total_entity_hits) >= self.hot_share_threshold
+
+    def acquire(self, entity_id: Optional[str]) -> Tuple[int, str, bool, bool]:
+        """Select a backend replica, increment inflight, return (idx, url, spilled, is_hot)."""
+        k = len(self.backends)
+        with self._lock:
+            if entity_id:
+                self._entity_hits[entity_id] += 1
+                self._total_entity_hits += 1
+            is_hot = self._is_hot(entity_id)
+            spilled = False
+
+            if k == 1:
+                idx = 0
+            elif self.policy == "RR" or not entity_id:
+                idx = self._rr_cursor % k
+                self._rr_cursor += 1
+            elif self.policy == "STICKY-HASH":
+                ring = self._pref_ring(entity_id)
+                idx = min(ring[: self.hot_replicas], key=lambda i: (self.inflight[i], self.routed_counts[i])) if is_hot else ring[0]
+            else:
+                ring = self._pref_ring(entity_id)
+                total_in = sum(self.inflight) + 1
+                cap = max(self.min_cap, int(math.ceil(self.cap_factor * total_in / k)))
+                if is_hot:
+                    warm = ring[: self.hot_replicas]
+                    warm_best = min(warm, key=lambda i: (self.inflight[i], self.routed_counts[i]))
+                    if self.inflight[warm_best] < cap:
+                        idx = warm_best
+                    else:
+                        chosen = next((c for c in ring[self.hot_replicas :] if self.inflight[c] < cap), None)
+                        idx = chosen if chosen is not None else min(range(k), key=lambda i: self.inflight[i])
+                        spilled = idx not in warm
+                else:
+                    chosen = None
+                    for pos, cand in enumerate(ring):
+                        if self.inflight[cand] < cap:
+                            chosen = cand
+                            spilled = pos > 0
+                            break
+                    if chosen is None:
+                        idx = min(range(k), key=lambda i: self.inflight[i])
+                        spilled = idx != ring[0]
+                    else:
+                        idx = chosen
+
+            self.inflight[idx] += 1
+            self.routed_counts[idx] += 1
+            if spilled:
+                self.spills += 1
+            return idx, self.backends[idx], spilled, is_hot
+
+    def release(self, idx: int) -> None:
+        with self._lock:
+            self.inflight[idx] = max(0, self.inflight[idx] - 1)
+
+    def stats(self) -> Dict[str, Any]:
+        with self._lock:
+            hot = [
+                eid
+                for eid, c in self._entity_hits.items()
+                if self._total_entity_hits >= self.hot_min_requests
+                and (c / self._total_entity_hits) >= self.hot_share_threshold
+            ]
+            return {
+                "backends": list(self.backends),
+                "routing_policy": self.policy,
+                "replica_counts": list(self.routed_counts),
+                "replica_inflight": list(self.inflight),
+                "spills": self.spills,
+                "hot_entities": sorted(hot),
+            }
 
 
 @dataclass
@@ -43,19 +165,45 @@ class RoutedKVProxyState:
 
     def __init__(
         self,
-        upstream_url: str,
+        upstream_url: str = "http://127.0.0.1:8000",
         entities: Optional[List[EntityRecord]] = None,
         extra_chunks: Optional[List[Tuple[str, str]]] = None,
         retriever_factory: Optional[Callable[[List[Tuple[str, str]]], Callable[[str], Tuple[List[str], Dict[str, float]]]]] = None,
         system_preamble: str = "You are a precise assistant. Answer using the provided context.",
         top_k: int = 5,
+        upstreams: Optional[Sequence[str]] = None,
+        routing_policy: str = "STICKY-BOUNDED",
+        cap_factor: float = 1.25,
+        min_cap: int = 3,
+        hot_replicas: int = 2,
+        hot_share_threshold: float = 0.15,
+        hot_min_requests: int = 8,
+        auto_crossover: bool = True,
+        crossover_policy: Optional[AutoCrossoverPolicy] = None,
+        compact_delta_ratio: float = 0.25,
+        compact_max_stale: int = 8,
     ) -> None:
-        self.upstream_url = upstream_url.rstrip("/")
+        backends = [u.rstrip("/") for u in (upstreams if upstreams else [upstream_url])]
+        self.upstream_url = backends[0]
+        self.lb = BoundedStickyRouter(
+            backends=backends,
+            policy=routing_policy,
+            cap_factor=cap_factor,
+            min_cap=min_cap,
+            hot_replicas=hot_replicas,
+            hot_share_threshold=hot_share_threshold,
+            hot_min_requests=hot_min_requests,
+        )
         self.system_preamble = system_preamble
         self.top_k = top_k
+        self.auto_crossover = bool(auto_crossover)
+        self.crossover_policy = crossover_policy or AutoCrossoverPolicy()
+        self.compact_delta_ratio = float(compact_delta_ratio)
+        self.compact_max_stale = int(compact_max_stale)
         self._retriever_factory = retriever_factory or (lambda ch: BM25ChunkRetriever(ch, top_k=self.top_k))
         self._lock = threading.RLock()
         self._entities: Dict[str, EntityRecord] = {}
+        self._delta_entities: Dict[str, DeltaFramedEntity] = {}
         self._extra_chunks: List[Tuple[str, str]] = list(extra_chunks or [])
         self._session_entity: Dict[str, str] = {}
         self._stats: Counter[str] = Counter()
@@ -65,10 +213,21 @@ class RoutedKVProxyState:
 
         for rec in entities or []:
             self._entities[rec.entity_id] = rec
+            self._delta_entities[rec.entity_id] = DeltaFramedEntity(
+                entity_id=rec.entity_id,
+                name=rec.name,
+                base_dossier=rec.dossier,
+                aliases=rec.aliases,
+                compact_delta_ratio=self.compact_delta_ratio,
+                compact_max_stale=self.compact_max_stale,
+            )
         self._rebuild_index()
 
     def _rebuild_index(self) -> None:
-        alias_map = {eid: list(rec.aliases) for eid, rec in self._entities.items()}
+        alias_map = {
+            eid: list(dict.fromkeys([*rec.aliases, rec.name, eid]))
+            for eid, rec in self._entities.items()
+        }
         name_map = {eid: rec.name for eid, rec in self._entities.items()}
         self._router = SotaEntityRouter(name_map, alias_map) if name_map else None
 
@@ -80,28 +239,104 @@ class RoutedKVProxyState:
     def upsert_entity(self, rec: EntityRecord) -> None:
         with self._lock:
             self._entities[rec.entity_id] = rec
+            self._delta_entities[rec.entity_id] = DeltaFramedEntity(
+                entity_id=rec.entity_id,
+                name=rec.name,
+                base_dossier=rec.dossier,
+                aliases=rec.aliases,
+                compact_delta_ratio=self.compact_delta_ratio,
+                compact_max_stale=self.compact_max_stale,
+            )
             self._rebuild_index()
+
+    def apply_entity_delta(
+        self,
+        entity_id: str,
+        field_name: str,
+        value: str,
+        note: str = "",
+        timestamp: Optional[str] = None,
+        auto_compact: bool = True,
+    ) -> Dict[str, Any]:
+        """Append a live mutation to an entity without invalidating its base KV prefix."""
+        with self._lock:
+            ent = self._delta_entities.get(entity_id)
+            if ent is None:
+                raise KeyError(f"Unknown entity_id: {entity_id}")
+            res = ent.append_delta(
+                field_name=field_name,
+                value=value,
+                note=note,
+                timestamp=timestamp,
+                auto_compact=auto_compact,
+            )
+            self._stats["delta_writes"] += 1
+            if res["compacted"]:
+                self._stats["compactions"] += 1
+                self._entities[entity_id].dossier = ent.base_snapshot
+                self._rebuild_index()
+            res["tier"] = self.crossover_policy.classify(ent).tier if self.auto_crossover else "FULL-KV"
+            return res
+
+    def compact_entity(self, entity_id: str) -> Dict[str, Any]:
+        with self._lock:
+            ent = self._delta_entities.get(entity_id)
+            if ent is None:
+                raise KeyError(f"Unknown entity_id: {entity_id}")
+            ev = ent.maybe_compact(force=True)
+            if ev is not None:
+                self._stats["compactions"] += 1
+                self._entities[entity_id].dossier = ent.base_snapshot
+                self._rebuild_index()
+                return {
+                    "entity_id": entity_id,
+                    "compacted": True,
+                    "deltas_merged": ev.deltas_merged,
+                    "seq": ent.seq,
+                    "compaction_count": ent.compaction_count,
+                }
+            return {"entity_id": entity_id, "compacted": False, "seq": ent.seq, "compaction_count": ent.compaction_count}
 
     def list_entities(self) -> List[Dict[str, Any]]:
         with self._lock:
-            return [
-                {"entity_id": r.entity_id, "name": r.name, "aliases": r.aliases, "dossier_chars": len(r.dossier)}
-                for r in self._entities.values()
-            ]
+            out = []
+            for r in self._entities.values():
+                ent = self._delta_entities.get(r.entity_id)
+                tier = self.crossover_policy.classify(ent).tier if (self.auto_crossover and ent) else "FULL-KV"
+                out.append(
+                    {
+                        "entity_id": r.entity_id,
+                        "name": r.name,
+                        "aliases": r.aliases,
+                        "dossier_chars": len(r.dossier),
+                        "delta_seq": ent.seq if ent else 0,
+                        "pending_deltas": len(ent.delta_frames) if ent else 0,
+                        "compactions": ent.compaction_count if ent else 0,
+                        "tier": tier,
+                    }
+                )
+            return out
 
     def metrics(self) -> Dict[str, Any]:
         with self._lock:
             total = self._stats["requests"]
-            return {
+            base = {
                 "requests": total,
                 "entity_hit": self._stats["entity_hit"],
                 "session_carry": self._stats["session_carry"],
                 "rag_fallback": self._stats["rag_fallback"],
                 "passthrough": self._stats["passthrough"],
+                "tier_full_kv": self._stats["tier_FULL-KV"],
+                "tier_hybrid_hier_kv": self._stats["tier_HYBRID-HIER-KV"],
+                "tier_chunked_rag": self._stats["tier_CHUNKED-RAG"],
+                "delta_writes": self._stats["delta_writes"],
+                "compactions": self._stats["compactions"],
                 "mean_route_ms": round(self._total_route_ms / total, 3) if total else 0.0,
                 "active_sessions": len(self._session_entity),
                 "registered_entities": len(self._entities),
             }
+        base.update(self.lb.stats())
+        return base
 
     def _resolve_entity(self, query: str, session_id: Optional[str]) -> Tuple[Optional[str], str]:
         if not self._entities or self._router is None:
@@ -136,27 +371,49 @@ class RoutedKVProxyState:
             if eid is not None and session_id:
                 self._session_entity[session_id] = eid
             rec = self._entities.get(eid) if eid is not None else None
+            delta_ent = self._delta_entities.get(eid) if eid is not None else None
             retriever = self._retriever
 
         out_messages = [dict(m) for m in messages]
-        if rec is not None:
-            prefix = f"{self.system_preamble}\n\n=== ENTITY DOSSIER: {rec.name} ===\n{rec.dossier}"
+        tier = "CHUNKED-RAG"
+        delta_seq = 0
+        compactions = 0
+
+        if rec is not None and delta_ent is not None:
+            decision = self.crossover_policy.classify(delta_ent) if self.auto_crossover else None
+            tier = decision.tier if decision is not None else "FULL-KV"
+            delta_seq = delta_ent.seq
+            compactions = delta_ent.compaction_count
+            if tier == "HYBRID-HIER-KV":
+                prefix = delta_ent.render_hierarchical_prefix(self.system_preamble)
+                cold_docs = delta_ent.retrieve_cold_chunks(user_query, top_k=min(self.top_k, 4))
+                if cold_docs:
+                    ctx = "\n\n---\n\n".join(cold_docs)
+                    out_messages[last_user_idx]["content"] = (
+                        f"Entity archive excerpts:\n{ctx}\n\nQuestion:\n{user_query}"
+                    )
+            else:
+                prefix = delta_ent.render_full_prefix(self.system_preamble)
             if out_messages and out_messages[0].get("role") == "system":
                 out_messages[0]["content"] = f"{prefix}\n\n{out_messages[0].get('content', '')}"
             else:
                 out_messages.insert(0, {"role": "system", "content": prefix})
         elif mode == "rag_fallback" and retriever is not None:
+            tier = "CHUNKED-RAG"
             docs, _ = retriever(user_query)
             if docs:
                 ctx = "\n\n---\n\n".join(docs)
                 out_messages[last_user_idx]["content"] = (
                     f"Retrieved context:\n{ctx}\n\nQuestion:\n{user_query}"
                 )
+        else:
+            tier = "PASSTHROUGH"
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         with self._lock:
             self._stats["requests"] += 1
             self._stats[mode] += 1
+            self._stats[f"tier_{tier}"] += 1
             self._total_route_ms += elapsed_ms
 
         rewritten = dict(payload)
@@ -164,6 +421,9 @@ class RoutedKVProxyState:
         headers = {
             "X-Routed-Mode": mode,
             "X-Routed-Entity": eid or "",
+            "X-Routed-Tier": tier,
+            "X-Delta-Seq": str(delta_seq),
+            "X-Entity-Compactions": str(compactions),
             "X-Route-Ms": f"{elapsed_ms:.2f}",
         }
         return rewritten, headers
@@ -194,7 +454,7 @@ def create_proxy_server(
 
         def do_GET(self) -> None:
             if self.path == "/health":
-                self._send_json(200, {"status": "ok", "upstream": state.upstream_url})
+                self._send_json(200, {"status": "ok", "upstream": state.upstream_url, "backends": state.lb.backends, "routing_policy": state.lb.policy})
             elif self.path == "/metrics":
                 self._send_json(200, state.metrics())
             elif self.path == "/v1/entities":
@@ -223,6 +483,41 @@ def create_proxy_server(
                 self._send_json(200, {"status": "registered", "entity_id": eid})
                 return
 
+            if self.path == "/v1/entities/delta":
+                eid = str(payload.get("entity_id") or "").strip()
+                field_name = str(payload.get("field") or "").strip()
+                value = str(payload.get("value") or "")
+                if not eid or not field_name:
+                    self._send_json(400, {"error": "entity_id and field are required"})
+                    return
+                try:
+                    res = state.apply_entity_delta(
+                        entity_id=eid,
+                        field_name=field_name,
+                        value=value,
+                        note=str(payload.get("note") or ""),
+                        timestamp=payload.get("timestamp"),
+                        auto_compact=bool(payload.get("auto_compact", True)),
+                    )
+                except KeyError as exc:
+                    self._send_json(404, {"error": str(exc)})
+                    return
+                self._send_json(200, res)
+                return
+
+            if self.path == "/v1/entities/compact":
+                eid = str(payload.get("entity_id") or "").strip()
+                if not eid:
+                    self._send_json(400, {"error": "entity_id is required"})
+                    return
+                try:
+                    res = state.compact_entity(eid)
+                except KeyError as exc:
+                    self._send_json(404, {"error": str(exc)})
+                    return
+                self._send_json(200, res)
+                return
+
             if self.path != "/v1/chat/completions":
                 self._send_json(404, {"error": "not found"})
                 return
@@ -230,54 +525,62 @@ def create_proxy_server(
             session_id = self.headers.get("X-Session-Id") or payload.pop("session_id", None)
             rewritten, route_headers = state.rewrite_payload(payload, session_id=session_id)
             is_stream = bool(rewritten.get("stream", False))
+            eid = route_headers.get("X-Routed-Entity") or None
+            b_idx, backend_url, spilled, is_hot = state.lb.acquire(eid)
+            route_headers["X-Routed-Backend"] = backend_url
+            route_headers["X-Routed-Spilled"] = "1" if spilled else "0"
+            route_headers["X-Routed-Hot"] = "1" if is_hot else "0"
 
             req = urllib.request.Request(
-                f"{state.upstream_url}/v1/chat/completions",
+                f"{backend_url}/v1/chat/completions",
                 data=json.dumps(rewritten).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
             try:
-                resp = urllib.request.urlopen(req, timeout=300.0)
-            except urllib.error.HTTPError as exc:
-                err_body = exc.read()
-                self.send_response(exc.code)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(err_body)))
-                for k, v in route_headers.items():
-                    self.send_header(k, v)
-                self.end_headers()
-                self.wfile.write(err_body)
-                return
-            except Exception as exc:
-                self._send_json(502, {"error": f"upstream error: {exc}"}, route_headers)
-                return
-
-            with resp:
-                if is_stream:
-                    self.send_response(resp.status)
-                    self.send_header("Content-Type", "text/event-stream")
-                    self.send_header("Cache-Control", "no-cache")
-                    self.send_header("Connection", "close")
-                    for k, v in route_headers.items():
-                        self.send_header(k, v)
-                    self.end_headers()
-                    while True:
-                        chunk = resp.readline()
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
-                    self.close_connection = True
-                else:
-                    body = resp.read()
-                    self.send_response(resp.status)
+                try:
+                    resp = urllib.request.urlopen(req, timeout=300.0)
+                except urllib.error.HTTPError as exc:
+                    err_body = exc.read()
+                    self.send_response(exc.code)
                     self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Content-Length", str(len(err_body)))
                     for k, v in route_headers.items():
                         self.send_header(k, v)
                     self.end_headers()
-                    self.wfile.write(body)
+                    self.wfile.write(err_body)
+                    return
+                except Exception as exc:
+                    self._send_json(502, {"error": f"upstream error: {exc}"}, route_headers)
+                    return
+
+                with resp:
+                    if is_stream:
+                        self.send_response(resp.status)
+                        self.send_header("Content-Type", "text/event-stream")
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("Connection", "close")
+                        for k, v in route_headers.items():
+                            self.send_header(k, v)
+                        self.end_headers()
+                        while True:
+                            chunk = resp.readline()
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                        self.close_connection = True
+                    else:
+                        body = resp.read()
+                        self.send_response(resp.status)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(body)))
+                        for k, v in route_headers.items():
+                            self.send_header(k, v)
+                        self.end_headers()
+                        self.wfile.write(body)
+            finally:
+                state.lb.release(b_idx)
 
     return ThreadingHTTPServer((host, port), Handler)
 
@@ -299,16 +602,35 @@ def load_entities_file(path: Path) -> List[EntityRecord]:
 def main() -> None:
     p = argparse.ArgumentParser(description="Entity-Routed KV + Adaptive RAG OpenAI Proxy")
     p.add_argument("--upstream", default="http://127.0.0.1:8000")
+    p.add_argument("--upstreams", type=str, default=None, help="Comma-separated multi-replica backend URLs")
+    p.add_argument("--policy", default="STICKY-BOUNDED", choices=["STICKY-BOUNDED", "STICKY-HASH", "RR"])
+    p.add_argument("--cap-factor", type=float, default=1.25)
+    p.add_argument("--hot-replicas", type=int, default=2)
+    p.add_argument("--hot-share", type=float, default=0.15)
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--entities-json", type=str, default=None)
     p.add_argument("--top-k", type=int, default=5)
+    p.add_argument("--l-full-max", type=int, default=13200, help="Auto-crossover FULL-KV max tokens")
+    p.add_argument("--l-wall", type=int, default=48000, help="Auto-crossover KV wall tokens")
+    p.add_argument("--compact-delta-ratio", type=float, default=0.25)
     args = p.parse_args()
 
+    backends = [u.strip() for u in args.upstreams.split(",") if u.strip()] if args.upstreams else [args.upstream]
     entities = load_entities_file(Path(args.entities_json)) if args.entities_json else []
-    state = RoutedKVProxyState(upstream_url=args.upstream, entities=entities, top_k=args.top_k)
+    state = RoutedKVProxyState(
+        upstreams=backends,
+        entities=entities,
+        top_k=args.top_k,
+        routing_policy=args.policy,
+        cap_factor=args.cap_factor,
+        hot_replicas=args.hot_replicas,
+        hot_share_threshold=args.hot_share,
+        crossover_policy=AutoCrossoverPolicy(l_full_max_tokens=args.l_full_max, l_wall_tokens=args.l_wall),
+        compact_delta_ratio=args.compact_delta_ratio,
+    )
     srv = create_proxy_server(args.host, args.port, state)
-    print(f"kv_routed_proxy listening on http://{args.host}:{args.port} -> {args.upstream} ({len(entities)} entities)", flush=True)
+    print(f"kv_routed_proxy listening on http://{args.host}:{args.port} -> {backends} policy={args.policy} ({len(entities)} entities)", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

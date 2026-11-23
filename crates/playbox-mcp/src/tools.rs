@@ -90,7 +90,11 @@ pub fn group_of(name: &str) -> Option<&'static str> {
         | "playbox_conversation_read"
         | "playbox_capabilities"
         | "playbox_capability_call"
-        | "playbox_policy" => "room",
+        | "playbox_policy"
+        | "playbox_manifest"
+        | "playbox_handle"
+        | "playbox_inbox"
+        | "playbox_ack" => "room",
         _ => return None,
     })
 }
@@ -158,6 +162,10 @@ fn base_tool_list() -> Value {
                 "invite_ttl_secs": {"type": "integer", "description": "How long the link works. Default 3600."},
                 "uses": {"type": "integer", "description": "How many members the link admits. Default 1."},
                 "for_guest": {"type": "string", "description": "Make the link work only for this guest: their id (64 hex characters, from `playbox id` or the `guest_id` in their playbox_status). Anyone else who finds the link is refused and cannot use up the invite."},
+                "min_guest_tier": {"type": "string", "enum": ["t0", "t1", "t2", "t3"], "description": "Require joining guests to prove at least this attestation tier before their invite is spent and a grant is minted (t0: signed guest key/posture; t1: pinned Secure Enclave/TPM device; t2: T1 + verified boot PCRs; t3: confidential VM). Failed checks leave the invite unspent."},
+                "trust_guest_device": {"type": "boolean", "description": "With min_guest_tier, pin a guest's hardware device key on first verified join (trust on first use)."},
+                "goal": {"type": "string", "description": "Room goal/vision text published in the signed Room Manifest."},
+                "template": {"type": "string", "enum": ["swe", "research", "review", "ops", "hillclimb"], "description": "Optional room template (e.g. `hillclimb` for autonomous metric optimization)."},
                 "share_ips": {"type": "boolean", "description": "Put this machine's IP addresses in the link. Off by default on iroh and relay transports, so a shared link does not reveal where you are; guests reach you through the relay. Local links always carry them."},
                 "idle_patience_secs": {"type": "integer", "description": "How long a member's connection may sit silent before this host closes it. Default 900 (15 minutes). Members' sidecars reopen closed connections on their next call."},
                 "grant_ttl_secs": {"type": "integer", "description": "How long members' grants last. Default 3600. Long experiments need longer; a grant that expires mid-run is refused, correctly."},
@@ -299,6 +307,26 @@ fn base_tool_list() -> Value {
                 "since": {"type": "integer", "description": "Return items after this sequence number. Default 0 (everything kept)."},
                 "wait_secs": {"type": "integer", "description": "If nothing is new, wait up to this many seconds (at most 20) and return as soon as something arrives, instead of an empty feed at once. Default 0. Waiting holds this tool call open, so use it in a loop that exists to wait for the room."}
             }), &[]),
+        tool("playbox_manifest",
+            "Fetch and cryptographically verify the host's signed Room Manifest (goal/vision, registered `/commands`, host schedules, minimum guest tier, and cost-tier budget policy).",
+            json!({}), &[]),
+        tool("playbox_handle",
+            "Register a unique `@handle` in the room bound to your verified EndpointId so other members and schedules can `@mention` you.",
+            json!({
+                "handle": {"type": "string", "description": "Handle to claim (e.g. `@alex-claude` or `alex-claude`). Lowercase letters, digits, `_`, `-`."}
+            }), &["handle"]),
+        tool("playbox_inbox",
+            "Read unread feed items after your durable host-side cursor. Set `only_mentions: true` to drain only items mentioning your `@handle`, `@all`, or `@team`. Remember to call `playbox_ack` with `next` after processing.",
+            json!({
+                "only_mentions": {"type": "boolean", "description": "Only return items mentioning your `@handle`, `@all`, or `@team`. Default false."},
+                "limit": {"type": "integer", "description": "Maximum unread items to return (default 100)."},
+                "wait_ms": {"type": "integer", "description": "Long-poll up to this many milliseconds (capped at 20000) if inbox is empty. Default 0."}
+            }), &[]),
+        tool("playbox_ack",
+            "Advance your durable host-side unread cursor to `seq` (typically the `next` value returned by `playbox_inbox`).",
+            json!({
+                "seq": {"type": "integer", "description": "Sequence number to acknowledge up to."}
+            }), &["seq"]),
         tool("playbox_pull",
             "Fetch a branch or commit from the room's shared repository into your workspace as refs/remotes/playbox/<ref>.",
             json!({

@@ -163,7 +163,7 @@ pub struct TransportArgs {
 pub struct UpArgs {
     #[command(flatten)]
     pub transport: TransportArgs,
-    /// Zero-friction room template: swe, research, review, or ops (pre-configures runner, egress allowlist, capability approvals, memory, and Canvas board)
+    /// Zero-friction room template: swe, research, review, ops, or hillclimb (pre-configures runner, egress allowlist, capability approvals, memory, and Canvas board)
     #[arg(long, value_enum, value_name = "TEMPLATE")]
     pub template: Option<RoomTemplate>,
     /// Keep the room's identity, members and bans across restarts
@@ -181,6 +181,21 @@ pub struct UpArgs {
     /// Weakest task isolation the host accepts from its runner: container (default), microvm, or confidential. Values above container require --runtime or --docker.
     #[arg(long, value_enum, default_value = "container", value_name = "LEVEL")]
     pub min_isolation: MinIsolation,
+    /// Require joining guests to prove at least this attestation tier before their invite is spent: t0, t1, t2, or t3
+    #[arg(long, value_name = "TIER")]
+    pub min_guest_tier: Option<String>,
+    /// With --min-guest-tier: pin a guest's hardware device key on first verified join (trust on first use)
+    #[arg(long)]
+    pub trust_guest_device: bool,
+    /// Path to a goal/vision file (e.g. GOAL.md) published in the signed Room Manifest
+    #[arg(long, value_name = "FILE")]
+    pub goal: Option<String>,
+    /// Register a sandboxed `/command` shorthand (`name=program [args...]`, e.g. `--cmd eval=./eval.sh`); repeatable
+    #[arg(long = "cmd", value_name = "NAME=ARGV")]
+    pub cmd: Vec<String>,
+    /// Register a host-side schedule (`<secs>:<message>` or `on_push:<message>`, e.g. `on_push:/eval`); repeatable
+    #[arg(long = "schedule", value_name = "SPEC")]
+    pub schedule: Vec<String>,
     /// Let tasks reach this host[:port]; repeatable; only openshell enforces it
     #[arg(long = "allow-host", value_name = "HOST")]
     pub allow_host: Vec<String>,
@@ -352,6 +367,49 @@ pub struct JoinArgs {
     /// Pin the host's device key if new (trust on first use)
     #[arg(long)]
     pub trust_host_device: bool,
+    /// Register a verified `@handle` in the room (e.g. `--as @alex-claude`)
+    #[arg(long = "as", value_name = "HANDLE")]
+    pub as_handle: Option<String>,
+    /// After joining and persisting the grant, immediately start the recursive `playbox watch` loop
+    #[arg(long)]
+    pub watch: bool,
+    /// With --watch: built-in local agent harness preset (`auto`, `claude`, `codex`, `hermes`, `opencode`)
+    #[arg(long, value_name = "NAME")]
+    pub harness: Option<String>,
+    /// With --watch: local agent/harness command to invoke on unread messages (receives untrusted-framed JSON context on stdin)
+    #[arg(long, value_name = "CMD")]
+    pub exec: Option<String>,
+    /// With --watch: only wake on `@mentions` (`@<handle>`, `@all`, `@team`) instead of all unread messages
+    #[arg(long)]
+    pub only_mentions: bool,
+    /// With --watch: model cost tier routing (`auto`, `fast`, or `frontier`; default `auto`)
+    #[arg(long, value_name = "TIER", default_value = "auto")]
+    pub model_tier: String,
+}
+
+#[derive(Args)]
+pub struct WatchArgs {
+    /// Host id of a previously joined room in the guest vault (defaults to the active room)
+    #[arg(long, value_name = "HOST_ID")]
+    pub room: Option<String>,
+    /// Register or re-assert a `@handle` for this watcher (defaults to saved handle)
+    #[arg(long = "as", value_name = "HANDLE")]
+    pub as_handle: Option<String>,
+    /// Built-in local agent harness preset (`auto`, `claude`, `codex`, `hermes`, `opencode`)
+    #[arg(long, value_name = "NAME")]
+    pub harness: Option<String>,
+    /// Local agent/harness command to invoke when unread items arrive (receives untrusted-framed JSON on stdin)
+    #[arg(long, value_name = "CMD")]
+    pub exec: Option<String>,
+    /// Only wake on `@mentions` (`@<handle>`, `@all`, `@team`) instead of all unread messages
+    #[arg(long)]
+    pub only_mentions: bool,
+    /// Model cost tier routing (`auto`, `fast`, or `frontier`; default `auto`)
+    #[arg(long, value_name = "TIER", default_value = "auto")]
+    pub model_tier: String,
+    /// Process at most one unread batch and exit (useful for cron or scripting)
+    #[arg(long)]
+    pub once: bool,
 }
 
 #[derive(Args)]
@@ -403,6 +461,8 @@ pub enum Cmd {
     Up(UpArgs),
     /// Join a room; with --task run a command on the host and print the patch
     Join(JoinArgs),
+    /// Resume a persisted room, drain its unread queue, and recursively wake a local agent harness
+    Watch(WatchArgs),
     /// Start an agent on this machine that the room's host vouches for: its own key, a link bound to it, and a host-signed launch record
     Launch(LaunchArgs),
     /// Interactive session: every MCP tool as a command (host or guest)
@@ -899,6 +959,7 @@ pub enum RoomTemplate {
     Research,
     Review,
     Ops,
+    Hillclimb,
 }
 
 impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
@@ -908,6 +969,7 @@ impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
             RoomTemplate::Research => Self::Research,
             RoomTemplate::Review => Self::Review,
             RoomTemplate::Ops => Self::Ops,
+            RoomTemplate::Hillclimb => Self::Hillclimb,
         }
     }
 }

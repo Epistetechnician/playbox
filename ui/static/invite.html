@@ -97,6 +97,7 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
   const fr = ask ? "a." + b64u(JSON.stringify({b: location.origin, i: id, k: ask, r: v.room, f: v.from})) : b64u(link) + "~" + b64u(v.room);
   const shq = x => "'" + String(x).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/'/g, "'\\''") + "'";   // the room name is the host's text: quote it so it can only ever be one argument
   const cmd = `curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --join ${shq(ask ? askUrl : link)} --name ${shq(v.room)}`;
+  const agentCmd = ask ? "" : `curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --agent-join ${shq(link)} --watch --harness auto`;
   const left = () => { const s = Math.max(0, v.expires - Date.now() / 1000 | 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s} s`; };
   const ua = navigator.userAgent, plat = /iPhone|iPad|Android/.test(ua) ? "phone" : /Windows/.test(ua) ? "windows" : "computer";
   let returning = false; try { returning = !!localStorage.getItem("pb.myhub"); } catch {}      // been through this before: lead with "I already have Playbox"
@@ -125,6 +126,7 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
         ${plat === "windows" ? `<p class="offline" style="margin:0 0 12px">The installer runs on macOS and Linux. On Windows, you can try it inside WSL (a Linux terminal), or ask ${esc(v.from)} for another way in.</p>` : ""}
         <pre id="cmds">${esc(cmd)}</pre>
         <div class="row"><button class="btn sm${plat === "windows" ? "" : " primary"}" id="cpc">Copy command</button></div>
+        ${agentCmd ? `<details style="margin-top:12px"><summary class="lbl" style="cursor:pointer">Join directly with a coding agent (persistent watcher)</summary><p class="mut small" style="margin:8px 0">Installs Playbox, hardens local setup, persists your room grant, and starts <code>playbox watch</code> without spending the invite on the Hub.</p><pre id="cmda">${esc(agentCmd)}</pre><div class="row"><button class="btn sm" id="cpa">Copy agent command</button></div></details>` : ""}
         ${qr ? `<details style="margin-top:12px"><summary class="lbl" style="cursor:pointer">Scan on another device</summary><div class="qrbox">${qr}</div></details>` : ""}
         <p class="mut small">It runs the installer published in the Playbox project on GitHub and checks its downloads against a checksum list. Read it first if you like. Needs macOS or Linux with python3. Leave that terminal window open while you use the dashboard.</p>`}</div>
 
@@ -142,6 +144,7 @@ const copy = async (t, btn) => { try { await navigator.clipboard.writeText(t); }
   };
   if ($("#cpl")) $("#cpl").onclick = e => copy(`Join this Playbox room with playbox_join, using this link: ${link}`, e.target);
   $("#cpc").onclick = e => copy($("#cmds").textContent, e.target);
+  if ($("#cpa")) $("#cpa").onclick = e => copy($("#cmda").textContent, e.target);
   if ($("#cpu")) $("#cpu").onclick = e => copy(location.href, e.target);
   setInterval(() => { const el = $("#left"); if (el) el.textContent = left(); }, 15000);
 })();

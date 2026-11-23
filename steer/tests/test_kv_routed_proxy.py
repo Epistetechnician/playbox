@@ -7,7 +7,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List
 
-from playbox_steer.kv_routed_proxy import EntityRecord, RoutedKVProxyState, create_proxy_server
+from playbox_steer.kv_routed_proxy import BoundedStickyRouter, EntityRecord, RoutedKVProxyState, create_proxy_server
 from playbox_steer.kv_sota_bench import DenseRerankChunkRetriever
 
 
@@ -137,3 +137,116 @@ def test_kv_routed_proxy_end_to_end_streaming_and_non_streaming() -> None:
         proxy.server_close()
         upstream.shutdown()
         upstream.server_close()
+
+
+def test_bounded_sticky_router_spill_and_hot_replication() -> None:
+    backends = [f"http://127.0.0.1:{8001 + i}" for i in range(4)]
+    lb = BoundedStickyRouter(
+        backends,
+        policy="STICKY-BOUNDED",
+        cap_factor=1.25,
+        min_cap=2,
+        hot_replicas=2,
+        hot_share_threshold=0.35,
+        hot_min_requests=6,
+    )
+    ring_cold = lb._pref_ring("cold_ent")
+    # 1. Cold entity pins to primary up to min_cap=2, then spills to secondary
+    i1, _, sp1, hot1 = lb.acquire("cold_ent")
+    i2, _, sp2, hot2 = lb.acquire("cold_ent")
+    i3, _, sp3, hot3 = lb.acquire("cold_ent")
+    assert i1 == ring_cold[0] and i2 == ring_cold[0] and not sp1 and not sp2 and not hot1 and not hot2
+    assert i3 == ring_cold[1] and sp3 and not hot3
+    for idx in (i1, i2, i3):
+        lb.release(idx)
+
+    # 2. Hot entity crosses hot_share_threshold and stays within top-2 warm replicas without spilling
+    ring_hot = lb._pref_ring("hot_ent")
+    warm_set = set(ring_hot[:2])
+    seen_hot_backends = set()
+    hot_flag_seen = False
+    for _ in range(10):
+        idx, _, spilled, is_hot = lb.acquire("hot_ent")
+        if is_hot:
+            hot_flag_seen = True
+            assert idx in warm_set
+            assert not spilled
+            seen_hot_backends.add(idx)
+        lb.release(idx)
+    assert hot_flag_seen
+    assert seen_hot_backends == warm_set
+    assert "hot_ent" in lb.stats()["hot_entities"]
+
+
+def test_kv_routed_proxy_multi_replica_zipf_hot_replication() -> None:
+    hits_by_port: Dict[int, int] = {}
+
+    def make_handler(port_holder: List[int]):
+        class MockReplica(BaseHTTPRequestHandler):
+            def log_message(self, fmt: str, *args: Any) -> None:
+                return
+
+            def do_POST(self) -> None:
+                n = int(self.headers.get("Content-Length", "0"))
+                _ = self.rfile.read(n)
+                hits_by_port[port_holder[0]] = hits_by_port.get(port_holder[0], 0) + 1
+                resp = json.dumps({"choices": [{"message": {"role": "assistant", "content": f"PORT:{port_holder[0]}"}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+
+        return MockReplica
+
+    servers = []
+    urls = []
+    for _ in range(4):
+        holder = [0]
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(holder))
+        holder[0] = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        servers.append(srv)
+        urls.append(f"http://127.0.0.1:{holder[0]}")
+
+    state = RoutedKVProxyState(
+        upstreams=urls,
+        entities=[
+            EntityRecord("acme", "Acme Corp", "Acme dossier.", aliases=["acme"]),
+            EntityRecord("globex", "Globex Inc", "Globex dossier.", aliases=["globex"]),
+        ],
+        routing_policy="STICKY-BOUNDED",
+        hot_replicas=2,
+        hot_share_threshold=0.40,
+        hot_min_requests=4,
+    )
+    proxy = create_proxy_server("127.0.0.1", 0, state)
+    p_port = proxy.server_address[1]
+    threading.Thread(target=proxy.serve_forever, daemon=True).start()
+
+    try:
+        acme_backends = set()
+        hot_seen = False
+        for i in range(8):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{p_port}/v1/chat/completions",
+                data=json.dumps({"model": "test", "messages": [{"role": "user", "content": "Tell me about Acme Corp"}]}).encode(),
+                headers={"Content-Type": "application/json", "X-Session-Id": f"s-{i}"},
+            )
+            with urllib.request.urlopen(req) as r:
+                acme_backends.add(r.headers["X-Routed-Backend"])
+                if r.headers["X-Routed-Hot"] == "1":
+                    hot_seen = True
+        assert hot_seen
+        assert len(acme_backends) == 2  # replicated across top-2 warm replicas, never scattered to all 4
+        with urllib.request.urlopen(f"http://127.0.0.1:{p_port}/metrics") as rm:
+            m = json.loads(rm.read().decode())
+            assert m["routing_policy"] == "STICKY-BOUNDED"
+            assert "acme" in m["hot_entities"]
+            assert sum(m["replica_counts"]) == 8
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+        for srv in servers:
+            srv.shutdown()
+            srv.server_close()

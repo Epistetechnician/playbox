@@ -252,6 +252,11 @@ impl Server {
             if a.get("task_budget").is_some() {
                 abuse.task_budget = parsed_abuse.task_budget;
             }
+            let min_guest_tier = match s(a, "min_guest_tier") {
+                Some(t) => Some(playbox_core::attest::Tier::parse(t).map_err(|e| anyhow!(e))?),
+                None => None,
+            };
+            let trust_guest_device = b(a, "trust_guest_device");
             let cfg = HostConfig {
                 repo: repo.clone(),
                 runner,
@@ -261,6 +266,11 @@ impl Server {
                 authenticated_patience: a.get("idle_patience_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs).unwrap_or(HostConfig::default().authenticated_patience),
                 grant_ttl: a.get("grant_ttl_secs").and_then(Value::as_u64).filter(|t| *t > 0).map(Duration::from_secs),
                 platform: platform::detect(&store::home()).map_err(|e| anyhow!(e))?.map(std::sync::Arc::from),
+                min_guest_tier,
+                trust_guest_device,
+                guest_pins_home: Some(store::home()),
+                goal: s(a, "goal").map(str::to_string),
+                template: s(a, "template").map(str::to_string),
                 abuse,
                 latent: latent_from_args(a),
                 capabilities: match a.get("capabilities") {
@@ -462,7 +472,7 @@ impl Server {
         let transport = choice.resolve(parsed.transport.as_ref());
         let client = Client::connect(
             parsed.addr,
-            playbox_net::key_for_link(link, &store::home().join("guest.key"))?,
+            playbox_net::identity_key(&store::home().join("guest.key"))?,
             transport,
         )
         .await?;
@@ -485,7 +495,7 @@ impl Server {
                 "next": "Show this to the person you work for. If they agree, call playbox_join again without `preview`; the invite is unspent."
             }));
         }
-        client.join(&parsed.invite).await?;
+        let outcome = client.join_details(&parsed.invite).await?;
         // Keep the host's signed statement in our history, so anyone verifying it later can see
         // what we knew about the host when we joined.
         let _ = store::append_kept(
@@ -505,14 +515,32 @@ impl Server {
         playbox_git::init(&ws, "main")
             .await
             .context("preparing the workspace")?;
+        let saved = playbox_net::SavedRoom {
+            host_id: client.host_id().to_string(),
+            addr: playbox_net::encode_peer(client.host_addr()),
+            transport: client.transport().label(),
+            grant: outcome.grant.clone(),
+            member_id: member.clone(),
+            joined_at: playbox_net::grants::now_secs(),
+            expires_at: outcome.expires,
+            hint_hosts: playbox_net::SavedRoom::encode_hosts(&parsed.hosts),
+            min_host_tier: s(a, "min_host_tier").unwrap_or("t0").to_string(),
+            trust_host_device: b(a, "trust_host_device"),
+            workspace: Some(ws.display().to_string()),
+            handle: None,
+        };
+        let persisted = playbox_net::GuestStore::new(&store::home())
+            .save(&saved)
+            .is_ok();
         self.client = Some(Arc::new(client));
         self.hint_hosts = parsed.hosts.clone();
         self.join_args = Some(a.clone());
         self.member_id = Some(member.clone());
         self.workspace = Some(ws.clone());
         self.learn_hosts().await;
-        Ok(json!({
+        let mut out = json!({
             "joined": true,
+            "persisted": persisted,
             "member_id": member,
             "workspace": ws.display().to_string(),
             "host_attestation": {
@@ -526,15 +554,23 @@ impl Server {
                 "device": host_att.device,
                 "device_newly_pinned": newly_pinned,
             }
-        }))
+        });
+        if let Some(tier) = outcome.guest_verified_tier {
+            out["guest_attestation"] = json!({
+                "verified_tier": tier,
+                "device": outcome.guest_device,
+                "device_newly_pinned": outcome.guest_device_newly_pinned,
+            });
+        }
+        Ok(out)
     }
 
     /// Forget the joined room so this sidecar can join another. The grant is not revoked.
     pub(crate) fn leave(&mut self) -> Result<Value> {
-        if self.client.is_none() {
+        let Some(c) = self.client.take() else {
             bail!("not in a room");
-        }
-        self.client = None;
+        };
+        let _ = playbox_net::GuestStore::new(&store::home()).remove(&c.host_id().to_string());
         self.extra.clear();
         self.active = None;
         self.room_root = None;

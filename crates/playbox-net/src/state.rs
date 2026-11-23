@@ -30,6 +30,12 @@ pub struct Admit {
     pub net: bool,
     /// The hosts, secrets (`secret/NAME`) and capabilities (`cap/NAME`) the grant allows.
     pub allowed: Vec<String>,
+    /// Verified guest attestation tier at join, if mutual attestation was enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest_tier: Option<String>,
+    /// Verified guest hardware device fingerprint (`kind:fp`), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest_device: Option<String>,
 }
 
 #[derive(Debug, Default)]

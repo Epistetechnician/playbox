@@ -88,6 +88,23 @@ pub struct HostConfig {
     pub conversations_store: Option<PathBuf>,
     /// Where this host keeps its copy of the room log (`roomlog.jsonl` in the state directory).
     pub roomlog_store: Option<PathBuf>,
+    /// Minimum attestation tier required from guests before an invite is spent and a grant is minted.
+    /// `None` (default) allows guests without attestation.
+    pub min_guest_tier: Option<playbox_core::attest::Tier>,
+    /// Pin a guest's hardware device key on first verified join (trust on first use), then judge with it pinned.
+    pub trust_guest_device: bool,
+    /// Home directory holding the host's `pins` file for verifying guest hardware devices (`None` = `playbox_core::store::home()`).
+    pub guest_pins_home: Option<PathBuf>,
+    /// Extra platform verifiers for guest attestation (e.g. custom hardware or test verifiers).
+    pub guest_verifiers: Vec<Arc<dyn playbox_core::attest::PlatformVerifier>>,
+    /// Optional room template id (e.g. `hillclimb`, `swe`) included in the signed manifest.
+    pub template: Option<String>,
+    /// Optional room goal/vision text published in the signed Room Manifest.
+    pub goal: Option<String>,
+    /// Host-side schedules that post periodic or event-driven (`on_push`) messages into the feed.
+    pub schedules: Vec<crate::manifest::ScheduleSpec>,
+    /// Cost & pacing policy published in the signed Room Manifest for `playbox watch` runners.
+    pub budget: crate::manifest::BudgetPolicy,
 }
 
 impl Default for HostConfig {
@@ -117,6 +134,14 @@ impl Default for HostConfig {
             calls_store: None,
             conversations_store: None,
             roomlog_store: None,
+            min_guest_tier: None,
+            trust_guest_device: false,
+            guest_pins_home: None,
+            guest_verifiers: Vec::new(),
+            template: None,
+            goal: None,
+            schedules: Vec::new(),
+            budget: crate::manifest::BudgetPolicy::default(),
         }
     }
 }
@@ -162,6 +187,8 @@ pub struct Host {
     sessions: SessionMap,
     handler: RoomHandler,
     revoke_hooks: Arc<Mutex<Vec<RevokeHook>>>,
+    /// Background scheduler tasks aborted when the host shuts down.
+    scheduler_tasks: Vec<tokio::task::JoinHandle<()>>,
     /// Holds the exclusive lock on `<state dir>/host.lock` for as long as the host lives.
     _dir_lock: Option<std::fs::File>,
 }
@@ -338,6 +365,7 @@ impl Host {
                 "replica": matches!(root, Root::Verifier(_)),
                 "scratch_quota_mib": cfg.scratch_quota.max_bytes >> 20,
                 "max_push_mib": cfg.max_push_bytes >> 20,
+                "min_guest_tier": cfg.min_guest_tier.map(|t| t.to_string()),
             }),
         );
         let measurements = Arc::new(attest::measure_self(
@@ -411,6 +439,7 @@ impl Host {
                 cfg.scratch_quota,
                 cfg.limits.clone(),
             )
+            .with_repo(cfg.repo.clone())
             .with_standing(Arc::new(move |member: &str, _capability: &str| {
                 let id: EndpointId = member
                     .parse()
@@ -442,6 +471,8 @@ impl Host {
             done: Arc::default(),
             replays: Arc::default(),
             handoffs: Arc::default(),
+            join_nonces: Arc::default(),
+            sched_last: Arc::default(),
             live_limits,
             live_policy_updated: Arc::default(),
             card: Arc::new(serde_json::to_value(card).context("agent card")?),
@@ -464,6 +495,21 @@ impl Host {
                 crate::roomsync::RoomLogHandler::new(roomlog.clone()),
             )
             .spawn();
+        let mut scheduler_tasks = Vec::new();
+        for sched in handler.cfg.schedules.clone() {
+            if let crate::manifest::ScheduleTrigger::Every { secs } = sched.trigger {
+                let h = handler.clone();
+                let interval = Duration::from_secs(secs.max(1));
+                scheduler_tasks.push(tokio::spawn(async move {
+                    let mut ticker = tokio::time::interval(interval);
+                    ticker.tick().await; // skip immediate tick at t=0
+                    loop {
+                        ticker.tick().await;
+                        h.fire_schedule(&sched);
+                    }
+                }));
+            }
+        }
         Ok(Self {
             audit,
             router,
@@ -478,6 +524,7 @@ impl Host {
             sessions,
             handler,
             revoke_hooks: Arc::new(Mutex::new(Vec::new())),
+            scheduler_tasks,
             _dir_lock: None,
         })
     }
@@ -1306,10 +1353,28 @@ impl Host {
             .await
     }
 
+    /// The room's durable Board/chat feed (handles, mentions, unread cursors, history).
+    #[must_use]
+    pub fn chat(&self) -> &crate::chat::Chat {
+        &self.audit.chat
+    }
+
+    /// Signed Room Manifest describing this room's goal, `/commands`, schedules, and admission tier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if manifest signing fails.
+    pub fn signed_manifest(&self) -> Result<crate::manifest::SignedManifest> {
+        self.handler.signed_manifest()
+    }
+
     /// # Errors
     ///
     /// Returns an error if the operation fails; the error carries the cause.
     pub async fn shutdown(self) -> Result<()> {
+        for task in &self.scheduler_tasks {
+            task.abort();
+        }
         self.repl.stop();
         drop_all_sessions(&self.sessions, self.runner.as_ref()).await;
         self.router.shutdown().await.map_err(|e| anyhow!("{e}"))
@@ -1347,6 +1412,8 @@ mod standing_tests {
                 timeout_secs: 0,
                 net: false,
                 allowed: vec![],
+                guest_tier: None,
+                guest_device: None,
             },
         );
         assert!(member_standing(&st, &id, 100).is_ok());

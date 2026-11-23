@@ -56,7 +56,7 @@ os.makedirs(out, exist_ok=True)
 work = tempfile.mkdtemp(prefix=f"pb-{tag}-")
 env = dict(os.environ)
 GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "user.name=bench", "-c", "user.email=bench@example.com"]
-home = f"{H}/home-{img_fam}-{arm}{slot_sfx}"
+home = f"{work}/home" if os.environ.get("PB_AIPROXY_URL", "").strip() else f"{H}/home-{img_fam}-{arm}{slot_sfx}"
 if not os.path.isdir(home):
     os.makedirs(home, exist_ok=True)
     skip = ("tools", "hermes-agent", "installs", "bin", "node", "desktop", "bootstrap-cache", "backups", "skills", "cache", "attachments", "image_cache",
@@ -128,13 +128,13 @@ else:
     else:
         if dirty_git:
             setup_cmd = (
-                f"rm -rf /sandbox/pb/{arm}{n}-{inst}; mkdir -p /sandbox/pb/{arm}{n}-{inst} "
+                f"rm -rf /sandbox/pb/{arm}{n}-*; mkdir -p /sandbox/pb/{arm}{n}-{inst} "
                 f"&& cp -a /usr/local/testbed {repo} && cd {repo} && git checkout -q -f {r['base_commit']} && git status --short | head -1"
             )
         else:
             # Single-commit archive inside the VM so `git log --all` cannot leak future gold commits.
             setup_cmd = (
-                f"rm -rf /sandbox/pb/{arm}{n}-{inst}; mkdir -p {repo} "
+                f"rm -rf /sandbox/pb/{arm}{n}-*; mkdir -p {repo} "
                 f"&& git -C /usr/local/testbed archive {r['base_commit']} | tar -x -C {repo} "
                 f"&& cd {repo} && git init -q -b main "
                 f"&& git -c user.name=bench -c user.email=bench@example.com add -A "
@@ -146,6 +146,56 @@ else:
     cfg = setterm(cfg, backend="ssh", cwd=repo, ssh_host=f"openshell-{SB}.default", ssh_user="sandbox", ssh_port="22")
     sh = lambda c, **k: ex(c)
 open(f"{home}/config.yaml", "w").write(cfg); env["HERMES_HOME"] = home; env.pop("TERMINAL_ENV", None)
+env["HERMES_DISABLE_LAZY_INSTALLS"] = "1"
+for _shared in ("tools", "runtime", "installs"):
+    _src = os.path.expanduser(f"~/.hermes/{_shared}")
+    _dst = os.path.join(home, _shared)
+    if os.path.exists(_src) and not os.path.lexists(_dst):
+        os.symlink(_src, _dst)
+
+aiproxy_url = os.environ.get("PB_AIPROXY_URL", "").strip()
+aiproxy_key_file = os.environ.get("PB_AIPROXY_ADMIN_KEY_FILE", "").strip()
+aiproxy_lease = None
+aiproxy_run_id = f"{tag}-{os.getpid()}"
+if aiproxy_url and os.environ.get("PB_HARNESS", "hermes") == "hermes":
+    _repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    _hpb = os.path.join(_repo_root, "hermes-playbox-backend")
+    if _hpb not in sys.path:
+        sys.path.insert(0, _hpb)
+    from playbox_router.aiproxy import AiproxyClient, WorkerTokenLease, load_admin_key
+    _raw_key = aiproxy_key_file or os.environ.get("PLAYBOX_AIPROXY_ADMIN_KEY", "")
+    if _raw_key:
+        _ac = AiproxyClient(aiproxy_url, load_admin_key(_raw_key))
+        aiproxy_lease = WorkerTokenLease(
+            client=_ac,
+            group="bench:arm-s",
+            worker_label=f"arm-s-{inst[:16]}",
+            hard_usd_cap=float(os.environ.get("PB_BUDGET", "1.50")),
+            run_id=aiproxy_run_id,
+            task_id=inst,
+            failover_policy="same_model_only",
+            cache_mode="off",
+        )
+        aiproxy_lease.__enter__()
+        env.update(aiproxy_lease.env_overrides())
+        _auth_p = os.path.join(home, "auth.json")
+        if os.path.lexists(_auth_p):
+            try:
+                os.remove(_auth_p)
+            except OSError:
+                pass
+        subprocess.run(
+            [
+                os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python"), "-c",
+                "import os,yaml,sys; p=sys.argv[1]; c=yaml.safe_load(open(p)) or {}; "
+                "c.pop('providers',None); c.pop('custom_providers',None); c['fallback_providers']=[]; "
+                "c['model']={'default': os.environ.get('PB_MODEL',''), 'provider': os.environ.get('PB_PROVIDER','custom')}; "
+                "open(p,'w').write(yaml.safe_dump(c))",
+                f"{home}/config.yaml",
+            ],
+            env=env,
+            check=True,
+        )
 
 parser = r.get("pb_parser") or ("pytest" if inst == "flask" else "django")
 mods = extract_django_modules(r["F"]) if parser == "django" else []
@@ -273,6 +323,8 @@ else:
             break
         time.sleep(3.0)
     wall = time.time() - t0
+if aiproxy_lease is not None:
+    aiproxy_lease.__exit__(None, None, None)
 kill_home_gateways(home)
 if arm == "S":
     subprocess.run(["pkill", "-f", f"openshell-{SB}\\.default"])
@@ -286,7 +338,11 @@ patch = "".join(
     and "\nBinary files " not in b
 )
 u_data = json.load(open(usage)) if os.path.exists(usage) else {}
-if not float(u_data.get("estimated_cost_usd") or 0.0) and (u_data.get("input_tokens") or u_data.get("output_tokens")):
+host_cost = aiproxy_lease.host_cost_usd if aiproxy_lease is not None else None
+if host_cost is not None:
+    u_data["estimated_cost_usd"] = round(float(host_cost), 6)
+    u_data["cost_source"] = "host_aiproxy"
+elif not float(u_data.get("estimated_cost_usd") or 0.0) and (u_data.get("input_tokens") or u_data.get("output_tokens")):
     inp = int(u_data.get("input_tokens") or 0)
     cached = int(u_data.get("cache_read_tokens") or 0)
     out_tok = int(u_data.get("output_tokens") or 0)
@@ -300,9 +356,11 @@ if not float(u_data.get("estimated_cost_usd") or 0.0) and (u_data.get("input_tok
     else:
         ir, cr, or_ = 1.00, 0.10, 5.00
     u_data["estimated_cost_usd"] = round((max(0, inp - cached) * ir + cached * cr + out_tok * or_) / 1_000_000.0, 6)
-res = dict(inst=inst, arm=arm, n=n, model=model, provider=provider, dirty_git=dirty_git, wall_s=round(wall, 1), rc=rc, patch_lines=len(patch.splitlines()), usage=u_data)
+res = dict(inst=inst, arm=arm, n=n, model=model, provider=provider, dirty_git=dirty_git, wall_s=round(wall, 1), rc=rc, patch_lines=len(patch.splitlines()), usage=u_data, llm_ledger_source=("host_aiproxy" if host_cost is not None else "client_estimate"))
 res.update(score(inst, patch)); res.pop("tail", None); res.pop("ok", None)
 if arm == "S": res["setup_s"] = round(upload_s, 1)
 json.dump(res, open(f"{out}/{tag}.json", "w"), indent=1); open(f"{out}/{tag}.patch", "w").write(patch)
 print(json.dumps({k: v for k, v in res.items() if k != "usage"}), res["usage"].get("estimated_cost_usd"))
+if arm == "S":
+    sh(f"rm -rf /sandbox/pb/{arm}{n}-{inst}")
 shutil.rmtree(work, ignore_errors=True)

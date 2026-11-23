@@ -120,6 +120,10 @@ pub(crate) struct RoomHandler {
     pub(crate) convs: Arc<conversations::Book>,
     /// Persistent per-member worktrees for stateful `keep = true` sessions, keyed by authenticated `EndpointId`.
     pub(crate) sessions: SessionMap,
+    /// Fresh nonces issued by `playbox.JoinChallenge` for mutual guest attestation, keyed by peer.
+    pub(crate) join_nonces: Arc<Mutex<HashMap<EndpointId, (String, std::time::Instant)>>>,
+    /// Last firing time per schedule id (enforces `min_interval_secs` cooldown).
+    pub(crate) sched_last: Arc<Mutex<HashMap<String, std::time::Instant>>>,
 }
 
 /// Persistent host-side worktree for a member's stateful (`keep = true`) task session.
@@ -230,12 +234,106 @@ pub(crate) fn finish(result: Result<Task>) -> Task {
 }
 
 impl RoomHandler {
+    fn verify_guest_attestation(
+        &self,
+        from: EndpointId,
+        attestation: Option<&str>,
+        min_tier: attest::Tier,
+    ) -> Result<(String, Option<String>, bool)> {
+        let text = attestation.ok_or_else(|| {
+            anyhow!(
+                "this room requires guest attestation at {min_tier}; upgrade playbox or supply a signed guest attestation (the invite was not spent)"
+            )
+        })?;
+        let expected_nonce = {
+            let mut nonces = self.join_nonces.lock_recover();
+            let now = std::time::Instant::now();
+            nonces.retain(|_, (_, issued)| now.duration_since(*issued) < Duration::from_secs(60));
+            nonces
+                .remove(&from)
+                .map(|(n, _)| n)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "missing or expired guest attestation challenge; request playbox.JoinChallenge first (the invite was not spent)"
+                    )
+                })?
+        };
+        let home = self
+            .cfg
+            .guest_pins_home
+            .clone()
+            .unwrap_or_else(playbox_core::store::home);
+        let pins_path = playbox_core::platform::pins_path(&home);
+        let mut pins = playbox_core::platform::PinStore::load(&pins_path)?;
+        let boot = playbox_core::platform::boot_reference_from_env().map_err(|e| anyhow!("{e}"))?;
+        let make = |pins: &playbox_core::platform::PinStore| {
+            playbox_core::platform::verifiers(pins.clone(), boot.clone())
+                .map_err(|e| anyhow!("{e}"))
+        };
+        let mut vs = make(&pins)?;
+        let mut verified = {
+            let mut refs: Vec<&dyn attest::PlatformVerifier> =
+                vs.iter().map(|v| v.as_ref()).collect();
+            for v in &self.cfg.guest_verifiers {
+                refs.push(v.as_ref());
+            }
+            attest::verify(text, &refs)
+                .map_err(|e| anyhow!("guest attestation invalid (the invite was not spent): {e}"))?
+        };
+        if verified.statement.subject != *from.as_bytes() {
+            bail!(
+                "guest attestation is for a different key than the connecting peer (the invite was not spent)"
+            );
+        }
+        if verified.statement.nonce != expected_nonce {
+            bail!("guest attestation nonce mismatch or replay (the invite was not spent)");
+        }
+        let mut newly_pinned = false;
+        if self.cfg.trust_guest_device {
+            if let Some((kind, fp)) = verified
+                .device
+                .clone()
+                .as_deref()
+                .and_then(|d| d.split_once(':'))
+            {
+                if !pins.contains(kind, fp) {
+                    pins.add(kind, fp)?;
+                    newly_pinned = true;
+                    vs = make(&pins)?;
+                    let mut refs: Vec<&dyn attest::PlatformVerifier> =
+                        vs.iter().map(|v| v.as_ref()).collect();
+                    for v in &self.cfg.guest_verifiers {
+                        refs.push(v.as_ref());
+                    }
+                    verified = attest::verify(text, &refs).map_err(|e| {
+                        anyhow!("guest attestation invalid after pinning (the invite was not spent): {e}")
+                    })?;
+                }
+            }
+        }
+        if verified.achieved < min_tier {
+            let device_hint = verified
+                .device
+                .as_deref()
+                .map(|d| format!("; device={d}"))
+                .unwrap_or_default();
+            bail!(
+                "guest attestation achieves {} but this room requires {} ({}{}; the invite was not spent)",
+                verified.achieved,
+                min_tier,
+                verified.notes.join("; "),
+                device_hint,
+            );
+        }
+        Ok((verified.achieved.to_string(), verified.device, newly_pinned))
+    }
+
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         reason = "the value is bounded, or truncated on purpose; the value is bounded well below the signed maximum"
     )]
-    fn join(&self, from: EndpointId, invite: String) -> Result<Value> {
+    fn join(&self, from: EndpointId, invite: String, attestation: Option<String>) -> Result<Value> {
         if !self.auth.can_issue() {
             bail!("this host is a replica and cannot admit members; join through the room's primary host");
         }
@@ -243,6 +341,28 @@ impl RoomHandler {
             bail!("this key is banned from the room");
         }
         let id = self.auth.verify_invite(&invite)?;
+        // Pre-check invite and capacity before doing guest attestation I/O, without spending the invite yet.
+        {
+            let st = self.state.lock_recover();
+            if st.members.len() >= self.limiter.max_members() && !st.members.contains_key(&from) {
+                bail!("this room is full ({} members)", self.limiter.max_members());
+            }
+            let inv = st
+                .invites
+                .get(&id)
+                .ok_or_else(|| anyhow!("invite already used or unknown"))?;
+            if inv.bound_to.is_some_and(|b| b != from) {
+                // Checked before the invite is spent, so a stranger holding a leaked link cannot burn it.
+                bail!("this invite is for a different key");
+            }
+        }
+        // Mutual guest attestation runs BEFORE the invite is spent so a failed check never burns the link.
+        let guest_att = match self.cfg.min_guest_tier {
+            Some(min_tier) => {
+                Some(self.verify_guest_attestation(from, attestation.as_deref(), min_tier)?)
+            }
+            None => None,
+        };
         let mut st = self.state.lock_recover();
         if st.members.len() >= self.limiter.max_members() && !st.members.contains_key(&from) {
             bail!("this room is full ({} members)", self.limiter.max_members());
@@ -288,17 +408,20 @@ impl RoomHandler {
             self.cfg.steer.as_ref().map(|h| h.caps()),
         )?;
         let now = grants::now_secs();
+        let expires = now.saturating_add(ttl);
         st.admits.insert(
             from,
             Admit {
                 issued: now,
-                expires: now.saturating_add(ttl),
+                expires,
                 invite: id.chars().take(8).collect(),
                 cpu_milli: caps.cpu_milli,
                 mem_mib: caps.mem_mib,
                 timeout_secs: caps.timeout_secs,
                 net: caps.net,
                 allowed: caps.hosts.clone(),
+                guest_tier: guest_att.as_ref().map(|(t, _, _)| t.clone()),
+                guest_device: guest_att.as_ref().and_then(|(_, d, _)| d.clone()),
             },
         );
         st.members.insert(from, grant_id);
@@ -311,9 +434,21 @@ impl RoomHandler {
                 .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
                 .unwrap_or(0),
         );
-        Ok(
-            json!({ "member": from.to_string(), "grant": grant, "protocol": wire::PROTOCOL, "version": env!("CARGO_PKG_VERSION") }),
-        )
+        let mut resp = json!({
+            "member": from.to_string(),
+            "grant": grant,
+            "expires": expires,
+            "protocol": wire::PROTOCOL,
+            "version": env!("CARGO_PKG_VERSION"),
+        });
+        if let Some((tier, device, newly_pinned)) = guest_att {
+            resp["guest_attestation"] = json!({
+                "verified_tier": tier,
+                "device": device,
+                "device_newly_pinned": newly_pinned,
+            });
+        }
+        Ok(resp)
     }
 
     pub(crate) fn check_live_policy(
@@ -394,6 +529,172 @@ impl RoomHandler {
             "capabilities": self.caps.book.describe(),
         });
         blake3::hash(capabilities::canonical(&doc).as_bytes()).to_hex()[..32].to_string()
+    }
+
+    pub(crate) fn signed_manifest(&self) -> Result<crate::manifest::SignedManifest> {
+        let host_id = EndpointId::from_bytes(self.attest_key.verifying_key().as_bytes())
+            .map_err(|e| anyhow!("invalid host key: {e}"))?
+            .to_string();
+        let commands = self
+            .caps
+            .book
+            .list()
+            .into_iter()
+            .map(|c| crate::manifest::CommandSpec {
+                name: c.name,
+                params: c.params.keys().cloned().collect(),
+                approval: c.approval,
+            })
+            .collect();
+        let goal = self.cfg.goal.as_deref().map(|g| {
+            if g.len() > crate::manifest::MAX_GOAL_BYTES {
+                g[..g.floor_char_boundary(crate::manifest::MAX_GOAL_BYTES)].to_string()
+            } else {
+                g.to_string()
+            }
+        });
+        let issued_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        let room_id: String = self
+            .auth
+            .public_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let manifest = crate::manifest::RoomManifest {
+            version: 1,
+            room_id,
+            host_id,
+            template: self.cfg.template.clone(),
+            goal,
+            commands,
+            schedules: self.cfg.schedules.clone(),
+            min_guest_tier: self.cfg.min_guest_tier.map(|t| t.to_string()),
+            budget: self.cfg.budget.clone(),
+            issued_at,
+            extra: std::collections::BTreeMap::new(),
+        };
+        crate::manifest::SignedManifest::sign_with_key(&self.attest_key, manifest)
+    }
+
+    /// If `text` begins with `/<cmd>` and `<cmd>` matches a registered host [`capabilities::Capability`],
+    /// dispatch it deterministically through the sandboxed capability engine and post a signed receipt
+    /// event back into the room feed when it completes.
+    ///
+    /// Security: never invokes a shell; only pre-registered pinned-argv capabilities are eligible,
+    /// parameter validation and approval policies are enforced by `self.caps`, and the posted receipt
+    /// has `kind = "event"` so it cannot recursively trigger another command.
+    pub(crate) fn maybe_dispatch_feed_command(
+        &self,
+        sender: &str,
+        text: &str,
+        seq: u64,
+    ) -> Option<Result<String, String>> {
+        let (cmd, args) = crate::chat::parse_command(text)?;
+        if !self.caps.book.names().iter().any(|n| n == &cmd) {
+            return None;
+        }
+        let call_id = format!("cmd-{seq}");
+        match self.caps.submit(sender, &cmd, args, &call_id) {
+            Ok(call) => {
+                let caps = self.caps.clone();
+                let audit = self.audit.clone();
+                let attest_key = self.attest_key.clone();
+                let member = sender.to_string();
+                let cid = call.id.clone();
+                let cname = cmd;
+                tokio::spawn(async move {
+                    let deadline = std::time::Instant::now() + Duration::from_secs(300);
+                    loop {
+                        let Some(cur) = caps.book.view(&member, &cid) else {
+                            break;
+                        };
+                        match cur.state {
+                            capabilities::State::Running
+                            | capabilities::State::AwaitingApproval => {
+                                if std::time::Instant::now() >= deadline {
+                                    break;
+                                }
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
+                            _ => {
+                                let signed = cur.signed(&attest_key);
+                                let (exit_code, result_hash, host_sig, summary) =
+                                    if let Some(ref o) = signed.outcome {
+                                        let out_line = o
+                                            .stdout
+                                            .lines()
+                                            .find(|l| !l.trim().is_empty())
+                                            .or_else(|| {
+                                                o.stderr.lines().find(|l| !l.trim().is_empty())
+                                            })
+                                            .unwrap_or("")
+                                            .chars()
+                                            .take(240)
+                                            .collect::<String>();
+                                        (
+                                            Some(o.exit_code),
+                                            Some(o.result_hash.clone()),
+                                            o.host_sig.clone(),
+                                            out_line,
+                                        )
+                                    } else {
+                                        (None, None, None, format!("{:?}", signed.state))
+                                    };
+                                audit.chat.event(
+                                    "command_receipt",
+                                    None,
+                                    &json!({
+                                        "command": cname,
+                                        "requester": member,
+                                        "call_id": cid,
+                                        "state": format!("{:?}", signed.state),
+                                        "exit_code": exit_code,
+                                        "result_hash": result_hash,
+                                        "host_sig": host_sig,
+                                        "summary": summary,
+                                    }),
+                                );
+                                break;
+                            }
+                        }
+                    }
+                });
+                Some(Ok(call.id))
+            }
+            Err(e) => Some(Err(e.to_string())),
+        }
+    }
+
+    pub(crate) fn fire_schedule(&self, sched: &crate::manifest::ScheduleSpec) {
+        let now = std::time::Instant::now();
+        {
+            let mut last = self.sched_last.lock_recover();
+            if let Some(prev) = last.get(&sched.id) {
+                if now.duration_since(*prev).as_secs() < sched.min_interval_secs {
+                    return;
+                }
+            }
+            last.insert(sched.id.clone(), now);
+        }
+        if let Ok(seq) = self
+            .audit
+            .chat
+            .say("host", Some("scheduler"), &sched.message)
+        {
+            let _ = self.maybe_dispatch_feed_command("host", &sched.message, seq);
+        }
+    }
+
+    pub(crate) fn trigger_on_push_schedules(&self, branch: &str) {
+        for sched in &self.cfg.schedules {
+            if matches!(sched.trigger, crate::manifest::ScheduleTrigger::OnPush) {
+                let mut resolved = sched.clone();
+                resolved.message = resolved.message.replace("{branch}", branch);
+                self.fire_schedule(&resolved);
+            }
+        }
     }
 
     pub(crate) fn policy_snapshot(&self) -> Value {
@@ -630,6 +931,30 @@ impl RoomHandler {
                 };
                 Ok(json!({ "statement": text }))
             }
+            wire::METHOD_JOIN_CHALLENGE => {
+                let raw = crate::random_bytes()
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())?;
+                let nonce: String = raw[..16].iter().map(|b| format!("{b:02x}")).collect();
+                {
+                    let mut nonces = self.join_nonces.lock_recover();
+                    let now = std::time::Instant::now();
+                    nonces.retain(|_, (_, issued)| {
+                        now.duration_since(*issued) < Duration::from_secs(60)
+                    });
+                    if nonces.len() >= 1024 && !nonces.contains_key(&from) {
+                        return Err(A2AError::unsupported_operation(
+                            "busy: too many join challenges in flight, try again",
+                        )
+                        .to_jsonrpc_error());
+                    }
+                    nonces.insert(from, (nonce.clone(), now));
+                }
+                Ok(json!({
+                    "nonce": nonce,
+                    "required": self.cfg.min_guest_tier.is_some(),
+                    "min_guest_tier": self.cfg.min_guest_tier.map(|t| t.to_string()),
+                }))
+            }
             wire::METHOD_JOIN => {
                 let invite = params
                     .get("invite")
@@ -637,11 +962,19 @@ impl RoomHandler {
                     .ok_or_else(|| {
                         A2AError::invalid_params("missing `invite`").to_jsonrpc_error()
                     })?;
-                let joined = self.join(from, invite.to_string());
+                let attestation = params
+                    .get("attestation")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let joined = self.join(from, invite.to_string(), attestation);
                 self.audit.record(
                     "join",
                     Some(&from.to_string()),
-                    json!({ "ok": joined.is_ok(), "reason": joined.as_ref().err().map(|e| audit::clip(&format!("{e:#}"))) }),
+                    json!({
+                        "ok": joined.is_ok(),
+                        "guest_attestation": joined.as_ref().ok().and_then(|v| v.get("guest_attestation")).cloned(),
+                        "reason": joined.as_ref().err().map(|e| audit::clip(&format!("{e:#}"))),
+                    }),
                 );
                 joined.map_err(unauthorized)
             }
@@ -704,6 +1037,67 @@ impl RoomHandler {
             wire::METHOD_HOSTS => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
                 Ok(self.roomlog.snapshot())
+            }
+            wire::METHOD_MANIFEST => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let signed = self
+                    .signed_manifest()
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())?;
+                serde_json::to_value(signed)
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+            }
+            wire::METHOD_REGISTER_HANDLE => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let raw = params
+                    .get("handle")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        A2AError::invalid_params("missing `handle`").to_jsonrpc_error()
+                    })?;
+                let handle = self
+                    .audit
+                    .chat
+                    .register_handle(&from.to_string(), raw)
+                    .map_err(|e| A2AError::invalid_params(e).to_jsonrpc_error())?;
+                Ok(json!({ "handle": handle }))
+            }
+            wire::METHOD_INBOX => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let only_mentions = params
+                    .get("only_mentions")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let limit = params.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize;
+                let wait_ms = params.get("wait_ms").and_then(Value::as_u64).unwrap_or(0);
+                let members: Vec<String> = self
+                    .state
+                    .lock_recover()
+                    .members
+                    .keys()
+                    .map(ToString::to_string)
+                    .collect();
+                let feed = self
+                    .audit
+                    .chat
+                    .inbox_wait(
+                        &from.to_string(),
+                        only_mentions,
+                        limit,
+                        &members,
+                        Duration::from_millis(wait_ms),
+                    )
+                    .await;
+                serde_json::to_value(feed)
+                    .map_err(|e| A2AError::internal(e.to_string()).to_jsonrpc_error())
+            }
+            wire::METHOD_ACK => {
+                self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
+                let seq = params
+                    .get("seq")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| A2AError::invalid_params("missing `seq`").to_jsonrpc_error())?;
+                let cursor = self.audit.chat.ack(&from.to_string(), seq);
+                Ok(json!({ "cursor": cursor }))
             }
             methods::GET_TASK => {
                 self.authorize(frame.grant(), from, "tasks", &grants::Needs::default())?;
@@ -800,10 +1194,17 @@ impl RoomHandler {
             }
             Some(Op::Echo { text }) => return reply(text),
             Some(Op::Say { text, name, request_id }) => {
-                return match self.audit.chat.say_once(&from.to_string(), name.as_deref(), &text, request_id.as_deref()) {
-                    Ok(seq) => reply(json!({ "seq": seq }).to_string()),
-                    Err(e) => reply(OpError::failed(e).body()),
-                }
+                let sender = from.to_string();
+                let seq = match self.audit.chat.say_once(&sender, name.as_deref(), &text, request_id.as_deref()) {
+                    Ok(seq) => seq,
+                    Err(e) => return reply(OpError::failed(e).body()),
+                };
+                let cmd_call = self.maybe_dispatch_feed_command(&sender, &text, seq);
+                return match cmd_call {
+                    Some(Ok(call_id)) => reply(json!({ "seq": seq, "command_call_id": call_id }).to_string()),
+                    Some(Err(err)) => reply(json!({ "seq": seq, "command_error": err }).to_string()),
+                    None => reply(json!({ "seq": seq }).to_string()),
+                };
             }
             Some(Op::Remember {
                 text,
@@ -1009,6 +1410,9 @@ impl RoomHandler {
                 let bytes = wire::raw_part(msg).map(<[u8]>::len);
                 let r = self.push(from, &branch, wire::raw_part(msg)).await;
                 self.audit_op(from, "push", &r, t0, json!({ "branch": audit::clip(&branch), "bytes": bytes }));
+                if r.is_ok() {
+                    self.trigger_on_push_schedules(&branch);
+                }
                 finish(r)
             }
             Some(Op::Run {

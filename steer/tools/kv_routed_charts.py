@@ -521,6 +521,158 @@ def make_crossover_curve() -> None:
     plt.close(fig)
 
 
+def make_multinode_sticky() -> None:
+    """Physical 4-node H100-80GB sticky routing: RR vs STICKY-HASH vs STICKY-BOUNDED vs STICKY-HOT-REP."""
+    dists = ["Uniform (α=0.0)\n48 × 8.2K entities · n=48", "Zipf Skew (α=1.5)\nHot entities · n=48"]
+    x = np.arange(len(dists))
+    w = 0.19
+
+    tpm_rr = [2978.57, 5710.82]
+    tpm_hash = [6918.15, 8104.05]
+    tpm_bnd = [6400.05, 9423.43]
+    tpm_hot = [6646.08, 8874.61]
+
+    p95_rr = [2.845, 1.275]
+    p95_hash = [1.564, 0.909]
+    p95_bnd = [1.643, 0.773]
+    p95_hot = [1.658, 0.860]
+
+    c_hot = "#2563EB"
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.2, 4.6), dpi=180)
+
+    b1 = ax1.bar(x - 1.5 * w, tpm_rr, w, label="Round-Robin (RR)", color=C_RAG)
+    b2 = ax1.bar(x - 0.5 * w, tpm_hash, w, label="Pure Sticky Hash", color=C_CONV)
+    b3 = ax1.bar(x + 0.5 * w, tpm_bnd, w, label="Bounded-Load Sticky (1.25×)", color=C_ROUTED)
+    b4 = ax1.bar(x + 1.5 * w, tpm_hot, w, label="Adaptive Hot-Entity Rep", color=c_hot)
+    for bars in (b1, b2, b3, b4):
+        for bar in bars:
+            h = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width() / 2, h + 140, f"{h:,.0f}", ha="center", va="bottom", fontsize=7.6, fontweight="bold")
+    ax1.annotate("2.32× vs RR\n91.5% KV hit", xy=(0 - 0.5 * w, 6918), xytext=(-0.10, 7750), fontsize=7.8, fontweight="bold", color="#B45309")
+    ax1.annotate("1.65× vs RR (+16% vs Hash)\n93.8% KV hit · imb 1.46×", xy=(1 + 0.5 * w, 9423), xytext=(0.48, 10200), fontsize=7.8, fontweight="bold", color="#1D6F63")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(dists, fontsize=9.2)
+    ax1.set_ylabel("Cluster Throughput (turns / min, n=48)", fontsize=9.6)
+    ax1.set_ylim(0, 11400)
+    ax1.set_title("Physical 4× H100 Cluster Throughput", fontsize=10.5, fontweight="bold")
+    ax1.legend(frameon=False, fontsize=7.6, loc="upper left")
+
+    b1 = ax2.bar(x - 1.5 * w, p95_rr, w, label="Round-Robin (RR)", color=C_RAG)
+    b2 = ax2.bar(x - 0.5 * w, p95_hash, w, label="Pure Sticky Hash", color=C_CONV)
+    b3 = ax2.bar(x + 0.5 * w, p95_bnd, w, label="Bounded-Load Sticky (1.25×)", color=C_ROUTED)
+    b4 = ax2.bar(x + 1.5 * w, p95_hot, w, label="Adaptive Hot-Entity Rep", color=c_hot)
+    for bars in (b1, b2, b3, b4):
+        for bar in bars:
+            h = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width() / 2, h + 0.05, f"{h:.2f}s", ha="center", va="bottom", fontsize=7.6, fontweight="bold")
+    ax2.annotate("−45% p95 vs RR\nt2–6: 0.31s vs 1.74s", xy=(0 - 0.5 * w, 1.564), xytext=(-0.10, 2.38), fontsize=7.8, fontweight="bold", color="#1D6F63")
+    ax2.annotate("−39% vs RR / −15% vs Hash\nt2–6: 0.13s (2.3× faster)", xy=(1 + 0.5 * w, 0.773), xytext=(0.58, 1.82), fontsize=7.8, fontweight="bold", color="#1D6F63")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(dists, fontsize=9.2)
+    ax2.set_ylabel("p95 End-to-End Latency q→end (s, lower is better)", fontsize=9.4)
+    ax2.set_ylim(0, 3.35)
+    ax2.set_title("p95 Tail Latency Across 4 Physical H100 Nodes", fontsize=10.5, fontweight="bold")
+
+    fig.suptitle(
+        "Physical 4-Node H100-80GB Cluster (Private Mesh · --clock-lock 1590 MHz · Qwen3-8B-FP8 · 4,608 Turns · 0 Errors)",
+        fontsize=10.5,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "09_multinode_sticky.png", bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_delta_and_hier_kv() -> None:
+    """Section 10: Log-Structured Delta-Framed KV under live writes (A) + Hierarchical Skeleton KV breaking the 64K wall (B)."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.6, 4.7), dpi=180)
+
+    # Panel A: Mutating-State Live Writes (~12K/entity, 1,024 turns, n=16, H100)
+    arms_a = ["Naive\nRewrite", "Delta-KV\n+ Compact", "Append-Only\nDelta-KV", "Stateless\nRAG-Live"]
+    tpm_a = [225.88, 523.85, 1474.75, 1668.06]
+    acc_a = [99.22, 98.83, 100.0, 43.36]
+    hit_a = [19.25, 68.78, 93.39, 57.70]
+    p95_a = [4.25, 3.90, 0.29, 0.74]
+    colors_a = [C_CTX, C_CONV, C_ROUTED, C_RAG]
+
+    x_a = np.arange(len(arms_a))
+    bars_a = ax1.bar(x_a, tpm_a, width=0.56, color=colors_a)
+    for idx, bar in enumerate(bars_a):
+        h = bar.get_height()
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 45,
+            f"{h:,.0f} tpm\nAcc {acc_a[idx]:.1f}% · Hit {hit_a[idx]:.0f}%\nWrite p95: {p95_a[idx]:.2f}s",
+            ha="center",
+            va="bottom",
+            fontsize=7.3,
+            fontweight="bold" if idx == 2 else "normal",
+            color="#1D6F63" if idx == 2 else "#111827",
+        )
+    ax1.annotate(
+        "6.53× tpm & 14.5× faster write p95\nvs Naive Rewrite · 100% prefix & acc",
+        xy=(2, 1740),
+        xytext=(0.05, 1980),
+        arrowprops=dict(arrowstyle="->", color="#1D6F63", lw=1.2),
+        fontsize=8.0,
+        fontweight="bold",
+        color="#1D6F63",
+    )
+    ax1.set_xticks(x_a)
+    ax1.set_xticklabels(arms_a, fontsize=8.8)
+    ax1.set_ylabel("Throughput (turns / min, n=16)", fontsize=9.4)
+    ax1.set_ylim(0, 2380)
+    ax1.set_title("(A) Live Writes (~12K Entity · 3 Writes/Session)", fontsize=10.2, fontweight="bold")
+
+    # Panel B: Breaking the 64K KV Capacity Wall (~56K-64K/entity, 288 turns, n=16, H100)
+    arms_b = ["Full-64K\nKV Wall", "Hybrid Hier-KV\n+ Delta + RAG", "Chunked\nRAG-64K"]
+    tpm_b = [19.48, 1332.31, 1720.97]
+    acc_b = [97.92, 100.0, 68.75]
+    p95_b = [60.13, 0.98, 0.81]
+    kv_b = ["56.1K tok", "2.6K tok", "32 tok"]
+    colors_b = [C_CTX, C_ROUTED, C_RAG]
+
+    x_b = np.arange(len(arms_b))
+    bars_b = ax2.bar(x_b, tpm_b, width=0.52, color=colors_b)
+    for idx, bar in enumerate(bars_b):
+        h = bar.get_height()
+        ax2.text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 45,
+            f"{h:,.1f} tpm\nAcc {acc_b[idx]:.1f}% · p95 {p95_b[idx]:.2f}s\nKV: {kv_b[idx]}",
+            ha="center",
+            va="bottom",
+            fontsize=7.6,
+            fontweight="bold" if idx == 1 else "normal",
+            color="#1D6F63" if idx == 1 else "#111827",
+        )
+    ax2.annotate(
+        "68.4× tpm · 61.6× lower p95 vs Full-64K\n+31.3 pp accuracy vs RAG (100% deep clause)",
+        xy=(1, 1600),
+        xytext=(-0.15, 1980),
+        arrowprops=dict(arrowstyle="->", color="#1D6F63", lw=1.2),
+        fontsize=8.0,
+        fontweight="bold",
+        color="#1D6F63",
+    )
+    ax2.set_xticks(x_b)
+    ax2.set_xticklabels(arms_b, fontsize=9.0)
+    ax2.set_ylabel("Throughput (turns / min, n=16)", fontsize=9.4)
+    ax2.set_ylim(0, 2380)
+    ax2.set_title("(B) Breaking the 64K Capacity Wall (~60K Entity)", fontsize=10.2, fontweight="bold")
+
+    fig.suptitle(
+        "Mutating-State Delta KV & Auto-Crossover Hierarchical Skeleton KV (H100-80GB --clock-lock · Qwen3-30B-A3B-FP8 · 1,312 Turns · 0 Errors)",
+        fontsize=10.2,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "10_delta_and_hier_kv.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     make_clean_3arm()
     make_noisy_routing()
@@ -530,4 +682,6 @@ if __name__ == "__main__":
     make_dense_rerank_sota()
     make_dense_model_qwen8b()
     make_crossover_curve()
-    print(f"Wrote 8 charts to {OUT_DIR}")
+    make_multinode_sticky()
+    make_delta_and_hier_kv()
+    print(f"Wrote 10 charts to {OUT_DIR}")
