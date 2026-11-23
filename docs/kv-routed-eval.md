@@ -66,7 +66,7 @@ Expands the 32 sessions across 6 isolated tenant namespaces (`--tenant-scale 6` 
 ## Limitations & Disclosures
 
 1. **CPU offload backend:** Stress Test 2 and the SOTA runs used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB`) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
-2. **Corpus & model scope:** All 9,228 measured turns ran on `Qwen3-30B-A3B-Instruct-2507-FP8` (3B active MoE) across 3 distinct datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Dense models, sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
+2. **Corpus & model scope:** Across **10,578 measured turns**, we evaluated **2 distinct model architectures** — a 3B-active MoE (`Qwen3-30B-A3B-Instruct-2507-FP8` on A100, 9,228 turns) and a **dense transformer** (`Qwen3-8B-FP8` on NVIDIA L4, 1,350 turns) — across 3 datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
 3. **Stateless vs conversational & dense+reranker RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Sections 5–6 explicitly evaluate **`S-CONV-RAG`** (with an LLM query rewriter) and **two-stage dense bi-encoder + cross-encoder reranker RAG** (`BAAI/bge-small-en-v1.5` + `BAAI/bge-reranker-v2-m3`) on FinanceBench and LoCoMo.
 
 ---
@@ -108,6 +108,26 @@ To close the "BM25 is a weak retriever" objection, we replaced BM25 with a two-s
 
 - **FinanceBench:** Upgrading RAG to dense + cross-encoder reranker closed the overall accuracy gap (`42.7%` → `56.0%`, tying `S-ROUTED`'s `56.0%` at `max_tokens=128`, though `S-ROUTED` still led `metrics-generated` math `48.0%` vs `40.0%`), **but `S-ROUTED` remained `1.46×` faster than `S-RAG` and `1.62×` faster than `S-CONV-RAG`** (`166.3` vs `114.0` / `102.5` tpm) and cut p95 `q→end` by **−1,420 to −2,100 ms** (`4.26 s` vs `5.68 s` / `6.36 s`) with **385K tokens** served from CPU KV offload (`65.0%` external prefix hit).
 - **LoCoMo:** Dense + reranker RAG actually **lost ground** to `S-ROUTED` (**+13.0 pp** vs `S-RAG`, `p = 2.71e-7`; **+16.7 pp** vs `S-CONV-RAG`, `p = 1.04e-11`), because multi-session temporal and cross-turn cues are scattered across sessions that top-5 semantic reranking still drops. `S-ROUTED` beat `S-CONV-RAG` on throughput (`169.8` vs `163.5` tpm) with **84.6% GPU + 69.5% CPU offload prefix hits** (`581K` tokens).
+
+---
+
+## 7. Second Model Architecture: Dense `Qwen3-8B-FP8` on NVIDIA L4 (1,350 turns, 0 errors)
+
+To test whether the serving speedup was specific to 3B-active MoE models, we replicated the full dense+reranker (`bge-small-en-v1.5` + `bge-reranker-v2-m3`) comparison on a **dense transformer (`Qwen/Qwen3-8B-FP8`, `enable_thinking=false`)** on an **NVIDIA L4 (24 GB)** with vLLM's 20 GiB CPU `OffloadingConnector` (`n=8`, `max_tokens=128`, **1,350 turns, 0 errors**):
+
+![Dense Model Qwen3-8B-FP8 Replication](assets/kv-routed/07_dense_model_qwen8b.png)
+
+| Benchmark *(Qwen3-8B-FP8 · L4)* | Arm *(Dense + Cross-Encoder Reranker)* | Throughput (`n=8`) | p95 `q→first` (follow-ups) | p95 `q→end` | GPU / CPU KV hit | Accuracy | Exact McNemar vs `S-ROUTED` |
+|---|---|---:|---:|---:|---:|---:|---|
+| **FinanceBench** *(150 Qs)* | `S-RAG` *(bge-small + bge-reranker-v2-m3)* | 23.0 tpm | 7.90 s (6.35 s) | 35.79 s | 5.8% / 3.1% | **52.7%** | `a=13, b=2`, `p = 0.0074` |
+| | `S-CONV-RAG` *(+ LLM rewriter)* | 21.7 tpm | 15.00 s (14.30 s) | 35.30 s | 6.4% / 4.0% | 50.7% | `a=13, b=5`, `p = 0.096` |
+| | **`S-ROUTED`** *(~5.8K KV + rerank fallback)* | **46.1 tpm (2.12×)** | **5.36 s (2.46 s)** | **20.90 s** | **76.3% / 0.8%** | 45.3% | *(−14.4 to −14.9 s p95)* |
+| **LoCoMo** *(300 Qs)* | `S-RAG` *(bge-small + bge-reranker-v2-m3)* | 35.7 tpm | 7.53 s (7.52 s) | 29.80 s | 9.3% / 2.6% | 47.7% | `a=30, b=30`, `p = 1.00` |
+| | `S-CONV-RAG` *(+ LLM rewriter)* | 34.3 tpm | 11.70 s (11.70 s) | 25.38 s | 9.1% / 3.5% | 47.7% | `a=28, b=28`, `p = 1.00` |
+| | **`S-ROUTED`** *(~18.1K KV + rerank fallback)* | **70.6 tpm (2.06×)** | 14.07 s (13.30 s) | **20.19 s** | **92.2% / 40.0%** | **47.7%** | *(Cat2: **57.3%** vs 51.2%)* |
+
+- **Bigger serving win on dense models (`2.0×–2.12×`):** Dense 8B pays full-parameter prefill FLOPs on every non-cached token, so `S-ROUTED`'s **76.3%–92.2% GPU prefix cache hit** (+ `170K` CPU offload tokens on LoCoMo) doubled throughput across both benchmarks (**2.00–2.12×** on FinanceBench, **1.98–2.06×** on LoCoMo) and cut p95 `q→end` by **−5.2 to −14.9 seconds**.
+- **Model-scale accuracy nuance:** On LoCoMo, `S-ROUTED` tied dense+reranker RAG overall (`47.7%`, `p = 1.00`) while still winning temporal Cat 2 (`57.3%` vs `51.2%`) and multi-hop Cat 1 (`40.2%` vs `37.8%`). On FinanceBench, the smaller 8B dense model benefited slightly from cross-encoder pre-filtering (`52.7%` vs `45.3%`, `p = 0.0074`), whereas `Qwen3-30B-A3B` achieved accuracy parity (`56.0%` vs `56.0%`) — showing that stronger base models extract full value from routed dossiers without needing a reranker to pre-filter tables.
 
 ---
 

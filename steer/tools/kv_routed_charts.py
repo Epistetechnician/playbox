@@ -376,6 +376,62 @@ def make_dense_rerank_sota() -> None:
     plt.close(fig)
 
 
+def make_dense_model_qwen8b() -> None:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4))
+    datasets = ["FinanceBench\n(150 Qs · ~5.8K KV)", "LoCoMo\n(300 Qs · ~18.1K KV)"]
+    x = np.arange(len(datasets))
+    w = 0.25
+
+    tpm_rag = [23.0, 35.7]
+    tpm_conv = [21.7, 34.3]
+    tpm_routed = [46.1, 70.6]
+
+    b1 = ax1.bar(x - w, tpm_rag, w, label="S-RAG (bge-small + bge-reranker-v2-m3)", color=C_RAG)
+    b2 = ax1.bar(x, tpm_conv, w, label="S-CONV-RAG (+ LLM Rewriter)", color=C_CPU)
+    b3 = ax1.bar(x + w, tpm_routed, w, label="S-ROUTED (Entity KV + Rerank Fallback)", color=C_ROUTED)
+    for bars in (b1, b2, b3):
+        for bar in bars:
+            h = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width() / 2, h + 1.5, f"{h:.1f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    ax1.annotate("2.12× vs Conv-RAG\n−14.4 s p95 q→end", xy=(0 + w, 46.1), xytext=(-0.22, 57), fontsize=8.3, fontweight="bold", color="#1D6F63")
+    ax1.annotate("2.06× vs Conv-RAG\n92.2% GPU / 40.0% CPU hit", xy=(1 + w, 70.6), xytext=(0.56, 78), fontsize=8.3, fontweight="bold", color="#1D6F63")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(datasets, fontsize=9.5)
+    ax1.set_ylabel("Throughput (turns / min, n=8)", fontsize=10)
+    ax1.set_ylim(0, 95)
+    ax1.set_title("Dense Qwen3-8B-FP8 Throughput (NVIDIA L4)", fontsize=11, fontweight="bold")
+    ax1.legend(frameon=False, fontsize=7.8, loc="upper left")
+
+    acc_rag = [52.7, 47.7]
+    acc_conv = [50.7, 47.7]
+    acc_routed = [45.3, 47.7]
+
+    b1 = ax2.bar(x - w, acc_rag, w, label="S-RAG (Dense+Rerank)", color=C_RAG)
+    b2 = ax2.bar(x, acc_conv, w, label="S-CONV-RAG (+ LLM Rewriter)", color=C_CPU)
+    b3 = ax2.bar(x + w, acc_routed, w, label="S-ROUTED", color=C_ROUTED)
+    for bars in (b1, b2, b3):
+        for bar in bars:
+            h = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width() / 2, h + 1.2, f"{h:.1f}%", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    ax2.annotate("8B benefits from\nreranker pre-filtering\n(p = 0.0074 vs S-RAG)", xy=(0 + w, 45.3), xytext=(-0.25, 62), fontsize=8.0, fontweight="bold", color="#B84B32")
+    ax2.annotate("Parity overall (p = 1.00)\nCat2 temporal: 57.3% vs 51.2%", xy=(1 + w, 47.7), xytext=(0.55, 62), fontsize=8.0, fontweight="bold", color="#1D6F63")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(datasets, fontsize=9.5)
+    ax2.set_ylabel("Accuracy (%)", fontsize=10)
+    ax2.set_ylim(0, 82)
+    ax2.set_title("Accuracy on Dense Qwen3-8B-FP8 (vs Dense+Rerank RAG)", fontsize=10.5, fontweight="bold")
+
+    fig.suptitle(
+        "Second Architecture Replication: Dense Qwen3-8B-FP8 on L4 (1,350 Turns · 0 Errors)",
+        fontsize=11.3,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "07_dense_model_qwen8b.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     make_clean_3arm()
     make_noisy_routing()
@@ -383,4 +439,5 @@ if __name__ == "__main__":
     make_sota_generalization()
     make_latency_delta_ms()
     make_dense_rerank_sota()
-    print(f"Wrote 6 charts to {OUT_DIR}")
+    make_dense_model_qwen8b()
+    print(f"Wrote 7 charts to {OUT_DIR}")
