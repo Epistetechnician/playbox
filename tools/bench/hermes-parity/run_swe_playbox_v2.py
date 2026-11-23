@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import importlib.util
 import json
 import os
@@ -31,7 +32,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import uuid
 from pathlib import Path
 
 H = Path(__file__).resolve().parent
@@ -112,9 +115,11 @@ def _start_host_with_runtime(
     *,
     egress_file: str = "",
     allow_egress: list[str] | None = None,
+    allow_image: str = "",
 ):
     """Like `R.Host`, parameterized by `--runtime` (`libkrun`, `docker`, or `openshell`) and optional BOX-7 egress."""
     import threading
+    img_allow = allow_image or R.IMAGE
 
     class _CustomHost(R.Host):
         def __init__(self, d_path: str):
@@ -131,12 +136,14 @@ def _start_host_with_runtime(
                 "PLAYBOX_HOME": self.home,
                 "PLAYBOX_HOSTING_DIR": self.hosting,
                 "PLAYBOX_ALLOW_MISSING_LIMITS": "1",
+                **({"PLAYBOX_ALLOW_UNSAFE_RUNNER": "1"} if runtime == "process" else {}),
             }
             argv = [
                 R.PLAYBOX, "up", "--home", self.home, "--local", "--console",
                 "--state", os.path.join(d_path, "state"),
                 "--repo", os.path.join(d_path, "repo"),
-                "--runtime", runtime, "--allow-image", R.IMAGE,
+                "--runtime", runtime,
+                *([] if runtime == "process" else ["--allow-image", img_allow]),
                 "--grant-ttl", "43200", "--max-tasks-per-minute", "300",
             ]
             if egress_file:
@@ -149,15 +156,28 @@ def _start_host_with_runtime(
             )
             self.links = []
             threading.Thread(target=self._pump, daemon=True).start()
-            for _ in range(60):
+            for _ in range(400):
                 if self.links:
                     break
-                time.sleep(0.5)
+                if self.p.poll() is not None:
+                    break
+                time.sleep(0.15)
             else:
+                try:
+                    self.p.terminate()
+                    self.p.wait(timeout=3)
+                except Exception:
+                    try:
+                        self.p.kill()
+                    except OSError as exc:
+                        sys.stderr.write(f"[run_swe_playbox_v2] host kill warning: {exc}\n")
                 raise RuntimeError(f"playbox host ({runtime}) did not come up")
-            for _ in range(5):
-                self.cmd("link")
-                time.sleep(1.0)
+            if not self.links:
+                try:
+                    self.p.kill()
+                except OSError as exc:
+                    sys.stderr.write(f"[run_swe_playbox_v2] host kill warning: {exc}\n")
+                raise RuntimeError(f"playbox host ({runtime}) exited before emitting invite link")
             self._reg = None
 
     return _CustomHost(d)
@@ -188,6 +208,8 @@ def host_repo(dst: str, inst: str, r: dict) -> None:
                 shutil.rmtree(tmp_cache, ignore_errors=True)
         else:
             shutil.rmtree(tmp_cache, ignore_errors=True)
+    if os.path.exists(dst):
+        shutil.rmtree(dst, ignore_errors=True)
     shutil.copytree(cache, dst, symlinks=True)
 
 
@@ -260,6 +282,11 @@ def build_atlas_brief(
 
 def _prepare_worker_home(hh: str, *, enable_atlas_plugin: bool, use_aiproxy: bool = False) -> None:
     R.make_home(hh, "P", str(REPO_ROOT / "hermes-playbox-backend" / "playbox_terminal"))
+    for shared_dir in ("tools", "runtime", "installs"):
+        src = os.path.expanduser(f"~/.hermes/{shared_dir}")
+        dst = os.path.join(hh, shared_dir)
+        if os.path.exists(src) and not os.path.lexists(dst):
+            os.symlink(src, dst)
     real_auth = os.path.expanduser("~/.hermes/auth.json")
     hh_auth = os.path.join(hh, "auth.json")
     if use_aiproxy:
@@ -608,6 +635,8 @@ def _run_sealed_container_check(
     script (`repro_script`, weight 0.4) separately so passing the authoritative repo test suite
     is scored distinctly from a synthetic repro failure. Never touches hidden SWE-bench `test_patch`.
     """
+    if not shutil.which("docker") or os.environ.get("PB_SKIP_ONLINE_GATE") == "1":
+        return (0.5 if (patch or "").strip() else 0.0, False, False, False, "no-local-docker-online-gate")
     img = rt_info["img"]
     online_cmd = rt_info["online_cmd"]
     py = rt_info["py"]
@@ -816,9 +845,9 @@ def run_repro_generator(
             u = _parse_agy_usage(out_rep, model, rc_rep, err_rep) if harness == "agy" else _extract_devin_usage(devin_ws, t0, model)
             Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
         else:
-            hh = os.path.join(R.D, f"home-P2-s{worker_slot}-repro")
+            hh = os.path.join(R.D, f"home-P2-p{os.getpid()}-s{worker_slot}-repro")
             _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path), use_aiproxy=lease is not None)
-            env = {**os.environ, **gw_env, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
+            env = {**os.environ, **gw_env, "HERMES_HOME": hh, "HERMES_DISABLE_LAZY_INSTALLS": "1", "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.environ.get("PB_HERMES_AGENT_DIR", os.path.expanduser("~/.hermes/hermes-agent"))}
             for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
                 env.pop(k, None)
             env.update(pbx_env_vars)
@@ -909,6 +938,7 @@ def run_worker(
     aiproxy_run_id: str = "",
     aiproxy_failover_policy: str = "same_model_only",
     aiproxy_cache_mode: str = "off",
+    member_home_override: str = "",
 ) -> CandidateResult:
     wdir = os.path.join(run_dir, worker_label)
     os.makedirs(wdir, exist_ok=True)
@@ -920,7 +950,7 @@ def run_worker(
 
     pbx_env_vars = {
         "PLAYBOX_BIN": R.PLAYBOX,
-        "PLAYBOX_HOME": os.path.join(wdir, "mhome"),
+        "PLAYBOX_HOME": member_home_override or os.path.join(wdir, "mhome"),
         "PLAYBOX_LINK_FILE": lf,
         "PLAYBOX_IMAGE": rt_info["img"],
         "PLAYBOX_STATS": stats_path,
@@ -1030,9 +1060,9 @@ def run_worker(
             u = _parse_agy_usage(stdout, model, rc_sol, stderr) if harness == "agy" else _extract_devin_usage(devin_ws, t0, model)
             Path(usage_path).write_text(json.dumps(u, indent=2), encoding="utf-8")
         else:
-            hh = os.path.join(R.D, f"home-P2-s{worker_slot}-{worker_label}")
+            hh = os.path.join(R.D, f"home-P2-p{os.getpid()}-s{worker_slot}-{worker_label}")
             _prepare_worker_home(hh, enable_atlas_plugin=bool(atlas_index_path), use_aiproxy=lease is not None)
-            env = {**os.environ, **gw_env, "HERMES_HOME": hh, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.path.expanduser("~/.hermes/hermes-agent")}
+            env = {**os.environ, **gw_env, "HERMES_HOME": hh, "HERMES_DISABLE_LAZY_INSTALLS": "1", "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.environ.get("PB_HERMES_AGENT_DIR", os.path.expanduser("~/.hermes/hermes-agent"))}
             for k in ("PLAYBOX_HOME", "PLAYBOX_HOSTING_DIR"):
                 env.pop(k, None)
             env.update(pbx_env_vars)
@@ -1086,12 +1116,105 @@ def run_worker(
     )
 
 
-def main() -> None:
+class WarmPlayboxRoom:
+    """Persistent Playbox host + warm OpenShell microVM room reused across tasks in a worker slot."""
+
+    def __init__(self, pool_dir: str, runtime: str, *, egress_file: str = "", allow_egress: list[str] | None = None, allow_image: str = ""):
+        self.pool_dir = pool_dir
+        self.runtime = runtime
+        self.allow_image = allow_image or R.IMAGE
+        self.repo_dir = os.path.join(pool_dir, "repo")
+        self.state_dir = os.path.join(pool_dir, "state")
+        os.makedirs(self.repo_dir, exist_ok=True)
+        if not os.path.isdir(os.path.join(self.repo_dir, ".git")):
+            subprocess.run(["git", "-C", self.repo_dir, "init", "-q", "-b", "main"], check=True)
+            Path(self.repo_dir, ".warm_init").write_text("init\n", encoding="utf-8")
+            subprocess.run(["git", "-C", self.repo_dir, "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", self.repo_dir, "-c", "user.name=bench", "-c", "user.email=bench@example.com", "commit", "-q", "-m", "init"],
+                check=True,
+            )
+        self.host = _start_host_with_runtime(
+            pool_dir,
+            runtime,
+            egress_file=egress_file,
+            allow_egress=allow_egress,
+            allow_image=self.allow_image,
+        )
+        self.host.hub_register()
+        self.link_cursor = 1
+        self.ensure_links(6)
+
+    def ensure_links(self, needed: int) -> None:
+        while len(self.host.links) < needed:
+            prev_n = len(self.host.links)
+            self.host.cmd("link")
+            for _ in range(20):
+                if len(self.host.links) > prev_n:
+                    break
+                time.sleep(0.1)
+
+    def next_link(self) -> str:
+        self.ensure_links(self.link_cursor + 1)
+        lk = self.host.links[self.link_cursor]
+        self.link_cursor += 1
+        return lk
+
+    def swap_repo(self, inst: str, r: dict) -> tuple[bool, int]:
+        shutil.rmtree(self.repo_dir, ignore_errors=True)
+        host_repo(self.repo_dir, inst, r)
+        return verify_single_commit_repo(self.repo_dir)
+
+    def member_home(self, label: str) -> str:
+        return os.path.join(self.pool_dir, f"mhome-{label}")
+
+    def close(self) -> None:
+        try:
+            self.host.close()
+        finally:
+            shutil.rmtree(self.repo_dir, ignore_errors=True)
+
+
+class WarmHostPool:
+    """Thread-safe pool of warm Playbox+OpenShell rooms keyed by `(slot, image)`."""
+
+    def __init__(self, runtime: str = "openshell"):
+        self.runtime = runtime
+        self._lock = threading.Lock()
+        self._rooms: dict[tuple[str, str], WarmPlayboxRoom] = {}
+
+    def get(self, slot: str, img: str, *, egress_file: str = "", allow_egress: list[str] | None = None) -> WarmPlayboxRoom:
+        key = (str(slot), str(img))
+        with self._lock:
+            room = self._rooms.get(key)
+            if room is not None and room.host.p.poll() is None:
+                return room
+            if room is not None:
+                room.close()
+            img_tag = hashlib.sha256(img.encode()).hexdigest()[:8]
+            pool_dir = os.path.join(R.D, f"warmpool-p{os.getpid()}-s{slot}-{img_tag}-{uuid.uuid4().hex[:6]}")
+            os.makedirs(pool_dir, exist_ok=True)
+            room = WarmPlayboxRoom(pool_dir, self.runtime, egress_file=egress_file, allow_egress=allow_egress, allow_image=img)
+            self._rooms[key] = room
+            return room
+
+    def close_all(self) -> None:
+        with self._lock:
+            rooms = list(self._rooms.values())
+            self._rooms.clear()
+        for room in rooms:
+            try:
+                room.close()
+            except Exception as exc:
+                sys.stderr.write(f"[run_swe_playbox_v2] room close warning: {exc}\n")
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("inst")
     ap.add_argument("n")
     ap.add_argument("outdir")
-    ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
+    ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker", "process"])
     ap.add_argument("--harness", default="hermes", choices=["hermes", "devin", "agy"], help="Agent CLI harness driving the Playbox room worker")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--provider", default="anthropic")
@@ -1119,21 +1242,36 @@ def main() -> None:
     ap.add_argument("--budget", type=float, default=0.80)
     ap.add_argument("--timeout", type=int, default=int(os.environ.get("PB_TIMEOUT", "1800")))
     ap.add_argument("--no-atlas", action="store_true")
+    ap.add_argument("--no-online-verify", action="store_true", help="Skip cold-container online_verify on single-tier runs (no repro-gate/escalation)")
     ap.add_argument("--legacy-replay", action="store_true")
-    args = ap.parse_args()
+    return ap
 
+
+def execute_p2_task(args: argparse.Namespace, *, warm_pool: WarmHostPool | None = None) -> dict:
     r = load(args.inst)
     rt_info = _resolve_inst_runtime(args.inst, r)
-    R.IMAGE = rt_info["img"]
     tag = f"{args.inst}-P2-{args.n}"
+    aiproxy_run_id = f"{tag}-{uuid.uuid4().hex[:8]}"
     os.makedirs(args.outdir, exist_ok=True)
     run_dir = os.path.join(R.D, f"swe-{tag}")
     shutil.rmtree(run_dir, ignore_errors=True)
     os.makedirs(run_dir)
-    repo_dir = os.path.join(run_dir, "repo")
-    host_repo(repo_dir, args.inst, r)
 
-    git_isolated, commit_count = verify_single_commit_repo(repo_dir)
+    warm_room: WarmPlayboxRoom | None = None
+    if warm_pool is not None and not args.legacy_replay:
+        warm_room = warm_pool.get(
+            str(args.worker_slot),
+            rt_info["img"],
+            egress_file=args.egress,
+            allow_egress=args.allow_egress,
+        )
+        repo_dir = warm_room.repo_dir
+        git_isolated, commit_count = warm_room.swap_repo(args.inst, r)
+    else:
+        repo_dir = os.path.join(run_dir, "repo")
+        host_repo(repo_dir, args.inst, r)
+        git_isolated, commit_count = verify_single_commit_repo(repo_dir)
+
     if not git_isolated:
         raise RuntimeError(f"anti-leak invariant violated: base repo has {commit_count} commits (>1)")
 
@@ -1214,21 +1352,35 @@ def main() -> None:
     except Exception:  # noqa: BLE001
         approvers_hex = ""
 
-    host = _start_host_with_runtime(
-        run_dir,
-        args.runtime,
-        egress_file=args.egress,
-        allow_egress=args.allow_egress,
-    )
-    host.hub_register()
+    if warm_room is not None:
+        host = warm_room.host
+        state_dir = warm_room.state_dir
+        warm_room.ensure_links(warm_room.link_cursor + needed_links)
+    else:
+        host = _start_host_with_runtime(
+            run_dir,
+            args.runtime,
+            egress_file=args.egress,
+            allow_egress=args.allow_egress,
+            allow_image=rt_info["img"],
+        )
+        host.hub_register()
+        state_dir = os.path.join(run_dir, "state")
     try:
-        while len(host.links) < needed_links:
-            host.cmd("link")
-            time.sleep(0.8)
+        if warm_room is None:
+            while len(host.links) < needed_links + 1:
+                prev_n = len(host.links)
+                host.cmd("link")
+                for _ in range(20):
+                    if len(host.links) > prev_n:
+                        break
+                    time.sleep(0.1)
         link_cursor = 1
 
         def next_link() -> str:
             nonlocal link_cursor
+            if warm_room is not None:
+                return warm_room.next_link()
             lk = host.links[link_cursor]
             link_cursor += 1
             return lk
@@ -1254,7 +1406,7 @@ def main() -> None:
                 aiproxy_client=aiproxy_client,
                 aiproxy_group="bench:repro",
                 aiproxy_hard_usd_cap=min(0.15, max(0.05, args.budget * 0.25)),
-                aiproxy_run_id=tag,
+                aiproxy_run_id=aiproxy_run_id,
                 aiproxy_failover_policy=args.aiproxy_failover_policy,
                 aiproxy_cache_mode=args.aiproxy_cache_mode,
             )
@@ -1288,9 +1440,10 @@ def main() -> None:
                     aiproxy_client=aiproxy_client,
                     aiproxy_group=args.aiproxy_group,
                     aiproxy_hard_usd_cap=per_worker_cap,
-                    aiproxy_run_id=tag,
+                    aiproxy_run_id=aiproxy_run_id,
                     aiproxy_failover_policy=args.aiproxy_failover_policy,
                     aiproxy_cache_mode=args.aiproxy_cache_mode,
+                    member_home_override=(warm_room.member_home(f"w{i}") if warm_room is not None else ""),
                 )
                 for i in range(args.workers)
             ]
@@ -1298,8 +1451,11 @@ def main() -> None:
 
         # Non-oracle online gate: existing tests + valid non-vacuous repro script (NEVER hidden SWE tests).
         repro_script = repro_gate.script if (repro_gate and repro_gate.valid) else ""
+        skip_online = bool(args.no_online_verify and args.workers == 1 and not args.escalate_model and not repro_script)
 
         def online_verify(patch: str):
+            if skip_online:
+                return False, 0.0, {"existing_ok": None, "repro_ok": None, "online_verify_skipped_single_tier": True}
             return _run_sealed_container_check(r, patch, rt_info=rt_info, repro_script=repro_script)
 
         all_workers_meta = [c.meta for c in cheap_candidates]
@@ -1332,7 +1488,7 @@ def main() -> None:
                     aiproxy_client=aiproxy_client,
                     aiproxy_group=args.aiproxy_group,
                     aiproxy_hard_usd_cap=max(0.05, remaining_usd),
-                    aiproxy_run_id=tag,
+                    aiproxy_run_id=aiproxy_run_id,
                     aiproxy_failover_policy=args.aiproxy_failover_policy,
                     aiproxy_cache_mode=args.aiproxy_cache_mode,
                 )
@@ -1369,7 +1525,7 @@ def main() -> None:
         gateway_total_cost: float | None = None
         if aiproxy_client is not None:
             try:
-                host_ledger = aiproxy_client.fetch_ledger(run_id=tag)
+                host_ledger = aiproxy_client.fetch_ledger(run_id=aiproxy_run_id)
                 Path(args.outdir, f"{tag}.llm_ledger.json").write_text(
                     json.dumps(host_ledger, indent=2), encoding="utf-8"
                 )
@@ -1393,7 +1549,7 @@ def main() -> None:
             network_isolated=not bool(args.allow_egress),
             box7_egress_hosts=list(args.allow_egress or []),
             host_audit_verified=host_audit_ok,
-            audit_log_path=os.path.join(run_dir, "state", "audit.log"),
+            audit_log_path=os.path.join(state_dir, "audit.log"),
             taint_summary={
                 "taint_mode": "enforced" if approvers_hex else "advisory",
                 "trust_offline_workspace": True,
@@ -1456,7 +1612,7 @@ def main() -> None:
         gate_pq_committed = 0
         exp_cmd = [
             R.PLAYBOX, "gate", "export",
-            "--state", os.path.join(run_dir, "state"),
+            "--state", state_dir,
             "--receipt", str(rcpt_path),
             "--sign-key", key_file,
             "--out", str(bundle_path),
@@ -1495,6 +1651,7 @@ def main() -> None:
             "arm": "P2",
             "runtime": args.runtime,
             "keep": not args.legacy_replay,
+            "warm_pool": warm_room is not None,
             "workers": args.workers,
             "wall_s": wall_total,
             "resolved": holdout_resolved,
@@ -1525,6 +1682,7 @@ def main() -> None:
             "inst": res["inst"],
             "arm": res["arm"],
             "runtime": res["runtime"],
+            "warm_pool": res["warm_pool"],
             "wall_s": res["wall_s"],
             "resolved": res["resolved"],
             "online_gate_passed": res["online_gate_passed"],
@@ -1535,18 +1693,25 @@ def main() -> None:
             "sync_none": receipt["payload"]["taint"]["sync_none"],
             "sync_delta": receipt["payload"]["taint"]["sync_delta"],
             "median_cmd_s": all_workers_meta[0].get("median_cmd_s") if all_workers_meta else None,
-        }))
+        }), flush=True)
+        return res
     finally:
-        host.close()
         state_dst = Path(args.outdir, "states", tag)
-        state_src = Path(run_dir, "state")
+        state_src = Path(state_dir)
         if state_src.is_dir():
             state_dst.mkdir(parents=True, exist_ok=True)
             for fn in ("audit.log", "root.key", "endpoint.key", "egress.jsonl"):
                 sp = state_src / fn
                 if sp.is_file():
                     shutil.copy2(sp, state_dst / fn)
-        shutil.rmtree(os.path.join(run_dir, "repo"), ignore_errors=True)
+        if warm_room is None:
+            host.close()
+            shutil.rmtree(os.path.join(run_dir, "repo"), ignore_errors=True)
+
+
+def main() -> None:
+    args = build_arg_parser().parse_args()
+    execute_p2_task(args)
 
 
 if __name__ == "__main__":

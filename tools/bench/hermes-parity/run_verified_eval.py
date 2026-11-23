@@ -479,17 +479,24 @@ def run_arm_ls_instance(
     provider: str,
     timeout: int,
     keep_swebench_image: bool = False,
+    aiproxy_url: str = "",
+    aiproxy_admin_key_file: str = "",
 ) -> dict:
+    eff_provider = "custom" if (aiproxy_url and harness == "hermes" and provider in ("openai-codex", "custom")) else provider
     env = {
         **os.environ,
         "PB_SLOT": str(slot),
         "PB_HARNESS": harness,
         "PB_MODEL": model,
-        "PB_PROVIDER": provider,
+        "PB_PROVIDER": eff_provider,
         "PB_TIMEOUT": str(timeout),
         "PB_SWE_DIR": str(SWE_DIR),
         "PB_KEEP_SWEBENCH_IMAGE": "1" if keep_swebench_image else "0",
     }
+    if aiproxy_url:
+        env["PB_AIPROXY_URL"] = aiproxy_url
+        if aiproxy_admin_key_file:
+            env["PB_AIPROXY_ADMIN_KEY_FILE"] = aiproxy_admin_key_file
     subprocess.run(
         [sys.executable, str(RUNNER_LS), inst, arm, "1", str(outdir)],
         env=env,
@@ -506,7 +513,7 @@ def run_arm_ls_instance(
         "arm": arm,
         "inst": inst,
         "model": model,
-        "provider": provider,
+        "provider": eff_provider,
         "resolved": bool(res.get("resolved")),
         "f2p": res.get("f2p"),
         "f2p_total": res.get("f2p_total"),
@@ -514,6 +521,7 @@ def run_arm_ls_instance(
         "p2p_total": res.get("p2p_total"),
         "wall_s": float(res.get("wall_s") or 0.0),
         "cost_usd": round(cost, 6),
+        "llm_ledger_source": res.get("llm_ledger_source") or "client_estimate",
         "patch_lines": res.get("patch_lines", 0),
         "completed_at": time.time(),
     }
@@ -543,11 +551,11 @@ def _invoke_p2_tier(
     atlas_embed_model: str = "",
     atlas_rerank_model: str = "",
     no_atlas: bool = False,
+    no_online_verify: bool = False,
+    warm_pool=None,
 ) -> tuple[dict, str, Path]:
     eff_provider = "custom" if (aiproxy_url and harness == "hermes" and provider == "openai-codex") else provider
-    cmd = [
-        sys.executable,
-        str(RUNNER_P2),
+    argv = [
         inst,
         tier_label,
         str(outdir),
@@ -563,30 +571,41 @@ def _invoke_p2_tier(
         "--timeout", str(timeout),
     ]
     if worker_models:
-        cmd.extend(["--worker-models", worker_models])
+        argv.extend(["--worker-models", worker_models])
     if repro_gate:
-        cmd.append("--repro-gate")
+        argv.append("--repro-gate")
     if no_atlas:
-        cmd.append("--no-atlas")
+        argv.append("--no-atlas")
+    if no_online_verify:
+        argv.append("--no-online-verify")
     if extra_guidance:
-        cmd.extend(["--extra-guidance", extra_guidance])
+        argv.extend(["--extra-guidance", extra_guidance])
     if aiproxy_url:
-        cmd.extend([
+        argv.extend([
             "--aiproxy-url", aiproxy_url,
             "--aiproxy-failover-policy", aiproxy_failover_policy,
             "--aiproxy-cache-mode", aiproxy_cache_mode,
         ])
         if aiproxy_admin_key_file:
-            cmd.extend(["--aiproxy-admin-key-file", aiproxy_admin_key_file])
+            argv.extend(["--aiproxy-admin-key-file", aiproxy_admin_key_file])
         if atlas_embed_model:
-            cmd.extend(["--atlas-embed-model", atlas_embed_model])
+            argv.extend(["--atlas-embed-model", atlas_embed_model])
         if atlas_rerank_model:
-            cmd.extend(["--atlas-rerank-model", atlas_rerank_model])
+            argv.extend(["--atlas-rerank-model", atlas_rerank_model])
 
-    env = {**os.environ, "PLAYBOX_BIN": PLAYBOX, "PB_SWE_DIR": str(SWE_DIR)}
-    subprocess.run(cmd, env=env, check=True)
+    if warm_pool is not None:
+        import run_swe_playbox_v2 as p2_mod
+        os.environ["PLAYBOX_BIN"] = PLAYBOX
+        os.environ["PB_SWE_DIR"] = str(SWE_DIR)
+        p2_args = p2_mod.build_arg_parser().parse_args(argv)
+        res = p2_mod.execute_p2_task(p2_args, warm_pool=warm_pool)
+    else:
+        cmd = [sys.executable, str(RUNNER_P2), *argv]
+        env = {**os.environ, "PLAYBOX_BIN": PLAYBOX, "PB_SWE_DIR": str(SWE_DIR)}
+        subprocess.run(cmd, env=env, check=True)
+        tag = f"{inst}-P2-{tier_label}"
+        res = json.loads((outdir / f"{tag}.json").read_text(encoding="utf-8"))
     tag = f"{inst}-P2-{tier_label}"
-    res = json.loads((outdir / f"{tag}.json").read_text(encoding="utf-8"))
     patch_p = outdir / f"{tag}.patch"
     patch = patch_p.read_text(encoding="utf-8") if patch_p.is_file() else ""
     rcpt_p = outdir / f"{tag}.receipt.json"
@@ -624,6 +643,7 @@ def run_arm_p2_cascade_instance(
     atlas_embed_model: str = "",
     atlas_rerank_model: str = "",
     no_atlas: bool = False,
+    warm_pool=None,
 ) -> dict:
     """Execute the strictly zero-oracle 3-Tier Playbox Arm P2 Cascade on `inst`."""
     from playbox_atlas import append_verified_lesson
@@ -704,6 +724,8 @@ def run_arm_p2_cascade_instance(
             atlas_embed_model=atlas_embed_model,
             atlas_rerank_model=atlas_rerank_model,
             no_atlas=no_atlas,
+            no_online_verify=(max_tiers == 1 and not ts["repro_gate"] and ts["workers"] == 1),
+            warm_pool=warm_pool,
         )
         tier_cost = float(res.get("total_cost_usd") or 0.0)
         tier_wall = float(res.get("wall_s") or 0.0)
@@ -735,6 +757,10 @@ def run_arm_p2_cascade_instance(
         is_last_tier = idx == (len(tier_specs) - 1)
         if is_last_tier:
             critic_ok, critique, critic_cost = (existing_ok and bool(patch.strip())), "final_tier", 0.0
+        elif not critic_model or critic_model.lower() in ("none", "local"):
+            critic_ok = bool(existing_ok and patch.strip())
+            critique = "local_non_oracle_pass" if critic_ok else ("empty_patch" if not patch.strip() else "local_existing_tests_failed")
+            critic_cost = 0.0
         else:
             t_c0 = time.time()
             critic_ok, critique, critic_cost = run_non_oracle_critic(
@@ -892,7 +918,7 @@ def export_aggregated_5gate_bundle(outdir: Path, p2_records: list[dict]) -> dict
 
     vfy_cmd = [PLAYBOX, "gate", "verify", str(bundle_out), "--require-signature", "--require-pq", "--json"]
     if default_attest.is_file():
-        vfy_cmd.extend(["--require-tier", "t1"])
+        vfy_cmd.extend(["--require-tier", os.environ.get("PLAYBOX_GATE_REQUIRE_TIER", "t1")])
     vfy_proc = subprocess.run(vfy_cmd, capture_output=True, text=True, timeout=60)
     vfy_json = json.loads(vfy_proc.stdout) if vfy_proc.returncode == 0 and vfy_proc.stdout.strip() else {}
     bundle_doc = json.loads(bundle_out.read_text(encoding="utf-8"))
@@ -969,7 +995,7 @@ def main() -> None:
     ap.add_argument("--concurrency", type=int, default=3, help="Number of isolated concurrent worker slots")
     ap.add_argument("--resume", dest="resume", action="store_true", default=True)
     ap.add_argument("--no-resume", dest="resume", action="store_false")
-    ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker"])
+    ap.add_argument("--runtime", default="openshell", choices=["openshell", "libkrun", "docker", "process"])
     ap.add_argument("--arm-s-harness", default="hermes", choices=["hermes", "devin", "agy"])
     ap.add_argument("--arm-s-model", default="claude-haiku-5-5")
     ap.add_argument("--arm-s-provider", default="anthropic")
@@ -992,12 +1018,17 @@ def main() -> None:
     ap.add_argument("--aiproxy-admin-key-file", default=os.environ.get("PLAYBOX_AIPROXY_ADMIN_KEY_FILE", ""))
     ap.add_argument("--aiproxy-failover-policy", default="same_model_only", choices=["same_model_only", "alias_cascade"])
     ap.add_argument("--aiproxy-cache-mode", default="off", choices=["off", "record", "replay"])
+    ap.add_argument("--require-host-aiproxy", action="store_true", help="Fail closed unless --aiproxy-url is set and 100%% of Arm P2 instances have host-attested aiproxy ledgers")
     ap.add_argument("--atlas-embed-model", default="")
     ap.add_argument("--atlas-rerank-model", default="")
     ap.add_argument("--no-atlas", action="store_true", help="Disable AtlasKV 3-hop index/brief for ablation")
+    ap.add_argument("--warm-pool", dest="warm_pool", action="store_true", default=True, help="Reuse warm OpenShell microVMs + Playbox rooms per (slot, image)")
+    ap.add_argument("--no-warm-pool", dest="warm_pool", action="store_false", help="Cold-boot Playbox + OpenShell per task")
     ap.add_argument("--max-tiers", type=int, default=3, choices=[1, 2, 3])
     ap.add_argument("--timeout", type=int, default=780)
     args = ap.parse_args()
+    if args.require_host_aiproxy and not args.aiproxy_url:
+        raise SystemExit("ERROR: --require-host-aiproxy requires --aiproxy-url (fail-closed)")
 
     devin_ok = is_devin_authenticated()
     auth_fallback = ""
@@ -1043,6 +1074,10 @@ def main() -> None:
 
     t_start_all = time.time()
     paired_interleave = len(arms) > 1 and args.instances.strip() in ("track-a-150", "track_a_150", "track-a-holdout")
+    warm_pool = None
+    if args.warm_pool and "P2" in arms:
+        import run_swe_playbox_v2 as p2_mod
+        warm_pool = p2_mod.WarmHostPool(runtime=args.runtime)
 
     def _run_one_arm_inst(arm: str, inst_id: str, slot: int, *, keep_img: bool = False) -> dict:
         if arm in ("L", "S"):
@@ -1056,6 +1091,8 @@ def main() -> None:
                 provider=args.arm_s_provider,
                 timeout=args.timeout,
                 keep_swebench_image=keep_img,
+                aiproxy_url=args.aiproxy_url,
+                aiproxy_admin_key_file=args.aiproxy_admin_key_file,
             )
         elif arm == "P2":
             rec = run_arm_p2_cascade_instance(
@@ -1088,6 +1125,7 @@ def main() -> None:
                 atlas_embed_model=args.atlas_embed_model,
                 atlas_rerank_model=args.atlas_rerank_model,
                 no_atlas=args.no_atlas,
+                warm_pool=warm_pool,
             )
         else:
             raise ValueError(f"unsupported arm {arm!r}")
@@ -1104,55 +1142,59 @@ def main() -> None:
         }), flush=True)
         return rec
 
-    if paired_interleave:
-        todo_insts = [inst for inst in instances if any((a, inst) not in completed for a in arms)]
-        if todo_insts:
-            slot_q: queue.Queue[int] = queue.Queue()
-            for s in range(max(1, args.concurrency)):
-                slot_q.put(s)
+    try:
+        if paired_interleave:
+            todo_insts = [inst for inst in instances if any((a, inst) not in completed for a in arms)]
+            if todo_insts:
+                slot_q: queue.Queue[int] = queue.Queue()
+                for s in range(max(1, args.concurrency)):
+                    slot_q.put(s)
 
-            def _pair_worker(inst_id: str) -> list[tuple[str, dict]]:
-                slot = slot_q.get()
-                out_pairs: list[tuple[str, dict]] = []
-                try:
-                    rem = [a for a in arms if (a, inst_id) not in completed]
-                    for idx_a, arm in enumerate(rem):
-                        rec = _run_one_arm_inst(arm, inst_id, slot, keep_img=(idx_a < len(rem) - 1))
-                        out_pairs.append((arm, rec))
-                    return out_pairs
-                finally:
-                    slot_q.put(slot)
+                def _pair_worker(inst_id: str) -> list[tuple[str, dict]]:
+                    slot = slot_q.get()
+                    out_pairs: list[tuple[str, dict]] = []
+                    try:
+                        rem = [a for a in arms if (a, inst_id) not in completed]
+                        for idx_a, arm in enumerate(rem):
+                            rec = _run_one_arm_inst(arm, inst_id, slot, keep_img=(idx_a < len(rem) - 1))
+                            out_pairs.append((arm, rec))
+                        return out_pairs
+                    finally:
+                        slot_q.put(slot)
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
-                futs = {pool.submit(_pair_worker, inst): inst for inst in todo_insts}
-                for fut in concurrent.futures.as_completed(futs):
-                    inst_id = futs[fut]
-                    for arm, rec in fut.result():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
+                    futs = {pool.submit(_pair_worker, inst): inst for inst in todo_insts}
+                    for fut in concurrent.futures.as_completed(futs):
+                        inst_id = futs[fut]
+                        for arm, rec in fut.result():
+                            if rec.get("status") == "completed":
+                                completed[(arm, inst_id)] = rec
+        else:
+            for arm in arms:
+                todo = [inst for inst in instances if (arm, inst) not in completed]
+                if not todo:
+                    continue
+                slot_q = queue.Queue()
+                for s in range(max(1, args.concurrency)):
+                    slot_q.put(s)
+
+                def _worker(inst_id: str) -> dict:
+                    slot = slot_q.get()
+                    try:
+                        return _run_one_arm_inst(arm, inst_id, slot, keep_img=False)
+                    finally:
+                        slot_q.put(slot)
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
+                    futs = {pool.submit(_worker, inst): inst for inst in todo}
+                    for fut in concurrent.futures.as_completed(futs):
+                        inst_id = futs[fut]
+                        rec = fut.result()
                         if rec.get("status") == "completed":
                             completed[(arm, inst_id)] = rec
-    else:
-        for arm in arms:
-            todo = [inst for inst in instances if (arm, inst) not in completed]
-            if not todo:
-                continue
-            slot_q = queue.Queue()
-            for s in range(max(1, args.concurrency)):
-                slot_q.put(s)
-
-            def _worker(inst_id: str) -> dict:
-                slot = slot_q.get()
-                try:
-                    return _run_one_arm_inst(arm, inst_id, slot, keep_img=False)
-                finally:
-                    slot_q.put(slot)
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
-                futs = {pool.submit(_worker, inst): inst for inst in todo}
-                for fut in concurrent.futures.as_completed(futs):
-                    inst_id = futs[fut]
-                    rec = fut.result()
-                    if rec.get("status") == "completed":
-                        completed[(arm, inst_id)] = rec
+    finally:
+        if warm_pool is not None:
+            warm_pool.close_all()
 
     arm_summaries: dict[str, dict] = {}
     arm_records: dict[str, list[dict]] = {}
@@ -1202,6 +1244,8 @@ def main() -> None:
         "mcnemar_p2_vs_s": mcnemar_p2_vs_s,
         "gate_5_compliance_bundle": gate_bundle_info,
     }), flush=True)
+    if args.require_host_aiproxy and "P2" in arm_summaries and not arm_summaries["P2"].get("all_host_aiproxy_ledgers"):
+        raise SystemExit("ERROR: --require-host-aiproxy failed: not all Arm P2 instances produced host-attested aiproxy ledgers")
 
 
 if __name__ == "__main__":
