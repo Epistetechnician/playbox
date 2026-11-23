@@ -131,13 +131,23 @@ To test whether the serving speedup was specific to 3B-active MoE models, we rep
 
 ---
 
+## 8. Drop-in OpenAI-Compatible Proxy (`playbox_steer.kv_routed_proxy`)
+
+The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-compatible HTTP proxy in [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py) (`steer/tests/test_kv_routed_proxy.py` passing):
+
+- Accepts standard `/v1/chat/completions` (`stream: false` and SSE `stream: true`) and forwards to any upstream vLLM / OpenAI-compatible endpoint.
+- Tracks per-session active entity via `X-Session-Id`, pins the entity dossier in a canonical `system` prefix for vLLM automatic prefix caching, and appends adaptive RAG chunks to the user turn only on entity drift or cross-entity fallback.
+- Returns routing telemetry headers (`X-KV-Route-Mode`, `X-KV-Entity`, `X-KV-Fallback`) and exposes `/health` and `/metrics`.
+
+---
+
 ## Reproducing
 
-Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py).
+Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py), [`steer/tests/test_kv_routed_proxy.py`](../steer/tests/test_kv_routed_proxy.py).
 
 ```bash
-# Local unit + mock-server tests (10/10)
-PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py -q
+# Local unit + mock-server tests (12/12)
+PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py steer/tests/test_kv_routed_proxy.py -q
 
 # Clean 3-arm run
 PYTHONPATH=steer python3 steer/tools/kv_routed_run.py \
