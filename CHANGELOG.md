@@ -9,6 +9,19 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-11-23
+
+### Added
+- n=150 Track A SWE-bench `T3`-sealed bundle and the Playbox v0.4.6 verified evaluation report (#90).
+- Multi-replica `BoundedStickyRouter` with Zipf hot-entity replication in `kv_routed_proxy`, the `STICKY-HOT-REP` policy, and 4-replica and physical 4-node H100-80GB sticky-routing evals (#92).
+- Mutating-State Delta KV and Auto-Crossover Hierarchical Skeleton KV, with an H100 eval (#92).
+- Persistent guest grants, mutual attestation, Board primitives, and recursive watch (#92).
+- Multi-agent taint confinement with Lean 4 proofs (`lean/Playbox/Taint.lean`), an Anthropic OAuth proxy bridge, and the verified OpenShell benchmark release (#92).
+
+### Fixed
+- `fuzz`: bump `ed25519-dalek` to 3 to match the workspace (#91).
+- macOS platform test and a CodeQL hardcoded-nonce alert (#92).
+
 ## [0.4.6] - 2026-11-21
 
 ### Added
