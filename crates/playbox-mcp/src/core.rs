@@ -273,6 +273,126 @@ impl Server {
         }
     }
 
+    /// Re-attach to the last persisted guest room from `<home>/guest-rooms/` if not already in a room.
+    /// Re-vets the host with the original join policy and verifies the saved grant is still accepted.
+    pub async fn resume_from_store(&mut self) {
+        if self.client.is_some() {
+            return;
+        }
+        let home = store::home();
+        let vault = playbox_net::GuestStore::new(&home);
+        let saved = match vault.load_active() {
+            Ok(Some(r)) => r,
+            Ok(None) => return,
+            Err(e) => {
+                eprintln!("playbox-mcp: could not read saved guest room: {e:#}");
+                return;
+            }
+        };
+        if saved.is_expired(playbox_net::grants::now_secs()) {
+            eprintln!(
+                "playbox-mcp: saved grant for room {} expired; clearing vault entry",
+                saved.host_id
+            );
+            let _ = vault.remove(&saved.host_id);
+            return;
+        }
+        let key = match playbox_net::identity_key(&home.join("guest.key")) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("playbox-mcp: could not load guest key for resume: {e:#}");
+                return;
+            }
+        };
+        let transport = match saved.parsed_transport() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("playbox-mcp: invalid saved transport: {e:#}");
+                return;
+            }
+        };
+        let mut candidates = Vec::new();
+        if let Ok(primary) = saved.host_addr() {
+            candidates.push(primary);
+        }
+        candidates.extend(saved.replica_addrs());
+        let vet_args = json!({
+            "min_host_tier": saved.min_host_tier,
+            "trust_host_device": saved.trust_host_device,
+        });
+        let mut last_err = None;
+        for addr in candidates {
+            let connect = tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                playbox_net::Client::resume(
+                    addr,
+                    key.clone(),
+                    transport.clone(),
+                    saved.grant.clone(),
+                ),
+            )
+            .await;
+            let client = match connect {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => {
+                    last_err = Some(e);
+                    continue;
+                }
+                Err(_) => {
+                    last_err = Some(anyhow!("host did not answer in 15 seconds"));
+                    continue;
+                }
+            };
+            if let Err(e) = self.vet_host(&client, &vet_args, "not resuming").await {
+                client.close().await;
+                last_err = Some(e);
+                continue;
+            }
+            if let Err(e) = client.echo("resume").await {
+                let msg = format!("{e:#}");
+                client.close().await;
+                if msg.contains("revoked")
+                    || msg.contains("expired")
+                    || msg.contains("unauthorized")
+                {
+                    eprintln!(
+                        "playbox-mcp: saved grant for room {} is no longer valid ({msg}); clearing vault entry",
+                        saved.host_id
+                    );
+                    let _ = vault.remove(&saved.host_id);
+                    return;
+                }
+                last_err = Some(e);
+                continue;
+            }
+            let member = client.id().to_string();
+            let ws = saved
+                .workspace
+                .as_deref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    home.join("workspaces")
+                        .join(&member[..12.min(member.len())])
+                });
+            let _ = playbox_git::init(&ws, "main").await;
+            self.client = Some(Arc::new(client));
+            self.hint_hosts = saved.replica_addrs();
+            self.join_args = Some(vet_args);
+            self.member_id = Some(member);
+            self.workspace = Some(ws);
+            self.learn_hosts().await;
+            self.record("resumed", b"resumed persisted guest room");
+            eprintln!("playbox-mcp: resumed persisted room {}", saved.host_id);
+            return;
+        }
+        if let Some(e) = last_err {
+            eprintln!(
+                "playbox-mcp: could not resume saved room {}: {e:#}",
+                saved.host_id
+            );
+        }
+    }
+
     pub async fn handle(&mut self, msg: Value) -> Option<Value> {
         if !msg.is_object() {
             return Some(
@@ -348,6 +468,10 @@ impl Server {
             "playbox_room_memory" => self.room_memory(args).await,
             "playbox_browse" => self.browse(args).await,
             "playbox_feed" => self.feed(args).await,
+            "playbox_manifest" => self.manifest().await,
+            "playbox_handle" => self.register_handle(args).await,
+            "playbox_inbox" => self.inbox(args).await,
+            "playbox_ack" => self.ack(args).await,
             "playbox_pull" => self.pull(args).await,
             "playbox_delegate" => self.delegate(args).await,
             "playbox_replay" => self.replay(args).await,

@@ -62,6 +62,9 @@ pub struct Capability {
     pub timeout_secs: Option<u64>,
     #[serde(default)]
     pub mem_mib: Option<u32>,
+    /// Stage a clean read-only snapshot of the room repo's HEAD into the sandbox's scratch work directory before running.
+    #[serde(default)]
+    pub mount_repo: bool,
 }
 
 /// Characters that change how text is shown without being visible: bidi overrides and isolates, zero-width and joiner characters, the
@@ -694,6 +697,7 @@ pub struct Engine {
     /// before the command starts, and while it runs. A call was authorised when it was made, which can be a long time before it runs
     /// (it waits for the owner for up to 15 minutes); a member revoked in between must not get one last run.
     standing: Option<Standing>,
+    repo: Option<PathBuf>,
 }
 
 /// `(member, capability)` to `Ok`, or why the member no longer holds the authority.
@@ -716,6 +720,7 @@ impl Engine {
             limits,
             permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
             standing: None,
+            repo: None,
         }
     }
 
@@ -723,6 +728,13 @@ impl Engine {
     #[must_use]
     pub fn with_standing(mut self, f: Standing) -> Self {
         self.standing = Some(f);
+        self
+    }
+
+    /// Room git repository to snapshot into the sandbox workdir when a capability sets `mount_repo: true`.
+    #[must_use]
+    pub fn with_repo(mut self, repo: Option<PathBuf>) -> Self {
+        self.repo = repo;
         self
     }
 
@@ -824,6 +836,14 @@ impl Engine {
                     spec.mem_mib = cap.mem_mib.unwrap_or(512).min(me.limits.mem_mib);
                     let ran = async {
                         let (_guard, work) = cap_scratch_dir()?;
+                        if cap.mount_repo {
+                            if let Some(repo) = me.repo.clone() {
+                                let dest = work.clone();
+                                tokio::task::spawn_blocking(move || stage_repo_snapshot(&repo, &dest))
+                                    .await
+                                    .map_err(|e| anyhow::anyhow!("repo snapshot task failed: {e}"))??;
+                            }
+                        }
                         // Stop the run, which kills its sandbox, if the member loses access while it runs.
                         tokio::select! {
                             r = playbox_runner::run_with_quota(runner.as_ref(), &spec, &work, me.quota) => r.map(Some),
@@ -866,6 +886,46 @@ impl Drop for CapScratchGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+/// Export a clean snapshot of the room repository's `HEAD` into `dest` without copying `.git`,
+/// so sandboxed capabilities can read repo scripts/files while remaining unable to mutate the host repo.
+fn stage_repo_snapshot(repo: &std::path::Path, dest: &std::path::Path) -> Result<()> {
+    use std::process::{Command, Stdio};
+    let archive = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["archive", "--format=tar", "HEAD"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("running git archive for capability repo snapshot")?;
+    if !archive.status.success() {
+        let err = String::from_utf8_lossy(&archive.stderr);
+        bail!("git archive HEAD failed: {}", err.trim());
+    }
+    let mut tar = Command::new("tar")
+        .arg("-xf")
+        .arg("-")
+        .arg("-C")
+        .arg(dest)
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("running tar to unpack capability repo snapshot")?;
+    if let Some(mut stdin) = tar.stdin.take() {
+        use std::io::Write;
+        stdin.write_all(&archive.stdout)?;
+    }
+    let out = tar.wait_with_output()?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        bail!(
+            "tar extract for capability repo snapshot failed: {}",
+            err.trim()
+        );
+    }
+    Ok(())
 }
 
 /// Atomically create a `0o711` parent directory in `temp_dir` (traversable by non-root container UIDs,
@@ -940,6 +1000,7 @@ mod tests {
             image: None,
             timeout_secs: None,
             mem_mib: None,
+            mount_repo: false,
         }
     }
 

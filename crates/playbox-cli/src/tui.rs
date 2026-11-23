@@ -121,6 +121,7 @@ impl App {
             name: None,
             text: text.into(),
             meta: None,
+            mentions: vec![],
         });
     }
 
@@ -662,6 +663,7 @@ mod tests {
             name: name.map(Into::into),
             text: text.into(),
             meta: None,
+            mentions: vec![],
         }
     }
 
@@ -699,6 +701,7 @@ mod tests {
                         name: None,
                         text: "task ok sh exit 0".into(),
                         meta: None,
+                        mentions: vec![],
                     },
                     say(3, "host", Some("host"), "welcome"),
                 ],

@@ -50,6 +50,9 @@ pub struct Item {
     /// Safe, structured telemetry for `event` items (strictly allowlisted, never secrets or raw args).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<Value>,
+    /// Lowercase `@handle` mentions extracted from `say` items (e.g. `["alex-claude", "all"]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mentions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -88,6 +91,10 @@ struct Inner {
     next: u64,
     items: VecDeque<Item>,
     names: HashMap<String, String>,
+    /// Verified sender-bound `@handle` per member id (lowercase, without leading `@`).
+    handles: HashMap<String, String>,
+    /// Durable unread cursor per member id (last acknowledged `seq`).
+    cursors: HashMap<String, u64>,
     seen: HashMap<String, u64>,
     posts: HashMap<String, VecDeque<u64>>,
     /// (member, request id) to the post it made.
@@ -124,6 +131,91 @@ fn clean(s: &str, max: usize) -> String {
         .to_string()
 }
 
+/// Normalize and validate a member handle (strips leading `@`, lowercases, checks `[a-z0-9][a-z0-9_-]{0,31}`).
+pub fn normalize_handle(raw: &str) -> Result<String, &'static str> {
+    let h = raw
+        .trim()
+        .strip_prefix('@')
+        .unwrap_or(raw.trim())
+        .to_ascii_lowercase();
+    if h.is_empty() || h.len() > MAX_NAME {
+        return Err("handle must be 1..=32 characters");
+    }
+    let bytes = h.as_bytes();
+    if !bytes[0].is_ascii_alphanumeric()
+        || !bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        return Err("handle must start with a letter/digit and contain only a-z, 0-9, -, _");
+    }
+    if matches!(h.as_str(), "all" | "team" | "host" | "everyone") {
+        return Err("that handle is reserved");
+    }
+    Ok(h)
+}
+
+/// Extract unique lowercase `@mentions` from a message (including `@all` and `@team`).
+#[must_use]
+pub fn parse_mentions(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'@'
+            && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric())
+            && i + 1 < bytes.len()
+            && bytes[i + 1].is_ascii_alphanumeric()
+        {
+            let start = i + 1;
+            let mut end = start;
+            while end < bytes.len()
+                && end - start < MAX_NAME
+                && (bytes[end].is_ascii_alphanumeric() || matches!(bytes[end], b'-' | b'_'))
+            {
+                end += 1;
+            }
+            let handle = text[start..end].to_ascii_lowercase();
+            if !out.contains(&handle) {
+                out.push(handle);
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Parse a leading `/command [key=val ...]` invocation from a `say` message.
+///
+/// Only matches when the trimmed message starts with `/` followed by a plain capability name.
+/// Arguments are split on whitespace as `key=value` pairs (never passed to a shell).
+#[must_use]
+pub fn parse_command(text: &str) -> Option<(String, std::collections::BTreeMap<String, String>)> {
+    let trimmed = text.trim();
+    let rest = trimmed.strip_prefix('/')?;
+    let mut parts = rest.split_whitespace();
+    let cmd = parts.next()?;
+    if cmd.is_empty()
+        || cmd.len() > 64
+        || !cmd
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return None;
+    }
+    let mut args = std::collections::BTreeMap::new();
+    for tok in parts {
+        if let Some((k, v)) = tok.split_once('=') {
+            if !k.is_empty() && !v.is_empty() {
+                args.insert(k.to_string(), v.to_string());
+            }
+        }
+    }
+    Some((cmd.to_string(), args))
+}
+
 impl Chat {
     #[must_use]
     pub fn new() -> Self {
@@ -140,6 +232,11 @@ impl Chat {
     ) -> u64 {
         inner.next += 1;
         let seq = inner.next;
+        let mentions = if kind == "say" {
+            parse_mentions(&text)
+        } else {
+            Vec::new()
+        };
         inner.items.push_back(Item {
             seq,
             time_ms: now_ms(),
@@ -148,6 +245,7 @@ impl Chat {
             name,
             text,
             meta,
+            mentions,
         });
         trim(&mut inner.items);
         if let Some(item) = inner.items.back().cloned() {
@@ -195,6 +293,16 @@ impl Chat {
                 body.push('\n');
                 lines += 1;
             }
+        }
+        for (from, handle) in &inner.handles {
+            body.push_str(&json!({ "t": "handle", "from": from, "handle": handle }).to_string());
+            body.push('\n');
+            lines += 1;
+        }
+        for (from, seq) in &inner.cursors {
+            body.push_str(&json!({ "t": "ack", "from": from, "seq": seq }).to_string());
+            body.push('\n');
+            lines += 1;
         }
         let tmp = path.with_extension("tmp");
         let written = std::fs::OpenOptions::new()
@@ -280,6 +388,21 @@ impl Chat {
                                 {
                                     g.request_order.push_back(key);
                                 }
+                            }
+                        }
+                        Some("handle") => {
+                            if let (Some(from), Some(handle)) =
+                                (v["from"].as_str(), v["handle"].as_str())
+                            {
+                                g.handles.insert(from.to_string(), handle.to_string());
+                                g.names.insert(from.to_string(), format!("@{handle}"));
+                            }
+                        }
+                        Some("ack") => {
+                            if let (Some(from), Some(seq)) = (v["from"].as_str(), v["seq"].as_u64())
+                            {
+                                let entry = g.cursors.entry(from.to_string()).or_insert(0);
+                                *entry = (*entry).max(seq);
                             }
                         }
                         _ => {}
@@ -508,6 +631,141 @@ impl Chat {
             members,
         }
     }
+
+    /// Bind a unique `@handle` to a verified member id (`EndpointId` or `"host"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handle is invalid, reserved, or already claimed by another member.
+    pub fn register_handle(&self, from: &str, raw: &str) -> Result<String, &'static str> {
+        let handle = normalize_handle(raw)?;
+        let mut g = self.inner.lock_recover();
+        if g.handles
+            .iter()
+            .any(|(member, existing)| member != from && existing == &handle)
+        {
+            return Err("that handle is already taken by another member");
+        }
+        g.handles.insert(from.to_string(), handle.clone());
+        g.names.insert(from.to_string(), format!("@{handle}"));
+        Self::persist(
+            &mut g,
+            &json!({ "t": "handle", "from": from, "handle": handle }),
+        );
+        Ok(handle)
+    }
+
+    /// The verified handle bound to `from`, if registered.
+    #[must_use]
+    pub fn handle_of(&self, from: &str) -> Option<String> {
+        self.inner.lock_recover().handles.get(from).cloned()
+    }
+
+    /// Durable unread cursor (last acknowledged `seq`) for `from`.
+    #[must_use]
+    pub fn cursor(&self, from: &str) -> u64 {
+        self.inner
+            .lock_recover()
+            .cursors
+            .get(from)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Advance `from`'s durable unread cursor monotonically to `seq`.
+    pub fn ack(&self, from: &str, seq: u64) -> u64 {
+        let mut g = self.inner.lock_recover();
+        let capped = seq.min(g.next);
+        let cur = g.cursors.entry(from.to_string()).or_insert(0);
+        if capped > *cur {
+            *cur = capped;
+            let new_cur = *cur;
+            Self::persist(&mut g, &json!({ "t": "ack", "from": from, "seq": new_cur }));
+            new_cur
+        } else {
+            *cur
+        }
+    }
+
+    /// Return unread items after `from`'s durable cursor. When `only_mentions` is true, returns only
+    /// items mentioning `@<from's handle>`, `@all`, or `@team` (excluding `from`'s own messages).
+    pub fn inbox(&self, from: &str, only_mentions: bool, limit: usize, members: &[String]) -> Feed {
+        let g = self.inner.lock_recover();
+        let now = now_ms();
+        let cursor = g.cursors.get(from).copied().unwrap_or(0).min(g.next);
+        let my_handle = g.handles.get(from).map(String::as_str);
+        let cap = limit.clamp(1, 500);
+        let mut items: Vec<Item> = g
+            .items
+            .iter()
+            .filter(|i| i.seq > cursor)
+            .filter(|i| {
+                if !only_mentions {
+                    return i.from != from;
+                }
+                if i.from == from {
+                    return false;
+                }
+                i.mentions
+                    .iter()
+                    .any(|m| m == "all" || m == "team" || my_handle.is_some_and(|h| h == m))
+            })
+            .take(cap + 1)
+            .cloned()
+            .collect();
+        let truncated = items.len() > cap;
+        if truncated {
+            items.truncate(cap);
+        }
+        let next = if truncated {
+            items.last().map_or(cursor, |i| i.seq)
+        } else {
+            g.next
+        };
+        let members = members
+            .iter()
+            .map(|id| {
+                let last = g.seen.get(id).copied().unwrap_or(0);
+                Presence {
+                    id: id.clone(),
+                    name: g.names.get(id).cloned(),
+                    present: last > 0 && now.saturating_sub(last) < PRESENT_MS,
+                    last_seen_ms: last,
+                }
+            })
+            .collect();
+        Feed {
+            items,
+            next,
+            now_ms: now,
+            members,
+        }
+    }
+
+    /// Long-poll variant of [`Chat::inbox`].
+    pub async fn inbox_wait(
+        &self,
+        from: &str,
+        only_mentions: bool,
+        limit: usize,
+        members: &[String],
+        wait: std::time::Duration,
+    ) -> Feed {
+        let deadline = std::time::Instant::now() + wait.min(MAX_FEED_WAIT);
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            self.touch(from);
+            let feed = self.inbox(from, only_mentions, limit, members);
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if !feed.items.is_empty() || left.is_zero() {
+                return feed;
+            }
+            let _ =
+                tokio::time::timeout(left.min(std::time::Duration::from_secs(4)), notified).await;
+        }
+    }
 }
 
 /// Keep the feed to KEPT items. A burst of events (a member being refused in a loop, say) must not push what people said out of the
@@ -570,6 +828,25 @@ pub fn summarize(event: &str, d: &Value) -> String {
             parts.extend(s("model"));
         }
         "refused" => parts.extend(s("reason").map(|r| clip(&r, 60))),
+        "command_receipt" => {
+            if let Some(cmd) = s("command") {
+                parts.push(format!("/{cmd}"));
+            }
+            if let Some(code) = field(d, "exit_code").and_then(Value::as_i64) {
+                parts.push(format!("exit={code}"));
+            } else if let Some(st) = s("state") {
+                parts.push(st);
+            }
+            if let Some(h) = field(d, "result_hash").and_then(Value::as_str) {
+                parts.push(format!("hash={}", clip(h, 16)));
+            }
+            if let Some(sum) = field(d, "summary").and_then(Value::as_str) {
+                let c = clip(sum, 120);
+                if !c.is_empty() {
+                    parts.push(c);
+                }
+            }
+        }
         _ => {}
     }
     parts.join(" ")

@@ -62,6 +62,7 @@ fn greet(approval: bool) -> Capability {
         image: None,
         timeout_secs: Some(10),
         mem_mib: None,
+        mount_repo: false,
     }
 }
 
@@ -113,6 +114,7 @@ async fn a_repeated_call_id_runs_once() {
         image: None,
         timeout_secs: Some(10),
         mem_mib: None,
+        mount_repo: false,
     };
     let (_h, c, _) = room("once", vec![cap]).await;
     for _ in 0..4 {
@@ -260,6 +262,7 @@ async fn a_member_revoked_while_waiting_for_approval_gets_no_last_run() {
         image: None,
         timeout_secs: Some(10),
         mem_mib: None,
+        mount_repo: false,
     };
     let (h, c, log) = room("revoked-waiting", vec![cap]).await;
     c.call_capability("touch", BTreeMap::new(), "w1")
@@ -300,6 +303,7 @@ async fn a_member_revoked_while_a_call_runs_stops_it() {
         image: None,
         timeout_secs: Some(20),
         mem_mib: None,
+        mount_repo: false,
     };
     let (h, c, log) = room("revoked-running", vec![cap]).await;
     c.call_capability("slow", BTreeMap::new(), "r1")
