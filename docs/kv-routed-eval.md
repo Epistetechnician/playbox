@@ -1,14 +1,16 @@
 # Entity-Routed Working-Set KV + Adaptive RAG vs Inline RAG vs Shared 128K KV
 
-An apples-to-apples 3-arm systems evaluation on the verified `a100-inline-4608` enterprise CRM lookup corpus (`Qwen/Qwen3-30B-A3B-Instruct-2507-FP8`, single `A100-SXM4-80GB`, `temperature=0`, `seed=0`, `max_tokens=384`, end-to-end timing from question arrival before retrieval/routing).
+An end-to-end systems evaluation (**10,578 measured turns, 0 errors**) across **3 datasets** (Enterprise CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K) and **2 model architectures** (`Qwen3-30B-A3B-Instruct-2507-FP8` MoE on `A100-SXM4-80GB` and dense `Qwen3-8B-FP8` on `L4-24GB`), comparing entity-routed working-set KV + adaptive RAG (`S-ROUTED`) against monolithic 128K shared KV (`S-CTX`), stateless inline RAG (`S-RAG`), conversational RAG with an LLM query rewriter (`S-CONV-RAG`), and two-stage dense bi-encoder + cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`). All latency is measured end-to-end from question arrival before routing, query rewriting, or retrieval.
 
 ## Core Finding
 
-Monolithic 128K prefix caching loses to inline RAG on CRM lookups because decode attention still scales with $O(L)$ per token and look-alike accounts act as distractors. **Shrinking and routing the KV unit** — caching each session's ~3.8K-token account dossier in KV and falling back to inline RAG only for cross-account or policy turns — **beats both baselines**:
+Monolithic 128K prefix caching loses to inline RAG because decode attention scales with $O(L)$ per token and look-alike entities act as distractors. **Shrinking and routing the KV unit** — caching each session's compact entity working set (~4K–18K tokens) in KV with CPU offloading and falling back to RAG only on entity drift — **dominates the speed/accuracy frontier**:
 
-- **Clean CRM (`n=32`, 3,456 turns):** `S-ROUTED` hits **706.5 turns/min** (**10.8×** over 128K Shared KV, **3.61×** over Inline RAG) and **0.54 s** follow-up p95 (**10×** faster than RAG), with **97.9% accuracy** (**100%** on look-alike Cat B).
-- **Noisy / Implicit Queries (`n=32`, 768 turns):** With Turn-1 account typos and Turn 2–6 `"this account"` follow-ups, stateless `S-RAG` collapses to **74.9%** while `S-ROUTED` holds **98.1%** (**+23.2 pp**, exact McNemar `p = 1.44e-20`) at **3.49× throughput**.
-- **192-Account Multi-Tenant Eviction (`n=32`, 2,304 turns, 24 GB CPU KV tier):** Forcing `~737K` KV tokens past GPU HBM in waves triggers **526.2K tokens** of CPU→GPU KV reloads; `S-ROUTED` widens its lead to **4.07× throughput** (`436.3` vs `107.2` tpm) and **6.66× lower `q→first` p95** (`1.99 s` vs `13.28 s`).
+- **Clean CRM (`n=32`, 3,456 turns, A100):** `S-ROUTED` hits **706.5 turns/min** (**10.8×** over 128K Shared KV, **3.61×** over Inline RAG) and **0.54 s** follow-up p95 (**10×** faster than RAG), with **97.9% accuracy** (**100%** on look-alike Cat B, 0 routing errors).
+- **Noisy / Implicit Queries (`n=32`, 768 turns, A100):** With Turn-1 account typos and Turn 2–6 `"this account"` follow-ups, stateless `S-RAG` collapses to **74.9%** while `S-ROUTED` holds **98.1%** (**+23.2 pp**, exact McNemar `p = 1.44e-20`) at **3.49× throughput**.
+- **192-Account Multi-Tenant Eviction (`n=32`, 2,304 turns, A100 + 24 GB CPU tier):** Forcing `~737K` KV tokens past GPU HBM in waves triggers **526.2K tokens** of CPU→GPU KV reloads; `S-ROUTED` widens its lead to **4.07× throughput** (`436.3` vs `107.2` tpm) and **6.66× lower `q→first` p95** (`1.99 s` vs `13.28 s`).
+- **SOTA Generalization vs Conversational & Dense+Reranker RAG (`n=8`, 2,700 turns, A100):** Against `bge-small-en-v1.5` + `bge-reranker-v2-m3` + LLM query rewriter, `S-ROUTED` stays **1.46–1.62× faster** at accuracy parity (`56.0%`) on FinanceBench (**−1.4 to −2.1 s** p95 `q→end`) and beats dense+reranker RAG by **+13.0–16.7 pp** (`p = 1.04e-11`) on LoCoMo while beating `S-CONV-RAG` on throughput.
+- **Second Architecture — Dense `Qwen3-8B-FP8` (`n=8`, 1,350 turns, L4 + 20 GB CPU tier):** The serving win **doubles on a dense transformer** — **2.00–2.12×** throughput on FinanceBench and **1.98–2.06×** on LoCoMo (**−5.2 to −14.9 s** p95 `q→end`, 76–92% GPU prefix hit) — while surfacing an honest model-scale trade-off on FinanceBench (`45.3%` vs `52.7%`, `p = 0.0074`) and parity on LoCoMo (`47.7%`).
 
 ---
 
@@ -63,11 +65,11 @@ Expands the 32 sessions across 6 isolated tenant namespaces (`--tenant-scale 6` 
 
 ---
 
-## Limitations & Disclosures
+## 4. End-to-End Latency Savings Summary (p95 Milliseconds)
 
-1. **CPU offload backend:** Stress Test 2 and the SOTA runs used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB`) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
-2. **Corpus & model scope:** Across **10,578 measured turns**, we evaluated **2 distinct model architectures** — a 3B-active MoE (`Qwen3-30B-A3B-Instruct-2507-FP8` on A100, 9,228 turns) and a **dense transformer** (`Qwen3-8B-FP8` on NVIDIA L4, 1,350 turns) — across 3 datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
-3. **Stateless vs conversational & dense+reranker RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Sections 5–6 explicitly evaluate **`S-CONV-RAG`** (with an LLM query rewriter) and **two-stage dense bi-encoder + cross-encoder reranker RAG** (`BAAI/bge-small-en-v1.5` + `BAAI/bge-reranker-v2-m3`) on FinanceBench and LoCoMo.
+Across single-user (`n=1`) to high-concurrency (`n=32`) and multi-tenant eviction regimes on `Qwen3-30B-A3B-FP8`, `S-ROUTED` saves **−220 ms to −11,490 ms** on follow-up time-to-first-token (`q→first`) and **−350 ms to −36,040 ms** end-to-end (`q→end`):
+
+![End-to-end p95 millisecond savings](assets/kv-routed/05_latency_delta_ms.png)
 
 ---
 
@@ -138,6 +140,14 @@ The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-com
 - Accepts standard `/v1/chat/completions` (`stream: false` and SSE `stream: true`) and forwards to any upstream vLLM / OpenAI-compatible endpoint.
 - Tracks per-session active entity via `X-Session-Id`, pins the entity dossier in a canonical `system` prefix for vLLM automatic prefix caching, and appends adaptive RAG chunks to the user turn only on entity drift or cross-entity fallback.
 - Returns routing telemetry headers (`X-KV-Route-Mode`, `X-KV-Entity`, `X-KV-Fallback`) and exposes `/health` and `/metrics`.
+
+---
+
+## 9. Limitations & Disclosures
+
+1. **CPU offload backend:** Stress Test 2 and the SOTA runs used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB` on A100, `20 GiB` on L4) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
+2. **Corpus & model scope:** Across **10,578 measured turns**, we evaluated **2 distinct model architectures** — a 3B-active MoE (`Qwen3-30B-A3B-Instruct-2507-FP8` on A100, 9,228 turns) and a **dense transformer** (`Qwen3-8B-FP8` on NVIDIA L4, 1,350 turns) — across 3 datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
+3. **Stateless vs conversational & dense+reranker RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Sections 5–7 explicitly evaluate **`S-CONV-RAG`** (with an LLM query rewriter) and **two-stage dense bi-encoder + cross-encoder reranker RAG** (`BAAI/bge-small-en-v1.5` + `BAAI/bge-reranker-v2-m3`) on FinanceBench and LoCoMo across both model architectures.
 
 ---
 
