@@ -144,6 +144,8 @@ fn guest_pins_a_secure_enclave_host_then_requires_t1() {
     assert!(device.starts_with("secure-enclave:"));
     let pins = std::fs::read_to_string(guest_home.join("pins")).unwrap();
     assert_eq!(pins.trim(), device.replacen(':', " ", 1));
+    let (err, left) = guest.tool("playbox_leave", json!({}));
+    assert!(!err, "{left}");
     drop(guest);
 
     // The pin survives a restart: no flag needed, and the host is T1 again.
