@@ -242,9 +242,145 @@ def make_sota_generalization() -> None:
     plt.close(fig)
 
 
+def make_latency_delta_ms() -> None:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.2, 5.2), sharey=True)
+
+    rows = [
+        "CRM Clean (n=1)\nvs S-RAG",
+        "CRM Clean (n=8)\nvs S-RAG",
+        "CRM Clean (n=32)\nvs S-RAG",
+        "CRM Clean (n=32)\nvs S-CTX (128K)",
+        "CRM Noisy (n=32)\nvs S-RAG",
+        "192-Acct Eviction (n=32)\nvs S-RAG",
+        "FinanceBench (n=8)\nvs S-CONV-RAG",
+        "LoCoMo 18K (n=8)\nvs S-CONV-RAG",
+    ]
+    # Negative = S-ROUTED is faster (milliseconds saved)
+    followup_ms = [-220, -1540, -4860, -3960, -5310, -11490, -1920, -860]
+    e2e_ms = [-350, -3240, -9400, -36040, -10740, -25370, -2420, 20]
+
+    y = np.arange(len(rows))[::-1]
+    h = 0.62
+
+    def _plot_panel(ax, vals, title, xlim):
+        colors = [C_ROUTED if v <= 0 else C_RAG for v in vals]
+        bars = ax.barh(y, vals, height=h, color=colors, edgecolor="none")
+        ax.axvline(0, color="#333333", linewidth=1.0, zorder=3)
+        ax.set_xlim(xlim)
+        ax.set_title(title, fontsize=11, fontweight="bold", pad=10)
+        ax.set_xlabel("Latency Δ in milliseconds (negative = S-ROUTED faster)", fontsize=9.2)
+        for bar, v in zip(bars, vals):
+            label = f"{v:+,d} ms"
+            if v <= 0:
+                ax.text(
+                    v - (xlim[1] - xlim[0]) * 0.015,
+                    bar.get_y() + bar.get_height() / 2,
+                    label,
+                    va="center",
+                    ha="right",
+                    fontsize=8.5,
+                    fontweight="bold",
+                    color="#165B52",
+                )
+            else:
+                ax.text(
+                    v + (xlim[1] - xlim[0]) * 0.015,
+                    bar.get_y() + bar.get_height() / 2,
+                    label,
+                    va="center",
+                    ha="left",
+                    fontsize=8.5,
+                    fontweight="bold",
+                    color="#B54434",
+                )
+
+    _plot_panel(ax1, followup_ms, "Follow-Up p95 Time-to-First-Token Δ (ms)", (-14800, 1400))
+    _plot_panel(ax2, e2e_ms, "End-to-End p95 Latency (q→end) Δ (ms)", (-45500, 5200))
+
+    ax1.set_yticks(y)
+    ax1.set_yticklabels(rows, fontsize=9)
+    ax1.tick_params(axis="y", length=0)
+
+    fig.suptitle(
+        "Latency Saved by Entity-Routed KV + Adaptive RAG vs Baselines (p95, Milliseconds)",
+        fontsize=12,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.text(
+        0.5,
+        -0.02,
+        "A100 · Qwen3-30B-A3B-FP8 · 7,878 measured turns (0 errors) · S-ROUTED faster on every follow-up TTFT bar (−220 ms to −11,490 ms)",
+        ha="center",
+        fontsize=8.8,
+        color="#555555",
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "05_latency_delta_ms.png", bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_dense_rerank_sota() -> None:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4))
+    datasets = ["FinanceBench\n(150 Qs · ~5.8K KV)", "LoCoMo\n(300 Qs · ~18.1K KV)"]
+    x = np.arange(len(datasets))
+    w = 0.25
+
+    acc_rag = [56.0, 44.3]
+    acc_conv = [54.7, 40.7]
+    acc_routed = [56.0, 57.3]
+
+    b1 = ax1.bar(x - w, acc_rag, w, label="S-RAG (bge-small + bge-reranker-v2-m3)", color=C_RAG)
+    b2 = ax1.bar(x, acc_conv, w, label="S-CONV-RAG (+ LLM Rewriter)", color=C_CPU)
+    b3 = ax1.bar(x + w, acc_routed, w, label="S-ROUTED (Entity KV + Rerank Fallback)", color=C_ROUTED)
+    for bars in (b1, b2, b3):
+        for bar in bars:
+            h = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width() / 2, h + 1.2, f"{h:.1f}%", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    ax1.annotate("Parity overall\n(Metrics: 48% vs 40%)", xy=(0 + w, 56.0), xytext=(-0.18, 66), fontsize=8.3, fontweight="bold", color="#1D6F63")
+    ax1.annotate("+16.7 pp vs Conv-RAG\n(p = 1.04e-11)", xy=(1 + w, 57.3), xytext=(0.72, 66), fontsize=8.3, fontweight="bold", color="#1D6F63")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(datasets, fontsize=9.5)
+    ax1.set_ylabel("Accuracy (%)", fontsize=10)
+    ax1.set_ylim(0, 92)
+    ax1.set_title("Accuracy vs Dense + Cross-Encoder Reranker RAG", fontsize=11, fontweight="bold")
+    ax1.legend(frameon=False, fontsize=7.8, loc="upper right")
+
+    tpm_rag = [114.0, 179.8]
+    tpm_conv = [102.5, 163.5]
+    tpm_routed = [166.3, 169.8]
+
+    b1 = ax2.bar(x - w, tpm_rag, w, label="S-RAG (Dense+Rerank)", color=C_RAG)
+    b2 = ax2.bar(x, tpm_conv, w, label="S-CONV-RAG (+ LLM Rewriter)", color=C_CPU)
+    b3 = ax2.bar(x + w, tpm_routed, w, label="S-ROUTED", color=C_ROUTED)
+    for bars in (b1, b2, b3):
+        for bar in bars:
+            h = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width() / 2, h + 3.5, f"{h:.0f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    ax2.annotate("1.62× vs Conv-RAG\n−2,100 ms p95 q→end", xy=(0 + w, 166.3), xytext=(-0.22, 200), fontsize=8.3, fontweight="bold", color="#1D6F63")
+    ax2.annotate("1.04× vs Conv-RAG\n84.6% GPU / 69.5% CPU hit", xy=(1 + w, 169.8), xytext=(0.64, 205), fontsize=8.3, fontweight="bold", color="#1D6F63")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(datasets, fontsize=9.5)
+    ax2.set_ylabel("Throughput (turns / min, n=8)", fontsize=10)
+    ax2.set_ylim(0, 245)
+    ax2.set_title("End-to-End Throughput (n=8 · bge-small + bge-reranker-v2-m3)", fontsize=10.5, fontweight="bold")
+
+    fig.suptitle(
+        "Strong RAG Baseline: Dense Bi-Encoder + Cross-Encoder Reranker vs Routed KV (1,350 Turns · 0 Errors)",
+        fontsize=11.3,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "06_dense_rerank_sota.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     make_clean_3arm()
     make_noisy_routing()
     make_evict192_cpu()
     make_sota_generalization()
-    print(f"Wrote 4 charts to {OUT_DIR}")
+    make_latency_delta_ms()
+    make_dense_rerank_sota()
+    print(f"Wrote 6 charts to {OUT_DIR}")

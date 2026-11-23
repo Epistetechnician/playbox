@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 
 from playbox_steer.kv_sota_bench import (
     BM25ChunkRetriever,
+    DenseRerankChunkRetriever,
     load_financebench,
     load_locomo,
     paired_mcnemar_sota,
@@ -24,6 +25,11 @@ def main() -> None:
     p.add_argument("--base-url", default="http://127.0.0.1:8000")
     p.add_argument("--model", default="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8")
     p.add_argument("--arms", default="S-RAG,S-CONV-RAG,S-ROUTED")
+    p.add_argument("--retriever", default="bm25", choices=["bm25", "dense_rerank"])
+    p.add_argument("--embed-model", default="BAAI/bge-small-en-v1.5")
+    p.add_argument("--rerank-model", default="BAAI/bge-reranker-v2-m3")
+    p.add_argument("--retriever-device", default="cpu")
+    p.add_argument("--cand-k", type=int, default=20)
     p.add_argument("--concurrency", type=int, default=16)
     p.add_argument("--sweeps", type=int, default=1)
     p.add_argument("--max-tokens", type=int, default=128)
@@ -39,7 +45,17 @@ def main() -> None:
         if args.dataset == "locomo"
         else load_financebench(data_path)
     )
-    retriever = BM25ChunkRetriever(dataset.chunks, top_k=args.top_k)
+    if args.retriever == "dense_rerank":
+        retriever = DenseRerankChunkRetriever(
+            dataset.chunks,
+            top_k=args.top_k,
+            cand_k=args.cand_k,
+            embed_model=args.embed_model,
+            rerank_model=args.rerank_model,
+            device=args.retriever_device,
+        )
+    else:
+        retriever = BM25ChunkRetriever(dataset.chunks, top_k=args.top_k)
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
 
     summaries: List[Dict[str, Any]] = []

@@ -156,6 +156,110 @@ class BM25ChunkRetriever:
         return docs, {"retrieve_ms": elapsed_ms}
 
 
+class DenseRerankChunkRetriever:
+    """Two-stage dense bi-encoder + cross-encoder reranker retriever.
+
+    Uses ``BAAI/bge-small-en-v1.5`` + ``BAAI/bge-reranker-v2-m3`` by default via
+    ``sentence-transformers`` (runs on CPU/CUDA cleanly alongside vLLM), or accepts
+    custom ``embed_fn`` / ``rerank_fn`` callables for fast offline testing.
+    """
+
+    def __init__(
+        self,
+        chunks: List[Tuple[str, str]],
+        top_k: int = 5,
+        cand_k: int = 20,
+        embed_model: str = "BAAI/bge-small-en-v1.5",
+        rerank_model: str = "BAAI/bge-reranker-v2-m3",
+        device: str = "cpu",
+        hybrid_bm25: bool = True,
+        embed_fn: Optional[Callable[[List[str]], List[List[float]]]] = None,
+        rerank_fn: Optional[Callable[[List[Tuple[str, str]]], List[float]]] = None,
+    ) -> None:
+        import threading
+
+        self.chunks = chunks
+        self.top_k = top_k
+        self.cand_k = max(cand_k, top_k)
+        self.hybrid_bm25 = hybrid_bm25
+        self._lock = threading.Lock()
+        self._texts = [txt for _, txt in chunks]
+        self._bm25 = BM25ChunkRetriever(chunks, top_k=self.cand_k) if hybrid_bm25 and chunks else None
+
+        if embed_fn is not None:
+            self._embed_fn = embed_fn
+        else:
+            import torch
+            from sentence_transformers import SentenceTransformer
+
+            mk = {"dtype": torch.float16} if device.startswith("cuda") else {}
+            enc = SentenceTransformer(embed_model, device=device, model_kwargs=mk)
+            self._embed_fn = lambda xs: enc.encode(xs, normalize_embeddings=True, batch_size=64, show_progress_bar=False).tolist()
+
+        if rerank_fn is not None:
+            self._rerank_fn = rerank_fn
+        else:
+            import torch
+            from sentence_transformers import CrossEncoder
+
+            mk = {"dtype": torch.float16} if device.startswith("cuda") else {}
+            rr = CrossEncoder(rerank_model, device=device, model_kwargs=mk)
+            self._rerank_fn = lambda pairs: [float(x) for x in rr.predict(pairs, batch_size=32, show_progress_bar=False)]
+
+        raw_vecs = self._embed_fn(self._texts) if self._texts else []
+        self._doc_vecs = [self._l2_norm(v) for v in raw_vecs]
+
+    @staticmethod
+    def _l2_norm(vec: List[float]) -> List[float]:
+        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+        return [x / norm for x in vec]
+
+    def __call__(self, query: str) -> Tuple[List[str], Dict[str, float]]:
+        t0 = time.perf_counter()
+        if not self._texts:
+            return [], {"retrieve_ms": 0.0, "embed_ms": 0.0, "rerank_ms": 0.0}
+        with self._lock:
+            q_vec = self._l2_norm(self._embed_fn([query])[0])
+            t_emb = time.perf_counter()
+            sims = [
+                (sum(a * b for a, b in zip(q_vec, dv)), idx)
+                for idx, dv in enumerate(self._doc_vecs)
+            ]
+            sims.sort(key=lambda kv: kv[0], reverse=True)
+            if self._bm25 is not None:
+                # Reciprocal Rank Fusion (BM25 + Dense) for candidate pool before cross-encoder rerank
+                q_toks = re.findall(r"[a-z0-9]+", query.lower())
+                bm_scores: List[Tuple[float, int]] = []
+                for idx, tf in enumerate(self._bm25._doc_tfs):
+                    dl = self._bm25._doc_lens[idx]
+                    denom_norm = self._bm25.k1 * (1.0 - self._bm25.b + self._bm25.b * (dl / max(self._bm25._avgdl, 1e-6)))
+                    s = sum(
+                        self._bm25._idf.get(qt, 0.0) * (tf[qt] * (self._bm25.k1 + 1.0)) / (tf[qt] + denom_norm)
+                        for qt in q_toks
+                        if qt in tf
+                    )
+                    bm_scores.append((s, idx))
+                bm_scores.sort(key=lambda kv: kv[0], reverse=True)
+                rrf: Dict[int, float] = {}
+                for rank, (_, idx) in enumerate(sims[: self.cand_k * 2]):
+                    rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (60.0 + rank + 1.0)
+                for rank, (_, idx) in enumerate(bm_scores[: self.cand_k * 2]):
+                    rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (60.0 + rank + 1.0)
+                cand_indices = [idx for idx, _ in sorted(rrf.items(), key=lambda kv: kv[1], reverse=True)[: self.cand_k]]
+            else:
+                cand_indices = [idx for _, idx in sims[: self.cand_k]]
+            pairs = [(query, self._texts[idx][:2000]) for idx in cand_indices]
+            rr_scores = self._rerank_fn(pairs)
+            t_rr = time.perf_counter()
+        ranked = sorted(zip(rr_scores, cand_indices), key=lambda kv: kv[0], reverse=True)
+        docs = [self._texts[idx] for _, idx in ranked[: self.top_k]]
+        return docs, {
+            "retrieve_ms": (t_rr - t0) * 1000.0,
+            "embed_ms": (t_emb - t0) * 1000.0,
+            "rerank_ms": (t_rr - t_emb) * 1000.0,
+        }
+
+
 @dataclass
 class SotaSession:
     session_id: str

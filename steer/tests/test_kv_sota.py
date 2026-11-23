@@ -8,6 +8,7 @@ from pathlib import Path
 
 from playbox_steer.kv_sota_bench import (
     BM25ChunkRetriever,
+    DenseRerankChunkRetriever,
     SotaEntityRouter,
     load_financebench,
     load_locomo,
@@ -131,3 +132,25 @@ def test_locomo_and_financebench_e2e(tmp_path: Path):
             assert res["summary"]["accuracy"] == 1.0
     finally:
         srv.shutdown()
+
+
+def test_dense_rerank_retriever_hybrid():
+    chunks = [
+        ("c1", "Apple FY2022 revenue was 394 billion dollars."),
+        ("c2", "3M FY2018 capex was 1577 million dollars."),
+        ("c3", "Microsoft Azure cloud growth accelerated in Q4."),
+    ]
+    # Mock embed_fn prefers c1, but rerank_fn promotes c2 based on exact keyword
+    def embed_fn(xs):
+        return [[1.0, 0.0] if "Apple" in t or "capex" in t else [0.5, 0.5] for t in xs]
+
+    def rerank_fn(pairs):
+        return [10.0 if "1577" in doc else 0.1 for _, doc in pairs]
+
+    ret = DenseRerankChunkRetriever(
+        chunks, top_k=1, cand_k=3, hybrid_bm25=True, embed_fn=embed_fn, rerank_fn=rerank_fn
+    )
+    docs, meta = ret("What was 3M FY2018 capex?")
+    assert len(docs) == 1
+    assert "1577" in docs[0]
+    assert meta["retrieve_ms"] >= 0.0 and meta["rerank_ms"] >= 0.0

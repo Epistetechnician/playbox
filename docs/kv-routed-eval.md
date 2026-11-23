@@ -66,8 +66,8 @@ Expands the 32 sessions across 6 isolated tenant namespaces (`--tenant-scale 6` 
 ## Limitations & Disclosures
 
 1. **CPU offload backend:** Stress Test 2 and the SOTA runs used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB`) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
-2. **Corpus & model scope:** All 7,878 measured turns ran on `Qwen3-30B-A3B-Instruct-2507-FP8` (3B active MoE) across 3 distinct datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Dense models, sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
-3. **Stateless vs conversational RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Section 5 explicitly adds **`S-CONV-RAG`** (with an LLM query rewriter) on FinanceBench and LoCoMo; `S-ROUTED` still beat `S-CONV-RAG` on both accuracy (`+20.7 pp` / `+8.7 pp`) and throughput (`1.43×` / `1.30×`).
+2. **Corpus & model scope:** All 9,228 measured turns ran on `Qwen3-30B-A3B-Instruct-2507-FP8` (3B active MoE) across 3 distinct datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Dense models, sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
+3. **Stateless vs conversational & dense+reranker RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Sections 5–6 explicitly evaluate **`S-CONV-RAG`** (with an LLM query rewriter) and **two-stage dense bi-encoder + cross-encoder reranker RAG** (`BAAI/bge-small-en-v1.5` + `BAAI/bge-reranker-v2-m3`) on FinanceBench and LoCoMo.
 
 ---
 
@@ -91,12 +91,32 @@ To test whether entity-routed KV generalizes beyond CRM and beats **conversation
 
 ---
 
+## 6. Strong RAG Baseline: Dense Embeddings + Cross-Encoder Reranker (1,350 turns, 0 errors)
+
+To close the "BM25 is a weak retriever" objection, we replaced BM25 with a two-stage **`BAAI/bge-small-en-v1.5` dense bi-encoder (`top-20`) + `BAAI/bge-reranker-v2-m3` cross-encoder reranker (`top-5`)** on the same A100 + `Qwen3-30B-A3B-Instruct-2507-FP8` server (`n=8`, `max_tokens=128`, 24 GB vLLM `OffloadingConnector`, **1,350 measured turns, 0 errors**):
+
+![Dense+Reranker RAG vs Routed KV](assets/kv-routed/06_dense_rerank_sota.png)
+
+| Benchmark | Arm *(Dense + Cross-Encoder Reranker)* | Throughput (`n=8`) | p95 `q→first` (follow-ups) | p95 `q→end` | Retrieve ms | GPU / CPU KV hit | Accuracy | Exact McNemar vs `S-ROUTED` |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| **FinanceBench** *(150 Qs · 32 cos)* | `S-RAG` *(bge-small + bge-reranker-v2-m3)* | 114.0 tpm | 1.37 s (1.16 s) | 5.68 s | 185.8 ms | 5.2% / 4.0% | 56.0% | `a=6, b=6`, `p = 1.00` |
+| | `S-CONV-RAG` *(+ LLM rewriter, 765 ms)* | 102.5 tpm | 2.55 s (2.53 s) | 6.36 s | 171.7 ms | 5.8% / 5.3% | 54.7% | `a=4, b=6`, `p = 0.754` |
+| | **`S-ROUTED`** *(~5.8K KV + rerank fallback)* | **166.3 tpm (1.62×)** | 1.63 s (1.55 s) | **4.26 s** | **13.2 ms** | **31.9% / 65.0%** | **56.0%** | *(metrics: **48%** vs 40%)* |
+| **LoCoMo** *(300 Qs · 10 convs)* | `S-RAG` *(bge-small + bge-reranker-v2-m3)* | 179.8 tpm | 1.24 s (1.14 s) | 4.84 s | 189.4 ms | 8.2% / 5.8% | 44.3% | `a=10, b=49`, **`p = 2.71e-7`** |
+| | `S-CONV-RAG` *(+ LLM rewriter, 507 ms)* | 163.5 tpm | 1.79 s (1.79 s) | 5.05 s | 159.2 ms | 7.7% / 5.5% | 40.7% | `a=5, b=55`, **`p = 1.04e-11`** |
+| | **`S-ROUTED`** *(~18.1K KV + rerank fallback)* | **169.8 tpm (1.04×)** | 4.96 s (4.90 s) | 5.49 s | **5.7 ms** | **84.6% / 69.5%** | **57.3%** | **+13.0–16.7 pp** |
+
+- **FinanceBench:** Upgrading RAG to dense + cross-encoder reranker closed the overall accuracy gap (`42.7%` → `56.0%`, tying `S-ROUTED`'s `56.0%` at `max_tokens=128`, though `S-ROUTED` still led `metrics-generated` math `48.0%` vs `40.0%`), **but `S-ROUTED` remained `1.46×` faster than `S-RAG` and `1.62×` faster than `S-CONV-RAG`** (`166.3` vs `114.0` / `102.5` tpm) and cut p95 `q→end` by **−1,420 to −2,100 ms** (`4.26 s` vs `5.68 s` / `6.36 s`) with **385K tokens** served from CPU KV offload (`65.0%` external prefix hit).
+- **LoCoMo:** Dense + reranker RAG actually **lost ground** to `S-ROUTED` (**+13.0 pp** vs `S-RAG`, `p = 2.71e-7`; **+16.7 pp** vs `S-CONV-RAG`, `p = 1.04e-11`), because multi-session temporal and cross-turn cues are scattered across sessions that top-5 semantic reranking still drops. `S-ROUTED` beat `S-CONV-RAG` on throughput (`169.8` vs `163.5` tpm) with **84.6% GPU + 69.5% CPU offload prefix hits** (`581K` tokens).
+
+---
+
 ## Reproducing
 
 Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py).
 
 ```bash
-# Local unit + mock-server tests (9/9)
+# Local unit + mock-server tests (10/10)
 PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py -q
 
 # Clean 3-arm run
