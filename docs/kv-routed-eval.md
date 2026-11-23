@@ -143,11 +143,12 @@ The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-com
 
 ---
 
-## 9. Limitations & Disclosures
+## 9. Scope & Methodology Disclosures
 
-1. **CPU offload backend:** Stress Test 2 and the SOTA runs used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB` on A100, `20 GiB` on L4) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
-2. **Corpus & model scope:** Across **10,578 measured turns**, we evaluated **2 distinct model architectures** — a 3B-active MoE (`Qwen3-30B-A3B-Instruct-2507-FP8` on A100, 9,228 turns) and a **dense transformer** (`Qwen3-8B-FP8` on NVIDIA L4, 1,350 turns) — across 3 datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
-3. **Stateless vs conversational & dense+reranker RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Sections 5–7 explicitly evaluate **`S-CONV-RAG`** (with an LLM query rewriter) and **two-stage dense bi-encoder + cross-encoder reranker RAG** (`BAAI/bge-small-en-v1.5` + `BAAI/bge-reranker-v2-m3`) on FinanceBench and LoCoMo across both model architectures.
+1. **Scope boundaries:** This release covers entity-scoped multi-turn workloads with 3.8K–18.1K working sets across two architectures (`Qwen3-30B-A3B-FP8` MoE on A100 and dense `Qwen3-8B-FP8` on L4). Sliding-window MoEs, single-entity dossiers exceeding ~50K tokens, and open-domain search without entity locality are outside scope.
+2. **Hardware & model-scale differences:** Sections 1–6 ran on NVIDIA A100 (`Qwen3-30B-A3B-FP8`); Section 7 ran on NVIDIA L4 (`Qwen3-8B-FP8`), so throughput ratios (`S-ROUTED` vs RAG) are compared within each hardware/model cell rather than across GPUs. On FinanceBench, the smaller 8B dense model benefited from cross-encoder pre-filtering (`52.7%` vs `45.3%`), whereas `Qwen3-30B-A3B` reached parity (`56.0%`).
+3. **CPU KV offload backend:** Multi-tenant eviction and SOTA runs used vLLM's native `OffloadingConnector` (`24 GiB` CPU tier on A100, `20 GiB` on L4) because PyPI's prebuilt `lmcache` wheel hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so`). Both offload KV blocks to host RAM over PCIe.
+4. **CRM baseline parity:** Sections 1–3 keep CRM `S-RAG` stateless to mirror the `a100-inline-4608` baseline; conversational RAG (`S-CONV-RAG`) and dense+cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`) are evaluated in Sections 5–7.
 
 ---
 
