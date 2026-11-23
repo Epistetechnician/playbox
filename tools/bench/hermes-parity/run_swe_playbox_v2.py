@@ -361,7 +361,9 @@ class _DevinPlayboxBridge:
         import types
 
         self.wdir = wdir
-        self.sock_path = os.path.join(wdir, "pbx.sock")
+        import hashlib, tempfile
+        sock_hash = hashlib.sha256(wdir.encode("utf-8")).hexdigest()[:16]
+        self.sock_path = os.path.join(tempfile.gettempdir(), f"pbx-{sock_hash}.sock")
         if os.path.exists(self.sock_path):
             os.remove(self.sock_path)
 
@@ -790,7 +792,8 @@ def run_repro_generator(
                 f"then stop and reply with one line.\n\nISSUE:\n{r['problem_statement']}"
             )
             devin_env = {**os.environ, **gw_env, "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", "PLAYBOX_ATLAS_INDEX": atlas_index_path}
-            devin_env.pop("ACP_BACKEND", None)
+            for _k in ("ACP_BACKEND", "DEVIN_FD_PATH", "AI_AGENT"):
+                devin_env.pop(_k, None)
             if harness == "agy":
                 cmd = [
                     AGY_BIN, "--model", model, "--output-format", "json",
@@ -991,7 +994,8 @@ def run_worker(
                 "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
                 "PLAYBOX_ATLAS_INDEX": atlas_index_path,
             }
-            devin_env.pop("ACP_BACKEND", None)
+            for _k in ("ACP_BACKEND", "DEVIN_FD_PATH", "AI_AGENT"):
+                devin_env.pop(_k, None)
             if harness == "agy":
                 cmd = [
                     AGY_BIN,

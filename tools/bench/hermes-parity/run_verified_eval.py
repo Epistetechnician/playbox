@@ -542,6 +542,7 @@ def _invoke_p2_tier(
     aiproxy_cache_mode: str = "off",
     atlas_embed_model: str = "",
     atlas_rerank_model: str = "",
+    no_atlas: bool = False,
 ) -> tuple[dict, str, Path]:
     eff_provider = "custom" if (aiproxy_url and harness == "hermes" and provider == "openai-codex") else provider
     cmd = [
@@ -565,6 +566,8 @@ def _invoke_p2_tier(
         cmd.extend(["--worker-models", worker_models])
     if repro_gate:
         cmd.append("--repro-gate")
+    if no_atlas:
+        cmd.append("--no-atlas")
     if extra_guidance:
         cmd.extend(["--extra-guidance", extra_guidance])
     if aiproxy_url:
@@ -620,6 +623,7 @@ def run_arm_p2_cascade_instance(
     aiproxy_cache_mode: str = "off",
     atlas_embed_model: str = "",
     atlas_rerank_model: str = "",
+    no_atlas: bool = False,
 ) -> dict:
     """Execute the strictly zero-oracle 3-Tier Playbox Arm P2 Cascade on `inst`."""
     from playbox_atlas import append_verified_lesson
@@ -699,6 +703,7 @@ def run_arm_p2_cascade_instance(
             aiproxy_cache_mode=aiproxy_cache_mode,
             atlas_embed_model=atlas_embed_model,
             atlas_rerank_model=atlas_rerank_model,
+            no_atlas=no_atlas,
         )
         tier_cost = float(res.get("total_cost_usd") or 0.0)
         tier_wall = float(res.get("wall_s") or 0.0)
@@ -989,6 +994,7 @@ def main() -> None:
     ap.add_argument("--aiproxy-cache-mode", default="off", choices=["off", "record", "replay"])
     ap.add_argument("--atlas-embed-model", default="")
     ap.add_argument("--atlas-rerank-model", default="")
+    ap.add_argument("--no-atlas", action="store_true", help="Disable AtlasKV 3-hop index/brief for ablation")
     ap.add_argument("--max-tiers", type=int, default=3, choices=[1, 2, 3])
     ap.add_argument("--timeout", type=int, default=780)
     args = ap.parse_args()
@@ -1081,6 +1087,7 @@ def main() -> None:
                 aiproxy_cache_mode=args.aiproxy_cache_mode,
                 atlas_embed_model=args.atlas_embed_model,
                 atlas_rerank_model=args.atlas_rerank_model,
+                no_atlas=args.no_atlas,
             )
         else:
             raise ValueError(f"unsupported arm {arm!r}")

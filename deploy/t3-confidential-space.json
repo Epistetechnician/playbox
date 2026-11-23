@@ -38,5 +38,22 @@
     "verified_bundle_path": "docs/reports/playbox-t3-confidential-space-5gate-bundle.json.gz",
     "verified_bundle_digest": "206e4ad33be0bcf42a5f7ce268d7ba504bd86b58302fd005000b51b1683f617f",
     "verifier_pubkey_hex": "e909cef9782c42082e7e0f8c2e2954346f3588395e33e4075fddf00938b487d2"
+  },
+  "swe150_confidential_space_workload": {
+    "project_id": "secops1219",
+    "zone": "us-central1-a",
+    "machine_type": "c3-standard-4",
+    "confidential_instance_type": "TDX",
+    "audience": "playbox-t3-gate-v0.4.6-swe150",
+    "image_uri": "us-east4-docker.pkg.dev/secops1219/ahcl-attestation/playbox-t3-gate@sha256:38dc08c14ae94b8f4df9c4e942b5f96f40f014076c10dda0fb9a2a97a923415f",
+    "image_digest": "sha256:38dc08c14ae94b8f4df9c4e942b5f96f40f014076c10dda0fb9a2a97a923415f",
+    "jwks_path": "docs/reports/google-confidential-space-jwks.json",
+    "verified_bundle_path": "docs/reports/playbox-swe150-t3-confidential-space-5gate-bundle.json.gz",
+    "verified_bundle_digest": "6d3a5e89752a3137c2bf62dde1775e3a6ba584b96e93e1a198a5aaff0dfddfd3",
+    "verifier_pubkey_hex": "2df77239c533aa45db420132a57dc3b30e93d3cedd8482d4659ddbc1159e8645",
+    "attested_receipts": 150,
+    "solved": 125,
+    "total_tasks": 150,
+    "llm_ledger_source": "client_unverified"
   }
 }
