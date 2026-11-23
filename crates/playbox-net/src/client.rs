@@ -535,7 +535,7 @@ impl Client {
             }
             Err(e) => {
                 let msg = format!("{e:#}");
-                if msg.contains("Method not found") || msg.contains("-32601") {
+                if msg.to_ascii_lowercase().contains("method not found") || msg.contains("-32601") {
                     Ok(JoinChallenge {
                         nonce: String::new(),
                         required: false,

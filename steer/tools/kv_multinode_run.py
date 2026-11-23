@@ -23,7 +23,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover - optional for pure-Python unit tests
+    aiohttp = None  # type: ignore[assignment]
 
 _TOOLS_DIR = str(Path(__file__).resolve().parent)
 if _TOOLS_DIR not in sys.path:
@@ -252,7 +255,7 @@ async def _chat_call(
                         break
                     try:
                         obj = json.loads(data)
-                    except Exception:
+                    except json.JSONDecodeError:
                         continue
                     usage = obj.get("usage")
                     if isinstance(usage, dict):
