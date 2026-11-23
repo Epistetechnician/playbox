@@ -522,55 +522,60 @@ def make_crossover_curve() -> None:
 
 
 def make_multinode_sticky() -> None:
-    """4-replica isolated vLLM sticky routing: RR vs STICKY-HASH vs STICKY-BOUNDED."""
-    dists = ["Uniform (α=0.0)\n48 entities · 4 replicas", "Zipf Skew (α=1.5)\nHot entities · 4 replicas"]
+    """Physical 4-node H100-80GB sticky routing: RR vs STICKY-HASH vs STICKY-BOUNDED vs STICKY-HOT-REP."""
+    dists = ["Uniform (α=0.0)\n48 × 8.2K entities · n=48", "Zipf Skew (α=1.5)\nHot entities · n=48"]
     x = np.arange(len(dists))
-    w = 0.25
+    w = 0.19
 
-    tpm_rr = [193.27, 435.29]
-    tpm_hash = [290.13, 835.49]
-    tpm_bnd = [304.42, 524.23]
+    tpm_rr = [2978.57, 5710.82]
+    tpm_hash = [6918.15, 8104.05]
+    tpm_bnd = [6400.05, 9423.43]
+    tpm_hot = [6646.08, 8874.61]
 
-    p95_rr = [12.03, 5.30]
-    p95_hash = [8.91, 2.85]
-    p95_bnd = [7.09, 4.63]
+    p95_rr = [2.845, 1.275]
+    p95_hash = [1.564, 0.909]
+    p95_bnd = [1.643, 0.773]
+    p95_hot = [1.658, 0.860]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.8, 4.5), dpi=180)
+    c_hot = "#2563EB"
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.2, 4.6), dpi=180)
 
-    b1 = ax1.bar(x - w, tpm_rr, w, label="Round-Robin (RR)", color=C_RAG)
-    b2 = ax1.bar(x, tpm_hash, w, label="Pure Sticky Hash", color=C_CONV)
-    b3 = ax1.bar(x + w, tpm_bnd, w, label="Bounded-Load Sticky (1.25× cap)", color=C_ROUTED)
-    for bars in (b1, b2, b3):
+    b1 = ax1.bar(x - 1.5 * w, tpm_rr, w, label="Round-Robin (RR)", color=C_RAG)
+    b2 = ax1.bar(x - 0.5 * w, tpm_hash, w, label="Pure Sticky Hash", color=C_CONV)
+    b3 = ax1.bar(x + 0.5 * w, tpm_bnd, w, label="Bounded-Load Sticky (1.25×)", color=C_ROUTED)
+    b4 = ax1.bar(x + 1.5 * w, tpm_hot, w, label="Adaptive Hot-Entity Rep", color=c_hot)
+    for bars in (b1, b2, b3, b4):
         for bar in bars:
             h = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width() / 2, h + 15, f"{h:.0f}", ha="center", va="bottom", fontsize=8.3, fontweight="bold")
-    ax1.annotate("1.58× vs RR\nimb 1.04× (12% spill)", xy=(0 + w, 304.4), xytext=(-0.32, 435), fontsize=8.0, fontweight="bold", color="#1D6F63")
-    ax1.annotate("1.92× vs RR\n84.7% GPU hit\n(2.50× hot-spot)", xy=(1, 835.5), xytext=(0.45, 760), fontsize=7.9, fontweight="bold", color="#7C3AED")
+            ax1.text(bar.get_x() + bar.get_width() / 2, h + 140, f"{h:,.0f}", ha="center", va="bottom", fontsize=7.6, fontweight="bold")
+    ax1.annotate("2.32× vs RR\n91.5% KV hit", xy=(0 - 0.5 * w, 6918), xytext=(-0.10, 7750), fontsize=7.8, fontweight="bold", color="#B45309")
+    ax1.annotate("1.65× vs RR (+16% vs Hash)\n93.8% KV hit · imb 1.46×", xy=(1 + 0.5 * w, 9423), xytext=(0.48, 10200), fontsize=7.8, fontweight="bold", color="#1D6F63")
     ax1.set_xticks(x)
     ax1.set_xticklabels(dists, fontsize=9.2)
-    ax1.set_ylabel("Cluster Throughput (turns / min, n=24)", fontsize=9.8)
-    ax1.set_ylim(0, 960)
-    ax1.set_title("Cluster Throughput across 4 Isolated KV Replicas", fontsize=10.5, fontweight="bold")
-    ax1.legend(frameon=False, fontsize=7.8, loc="upper left")
+    ax1.set_ylabel("Cluster Throughput (turns / min, n=48)", fontsize=9.6)
+    ax1.set_ylim(0, 11400)
+    ax1.set_title("Physical 4× H100 Cluster Throughput", fontsize=10.5, fontweight="bold")
+    ax1.legend(frameon=False, fontsize=7.6, loc="upper left")
 
-    b1 = ax2.bar(x - w, p95_rr, w, label="Round-Robin (RR)", color=C_RAG)
-    b2 = ax2.bar(x, p95_hash, w, label="Pure Sticky Hash", color=C_CONV)
-    b3 = ax2.bar(x + w, p95_bnd, w, label="Bounded-Load Sticky (1.25× cap)", color=C_ROUTED)
-    for bars in (b1, b2, b3):
+    b1 = ax2.bar(x - 1.5 * w, p95_rr, w, label="Round-Robin (RR)", color=C_RAG)
+    b2 = ax2.bar(x - 0.5 * w, p95_hash, w, label="Pure Sticky Hash", color=C_CONV)
+    b3 = ax2.bar(x + 0.5 * w, p95_bnd, w, label="Bounded-Load Sticky (1.25×)", color=C_ROUTED)
+    b4 = ax2.bar(x + 1.5 * w, p95_hot, w, label="Adaptive Hot-Entity Rep", color=c_hot)
+    for bars in (b1, b2, b3, b4):
         for bar in bars:
             h = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width() / 2, h + 0.25, f"{h:.2f}s", ha="center", va="bottom", fontsize=8.3, fontweight="bold")
-    ax2.annotate("−41% p95 vs RR\n−20% vs Sticky-Hash", xy=(0 + w, 7.09), xytext=(-0.15, 9.6), fontsize=8.0, fontweight="bold", color="#1D6F63")
-    ax2.annotate("Tight 1.25× cap spills\n45.8% → 52.3% hit", xy=(1 + w, 4.63), xytext=(0.68, 7.2), fontsize=7.9, fontweight="bold", color="#B84B32")
+            ax2.text(bar.get_x() + bar.get_width() / 2, h + 0.05, f"{h:.2f}s", ha="center", va="bottom", fontsize=7.6, fontweight="bold")
+    ax2.annotate("−45% p95 vs RR\nt2–6: 0.31s vs 1.74s", xy=(0 - 0.5 * w, 1.564), xytext=(-0.10, 2.38), fontsize=7.8, fontweight="bold", color="#1D6F63")
+    ax2.annotate("−39% vs RR / −15% vs Hash\nt2–6: 0.13s (2.3× faster)", xy=(1 + 0.5 * w, 0.773), xytext=(0.58, 1.82), fontsize=7.8, fontweight="bold", color="#1D6F63")
     ax2.set_xticks(x)
     ax2.set_xticklabels(dists, fontsize=9.2)
-    ax2.set_ylabel("p95 End-to-End Latency q→end (s, lower is better)", fontsize=9.5)
-    ax2.set_ylim(0, 14.5)
-    ax2.set_title("p95 Tail Latency & Locality-vs-Balance Trade-off", fontsize=10.5, fontweight="bold")
+    ax2.set_ylabel("p95 End-to-End Latency q→end (s, lower is better)", fontsize=9.4)
+    ax2.set_ylim(0, 3.35)
+    ax2.set_title("p95 Tail Latency Across 4 Physical H100 Nodes", fontsize=10.5, fontweight="bold")
 
     fig.suptitle(
-        "Multi-Replica Sticky Routing: 4 Isolated Qwen3-1.7B vLLM Replicas on L4 (1,728 Turns · 100% Acc · 0 Errors)",
-        fontsize=10.8,
+        "Physical 4-Node H100-80GB Cluster (Private Mesh · --clock-lock 1590 MHz · Qwen3-8B-FP8 · 4,608 Turns · 0 Errors)",
+        fontsize=10.5,
         fontweight="bold",
         y=1.01,
     )
