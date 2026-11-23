@@ -1,6 +1,6 @@
 # Entity-Routed Working-Set KV + Adaptive RAG vs Inline RAG vs Shared 128K KV
 
-An end-to-end systems evaluation (**12,210 measured turns, 0 errors**) across **4 workloads** (Enterprise CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K, and a controlled 4K→64K working-set crossover sweep) and **2 model architectures** (`Qwen3-30B-A3B-Instruct-2507-FP8` MoE on `A100-SXM4-80GB` and dense `Qwen3-8B-FP8` on `L4-24GB`), comparing entity-routed working-set KV + adaptive RAG (`S-ROUTED`) against monolithic 128K shared KV (`S-CTX`), stateless inline RAG (`S-RAG`), conversational RAG with an LLM query rewriter (`S-CONV-RAG`), and two-stage dense bi-encoder + cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`). All latency is measured end-to-end from question arrival before routing, query rewriting, or retrieval.
+An end-to-end systems evaluation (**13,938 measured turns, 0 errors**) across **5 experiments** (Enterprise CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K, a 4K→64K working-set crossover sweep, and 4-replica sticky routing) and **2 model architectures / 3 scales** (`Qwen3-30B-A3B-Instruct-2507-FP8` MoE on `A100-SXM4-80GB`, dense `Qwen3-8B-FP8` and `Qwen3-1.7B` on `L4-24GB`), comparing entity-routed working-set KV + adaptive RAG (`S-ROUTED`) against monolithic 128K shared KV (`S-CTX`), stateless inline RAG (`S-RAG`), conversational RAG with an LLM query rewriter (`S-CONV-RAG`), and two-stage dense bi-encoder + cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`). All latency is measured end-to-end from question arrival before routing, query rewriting, or retrieval.
 
 ## Core Finding
 
@@ -12,6 +12,7 @@ Monolithic 128K prefix caching loses to inline RAG because decode attention scal
 - **SOTA Generalization vs Conversational & Dense+Reranker RAG (`n=8`, 2,700 turns, A100):** Against `bge-small-en-v1.5` + `bge-reranker-v2-m3` + LLM query rewriter, `S-ROUTED` stays **1.46–1.62× faster** at accuracy parity (`56.0%`) on FinanceBench (**−1.4 to −2.1 s** p95 `q→end`) and beats dense+reranker RAG by **+13.0–16.7 pp** (`p = 1.04e-11`) on LoCoMo while beating `S-CONV-RAG` on throughput.
 - **Second Architecture — Dense `Qwen3-8B-FP8` (`n=8`, 1,350 turns, L4 + 20 GB CPU tier):** The serving win **doubles on a dense transformer** — **2.00–2.12×** throughput on FinanceBench and **1.98–2.06×** on LoCoMo (**−5.2 to −14.9 s** p95 `q→end`, 76–92% GPU prefix hit) — while surfacing an honest model-scale trade-off on FinanceBench (`45.3%` vs `52.7%`, `p = 0.0074`) and parity on LoCoMo (`47.7%`).
 - **4K→64K Working-Set Crossover Law (`n=8`, 1,632 turns, A100-80GB):** Sweeping entity dossier size from 4K to 64K against GPU-accelerated dense+reranker RAG identifies exact throughput crossover thresholds at **$L^*_{\text{RAG}} = 8.2\text{K}$** tokens (vs stateless `S-RAG`) and **$L^*_{\text{CONV}} = 13.2\text{K}$** tokens (vs `S-CONV-RAG`), while `S-ROUTED` holds **95.8–100.0% accuracy** across 4K–48K before hitting the active-KV concurrency wall at 64K.
+- **Multi-Replica Sticky Routing (4 Isolated vLLM Replicas, `n=24`, 1,728 turns, L4):** Across 4 independent vLLM KV caches (`Qwen3-1.7B` + 4 GiB CPU offload each, 100% accuracy, 0 errors), `STICKY-BOUNDED` beats Round-Robin by **1.58× throughput** and **−41% p95 `q→end`** (`7.09 s` vs `12.03 s`, `1.04×` load balance) under Uniform traffic, while `STICKY-HASH` hits **1.92× throughput** (`835.5` vs `435.3` tpm, `84.7%` GPU prefix hit) under Zipf=1.5 — exposing the exact locality-vs-balance threshold where aggressive spilling (`45.8%`) erodes hot-entity prefix reuse.
 
 ---
 
@@ -158,7 +159,28 @@ To establish an exact systems threshold $L^*$ for when entity-routed KV beats RA
 
 ---
 
-## 9. Drop-in OpenAI-Compatible Proxy (`playbox_steer.kv_routed_proxy`)
+## 9. Multi-Replica Sticky Routing (4 Isolated vLLM Replicas)
+
+To test whether entity-routed KV locality survives behind a multi-replica load balancer, we ran **4 isolated vLLM `Qwen/Qwen3-1.7B` server processes** (ports `:8001–:8004`, independent PagedAttention KV caches + `4 GiB` `OffloadingConnector` CPU tier each, `48` ~4K entities, `48` sessions × `6` turns, `n=24` concurrent sessions; **1,728 measured turns, 100.0% accuracy, 0 errors**) on a single NVIDIA L4-24GB under Uniform ($\alpha=0.0$) and Zipf-skewed ($\alpha=1.5$) entity traffic.
+
+![Multi-replica sticky routing throughput and tail latency](assets/kv-routed/09_multinode_sticky.png)
+
+| Traffic | Policy | Throughput (`n=24`) | p95 `q→first` (t2–6) | p95 `q→end` | GPU KV hit | Imbalance (max/mean) | Spill % | Replica counts |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| **Uniform** ($\alpha=0.0$) | `RR` (Round-Robin) | 193.3 tpm | 10.72 s (10.87 s) | 12.03 s | 5.4% | 1.00× | 0.0% | `[72, 72, 72, 72]` |
+| | `STICKY-HASH` | 290.1 tpm (1.50×) | 8.02 s (7.50 s) | 8.91 s | 6.2% | 1.33× | 0.0% | `[54, 66, 96, 72]` |
+| | **`STICKY-BOUNDED`** *(1.25× cap)* | **304.4 tpm (1.58×)** | **6.29 s (5.69 s)** | **7.09 s** | **8.2%** | **1.04×** | 12.2% | `[65, 74, 75, 74]` |
+| **Zipf** ($\alpha=1.5$) | `RR` (Round-Robin) | 435.3 tpm | 4.49 s (4.38 s) | 5.30 s | 54.1% | 1.00× | 0.0% | `[72, 72, 72, 72]` |
+| | **`STICKY-HASH`** | **835.5 tpm (1.92×)** | **2.36 s (2.31 s)** | **2.85 s** | **84.7%** | 2.50× | 0.0% | `[48, 180, 0, 60]` |
+| | `STICKY-BOUNDED` *(1.25× cap)* | 524.2 tpm (1.20×) | 3.75 s (3.61 s) | 4.63 s | 52.3% | 1.57× | 45.8% | `[83, 113, 12, 80]` |
+
+- **Uniform traffic — `STICKY-BOUNDED` wins every metric:** Pure sticky hashing suffers natural hash-bucket skew (`1.33×`, replica 2 gets 96 turns vs 54 on replica 0). Bounded-load sticky routing (`cap = 1.25×`) spills just `12.2%` of turns, restoring near-perfect balance (`1.04×`), raising cluster throughput to **1.58× vs RR**, and cutting p95 `q→end` by **−41% vs RR** (`−20%` vs pure `STICKY-HASH`).
+- **Extreme Zipf skew ($\alpha=1.5$) — locality vs spill-threshold law:** Pure `STICKY-HASH` concentrates hot entities on one replica (`2.50×` imbalance) and reaches **84.7% GPU prefix hit** and **1.92× throughput vs RR**. A tight `1.25×` spill cap over-spills **45.8%** of hot-entity turns onto cold secondary replicas, collapsing prefix hit rate to `52.3%`. **Production rule:** use bounded-load sticky routing with a tight cap (`1.25×`) for uniform/moderate traffic, and either raise the spill cap (`2.0×–2.5×`) or replicate the top-$k$ hot entity prefixes onto 2 warm replicas under extreme Zipf skew.
+- **Shared-GPU emulation disclosure:** All 4 vLLM replicas ran as separate processes with isolated KV caches on one L4-24GB (`20.8 GiB` used). KV hit rates, eviction, and routing distributions are exact for 4 independent caches, while physical SM compute is shared across replicas; on 4 physically separate GPUs, `STICKY-HASH`'s `2.50×` hot-spot queue penalty would be steeper relative to `STICKY-BOUNDED`.
+
+---
+
+## 10. Drop-in OpenAI-Compatible Proxy (`playbox_steer.kv_routed_proxy`)
 
 The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-compatible HTTP proxy in [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py) (`steer/tests/test_kv_routed_proxy.py` passing):
 
@@ -168,22 +190,22 @@ The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-com
 
 ---
 
-## 10. Scope & Methodology Disclosures
+## 11. Scope & Methodology Disclosures
 
-1. **Scope boundaries:** This release covers entity-scoped multi-turn workloads from 3.8K to 64K working sets across two architectures (`Qwen3-30B-A3B-FP8` MoE on A100 and dense `Qwen3-8B-FP8` on L4). Sliding-window MoEs, multi-node cluster routing, and open-domain search without entity locality are outside scope.
-2. **Hardware & model-scale differences:** Sections 1–6 and 8 ran on NVIDIA A100-SXM4-80GB (`Qwen3-30B-A3B-FP8`); Section 7 ran on NVIDIA L4 (`Qwen3-8B-FP8`), so throughput ratios (`S-ROUTED` vs RAG) are compared within each hardware/model cell rather than across GPUs. On FinanceBench, the smaller 8B dense model benefited from cross-encoder pre-filtering (`52.7%` vs `45.3%`), whereas `Qwen3-30B-A3B` reached parity (`56.0%`).
-3. **CPU KV offload backend:** Multi-tenant eviction, SOTA, and crossover runs used vLLM's native `OffloadingConnector` (`24 GiB` CPU tier on A100, `20 GiB` on L4) because PyPI's prebuilt `lmcache` wheel hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so`). Both offload KV blocks to host RAM over PCIe.
+1. **Scope boundaries:** This release covers entity-scoped multi-turn workloads from 3.8K to 64K working sets across two architectures / three scales (`Qwen3-30B-A3B-FP8` MoE on A100, dense `Qwen3-8B-FP8` and `Qwen3-1.7B` on L4) plus 4-replica sticky routing on a single L4. Sliding-window MoEs, physical multi-node multi-GPU cluster scaling, and open-domain search without entity locality remain outside scope.
+2. **Hardware & model-scale differences:** Sections 1–6 and 8 ran on NVIDIA A100-SXM4-80GB (`Qwen3-30B-A3B-FP8`); Section 7 (`Qwen3-8B-FP8`) and Section 9 (4 isolated `Qwen3-1.7B` processes sharing one GPU's SMs) ran on NVIDIA L4-24GB. Throughput ratios are compared within each hardware/model cell rather than across GPUs. On FinanceBench, the smaller 8B dense model benefited from cross-encoder pre-filtering (`52.7%` vs `45.3%`), whereas `Qwen3-30B-A3B` reached parity (`56.0%`).
+3. **CPU KV offload backend:** Multi-tenant eviction, SOTA, crossover, and multi-replica runs used vLLM's native `OffloadingConnector` (`24 GiB` CPU tier on A100, `20 GiB` on L4, `4 GiB × 4` for the 4-replica run) because PyPI's prebuilt `lmcache` wheel hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so`). Both offload KV blocks to host RAM over PCIe.
 4. **CRM baseline parity:** Sections 1–3 keep CRM `S-RAG` stateless to mirror the `a100-inline-4608` baseline; conversational RAG (`S-CONV-RAG`) and dense+cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`) are evaluated in Sections 5–8.
 
 ---
 
 ## Reproducing
 
-Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tools/kv_crossover_run.py`](../steer/tools/kv_crossover_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py), [`steer/tests/test_kv_routed_proxy.py`](../steer/tests/test_kv_routed_proxy.py).
+Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tools/kv_crossover_run.py`](../steer/tools/kv_crossover_run.py), [`steer/tools/kv_multinode_run.py`](../steer/tools/kv_multinode_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py), [`steer/tests/test_kv_routed_proxy.py`](../steer/tests/test_kv_routed_proxy.py), [`steer/tests/test_kv_multinode.py`](../steer/tests/test_kv_multinode.py).
 
 ```bash
-# Local unit + mock-server tests (12/12)
-PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py steer/tests/test_kv_routed_proxy.py -q
+# Local unit + mock-server tests (16/16)
+PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py steer/tests/test_kv_routed_proxy.py steer/tests/test_kv_multinode.py -q
 
 # Clean 3-arm run
 PYTHONPATH=steer python3 steer/tools/kv_routed_run.py \
