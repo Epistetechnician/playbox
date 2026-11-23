@@ -61,3 +61,24 @@ def test_zipf_sampling_creates_heavy_hitter_skew() -> None:
     zipf = sample_session_entities(eids, n_sessions=96, zipf_alpha=1.2, seed=42)
     top3 = sum(c for _, c in Counter(zipf).most_common(3))
     assert top3 >= 35
+
+
+def test_sticky_hot_rep_replicates_hot_entity_across_two_warm_replicas() -> None:
+    backends = [f"http://127.0.0.1:800{i}" for i in range(1, 5)]
+    lb = ReplicaLoadBalancer(
+        backends,
+        policy="STICKY-HOT-REP",
+        cap_factor=1.25,
+        min_cap=2,
+        hot_replicas=2,
+        hot_share_threshold=0.3,
+        hot_min_requests=4,
+    )
+    warm = set(lb._pref_ring("ACME-100")[:2])
+    seen = set()
+    for _ in range(12):
+        idx, _, spilled = lb.acquire("ACME-100")
+        seen.add(idx)
+        assert not spilled
+        lb.release(idx)
+    assert seen == warm

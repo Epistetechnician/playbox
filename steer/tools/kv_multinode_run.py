@@ -57,7 +57,7 @@ def _score_exact(pred: str, expected: str) -> float:
 
 
 class ReplicaLoadBalancer:
-    """Multi-replica router supporting RR, STICKY-HASH, and STICKY-BOUNDED."""
+    """Multi-replica router supporting RR, STICKY-HASH, STICKY-BOUNDED, and STICKY-HOT-REP."""
 
     def __init__(
         self,
@@ -65,19 +65,27 @@ class ReplicaLoadBalancer:
         policy: str,
         cap_factor: float = 1.25,
         min_cap: int = 3,
+        hot_replicas: int = 2,
+        hot_share_threshold: float = 0.15,
+        hot_min_requests: int = 8,
     ) -> None:
         if not backends:
             raise ValueError("backends must be non-empty")
-        if policy not in ("RR", "STICKY-HASH", "STICKY-BOUNDED"):
+        if policy not in ("RR", "STICKY-HASH", "STICKY-BOUNDED", "STICKY-HOT-REP"):
             raise ValueError(f"Unknown policy: {policy}")
         self.backends = [b.rstrip("/") for b in backends]
         self.policy = policy
         self.cap_factor = float(cap_factor)
         self.min_cap = int(min_cap)
+        self.hot_replicas = max(1, min(int(hot_replicas), len(self.backends)))
+        self.hot_share_threshold = float(hot_share_threshold)
+        self.hot_min_requests = int(hot_min_requests)
         self.inflight: List[int] = [0] * len(self.backends)
         self.routed_counts: List[int] = [0] * len(self.backends)
         self.spills: int = 0
         self._rr_cursor: int = 0
+        self._entity_hits: Dict[str, int] = {}
+        self._total_hits: int = 0
 
     def _pref_ring(self, entity_id: str) -> List[int]:
         k = len(self.backends)
@@ -88,15 +96,36 @@ class ReplicaLoadBalancer:
         scored.sort()
         return [idx for _, idx in scored]
 
+    def _is_hot(self, entity_id: str) -> bool:
+        if self.policy != "STICKY-HOT-REP" or len(self.backends) < 2 or self.hot_replicas < 2:
+            return False
+        if self._total_hits < self.hot_min_requests:
+            return False
+        return (self._entity_hits.get(entity_id, 0) / self._total_hits) >= self.hot_share_threshold
+
     def acquire(self, entity_id: str) -> Tuple[int, str, bool]:
         """Select a backend replica index, increment inflight, return (idx, url, spilled)."""
         k = len(self.backends)
+        self._entity_hits[entity_id] = self._entity_hits.get(entity_id, 0) + 1
+        self._total_hits += 1
         spilled = False
         if self.policy == "RR":
             idx = self._rr_cursor % k
             self._rr_cursor += 1
         elif self.policy == "STICKY-HASH":
             idx = self._pref_ring(entity_id)[0]
+        elif self.policy == "STICKY-HOT-REP" and self._is_hot(entity_id):
+            ring = self._pref_ring(entity_id)
+            total_in = sum(self.inflight) + 1
+            cap = max(self.min_cap, int(math.ceil(self.cap_factor * total_in / k)))
+            warm = ring[: self.hot_replicas]
+            warm_best = min(warm, key=lambda c: (self.inflight[c], self.routed_counts[c]))
+            if self.inflight[warm_best] < cap:
+                idx = warm_best
+            else:
+                chosen = next((c for c in ring[self.hot_replicas :] if self.inflight[c] < cap), None)
+                idx = chosen if chosen is not None else min(ring, key=lambda c: self.inflight[c])
+                spilled = idx not in warm
         else:
             ring = self._pref_ring(entity_id)
             total_in = sum(self.inflight) + 1
