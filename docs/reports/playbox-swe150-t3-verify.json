@@ -1,0 +1,17 @@
+{
+  "achieved_tier": "T3",
+  "attested_receipts": 150,
+  "audit_entries": 2,
+  "bundle_digest": "6d3a5e89752a3137c2bf62dde1775e3a6ba584b96e93e1a198a5aaff0dfddfd3",
+  "claims_full_84_permf": false,
+  "egress_requests": 1,
+  "enforced_gates_count": 5,
+  "ok": true,
+  "pq_signed": true,
+  "promotions": 0,
+  "room_log_committed": 2,
+  "room_log_len": 2,
+  "room_log_pq_committed": 2,
+  "schema": "playbox.attested_gate.v1",
+  "signed": true
+}
