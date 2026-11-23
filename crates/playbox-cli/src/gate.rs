@@ -584,10 +584,6 @@ fn load_attestation_text(path: &Path) -> Result<String> {
         .with_context(|| format!("loading attestation from {}", path.display()))
 }
 
-fn verify_attestation_text(text: &str) -> Result<AttestationEvidence> {
-    verify_attestation_text_mode(text, false)
-}
-
 fn verify_attestation_text_historical(text: &str) -> Result<AttestationEvidence> {
     verify_attestation_text_mode(text, true)
 }
@@ -689,7 +685,7 @@ pub fn export(o: ExportOpts) -> Result<()> {
     let attestation = match &attest_path {
         Some(p) => {
             let raw = load_attestation_text(p)?;
-            Some(verify_attestation_text(&raw)?)
+            Some(verify_attestation_text_historical(&raw)?)
         }
         None => None,
     };
