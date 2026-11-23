@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -86,7 +87,11 @@ def verify_ledger(ledger: dict[str, Any]) -> tuple[bool, str]:
     return True, "ok"
 
 
-def summarize_ledger_for_receipt(ledger: dict[str, Any]) -> dict[str, Any]:
+def summarize_ledger_for_receipt(
+    ledger: dict[str, Any],
+    *,
+    kv_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Produce the compact `llm_ledger` block embedded in `playbox.attested_gate_receipt.v1`."""
     ok, reason = verify_ledger(ledger)
     if not ok:
@@ -95,7 +100,7 @@ def summarize_ledger_for_receipt(ledger: dict[str, Any]) -> dict[str, Any]:
     cached_read = int(totals.get("cached_read_tokens", 0) or 0)
     cached_write = int(totals.get("cached_write_tokens", 0) or 0)
     cached_total = int(totals.get("cached_tokens", cached_read + cached_write) or 0)
-    return {
+    out = {
         "source": "host_aiproxy",
         "schema": LEDGER_SCHEMA,
         "ledger_sha256": str(ledger["ledger_sha256"]).lower(),
@@ -122,6 +127,9 @@ def summarize_ledger_for_receipt(ledger: dict[str, Any]) -> dict[str, Any]:
             "models_used": sorted({str(m) for m in (totals.get("models_used") or []) if m}),
         },
     }
+    if kv_summary is not None:
+        out["kv_gateway"] = dict(kv_summary)
+    return out
 
 
 @dataclass(frozen=True)
@@ -199,18 +207,23 @@ class AiproxyClient:
                 "User-Agent": "playbox-router/0.4",
             },
         )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read(16 * 1024 * 1024)
-        except urllib.error.HTTPError as exc:
-            detail = ""
+        for attempt in range(5):
             try:
-                detail = exc.read(4096).decode("utf-8", "replace")
-            except OSError:
-                pass
-            raise AiproxyError(exc.code, f"playbox-aiproxy {method} {path} -> HTTP {exc.code}: {detail}") from exc
-        except (OSError, urllib.error.URLError) as exc:
-            raise AiproxyError(502, f"playbox-aiproxy unreachable at {self.base_url}: {exc}") from exc
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    raw = resp.read(16 * 1024 * 1024)
+                break
+            except urllib.error.HTTPError as exc:
+                detail = ""
+                try:
+                    detail = exc.read(4096).decode("utf-8", "replace")
+                except OSError:
+                    pass
+                if exc.code >= 500 and "SQLITE_BUSY" in detail and attempt < 4:
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                raise AiproxyError(exc.code, f"playbox-aiproxy {method} {path} -> HTTP {exc.code}: {detail}") from exc
+            except (OSError, urllib.error.URLError) as exc:
+                raise AiproxyError(502, f"playbox-aiproxy unreachable at {self.base_url}: {exc}") from exc
         try:
             parsed = json.loads(raw or b"{}")
         except ValueError as exc:
