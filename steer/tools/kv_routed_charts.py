@@ -584,6 +584,95 @@ def make_multinode_sticky() -> None:
     plt.close(fig)
 
 
+def make_delta_and_hier_kv() -> None:
+    """Section 10: Log-Structured Delta-Framed KV under live writes (A) + Hierarchical Skeleton KV breaking the 64K wall (B)."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.6, 4.7), dpi=180)
+
+    # Panel A: Mutating-State Live Writes (~12K/entity, 1,024 turns, n=16, H100)
+    arms_a = ["Naive\nRewrite", "Delta-KV\n+ Compact", "Append-Only\nDelta-KV", "Stateless\nRAG-Live"]
+    tpm_a = [225.88, 523.85, 1474.75, 1668.06]
+    acc_a = [99.22, 98.83, 100.0, 43.36]
+    hit_a = [19.25, 68.78, 93.39, 57.70]
+    p95_a = [4.25, 3.90, 0.29, 0.74]
+    colors_a = [C_CTX, C_CONV, C_ROUTED, C_RAG]
+
+    x_a = np.arange(len(arms_a))
+    bars_a = ax1.bar(x_a, tpm_a, width=0.56, color=colors_a)
+    for idx, bar in enumerate(bars_a):
+        h = bar.get_height()
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 45,
+            f"{h:,.0f} tpm\nAcc {acc_a[idx]:.1f}% · Hit {hit_a[idx]:.0f}%\nWrite p95: {p95_a[idx]:.2f}s",
+            ha="center",
+            va="bottom",
+            fontsize=7.3,
+            fontweight="bold" if idx == 2 else "normal",
+            color="#1D6F63" if idx == 2 else "#111827",
+        )
+    ax1.annotate(
+        "6.53× tpm & 14.5× faster write p95\nvs Naive Rewrite · 100% prefix & acc",
+        xy=(2, 1740),
+        xytext=(0.05, 1980),
+        arrowprops=dict(arrowstyle="->", color="#1D6F63", lw=1.2),
+        fontsize=8.0,
+        fontweight="bold",
+        color="#1D6F63",
+    )
+    ax1.set_xticks(x_a)
+    ax1.set_xticklabels(arms_a, fontsize=8.8)
+    ax1.set_ylabel("Throughput (turns / min, n=16)", fontsize=9.4)
+    ax1.set_ylim(0, 2380)
+    ax1.set_title("(A) Live Writes (~12K Entity · 3 Writes/Session)", fontsize=10.2, fontweight="bold")
+
+    # Panel B: Breaking the 64K KV Capacity Wall (~56K-64K/entity, 288 turns, n=16, H100)
+    arms_b = ["Full-64K\nKV Wall", "Hybrid Hier-KV\n+ Delta + RAG", "Chunked\nRAG-64K"]
+    tpm_b = [19.48, 1332.31, 1720.97]
+    acc_b = [97.92, 100.0, 68.75]
+    p95_b = [60.13, 0.98, 0.81]
+    kv_b = ["56.1K tok", "2.6K tok", "32 tok"]
+    colors_b = [C_CTX, C_ROUTED, C_RAG]
+
+    x_b = np.arange(len(arms_b))
+    bars_b = ax2.bar(x_b, tpm_b, width=0.52, color=colors_b)
+    for idx, bar in enumerate(bars_b):
+        h = bar.get_height()
+        ax2.text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 45,
+            f"{h:,.1f} tpm\nAcc {acc_b[idx]:.1f}% · p95 {p95_b[idx]:.2f}s\nKV: {kv_b[idx]}",
+            ha="center",
+            va="bottom",
+            fontsize=7.6,
+            fontweight="bold" if idx == 1 else "normal",
+            color="#1D6F63" if idx == 1 else "#111827",
+        )
+    ax2.annotate(
+        "68.4× tpm · 61.6× lower p95 vs Full-64K\n+31.3 pp accuracy vs RAG (100% deep clause)",
+        xy=(1, 1600),
+        xytext=(-0.15, 1980),
+        arrowprops=dict(arrowstyle="->", color="#1D6F63", lw=1.2),
+        fontsize=8.0,
+        fontweight="bold",
+        color="#1D6F63",
+    )
+    ax2.set_xticks(x_b)
+    ax2.set_xticklabels(arms_b, fontsize=9.0)
+    ax2.set_ylabel("Throughput (turns / min, n=16)", fontsize=9.4)
+    ax2.set_ylim(0, 2380)
+    ax2.set_title("(B) Breaking the 64K Capacity Wall (~60K Entity)", fontsize=10.2, fontweight="bold")
+
+    fig.suptitle(
+        "Mutating-State Delta KV & Auto-Crossover Hierarchical Skeleton KV (H100-80GB --clock-lock · Qwen3-30B-A3B-FP8 · 1,312 Turns · 0 Errors)",
+        fontsize=10.2,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "10_delta_and_hier_kv.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     make_clean_3arm()
     make_noisy_routing()
@@ -594,4 +683,5 @@ if __name__ == "__main__":
     make_dense_model_qwen8b()
     make_crossover_curve()
     make_multinode_sticky()
-    print(f"Wrote 9 charts to {OUT_DIR}")
+    make_delta_and_hier_kv()
+    print(f"Wrote 10 charts to {OUT_DIR}")

@@ -1,6 +1,6 @@
 # Entity-Routed Working-Set KV + Adaptive RAG vs Inline RAG vs Shared 128K KV
 
-An end-to-end systems evaluation (**18,546 measured turns, 0 errors**) across **6 GPU experiments** (Enterprise CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K, a 4K→64K working-set crossover sweep, 4-replica L4 emulation, and a **physical 4-node H100-80GB cluster** over private east-west networking) and **2 model architectures / 3 scales** (`Qwen3-30B-A3B-Instruct-2507-FP8` MoE on `A100-SXM4-80GB`, dense `Qwen3-8B-FP8` on `L4-24GB` and `4× H100-80GB`, and `Qwen3-1.7B` on `L4-24GB`), comparing entity-routed working-set KV + adaptive RAG (`S-ROUTED`) against monolithic 128K shared KV (`S-CTX`), stateless inline RAG (`S-RAG`), conversational RAG with an LLM query rewriter (`S-CONV-RAG`), and two-stage dense bi-encoder + cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`). All latency is measured end-to-end from question arrival before routing, query rewriting, or retrieval.
+An end-to-end systems evaluation (**19,858 measured turns, 0 errors**) across **7 GPU experiments** (Enterprise CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K, a 4K→64K working-set crossover sweep, 4-replica L4 emulation, a **physical 4-node H100-80GB cluster** over private east-west networking, and **live mutating-state Delta KV + 64K Hierarchical Skeleton KV** on clock-locked H100-80GB) and **2 model architectures / 3 scales** (`Qwen3-30B-A3B-Instruct-2507-FP8` MoE on `A100-SXM4-80GB` and `H100-80GB`, dense `Qwen3-8B-FP8` on `L4-24GB` and `4× H100-80GB`, and `Qwen3-1.7B` on `L4-24GB`), comparing entity-routed working-set KV + adaptive RAG (`S-ROUTED`), log-structured Delta-Framed KV (`S-DELTA-KV`), and auto-crossover Hierarchical Summary-KV (`S-HYBRID-HIER-KV`) against monolithic 128K shared KV (`S-CTX`), stateless inline RAG (`S-RAG`), conversational RAG with an LLM query rewriter (`S-CONV-RAG`), and two-stage dense bi-encoder + cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`). All latency is measured end-to-end from question arrival before routing, query rewriting, or retrieval.
 
 ## Core Finding
 
@@ -13,6 +13,7 @@ Monolithic 128K prefix caching loses to inline RAG because decode attention scal
 - **Second Architecture — Dense `Qwen3-8B-FP8` (`n=8`, 1,350 turns, L4 + 20 GB CPU tier):** The serving win **doubles on a dense transformer** — **2.00–2.12×** throughput on FinanceBench and **1.98–2.06×** on LoCoMo (**−5.2 to −14.9 s** p95 `q→end`, 76–92% GPU prefix hit) — while surfacing an honest model-scale trade-off on FinanceBench (`45.3%` vs `52.7%`, `p = 0.0074`) and parity on LoCoMo (`47.7%`).
 - **4K→64K Working-Set Crossover Law (`n=8`, 1,632 turns, A100-80GB):** Sweeping entity dossier size from 4K to 64K against GPU-accelerated dense+reranker RAG identifies exact throughput crossover thresholds at **$L^*_{\text{RAG}} = 8.2\text{K}$** tokens (vs stateless `S-RAG`) and **$L^*_{\text{CONV}} = 13.2\text{K}$** tokens (vs `S-CONV-RAG`), while `S-ROUTED` holds **95.8–100.0% accuracy** across 4K–48K before hitting the active-KV concurrency wall at 64K.
 - **Physical 4-Node H100-80GB Cluster (`n=48`, 4,608 turns, `--clock-lock` 1590 MHz, private east-west mesh):** Running 4 physically separate `Qwen3-8B-FP8` H100 nodes (414.8K KV tokens/GPU = 1.66M total KV tokens, 48 ~8.2K entities, 100% accuracy, 0 errors), sticky routing beats Round-Robin by **2.15–2.32× throughput** (`6,400–6,918` vs `2,979` tpm) and **−42% to −45% p95 `q→end`** (`0.31 s` vs `1.74 s` follow-up TTFT) under Uniform traffic. Under extreme Zipf skew ($\alpha=1.5$), physical GPU contention exposes `STICKY-HASH`'s `2.42×` hot-spot (`[72, 348, 18, 138]`), and **`STICKY-BOUNDED` (`1.25×` cap) wins every metric** at **9,423.4 tpm (1.65× vs RR, +16.3% vs `STICKY-HASH`)**, **0.773 s p95 `q→end`**, **0.132 s follow-up p95 (2.26× faster than `STICKY-HASH`)**, and **93.8% GPU prefix hit** — with `STICKY-HOT-REP` achieving the tightest Zipf balance (`1.37×`) and cutting spillover `47.7% → 30.6%`.
+- **Mutating-State Delta KV & Breaking the 64K Capacity Wall (`n=16`, 1,312 turns, H100-80GB `--clock-lock`, `Qwen3-30B-A3B-FP8`):** Splitting each entity into an **immutable base prefix + append-only delta frames** (`playbox_steer.kv_delta`) eliminates cache invalidation on live writes — hitting **1,474.8 tpm (6.53× over in-place rewrite)**, **0.29 s** post-mutation p95 TTFT (**14.5× faster** than `4.25 s`), **93.4% GPU KV hit** (`100%` prefix preserved on writes vs `1.1%`), and **100.0% accuracy** vs `43.4%` for stateless live RAG. At **~60K tokens/entity**, auto-crossover **Hierarchical Skeleton KV + live deltas + entity cold-archive RAG** shatters the 64K capacity wall: **1,332.3 tpm (68.4× over Full-64K KV)**, **0.98 s p95 `q→end` (61.6× lower than `60.13 s`)**, **21.8× smaller KV footprint** (`2.6K` vs `56.1K` tok), and **100.0% accuracy** across live mutations and deep clauses (**+31.3 pp** over chunked RAG).
 
 ---
 
@@ -182,32 +183,63 @@ To test whether entity-routed KV locality scales across physically separate GPUs
 
 ---
 
-## 10. Drop-in OpenAI-Compatible Proxy (`playbox_steer.kv_routed_proxy`)
+## 10. Mutating-State Delta KV & Breaking the 64K Capacity Wall (1,312 turns, 0 errors)
 
-The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-compatible HTTP proxy in [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py) (`steer/tests/test_kv_routed_proxy.py` passing):
+Real production entities are neither static nor bounded under 13K tokens: editing one field in the middle of a cached dossier invalidates the entire prefix cache (`93% → 19%` GPU hit), while 64K entities collapse into queuing (`19.5` tpm, `60.1 s` p95). To solve both walls natively in `kv_routed_proxy.py`, we built [`playbox_steer.kv_delta`](../steer/playbox_steer/kv_delta.py) with two mechanisms and evaluated them on a clock-locked **NVIDIA H100-80GB** (`Qwen3-30B-A3B-Instruct-2507-FP8`, `409.6K` GPU KV tokens, `n=16`, **1,312 measured turns, 0 errors**):
 
-- Accepts standard `/v1/chat/completions` (`stream: false` and SSE `stream: true`) and forwards to one or multiple upstream vLLM / OpenAI-compatible replicas (`--upstreams` + `BoundedStickyRouter` with `STICKY-BOUNDED`, `STICKY-HASH`, or `RR` plus adaptive Zipf hot-entity replication across top-$k$ warm replicas).
-- Tracks per-session active entity via `X-Session-Id`, pins the entity dossier in a canonical `system` prefix for vLLM automatic prefix caching, and appends adaptive RAG chunks to the user turn only on entity drift or cross-entity fallback.
-- Returns routing telemetry headers (`X-Routed-Mode`, `X-Routed-Entity`, `X-Routed-Backend`, `X-Routed-Spilled`, `X-Routed-Hot`) and exposes `/health` and `/metrics`.
+1. **Log-Structured Delta-Framed Entity KV (`DeltaEntityStore`):** Splits each entity into a byte-identical **immutable base prefix** plus **append-only versioned `[DELTA vK]` frames** (`newest version wins`), paired with a **cost-aware compaction gate** (`stale_ratio` + delta-size threshold) that folds superseded frames back into the base only when amortized decode overhead exceeds one re-prefill.
+2. **Auto-Crossover Hierarchical Summary-KV (`AutoCrossoverRouter`):** Uses our measured Section 8 crossover law ($L^*_{\text{RAG}} \approx 8.2\text{K}$, $L^*_{\text{CONV}} \approx 13.2\text{K}$) to automatically route each entity into `FULL-KV` ($\le 13.2\text{K}$), `HIER-SUMMARY-KV` ($13.2\text{K}–48\text{K}$+: ~2.5K immutable entity skeleton + live delta frames in KV, with the deep cold archive indexed per-entity for on-demand clause RAG), or `CHUNKED-RAG`.
+
+![Mutating-State Delta KV and Breaking the 64K Capacity Wall](assets/kv-routed/10_delta_and_hier_kv.png)
+
+### Sub-Experiment A: Live Writes (~12K/entity, 3 mutations/session, 1,024 turns, `n=16`)
+
+| Arm | Throughput (`n=16`) | p95 `q→first` (post-write) | p95 `q→end` | GPU KV hit | Prefix kept on write | Compactions | Accuracy (Mutated) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `S-NAIVE-REWRITE` *(in-place edit)* | 225.9 tpm | 4.25 s (4.25 s) | 5.64 s | 19.3% | 1.1% | 0 | 99.2% (98.4%) |
+| `S-DELTA-COMPACT` *(eager compact on 1 stale)* | 523.9 tpm (2.32×) | 3.90 s (3.90 s) | 5.25 s | 68.8% | 67.0% | 32 | 98.8% (97.7%) |
+| **`S-DELTA-KV`** *(append-only delta frames)* | **1,474.8 tpm (6.53×)** | **1.50 s (0.29 s)** | **2.60 s** | **93.4%** | **100.0%** | 0 | **100.0% (100.0%)** |
+| `S-RAG-LIVE` *(stateless live-indexed RAG)* | 1,668.1 tpm | 0.71 s (0.74 s) | 0.95 s | 57.7% | 100.0% | 0 | 43.4% (57.0%) |
+
+### Sub-Experiment B: Breaking the 64K KV Wall (~56K–60K/entity, live writes + deep clauses, 288 turns, `n=16`)
+
+| Arm | Throughput (`n=16`) | p95 `q→first` (post-write) | p95 `q→end` | Mean KV prefix | GPU KV hit | Accuracy (Mutated / Deep Clause) |
+|---|---:|---:|---:|---:|---:|---:|
+| `S-FULL-64K-KV` *(full 60K dossier)* | 19.5 tpm | 56.21 s (53.64 s) | 60.13 s | 56,110 tok | 16.8% | 97.9% (100.0% / 100.0%) |
+| `S-RAG-64K` *(chunked RAG, live index)* | 1,721.0 tpm | 0.56 s (0.55 s) | 0.81 s | 32 tok | 68.0% | 68.8% (56.3% / 93.8%) |
+| **`S-HYBRID-HIER-KV`** *(skeleton + delta + archive RAG)* | **1,332.3 tpm (68.4×)** | **0.69 s (0.65 s)** | **0.98 s (61.6×↓)** | **2,576 tok (21.8×↓)** | **73.1%** | **100.0% (100.0% / 100.0%)** |
+
+- **Zero-invalidation live writes (`6.53×` tpm, `14.5×` lower write TTFT):** Editing fields near the top of a 12K dossier drops `S-NAIVE-REWRITE`'s GPU prefix hit to `19.3%` and spikes post-write TTFT to `4.25 s`. Appending `[DELTA vK]` frames keeps **`100.0%`** of the base prefix untouched (**`93.4%` GPU KV hit**, **`0.29 s`** post-write p95 TTFT, **`100.0%`** accuracy on overwritten values) — while `S-DELTA-COMPACT` (`32` live compactions on stale overwrite #1) shows on this 12K / 3-write workload why compaction should be **lazy/cost-gated** (`68.8%` hit, `523.9` tpm) rather than eager (longer multi-hour write streams remain untested here).
+- **Shattering the 64K capacity wall (`68.4×` tpm, `61.6×` lower p95, `100%` accuracy):** Pinning a `2.6K`-token structured entity skeleton + append-only delta frames in KV and querying the cold 54K archive only when needed runs at **1,332.3 tpm / 0.98 s p95** (`68.4×` faster than `S-FULL-64K-KV`) while beating chunked `S-RAG-64K` by **+31.3 pp overall** and **+43.8 pp on mutated facts** (`100%` vs `56.3%`, with `100%` deep-clause recall).
 
 ---
 
-## 11. Scope & Methodology Disclosures
+## 11. Drop-in OpenAI-Compatible Proxy (`playbox_steer.kv_routed_proxy`)
 
-1. **Scope boundaries:** This release covers entity-scoped multi-turn workloads from 3.8K to 64K working sets across two architectures / three scales (`Qwen3-30B-A3B-FP8` MoE on A100, dense `Qwen3-8B-FP8` on L4 and a physical 4-node H100-80GB cluster, and `Qwen3-1.7B` on L4). Sliding-window MoEs, >4-node clusters with disaggregated prefill/decode KV transfer (NIXL/Mooncake), and open-domain search without entity locality remain outside scope.
-2. **Hardware & model-scale differences:** Sections 1–6 and 8 ran on NVIDIA A100-SXM4-80GB (`Qwen3-30B-A3B-FP8`); Section 7 (`Qwen3-8B-FP8`) ran on NVIDIA L4-24GB; Section 9 ran on **4 physically separate NVIDIA H100-80GB nodes** (`--clock-lock`, 1590 MHz, private east-west mesh, `Qwen3-8B-FP8`, 4,608 turns) alongside a single-L4 4-process `Qwen3-1.7B` contrast run (1,728 turns). Throughput ratios are compared within each hardware/model cell rather than across GPUs. On FinanceBench, the smaller 8B dense model benefited from cross-encoder pre-filtering (`52.7%` vs `45.3%`), whereas `Qwen3-30B-A3B` reached parity (`56.0%`).
-3. **CPU KV offload backend:** Multi-tenant eviction, SOTA, crossover, and L4 multi-replica runs used vLLM's native `OffloadingConnector` (`24 GiB` CPU tier on A100, `20 GiB` on L4, `4 GiB × 4` for L4 emulation) because PyPI's prebuilt `lmcache` wheel hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so`). On the physical 4× H100-80GB cluster, each GPU holds `56.96 GiB` (`414,784` KV tokens) natively in HBM.
-4. **CRM baseline parity:** Sections 1–3 keep CRM `S-RAG` stateless to mirror the `a100-inline-4608` baseline; conversational RAG (`S-CONV-RAG`) and dense+cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`) are evaluated in Sections 5–8.
+The entity router, log-structured delta store, auto-crossover tier router, and multi-replica bounded-sticky load balancer are productized in [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py) + [`steer/playbox_steer/kv_delta.py`](../steer/playbox_steer/kv_delta.py) (**23/23 unit + mock-server tests passing**):
+
+- Accepts standard `/v1/chat/completions` (`stream: false` and SSE `stream: true`) and forwards to one or multiple upstream vLLM / OpenAI-compatible replicas (`--upstreams` + `BoundedStickyRouter` with `STICKY-BOUNDED`, `STICKY-HASH`, or `RR` plus adaptive Zipf hot-entity replication across top-$k$ warm replicas).
+- Supports **zero-invalidation live entity updates** via `POST /v1/entities/{entity_id}/mutate` (appending versioned delta frames with cost-aware compaction) and **`--auto-crossover`**, automatically selecting `FULL-KV` ($\le 13.2\text{K}$), `HIER-SUMMARY-KV` ($>13.2\text{K}$ skeleton + delta + per-entity cold-archive RAG), or `CHUNKED-RAG` per entity.
+- Returns full routing & delta telemetry headers (`X-Routed-Mode`, `X-Routed-Entity`, `X-Routed-Tier`, `X-Delta-Version`, `X-Routed-Backend`, `X-Routed-Spilled`, `X-Routed-Hot`) and exposes `/health` and `/metrics`.
+
+---
+
+## 12. Scope & Methodology Disclosures
+
+1. **Scope boundaries:** This release covers entity-scoped multi-turn workloads from 3.8K to 64K working sets (static and live-mutating) across two architectures / three scales (`Qwen3-30B-A3B-FP8` MoE on A100 and H100, dense `Qwen3-8B-FP8` on L4 and a physical 4-node H100-80GB cluster, and `Qwen3-1.7B` on L4). Sliding-window MoEs, >4-node clusters with disaggregated prefill/decode KV transfer (NIXL/Mooncake), and open-domain search without entity locality remain outside scope.
+2. **Hardware & model-scale differences:** Sections 1–6 and 8 ran on NVIDIA A100-SXM4-80GB (`Qwen3-30B-A3B-FP8`); Section 7 (`Qwen3-8B-FP8`) ran on NVIDIA L4-24GB; Section 9 ran on **4 physically separate NVIDIA H100-80GB nodes** (`--clock-lock`, 1590 MHz, private east-west mesh, `Qwen3-8B-FP8`, 4,608 turns) alongside a single-L4 4-process `Qwen3-1.7B` contrast run (1,728 turns); Section 10 ran on a clock-locked **NVIDIA H100-80GB** (`Qwen3-30B-A3B-FP8`, 1,312 turns). Throughput ratios are compared within each hardware/model cell rather than across GPUs. On FinanceBench, the smaller 8B dense model benefited from cross-encoder pre-filtering (`52.7%` vs `45.3%`), whereas `Qwen3-30B-A3B` reached parity (`56.0%`).
+3. **CPU KV offload backend:** Multi-tenant eviction, SOTA, crossover, and L4 multi-replica runs used vLLM's native `OffloadingConnector` (`24 GiB` CPU tier on A100, `20 GiB` on L4, `4 GiB × 4` for L4 emulation) because PyPI's prebuilt `lmcache` wheel hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so`). On the H100-80GB runs (Sections 9–10), KV blocks sit natively in HBM (`414.8K` / `409.6K` KV tokens/GPU).
+4. **CRM & live-RAG baseline parity:** Sections 1–3 keep CRM `S-RAG` stateless to mirror the `a100-inline-4608` baseline; conversational RAG (`S-CONV-RAG`) and dense+cross-encoder reranker RAG (`bge-small-en-v1.5` + `bge-reranker-v2-m3`) are evaluated in Sections 5–8. In Section 10, `S-RAG-LIVE` / `S-RAG-64K` use BM25 over live-updated chunks (re-indexed on every mutation) without an LLM query rewriter; Section 10's accuracy evaluator normalizes `$` and thousands commas identically across all arms.
 
 ---
 
 ## Reproducing
 
-Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tools/kv_crossover_run.py`](../steer/tools/kv_crossover_run.py), [`steer/tools/kv_multinode_run.py`](../steer/tools/kv_multinode_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py), [`steer/tests/test_kv_routed_proxy.py`](../steer/tests/test_kv_routed_proxy.py), [`steer/tests/test_kv_multinode.py`](../steer/tests/test_kv_multinode.py).
+Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_delta.py`](../steer/playbox_steer/kv_delta.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tools/kv_crossover_run.py`](../steer/tools/kv_crossover_run.py), [`steer/tools/kv_multinode_run.py`](../steer/tools/kv_multinode_run.py), [`steer/tools/kv_delta_run.py`](../steer/tools/kv_delta_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py), [`steer/tests/test_kv_routed_proxy.py`](../steer/tests/test_kv_routed_proxy.py), [`steer/tests/test_kv_multinode.py`](../steer/tests/test_kv_multinode.py), [`steer/tests/test_kv_delta.py`](../steer/tests/test_kv_delta.py).
 
 ```bash
-# Local unit + mock-server tests (19/19)
-PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py steer/tests/test_kv_routed_proxy.py steer/tests/test_kv_multinode.py -q
+# Local unit + mock-server tests (23/23)
+PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py steer/tests/test_kv_routed_proxy.py steer/tests/test_kv_multinode.py steer/tests/test_kv_delta.py -q
 
 # Clean 3-arm run
 PYTHONPATH=steer python3 steer/tools/kv_routed_run.py \
