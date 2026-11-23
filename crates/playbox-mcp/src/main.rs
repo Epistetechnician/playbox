@@ -10,5 +10,6 @@ async fn main() -> anyhow::Result<()> {
         server.log_path().display()
     );
     server.join_from_env().await;
+    server.resume_from_store().await;
     server.serve_stdio().await
 }

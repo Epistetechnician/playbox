@@ -33,11 +33,13 @@ pub const SVC_AUTHORIZATION: &str = "Authorization";
 pub fn is_public(method: &str) -> bool {
     matches!(
         method,
-        METHOD_AGENT_CARD | METHOD_ATTESTATION | METHOD_ACTIVATE
+        METHOD_AGENT_CARD | METHOD_ATTESTATION | METHOD_ACTIVATE | METHOD_JOIN_CHALLENGE
     )
 }
 
 pub const METHOD_JOIN: &str = "playbox.Join";
+/// `{}` returns `{ "nonce": "<32 hex chars>", "required": bool, "min_guest_tier": "T1"|null }`. No auth.
+pub const METHOD_JOIN_CHALLENGE: &str = "playbox.JoinChallenge";
 pub const METHOD_AGENT_CARD: &str = "playbox.GetAgentCard";
 /// `{ "nonce": "<hex, up to 64 chars>" }` returns `{ "statement": "<signed attestation text>" }`. No auth.
 pub const METHOD_ATTESTATION: &str = "playbox.GetAttestation";
@@ -47,6 +49,14 @@ pub const METHOD_ACTIVATE: &str = "playbox.ActivateCredential";
 /// `{}` returns `{ "root": hex, "entries": [...], "certs": [...] }`: the room's signed log (host-less rooms), for a
 /// member to check from the room key and read the host set from. Needs membership.
 pub const METHOD_HOSTS: &str = "playbox.GetHosts";
+/// `{}` returns a host-signed [`crate::SignedManifest`]. Needs membership.
+pub const METHOD_MANIFEST: &str = "playbox.GetManifest";
+/// `{ "handle": "@alex-claude" }` binds a unique handle to the caller's EndpointId. Needs membership.
+pub const METHOD_REGISTER_HANDLE: &str = "playbox.RegisterHandle";
+/// `{ "only_mentions": bool, "wait_ms": u64, "limit": u64 }` returns unread items after caller's cursor.
+pub const METHOD_INBOX: &str = "playbox.Inbox";
+/// `{ "seq": u64 }` advances the caller's durable unread cursor.
+pub const METHOD_ACK: &str = "playbox.Ack";
 /// JSON-RPC error code for a missing, invalid, expired or revoked grant (A2A defines none for this).
 pub const ERR_UNAUTHORIZED: i32 = -32040;
 pub const BINDING: &str = "PLAYBOX-IROH";

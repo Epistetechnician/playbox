@@ -13,7 +13,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Epistetechnician/playbox/main/install.sh | sh -s -- --join 'playbox://...' --name 'Room name'
 #
-# Options: --join LINK, --name NAME, --hub (install and start the hub without an invite), --no-start (install, don't launch).
+# Options: --join LINK, --name NAME, --hub (install and start the hub without an invite), --no-start (install, don't launch),
+#          --agent-join LINK [--as @handle] [--watch] [--harness auto|claude|codex|hermes|opencode] [--min-host-tier t0..t3] [--only-mentions].
 # Environment: PLAYBOX_HUB_DIR (default ~/.local/share/playbox-hub).
 set -eu
 
@@ -101,16 +102,24 @@ PY
 }
 
 join="${PLAYBOX_JOIN_LINK:-}" name="${PLAYBOX_JOIN_NAME:-}" want_hub=0 start=1
+agent_join="${PLAYBOX_AGENT_JOIN_LINK:-}" agent_as="" agent_watch=0 agent_harness="" agent_min_tier="" agent_only_mentions=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --join) [ $# -ge 2 ] || die "--join needs the playbox:// link"; join="$2"; want_hub=1; shift 2 ;;
     --name) [ $# -ge 2 ] || die "--name needs a value"; name="$2"; shift 2 ;;
     --hub) want_hub=1; shift ;;
     --no-start) start=0; shift ;;
+    --agent-join) [ $# -ge 2 ] || die "--agent-join needs a playbox:// link"; agent_join="$2"; shift 2 ;;
+    --as) [ $# -ge 2 ] || die "--as needs a @handle"; agent_as="$2"; shift 2 ;;
+    --watch) agent_watch=1; shift ;;
+    --harness) [ $# -ge 2 ] || die "--harness needs a preset name"; agent_harness="$2"; shift 2 ;;
+    --min-host-tier) [ $# -ge 2 ] || die "--min-host-tier needs t0..t3"; agent_min_tier="$2"; shift 2 ;;
+    --only-mentions) agent_only_mentions=1; shift ;;
     *) die "unknown option $1" ;;
   esac
 done
 if [ -n "$join" ]; then case "$join" in playbox://*|https://*/i/*|http://*/i/*) ;; *) die "that doesn't look like a Playbox invite (a playbox:// link or an invite page address)" ;; esac; fi
+if [ -n "$agent_join" ]; then case "$agent_join" in playbox://*) ;; *) die "--agent-join expects a playbox:// link" ;; esac; fi
 
 have curl || die "curl is required"
 have tar || die "tar is required"
@@ -182,6 +191,22 @@ if [ "${PLAYBOX_NO_SETUP:-}" = 1 ]; then
   say "skipped agent setup; run: $dest/playbox setup"
 else
   "$dest/playbox" setup
+fi
+
+if [ -n "$agent_join" ] && [ "$start" = 1 ]; then
+  say ""
+  say "checking local posture and joining the room..."
+  "$dest/playbox" secure --fix >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+  set -- join --yes "$agent_join"
+  [ -n "$agent_as" ] && set -- "$@" --as "$agent_as"
+  [ -n "$agent_min_tier" ] && set -- "$@" --min-host-tier "$agent_min_tier"
+  if [ "$agent_watch" = 1 ]; then
+    set -- "$@" --watch
+    [ -n "$agent_harness" ] && set -- "$@" --harness "$agent_harness"
+    [ "$agent_only_mentions" = 1 ] && set -- "$@" --only-mentions
+  fi
+  exec "$dest/playbox" "$@"
 fi
 
 # 3. The hub: the dashboard, passkeys and the invite pages. Same checksum list as the binary.

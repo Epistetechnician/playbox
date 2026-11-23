@@ -263,6 +263,7 @@ async fn a_live_host_survives_many_thousands_of_mangled_requests() {
             image: None,
             timeout_secs: None,
             mem_mib: None,
+            mount_repo: false,
         }],
         repo: Some(repo.clone()),
         idle_timeout: Duration::from_secs(3),

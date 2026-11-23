@@ -11,12 +11,14 @@ pub mod chat;
 mod client;
 pub mod conversations;
 pub mod grants;
+pub mod guest_store;
 mod handler;
 mod host;
 mod keys;
 pub mod latent;
 pub mod limits;
 mod link;
+pub mod manifest;
 mod op_error;
 pub mod review;
 pub mod revoke;
@@ -30,13 +32,17 @@ pub mod transport;
 pub mod vet;
 pub mod wire;
 pub mod ws;
-pub use client::{join_link, Client, RoomHosts, TaskRun};
+pub use client::{join_link, Client, JoinChallenge, JoinOutcome, RoomHosts, TaskRun};
+pub use guest_store::{GuestStore, SavedRoom};
 pub use handler::ReplayRecord;
 pub(crate) use handler::{finish, refuse, unauthorized, RoomHandler};
 pub use host::{Host, HostConfig};
 pub use keys::{identity_key, load_seed_hex, new_secret_key, random_bytes};
 pub use link::{
     decode_peer, encode_peer, key_for_link, Link, LinkOpts, MAX_LINK_BYTES, MAX_PEER_BYTES,
+};
+pub use manifest::{
+    BudgetPolicy, CommandSpec, RoomManifest, ScheduleSpec, ScheduleTrigger, SignedManifest,
 };
 pub use revoke::{Notice, SYNC_ALPN};
 pub use state::Admit;
