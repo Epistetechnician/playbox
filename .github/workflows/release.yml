@@ -108,7 +108,12 @@ jobs:
         run: |
           # A tag like v0.3.0-rc.1 is a pre-release: `playbox update` and install.sh follow "latest", which skips it.
           case "${{ github.ref_name }}" in *-*) pre=--prerelease ;; *) pre= ;; esac
-          gh release create "${{ github.ref_name }}" dist/* --notes-file notes.md $pre
+          # A release made by hand for this tag (e.g. with evidence files) keeps its notes and assets; the signed build is added to it.
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" dist/* --clobber
+          else
+            gh release create "${{ github.ref_name }}" dist/* --notes-file notes.md $pre
+          fi
   homebrew:
     # Update the Homebrew tap (Epistetechnician/homebrew-playbox) with the formula for this release. Skipped for pre-releases, and when the
     # TAP_DEPLOY_KEY secret (an SSH deploy key with write access to the tap repository only) is not set.
