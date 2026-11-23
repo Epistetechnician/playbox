@@ -185,8 +185,66 @@ def make_evict192_cpu() -> None:
     plt.close(fig)
 
 
+def make_sota_generalization() -> None:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4))
+
+    datasets = ["FinanceBench\n(150 Qs · 32 cos · ~5.9K)", "LoCoMo\n(300 Qs · 10 convs · ~18.1K)"]
+    x = np.arange(len(datasets))
+    w = 0.25
+
+    acc_rag = [42.7, 49.3]
+    acc_conv = [44.0, 49.0]
+    acc_routed = [64.7, 57.7]
+
+    b1 = ax1.bar(x - w, acc_rag, w, label="S-RAG (Stateless BM25)", color=C_RAG)
+    b2 = ax1.bar(x, acc_conv, w, label="S-CONV-RAG (+ LLM Rewriter)", color=C_CPU)
+    b3 = ax1.bar(x + w, acc_routed, w, label="S-ROUTED (Entity KV + Fallback)", color=C_ROUTED)
+    for bars in (b1, b2, b3):
+        for bar in bars:
+            h = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width() / 2, h + 1.2, f"{h:.1f}%", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    ax1.annotate("+22.0 pp vs RAG\n(p = 1.03e-7)", xy=(0 + w, 64.7), xytext=(-0.18, 72), fontsize=8.5, fontweight="bold", color="#1D6F63")
+    ax1.annotate("+8.7 pp vs Conv-RAG\n(p = 5.35e-4)", xy=(1 + w, 57.7), xytext=(0.76, 65), fontsize=8.5, fontweight="bold", color="#1D6F63")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(datasets, fontsize=9.5)
+    ax1.set_ylabel("Accuracy (%)", fontsize=10)
+    ax1.set_ylim(0, 102)
+    ax1.set_title("Accuracy: Routed KV vs RAG & Conversational RAG", fontsize=11, fontweight="bold")
+    ax1.legend(frameon=False, fontsize=8, loc="upper right")
+
+    tpm_rag = [124.7, 205.9]
+    tpm_conv = [103.2, 178.0]
+    tpm_routed = [147.6, 231.9]
+
+    b1 = ax2.bar(x - w, tpm_rag, w, label="S-RAG", color=C_RAG)
+    b2 = ax2.bar(x, tpm_conv, w, label="S-CONV-RAG (+ LLM Rewriter)", color=C_CPU)
+    b3 = ax2.bar(x + w, tpm_routed, w, label="S-ROUTED", color=C_ROUTED)
+    for bars in (b1, b2, b3):
+        for bar in bars:
+            h = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width() / 2, h + 4, f"{h:.0f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    ax2.annotate("1.43× vs Conv-RAG\n0.45s follow-up p95", xy=(0 + w, 147.6), xytext=(-0.22, 195), fontsize=8.5, fontweight="bold", color="#1D6F63")
+    ax2.annotate("1.30× vs Conv-RAG\n(even at 18.1K toks!)", xy=(1 + w, 231.9), xytext=(0.62, 260), fontsize=8.5, fontweight="bold", color="#1D6F63")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(datasets, fontsize=9.5)
+    ax2.set_ylabel("Throughput (turns / min, n=8)", fontsize=10)
+    ax2.set_ylim(0, 305)
+    ax2.set_title("End-to-End Throughput (n=8, A100-40GB + 24 GB CPU Tier)", fontsize=11, fontweight="bold")
+
+    fig.suptitle(
+        "Cross-Dataset Generalization: FinanceBench & LoCoMo (Qwen3-30B-A3B-FP8 · 1,350 Turns · 0 Errors)",
+        fontsize=11.5,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "04_sota_generalization.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     make_clean_3arm()
     make_noisy_routing()
     make_evict192_cpu()
-    print(f"Wrote 3 charts to {OUT_DIR}")
+    make_sota_generalization()
+    print(f"Wrote 4 charts to {OUT_DIR}")

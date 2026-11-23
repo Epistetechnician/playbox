@@ -65,19 +65,39 @@ Expands the 32 sessions across 6 isolated tenant namespaces (`--tenant-scale 6` 
 
 ## Limitations & Disclosures
 
-1. **CPU offload backend:** Stress Test 2 used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB`) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
-2. **Corpus scope:** Evaluated on a single-model (`Qwen3-30B-A3B-Instruct-2507-FP8`), single-GPU (`A100-80GB`) enterprise CRM benchmark where each account dossier fits in ~3.8K tokens. Workloads with 50K+ tokens per entity or open-domain multi-hop search without session entity locality will behave differently.
-3. **Stateless vs conversational RAG:** `S-RAG` mirrors the baseline inline retriever (queries sent verbatim without a query-rewriting LLM call). Adding an LLM query rewriter would recover `S-RAG`'s accuracy on pronoun follow-ups at the cost of an extra inference round-trip per turn.
+1. **CPU offload backend:** Stress Test 2 and the SOTA runs used vLLM's built-in `OffloadingConnector` (`cpu_bytes_to_use = 24 GiB`) because the prebuilt `lmcache` wheel on PyPI hit a PyTorch C++ ABI mismatch on Colab Python 3.13 (`lmcache/c_ops.so` undefined symbol). Both offload KV blocks to host RAM over PCIe.
+2. **Corpus & model scope:** All 7,878 measured turns ran on `Qwen3-30B-A3B-Instruct-2507-FP8` (3B active MoE) across 3 distinct datasets (CRM ~3.8K, FinanceBench ~5.9K, LoCoMo ~18.1K). Dense models, sliding-window MoEs, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside this release.
+3. **Stateless vs conversational RAG:** On CRM, `S-RAG` mirrors the baseline stateless inline retriever. Section 5 explicitly adds **`S-CONV-RAG`** (with an LLM query rewriter) on FinanceBench and LoCoMo; `S-ROUTED` still beat `S-CONV-RAG` on both accuracy (`+20.7 pp` / `+8.7 pp`) and throughput (`1.43×` / `1.30×`).
+
+---
+
+## 5. Cross-Dataset Generalization: FinanceBench & LoCoMo vs Conversational RAG (1,350 turns, 0 errors)
+
+To test whether entity-routed KV generalizes beyond CRM and beats **conversational RAG with an LLM query rewriter** (`S-CONV-RAG`), we evaluated `Qwen3-30B-A3B-Instruct-2507-FP8` on two public SOTA benchmarks (`n=8`, A100-SXM4-40GB + 24 GB vLLM `OffloadingConnector`, `0` errors):
+
+![Cross-dataset generalization](assets/kv-routed/04_sota_generalization.png)
+
+| Benchmark | Arm | Throughput (`n=8`) | p95 `q→first` (follow-ups) | p95 `q→end` | Prompt toks | Token F1 | Accuracy | Exact McNemar vs `S-ROUTED` |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| **FinanceBench** *(all 150 Qs · 32 companies)* | `S-RAG` (BM25 top-5) | 124.7 tpm | 0.97 s (0.89 s) | 6.37 s | 5,166 | 47.1% | 42.7% | `a=4, b=37`, **`p = 1.03e-7`** |
+| | `S-CONV-RAG` *(+ LLM rewriter, 1.08 s)* | 103.2 tpm | 2.37 s (2.37 s) | 8.96 s | 5,181 | 48.6% | 44.0% | `a=5, b=36`, **`p = 7.84e-7`** |
+| | **`S-ROUTED`** *(~5.9K company KV + fallback)* | **147.6 tpm (1.43×)** | **0.82 s (0.45 s)** | **6.54 s** | **5,895** | **71.0%** | **64.7%** | *(124 entity, 9 carry, 17 fallback)* |
+| **LoCoMo** *(300 Qs · 10 multi-session convs)* | `S-RAG` (BM25 top-5) | 205.9 tpm | 0.73 s (0.65 s) | 4.49 s | 3,742 | 45.4% | 49.3% | `a=13, b=38`, **`p = 6.21e-4`** |
+| | `S-CONV-RAG` *(+ LLM rewriter, 0.59 s)* | 178.0 tpm | 1.62 s (1.62 s) | 4.66 s | 3,746 | 45.3% | 49.0% | `a=14, b=40`, **`p = 5.35e-4`** |
+| | **`S-ROUTED`** *(~18.1K conv KV + fallback)* | **231.9 tpm (1.30×)** | **2.29 s (0.76 s)** | **4.68 s** | **18,136** | **51.4%** | **57.7%** | *(252 entity, 33 carry, 15 fallback)* |
+
+- **FinanceBench (`+22.0 pp` vs `S-RAG`, `+20.7 pp` vs `S-CONV-RAG`):** The biggest leap is on `metrics-generated` multi-table calculations (`14.0%` / `16.0%` → **`76.0%`**), where top-5 retrieval drops needed financial lines while pinning the company's ~5.9K dossier preserves full recall at **0.45 s** follow-up p95 (**5.3×** faster than `S-CONV-RAG`).
+- **LoCoMo (`+8.3 pp` vs `S-RAG`, `+8.7 pp` vs `S-CONV-RAG`):** Even at **18.1K tokens** per conversation (~4.8× longer prompts than RAG), `S-ROUTED` still beat both RAG baselines on throughput (**1.13×** vs `S-RAG`, **1.30×** vs `S-CONV-RAG`) while jumping **+15.9–18.3 pp** on temporal reasoning (Cat 2: `56.1%` / `53.7%` → **`72.0%`**) and **+8.5–10.9 pp** on multi-hop (Cat 1: `37.8%` / `35.4%` → **`46.3%`**).
 
 ---
 
 ## Reproducing
 
-Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py).
+Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py).
 
 ```bash
-# Local unit + mock-server tests (7/7)
-PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py -q
+# Local unit + mock-server tests (9/9)
+PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py -q
 
 # Clean 3-arm run
 PYTHONPATH=steer python3 steer/tools/kv_routed_run.py \
