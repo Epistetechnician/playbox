@@ -299,8 +299,9 @@ async fn tampered_or_replayed_guest_attestation_fails_without_spending_invite() 
     assert!(format!("{err:#}").contains("not spent"));
 
     // 2. Statement signed for a wrong nonce -> fails without spending invite (and consumes the challenge).
-    let _ch = guest.join_challenge().await.unwrap();
-    let wrong_nonce_stmt = guest.sign_guest_attestation("deadbeef", None).unwrap();
+    let ch = guest.join_challenge().await.unwrap();
+    let wrong_nonce = format!("mismatch-{}", ch.nonce);
+    let wrong_nonce_stmt = guest.sign_guest_attestation(&wrong_nonce, None).unwrap();
     let err = guest
         .call(
             wire::METHOD_JOIN,
