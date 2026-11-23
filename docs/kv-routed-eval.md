@@ -184,9 +184,9 @@ To test whether entity-routed KV locality survives behind a multi-replica load b
 
 The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-compatible HTTP proxy in [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py) (`steer/tests/test_kv_routed_proxy.py` passing):
 
-- Accepts standard `/v1/chat/completions` (`stream: false` and SSE `stream: true`) and forwards to any upstream vLLM / OpenAI-compatible endpoint.
+- Accepts standard `/v1/chat/completions` (`stream: false` and SSE `stream: true`) and forwards to one or multiple upstream vLLM / OpenAI-compatible replicas (`--upstreams` + `BoundedStickyRouter` with `STICKY-BOUNDED`, `STICKY-HASH`, or `RR` plus adaptive Zipf hot-entity replication across top-$k$ warm replicas).
 - Tracks per-session active entity via `X-Session-Id`, pins the entity dossier in a canonical `system` prefix for vLLM automatic prefix caching, and appends adaptive RAG chunks to the user turn only on entity drift or cross-entity fallback.
-- Returns routing telemetry headers (`X-KV-Route-Mode`, `X-KV-Entity`, `X-KV-Fallback`) and exposes `/health` and `/metrics`.
+- Returns routing telemetry headers (`X-Routed-Mode`, `X-Routed-Entity`, `X-Routed-Backend`, `X-Routed-Spilled`, `X-Routed-Hot`) and exposes `/health` and `/metrics`.
 
 ---
 
@@ -204,7 +204,7 @@ The entity router + adaptive RAG fallback is productized as a drop-in OpenAI-com
 Code & tests: [`steer/playbox_steer/kv_routed.py`](../steer/playbox_steer/kv_routed.py), [`steer/playbox_steer/kv_sota_bench.py`](../steer/playbox_steer/kv_sota_bench.py), [`steer/playbox_steer/kv_routed_proxy.py`](../steer/playbox_steer/kv_routed_proxy.py), [`steer/tools/kv_routed_run.py`](../steer/tools/kv_routed_run.py), [`steer/tools/kv_sota_run.py`](../steer/tools/kv_sota_run.py), [`steer/tools/kv_crossover_run.py`](../steer/tools/kv_crossover_run.py), [`steer/tools/kv_multinode_run.py`](../steer/tools/kv_multinode_run.py), [`steer/tests/test_kv_routed.py`](../steer/tests/test_kv_routed.py), [`steer/tests/test_kv_sota.py`](../steer/tests/test_kv_sota.py), [`steer/tests/test_kv_routed_proxy.py`](../steer/tests/test_kv_routed_proxy.py), [`steer/tests/test_kv_multinode.py`](../steer/tests/test_kv_multinode.py).
 
 ```bash
-# Local unit + mock-server tests (16/16)
+# Local unit + mock-server tests (18/18)
 PYTHONPATH=steer pytest --noconftest steer/tests/test_kv_routed.py steer/tests/test_kv_sota.py steer/tests/test_kv_routed_proxy.py steer/tests/test_kv_multinode.py -q
 
 # Clean 3-arm run
