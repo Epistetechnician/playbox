@@ -470,8 +470,8 @@ def main() -> None:
             })
         rows = results["learned_resampler_kv_adapter"]
         n = len(rows)
-        orig_slots = sum(c.num_tokens for c in verified_clusters)
-        comp_slots = sum(c.num_tokens for c in verified_resampler_clusters)
+        orig_slots = sum(c.slot_count for c in verified_clusters)
+        comp_slots = sum(c.slot_count for c in verified_resampler_clusters)
         summary = {
             "schema": "playbox.parametric_atlaskv_resampler_sweep.v1",
             "model_id": args.model,

@@ -1,0 +1,58 @@
+{
+  "schema": "playbox.parametric_atlaskv_resampler_scaling.v1",
+  "date": "2026-11-24",
+  "model_id": "Qwen/Qwen3-1.7B-Base",
+  "device": "mps",
+  "train_corpus": "scaled (80 strictly disjoint non-Django modules across 20 Python repos, 160 QA pairs, 2 quarantined poison triples dropped pre-encode)",
+  "eval_holdout": "20 Django QA queries + 3 quarantined poison triples (zero file/entity overlap asserted)",
+  "architecture": "TrainedKVProjectionAdapter(rank=32) + salience-gated Perceiver cross-attention resampler (resamp_tok_gate, init pos_sharp=8.0, temp_min=0.02)",
+  "baseline_comparisons": {
+    "full_context_text": {"exact_recall": 9, "queries": 20, "rate": 0.45, "online_tokens": 4407.9, "median_prefill_ms": 4038.5},
+    "hikvp_text_brief": {"exact_recall": 6, "queries": 20, "rate": 0.30, "online_tokens": 313.1, "poison_leaks": 0},
+    "naive_avg_pool_s32": {"exact_recall": 1, "queries": 20, "rate": 0.05, "kv_slots": 608, "kv_compression_x": 7.21, "poison_leaks": 0},
+    "prior_resampler_s16_48qa": {"exact_recall": 7, "queries": 20, "rate": 0.35, "kv_compression_x": 12.0, "median_prefill_ms": 47.7, "poison_leaks": 0},
+    "unpooled_trained_mps_fp16": {"exact_recall": 16, "queries": 20, "rate": 0.80, "kv_slots": 4384, "kv_compression_x": 1.0, "median_prefill_ms": 57.42, "poison_leaks": 0}
+  },
+  "runs": [
+    {
+      "slots_per_cluster": 32,
+      "train_examples": 160,
+      "epochs": 15,
+      "loss_first": 8.7069,
+      "loss_last": 0.3473,
+      "train_wall_s": 587.97,
+      "orig_total_kv_slots": 4384,
+      "compressed_total_kv_slots": 652,
+      "kv_slot_compression_x": 6.72,
+      "exact_recall": 15,
+      "queries": 20,
+      "exact_recall_rate": 0.75,
+      "exact_line_number_recall": "4/4 (100%)",
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 23.9,
+      "median_prefill_ms": 42.18,
+      "prefill_speedup_vs_full_x": 95.74,
+      "pq_verified": true
+    },
+    {
+      "slots_per_cluster": 64,
+      "train_examples": 160,
+      "epochs": 15,
+      "loss_first": 11.558,
+      "loss_last": 0.3199,
+      "train_wall_s": 663.43,
+      "orig_total_kv_slots": 4384,
+      "compressed_total_kv_slots": 1228,
+      "kv_slot_compression_x": 3.57,
+      "exact_recall": 15,
+      "queries": 20,
+      "exact_recall_rate": 0.75,
+      "exact_line_number_recall": "4/4 (100%)",
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 23.9,
+      "median_prefill_ms": 37.38,
+      "prefill_speedup_vs_full_x": 108.04,
+      "pq_verified": true
+    }
+  ]
+}
