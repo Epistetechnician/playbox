@@ -18,6 +18,7 @@ pub mod egress;
 pub mod guestnames;
 #[cfg(target_os = "linux")]
 pub mod jail;
+pub mod maverick;
 pub mod netpolicy;
 #[cfg(target_os = "linux")]
 pub mod seccomp;

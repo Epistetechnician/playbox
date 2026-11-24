@@ -34,6 +34,7 @@ n0-future = "0.3"
 [dev-dependencies]
 iroh = { version = "1.4", features = ["test-utils"] }
 iroh-relay = { version = "1.4", features = ["test-utils", "server"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
 [lints]
 workspace = true

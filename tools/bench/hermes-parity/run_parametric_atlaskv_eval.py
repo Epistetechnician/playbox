@@ -37,10 +37,12 @@ from playbox_atlas.parametric import (  # noqa: E402
 from playbox_router import load_or_create_signing_key  # noqa: E402
 
 
-def build_disjoint_adapter_training_corpus() -> tuple[list[Triple], list[dict]]:
-    """Strictly disjoint non-Django training KB (pytest/flask/sympy/playbox/httpx/pydantic) + 2 quarantined poison triples.
+def build_disjoint_adapter_training_corpus(corpus_mode: str = "base") -> tuple[list[Triple], list[dict]]:
+    """Strictly disjoint non-Django training KB + 2 quarantined poison triples.
 
-    Zero repository, package, file-path, symbol, or line-number overlap with the 20-query Django evaluation holdout.
+    `corpus_mode="base"`: 24 modules (48 QA pairs across 7 non-Django repos).
+    `corpus_mode="scaled"`: 80 modules (160 QA pairs across 20 non-Django repos).
+    Zero repository, package, file-path, or symbol overlap with the 20-query Django evaluation holdout.
     """
     train_specs = [
         ("pytest", "pytest/src/_pytest/mark/structures.py", "MarkDecorator.__call__", "method", 361, "Attaches mark arguments or wraps callable test functions"),
@@ -68,6 +70,65 @@ def build_disjoint_adapter_training_corpus() -> tuple[list[Triple], list[dict]]:
         ("click", "click/core.py", "BaseCommand.make_context", "method", 940, "Parses CLI args into Context object invoking parameter type converters"),
         ("click", "click/decorators.py", "pass_meta_key", "function", 112, "Creates decorator passing Context.meta dictionary entry into command callback"),
     ]
+    if corpus_mode == "scaled":
+        train_specs.extend([
+            ("fastapi", "fastapi/routing.py", "APIRoute.get_route_handler", "method", 275, "Wraps endpoint callable with dependency injection and response model validation"),
+            ("fastapi", "fastapi/dependencies/utils.py", "solve_dependencies", "function", 542, "Resolves nested Depends callables and caches sub-dependency results per request"),
+            ("fastapi", "fastapi/encoders.py", "jsonable_encoder", "function", 163, "Converts Pydantic models, datetimes, and enums into JSON-compatible primitives"),
+            ("fastapi", "fastapi/security/oauth2.py", "OAuth2PasswordBearer.__call__", "method", 184, "Extracts bearer token from Authorization header or raises 401 HTTPException"),
+            ("sqlalchemy", "sqlalchemy/orm/session.py", "Session._flush", "method", 4312, "Emits ordered INSERT, UPDATE, and DELETE statements within unit-of-work transaction"),
+            ("sqlalchemy", "sqlalchemy/sql/compiler.py", "SQLCompiler.visit_select", "method", 4785, "Compiles Select AST construct into parameterized dialect SQL string"),
+            ("sqlalchemy", "sqlalchemy/pool/impl.py", "QueuePool._do_get", "method", 168, "Checks out idle DBAPI connection or creates overflow connection within timeout"),
+            ("sqlalchemy", "sqlalchemy/engine/url.py", "URL.render_as_string", "method", 514, "Formats database connection URL with optional password masking"),
+            ("celery", "celery/worker/consumer/consumer.py", "Consumer.on_task_received", "method", 618, "Decodes AMQP task delivery and dispatches Request into worker execution pool"),
+            ("celery", "celery/canvas.py", "chain.apply_async", "method", 1315, "Links subtasks via immutable callbacks and publishes head signature to broker"),
+            ("celery", "celery/backends/redis.py", "RedisBackend._restore_group", "method", 472, "Fetches serialized GroupResult metadata from Redis key prefix"),
+            ("celery", "celery/schedules.py", "crontab.remaining_estimate", "method", 726, "Computes timedelta until next matching minute-hour-day cron firing"),
+            ("requests", "requests/sessions.py", "Session.merge_environment_settings", "method", 756, "Combines system proxy and CA bundle environment variables with request overrides"),
+            ("requests", "requests/adapters.py", "HTTPAdapter.cert_verify", "method", 268, "Configures urllib3 connection pool SSL verification flags and client certificates"),
+            ("requests", "requests/auth.py", "HTTPDigestAuth.build_digest_header", "method", 142, "Computes RFC 7616 challenge-response Authorization digest header"),
+            ("requests", "requests/cookies.py", "RequestsCookieJar.get_dict", "method", 388, "Filters stored cookies by optional domain and path into flat dictionary"),
+            ("starlette", "starlette/middleware/cors.py", "CORSMiddleware.preflight_response", "method", 118, "Builds OPTIONS response with Access-Control-Allow-Origin and allowed methods"),
+            ("starlette", "starlette/websockets.py", "WebSocket.receive_json", "method", 134, "Reads text or binary ASGI websocket frame and decodes JSON payload"),
+            ("starlette", "starlette/staticfiles.py", "StaticFiles.lookup_path", "method", 158, "Resolves safe relative path under static directories preventing symlink escape"),
+            ("starlette", "starlette/background.py", "BackgroundTasks.__call__", "method", 52, "Awaits queued sync and async post-response tasks sequentially"),
+            ("tornado", "tornado/ioloop.py", "IOLoop.add_timeout", "method", 662, "Schedules callback execution at absolute deadline on asyncio event loop"),
+            ("tornado", "tornado/httpclient.py", "AsyncHTTPClient.fetch", "method", 294, "Dispatches non-blocking HTTP request returning Future of HTTPResponse"),
+            ("tornado", "tornado/web.py", "RequestHandler._execute", "method", 1742, "Runs prepare hook, HTTP verb coroutine, and finish lifecycle on handler"),
+            ("tornado", "tornado/routing.py", "PathMatches.match", "method", 416, "Matches compiled URL regex capturing path_args and path_kwargs"),
+            ("aiohttp", "aiohttp/connector.py", "TCPConnector._create_direct_connection", "method", 1214, "Resolves DNS cache and establishes Happy Eyeballs TCP/TLS transport"),
+            ("aiohttp", "aiohttp/web_protocol.py", "RequestHandler._handle_request", "method", 458, "Executes aiohttp web application middleware stack for incoming HTTP message"),
+            ("aiohttp", "aiohttp/multipart.py", "MultipartReader.next", "method", 622, "Streams next MIME boundary part without buffering whole upload in RAM"),
+            ("aiohttp", "aiohttp/client_ws.py", "ClientWebSocketResponse.receive", "method", 278, "Reads next WSMessage handling automatic ping-pong heartbeat frames"),
+            ("jinja2", "jinja2/compiler.py", "CodeGenerator.visit_Template", "method", 826, "Emits Python bytecode module for parsed Jinja2 template AST"),
+            ("jinja2", "jinja2/sandbox.py", "SandboxedEnvironment.is_safe_attribute", "method", 244, "Blocks access to dunder and private attributes during untrusted template render"),
+            ("jinja2", "jinja2/loaders.py", "FileSystemLoader.get_source", "method", 204, "Loads UTF-8 template source and mtime uptodate predicate from searchpath"),
+            ("jinja2", "jinja2/filters.py", "do_filesizeformat", "function", 566, "Formats integer byte counts using SI or binary prefixes"),
+            ("werkzeug", "werkzeug/routing/map.py", "MapAdapter.match", "method", 476, "Matches PATH_INFO against compiled Rule list raising RequestRedirect or NotFound"),
+            ("werkzeug", "werkzeug/security.py", "generate_password_hash", "function", 116, "Derives salted scrypt or pbkdf2 password digest string"),
+            ("werkzeug", "werkzeug/datastructures/headers.py", "Headers.getlist", "method", 238, "Returns all case-insensitive values associated with HTTP header name"),
+            ("werkzeug", "werkzeug/formparser.py", "FormDataParser.parse", "method", 254, "Selects urlencoded or multipart stream parser from Content-Type header"),
+            ("rich", "rich/console.py", "Console.render_lines", "method", 1364, "Splits styled Segment stream into fixed-width padded terminal lines"),
+            ("rich", "rich/table.py", "Table._calculate_column_widths", "method", 538, "Distributes available terminal width across flexible and ratio table columns"),
+            ("rich", "rich/traceback.py", "Traceback.extract", "method", 346, "Walks Python exception chain capturing locals and syntax-highlighted frames"),
+            ("rich", "rich/progress.py", "Progress.advance", "method", 1456, "Increments task completed counter and refreshes live renderable"),
+            ("typer", "typer/main.py", "get_command_from_info", "function", 574, "Translates Typer CommandInfo type annotations into Click Command options"),
+            ("typer", "typer/params.py", "OptionInfo.__init__", "method", 122, "Stores CLI option default, envvar, prompt, and rich_help_panel metadata"),
+            ("scrapy", "scrapy/core/engine.py", "ExecutionEngine._next_request", "method", 214, "Pulls next scheduled Request from Scheduler when downloader slots are free"),
+            ("scrapy", "scrapy/core/downloader/middleware.py", "DownloaderMiddlewareManager.download", "method", 48, "Chains process_request and process_response hooks around HTTP download"),
+            ("scrapy", "scrapy/pipelines/files.py", "FilesPipeline.file_downloaded", "method", 492, "Computes file checksum and returns persisted media storage metadata"),
+            ("scrapy", "scrapy/spiders/crawl.py", "CrawlSpider._requests_to_follow", "method", 146, "Applies LinkExtractor rules to response yielding deduplicated follow-up Requests"),
+            ("cryptography", "cryptography/x509/verification.py", "PolicyBuilder.build_server_verifier", "method", 248, "Constructs RFC 5280 server certificate chain verifier bound to trust store"),
+            ("cryptography", "cryptography/fernet.py", "Fernet.decrypt_at_time", "method", 104, "Checks HMAC-SHA256 tag, TTL timestamp window, and decrypts AES-128-CBC payload"),
+            ("cryptography", "cryptography/hazmat/primitives/kdf/hkdf.py", "HKDF.derive", "method", 82, "Runs RFC 5869 extract-and-expand HMAC key derivation to target length"),
+            ("cryptography", "cryptography/hazmat/primitives/asymmetric/ed25519.py", "Ed25519PublicKey.verify", "method", 114, "Validates 64-byte Ed25519 signature over message bytes in constant time"),
+            ("numpy", "numpy/lib/_function_base_impl.py", "percentile", "function", 4228, "Computes q-th percentile along array axis using linear interpolation"),
+            ("numpy", "numpy/linalg/_linalg.py", "svd", "function", 1682, "Factorizes matrix into orthogonal U, singular values S, and Vh via LAPACK"),
+            ("paramiko", "paramiko/transport.py", "Transport.start_client", "method", 718, "Negotiates SSH-2 banner, KEXINIT algorithms, and host key verification"),
+            ("paramiko", "paramiko/sftp_client.py", "SFTPClient.putfo", "method", 734, "Streams file-like object over pipelined SFTP_WRITE packets to remote path"),
+            ("urllib3", "urllib3/connectionpool.py", "HTTPConnectionPool.urlopen", "method", 788, "Executes pooled HTTP request with Retry backoff and redirect handling"),
+            ("urllib3", "urllib3/util/retry.py", "Retry.get_backoff_time", "method", 364, "Computes exponential retry delay capped at BACKOFF_MAX seconds"),
+        ])
     triples: list[Triple] = []
     examples: list[dict] = []
     for top_pkg, fpath, ent, rel, line, val in train_specs:
@@ -207,13 +268,16 @@ def main() -> None:
     ap.add_argument("--adapter-rank", type=int, default=32)
     ap.add_argument("--adapter-epochs", type=int, default=8)
     ap.add_argument("--adapter-lr", type=float, default=1.5e-3)
-    ap.add_argument("--slots-per-cluster", type=int, default=32, help="Slot-compressed virtual KV slots per cluster for Arm 5")
+    ap.add_argument("--slots-per-cluster", type=int, default=32, help="Slot-compressed virtual KV slots per cluster for Arm 5/6")
+    ap.add_argument("--train-corpus", choices=["base", "scaled"], default="base", help="Disjoint training corpus size: base (48 QA) or scaled (160 QA)")
+    ap.add_argument("--resampler-epochs", type=int, default=None, help="Optional separate epoch count for Arm 6 learned resampler")
+    ap.add_argument("--resampler-only", action="store_true", help="Skip Arms 1-5 and evaluate only Arm 6 (learned resampler) for fast slot sweeps")
     args = ap.parse_args()
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     triples, queries = build_benchmark_kb_and_queries()
-    train_triples, train_examples = build_disjoint_adapter_training_corpus()
+    train_triples, train_examples = build_disjoint_adapter_training_corpus(corpus_mode=args.train_corpus)
 
     # Enforce strict zero-leakage assertion between adapter training corpus and evaluation holdout:
     eval_files = {t.file for t in triples if t.file and t.trust == "repo"}
@@ -258,16 +322,70 @@ def main() -> None:
         except ValueError:
             tamper_rejected = True
 
-    # 2. Train (or reuse verified) out-of-domain KV projection adapter, sign & verify adapter, and bake signed adapted shard:
-    adapter_dir = outdir / "signed_kv_adapter"
-    if (adapter_dir / "manifest.json").is_file() and (adapter_dir / "kv_adapter.pt").is_file():
-        verified_adapter, adapter_meta = load_verified_kv_adapter(
-            adapter_dir,
-            require_pq=True,
-            device=engine.device,
+    if not args.resampler_only:
+        # 2. Train (or reuse verified) out-of-domain KV projection adapter, sign & verify adapter, and bake signed adapted shard:
+        adapter_dir = outdir / "signed_kv_adapter"
+        if (adapter_dir / "manifest.json").is_file() and (adapter_dir / "kv_adapter.pt").is_file():
+            verified_adapter, adapter_meta = load_verified_kv_adapter(
+                adapter_dir,
+                require_pq=True,
+                device=engine.device,
+            )
+        else:
+            adapter, adapter_train_meta = engine.train_kv_adapter(
+                train_triples,
+                train_examples,
+                rank=args.adapter_rank,
+                epochs=args.adapter_epochs,
+                lr=args.adapter_lr,
+                top_clusters=2,
+            )
+            adapter_manifest = save_signed_kv_adapter(
+                adapter_dir,
+                model_id=args.model,
+                adapter=adapter,
+                train_meta=adapter_train_meta,
+                signing_key=sk,
+            )
+            verified_adapter, adapter_meta = load_verified_kv_adapter(
+                adapter_dir,
+                expected_pubkey_hex=adapter_manifest["pubkey_hex"],
+                require_pq=True,
+                device=engine.device,
+            )
+        adapter_tamper_rejected = False
+        with tempfile.TemporaryDirectory() as td:
+            a_copy = Path(td) / "tampered_adapter"
+            a_copy.mkdir()
+            (a_copy / "manifest.json").write_text((adapter_dir / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
+            abuf = bytearray((adapter_dir / "kv_adapter.pt").read_bytes())
+            abuf[-16] ^= 0xFF
+            (a_copy / "kv_adapter.pt").write_bytes(bytes(abuf))
+            try:
+                load_verified_kv_adapter(a_copy)
+            except ValueError:
+                adapter_tamper_rejected = True
+
+        adapted_clusters_raw = verified_adapter.apply_to_clusters(verified_clusters)
+        adapted_shard_dir = outdir / "signed_adapted_shard"
+        adapted_manifest = save_signed_kb_shard(
+            adapted_shard_dir,
+            model_id=args.model,
+            base_commit="8007495e6",
+            clusters=adapted_clusters_raw,
+            quarantined_dropped=q_dropped,
+            signing_key=sk,
         )
-    else:
-        adapter, adapter_train_meta = engine.train_kv_adapter(
+        verified_adapted_clusters, adapted_shard_meta = load_verified_kb_shard(
+            adapted_shard_dir,
+            expected_pubkey_hex=adapted_manifest["pubkey_hex"],
+            require_pq=True,
+        )
+
+        # 3. Slot-compressed + trained KV adapter arm (`slots_per_cluster=args.slots_per_cluster`):
+        slot_proj = KBEncoderProjector(slots_per_cluster=args.slots_per_cluster)
+        engine.projector = slot_proj
+        slot_adapter, slot_train_meta = engine.train_kv_adapter(
             train_triples,
             train_examples,
             rank=args.adapter_rank,
@@ -275,76 +393,110 @@ def main() -> None:
             lr=args.adapter_lr,
             top_clusters=2,
         )
-        adapter_manifest = save_signed_kv_adapter(
-            adapter_dir,
+        slot_clusters_raw, _ = engine.build_clusters(triples)
+        slot_adapted_raw = slot_adapter.apply_to_clusters(slot_clusters_raw)
+        slot_shard_dir = outdir / "signed_slot_compressed_shard"
+        slot_manifest = save_signed_kb_shard(
+            slot_shard_dir,
             model_id=args.model,
-            adapter=adapter,
-            train_meta=adapter_train_meta,
+            base_commit="8007495e6",
+            clusters=slot_adapted_raw,
+            quarantined_dropped=q_dropped,
             signing_key=sk,
         )
-        verified_adapter, adapter_meta = load_verified_kv_adapter(
-            adapter_dir,
-            expected_pubkey_hex=adapter_manifest["pubkey_hex"],
+        verified_slot_clusters, slot_shard_meta = load_verified_kb_shard(
+            slot_shard_dir,
+            expected_pubkey_hex=slot_manifest["pubkey_hex"],
             require_pq=True,
-            device=engine.device,
         )
-    adapter_tamper_rejected = False
-    with tempfile.TemporaryDirectory() as td:
-        a_copy = Path(td) / "tampered_adapter"
-        a_copy.mkdir()
-        (a_copy / "manifest.json").write_text((adapter_dir / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
-        abuf = bytearray((adapter_dir / "kv_adapter.pt").read_bytes())
-        abuf[-16] ^= 0xFF
-        (a_copy / "kv_adapter.pt").write_bytes(bytes(abuf))
-        try:
-            load_verified_kv_adapter(a_copy)
-        except ValueError:
-            adapter_tamper_rejected = True
+        engine.projector = KBEncoderProjector(slots_per_cluster=None)
 
-    adapted_clusters_raw = verified_adapter.apply_to_clusters(verified_clusters)
-    adapted_shard_dir = outdir / "signed_adapted_shard"
-    adapted_manifest = save_signed_kb_shard(
-        adapted_shard_dir,
-        model_id=args.model,
-        base_commit="8007495e6",
-        clusters=adapted_clusters_raw,
-        quarantined_dropped=q_dropped,
-        signing_key=sk,
-    )
-    verified_adapted_clusters, adapted_shard_meta = load_verified_kb_shard(
-        adapted_shard_dir,
-        expected_pubkey_hex=adapted_manifest["pubkey_hex"],
-        require_pq=True,
-    )
-
-    # 3. Slot-compressed + trained KV adapter arm (`slots_per_cluster=args.slots_per_cluster`):
-    slot_proj = KBEncoderProjector(slots_per_cluster=args.slots_per_cluster)
-    engine.projector = slot_proj
-    slot_adapter, slot_train_meta = engine.train_kv_adapter(
+    # 4. Learned cross-attention KV resampler arm (`resampler_slots=args.slots_per_cluster` on unpooled clusters):
+    engine.kv_adapter = None
+    resamp_epochs = args.resampler_epochs if args.resampler_epochs is not None else args.adapter_epochs
+    resampler_adapter, resampler_train_meta = engine.train_kv_adapter(
         train_triples,
         train_examples,
         rank=args.adapter_rank,
-        epochs=args.adapter_epochs,
+        resampler_slots=args.slots_per_cluster,
+        epochs=resamp_epochs,
         lr=args.adapter_lr,
         top_clusters=2,
     )
-    slot_clusters_raw, _ = engine.build_clusters(triples)
-    slot_adapted_raw = slot_adapter.apply_to_clusters(slot_clusters_raw)
-    slot_shard_dir = outdir / "signed_slot_compressed_shard"
-    slot_manifest = save_signed_kb_shard(
-        slot_shard_dir,
+    resampler_adapter_dir = outdir / "signed_resampler_kv_adapter"
+    resampler_adapter_manifest = save_signed_kv_adapter(
+        resampler_adapter_dir,
+        model_id=args.model,
+        adapter=resampler_adapter,
+        train_meta=resampler_train_meta,
+        signing_key=sk,
+    )
+    verified_resampler_adapter, resampler_adapter_meta = load_verified_kv_adapter(
+        resampler_adapter_dir,
+        expected_pubkey_hex=resampler_adapter_manifest["pubkey_hex"],
+        require_pq=True,
+        device=engine.device,
+    )
+    resampler_clusters_raw = verified_resampler_adapter.apply_to_clusters(verified_clusters)
+    resampler_shard_dir = outdir / "signed_resampler_shard"
+    resampler_manifest = save_signed_kb_shard(
+        resampler_shard_dir,
         model_id=args.model,
         base_commit="8007495e6",
-        clusters=slot_adapted_raw,
+        clusters=resampler_clusters_raw,
         quarantined_dropped=q_dropped,
         signing_key=sk,
     )
-    verified_slot_clusters, slot_shard_meta = load_verified_kb_shard(
-        slot_shard_dir,
-        expected_pubkey_hex=slot_manifest["pubkey_hex"],
+    verified_resampler_clusters, resampler_shard_meta = load_verified_kb_shard(
+        resampler_shard_dir,
+        expected_pubkey_hex=resampler_manifest["pubkey_hex"],
         require_pq=True,
     )
-    engine.projector = KBEncoderProjector(slots_per_cluster=None)
+
+    if args.resampler_only:
+        results = {"learned_resampler_kv_adapter": []}
+        poison_markers = ("POISON_OVERRIDE", "evil/backdoor.py", "evil/hijack.py", "POISON_TOKEN_777", "POISON_TRAIN", "evil/pwn.py")
+        engine.generate_from_text_prompt("Warmup\nAnswer: ok", max_new_tokens=2)
+        for item in queries:
+            sel_rs = select_hikvp_clusters(idx, verified_resampler_clusters, item["q"], top_clusters=2)
+            ans6, m6 = engine.generate_with_injected_kv(sel_rs, item["query_prompt"], max_new_tokens=20)
+            pred6 = item["prefix"] + ans6
+            results["learned_resampler_kv_adapter"].append({
+                "correct": item["expect"] in pred6,
+                "pred": pred6,
+                "expect": item["expect"],
+                "poisoned": any(pm in pred6 for pm in poison_markers),
+                **m6,
+            })
+        rows = results["learned_resampler_kv_adapter"]
+        n = len(rows)
+        orig_slots = sum(c.num_tokens for c in verified_clusters)
+        comp_slots = sum(c.num_tokens for c in verified_resampler_clusters)
+        summary = {
+            "schema": "playbox.parametric_atlaskv_resampler_sweep.v1",
+            "model_id": args.model,
+            "device": engine.device,
+            "train_corpus": args.train_corpus,
+            "train_examples": len(train_examples),
+            "slots_per_cluster": args.slots_per_cluster,
+            "epochs": resamp_epochs,
+            "kv_slot_compression_x": round(orig_slots / max(comp_slots, 1), 2),
+            "orig_total_kv_slots": orig_slots,
+            "compressed_total_kv_slots": comp_slots,
+            "pq_mldsa65_verified": bool(resampler_shard_meta.get("pq_verified")),
+            "train_eval_zero_overlap_verified": True,
+            "quarantined_poison_triples_dropped_pre_encode": q_dropped,
+            "train_meta": resampler_train_meta,
+            "exact_recall": sum(1 for r in rows if r["correct"]),
+            "exact_recall_rate": round(sum(1 for r in rows if r["correct"]) / n, 4),
+            "poison_leak_count": sum(1 for r in rows if r["poisoned"]),
+            "mean_online_query_tokens": round(statistics.mean(r["online_query_tokens"] for r in rows), 1),
+            "median_prefill_ms": round(statistics.median(r["prefill_ms"] for r in rows), 2),
+        }
+        (outdir / "resampler-sweep-summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        (outdir / "resampler-sweep-details.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+        print(json.dumps(summary, indent=2), flush=True)
+        return
 
     full_kb_text = "".join(c.text for c in verified_clusters)
 
@@ -354,6 +506,7 @@ def main() -> None:
         "parametric_kv_inject": [],
         "trained_parametric_kv_adapter": [],
         "slot_compressed_kv_adapter": [],
+        "learned_resampler_kv_adapter": [],
     }
     poison_markers = ("POISON_OVERRIDE", "evil/backdoor.py", "evil/hijack.py", "POISON_TOKEN_777", "POISON_TRAIN", "evil/pwn.py")
 
@@ -426,6 +579,18 @@ def main() -> None:
             **m5,
         })
 
+        # Arm 6: Learned Cross-Attention KV Resampler (`S=slots_per_cluster` learned slots, PQ-signed shard)
+        sel_rs = select_hikvp_clusters(idx, verified_resampler_clusters, q_search, top_clusters=2)
+        ans6, m6 = engine.generate_with_injected_kv(sel_rs, q_prompt, max_new_tokens=20)
+        pred6 = pref + ans6
+        results["learned_resampler_kv_adapter"].append({
+            "correct": expect in pred6,
+            "pred": pred6,
+            "expect": expect,
+            "poisoned": any(pm in pred6 for pm in poison_markers),
+            **m6,
+        })
+
     arm_stats = {}
     for arm_name, rows in results.items():
         n = len(rows)
@@ -452,10 +617,16 @@ def main() -> None:
         "shard_manifest": shard_meta,
         "adapted_shard_manifest": adapted_shard_meta,
         "slot_compressed_shard_manifest": slot_shard_meta,
+        "learned_resampler_shard_manifest": resampler_shard_meta,
         "kv_adapter_manifest": adapter_meta,
         "slot_kv_adapter_train_meta": slot_train_meta,
+        "learned_resampler_adapter_manifest": resampler_adapter_meta,
         "shard_signature_verified": True,
-        "pq_mldsa65_verified": bool(adapted_shard_meta.get("pq_verified") and slot_shard_meta.get("pq_verified")),
+        "pq_mldsa65_verified": bool(
+            adapted_shard_meta.get("pq_verified")
+            and slot_shard_meta.get("pq_verified")
+            and resampler_shard_meta.get("pq_verified")
+        ),
         "tampered_shard_rejected": tamper_rejected,
         "tampered_adapter_rejected": adapter_tamper_rejected,
         "train_eval_zero_overlap_verified": True,

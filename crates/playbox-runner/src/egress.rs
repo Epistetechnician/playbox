@@ -421,6 +421,7 @@ struct SharedState {
     entries: Mutex<VecDeque<EgressLogEntry>>,
     dropped_entries: AtomicU64,
     sem: Semaphore,
+    arc_maverick: Option<Arc<crate::maverick::ArcMaverickHook>>,
 }
 
 fn rotated_log_path(path: &Path) -> PathBuf {
@@ -556,6 +557,35 @@ impl Proxy {
         bind_ip: Ipv4Addr,
         guest_host: &str,
         correlation_headers: &BTreeMap<String, String>,
+    ) -> Result<Self> {
+        Self::start_with_arc_maverick(
+            cfg,
+            secrets,
+            names,
+            bind_ip,
+            guest_host,
+            correlation_headers,
+            None,
+        )
+        .await
+    }
+
+    /// Like [`Proxy::start_with_host_and_headers`], optionally attaching a native Rust
+    /// [`crate::maverick::ArcMaverickHook`] for CPU-ARC local skill bypass, Goldilocks Maverick
+    /// Verification-Only, and dual-signed (`Ed25519 + ML-DSA-65`) `RoomLog` receipts.
+    ///
+    /// # Errors
+    ///
+    /// Fails if any requested upstream is unknown, duplicated, missing its secret, resolves to a forbidden address,
+    /// contains invalid correlation headers, or cannot bind.
+    pub async fn start_with_arc_maverick(
+        cfg: &EgressConfig,
+        secrets: &SecretStore,
+        names: &[String],
+        bind_ip: Ipv4Addr,
+        guest_host: &str,
+        correlation_headers: &BTreeMap<String, String>,
+        arc_maverick: Option<Arc<crate::maverick::ArcMaverickHook>>,
     ) -> Result<Self> {
         cfg.validate()?;
         if guest_host.is_empty()
@@ -700,6 +730,7 @@ impl Proxy {
             entries: Mutex::new(VecDeque::new()),
             dropped_entries: AtomicU64::new(0),
             sem: Semaphore::new(MAX_CONCURRENT),
+            arc_maverick,
         });
         let (stop_tx, mut stop_rx) = oneshot::channel();
         let runner_state = Arc::clone(&state);
@@ -1051,6 +1082,38 @@ async fn serve_one(mut stream: TcpStream, state: &SharedState) {
         return;
     }
 
+    if let Some(hook) = &state.arc_maverick {
+        if let Some(hit) = hook.intercept_request(&req.method, &clean_path, &req.body) {
+            let mut head = format!(
+                "HTTP/1.1 {} {}\r\nContent-Length: {}\r\n",
+                hit.status,
+                reason_phrase(hit.status),
+                hit.body.len()
+            );
+            for (k, v) in &hit.headers {
+                if !k.contains(['\r', '\n']) && !v.contains(['\r', '\n']) {
+                    head.push_str(&format!("{k}: {v}\r\n"));
+                }
+            }
+            head.push_str("Connection: close\r\n\r\n");
+            let _ = stream.write_all(head.as_bytes()).await;
+            let _ = stream.write_all(&hit.body).await;
+            let _ = stream.shutdown().await;
+            state.record(EgressLogEntry {
+                ts_ms,
+                upstream: upstream_name.to_string(),
+                method: req.method,
+                path: clean_path,
+                status: hit.status,
+                req_bytes,
+                resp_bytes: hit.body.len() as u64,
+                duration_ms: u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX),
+                denied: hit.denied,
+            });
+            return;
+        }
+    }
+
     let Ok(method) = reqwest::Method::from_bytes(req.method.as_bytes()) else {
         let resp_bytes = write_error(&mut stream, 400, "invalid_method").await;
         state.record(EgressLogEntry {
@@ -1392,6 +1455,7 @@ mod tests {
             entries: Mutex::new(VecDeque::new()),
             dropped_entries: AtomicU64::new(0),
             sem: Semaphore::new(1),
+            arc_maverick: None,
         };
         let total = MAX_MEMORY_LOG_ENTRIES + 25;
         for i in 0..total {

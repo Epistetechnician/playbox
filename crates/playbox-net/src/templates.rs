@@ -16,6 +16,8 @@ pub enum TemplateKind {
     Review,
     Ops,
     Hillclimb,
+    #[serde(rename = "arc-rsi")]
+    ArcRsi,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +42,7 @@ impl TemplateKind {
         TemplateKind::Review,
         TemplateKind::Ops,
         TemplateKind::Hillclimb,
+        TemplateKind::ArcRsi,
     ];
 
     #[must_use]
@@ -50,6 +53,7 @@ impl TemplateKind {
             "review" => Some(Self::Review),
             "ops" => Some(Self::Ops),
             "hillclimb" | "hill-climb" => Some(Self::Hillclimb),
+            "arc-rsi" | "arc_rsi" | "arcrsi" => Some(Self::ArcRsi),
             _ => None,
         }
     }
@@ -62,6 +66,7 @@ impl TemplateKind {
             Self::Review => "review",
             Self::Ops => "ops",
             Self::Hillclimb => "hillclimb",
+            Self::ArcRsi => "arc-rsi",
         }
     }
 
@@ -401,6 +406,65 @@ impl TemplateKind {
                 starter_fact: (
                     "hillclimb-protocol",
                     "Template: Autonomous hill-climbing room. Inspect the signed Room Manifest for goal and `/commands`; post `/eval` to score candidates.",
+                ),
+            },
+            Self::ArcRsi => TemplateSpec {
+                kind: self,
+                id: "arc-rsi",
+                label: "ARC-RSI · Sovereign CPU-ARC + Maverick + Self-Rewrite",
+                summary: "Zero-trust sovereign agent room combining CPU-ARC bytecode skill caching, Goldilocks Maverick Verification-Only, 64B Swarm Telepathy descriptors, and quorum-signed promotion gates.",
+                default_runtime: "krun",
+                limits: Limits {
+                    cpus: 4.0,
+                    mem_mib: 4096,
+                    timeout_secs: 600,
+                    network: false,
+                    allowed_hosts: Vec::new(),
+                    allowed_secrets: Vec::new(),
+                    allowed_egress: Vec::new(),
+                },
+                abuse: AbuseLimits {
+                    max_members: 16,
+                    max_concurrent_per_member: 2,
+                    max_tasks_per_window: 24,
+                    task_budget: 1000,
+                    ..AbuseLimits::default()
+                },
+                memory_review: true,
+                capabilities: vec![
+                    cap("arc-compile", &["python3", "-m", "arc_membrane.cpu_arc_compiler"], false, 120),
+                    cap("maverick-verify", &["cargo", "test", "--lib", "maverick"], false, 120),
+                    cap("rsi-eval", &["python3", "-m", "arc_membrane.self_rewrite_bridge"], false, 300),
+                    cap("promote", &["playbox", "gate", "verify"], true, 60),
+                ],
+                canvas_seed: vec![
+                    (
+                        "artifact",
+                        json!({
+                            "id": "arc-rsi-protocol",
+                            "title": "ARC-RSI Sovereign Room Protocol",
+                            "kind": "doc",
+                            "status": "verified",
+                            "summary": "BOX-7 fail-closed proxy + CPU-ARC hit cache + Maverick Verification-Only + 64B Swarm Telepathy + dual-signed Ed25519+ML-DSA-65 quorum promotions.",
+                            "body": "# ARC-RSI Protocol\n\n1. All model egress passes through BOX-7 (`playbox-aiproxy`) with CPU-ARC local hit bypass and Maverick Goldilocks Verification-Only.\n2. Novel compiled skills broadcast 64-byte int8 Swarm Telepathy descriptors (`PBL2`) bound to signed receipts.\n3. Weight rewrites run router-frozen exact QR null-space projection and require quorum-signed (`j >= 2`) dual Ed25519+ML-DSA-65 promotion receipts; zero unsigned promotions are accepted."
+                        }),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "arc-1", "title": "Compile & certify CPU-ARC skills", "col": "todo", "note": "Run `/arc-compile` and broadcast novel 64B int8 descriptors"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "arc-2", "title": "Verify Maverick Goldilocks matvec proofs", "col": "todo", "note": "Run `/maverick-verify` (1-RTT honest + cheat rejection)"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "arc-3", "title": "Sealed F3 self-rewrite quorum promotion", "col": "todo", "note": "Run `/rsi-eval`, collect j>=2 host receipts, verify offline via `/promote`"}),
+                    ),
+                ],
+                starter_fact: (
+                    "arc-rsi-protocol",
+                    "Template: ARC-RSI sovereign room. Zero unsigned promotions; all egress flows through BOX-7 CPU-ARC + Maverick Verification-Only with dual Ed25519+ML-DSA-65 receipts.",
                 ),
             },
         }
