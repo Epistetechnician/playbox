@@ -36,6 +36,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 A = HERE / "tier_a_matmul"
 B = HERE / "tier_b_lm"
+F3 = HERE / "f3"
 MICRO = 1_000_000
 
 
@@ -61,6 +62,8 @@ def problems() -> dict:
     for p in sorted(A.glob("*.json")):
         out[sha256_file(p)] = ("a", p)
     out[sha256_file(B / "problem.json")] = ("b", B / "problem.json")
+    if (F3 / "task_spec.json").is_file():
+        out[sha256_file(F3 / "task_spec.json")] = ("f3", F3 / "task_spec.json")
     return out
 
 
@@ -145,6 +148,83 @@ def eval_b(problem_file: Path, cand: Path) -> dict:
     }
 
 
+def eval_f3(problem_file: Path, cand: Path) -> dict:
+    """F3 training hill-climb evaluator: hardware-independent tokens-to-target with per-host sealed holdout."""
+    sys.path.insert(0, str(F3))
+    import task  # type: ignore
+
+    spec = json.loads(problem_file.read_text())
+    target = float(os.environ.get("PLAYBOX_F3_TARGET", "3.0"))
+    eps_hold = float(os.environ.get("PLAYBOX_F3_EPS_HOLD", "0.05"))
+    seeds = [int(s) for s in os.environ.get("PLAYBOX_F3_SEEDS", "1").split(",") if s.strip()]
+    token_cap = int(os.environ.get("PLAYBOX_F3_TOKEN_CAP", "4000000"))
+    hold_seed = int(os.environ.get("PLAYBOX_F3_HOLDOUT_SEED") or random.SystemRandom().randrange(1, 2**31))
+    hold_salt = os.environ.get("PLAYBOX_F3_HOLDOUT_SALT") or os.urandom(16).hex()
+
+    src = cand.read_text()
+    bad = task.static_check(src)
+    if bad:
+        refuse(f"static_check: {bad}")
+    hold = task.holdout_blocks_from_secret(hold_seed)
+    leak = task.leak_scan(src, hold, hold_seed, hold_salt)
+    if leak:
+        refuse(f"leak_scan: {leak}")
+
+    base_path = F3 / "baseline.py"
+    cache_path = store() / ".f3_base_cache.json"
+    try:
+        base_cache = json.loads(cache_path.read_text()) if cache_path.is_file() else {}
+    except (OSError, ValueError):
+        base_cache = {}
+    base_sig = sha256_bytes(
+        f"{sha256_file(base_path)}|{sha256_file(F3 / 'task.py')}|{sha256_file(problem_file)}|{target}|{token_cap}".encode()
+    )
+
+    ratios = []
+    cache_dirty = False
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        cand_py = td_path / "candidate.py"
+        shutil.copyfile(cand, cand_py)
+        for s in seeds:
+            ck = f"{base_sig}:{s}"
+            if ck in base_cache:
+                base_tokens = int(base_cache[ck])
+            else:
+                base_r = task.run_candidate(base_path, s, None, target=target, token_cap=token_cap)
+                if not base_r.get("reached"):
+                    refuse(f"baseline did not reach target {target} on seed {s}: {base_r.get('reason')}")
+                base_tokens = int(base_r["tokens"])
+                base_cache[ck] = base_tokens
+                cache_dirty = True
+            state_out = td_path / f"cand_s{s}.pt"
+            cand_r = task.run_candidate(cand_py, s, state_out, target=target, token_cap=token_cap)
+            if not cand_r.get("reached"):
+                refuse(f"target_not_reached on seed {s}: {cand_r.get('reason')}")
+            ev = task.evaluate_state(cand_py, state_out, hold)
+            if "error" in ev:
+                refuse(f"evaluate_state failed: {ev['error']}")
+            if ev["dev_loss"] > target + spec.get("dev_recompute_tol", 1e-4):
+                refuse(f"dev_mismatch: {ev['dev_loss']:.4f} > {target}")
+            if ev["holdout_loss"] > target + eps_hold:
+                refuse(
+                    f"holdout_failed: holdout={ev['holdout_loss']:.4f} > limit={target + eps_hold:.4f} "
+                    f"(dev={ev['dev_loss']:.4f})"
+                )
+            ratios.append(base_tokens / cand_r["tokens"])
+    if cache_dirty:
+        try:
+            cache_path.write_text(json.dumps(base_cache, indent=1) + "\n")
+        except OSError:
+            pass
+
+    return {
+        "metric": int(round(statistics.median(ratios) * MICRO)),
+        "weights": sha256_file(problem_file),
+        "env": env_hash(sha256_file(F3 / "task.py")),
+    }
+
+
 def evaluate(problem_hash: str, cand_hash: str) -> dict:
     known = problems()
     if problem_hash not in known:
@@ -155,7 +235,12 @@ def evaluate(problem_hash: str, cand_hash: str) -> dict:
         refuse(f"candidate {cand_hash[:12]} is not in this host's store ({store()}); put it there first")
     if sha256_file(cand) != cand_hash:
         refuse("the stored file does not hash to the name it is stored under")
-    out = (eval_a if kind == "a" else eval_b)(pfile, cand)
+    if kind == "a":
+        out = eval_a(pfile, cand)
+    elif kind == "b":
+        out = eval_b(pfile, cand)
+    else:
+        out = eval_f3(pfile, cand)
     if out["metric"] <= 0:
         refuse("no positive metric")
     out["tier"] = int(os.environ.get("PB_TIER", "0"))
@@ -163,11 +248,13 @@ def evaluate(problem_hash: str, cand_hash: str) -> dict:
 
 
 def rule_line(problem_file: Path) -> str:
-    """The console line that registers this problem in a room: j=2 hosts, exact for Tier A, 10% noise and the gate's 5% threshold for Tier B."""
+    """The console line that registers this problem in a room: j=2 hosts, exact for Tier A, 10% noise and the gate's 5% threshold for Tier B, 5%/5% for F3."""
     h = sha256_file(problem_file)
     kind = problems().get(h, ("?",))[0]
     if kind == "a":
         return f"roomlog-problem {h} 2 0 1 {MICRO}"
+    if kind == "f3":
+        return f"roomlog-problem {h} 2 50000 50000 {MICRO}"
     thr = json.load(open(problem_file)).get("threshold", 1.05)
     return f"roomlog-problem {h} 2 100000 {round((thr - 1) * MICRO)} {MICRO}"
 

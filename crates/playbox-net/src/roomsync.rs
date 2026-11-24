@@ -32,6 +32,8 @@ const MAX_MSG: usize = 8 * 1024 * 1024;
 const MAX_CERTS: usize = 256;
 /// Stream I/O timeout for peer-to-peer roomlog RPCs so a stalled peer cannot hang `ask_all`/`pull`.
 const RPC_IO_TIMEOUT: Duration = Duration::from_secs(15);
+/// Timeout for `"receipt"` RPCs, where the remote peer runs its evaluator (up to 900 s in `measure`).
+const RECEIPT_RPC_TIMEOUT: Duration = Duration::from_secs(915);
 
 /// What this host has promised and seen, kept next to the log. A promise must survive a restart or a host could
 /// sign two rival bids for one epoch.
@@ -1083,7 +1085,12 @@ async fn ask(endpoint: &Endpoint, peer: &EndpointAddr, req: &Value) -> Result<Va
     )
     .await
     .map_err(|_| anyhow!("timed out connecting to {}", peer.id.fmt_short()))??;
-    let reply = tokio::time::timeout(RPC_IO_TIMEOUT, async {
+    let io_timeout = if req["op"] == "receipt" {
+        RECEIPT_RPC_TIMEOUT
+    } else {
+        RPC_IO_TIMEOUT
+    };
+    let reply = tokio::time::timeout(io_timeout, async {
         let (mut send, mut recv) = conn.open_bi().await?;
         send.write_all(req.to_string().as_bytes()).await?;
         send.finish()?;
