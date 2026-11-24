@@ -64,13 +64,14 @@ class RidgeMapper(S.Mapper):
         for b, blk in enumerate(self.blocks):  # zero-initialised output layers: at step 0 the residual is exactly zero
             nn.init.zeros_(blk.out.weight)
             nn.init.zeros_(blk.out.bias)
-        for b in range(B):
-            n_in = (self.sg[b][1] - self.sg[b][0]) * 2 * sd["kd"]
-            n_out = (self.rg[b][1] - self.rg[b][0]) * 2 * rd["kd"]
-            self.register_buffer(f"W{b}", torch.zeros(n_in, n_out))
-            self.register_buffer(f"xs{b}", torch.ones(n_in))
-            self.register_buffer(f"c{b}", torch.zeros(n_in))
-            self.register_buffer(f"b{b}", torch.zeros(n_out))
+        if use_ridge:
+            for b in range(B):
+                n_in = (self.sg[b][1] - self.sg[b][0]) * 2 * sd["kd"]
+                n_out = (self.rg[b][1] - self.rg[b][0]) * 2 * rd["kd"]
+                self.register_buffer(f"W{b}", torch.zeros(n_in, n_out))
+                self.register_buffer(f"xs{b}", torch.ones(n_in))
+                self.register_buffer(f"c{b}", torch.zeros(n_in))
+                self.register_buffer(f"b{b}", torch.zeros(n_out))
 
     def ridge_part(self, b: int, sk, sv, idx):
         lo, hi = self.sg[b]
@@ -116,6 +117,12 @@ def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print,
     split = max(1, int(0.9 * len(all_idx))) if len(all_idx) > 2 else len(all_idx)
     train_idx = all_idx[:split]
     hold_idx = all_idx[split:] or all_idx
+    # Accumulate/solve float64 Gram matrices on GPU when >=40 GiB VRAM is available; offload to CPU on 24 GiB GPUs.
+    use_gpu_gram = (
+        torch.cuda.is_available()
+        and torch.cuda.get_device_properties(0).total_memory >= 40 * (1024**3)
+    )
+    gdev = DEV if use_gpu_gram else torch.device("cpu")
     for it in range(cfg.ridge_batches):
         src = hold_idx if it >= cfg.ridge_batches - n_hold else train_idx
         bt = pool.batch(rng.sample(src, min(bs, len(src))), su.pad_s, su.pad_r)
@@ -129,15 +136,15 @@ def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print,
             x = torch.gather(layer_flat(sk, sv, lo, hi).float(), 1, idx[:, :, None].expand(-1, -1, (hi - lo) * 2 * m.sd["kd"]))[valid]
             y = layer_flat(rk, rv, rlo, rhi).float()[valid]
             if it >= cfg.ridge_batches - n_hold:
-                held.append((b, x, y))
+                held.append((b, x.to(gdev), y.to(gdev)))
                 continue
-            x64, y64 = x.double(), y.double()
+            x64, y64 = x.to(gdev).double(), y.to(gdev).double()
             if sums[b] is None:
-                sums[b] = {"n": 0, "sx": torch.zeros(x.shape[1], device=DEV, dtype=torch.float64),
-                           "sxx": torch.zeros(x.shape[1], device=DEV, dtype=torch.float64),
-                           "sy": torch.zeros(y.shape[1], device=DEV, dtype=torch.float64),
-                           "xtx": torch.zeros(x.shape[1], x.shape[1], device=DEV, dtype=torch.float64),
-                           "xty": torch.zeros(x.shape[1], y.shape[1], device=DEV, dtype=torch.float64)}
+                sums[b] = {"n": 0, "sx": torch.zeros(x.shape[1], device=gdev, dtype=torch.float64),
+                           "sxx": torch.zeros(x.shape[1], device=gdev, dtype=torch.float64),
+                           "sy": torch.zeros(y.shape[1], device=gdev, dtype=torch.float64),
+                           "xtx": torch.zeros(x.shape[1], x.shape[1], device=gdev, dtype=torch.float64),
+                           "xty": torch.zeros(x.shape[1], y.shape[1], device=gdev, dtype=torch.float64)}
             s = sums[b]
             s["n"] += x64.shape[0]
             s["sx"] += x64.sum(0)
@@ -145,6 +152,7 @@ def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print,
             s["sy"] += y64.sum(0)
             s["xtx"] += x64.T @ x64
             s["xty"] += x64.T @ y64
+            del x64, y64
     r2 = []
     for b in range(B):
         s = sums[b]
@@ -155,18 +163,19 @@ def fit_ridge(su: S.Setup, pool: S.Pool, cfg: V2Config, bs: int = 16, log=print,
         xtx64 = (s["xtx"] - n * torch.outer(mx64, mx64)) / torch.outer(xs64, xs64)
         xty64 = (s["xty"] - n * torch.outer(mx64, my64)) / xs64[:, None]
         lam = cfg.ridge_lam * xtx64.diagonal().mean()
-        eye = torch.eye(xtx64.shape[0], device=DEV, dtype=torch.float64)
+        eye = torch.eye(xtx64.shape[0], device=gdev, dtype=torch.float64)
         W = torch.linalg.solve(xtx64 + lam * eye, xty64).float()
         mx, my, xs = mx64.float(), my64.float(), xs64.float()
-        getattr(m, f"W{b}").copy_(W)
-        getattr(m, f"xs{b}").copy_(xs)
-        getattr(m, f"c{b}").copy_(mx)
-        getattr(m, f"b{b}").copy_(my)
+        getattr(m, f"W{b}").copy_(W.to(DEV))
+        getattr(m, f"xs{b}").copy_(xs.to(DEV))
+        getattr(m, f"c{b}").copy_(mx.to(DEV))
+        getattr(m, f"b{b}").copy_(my.to(DEV))
         hx = torch.cat([x for bb, x, _ in held if bb == b])
         hy = torch.cat([y for bb, _, y in held if bb == b])
         pred = ((hx - mx) / xs) @ W + my
         r2.append(float(1 - ((pred - hy) ** 2).sum() / ((hy - hy.mean(0)) ** 2).sum()))
         del xtx64, xty64, s
+        sums[b] = None
     m.fitted = True
     log(f"ridge fitted: held-out R^2 per group {[round(v, 3) for v in r2]}")
     return {"ridge_r2_by_group": [round(v, 4) for v in r2], "n_tokens": n}

@@ -120,7 +120,7 @@ def build_items(split_texts: list[str], n_items: int, seed: int, ctx_chars=(350,
 
 def wiki_texts(config: str, split: str, min_chars=700) -> list[str]:
     from datasets import load_dataset
-    ds = load_dataset("wikitext", config, split=split)
+    ds = load_dataset("Salesforce/wikitext", config, split=split)
     return [t.strip() for t in ds["text"] if len(t.strip()) > min_chars and not t.strip().startswith("=")]
 
 
