@@ -1116,6 +1116,18 @@ def make_handler(hub, auth, store, opts):
                 data = room.archive.export()
                 name = re.sub(r"[^A-Za-z0-9._-]+", "-", room.rec["label"]).strip("-") or "room"
                 return self.send(200, data, "application/x-ndjson", {"Content-Disposition": f'attachment; filename="{name}-history.jsonl"'})
+            if m == "GET" and rest == "/api/lineage":
+                from . import lineage as lineage_mod
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    decay = float(q.get("decay", ["0.5"])[0])
+                except ValueError:
+                    raise AuthError(400, "decay must be a float in [0, 1]")
+                if not (0.0 <= decay <= 1.0):
+                    raise AuthError(400, "decay must be in [0, 1]")
+                report = lineage_mod.compute_lineage_credits(room.archive.tail(2000), decay=decay)
+                report["room"] = {"id": room.id, "label": room.rec["label"], "read_only": True}
+                return self.j(200, report)
             if m == "GET" and rest == "/api/canvas":
                 def saved():
                     """The host cannot be read: show what this hub saved of the room, marked as such."""

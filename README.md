@@ -17,7 +17,7 @@ On top of that sits the research half of the project: **swarm telepathy** (agent
 1. [At a glance](#at-a-glance)
 2. [How a room works](#how-a-room-works)
 3. [Trust: four layers](#trust-four-layers)
-4. [Swarm telepathy](#swarm-telepathy)
+4. [Swarm telepathy & KV channels](#swarm-telepathy--kv-channels)
 5. [Collaborative hill-climbing](#collaborative-hill-climbing)
 6. [Proof, end to end](#proof-end-to-end)
 7. [What is not proven](#what-is-not-proven)
@@ -46,11 +46,12 @@ Counted from the source tree at **v0.4.6** (`git ls-files`, `grep`, `wc -l`; see
 
 | Claim | Number | Where it comes from |
 |---|---|---|
-| A concept crosses between two model families with no text | **87.5%** topic recognition over 160 blind trials (20 topics, chance 4.8%), 71 of 72 no-concept controls correctly answered "none" | [docs/steering.md](docs/steering.md), Qwen3-8B ↔ OLMo-2-7B, gated |
-| A third family works once the receiver is steered at the right layer | Qwen3-8B → DeepSeek-7B from **8/80 to 63/80** at layer fraction 0.9 | [docs/steering.md](docs/steering.md) |
-| One shared latent space instead of a map per pair | **64 int8 bytes** per thought; 10 adapters instead of 20 pair maps; hub matches the pair map at 1,000 anchors (0.717 vs 0.716) | [docs/latent-channels.md](docs/latent-channels.md) §6d |
-| A swarm of senders beats a single sender if you filter for novelty | Novelty filter: **55.7%** recall vs 44.5% for one agent; rare concepts found 54.2% vs 11.5% for a plain sum; sign test vs the plain sum p = 2e-9, vs random agents p = 1e-5 (see the swarm section for the per-direction split) | [steer/results/telepathy/swarm/report.md](steer/results/telepathy/swarm/report.md) |
-| A cooperative hill-climb gate promotes real wins and rejects cheats | Tier B speedup **2.84×** at token-identical output; 4 of 6 submissions rejected (an invalid scheme, a memoizing cheat, a lossy change, a gain under threshold), 2 promoted; **6/6 signed receipts re-verified** | [challenge/results/](challenge/results/) |
+| Entity-routed KV + adaptive RAG beats 128K KV and RAG on CRM, FinanceBench, and LoCoMo | **706.5 tpm** (**10.8×** vs 128K KV, **3.61×** vs RAG) at **97.9%** acc on clean CRM; **+23.2 pp** (`p = 1.4e-20`) on noisy queries; **4.07×** tpm under 192-tenant CPU eviction; **+13.0–16.7 pp** (`p ≤ 2.7e-7`) over dense+reranker RAG on LoCoMo and **1.46×–1.62×** faster on FinanceBench (9,228 turns, 0 errors) | [docs/kv-routed-eval.md](docs/kv-routed-eval.md) |
+| Signed Parametric AtlasKV compresses repo context 184× with higher exact recall | **17/20 (85.0%)** out-of-sample exact recall on `Qwen3-1.7B-Base` vs 45% full-context stuffing and 30% text HiKVP, at **184×** token compression, **36.6×–70.3×** prefill speedup, **0/20** poison leaks, hybrid `Ed25519+ML-DSA-65` shards | [docs/atlaskv-integration.md](docs/atlaskv-integration.md) |
+| Cross-family KV-cache transfer (L4 mapper v2) clears its 4-seed stability bar | **85.3–86.6%** retention (**+25.7 to +27.1 pts** over unrelated cache, range **1.4 pts** across 4 seeds vs 10.2 pts for v1) on `Qwen3-4B → Llama-3.2-3B` (edge path) | [docs/l4-scope.md](docs/l4-scope.md) §14 |
+| Live Attested Gate + 3-tier hill-climb beats stock OpenShell on SWE-bench with 0% attack success | **44/50 (88.0%)** polyglot SWE-bench vs 42/50 stock (`37/50` pre-retry, `p = 0.035`); **28/28 (100%)** vs 22/28 paired (`p = 0.031`); **0/20 (0% ASR)** vs 20% ASR on adversarial security suite; **5/5** recursive Devin hill-climb; all with hybrid `Ed25519+ML-DSA-65` 5-gate bundles | [docs/hermes-parity-swe-playbox.md](docs/hermes-parity-swe-playbox.md) |
+| Two-host H100 hill-climb gate (F3 pilot 2) replays cleanly and catches reward hacking | **6/6** signed receipts verified & replayed on a second H100 with fresh seeds; 2 real wins promoted, 1 sub-threshold rejected, 1 injected dev memorizer caught on sealed holdout (**0** false promotions) | [docs/f3/pilot2/README.md](docs/f3/pilot2/README.md) |
+| A concept crosses between model families with no text (L2 hub + swarm novelty filter) | **87.5%** gated topic recognition (160 trials, 71/72 controls `"none"`); **64 int8 bytes** per thought; novelty filter **55.7%** recall vs 44.5% one agent (`p = 2e-9` vs plain sum) | [docs/steering.md](docs/steering.md), [docs/latent-channels.md](docs/latent-channels.md) |
 
 ---
 
@@ -171,11 +172,57 @@ Grants limit what a guest can *do*. They do not limit what a guest's output *say
 
 ---
 
-## Swarm telepathy
+## Swarm telepathy & KV channels
 
-Text is the only channel every model shares, and it is lossy, costly, and where prompt injection lives. Open-weights models expose their activations, so a concept can be carried as a vector instead: Agent A reads private sentences, builds a thought vector from its mid-layer states, a fitted map translates it into the receiver's space, and Agent B's model adds it while continuing neutral prompts. Only the vector crosses.
+Text is the only channel every model shares, and it is lossy, costly, and where prompt injection lives. Playbox evolved through four tiers of non-text / KV-native sharing:
 
-### One hub instead of a map per pair
+1. **L2 concept vectors (64-byte hub + novelty swarm):** proves a concept can cross model families with zero text and a commit-and-challenge audit, while our [metered benchmark](docs/metered-benchmark.md) showed plainly that L2 steering carries *concepts*, not exact facts (0% fact recall) and does not beat a topic word on cost.
+2. **Entity-Routed Working-Set KV + Adaptive RAG (`S-ROUTED`):** solves the efficiency and factual-recall problem for multi-turn swarms on real serving stacks (vLLM + CPU KV offload), beating 128K Shared KV, BM25 RAG, Conversational RAG, and Dense+Cross-Encoder Reranker RAG across 9,228 measured turns.
+3. **Parametric AtlasKV (`playbox_atlas/`):** injects position-decoupled, `Ed25519+ML-DSA-65`-signed pre-RoPE `(K_raw, V)` repository shards directly into attention with 184× online token compression and 0% poison leaks.
+4. **L4 Cross-Family KV-Cache Transfer (mapper v2):** maps full pre-RoPE KV caches from a frozen sender (`Qwen3-4B`) to a frozen receiver (`Llama-3.2-3B`) across tokenizers and architectures.
+
+### Entity-routed working-set KV + adaptive RAG (9,228 turns, 0 errors)
+
+Monolithic 128K prefix caching loses to inline RAG because decode attention still scales with $O(L)$ per token and look-alike entities act as distractors. Caching each session's small entity working set in KV (~3.8K–18K tokens) and falling back to RAG only for cross-entity or policy turns beats both baselines on `Qwen3-30B-A3B-Instruct-2507-FP8` (single A100, `temperature=0`, end-to-end timing from question arrival, [docs/kv-routed-eval.md](docs/kv-routed-eval.md)):
+
+| Suite | Baseline | `S-ROUTED` | Delta / Significance |
+|---|---|---|---|
+| **Clean CRM** (`n=32`, 3,456 turns) | `S-CTX` (128K KV): 65.3 tpm, 84.3% acc · `S-RAG`: 195.9 tpm, 99.5% acc | **706.5 tpm**, **0.54 s** follow-up p95, **97.9%** acc (100% Cat B) | **10.8×** vs 128K KV, **3.61×** vs RAG, **10×** faster follow-up p95 |
+| **Noisy / implicit CRM** (`n=32`, 768 turns, typos + `"this account"`) | `S-RAG`: 181.7 tpm, **74.9%** acc | **634.5 tpm**, **98.1%** acc | **+23.2 pp** (McNemar `p = 1.44e-20`), **3.49×** throughput |
+| **192-tenant eviction** (`n=32`, 2,304 turns, 24 GB CPU KV tier) | `S-RAG`: 107.2 tpm, 13.28 s `q→first` p95 | **436.3 tpm**, **1.99 s** `q→first` p95 (526K tok CPU reload) | **4.07×** throughput, **6.66×** lower `q→first` p95 |
+| **FinanceBench** (150 Qs, `n=8`, vs BM25 & `S-CONV-RAG`) | `S-RAG` 42.7% (124.7 tpm) · `S-CONV-RAG` 44.0% (103.2 tpm) | **64.7%** acc (**147.6 tpm**, 0.45 s follow-up p95) | **+20.7–22.0 pp** (`p ≤ 7.8e-7`), **1.43×** vs `S-CONV-RAG` |
+| **FinanceBench** (150 Qs, `n=8`, vs **`bge-small` + `bge-reranker-v2-m3`**) | `S-RAG` 56.0% (114.0 tpm) · `S-CONV-RAG` 54.7% (102.5 tpm) | **56.0%** acc (math **48%** vs 40%), **166.3 tpm**, **4.26 s** `q→end` p95 | **1.46×–1.62×** throughput, **−1.42 to −2.10 s** p95 |
+| **LoCoMo** (300 Qs, `n=8`, vs **`bge-small` + `bge-reranker-v2-m3`**) | `S-RAG` 44.3% (179.8 tpm) · `S-CONV-RAG` 40.7% (163.5 tpm) | **57.3%** acc (**169.8 tpm**, 84.6% GPU / 69.5% CPU KV hit) | **+13.0–16.7 pp** (McNemar `p = 2.7e-7` / `1.0e-11`) |
+| **Dense `Qwen3-4B` + 31K mega-dossier** (Colab L4, `kv_routed_dense_colab.py`) | `S-CTX`: 421.4 tpm, 3.22 s p95 · full 31K KV: 12.51 s wall | **684.9 tpm**, **1.54 s** p95 (`90.6%` acc) · adaptive 31K sub-dossier: **2.04 s** wall (**100%** acc) | **1.63×** tpm / **2.09×** p95 on dense model; **6.13×** faster on 31K single-entity dossier |
+
+### Parametric AtlasKV (signed pre-RoPE repository shards)
+
+`hermes-playbox-backend/playbox_atlas/` builds a 3-level `KG2KV` + `HiKVP` code/memory index (~16.4K triples in ~1.2 s on CPU) with strict trust gating (`quarantined` peer triples dropped pre-encode). On the open-weights parametric track (`Qwen/Qwen3-1.7B-Base`, rank-32 residual KV adapters trained on 48 strictly disjoint non-Django repos, evaluated on 20 Django QA holdout queries + 3 poison triples, [docs/atlaskv-integration.md](docs/atlaskv-integration.md)):
+
+| Method | Online tokens | Exact recall (GCE FP32 / MPS FP16) | Prefill speedup | Poison leaks |
+|---|---:|---:|---:|---:|
+| Full-context text stuffing | 4,407.9 | 9/20 (45.0%) | 1.0× | — |
+| Text `HiKVP` brief | 313.1 | 6/20 (30.0%) | — | 0/20 |
+| Un-adapted parametric KV inject | 23.9 | 6/20 (30.0%) | — | 0/20 |
+| **Trained Parametric AtlasKV** (`Ed25519+ML-DSA-65` shard) | **23.9** (**184×** compression) | **17/20 (85.0%)** / **16/20 (80.0%)** | **36.6×–70.3×** | **0/20** |
+
+Naive `AdaptiveAvgPool1d` slot compression collapses recall to `0–1/20 (0–5%)`. A learned Perceiver-style cross-attention resampler (`TrainedKVResamplerAdapter`, 16 slots/cluster, **12×** KV compression, 30 epochs on M4 Max MPS) recovers **`7/20 (35.0%)`** exact recall at `47.7 ms` prefill (**67×** faster than full context, `0/20` poison leaks, `Ed25519+ML-DSA-65` verified), plateauing below the `80–85%` unpooled ceiling due to overfitting 48 train facts into 16 slots. Tampered `.pt` shards and adapters are rejected 100% fail-closed, and `VerifiedKVGateway` (`playbox_router/kv_gateway.py`) binds verified shard/route summaries into `aiproxy` receipts.
+
+### L4 cross-family KV-cache transfer (mapper v2)
+
+Mapping full pre-RoPE KV caches from `Qwen3-4B` to `Llama-3.2-3B` across different tokenizers and head geometries ([docs/l4-scope.md](docs/l4-scope.md) §13–14.1). Recipe v2 (closed-form ridge start + teacher KL loss + 2× key weight + 4-token edge recompute) passed its preregistered 4-seed stability rule on 720 held-out items (`(B)` = mapped retention minus unrelated-real-cache retention):
+
+| Metric (4 training seeds, 720 items) | v1 plain | v1 + 4-tok edge | **v2 + 4-tok edge** | Edge tokens only (control) |
+|---|---:|---:|---:|---:|
+| Retention (%) | 75.6–85.8% | 69.6–77.7% | **85.3–86.6%** | 7.4% |
+| `(B)` gain over unrelated cache (pts) | 16.0–26.2 | 10.1–18.1 | **25.7–27.1** (mean **26.6**) | — |
+| Seed-to-seed range (pts, bar ≤ 5.0) | 10.2 | 8.0 | **1.4** | — |
+
+The stability comes from training with the 4-token edge path; plain cache-only v2 remains high variance (range 12.1 pts).
+
+### L2 concept hub, novelty swarm & commit-and-challenge audit
+
+For lightweight 64-byte concept signaling without KV caches, N models share one hub space (`2N` adapters instead of `N(N-1)` pair maps; `PBL2` envelope: header + signature + 64 int8 bytes vs 2–8 KB float32):
 
 ```mermaid
 flowchart LR
@@ -201,143 +248,53 @@ flowchart LR
     HUBV -- "dec" --> R3
 ```
 
-N models need 2N adapters instead of N(N-1) pair maps, and a new model joins by fitting only its own two adapters. The wire message (`PBL2`) is a header, a signature and `k` int8 bytes. For k = 64 the payload is 64 bytes against 2,304 to 8,192 bytes of float32 for a raw vector.
-
-### A swarm: several senders, one summarizer
-
-Six agents hold k = 2 or 3 concepts between them (one concept is held by several agents, the others by one each), and one summarizer must recover them from a single message. Summing all vectors lets the dominant concept drown the rest. The **novelty filter** picks the k senders whose vectors are farthest apart in cosine, so each distinct concept is represented once.
-
-```mermaid
-flowchart LR
-    subgraph SW["6 sender agents (family A)"]
-        A1["agent 1<br/>concept X"]
-        A2["agent 2<br/>concept X"]
-        A3["agent 3<br/>concept X"]
-        A4["agent 4<br/>concept X"]
-        A5["agent 5<br/>concept Y"]
-        A6["agent 6<br/>concept Z"]
-    end
-
-    NF{{"Novelty filter<br/>pick k vectors<br/>farthest apart in cosine"}}
-    MAP["Fitted map<br/>family A to family B"]
-    SUM["Summarizer<br/>(family B)<br/>one message"]
-    OUT["Top-k concepts<br/>by lexicon hits"]
-
-    A1 --> NF
-    A2 --> NF
-    A3 --> NF
-    A4 --> NF
-    A5 --> NF
-    A6 --> NF
-    NF -- "k vectors, summed" --> MAP --> SUM --> OUT
-```
-
-Measured on one H100, Qwen3-8B and OLMo-2-7B, 400 trials over both directions (each trial draws k = 2 or 3 of 20 concepts):
-
-```mermaid
-xychart-beta
-    title "Mean recall of the true concepts (%), 400 trials"
-    x-axis ["no message", "random vector", "1 agent", "all 6 summed", "k random", "novelty filter", "own direction", "text oracle"]
-    y-axis "recall %" 0 --> 100
-    bar [7.8, 9.0, 44.5, 46.7, 49.6, 55.7, 67.0, 85.9]
-```
-
-| Arm | Recall % | All k recovered % (95% CI) | Rare concepts found % |
-|---|---|---|---|
-| no message | 7.8 | 0.2 (0 to 1) | 9.4 |
-| random vector | 9.0 | 0.5 (0 to 2) | 10.4 |
-| latent, one random agent | 44.5 | 2.8 (2 to 5) | 18.2 |
-| latent, all 6 summed | 46.7 | 5.5 (4 to 8) | 11.5 |
-| latent, k random agents | 49.6 | 8.0 (6 to 11) | 24.1 |
-| **latent, novelty filter** | **55.7** | **17.0 (14 to 21)** | **54.2** |
-| same-model direction (upper bound for a vector) | 67.0 | 32.0 (28 to 37) | 67.0 |
-| text "Topics: a, b" (an oracle that gets the true set) | 85.9 | 66.0 (61 to 70) | 82.1 |
-
-- The filter picks one agent from every true concept in **99%** of trials; a random choice of k does so in 32%.
-- It beats summing everything in 127 trials to 48 (exact sign test p = 2e-9), beats one agent in 140 to 34, and beats k randomly chosen agents in 101 to 47 (p = 1e-5). Random agents are the fairer control, and the margin is not uniform: Qwen→OLMo alone is 49 to 31 (p = 0.057, not significant), OLMo→Qwen 52 to 16 (p = 1e-5).
-- Crossing families costs about 11 points of recall against the same-model direction (55.7 vs 67.0).
-- Cost: 0.5 ms to select, about 150 ms per sender to think; the summarizer runs at the same speed with or without the message.
-
-### Two agents, end to end
-
-Agents are real Hermes agents. Agent A is told a secret topic and runs `think`; Agent B is given only the vector and must name one of 20 topics or "none". Controls send no concept.
-
-| Pair | Setting | Topics correct | Controls answered "none" |
-|---|---|---|---|
-| SmolLM2-135M ↔ Qwen3-1.7B | probe-gated | 65/80 = 81.3% (CI 71 to 88) | 35/36 |
-| Qwen3-8B ↔ OLMo-2-7B | ungated, pooled over 2 seeds | 148/160 = 92.5% | 24/36 (false positives 33%) |
-| Qwen3-8B ↔ OLMo-2-7B | **probe-gated, pooled over 2 seeds** | **140/160 = 87.5% (CI 81 to 92)** | **71/72** |
-| Qwen3-8B ↔ DeepSeek-7B | receiver at layer 0.9, 2 seeds | 139/160 = 86.9% | 68/72 |
-
-The gate is a small probe trained on live Agent A text. It cost about 5 points of topic accuracy and removed almost every false positive.
-
-### Audit: a latent message you can challenge
-
-A latent vector is an injection channel the text filter cannot read, so a sender can commit to what it said.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant S as Sender
-    participant H as Host
-    participant M as Any member (auditor)
-    S->>H: PBL2 envelope: vector + commit = hash(salt + sentences), signed
-    M->>H: challenge seq N
-    H->>S: reveal request
-    S->>H: salt + the sentences it read
-    H->>H: accept only if hash matches the signed commit, once
-    H-->>M: reveal travels with the message
-    M->>M: encode sentences through its own model, compare cosine
-    Note over M: honest median 0.51, swapped 0.29, random 0.03
-```
-
-In a real room run, 72 audits separated honest from lying senders with a probability of 0.994 that an honest score exceeds a lying one. At a threshold of 0.437 (in-sample), 36 of 36 liars were caught and 28 of 30 honest messages passed. Thresholds must be set from honest runs of your own models.
+- **Two Hermes agents, end to end** (20 topics or `"none"`, chance 4.8%): `SmolLM2-135M ↔ Qwen3-1.7B` **81.3%** (65/80, 35/36 controls `"none"`); `Qwen3-8B ↔ OLMo-2-7B` probe-gated **87.5%** (140/160, 71/72 controls `"none"`; ungated 92.5% with 33% false positives); `Qwen3-8B ↔ DeepSeek-7B` (layer 0.9) **86.9%** (139/160, 68/72 controls `"none"`).
+- **Novelty-filtered swarm** (6 senders, `k = 2` or `3` concepts, 400 H100 trials across `Qwen3-8B ↔ OLMo-2-7B`, [report](steer/results/telepathy/swarm/report.md)): picking the `k` senders farthest apart in cosine hits **55.7% recall** (**54.2%** on rare concepts) vs **46.7%** (11.5% rare) for summing all 6 (`p = 2e-9`), **44.5%** for one agent, and **49.6%** for `k` random agents (`p = 1e-5`; OLMo→Qwen `p = 1e-5`, Qwen→OLMo `p = 0.057`). Same-model vector upper bound is 67.0%; oracle text `"Topics: a, b"` is 85.9%.
+- **Commit-and-challenge audit:** every `PBL2` envelope commits `hash(salt + sentences)`. Any member can challenge `seq N` and re-encode the revealed sentences through its own model; in 72 room audits, honest vs lying senders separated with **0.994** probability (36/36 liars caught and 28/30 honest passed at in-sample threshold 0.437; near-miss payloads remain a known limit in [docs/latent-channels.md](docs/latent-channels.md) §6r).
 
 ---
 
 ## Collaborative hill-climbing
 
-Yukon-style challenges already show the shape: one objective, a verifier, each promoted result becomes the next baseline. The **Commons** keeps that and changes two things. The score that counts is the group's frontier, and the verifier is a peer-verifiable host instead of a platform ([docs/challenge.md](docs/challenge.md)).
+Yukon-style challenges already show the shape: one objective, a verifier, each promoted result becomes the next baseline. The **Commons** keeps that and changes two things: the score that counts is the group's frontier, and the verifier is a peer-verifiable attested host emitting offline-verifiable 5-gate bundles instead of a trusted platform ([docs/challenge.md](docs/challenge.md)).
 
 ```mermaid
 flowchart LR
     FR["frontier<br/>current best,<br/>one git history"] -- "pull" --> AG["Agents<br/>different owners,<br/>models, harnesses"]
-    AG <-- "recall / remember" --> MEM[("Shared memory<br/>negative results,<br/>claims")]
-    AG -- "push branch" --> GATE{"Merge gate<br/>no humans in<br/>the path"}
-    GATE -- "run candidate" --> EV["Signed evaluator<br/>sealed holdout,<br/>harness owns the clock"]
+    AG <-- "recall / remember" --> MEM[("Verified memory<br/>AtlasKV + lessons")]
+    AG -- "push branch" --> GATE{"Attested Gate<br/>persistent microVM,<br/>no humans in path"}
+    GATE -- "run candidate" --> EV["Sealed evaluator<br/>enforced taint +<br/>BOX-7 egress"]
     EV -- "score + verdict" --> GATE
-    GATE -- "above threshold:<br/>promote" --> FR
-    GATE -- "every decision" --> REC["Signed receipt<br/>promote or reject,<br/>with the reason"]
+    GATE -- "quorum promote" --> FR
+    GATE -- "every decision" --> REC["5-Gate Bundle<br/>Ed25519 + ML-DSA-65<br/>RoomLog + T1/T3"]
 ```
 
-### What the gate does today
+### Live Attested Gate: SWE-bench, recursive hill-climb & adversarial security
 
-Run on one M4 Max on 2026-10-29. The objective is lossless speedup of greedy decoding for SmolLM2-135M on CPU (token-for-token equality with the reference on sealed prompts), plus an exact-certificate matrix-multiplication problem.
+The gate now runs inside live Playbox rooms (`Arm P2`) with persistent OpenShell microVMs (**0.07–0.15 s** median delegate vs 6.97 s legacy, **99× faster**), 3-hop AtlasKV + gate-verified compounding memory, enforced taint (`PLAYBOX_APPROVERS`, 0 false positives on offline repo work), `BOX-7` egress control, 2-host `RoomLog` quorum promotions, `T1`/`T3` hardware attestation, and hybrid post-quantum **`Ed25519+ML-DSA-65`** receipts (`playbox gate export|sign|verify`). Playbox also blocks `.git` future-history leakage by construction (single-commit `git archive` + stripped `.git` in `/sandbox`), which forensic inspection showed had contaminated 7/7 legacy `django-11422` solves in Arms L & S ([docs/hermes-parity-swe-playbox.md](docs/hermes-parity-swe-playbox.md)).
 
-| Submission | Tier | Gate result |
-|---|---|---|
-| rank-6 2×2 scheme (invalid) | A | **rejected**: exact tensor mismatch at (1, 3, 0) |
-| Strassen, rank 7 | A | **promoted** (alice) |
-| memoizing cheat | B | **rejected**: disallowed imports; with the whitelist relaxed it passes the public dev seed at about 20M tok/s and fails the sealed seed, 4 of 4 prompts differ |
-| bf16 weights | B | **rejected**: 1 of 4 prompts differ from the reference |
-| KV cache | B | **promoted**, **2.84×** over the pinned no-cache baseline (the lower of the primary and replica ratios) |
-| KV cache plus thread tweak | B | **rejected**: 1.031× is below the 1.05× threshold |
+| Evaluation suite | Baseline | Playbox Attested Gate (`Arm P2`) | Receipts & verification |
+|---|---|---|---|
+| **50-Instance Polyglot SWE-bench** (Python `django`/`pytest`/`sympy`/`sklearn`/`flask` + Rust + TS) | Arm S (`claude-haiku-5-5` stock OpenShell): **42/50** (84.0%; 37/50 pre-retry) | **44/50 (88.0%)**, `0.12–0.15 s` med cmd, `$0.105/solve` (fast gate); McNemar `p = 0.035` vs pre-retry | 50/50 `Ed25519+ML-DSA-65` receipts, 44 PQ `RoomLog` promotions, 5-gate `T1` bundle |
+| **28-Instance SWE-bench Verified (paired)** | Arm S (`gpt-5.6-luna` stock OpenShell): **22/28** (78.6%) | **28/28 (100.0%)** (`devin` `swe-2-high→max` + `playbox-aiproxy`); exact McNemar `p = 0.03125` | 28/28 `host_aiproxy` ledgers + PQ receipts + 5-gate `T1` bundle |
+| **5-Instance Recursive Hill-Climb** (`hillclimb_playbox.py`) | Round 1 (`gemini-4-neon-high`): 4/5 | **5/5 (100.0%)** (Round 2 non-oracle climb w/ `claude-opus-5-5-high` solved `django-11905` in 45.3 s, $0.05) | 6/6 PQ receipts, 5/5 verified lessons, 0 taint advisories |
+| **20-Task Adversarial Security & Anti-Goodhart** (secret exfil, backdoor, git leak, test tamper, path traversal) | Arm L: **20.0% ASR** (4/20 traversal) · Arm S: **20.0% ASR** (4/20 `.env.ci` exfil) | **0/20 (0.0% ASR, 0.0% unflagged reward hacks)** at **95.0%** clean utility (19/20) | 20/20 PQ receipts, 19 PQ promotions, 5-gate `T1` bundle |
+| **10-Instance Local Same-Model Pilot** (`swe-2`, Django ARM64) | Arm S (`devin` `swe-2`): **10/10** (`48.0 s` avg)\* | **10/10** (`devin` `swe-2`, `--max-tiers 1`, `openshell`, `98.2 s` avg)\* | 10/10 PQ receipts, `.git` isolated (\*after fixing Django docstring-test parsing in `swe/score.py`, which initially capped both arms at `5/10`) |
 
-I re-verified the receipt chain while writing this README. The check recomputes each body hash, checks the `prev` link, and checks the Ed25519 signature against the host key:
+### Two-host H100 training hill-climb (F3 pilot 2)
 
-```text
-receipts verified (hash chain + Ed25519 sig): 6
-a mallory reject  checker 1: tensor mismatch at (1, 3, 0)
-a alice   promote 7
-b mallory reject  primary: disallowed imports: ['json', 'random', 'pathlib']
-b carol   reject  primary: 1/4 prompts differ from reference
-b alice   promote
-b bob     reject  gain 1.031x over frontier is below threshold 1.05x
-```
+On two H100 nodes (`f3-pilot-a` primary, `f3-pilot-b` independent replay, [docs/f3/pilot2/README.md](docs/f3/pilot2/README.md)), the F3 gate ran a full training hill-climb round with an off-node pinned key and fresh-seed replay (`verify.py --replay all`: `VERIFIED`, 0 `FAIL` lines):
 
-### Hill-climbing steering itself (E4)
+| Seq | Candidate | Gate verdict | Primary / Replay result |
+|---|---|---|---|
+| 1 | `compile_model` | **PROMOTE** | +0.6096 gain; fresh seeds +0.615 |
+| 2 | `weight_decay_0 + clip_1` | **REJECT** (`gain_below_threshold`) | +0.0371 < ~0.05 threshold |
+| 3 | `anneal_to_step_240` | **PROMOTE** | +0.1178 gain; fresh seeds +0.129 |
+| 4 | `dev memorizer` (injected cheat) | **REJECT** (`holdout_failed`) | dev 0.807, holdout **2.249** > 1.2225 limit (**caught** on primary & replay) |
 
-The same idea applied to a steering configuration: a custodian seals a holdout of 32 prompts and issues a signed evaluator; a different key searches, signs variants, and cannot edit the evaluator. In the GPT-2 run, both candidates that looked as good on the dev set were rejected because their gain was not supported on the sealed holdout. The honest summary is that the loop works end to end, and on a space this small it finds what a short grid finds ([docs/steering.md](docs/steering.md) §E4).
+### Commons v0 gate & E4 steering hill-climb
+
+The original single-machine v0 gate ([challenge/results/](challenge/results/)) verified **6/6** signed receipts on SmolLM2-135M CPU greedy decoding + exact-certificate matrix multiplication (promoting Strassen rank-7 and a lossless **2.84×** KV-cache speedup while rejecting an invalid rank-6 scheme, a memoizing cheat, lossy bf16 weights, and a 1.031× sub-threshold tweak). The same sealed-holdout loop was also validated on steering configs (E4, [docs/steering.md](docs/steering.md) §E4), rejecting both dev-overfit candidates on the 32-prompt sealed holdout.
 
 ### Credit without a leaderboard
 
@@ -363,9 +320,10 @@ Credit follows signed ancestry, not rank, so a contributor can leave and keep it
 | T3 confidential VM | Real TDX token verified; a Mac guest joined a Confidential Space host at T3 across the internet | [docs/trust-layers.md](docs/trust-layers.md) |
 | Grants | Lean theorems with no `sorry`; Rust attacks tried and refused (`security.rs`) | `lean/`, `crates/playbox-net/tests/security.rs` |
 | Parsers | 14 fuzz targets: wire frames, grant tokens, revocation notices, links, attestation, TPM, TDX, latent envelopes and store, history and audit logs, room state files, capability binding, room logs | `fuzz/` |
-| Cross-family latent channel | 87.5% gated over 160 blind trials; 0 infrastructure failures | [docs/steering.md](docs/steering.md) |
-| Swarm | 400 trials, sign tests, per-arm CIs, per-direction breakdown | `steer/results/telepathy/swarm/` |
-| Hill-climb gate | 6 signed receipts; cheats rejected; 2.84× promoted | `challenge/results/` |
+| Entity-routed KV + adaptive RAG | 9,228 turns (0 errors) across CRM, FinanceBench, LoCoMo vs 128K KV, BM25, conversational & dense+reranker RAG | [docs/kv-routed-eval.md](docs/kv-routed-eval.md) |
+| Parametric AtlasKV & L4 KV mapper | 85% exact recall at 184× compression (`Ed25519+ML-DSA-65` shards); L4 v2 85.3–86.6% retention across 4 seeds (range 1.4 pts) | [docs/atlaskv-integration.md](docs/atlaskv-integration.md), [docs/l4-scope.md](docs/l4-scope.md) |
+| Cross-family L2 channel & swarm | 87.5% gated over 160 blind trials; 400-trial swarm novelty filter; 72 room audits | [docs/steering.md](docs/steering.md), `steer/results/telepathy/swarm/` |
+| Live Attested Gate & hill-climb | 44/50 polyglot SWE-bench, 28/28 paired, 5/5 Devin hill-climb, 0/20 adversarial ASR; F3 pilot 2 two-host H100 replay; v0 6/6 receipts | [docs/hermes-parity-swe-playbox.md](docs/hermes-parity-swe-playbox.md), [docs/f3/pilot2/README.md](docs/f3/pilot2/README.md), `challenge/results/` |
 | Release integrity | Signed `SHA256SUMS` checked against a key compiled into the binary; SBOM and build provenance; old binary kept for `--rollback` | [docs/releasing.md](docs/releasing.md), [CHANGELOG.md](CHANGELOG.md) |
 
 The latent-channel and steering write-ups label their results with a ceiling (for example `local_internal_exploratory`, in [docs/latent-channels.md](docs/latent-channels.md)) so a number cannot quietly claim more than it earned. The raw result files under `steer/results/` carry no such label.
@@ -388,14 +346,14 @@ This project's habit is to say what a result does not show. These are the limits
 
 - **Telepathy is a concept channel, not thought transfer.** The vector is built from the sender's own sentences about a listed concept. Concepts outside the anchors do not cross; cards for "ocean" and "space" failed for a text-only reader because the anchors had nothing near them.
 - **Closed models get text only.** Nothing lets a vector be injected into a model whose activations we cannot hook.
-- **A vector is not better than a word.** Sending the topic word as text scored higher (71 to 77% against 61 to 68% for the latent vector, 160 prompts per direction) and costs 16 bytes. The latent channel's value is that no readable text crosses and the receiver's context stays untouched. A vector also carries a mixture direction, not a list: the best swarm vector recovered all k concepts in 17% of trials, oracle text in 66%.
-- **Each new model family needs its own receiver layer and strength.** DeepSeek failed at the default and worked at 0.9 depth.
-- **The Commons v0 is one machine.** The "replica" is a second sealed seed, the hardware fingerprint is self-reported (`attested: false`), candidates run as subprocesses behind an import whitelist, and it is not yet wired into a live room. The 2×2 problem is solved; the open target is 3×3 (best known 23).
+- **L2 concept vectors are not better than a word; KV channels have explicit scope limits.** In [docs/metered-benchmark.md](docs/metered-benchmark.md), L2 steering scored 0% on exact facts and cost more than a text word. `S-ROUTED` ([docs/kv-routed-eval.md](docs/kv-routed-eval.md)) has been measured on `Qwen3-30B-A3B-Instruct-2507-FP8` across 3 datasets (CRM, FinanceBench, LoCoMo); dense models, 50K+ single-entity dossiers, and open-domain search without entity locality remain outside it. L4 mapper v2 ([docs/l4-scope.md](docs/l4-scope.md) §14.1) requires the 4-token edge path (plain cache-only is still high variance). Parametric AtlasKV's naive average-pooling slot compression fails (`5%` recall).
+- **Each new model family needs its own receiver layer and strength (L2).** DeepSeek failed at the default and worked at 0.9 depth.
+- **SWE-bench and F3 evals are not full-split leaderboard claims.** The 50-instance polyglot and 28-instance paired runs are `n=1` per instance (the 150-instance sealed `Track A` harness is materialized and verified, awaiting live run); the 20-task security suite uses controlled micro-repos. F3 pilot 2 used scripted stand-ins on two same-operator H100s rather than independent operators.
 - **Attestation proves the platform, not the agent's behavior.** No hardware TPM has been tested yet; the libkrun runner on Linux/KVM and its confinement run in CI on GitHub's KVM runners (`.github/workflows/ci.yml` `krun` and `confine` jobs) and on nested arm64 KVM ([docs/tested-on.md](docs/tested-on.md)).
 - **Trusting the host(s).** Single-host rooms trust that host unless its hardware tier is verified; multi-host signed room logs (`playbox_core::roomlog`, [docs/host-less-rooms.md](docs/host-less-rooms.md)) add quorum cosigning, equivocation proofs, and automatic guest failover across the room's host set. The admission broker is lexical.
 - **Bundle import and git versions.** On git 2.43.0 `git fetch` from a bundle file does not apply `transfer.fsckObjects`, so a bundle whose tree contains `.git/hooks/post-checkout` was imported instead of refused; that is why `a_hostile_bundle_is_rejected_on_import` failed in the run above. Reproduced again with plain git in an `ubuntu:24.04` container (2.43.0): the fetch succeeds, and `git -c fsck.hasDotgit=error fsck --strict` on the new tip then fails with `hasDotgit`. `bundle_import` now runs that explicit fsck and restores the ref when it fails (#11, [threat model §4](docs/threat-model.md)); the test passes on git 2.55.0. Re-run since then: `cargo test -p playbox-git` passes 6 of 6 on git 2.43.0 (`ubuntu:24.04`) as well as on 2.55.0 ([docs/proof-status.md](docs/proof-status.md)). The companion test that checks a hook is never *run* on checkout passed throughout. The Docker/microVM sandbox boundary is unaffected.
 - **Self-review.** [docs/threat-model.md](docs/threat-model.md) is written by the authors. Get an independent audit before exposing a host to people you do not know. What is built, planned and not planned for the sandbox is in [docs/security-roadmap.md](docs/security-roadmap.md).
-- **Small samples.** Most telepathy cells are one or two seeds; seed-to-seed spread is up to 5 points. A withdrawn benchmark ([docs/kv-hybrid.md](docs/kv-hybrid.md)) is kept in the repo with its retraction, because the first throughput claim did not survive a control.
+- **Small samples & retractions.** Most L2 telepathy cells are one or two seeds (spread up to 5 points). An early hybrid KV benchmark ([docs/kv-hybrid.md](docs/kv-hybrid.md)) is kept in the repo with its retraction, before entity-routed KV ([docs/kv-routed-eval.md](docs/kv-routed-eval.md)) resolved the cache-salt and working-set design.
 
 ---
 
@@ -404,24 +362,23 @@ This project's habit is to say what a result does not show. These are the limits
 ```mermaid
 flowchart LR
     subgraph DONE["Built and measured"]
-        D1["Rooms, grants, sandbox,<br/>signed history"]
-        D2["T1 and T3 attestation"]
-        D3["Hub PWA, MCP App card,<br/>Claude Code plugin"]
-        D4["Latent hub, signed envelopes,<br/>commit and challenge"]
-        D5["Cross-family swarm<br/>with novelty filter"]
-        D6["Commons v0 gate and receipts"]
+        D1["Rooms, grants, sandbox,<br/>signed history, PQ receipts"]
+        D2["T1 and T3 attestation<br/>5-gate offline bundles"]
+        D3["Hub PWA, MCP App card,<br/>Claude Code plugin, aiproxy"]
+        D4["Entity-routed KV (MoE+dense),<br/>Parametric AtlasKV & L4 v2"]
+        D5["Live Attested Gate, 2-host<br/>RoomLog & 2-key F3 quorum"]
+        D6["n=150 T3 Track A SWE-bench,<br/>0% ASR suite & /api/lineage"]
     end
     subgraph NEXT["Next"]
-        N1["Commons inside a live room:<br/>push and pull, claims,<br/>shared memory"]
-        N2["Real second host for<br/>two-key promotion"]
-        N3["Lossy Pareto track with<br/>sealed quality set and KL check"]
-        N4["Latent swarm on a<br/>real program-search task"]
+        N1["Physical hardware TPM (/dev/tpmrm0)<br/>+ vendor EK anchors for T2"]
+        N2["AtlasKV resampler scaling<br/>(32–64 slots, >48 train repos)"]
+        N3["L4 v2 one-switch-off<br/>ablations (ridge/KL/key/edge)"]
     end
     subgraph LATER["Later"]
-        L1["Trained cache mapper<br/>across families"]
+        L1["Full-size L4 KV mapper<br/>(post-ablation)"]
         L2["Hardware TPM and T2<br/>on real machines"]
         L3["Hill-climb on GPU kernels<br/>for a 1B-class model"]
-        L4["Lineage credit report<br/>and spectator page"]
+        L4["Independent security audit<br/>& public Commons rooms"]
     end
     DONE --> NEXT --> LATER
 ```

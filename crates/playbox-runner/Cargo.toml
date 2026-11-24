@@ -15,6 +15,7 @@ url = "2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 playbox-core = { path = "../playbox-core" }
 blake3 = "1"
+ed25519-dalek.workspace = true
 
 # Confinement of the helper process (namespaces, cgroups). Linux only: macOS has no equivalent, and says so in docs/libkrun.md.
 [target.'cfg(target_os = "linux")'.dependencies]

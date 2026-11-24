@@ -106,7 +106,12 @@ else:
     ex = lambda c: subprocess.run(["openshell", "sandbox", "exec", SB, "--", "sh", "-c", c], capture_output=True, text=True)
     if ex("true").returncode != 0:
         subprocess.run(["openshell", "sandbox", "delete", SB], capture_output=True, text=True)
-        subprocess.run(["openshell", "sandbox", "create", "--name", SB, "--from", img, "--detach"], check=True, capture_output=True, text=True)
+        cr = subprocess.run(["openshell", "sandbox", "create", "--name", SB, "--from", img, "--detach"], capture_output=True, text=True)
+        if cr.returncode != 0 and ex("true").returncode != 0:
+            time.sleep(2)
+            if ex("true").returncode != 0:
+                subprocess.run(["openshell", "sandbox", "delete", SB], capture_output=True, text=True)
+                subprocess.run(["openshell", "sandbox", "create", "--name", SB, "--from", img, "--detach"], check=True, capture_output=True, text=True)
     ssh_bin = ensure_openshell_ssh_shim(H, SB)
     env["PATH"] = f"{ssh_bin}:" + env["PATH"]
     t0 = time.time()

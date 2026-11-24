@@ -960,6 +960,8 @@ pub enum RoomTemplate {
     Review,
     Ops,
     Hillclimb,
+    #[value(name = "arc-rsi")]
+    ArcRsi,
 }
 
 impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
@@ -970,6 +972,7 @@ impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
             RoomTemplate::Review => Self::Review,
             RoomTemplate::Ops => Self::Ops,
             RoomTemplate::Hillclimb => Self::Hillclimb,
+            RoomTemplate::ArcRsi => Self::ArcRsi,
         }
     }
 }

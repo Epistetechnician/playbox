@@ -22,6 +22,7 @@ Anti-Goodhart & security invariants:
 from __future__ import annotations
 
 import argparse
+import atexit
 import concurrent.futures
 import hashlib
 import importlib.util
@@ -195,7 +196,7 @@ def host_repo(dst: str, inst: str, r: dict) -> None:
             subprocess.run(["tar", "-xf", r["pb_host_tar"], "-C", tmp_cache], check=True)
             shutil.rmtree(os.path.join(tmp_cache, ".git"), ignore_errors=True)
         else:
-            fam = r.get("pb_family") or ("django" if inst.startswith("django-") else inst)
+            fam = r.get("pb_family") or ("django" if inst.startswith(("django-", "django__")) else inst)
             tb = f"{SWE}/{fam}/testbed"
             subprocess.run(f"git -C {tb} archive {r['base_commit']} | tar -x -C {tmp_cache}", shell=True, check=True)
         subprocess.run([*GIT, "init", "-q", "-b", "main", tmp_cache], check=True)
@@ -1169,10 +1170,34 @@ class WarmPlayboxRoom:
         return os.path.join(self.pool_dir, f"mhome-{label}")
 
     def close(self) -> None:
+        host_pid = getattr(getattr(self.host, "p", None), "pid", None)
         try:
             self.host.close()
         finally:
+            if self.runtime == "openshell" and host_pid:
+                _cleanup_openshell_warm_sandboxes(host_pid)
             shutil.rmtree(self.repo_dir, ignore_errors=True)
+
+
+def _cleanup_openshell_warm_sandboxes(host_pid: int) -> None:
+    prefix = f"pbxw-{host_pid:x}-"
+    try:
+        out = subprocess.run(
+            ["openshell", "sandbox", "list"],
+            capture_output=True, text=True, timeout=15,
+        ).stdout
+        stale = [
+            line.split()[0]
+            for line in out.splitlines()
+            if line.split() and line.split()[0].startswith(prefix)
+        ]
+        if stale:
+            subprocess.run(
+                ["openshell", "sandbox", "delete", *stale],
+                capture_output=True, text=True, timeout=30,
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[warn] stale openshell sandbox cleanup failed: {exc}", file=sys.stderr)
 
 
 class WarmHostPool:
@@ -1182,6 +1207,7 @@ class WarmHostPool:
         self.runtime = runtime
         self._lock = threading.Lock()
         self._rooms: dict[tuple[str, str], WarmPlayboxRoom] = {}
+        atexit.register(self.close_all)
 
     def get(self, slot: str, img: str, *, egress_file: str = "", allow_egress: list[str] | None = None) -> WarmPlayboxRoom:
         key = (str(slot), str(img))

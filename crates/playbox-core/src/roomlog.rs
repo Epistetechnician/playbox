@@ -1188,6 +1188,17 @@ fn validate_event(e: &Entry) -> Result<(), LogError> {
         }
         "problem.register" => promotion::parse_register(e).map(|_| ()),
         "promotion" => promotion::parse_promotion(e).map(|_| ()),
+        "arc.receipt" => {
+            let v: Value =
+                serde_json::from_slice(&e.payload).map_err(|_| bad("payload is not json"))?;
+            let kind = v["event"].as_str().ok_or_else(|| bad("missing event"))?;
+            let digest = v["digest"].as_str().ok_or_else(|| bad("missing digest"))?;
+            if kind.is_empty() || digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(bad("arc.receipt fields"));
+            }
+            Ok(())
+        }
         other => Err(bad(&format!("kind {other}"))),
     }
 }
