@@ -27,6 +27,10 @@ const PINNED_PQ_KEYS: &str = match option_env!("PLAYBOX_RELEASE_PQ_PUBKEY") {
     Some(k) if !k.is_empty() => k,
     _ => include_str!("../../../release.pq.pub"),
 };
+const PINNED_HASH_KEYS: &str = match option_env!("PLAYBOX_RELEASE_HASH_PUBKEY") {
+    Some(k) if !k.is_empty() => k,
+    _ => include_str!("../../../release.hash.pub"),
+};
 
 fn parse_pinned(raw: &str) -> Vec<String> {
     raw.lines()
@@ -43,6 +47,10 @@ pub(crate) fn pinned_keys() -> Vec<String> {
 pub(crate) fn pinned_pq_keys() -> Vec<String> {
     parse_pinned(PINNED_PQ_KEYS)
 }
+
+pub(crate) fn pinned_hash_keys() -> Vec<String> {
+    parse_pinned(PINNED_HASH_KEYS)
+}
 /// Exit status of `--check` when a newer release exists, so scripts can branch on it.
 pub const EXIT_UPDATE_AVAILABLE: u8 = 10;
 
@@ -55,6 +63,7 @@ pub struct Opts {
     pub json: bool,
     pub pubkey: Option<String>,
     pub pq_pubkey: Option<String>,
+    pub hash_pubkey: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,7 +147,9 @@ fn platform() -> Result<String> {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
         "linux" => "linux",
-        o => bail!("no prebuilt release for {o}; build from source: cargo install --path crates/playbox-cli"),
+        o => bail!(
+            "no prebuilt release for {o}; build from source: cargo install --path crates/playbox-cli"
+        ),
     };
     let arch = match std::env::consts::ARCH {
         "aarch64" => "arm64",
@@ -314,7 +325,9 @@ fn resolve_signing_keys(override_key: Option<&str>, pinned: Vec<String>) -> Resu
         None => pinned,
     };
     if keys.is_empty() {
-        bail!("this build pins no release signing key; refusing to update without signature verification");
+        bail!(
+            "this build pins no release signing key; refusing to update without signature verification"
+        );
     }
     Ok(keys)
 }
@@ -411,6 +424,26 @@ pub fn run(o: &Opts) -> Result<u8> {
             );
         }
     }
+    let hash_keys = match (&o.hash_pubkey, &o.pubkey) {
+        (Some(k), _) => vec![k.clone()],
+        (None, Some(_)) => Vec::new(),
+        (None, None) => pinned_hash_keys(),
+    };
+    if !hash_keys.is_empty() {
+        let hash_sig = fetch(&format!("{base}/SHA256SUMS.hash.sig")).context(
+            "this release has no FIPS 205 SLH-DSA-SHA2-128f hash-based signature, and this build requires one",
+        )?;
+        std::fs::write(tmp.0.join("SHA256SUMS.hash.sig"), hash_sig)?;
+        let ok = hash_keys.iter().any(|k| {
+            crate::release::verify_hash_quiet(&sums_path.to_string_lossy(), None, k).is_ok()
+        });
+        if !ok {
+            bail!(
+                "BAD HASH SIGNATURE: SHA256SUMS was not signed by any SLH-DSA-SHA2-128f key this build trusts ({} pinned); not updating",
+                hash_keys.len()
+            );
+        }
+    }
     let sums = parse_sums(&String::from_utf8_lossy(&sums_raw));
 
     // 2. release.json must be listed in the signed SHA256SUMS and match its hash before we parse or display it.
@@ -430,7 +463,10 @@ pub fn run(o: &Opts) -> Result<u8> {
     }
     let newer = target > cur;
     let compat = match m.protocol {
-        Some(p) if p > playbox_net::wire::PROTOCOL => format!("changes the wire protocol ({} -> {p}): rooms hosted by older builds will refuse you until their hosts update", playbox_net::wire::PROTOCOL),
+        Some(p) if p > playbox_net::wire::PROTOCOL => format!(
+            "changes the wire protocol ({} -> {p}): rooms hosted by older builds will refuse you until their hosts update",
+            playbox_net::wire::PROTOCOL
+        ),
         Some(p) => format!("wire protocol {p}: compatible with rooms on this version"),
         None => "wire protocol not stated".to_string(),
     };
@@ -533,7 +569,9 @@ pub fn run(o: &Opts) -> Result<u8> {
     if !m.notes.trim().is_empty() {
         println!("\n{}", m.notes.trim());
     }
-    println!("\nrunning agents keep the old version until restarted; undo with: playbox update --rollback");
+    println!(
+        "\nrunning agents keep the old version until restarted; undo with: playbox update --rollback"
+    );
     // Every update is followed by a check of the updated install, run by the new binary: a release that moved a file or loosened a
     // permission shows up now rather than at the next audit. The report is the same one `playbox secure` writes for the hub.
     println!("\nchecking the updated install (playbox secure):");
@@ -721,7 +759,9 @@ fn keep_local_signature(staged: &Path, installed: &Path) {
     if ok {
         println!("signed with \"{name}\" so the firewall keeps its answer");
     } else {
-        eprintln!("note: could not sign with \"{name}\" (is the login keychain locked?); the release's own signature is kept");
+        eprintln!(
+            "note: could not sign with \"{name}\" (is the login keychain locked?); the release's own signature is kept"
+        );
     }
 }
 

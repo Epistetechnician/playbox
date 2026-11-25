@@ -1,0 +1,2 @@
+# PQAI hash-only release signing keys (FIPS 205 SLH-DSA-SHA2-128f, hex), one per line.
+# Empty until a maintainer pins a hash-based root key with `playbox release hash-keygen` alongside `release.pub`.

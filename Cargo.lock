@@ -1477,6 +1477,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fips205"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a5a5dcc490a93ad15deabf0534af8b2b6e9d20e01e8066f6fcba4da7e316100"
+dependencies = [
+ "rand_core 0.6.4",
+ "sha2 0.10.9",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3611,6 +3623,7 @@ dependencies = [
  "cfb-mode",
  "ed25519-dalek 3.0.0",
  "fips204",
+ "fips205",
  "getrandom 0.4.3",
  "hmac 0.12.1",
  "p256 0.14.0",

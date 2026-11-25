@@ -8,6 +8,7 @@ use playbox_core::record::{hex, unhex};
 use std::path::Path;
 
 const RELEASE_PQ_CTX: &[u8] = b"playbox.release.v1";
+const RELEASE_HASH_CTX: &[u8] = b"playbox.release.hash.v1";
 
 fn unhex_vec(s: &str) -> Result<Vec<u8>> {
     if !s.len().is_multiple_of(2) || !s.is_ascii() {
@@ -45,7 +46,9 @@ pub fn keygen(out: &str) -> Result<()> {
     let k = SigningKey::from_bytes(&playbox_net::random_bytes()?);
     write_private_new(out, format!("{}\n", hex(&k.to_bytes())).as_bytes())?;
     println!("{}", hex(&k.verifying_key().to_bytes()));
-    eprintln!("public key above: pin it in install.sh and docs. The secret is in {out}; store it as the PLAYBOX_RELEASE_KEY CI secret and nowhere else.");
+    eprintln!(
+        "public key above: pin it in install.sh and docs. The secret is in {out}; store it as the PLAYBOX_RELEASE_KEY CI secret and nowhere else."
+    );
     Ok(())
 }
 
@@ -54,7 +57,20 @@ pub fn pq_keygen(out: &str) -> Result<()> {
     let (pk, sk) = pq::keygen_mldsa65()?;
     write_private_new(out, format!("{}\n", hex(&sk)).as_bytes())?;
     println!("{}", hex(&pk));
-    eprintln!("ML-DSA-65 public key above: pin it in release.pq.pub / PLAYBOX_RELEASE_PQ_PUBKEY. Store {out} as PLAYBOX_RELEASE_PQ_KEY and nowhere else.");
+    eprintln!(
+        "ML-DSA-65 public key above: pin it in release.pq.pub / PLAYBOX_RELEASE_PQ_PUBKEY. Store {out} as PLAYBOX_RELEASE_PQ_KEY and nowhere else."
+    );
+    Ok(())
+}
+
+/// Generate a FIPS 205 SLH-DSA-SHA2-128f hash-based PQAI release signing keypair; writes the secret key to `out` (0600) and prints the public key hex.
+pub fn hash_keygen(out: &str) -> Result<()> {
+    let (pk, sk) = pq::keygen_slhdsa()?;
+    write_private_new(out, format!("{}\n", hex(&sk)).as_bytes())?;
+    println!("{}", hex(&pk));
+    eprintln!(
+        "SLH-DSA-SHA2-128f public key above: pin it in release.hash.pub / PLAYBOX_RELEASE_HASH_PUBKEY. Store {out} as PLAYBOX_RELEASE_HASH_KEY and nowhere else."
+    );
     Ok(())
 }
 
@@ -81,8 +97,21 @@ fn load_pq_key(secret_hex_or_file: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Sign a file with Ed25519 (writing `<file>.sig`) and optionally ML-DSA-65 (writing `<file>.pq.sig`).
-pub fn sign(file: &str, key: &str, pq_key: Option<&str>) -> Result<()> {
+fn load_hash_key(secret_hex_or_file: &str) -> Result<Vec<u8>> {
+    let text = if Path::new(secret_hex_or_file).exists() {
+        std::fs::read_to_string(secret_hex_or_file)?
+    } else {
+        secret_hex_or_file.to_string()
+    };
+    let bytes = unhex_vec(text.trim()).context("release SLH-DSA hash key")?;
+    if bytes.len() != pq::SLHDSA_SK_LEN {
+        bail!("release SLH-DSA key must be {} bytes", pq::SLHDSA_SK_LEN);
+    }
+    Ok(bytes)
+}
+
+/// Sign a file with Ed25519 (writing `<file>.sig`), optionally ML-DSA-65 (`<file>.pq.sig`), and optionally FIPS 205 SLH-DSA-SHA2-128f (`<file>.hash.sig`).
+pub fn sign(file: &str, key: &str, pq_key: Option<&str>, hash_key: Option<&str>) -> Result<()> {
     let data = std::fs::read(file)?;
     let k = load_key(key)?;
     let sig = k.sign(&data);
@@ -92,6 +121,11 @@ pub fn sign(file: &str, key: &str, pq_key: Option<&str>) -> Result<()> {
         let pq_sig = pq::sign_mldsa65(&sk, &data, RELEASE_PQ_CTX)?;
         std::fs::write(format!("{file}.pq.sig"), format!("{}\n", hex(&pq_sig)))?;
     }
+    if let Some(hk) = hash_key.filter(|s| !s.trim().is_empty()) {
+        let sk = load_hash_key(hk)?;
+        let hash_sig = pq::sign_slhdsa(&sk, &data, RELEASE_HASH_CTX)?;
+        std::fs::write(format!("{file}.hash.sig"), format!("{}\n", hex(&hash_sig)))?;
+    }
     println!(
         "signed {file} with key {}",
         hex(&k.verifying_key().to_bytes())
@@ -99,17 +133,22 @@ pub fn sign(file: &str, key: &str, pq_key: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Check `<file>.sig` (or `--sig`) against an Ed25519 public key, and optionally `<file>.pq.sig` against an ML-DSA-65 public key.
+/// Check `<file>.sig` against an Ed25519 public key, optionally `<file>.pq.sig` against ML-DSA-65, and optionally `<file>.hash.sig` against FIPS 205 SLH-DSA-SHA2-128f.
 pub fn verify(
     file: &str,
     sig: Option<&str>,
     pubkey: &str,
     pq_sig: Option<&str>,
     pq_pubkey: Option<&str>,
+    hash_sig: Option<&str>,
+    hash_pubkey: Option<&str>,
 ) -> Result<()> {
     verify_quiet(file, sig, pubkey)?;
     if let Some(pq_pk) = pq_pubkey.filter(|s| !s.trim().is_empty()) {
         verify_pq_quiet(file, pq_sig, pq_pk)?;
+    }
+    if let Some(hash_pk) = hash_pubkey.filter(|s| !s.trim().is_empty()) {
+        verify_hash_quiet(file, hash_sig, hash_pk)?;
     }
     println!("signature ok: {file}");
     Ok(())
@@ -143,6 +182,22 @@ pub fn verify_pq_quiet(file: &str, pq_sig: Option<&str>, pq_pubkey: &str) -> Res
     let data = std::fs::read(file)?;
     if !pq::verify_mldsa65(&pk, &data, &sig, RELEASE_PQ_CTX) {
         bail!("BAD PQ SIGNATURE: {file} did not verify under that ML-DSA-65 key");
+    }
+    Ok(())
+}
+
+pub fn verify_hash_quiet(file: &str, hash_sig: Option<&str>, hash_pubkey: &str) -> Result<()> {
+    let pk = unhex_vec(hash_pubkey.trim()).context("SLH-DSA-SHA2-128f public key")?;
+    let sig_path = hash_sig.map_or_else(|| format!("{file}.hash.sig"), String::from);
+    let sig = unhex_vec(
+        std::fs::read_to_string(&sig_path)
+            .with_context(|| format!("reading {sig_path}"))?
+            .trim(),
+    )
+    .context("SLH-DSA-SHA2-128f signature")?;
+    let data = std::fs::read(file)?;
+    if !pq::verify_slhdsa(&pk, &data, &sig, RELEASE_HASH_CTX) {
+        bail!("BAD HASH SIGNATURE: {file} did not verify under that SLH-DSA-SHA2-128f key");
     }
     Ok(())
 }
@@ -206,7 +261,9 @@ pub fn check(version: &str, changelog: &str, cargo_toml: &str) -> Result<()> {
     let have = workspace_version(&cargo)
         .ok_or_else(|| anyhow::anyhow!("{cargo_toml} has no [workspace.package] version"))?;
     if have != v {
-        bail!("tag is {v} but {cargo_toml} says {have}: run `playbox release prepare {v}` and commit it before tagging");
+        bail!(
+            "tag is {v} but {cargo_toml} says {have}: run `playbox release prepare {v}` and commit it before tagging"
+        );
     }
     let text = std::fs::read_to_string(changelog)?;
     match section(&text, &v) {
@@ -312,7 +369,9 @@ pub fn prepare(version: &str, changelog: &str, cargo_toml: &str) -> Result<()> {
         eprintln!("note: could not refresh Cargo.lock; run `cargo update --workspace`");
     }
     println!("prepared {new}: Cargo.toml bumped and CHANGELOG.md rolled.");
-    println!("next: read the {new} section and edit it, commit, then `git tag v{new} && git push origin main v{new}`");
+    println!(
+        "next: read the {new} section and edit it, commit, then `git tag v{new} && git push origin main v{new}`"
+    );
     Ok(())
 }
 

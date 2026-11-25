@@ -16,6 +16,8 @@ pub(crate) const RECEIPT_SCHEMA: &str = "playbox.attested_gate_receipt.v1";
 const RECEIPT_DOMAIN: &str = "playbox.attested_gate_receipt.v1";
 const RECEIPT_PQ_DOMAIN: &str = "playbox.attested_gate_receipt.pq.v1";
 const RECEIPT_PQ_CTX: &[u8] = b"playbox.attested_gate_receipt.pq.v1";
+const RECEIPT_HASH_DOMAIN: &str = "playbox.attested_gate_receipt.hash.v1";
+const RECEIPT_HASH_CTX: &[u8] = b"playbox.attested_gate_receipt.hash.v1";
 
 pub fn approver_key_path(key: Option<String>) -> PathBuf {
     key.map_or_else(|| store::home().join("approver.key"), PathBuf::from)
@@ -270,7 +272,10 @@ pub fn demo() -> Result<()> {
 pub async fn review_cmd(repo: &str, action: &[String], into: String) -> Result<()> {
     use playbox_net::review;
     let repo = std::path::Path::new(repo);
-    match (action.first().map(std::string::String::as_str), action.get(1)) {
+    match (
+        action.first().map(std::string::String::as_str),
+        action.get(1),
+    ) {
         (None | Some("list"), _) => {
             let list = review::pending(repo).await?;
             if list.is_empty() {
@@ -295,7 +300,9 @@ pub async fn review_cmd(repo: &str, action: &[String], into: String) -> Result<(
             println!("rejected; the commits are kept under refs/playbox/rejected/");
             Ok(())
         }
-        _ => bail!("usage: playbox review <repo> [list | show REF | accept REF | reject REF] [--into BRANCH]"),
+        _ => bail!(
+            "usage: playbox review <repo> [list | show REF | accept REF | reject REF] [--into BRANCH]"
+        ),
     }
 }
 
@@ -356,20 +363,26 @@ pub fn sign_receipt_value(doc: &Value, key: &SigningKey) -> Result<Value> {
     let ed_sig = key.sign(&msg).to_bytes();
     let (pq_pk, pq_sk) = pq::derive_mldsa65_from_ed25519_seed(&key.to_bytes());
     let pq_sig = pq::sign_mldsa65(&pq_sk, &msg, RECEIPT_PQ_CTX)?;
+    let (hash_pk, hash_sk) = pq::derive_slhdsa_from_ed25519_seed(&key.to_bytes());
+    let hash_sig = pq::sign_slhdsa(&hash_sk, &msg, RECEIPT_HASH_CTX)?;
 
     Ok(json!({
         "payload": payload,
         "payload_sha256": payload_sha256,
         "signature": {
-            "alg": "Ed25519+ML-DSA-65",
+            "alg": "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f",
             "domain": RECEIPT_DOMAIN,
             "pq_alg": "ML-DSA-65",
             "pq_domain": RECEIPT_PQ_DOMAIN,
+            "hash_alg": "SLH-DSA-SHA2-128f",
+            "hash_domain": RECEIPT_HASH_DOMAIN,
             "signed": true,
             "pubkey_hex": hex(&ed_pk),
             "sig_hex": hex(&ed_sig),
             "pq_pubkey_hex": hex(&pq_pk),
             "pq_sig_hex": hex(&pq_sig),
+            "hash_pubkey_hex": hex(&hash_pk),
+            "hash_sig_hex": hex(&hash_sig),
         }
     }))
 }
@@ -379,6 +392,24 @@ pub fn verify_receipt_value(
     expected_pubkey: Option<&str>,
     expected_pq_pubkey: Option<&str>,
     require_pq: bool,
+) -> Result<Value> {
+    verify_receipt_value_pqai(
+        doc,
+        expected_pubkey,
+        expected_pq_pubkey,
+        None,
+        require_pq,
+        false,
+    )
+}
+
+pub fn verify_receipt_value_pqai(
+    doc: &Value,
+    expected_pubkey: Option<&str>,
+    expected_pq_pubkey: Option<&str>,
+    expected_hash_pubkey: Option<&str>,
+    require_pq: bool,
+    require_pqai: bool,
 ) -> Result<Value> {
     let payload = doc
         .get("payload")
@@ -409,7 +440,10 @@ pub fn verify_receipt_value(
         bail!("unexpected signature domain: {:?}", sig.get("domain"));
     }
     let alg = sig.get("alg").and_then(Value::as_str).unwrap_or("");
-    if alg != "Ed25519+ML-DSA-65" && alg != "Ed25519" {
+    if alg != "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"
+        && alg != "Ed25519+ML-DSA-65"
+        && alg != "Ed25519"
+    {
         bail!("unsupported signature algorithm: {alg:?}");
     }
     let pk_hex = sig.get("pubkey_hex").and_then(Value::as_str).unwrap_or("");
@@ -432,9 +466,11 @@ pub fn verify_receipt_value(
         .get("pq_sig_hex")
         .and_then(Value::as_str)
         .is_some_and(|s| !s.is_empty());
-    let check_pq = alg == "Ed25519+ML-DSA-65"
+    let check_pq = alg == "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"
+        || alg == "Ed25519+ML-DSA-65"
         || has_pq_fields
         || require_pq
+        || require_pqai
         || expected_pq_pubkey.is_some_and(|s| !s.trim().is_empty());
     let mut pq_verified = false;
     if check_pq {
@@ -465,11 +501,53 @@ pub fn verify_receipt_value(
         pq_verified = true;
     }
 
+    let has_hash_fields = sig
+        .get("hash_sig_hex")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty());
+    let check_hash = alg == "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"
+        || has_hash_fields
+        || require_pqai
+        || expected_hash_pubkey.is_some_and(|s| !s.trim().is_empty());
+    let mut hash_verified = false;
+    if check_hash {
+        if sig.get("hash_alg").and_then(Value::as_str) != Some("SLH-DSA-SHA2-128f") {
+            bail!("missing or unsupported PQAI hash-based algorithm (expected SLH-DSA-SHA2-128f)");
+        }
+        if sig.get("hash_domain").and_then(Value::as_str) != Some(RECEIPT_HASH_DOMAIN) {
+            bail!(
+                "unexpected PQAI hash signature domain: {:?}",
+                sig.get("hash_domain")
+            );
+        }
+        let hash_pk_hex = sig
+            .get("hash_pubkey_hex")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let hash_sig_hex = sig
+            .get("hash_sig_hex")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if let Some(exp_hash) = expected_hash_pubkey.filter(|s| !s.trim().is_empty()) {
+            if !hash_pk_hex.eq_ignore_ascii_case(exp_hash.trim()) {
+                bail!("signer SLH-DSA-SHA2-128f pubkey does not match expected --hash-pubkey");
+            }
+        }
+        let hash_pk = unhex_vec(hash_pk_hex).context("SLH-DSA-SHA2-128f hash_pubkey_hex")?;
+        let hash_sig = unhex_vec(hash_sig_hex).context("SLH-DSA-SHA2-128f hash_sig_hex")?;
+        if !pq::verify_slhdsa(&hash_pk, &msg, &hash_sig, RECEIPT_HASH_CTX) {
+            bail!("SLH-DSA-SHA2-128f hash-based signature verification failed");
+        }
+        hash_verified = true;
+    }
+
     Ok(json!({
         "valid": true,
         "alg": alg,
         "ed25519_verified": true,
         "pq_verified": pq_verified,
+        "hash_verified": hash_verified,
+        "pqai_verified": pq_verified && hash_verified,
         "payload_sha256": computed_sha,
         "pubkey_hex": pk_hex,
     }))
@@ -492,9 +570,10 @@ pub fn receipt_cmd(cmd: ReceiptCmd) -> Result<()> {
                 "{}",
                 json!({
                     "signed": true,
-                    "alg": "Ed25519+ML-DSA-65",
+                    "alg": "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f",
                     "payload_sha256": signed["payload_sha256"],
                     "pubkey_hex": signed["signature"]["pubkey_hex"],
+                    "hash_pubkey_hex": signed["signature"]["hash_pubkey_hex"],
                 })
             );
             Ok(())
@@ -503,13 +582,21 @@ pub fn receipt_cmd(cmd: ReceiptCmd) -> Result<()> {
             file,
             pubkey,
             pq_pubkey,
+            hash_pubkey,
             require_pq,
+            require_pqai,
         } => {
             let raw = std::fs::read_to_string(&file).with_context(|| format!("reading {file}"))?;
             let doc: Value =
                 serde_json::from_str(&raw).with_context(|| format!("parsing {file} as JSON"))?;
-            let summary =
-                verify_receipt_value(&doc, pubkey.as_deref(), pq_pubkey.as_deref(), require_pq)?;
+            let summary = verify_receipt_value_pqai(
+                &doc,
+                pubkey.as_deref(),
+                pq_pubkey.as_deref(),
+                hash_pubkey.as_deref(),
+                require_pq,
+                require_pqai,
+            )?;
             println!("{summary}");
             Ok(())
         }
@@ -533,12 +620,18 @@ mod receipt_tests {
             }
         });
         let signed = sign_receipt_value(&doc, &sk).unwrap();
-        assert_eq!(signed["signature"]["alg"], "Ed25519+ML-DSA-65");
+        assert_eq!(
+            signed["signature"]["alg"],
+            "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"
+        );
         assert_eq!(signed["signature"]["pq_alg"], "ML-DSA-65");
+        assert_eq!(signed["signature"]["hash_alg"], "SLH-DSA-SHA2-128f");
 
-        let ok = verify_receipt_value(&signed, None, None, true).unwrap();
+        let ok = verify_receipt_value_pqai(&signed, None, None, None, true, true).unwrap();
         assert_eq!(ok["valid"], true);
         assert_eq!(ok["pq_verified"], true);
+        assert_eq!(ok["hash_verified"], true);
+        assert_eq!(ok["pqai_verified"], true);
 
         // Tamper with payload -> fails closed.
         let mut bad_payload = signed.clone();
@@ -558,5 +651,19 @@ mod receipt_tests {
         );
         bad_pq["signature"]["pq_sig_hex"] = json!(flipped);
         assert!(verify_receipt_value(&bad_pq, None, None, false).is_err());
+
+        // Tamper with SLH-DSA hash-based signature -> fails closed even though Ed25519 + ML-DSA-65 are intact.
+        let mut bad_hash = signed.clone();
+        let orig_hash = bad_hash["signature"]["hash_sig_hex"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let flipped_hash = format!(
+            "{:02x}{}",
+            u8::from_str_radix(&orig_hash[..2], 16).unwrap() ^ 1,
+            &orig_hash[2..]
+        );
+        bad_hash["signature"]["hash_sig_hex"] = json!(flipped_hash);
+        assert!(verify_receipt_value_pqai(&bad_hash, None, None, None, false, false).is_err());
     }
 }
