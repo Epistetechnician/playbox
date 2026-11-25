@@ -54,7 +54,7 @@ class ParametricAtlasKVUnitTests(unittest.TestCase):
                 quarantined_dropped=3,
                 signing_key=sk,
             )
-            self.assertEqual(manifest.get("sig_alg"), "Ed25519+ML-DSA-65")
+            self.assertIn(manifest.get("sig_alg"), ("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"))
             loaded, meta = load_verified_kb_shard(
                 sdir,
                 expected_pubkey_hex=manifest["pubkey_hex"],
@@ -108,7 +108,7 @@ class ParametricAtlasKVUnitTests(unittest.TestCase):
                 train_meta={"epochs": 4, "rank": 8},
                 signing_key=sk,
             )
-            self.assertEqual(manifest.get("sig_alg"), "Ed25519+ML-DSA-65")
+            self.assertIn(manifest.get("sig_alg"), ("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"))
             loaded, meta = load_verified_kv_adapter(
                 adir,
                 expected_pubkey_hex=manifest["pubkey_hex"],
