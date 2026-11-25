@@ -522,6 +522,9 @@ pub enum Cmd {
         /// Verify against this ML-DSA-65 release public key (hybrid PQ check)
         #[arg(long, value_name = "HEX")]
         pq_pubkey: Option<String>,
+        /// Verify against this FIPS 205 SLH-DSA-SHA2-128f release public key (hash-based PQAI check)
+        #[arg(long, value_name = "HEX")]
+        hash_pubkey: Option<String>,
     },
     /// Sign and verify releases (maintainers; the installer uses `verify`)
     #[command(subcommand, hide = true)]
@@ -542,6 +545,9 @@ pub enum Cmd {
     /// Export and offline-verify v0.4 Attested Gate compliance receipt bundles
     #[command(subcommand)]
     Gate(GateCmd),
+    /// PQAI pre-quantum / lattice / algebraic-hash scanner and deterministic migration verifier
+    #[command(subcommand)]
+    Pqai(PqaiCmd),
     /// Hub latent messages (docs/latent-channels.md): relay signed vectors for an agent that holds its own key
     #[command(subcommand)]
     Latent(LatentCmd),
@@ -665,6 +671,58 @@ pub enum Cmd {
 }
 
 #[derive(Subcommand)]
+pub enum PqaiCmd {
+    /// Deterministically scan a repo/file for pre-quantum ECC/KZG, lattice PQC, algebraic hashes, and PQAI-native signals
+    Scan {
+        /// File or directory to scan (default: current directory)
+        #[arg(default_value = ".")]
+        path: String,
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+        /// Optional output file path
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+        /// Sign the scan report as a tri-signed (`Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f`) Attested Gate receipt
+        #[arg(long, value_name = "FILE")]
+        sign_key: Option<String>,
+        /// Exit non-zero if any critical pre-quantum assumptions (`ecrecover`, BLS, BN254, KZG, secp256k1) remain
+        #[arg(long)]
+        fail_on_critical: bool,
+    },
+    /// Verify a pre-quantum to Frames/hash-based migration (strict reduction, zero regressions, oracle, anytime EB+MDL, tri-signed receipt)
+    VerifyMigration {
+        /// Baseline directory or `playbox pqai scan` JSON before migration
+        #[arg(long, value_name = "PATH")]
+        before: String,
+        /// Migrated directory or `playbox pqai scan` JSON after migration
+        #[arg(long, value_name = "PATH")]
+        after: String,
+        /// Minimum reduction in critical pre-quantum findings (default: 1 if before > 0, else 0)
+        #[arg(long)]
+        min_reduction: Option<usize>,
+        /// Allow newly introduced critical pre-quantum findings (default: false / fail-closed)
+        #[arg(long)]
+        allow_regressions: bool,
+        /// Optional deterministic test oracle command executed in AFTER (e.g. `cargo test` or `forge test`)
+        #[arg(long, value_name = "CMD")]
+        oracle_cmd: Option<String>,
+        /// Optional comma-separated paired delta scores for the anytime EB+MDL promotion gate
+        #[arg(long, value_name = "FLOATS")]
+        eb_scores: Option<String>,
+        /// Sign the migration verdict as a tri-signed (`Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f`) Attested Gate receipt
+        #[arg(long, value_name = "FILE")]
+        sign_key: Option<String>,
+        /// Optional output file path
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum GateCmd {
     /// Export an offline-verifiable Attested Gate compliance receipt bundle for the 5 runtime-native gates
     Export {
@@ -698,6 +756,9 @@ pub enum GateCmd {
         /// Optional FIPS 204 ML-DSA-65 private key hex file for hybrid PQ bundle signing
         #[arg(long, value_name = "FILE")]
         pq_key: Option<String>,
+        /// Optional FIPS 205 SLH-DSA-SHA2-128f private key hex file for hash-based PQAI bundle signing
+        #[arg(long, value_name = "FILE")]
+        hash_key: Option<String>,
         /// Omit bundle signature even if STATE/endpoint.key is present
         #[arg(long)]
         no_sign: bool,
@@ -705,7 +766,7 @@ pub enum GateCmd {
         #[arg(long, value_name = "FILE")]
         out: Option<String>,
     },
-    /// Sign a Playbox Attested Gate run receipt JSON (`playbox.attested_gate_receipt.v1`) with hybrid Ed25519 + ML-DSA-65
+    /// Sign a Playbox Attested Gate run receipt JSON (`playbox.attested_gate_receipt.v1`) with tri-sig Ed25519 + ML-DSA-65 + SLH-DSA-SHA2-128f
     Sign {
         /// Path to the receipt JSON file (updated in place unless --out is set)
         file: String,
@@ -726,12 +787,18 @@ pub enum GateCmd {
         /// Require hybrid ML-DSA-65 signature by this hex public key
         #[arg(long, value_name = "HEX")]
         pq_pubkey: Option<String>,
+        /// Require FIPS 205 SLH-DSA-SHA2-128f hash-based signature by this 64-hex public key
+        #[arg(long, value_name = "HEX")]
+        hash_pubkey: Option<String>,
         /// Fail if the bundle itself carries no Ed25519 signature
         #[arg(long)]
         require_signature: bool,
         /// Require ML-DSA-65 post-quantum enforcement (bundle pq_sig and/or PQ-committed RoomLog checkpoints)
         #[arg(long)]
         require_pq: bool,
+        /// Require FIPS 205 SLH-DSA hash-based PQAI enforcement (bundle hash_sig, hash-committed RoomLog, and/or tri-signed run receipts)
+        #[arg(long)]
+        require_pqai: bool,
         /// Require verified host attestation reaching at least this tier (t0..t3)
         #[arg(long, value_name = "TIER")]
         require_tier: Option<String>,
@@ -811,13 +878,17 @@ pub enum ReleaseCmd {
     Keygen { out: String },
     /// Make an ML-DSA-65 release keypair; writes secret to OUT and prints the public key hex
     PqKeygen { out: String },
-    /// Sign FILE, writing FILE.sig (and FILE.pq.sig when --pq-key is given)
+    /// Make a FIPS 205 SLH-DSA-SHA2-128f hash-based PQAI release keypair; writes secret to OUT and prints the public key hex
+    HashKeygen { out: String },
+    /// Sign FILE, writing FILE.sig (plus FILE.pq.sig and FILE.hash.sig when keys are given)
     Sign {
         file: String,
         #[arg(long, env = "PLAYBOX_RELEASE_KEY", hide_env_values = true)]
         key: String,
         #[arg(long, env = "PLAYBOX_RELEASE_PQ_KEY", hide_env_values = true)]
         pq_key: Option<String>,
+        #[arg(long, env = "PLAYBOX_RELEASE_HASH_KEY", hide_env_values = true)]
+        hash_key: Option<String>,
     },
     /// Print the changelog entries for a version
     Notes {
@@ -850,7 +921,7 @@ pub enum ReleaseCmd {
         #[arg(long, default_value = "release.json")]
         out: String,
     },
-    /// Check FILE.sig against a public key (and optional FILE.pq.sig against --pq-pubkey)
+    /// Check FILE.sig against a public key (plus optional FILE.pq.sig and FILE.hash.sig)
     Verify {
         file: String,
         #[arg(long)]
@@ -861,6 +932,10 @@ pub enum ReleaseCmd {
         pq_pubkey: Option<String>,
         #[arg(long)]
         pq_sig: Option<String>,
+        #[arg(long)]
+        hash_pubkey: Option<String>,
+        #[arg(long)]
+        hash_sig: Option<String>,
     },
 }
 
@@ -901,7 +976,7 @@ pub enum ReceiptCmd {
         #[arg(long, value_name = "FILE")]
         out: Option<String>,
     },
-    /// Verify a Playbox Attested Gate Receipt JSON file (canonical SHA-256 + Ed25519 + ML-DSA-65)
+    /// Verify a Playbox Attested Gate Receipt JSON file (canonical SHA-256 + Ed25519 + ML-DSA-65 + SLH-DSA-SHA2-128f)
     Verify {
         /// Path to the receipt JSON file
         file: String,
@@ -911,9 +986,15 @@ pub enum ReceiptCmd {
         /// Optional expected ML-DSA-65 public key hex (3904 hex chars)
         #[arg(long, value_name = "HEX")]
         pq_pubkey: Option<String>,
+        /// Optional expected FIPS 205 SLH-DSA-SHA2-128f public key hex (64 hex chars)
+        #[arg(long, value_name = "HEX")]
+        hash_pubkey: Option<String>,
         /// Require a valid ML-DSA-65 post-quantum signature (reject Ed25519-only receipts)
         #[arg(long)]
         require_pq: bool,
+        /// Require a valid FIPS 205 SLH-DSA-SHA2-128f hash-based PQAI signature
+        #[arg(long)]
+        require_pqai: bool,
     },
 }
 
@@ -962,6 +1043,10 @@ pub enum RoomTemplate {
     Hillclimb,
     #[value(name = "arc-rsi")]
     ArcRsi,
+    #[value(name = "pqai-audit")]
+    PqaiAudit,
+    #[value(name = "pqai-migrate")]
+    PqaiMigrate,
 }
 
 impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
@@ -973,6 +1058,8 @@ impl From<RoomTemplate> for playbox_net::templates::TemplateKind {
             RoomTemplate::Ops => Self::Ops,
             RoomTemplate::Hillclimb => Self::Hillclimb,
             RoomTemplate::ArcRsi => Self::ArcRsi,
+            RoomTemplate::PqaiAudit => Self::PqaiAudit,
+            RoomTemplate::PqaiMigrate => Self::PqaiMigrate,
         }
     }
 }

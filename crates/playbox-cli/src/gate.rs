@@ -29,6 +29,7 @@ pub const BUNDLE_SCHEMA: &str = "playbox.attested_gate.v1";
 const BODY_DOMAIN: &[u8] = b"playbox.attested_gate.v1.body\n";
 const SIG_DOMAIN: &[u8] = b"playbox.attested_gate.v1.sig\n";
 const PQ_CTX: &[u8] = b"playbox.attested_gate.pq.v1";
+const HASH_CTX: &[u8] = b"playbox.attested_gate.hash.v1";
 
 pub struct ExportOpts {
     pub state: Option<String>,
@@ -41,6 +42,7 @@ pub struct ExportOpts {
     pub attestation: Option<String>,
     pub sign_key: Option<String>,
     pub pq_key: Option<String>,
+    pub hash_key: Option<String>,
     pub no_sign: bool,
     pub out: Option<String>,
 }
@@ -49,8 +51,10 @@ pub struct VerifyOpts {
     pub bundle: String,
     pub pubkey: Option<String>,
     pub pq_pubkey: Option<String>,
+    pub hash_pubkey: Option<String>,
     pub require_signature: bool,
     pub require_pq: bool,
+    pub require_pqai: bool,
     pub require_tier: Option<String>,
     pub json: bool,
 }
@@ -72,6 +76,10 @@ pub struct BundleSignature {
     pub pq_pubkey: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pq_sig: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash_pubkey: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash_sig: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -155,6 +163,14 @@ pub struct AuditEvidence {
     pub lines: Vec<String>,
 }
 
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoomLogEvidence {
     pub root_pubkey: String,
@@ -162,6 +178,8 @@ pub struct RoomLogEvidence {
     pub head: String,
     pub committed: u64,
     pub pq_committed: u64,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub hash_committed: u64,
     pub epoch: u64,
     pub leader: String,
     pub hosts: Vec<String>,
@@ -187,6 +205,8 @@ pub struct AttestedReceiptEvidence {
     pub payload_sha256: String,
     pub pubkey_hex: String,
     pub pq_verified: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hash_verified: bool,
     pub receipt: Value,
 }
 
@@ -237,6 +257,8 @@ pub struct AttestationEvidence {
 pub struct ReleasePins {
     pub ed25519: Vec<String>,
     pub ml_dsa_65: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slh_dsa_sha2_128f: Vec<String>,
 }
 
 fn default_claim_boundary() -> ClaimBoundary {
@@ -428,6 +450,16 @@ fn synthesize_room_log_from_receipts(
             )
         })
         .collect();
+    let hash_map: serde_json::Map<String, Value> = sc
+        .hash_sigs
+        .iter()
+        .map(|(k, hs)| {
+            (
+                roomlog::hex(k),
+                serde_json::json!({ "pk": roomlog::hex(&hs.pk), "sig": roomlog::hex(&hs.sig) }),
+            )
+        })
+        .collect();
     let cert_line = serde_json::json!({
         "cert": {
             "cp": {
@@ -437,6 +469,7 @@ fn synthesize_room_log_from_receipts(
             },
             "sigs": sigs_map,
             "pq_sigs": pq_map,
+            "hash_sigs": hash_map,
         }
     });
     out.push_str(&cert_line.to_string());
@@ -615,6 +648,32 @@ fn verify_attestation_text_mode(text: &str, historical: bool) -> Result<Attestat
     })
 }
 
+fn load_hash_sk(path: &Path) -> Result<Vec<u8>> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("reading SLH-DSA hash signing key {}", path.display()))?;
+    let bytes = parse_hex_vec(&text, "SLH-DSA hash signing key")?;
+    if bytes.len() != pq::SLHDSA_SK_LEN {
+        bail!(
+            "SLH-DSA hash signing key {} must be {} bytes",
+            path.display(),
+            pq::SLHDSA_SK_LEN
+        );
+    }
+    Ok(bytes)
+}
+
+fn parse_hash_pk_hex(hex_str: &str) -> Result<Vec<u8>> {
+    let bytes = parse_hex_vec(hex_str, "SLH-DSA-SHA2-128f public key")?;
+    if bytes.len() != pq::SLHDSA_PK_LEN {
+        bail!(
+            "SLH-DSA-SHA2-128f public key must be {} bytes ({} hex chars)",
+            pq::SLHDSA_PK_LEN,
+            pq::SLHDSA_PK_LEN * 2
+        );
+    }
+    Ok(bytes)
+}
+
 fn load_pq_sk(path: &Path) -> Result<Vec<u8>> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading PQ signing key {}", path.display()))?;
@@ -784,6 +843,7 @@ pub fn export(o: ExportOpts) -> Result<()> {
             head: st.head,
             committed: st.committed,
             pq_committed: st.pq_committed,
+            hash_committed: st.pqai_committed,
             epoch: st.epoch,
             leader: st.leader,
             hosts: st.hosts,
@@ -822,6 +882,7 @@ pub fn export(o: ExportOpts) -> Result<()> {
             payload_sha256: summary["payload_sha256"].as_str().unwrap_or("").to_string(),
             pubkey_hex: summary["pubkey_hex"].as_str().unwrap_or("").to_string(),
             pq_verified: summary["pq_verified"].as_bool() == Some(true),
+            hash_verified: summary["hash_verified"].as_bool() == Some(true),
             receipt: doc,
         });
     }
@@ -840,6 +901,7 @@ pub fn export(o: ExportOpts) -> Result<()> {
                 release_pins: ReleasePins {
                     ed25519: crate::update::pinned_keys(),
                     ml_dsa_65: crate::update::pinned_pq_keys(),
+                    slh_dsa_sha2_128f: crate::update::pinned_hash_keys(),
                 },
             },
         },
@@ -863,6 +925,9 @@ pub fn export(o: ExportOpts) -> Result<()> {
     if o.pq_key.is_some() && sign_seed.is_none() {
         bail!("--pq-key requires an Ed25519 signing key (--sign-key or STATE/endpoint.key)");
     }
+    if o.hash_key.is_some() && sign_seed.is_none() {
+        bail!("--hash-key requires an Ed25519 signing key (--sign-key or STATE/endpoint.key)");
+    }
 
     let signature = if let Some(seed) = sign_seed {
         let sk = SigningKey::from_bytes(&seed);
@@ -878,11 +943,23 @@ pub fn export(o: ExportOpts) -> Result<()> {
             let pq_s = pq::sign_mldsa65(&pq_sk, bundle_digest.as_bytes(), PQ_CTX)?;
             (Some(hex(&pq_pk)), Some(hex(&pq_s)))
         };
+        let (hash_pubkey, hash_sig) = if let Some(hash_path) = &o.hash_key {
+            let hash_sk = load_hash_sk(Path::new(hash_path))?;
+            let hash_pk = pq::pk_from_sk_slhdsa(&hash_sk)?;
+            let hash_s = pq::sign_slhdsa(&hash_sk, bundle_digest.as_bytes(), HASH_CTX)?;
+            (Some(hex(&hash_pk)), Some(hex(&hash_s)))
+        } else {
+            let (hash_pk, hash_sk) = pq::derive_slhdsa_from_ed25519_seed(&seed);
+            let hash_s = pq::sign_slhdsa(&hash_sk, bundle_digest.as_bytes(), HASH_CTX)?;
+            (Some(hex(&hash_pk)), Some(hex(&hash_s)))
+        };
         Some(BundleSignature {
             signer: hex(&sk.verifying_key().to_bytes()),
             sig: hex(&sig.to_bytes()),
             pq_pubkey,
             pq_sig,
+            hash_pubkey,
+            hash_sig,
         })
     } else {
         None
@@ -927,21 +1004,24 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 "--require-tier requires a 5-gate compliance bundle ({BUNDLE_SCHEMA}); this file is a run receipt"
             );
         }
-        let summary = crate::trust::verify_receipt_value(
+        let summary = crate::trust::verify_receipt_value_pqai(
             &raw_val,
             o.pubkey.as_deref(),
             o.pq_pubkey.as_deref(),
+            o.hash_pubkey.as_deref(),
             o.require_pq,
+            o.require_pqai,
         )?;
         if o.json {
             println!("{}", serde_json::to_string_pretty(&summary)?);
         } else {
             println!(
-                "attested gate receipt OK: schema={} sha256={} alg={} pq_verified={}",
+                "attested gate receipt OK: schema={} sha256={} alg={} pq_verified={} hash_verified={}",
                 crate::trust::RECEIPT_SCHEMA,
                 &summary["payload_sha256"].as_str().unwrap_or("")[..16],
                 summary["alg"].as_str().unwrap_or(""),
                 summary["pq_verified"].as_bool().unwrap_or(false),
+                summary["hash_verified"].as_bool().unwrap_or(false),
             );
         }
         return Ok(());
@@ -985,6 +1065,7 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
 
     let mut bundle_sig_verified = false;
     let mut bundle_pq_verified = false;
+    let mut bundle_hash_verified = false;
     if let Some(s) = &bundle.signature {
         let pk_bytes: [u8; 32] = unhex(&s.signer).map_err(|e| anyhow!("bundle signer: {e}"))?;
         let sig_bytes: [u8; 64] = unhex(&s.sig).map_err(|e| anyhow!("bundle sig: {e}"))?;
@@ -1016,8 +1097,36 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
         } else if o.pq_pubkey.is_some() {
             bail!("--pq-pubkey was given, but bundle carries no ML-DSA-65 signature");
         }
+
+        if let Some(hash_sig_hex) = &s.hash_sig {
+            let hash_pk_hex = s
+                .hash_pubkey
+                .as_deref()
+                .ok_or_else(|| anyhow!("bundle has hash_sig without hash_pubkey"))?;
+            let hash_pk = parse_hash_pk_hex(hash_pk_hex)?;
+            let hash_sig = parse_hex_vec(hash_sig_hex, "bundle hash_sig")?;
+            if !pq::verify_slhdsa(
+                &hash_pk,
+                bundle.bundle_digest.as_bytes(),
+                &hash_sig,
+                HASH_CTX,
+            ) {
+                bail!("bundle SLH-DSA-SHA2-128f hash-based signature verification failed");
+            }
+            if let Some(want_hash) = &o.hash_pubkey {
+                let want = parse_hash_pk_hex(want_hash)?;
+                if hash_pk != want {
+                    bail!("bundle SLH-DSA-SHA2-128f public key does not match --hash-pubkey");
+                }
+            }
+            bundle_hash_verified = true;
+        } else if o.hash_pubkey.is_some() {
+            bail!("--hash-pubkey was given, but bundle carries no SLH-DSA-SHA2-128f signature");
+        }
     } else if o.pq_pubkey.is_some() {
         bail!("--pq-pubkey was given, but bundle is unsigned");
+    } else if o.hash_pubkey.is_some() {
+        bail!("--hash-pubkey was given, but bundle is unsigned");
     }
 
     let g = &bundle.body.gates;
@@ -1050,6 +1159,7 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
             || st.head != r.head
             || st.committed != r.committed
             || st.pq_committed != r.pq_committed
+            || st.pqai_committed != r.hash_committed
             || st.epoch != r.epoch
             || st.leader != r.leader
             || st.hosts != r.hosts
@@ -1127,11 +1237,19 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
         .iter()
         .enumerate()
     {
-        let summary = crate::trust::verify_receipt_value(&ar.receipt, None, None, o.require_pq)
-            .with_context(|| format!("gate_4 attested_receipt[{idx}] failed verification"))?;
+        let summary = crate::trust::verify_receipt_value_pqai(
+            &ar.receipt,
+            None,
+            None,
+            None,
+            o.require_pq,
+            o.require_pqai,
+        )
+        .with_context(|| format!("gate_4 attested_receipt[{idx}] failed verification"))?;
         if summary["payload_sha256"].as_str() != Some(ar.payload_sha256.as_str())
             || summary["pubkey_hex"].as_str() != Some(ar.pubkey_hex.as_str())
             || summary["pq_verified"].as_bool() != Some(ar.pq_verified)
+            || (ar.hash_verified && summary["hash_verified"].as_bool() != Some(true))
             || ar.receipt["payload"]["instance"].as_str().unwrap_or("") != ar.instance
             || ar.receipt["payload"]["base_commit"].as_str().unwrap_or("") != ar.base_commit
             || ar.receipt["payload"]["runtime"].as_str().unwrap_or("") != ar.runtime
@@ -1165,6 +1283,37 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
         if !bundle_pq_verified && !room_pq && !receipts_pq {
             bail!(
                 "--require-pq: neither bundle ML-DSA-65 signature, PQ-committed RoomLog, nor PQ-signed run receipt present"
+            );
+        }
+    }
+
+    if o.require_pqai {
+        let room_hash = g
+            .gate_3_tamper_evident_logs
+            .room_log
+            .as_ref()
+            .is_some_and(|r| r.hash_committed > 0);
+        let receipts_hash = !g
+            .gate_4_sealed_evaluation_gates
+            .attested_receipts
+            .is_empty()
+            && g.gate_4_sealed_evaluation_gates
+                .attested_receipts
+                .iter()
+                .all(|r| r.hash_verified);
+        if bundle.signature.is_some() && !bundle_hash_verified {
+            bail!(
+                "--require-pqai: signed bundle does not carry a verified FIPS 205 SLH-DSA-SHA2-128f signature"
+            );
+        }
+        if let Some(r) = &g.gate_3_tamper_evident_logs.room_log {
+            if r.hash_committed == 0 {
+                bail!("--require-pqai: embedded room_log has 0 SLH-DSA hash-committed entries");
+            }
+        }
+        if !bundle_hash_verified && !room_hash && !receipts_hash {
+            bail!(
+                "--require-pqai: neither bundle SLH-DSA signature, hash-committed RoomLog, nor SLH-DSA-signed run receipt present"
             );
         }
     }
@@ -1204,12 +1353,15 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 "bundle_digest": bundle.bundle_digest,
                 "signed": bundle_sig_verified,
                 "pq_signed": bundle_pq_verified,
+                "hash_signed": bundle_hash_verified,
+                "pqai_signed": bundle_pq_verified && bundle_hash_verified,
                 "enforced_gates_count": cb.enforced_gates_count,
                 "claims_full_84_permf": cb.claims_full_84_permf,
                 "audit_entries": g.gate_3_tamper_evident_logs.audit_log.as_ref().map(|a| a.entries),
                 "room_log_len": g.gate_3_tamper_evident_logs.room_log.as_ref().map(|r| r.len),
                 "room_log_committed": g.gate_3_tamper_evident_logs.room_log.as_ref().map(|r| r.committed),
                 "room_log_pq_committed": g.gate_3_tamper_evident_logs.room_log.as_ref().map(|r| r.pq_committed),
+                "room_log_hash_committed": g.gate_3_tamper_evident_logs.room_log.as_ref().map(|r| r.hash_committed),
                 "egress_requests": g.gate_2_confinement_and_egress.egress.as_ref().map(|e| e.requests),
                 "promotions": g.gate_4_sealed_evaluation_gates.room_promotions.len(),
                 "attested_receipts": g.gate_4_sealed_evaluation_gates.attested_receipts.len(),
@@ -1218,11 +1370,12 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
         );
     } else {
         println!(
-            "attested gate OK: schema={} digest={} sig={} pq_sig={}",
+            "attested gate OK: schema={} digest={} sig={} pq_sig={} hash_sig={}",
             bundle.schema,
             &bundle.bundle_digest[..16],
             bundle_sig_verified,
-            bundle_pq_verified
+            bundle_pq_verified,
+            bundle_hash_verified
         );
         println!(
             "  claim boundary: {}/5 runtime-native gates (claims_full_84_permf={})",
@@ -1249,7 +1402,7 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 .map_or(0, |e| e.denied),
         );
         println!(
-            "  gate 3 (logs/PQ): audit_entries={} room_log_len={} committed={} pq_committed={}",
+            "  gate 3 (logs/PQAI): audit_entries={} room_log_len={} committed={} pq_committed={} hash_committed={}",
             g.gate_3_tamper_evident_logs
                 .audit_log
                 .as_ref()
@@ -1266,6 +1419,10 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 .room_log
                 .as_ref()
                 .map_or(0, |r| r.pq_committed),
+            g.gate_3_tamper_evident_logs
+                .room_log
+                .as_ref()
+                .map_or(0, |r| r.hash_committed),
         );
         println!(
             "  gate 4 (eval gate): promotions={} attested_receipts={} challenge_receipts={}",
@@ -1277,7 +1434,7 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
                 .map_or(0, |c| c.count),
         );
         println!(
-            "  gate 5 (identity/release): tier={} release_pins_ed25519={} release_pins_mldsa65={}",
+            "  gate 5 (identity/release): tier={} release_pins_ed25519={} release_pins_mldsa65={} release_pins_slhdsa={}",
             g.gate_5_identity_and_release_integrity
                 .attestation
                 .as_ref()
@@ -1289,6 +1446,10 @@ pub fn verify(o: VerifyOpts) -> Result<()> {
             g.gate_5_identity_and_release_integrity
                 .release_pins
                 .ml_dsa_65
+                .len(),
+            g.gate_5_identity_and_release_integrity
+                .release_pins
+                .slh_dsa_sha2_128f
                 .len(),
         );
     }

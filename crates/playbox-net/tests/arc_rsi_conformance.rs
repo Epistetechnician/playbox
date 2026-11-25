@@ -62,7 +62,10 @@ async fn arc_rsi_two_node_blackbox_conformance() {
     assert_eq!(TemplateKind::parse("arc-rsi"), Some(TemplateKind::ArcRsi));
     assert_eq!(spec.default_runtime, "krun");
     assert!(spec.memory_review);
-    assert!(spec.capabilities.iter().any(|c| c.name == "promote" && c.approval));
+    assert!(spec
+        .capabilities
+        .iter()
+        .any(|c| c.name == "promote" && c.approval));
 
     let host = Host::start_with(new_secret_key().unwrap(), true, HostConfig::default())
         .await
@@ -111,10 +114,7 @@ async fn arc_rsi_two_node_blackbox_conformance() {
             secret: "ai_key".into(),
             auth_header: "Authorization".into(),
             auth_prefix: "Bearer ".into(),
-            allow_paths: vec![
-                "/v1/chat/completions".into(),
-                "/v1/maverick/verify".into(),
-            ],
+            allow_paths: vec!["/v1/chat/completions".into(), "/v1/maverick/verify".into()],
             pass_headers: vec!["content-type".into()],
             extra_headers: BTreeMap::new(),
             env_var: None,
@@ -149,7 +149,10 @@ async fn arc_rsi_two_node_blackbox_conformance() {
 
     // 2a. Fail-closed 403 on unauthorized path and missing capability token.
     let r_unauth = http
-        .get(format!("http://127.0.0.1:{}/v1/chat/completions", proxy.port()))
+        .get(format!(
+            "http://127.0.0.1:{}/v1/chat/completions",
+            proxy.port()
+        ))
         .send()
         .await
         .unwrap();

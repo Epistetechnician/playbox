@@ -18,6 +18,10 @@ pub enum TemplateKind {
     Hillclimb,
     #[serde(rename = "arc-rsi")]
     ArcRsi,
+    #[serde(rename = "pqai-audit")]
+    PqaiAudit,
+    #[serde(rename = "pqai-migrate")]
+    PqaiMigrate,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +47,8 @@ impl TemplateKind {
         TemplateKind::Ops,
         TemplateKind::Hillclimb,
         TemplateKind::ArcRsi,
+        TemplateKind::PqaiAudit,
+        TemplateKind::PqaiMigrate,
     ];
 
     #[must_use]
@@ -54,6 +60,8 @@ impl TemplateKind {
             "ops" => Some(Self::Ops),
             "hillclimb" | "hill-climb" => Some(Self::Hillclimb),
             "arc-rsi" | "arc_rsi" | "arcrsi" => Some(Self::ArcRsi),
+            "pqai-audit" | "pqai_audit" | "pqaiaudit" => Some(Self::PqaiAudit),
+            "pqai-migrate" | "pqai_migrate" | "pqaimigrate" => Some(Self::PqaiMigrate),
             _ => None,
         }
     }
@@ -67,6 +75,8 @@ impl TemplateKind {
             Self::Ops => "ops",
             Self::Hillclimb => "hillclimb",
             Self::ArcRsi => "arc-rsi",
+            Self::PqaiAudit => "pqai-audit",
+            Self::PqaiMigrate => "pqai-migrate",
         }
     }
 
@@ -189,7 +199,11 @@ impl TemplateKind {
                 capabilities: vec![
                     cap(
                         "run_benchmark",
-                        &["sh", "-c", "python3 -m pytest -q || echo 'benchmark runner ready'"],
+                        &[
+                            "sh",
+                            "-c",
+                            "python3 -m pytest -q || echo 'benchmark runner ready'",
+                        ],
                         false,
                         600,
                     ),
@@ -320,7 +334,12 @@ impl TemplateKind {
                 },
                 memory_review: true,
                 capabilities: vec![
-                    cap("health_check", &["sh", "-c", "uname -a && df -h ."], false, 30),
+                    cap(
+                        "health_check",
+                        &["sh", "-c", "uname -a && df -h ."],
+                        false,
+                        30,
+                    ),
                     cap(
                         "remediate",
                         &["sh", "-c", "echo 'remediation executed'"],
@@ -432,9 +451,24 @@ impl TemplateKind {
                 },
                 memory_review: true,
                 capabilities: vec![
-                    cap("arc-compile", &["python3", "-m", "arc_membrane.cpu_arc_compiler"], false, 120),
-                    cap("maverick-verify", &["cargo", "test", "--lib", "maverick"], false, 120),
-                    cap("rsi-eval", &["python3", "-m", "arc_membrane.self_rewrite_bridge"], false, 300),
+                    cap(
+                        "arc-compile",
+                        &["python3", "-m", "arc_membrane.cpu_arc_compiler"],
+                        false,
+                        120,
+                    ),
+                    cap(
+                        "maverick-verify",
+                        &["cargo", "test", "--lib", "maverick"],
+                        false,
+                        120,
+                    ),
+                    cap(
+                        "rsi-eval",
+                        &["python3", "-m", "arc_membrane.self_rewrite_bridge"],
+                        false,
+                        300,
+                    ),
                     cap("promote", &["playbox", "gate", "verify"], true, 60),
                 ],
                 canvas_seed: vec![
@@ -465,6 +499,147 @@ impl TemplateKind {
                 starter_fact: (
                     "arc-rsi-protocol",
                     "Template: ARC-RSI sovereign room. Zero unsigned promotions; all egress flows through BOX-7 CPU-ARC + Maverick Verification-Only with dual Ed25519+ML-DSA-65 receipts.",
+                ),
+            },
+            Self::PqaiAudit => TemplateSpec {
+                kind: self,
+                id: "pqai-audit",
+                label: "PQAI · Air-Gapped Security & Client Audit Room",
+                summary: "Zero-egress microVM room for AI-assisted auditing & fuzzing of pq-cl clients, hash-based verifiers, and smart contracts with tri-signed SLH-DSA 5-gate bundles.",
+                default_runtime: "krun",
+                limits: Limits {
+                    cpus: 4.0,
+                    mem_mib: 4096,
+                    timeout_secs: 900,
+                    network: false,
+                    allowed_hosts: Vec::new(),
+                    allowed_secrets: Vec::new(),
+                    allowed_egress: Vec::new(),
+                },
+                abuse: AbuseLimits {
+                    max_members: 16,
+                    max_concurrent_per_member: 3,
+                    max_tasks_per_window: 30,
+                    task_budget: 1000,
+                    ..AbuseLimits::default()
+                },
+                memory_review: true,
+                capabilities: vec![
+                    cap(
+                        "pqai-scan",
+                        &["playbox", "pqai", "scan", ".", "--json"],
+                        false,
+                        120,
+                    ),
+                    cap("test_suite", &["cargo", "test"], false, 600),
+                    cap(
+                        "gate-verify-pqai",
+                        &["playbox", "gate", "verify", "--require-pqai"],
+                        true,
+                        60,
+                    ),
+                ],
+                canvas_seed: vec![
+                    (
+                        "artifact",
+                        json!({
+                            "id": "pqai-audit-charter",
+                            "title": "PQAI Air-Gapped Audit Room Charter",
+                            "kind": "doc",
+                            "status": "verified",
+                            "summary": "Zero-egress microVM + BOX-7 confinement + anti-Goodhart verified_loop EB+MDL gate + FIPS 205 SLH-DSA tri-signed 5-gate compliance bundles.",
+                            "body": "# PQAI Audit Room\n\n1. Air-gapped execution (`krun` microVM, `network=false`, empty `allowed_egress`) prevents unpatched 0-day exfiltration.\n2. Run `/pqai-scan` to inventory classical assumptions (`ecrecover`, BLS12-381, BN254, KZG) and lattice/algebraic-hash dependencies.\n3. Patches promote only after deterministic test oracles, verified-loop trajectory hygiene + anytime EB+MDL LCB, and offline `/gate-verify-pqai` (`Ed25519 + ML-DSA-65 + SLH-DSA-SHA2-128f`)."
+                        }),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "pqai-1", "title": "Inventory classical & lattice assumptions", "col": "todo", "note": "Run `/pqai-scan` across client / contract targets"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "pqai-2", "title": "Fuzz & formally verify critical paths offline", "col": "todo", "note": "Zero-egress microVM; record all findings in owner-reviewed Room Memory"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "pqai-3", "title": "Export & verify tri-signed SLH-DSA 5-gate bundle", "col": "todo", "note": "Owner approval required via `/gate-verify-pqai` (`--require-pqai`)"}),
+                    ),
+                ],
+                starter_fact: (
+                    "pqai-audit-charter",
+                    "Template: PQAI Air-Gapped Audit Room. Zero network egress (BOX-7 fail-closed), owner-gated Room Memory, and FIPS 205 SLH-DSA tri-signed 5-gate receipts required for promotion.",
+                ),
+            },
+            Self::PqaiMigrate => TemplateSpec {
+                kind: self,
+                id: "pqai-migrate",
+                label: "PQAI · Pre-Quantum to Frames & Hash-Crypto Migration",
+                summary: "Governed air-gapped room that migrates ecrecover, BLS, and KZG codebases to Hegotá Frames, EIP-8288/8479, and FIPS 205 SLH-DSA with deterministic before/after receipts.",
+                default_runtime: "krun",
+                limits: Limits {
+                    cpus: 4.0,
+                    mem_mib: 4096,
+                    timeout_secs: 900,
+                    network: false,
+                    allowed_hosts: Vec::new(),
+                    allowed_secrets: Vec::new(),
+                    allowed_egress: Vec::new(),
+                },
+                abuse: AbuseLimits {
+                    max_members: 16,
+                    max_concurrent_per_member: 3,
+                    max_tasks_per_window: 30,
+                    task_budget: 1000,
+                    ..AbuseLimits::default()
+                },
+                memory_review: true,
+                capabilities: vec![
+                    cap(
+                        "pqai-scan",
+                        &["playbox", "pqai", "scan", ".", "--json"],
+                        false,
+                        120,
+                    ),
+                    cap(
+                        "pqai-verify-migration",
+                        &["playbox", "pqai", "verify-migration", "--json"],
+                        false,
+                        180,
+                    ),
+                    cap(
+                        "gate-verify-pqai",
+                        &["playbox", "gate", "verify", "--require-pqai"],
+                        true,
+                        60,
+                    ),
+                ],
+                canvas_seed: vec![
+                    (
+                        "artifact",
+                        json!({
+                            "id": "pqai-migrate-runbook",
+                            "title": "PQAI Pre-Quantum to Hash-Based Migration Runbook",
+                            "kind": "doc",
+                            "status": "verified",
+                            "summary": "Deterministic migration from ecrecover/BLS/KZG to Hegotá Frames + hash-based signatures/commitments verified by anytime EB+MDL and SLH-DSA tri-signed receipts.",
+                            "body": "# PQAI Migration Runbook\n\n1. Capture baseline inventory with `/pqai-scan` (`ecrecover`, BLS12-381/BN254, KZG `pointEvaluation`, classical custody).\n2. Migrate account verification to Hegotá Frames (`EIP-8141`) + hash-based verifiers (`SLH-DSA`/`XMSS`/`EIP-8288`) and DA checks to `EIP-8479` hash-based commitments.\n3. Verify strict reduction of pre-quantum findings + zero regressions + verified-loop trajectory hygiene via `/pqai-verify-migration` and seal with `--require-pqai`."
+                        }),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "mig-1", "title": "Baseline pre-quantum scan", "col": "todo", "note": "Run `/pqai-scan` on target repo before edits"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "mig-2", "title": "Migrate ecrecover / BLS / KZG to Frames & hash-based verifiers", "col": "todo", "note": "Keep zero-egress microVM confinement active"}),
+                    ),
+                    (
+                        "card",
+                        json!({"id": "mig-3", "title": "Run deterministic migration verifier & emit SLH-DSA receipt", "col": "todo", "note": "Run `/pqai-verify-migration` and approve via `/gate-verify-pqai`"}),
+                    ),
+                ],
+                starter_fact: (
+                    "pqai-migrate-runbook",
+                    "Template: PQAI Migration Room. Air-gapped microVM; every migration patch must strictly reduce pre-quantum findings with zero regressions and pass `--require-pqai` SLH-DSA verification.",
                 ),
             },
         }

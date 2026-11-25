@@ -54,6 +54,48 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+const BISCUIT_ANCHOR_CTX: &[u8] = b"playbox.biscuit.root_anchor.slhdsa.v1";
+
+/// Pure hash-based (`FIPS 205 SLH-DSA-SHA2-128f`) root anchor binding a room's Biscuit Ed25519
+/// root public key and active revocation-set digest to an epoch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BiscuitRootAnchor {
+    pub room: String,
+    pub epoch: u64,
+    pub biscuit_root_pk: [u8; 32],
+    pub revoked_digest: [u8; 32],
+    pub slh_pk: Vec<u8>,
+    pub slh_sig: Vec<u8>,
+}
+
+fn revocation_set_digest(revoked_ids: &HashSet<String>) -> [u8; 32] {
+    let mut sorted: Vec<&str> = revoked_ids.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"playbox.biscuit.revocations.v1\0");
+    for id in sorted {
+        hasher.update(&(id.len() as u64).to_be_bytes());
+        hasher.update(id.as_bytes());
+    }
+    *hasher.finalize().as_bytes()
+}
+
+fn biscuit_root_anchor_msg(
+    room: &str,
+    epoch: u64,
+    biscuit_root_pk: &[u8; 32],
+    revoked_digest: &[u8; 32],
+) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(room.len() + 128);
+    msg.extend_from_slice(b"playbox.biscuit.anchor.v1\0");
+    msg.extend_from_slice(&(room.len() as u64).to_be_bytes());
+    msg.extend_from_slice(room.as_bytes());
+    msg.extend_from_slice(&epoch.to_be_bytes());
+    msg.extend_from_slice(biscuit_root_pk);
+    msg.extend_from_slice(revoked_digest);
+    msg
+}
+
 /// Limits baked into a member grant.
 #[derive(Debug, Clone)]
 pub struct Caps {
@@ -245,6 +287,68 @@ impl Authority {
         out
     }
 
+    /// Anchor this room's Biscuit Ed25519 root public key and active revocation-set digest under
+    /// a FIPS 205 `SLH-DSA-SHA2-128f` pure hash-based envelope so capability roots and revocations
+    /// survive classical and lattice breaks alike.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if this host is a verifier-only replica or if SLH-DSA signing fails.
+    pub fn anchor_root_pqai(
+        &self,
+        epoch: u64,
+        revoked_ids: &HashSet<String>,
+    ) -> Result<BiscuitRootAnchor> {
+        let seed = self
+            .notice_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("this host cannot sign a PQAI root anchor (no root key)"))?
+            .to_bytes();
+        let (slh_pk, slh_sk) = playbox_core::pq::derive_slhdsa_from_ed25519_seed(&seed);
+        let revoked_digest = revocation_set_digest(revoked_ids);
+        let biscuit_root_pk = self.public_bytes();
+        let msg = biscuit_root_anchor_msg(&self.room, epoch, &biscuit_root_pk, &revoked_digest);
+        let slh_sig = playbox_core::pq::sign_slhdsa(&slh_sk, &msg, BISCUIT_ANCHOR_CTX)
+            .map_err(|e| anyhow!("SLH-DSA root anchor signing failed: {e}"))?;
+        Ok(BiscuitRootAnchor {
+            room: self.room.clone(),
+            epoch,
+            biscuit_root_pk,
+            revoked_digest,
+            slh_pk,
+            slh_sig,
+        })
+    }
+
+    /// Verify a [`BiscuitRootAnchor`] against this authority's room ID, Biscuit root public key,
+    /// active revocation set, and optional expected FIPS 205 `SLH-DSA-SHA2-128f` public key.
+    #[must_use]
+    pub fn verify_root_anchor_pqai(
+        &self,
+        anchor: &BiscuitRootAnchor,
+        revoked_ids: &HashSet<String>,
+        expected_slh_pk: Option<&[u8]>,
+    ) -> bool {
+        if anchor.room != self.room || anchor.biscuit_root_pk != self.public_bytes() {
+            return false;
+        }
+        if anchor.revoked_digest != revocation_set_digest(revoked_ids) {
+            return false;
+        }
+        if let Some(exp) = expected_slh_pk {
+            if anchor.slh_pk.as_slice() != exp {
+                return false;
+            }
+        }
+        let msg = biscuit_root_anchor_msg(
+            &anchor.room,
+            anchor.epoch,
+            &anchor.biscuit_root_pk,
+            &anchor.revoked_digest,
+        );
+        playbox_core::pq::verify_slhdsa(&anchor.slh_pk, &msg, &anchor.slh_sig, BISCUIT_ANCHOR_CTX)
+    }
+
     /// The root signing key, for signing a room's genesis log entry; `None` on a replica.
     #[must_use]
     pub fn root_signing_key(&self) -> Option<&ed25519_dalek::SigningKey> {
@@ -375,7 +479,9 @@ impl Authority {
             ps.insert("smodes".into(), set(&sc.modes));
             if let Some(d) = &sc.directions {
                 if d.is_empty() {
-                    return Err(anyhow!("an empty direction allow-list would allow nothing; leave it unset or list directions"));
+                    return Err(anyhow!(
+                        "an empty direction allow-list would allow nothing; leave it unset or list directions"
+                    ));
                 }
                 code.push_str(&format!(
                     "check if {sops} or req_direction($d), {{sdirs}}.contains($d);\n"
