@@ -15,6 +15,25 @@
   },
   "runs": [
     {
+      "slots_per_cluster": 16,
+      "train_examples": 160,
+      "epochs": 15,
+      "loss_first": 9.8117,
+      "loss_last": 0.403,
+      "train_wall_s": 2918.16,
+      "orig_total_kv_slots": 4384,
+      "compressed_total_kv_slots": 364,
+      "kv_slot_compression_x": 12.04,
+      "exact_recall": 10,
+      "queries": 20,
+      "exact_recall_rate": 0.5,
+      "poison_leak_count": 0,
+      "mean_online_query_tokens": 23.9,
+      "median_prefill_ms": 44.75,
+      "prefill_speedup_vs_full_x": 90.25,
+      "pq_verified": true
+    },
+    {
       "slots_per_cluster": 32,
       "train_examples": 160,
       "epochs": 15,

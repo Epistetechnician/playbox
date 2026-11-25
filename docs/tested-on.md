@@ -96,6 +96,14 @@ Ran `scripts/f3-two-key-promotion-e2e.sh` across two physically separate hosts w
 - **Quorum verdicts:** (1) `dev_memorizer_INJECTED_BAD` refused (`holdout_failed: holdout=3.4727 > limit=3.3000`, `dev=3.2291`); (2) `lr_3e-3` **promoted by 2-of-2 quorum** to frontier `2,250,000` (2.25× tokens-to-target, weakest signer tier `1`); (3) `baseline.py` refused (`1,000,000` below frontier `2,250,000`, all peers answered).
 - **Offline verification:** Both hosts' `roomlog.jsonl` verified identically offline (`room log OK: 3 entries, 3 committed (3 PQ-committed), head 4ddb3e33…`), and `playbox gate verify --require-signature --require-pq --json` verified the exported 5-gate bundle (`ok: true`, `promotions: 1`, `room_log_pq_committed: 3`, `bundle_digest: f0c888f6…`).
 
+## Three-machine fault-tolerant F3 quorum (2026-11-24, M4 Max + M1 Air 8GB + Raspberry Pi 5)
+
+Ran `scripts/f3-three-node-quorum-e2e.sh` across three physically distinct hosts peered over `iroh` (`2 of 3 hosts needed`, three separate keys and independent sealed holdout seeds `77101` / `88202` / `99303`): MacBook Pro M4 Max (Host A leader), MacBook Air M1 8GB (`episteman@192.168.4.31`, Host B replica, `playbox 0.4.6`, PyTorch `2.8.0` MPS), and Raspberry Pi 5 (`patelsh@192.168.4.20`, Host C replica, `playbox 0.4.6`, Debian 13 `aarch64`):
+
+- **Anti-Goodhart & 3-of-3 promotion:** `dev_memorizer_INJECTED_BAD` refused on sealed holdout (`holdout=3.4727 > limit=3.3000`); `lr_3e-3` promoted to frontier `2,250,000` (`2.25×`).
+- **Node-loss resilience (2-of-3 quorum):** Killed Host C (RPi5) mid-room; surviving hosts M4 Max + M1 Air independently evaluated `lr_6e-3` and promoted frontier `3,000,000` (`3.0×`) without Host C.
+- **Offline verification:** Exported 5-gate bundle verified offline with `playbox gate verify --require-signature --require-pq --json` (`ok: true`, `pq_signed: true`, `hash_signed: true`, `pqai_signed: true`, `room_log_len: 4`, `room_log_pq_committed: 3`, `bundle_digest: 4657603b…`).
+
 ## Not yet tested
 
 - The libkrun runner and its confinement on bare-metal or x86-64 Linux/KVM. Both passed on nested arm64 KVM (above). The Pi has `/dev/kvm`, but libkrun is not packaged for it.

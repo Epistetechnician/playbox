@@ -731,7 +731,7 @@ def _verify_pq_attestation(
     if atlas_blk.get("body_sha256") != body_sha256 or atlas_blk.get("tensors_sha256") != tensors_sha256:
         raise ValueError("manifest PQ attestation digest binding mismatch")
     sig_alg = str((pq_att.get("signature") or {}).get("alg") or "")
-    return sig_alg == "Ed25519+ML-DSA-65"
+    return sig_alg in ("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f")
 
 
 def save_signed_kb_shard(
