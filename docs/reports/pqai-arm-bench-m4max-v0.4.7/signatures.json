@@ -1,0 +1,76 @@
+{
+  "ceilings": {
+    "attestation_window_secs": 4.0,
+    "bandwidth_budget_mbps": 25.0,
+    "committee_size_per_slot": 8192,
+    "ram_budget_gib": 16.0,
+    "slot_duration_secs": 12.0,
+    "target_pcs_verify_ms": 100.0,
+    "target_proof_size_bytes": 131072
+  },
+  "claim_ceiling": "LocalDevelopmentAppleSiliconEvidence (not official Graviton4 / Xeon / Pi5)",
+  "hardware_note": "Measured locally on Apple Silicon host; Graviton4 (SVE2) and Raspberry Pi 5 numbers require native hardware runs.",
+  "host_arch": "aarch64",
+  "host_os": "macos",
+  "pcs": [],
+  "peak_rss_mib": 2.4375,
+  "schema_version": 1,
+  "signatures": [
+    {
+      "assumption_family": "ECC (Curve25519 — broken by Shor)",
+      "keygen_ms": 0.007875,
+      "pk_bytes": 32,
+      "pqai_hash_only": false,
+      "raw_fits_home_staker_25mbps_4s": true,
+      "scheme": "Ed25519 (classical)",
+      "sig_bytes": 64,
+      "sign_ms": 0.009042000000000001,
+      "unagg_8192_att_4s_mbps": 1.048576,
+      "unagg_8192_verify_1core_ms": 151.552,
+      "verify_ms": 0.0185,
+      "verify_ops_per_sec_1core": 54054.05405405405
+    },
+    {
+      "assumption_family": "Module-LWE / Module-SIS lattice",
+      "keygen_ms": 0.14116599999999999,
+      "pk_bytes": 1952,
+      "pqai_hash_only": false,
+      "raw_fits_home_staker_25mbps_4s": false,
+      "scheme": "ML-DSA-65 (FIPS 204)",
+      "sig_bytes": 3309,
+      "sign_ms": 0.1325,
+      "unagg_8192_att_4s_mbps": 54.214656,
+      "unagg_8192_verify_1core_ms": 691.8881279999999,
+      "verify_ms": 0.08445899999999999,
+      "verify_ops_per_sec_1core": 11840.064409950392
+    },
+    {
+      "assumption_family": "Stateless hash-only (SHA-256)",
+      "keygen_ms": 1.0482079999999998,
+      "pk_bytes": 32,
+      "pqai_hash_only": true,
+      "raw_fits_home_staker_25mbps_4s": false,
+      "scheme": "SLH-DSA-SHA2-128f (FIPS 205)",
+      "sig_bytes": 17088,
+      "sign_ms": 25.739625,
+      "unagg_8192_att_4s_mbps": 279.969792,
+      "unagg_8192_verify_1core_ms": 11939.495936,
+      "verify_ms": 1.457458,
+      "verify_ops_per_sec_1core": 686.1261182140412
+    },
+    {
+      "assumption_family": "Stateful hash-only (SHA-256 + Merkle)",
+      "keygen_ms": 242.167875,
+      "pk_bytes": 64,
+      "pqai_hash_only": true,
+      "raw_fits_home_staker_25mbps_4s": false,
+      "scheme": "XMSS-WOTS+-SHA256 (H=10, leanSig-style)",
+      "sig_bytes": 2468,
+      "sign_ms": 0.123458,
+      "unagg_8192_att_4s_mbps": 40.435712,
+      "unagg_8192_verify_1core_ms": 948.568064,
+      "verify_ms": 0.115792,
+      "verify_ops_per_sec_1core": 8636.175210722675
+    }
+  ]
+}
