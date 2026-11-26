@@ -420,7 +420,7 @@ impl Host {
             }
         }
         let state = Arc::new(Mutex::new(state));
-        let gossip = iroh_gossip::net::Gossip::builder().spawn(endpoint.clone());
+        let gossip = iroh_gossip::Gossip::builder().spawn(endpoint.clone());
         let repl = Arc::new(revoke::Replication::new(gossip.clone(), memory));
         let card = wire::agent_card(
             &room,
@@ -488,7 +488,7 @@ impl Host {
         let sync = revoke::SyncHandler::new(state.clone(), repl.allowed.clone());
         let router = Router::builder(endpoint)
             .accept(ALPN, handler.clone())
-            .accept(iroh_gossip::net::GOSSIP_ALPN, gossip)
+            .accept(iroh_gossip::ALPN, gossip)
             .accept(SYNC_ALPN, sync)
             .accept(
                 crate::roomsync::ROOMLOG_ALPN,

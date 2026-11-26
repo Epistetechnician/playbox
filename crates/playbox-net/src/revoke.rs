@@ -22,7 +22,7 @@ use iroh::{
     protocol::{AcceptError, ProtocolHandler},
     Endpoint, EndpointAddr, EndpointId,
 };
-use iroh_gossip::{api::Event, net::Gossip, proto::TopicId};
+use iroh_gossip::{Event, Gossip, GossipSender, TopicId};
 use n0_future::StreamExt;
 use std::{
     collections::HashSet,
@@ -242,7 +242,7 @@ pub(crate) struct Replication {
 }
 
 struct Running {
-    sender: iroh_gossip::api::GossipSender,
+    sender: GossipSender,
     peers: Arc<Mutex<Vec<EndpointAddr>>>,
 }
 
