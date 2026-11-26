@@ -38,13 +38,13 @@ if [[ -d "${LABINIUS_DIR}" ]]; then
   echo "[2/3] Running hash-based PCS competitors (WHIR, BaseFold, Brakedown, Ligerito) suite s..."
   (
     cd "${LABINIUS_DIR}"
-    RAYON_NUM_THREADS=1 cargo run --release --bin pcs-competitors -- --suite s \
+    BENCH_CPU="${BENCH_CPU:-0}" RAYON_NUM_THREADS=1 cargo run --release --bin pcs-competitors -- --suite s \
       | tee "${OUT_DIR}/pcs_competitors_s.txt"
   )
   echo "[3/3] Running lattice PCS baseline (Labinius) suite s..."
   (
     cd "${LABINIUS_DIR}"
-    RAYON_NUM_THREADS=1 cargo run --release --bin labinius -- --suite s \
+    BENCH_CPU="${BENCH_CPU:-0}" RAYON_NUM_THREADS=1 cargo run --release --bin labinius -- --suite s \
       | tee "${OUT_DIR}/labinius_s.txt"
   )
 else
