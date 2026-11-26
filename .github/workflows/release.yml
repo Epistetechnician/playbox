@@ -38,9 +38,10 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Build
         env:
-          # Pinned into the binary so `playbox update` verifies SHA256SUMS.sig (and optional ML-DSA-65 SHA256SUMS.pq.sig).
+          # Pinned into the binary so `playbox update` verifies SHA256SUMS.sig (and optional ML-DSA-65 / SLH-DSA-SHA2-128f signatures).
           PLAYBOX_RELEASE_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PUBKEY }}
           PLAYBOX_RELEASE_PQ_PUBKEY: ${{ vars.PLAYBOX_RELEASE_PQ_PUBKEY }}
+          PLAYBOX_RELEASE_HASH_PUBKEY: ${{ vars.PLAYBOX_RELEASE_HASH_PUBKEY }}
         run: cargo build --release -p playbox-cli -p playbox-mcp --target ${{ matrix.target }}
       - name: Package
         run: |
@@ -77,6 +78,7 @@ jobs:
         env:
           PLAYBOX_RELEASE_KEY: ${{ secrets.PLAYBOX_RELEASE_KEY }}
           PLAYBOX_RELEASE_PQ_KEY: ${{ secrets.PLAYBOX_RELEASE_PQ_KEY }}
+          PLAYBOX_RELEASE_HASH_KEY: ${{ secrets.PLAYBOX_RELEASE_HASH_KEY }}
         run: |
           tar -czf dist/playbox-hub.tar.gz --exclude='.*' --exclude=__pycache__ --exclude='*.pyc' --exclude='ui/tests' --exclude='ui/e2e.py' --exclude='ui/service' ui     # the dashboard, for the installer's --join / --hub
           cargo install cargo-cyclonedx --locked --version 0.5.7 >/dev/null
@@ -94,6 +96,10 @@ jobs:
           fi
           if grep -Eqv '^\s*(#|$)' release.pq.pub && [ -z "$PLAYBOX_RELEASE_PQ_KEY" ]; then
             echo "release.pq.pub pins an ML-DSA-65 key but PLAYBOX_RELEASE_PQ_KEY is not set; refusing to publish without SHA256SUMS.pq.sig" >&2
+            exit 1
+          fi
+          if grep -Eqv '^\s*(#|$)' release.hash.pub && [ -z "$PLAYBOX_RELEASE_HASH_KEY" ]; then
+            echo "release.hash.pub pins an SLH-DSA-SHA2-128f key but PLAYBOX_RELEASE_HASH_KEY is not set; refusing to publish without SHA256SUMS.hash.sig" >&2
             exit 1
           fi
           cargo run --release -q -p playbox-cli -- release sign dist/SHA256SUMS

@@ -10,6 +10,7 @@ Reproducible local verification summary across all five layers aligned with Ethe
 
 ## Layer 1 — Pure Hash-Based PQAI Trust Root (`playbox`)
 - **Primitives (`crates/playbox-core/src/pq.rs`):** Tri-signed custody (`Ed25519 + FIPS 204 ML-DSA-65 + FIPS 205 SLH-DSA-SHA2-128f`), anchoring long-lived roots (`RoomLog` epoch checkpoints, `BiscuitRootAnchor`, Attested Gate receipts, 5-gate bundles, releases) under pure hash-based signatures.
+- **Release Root (`release.hash.pub` + `.github/workflows/release.yml`):** Offline FIPS 205 `SLH-DSA-SHA2-128f` release public key pinned (`89b904d9aeabfeee9a7c00ceeb7f22d026c5d4cf1f50f14812008b98b00dd00e`), wired into `PLAYBOX_RELEASE_HASH_PUBKEY` / `PLAYBOX_RELEASE_HASH_KEY` with fail-closed CI refusal if `SHA256SUMS.hash.sig` cannot be produced.
 - **Formal proofs (`lean/Playbox/Pqai.lean`):** Kernel-checked Lean 4 theorems (`0 sorry`, checked by `lake build`) proving:
   - `anchor_cross_room_denies`, `anchor_unpinned_slh_denies`, `anchor_invalid_sig_denies`, `anchor_revoked_denies`, `anchor_revocation_monotonic`.
   - `pqai_requires_hash_sig`, `pqai_implies_hybrid`, `pqai_count_le_hybrid_count`, `pqai_checkpoint_safety` (strict majority quorum intersection `2k > n`).
@@ -57,9 +58,10 @@ Raw hardware-tagged bundles live in:
 - Fail-closed reference verifier: **ADMITTED (`28/28` caught, `0` unsound accepts)**, `31.3 us` (EIP-8288) / `83.0 us` (EIP-8479).
 - Unsound fast baseline: **DISQUALIFIED (`2/28` caught, `26` unsound accepts)** with timings quarantined.
 
-### 2C. Triple-Lock `pq-cl` Verifier (`formasec`)
+### 2C. Triple-Lock `pq-cl` Verifier (`formasec`, commit `9e26fe3`)
 - **Executable Python spec:** `search/pqcl_spec.py`
-- **Portable Rust verifier + Kani harnesses:** `pqcl-verifier/src/lib.rs`
+- **Portable Rust verifier + Kani proofs:** `pqcl-verifier/src/lib.rs` (`cargo test` 2/2, `cargo clippy --all-targets -- -D warnings` 0 warnings)
+- **Kani 0.68.0 / CBMC 6.11.0 bounded model checking (`cargo kani -Z stubbing`):** **`6/6 VERIFICATION:- SUCCESSFUL`, `0` failures (`13.4s` total)** — `kani_decode_hex_32_never_panics` (unstubbed, `0/86`), `kani_quorum_never_accepts_below_two_thirds` (`0/1969`), `kani_duplicate_registry_vid_always_rejected` (`0/1987`), `kani_slot_epoch_mismatch_always_rejected` (`0/1989`), `kani_revoked_validator_always_rejected` (`0/2005`), and `kani_unsorted_or_duplicate_signers_always_rejected` (`0/1945`). Control-flow harnesses use `#[kani::stub]` deterministic zero-allocation hash oracles matching Lean's abstract hash model while production always executes real SHA-256 (verified by differential tests); compiler warnings about unreachable `caller_location`/foreign constructs are noted with 0 reachable failures.
 - **Lean 4 proofs:** `lean/PqCl.lean` (`4` kernel-checked theorems, `0 sorry`, axioms `[propext, Quot.sound]`)
 - **Differential + fuzz suite:** `search/tests/test_pqcl_differential.py` — `100%` exact `(ok, reason)` agreement across golden, 14 adversarial mutant classes, and 50 deterministic fuzz cases.
 
@@ -89,9 +91,9 @@ cd composed-zk-benchmark-os
 cargo test -p zkbench-core pqai && cargo test -p statebook-settlement
 python3 tools/pqai_frontier/test_frontier.py -v
 
-# Layer 2C (formasec)
-cd formasec/pqcl-verifier && cargo test
-cd .. && lean lean/PqCl.lean && python3 search/tests/test_pqcl_differential.py -v
+# Layer 2C (formasec, commit 9e26fe3)
+cd formasec/pqcl-verifier && cargo test && cargo kani -Z stubbing --output-format terse
+cd ../lean && lean PqCl.lean && cd .. && python3 search/tests/test_pqcl_differential.py -v
 
 # Layer 5 HyperIntel & hyperAI
 cargo test --manifest-path HyperIntel/Cargo.toml -p hyperintel-assurance
