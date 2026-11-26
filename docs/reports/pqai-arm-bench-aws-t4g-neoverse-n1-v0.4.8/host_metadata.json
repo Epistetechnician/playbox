@@ -1,0 +1,8 @@
+{
+  "os": "Linux",
+  "arch": "aarch64",
+  "cpu_model": "Neoverse-N1",
+  "cores": 2,
+  "ram_mb": 1834,
+  "timestamp_utc": "2026-11-26T03:05:03Z"
+}

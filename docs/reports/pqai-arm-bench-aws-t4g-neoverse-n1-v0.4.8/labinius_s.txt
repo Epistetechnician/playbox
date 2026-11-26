@@ -1,0 +1,71 @@
+=== size sizes ===
+=== short challenge: weight 28, canonical bound 12, 1000 samples ===
+  acceptance rate: 0.6562 (1 in 1.52)
+
+labinius, core 0, one thread, moduli 9721, 12637
+
+=== recursion off ===
+witness: 2^18 F162 = 65536 ring elements of R_648, 128 columns of 2048 F162
+folded witness: 512 ring elements of R_648, 128 F162 of row evaluation
+  public parameters                1.76 ms
+
+PROVER
+  commit                         668.89 ms
+  row_evaluate                     4.81 ms
+  fold                            27.84 ms
+  pack commitment, row             1.21 ms
+  encode folded witness            1.74 ms
+  total                          704.49 ms
+  total except encode            702.75 ms
+
+STATEMENT
+  derive_evaluation_point          0.81 ms
+  mle_evaluate                     4.80 ms
+  total                            5.61 ms
+
+VERIFIER
+  derive_folding_challenges        0.63 ms
+  decode                           1.74 ms
+  fold_commitment                  0.84 ms
+  fold_row_evaluation              0.01 ms
+  verify_evaluation                0.00 ms
+  verify_folded_opening            8.63 ms
+  total                           11.85 ms
+  total except decode             10.11 ms
+
+wire: commitment 283.5 KB, row evaluation 2.5 KB, folded witness 305.0 KB, TOTAL 591.0 KB
+verification: accepted
+
+=== plain-bd ===
+witness: 2^18 F162 = 65536 ring elements of R_648, 128 columns of 2048 F162
+dropped bits 10, residual cap 811748044800 over the expectation 2.029e11
+  public parameters                2.04 ms
+
+PROVER
+  commit (with the digits)       662.21 ms
+  row_evaluate                     4.73 ms
+  fold                            26.57 ms
+  pack commitment, row             1.09 ms
+  encode folded witness            1.78 ms
+  total                          696.38 ms
+  total except encode            694.60 ms
+
+STATEMENT
+  derive_evaluation_point          1.39 ms
+  mle_evaluate                     4.73 ms
+  total                            6.12 ms
+
+VERIFIER
+  derive_folding_challenges        0.76 ms
+  decode                           2.16 ms
+  fold_row_evaluation              0.01 ms
+  verify_evaluation                0.00 ms
+  verify_folded_opening           18.11 ms
+  total                           21.05 ms
+  total except decode             18.88 ms
+
+wire: commitment 283.5 KB, row evaluation 2.5 KB, folded witness 324.5 KB, TOTAL 610.5 KB
+verification: accepted
+tampered fold: rejected (the opening was rejected)
+
+peak resident set: 106 MB
