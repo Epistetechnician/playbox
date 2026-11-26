@@ -80,6 +80,30 @@ Re-checked on Ubuntu 24.04.4 (kernel 6.8.0-134, Lima VM): the unshare succeeds, 
 
 Following the README only. `install.sh` installed the signed 0.3.2 release and `playbox up --local` / `join --local` worked with no toolchain. From a fresh clone, `cargo test --workspace` first failed twice: no C compiler (the README did not say one is needed), then the rootless jail cases under AppArmor (above). With both fixed it passes: 62 test binaries, 0 failed. `scripts/demo.sh` passes all six steps there and on macOS ([demo.md](demo.md)). Also found: the F3 dry run no longer verified because the protocol file had been amended after it (fixed, amendment A4); verifying the climbmix runs needs their data files and ended in a Python traceback without them, not a clean failure (fixed 2026-11-14: it now fails the data-manifest check and says what is missing); `playbox doctor` reported the research venvs as ready on a machine that only had the repository mounted (fixed 2026-11-14: a venv needs a working python and an existing base interpreter).
 
+## TPM 2.0 T2 Attested Gate + Shirudo shield validation (2026-11-23, Raspberry Pi 5 → macOS)
+
+Ran `scripts/shirudo-gate-e2e.sh` with `playbox 0.4.6` (`playbox-linux-arm64.tar.gz`) on the bare-metal Raspberry Pi 5 (`Debian 13`, kernel `6.18.39+rpt-rpi-2712`, `aarch64`, Docker cgroup v2 with `MemoryLimit=true`, `tpm2-tools 5.7`, `swtpm 0.7.1`; the Pi has no discrete `/dev/tpm0` chip, so the script ran against `swtpm` — on a host with `/dev/tpmrm0` it uses the hardware TPM directly):
+
+- **Live T2 host attestation:** `PLAYBOX_ATTEST=tpm` extended PCR 23 with the host's declared measurements and quoted PCRs `[0..7, 23]` under a restricted non-exportable AK (`8ba62f4a…`). Three sequential `playbox join --min-host-tier t2` runs verified the host at `T2` live over the wire before running Docker-confined tasks.
+- **Shirudo `.bee` validation gate:** (1) baseline unshielded run reproduced the CVE (`exploit_blocked=0, benign_pass=5/5, net_isolated=1`); (2) over-broad `bad_shield.bee` (`DENY_ALL`) blocked the exploit but broke benign traffic (`benign_pass=0/5`) and received a hybrid `Ed25519+ML-DSA-65` `REJECT` receipt (`sha256=699c14ec1005…`); (3) targeted `valid_shield.bee` blocked the exploit with `5/5` benign pass and received a hybrid `Ed25519+ML-DSA-65` `PROMOTE` receipt (`sha256=e88d86ea86c3…`).
+- **Cross-machine offline verification on macOS:** Exported the 5-gate `playbox.attested_gate.v1` bundle (`bundle_digest=70a8f86d…`, 7 audit entries, 2 PQ receipts, `T2` attestation) to macOS and verified offline with `playbox gate verify --require-signature --require-pq --require-tier t2 --json` (`ok: true`, `achieved_tier: T2`, `pq_signed: true`). Both fail-closed negative checks rejected as expected: mismatched `PLAYBOX_TPM_BOOT_PCRS` rejected `T2`, and flipping `REJECT` → `PROMOTE` in the bundle failed digest verification.
+
+## Two-key F3 quorum promotion (2026-11-24, macOS Apple Silicon ↔ Raspberry Pi 5)
+
+Ran `scripts/f3-two-key-promotion-e2e.sh` across two physically separate hosts with distinct Ed25519 + ML-DSA-65 keys and independent sealed holdout seeds (`77101` on Mac, `88202` on RPi5), connected over `iroh` with `challenge/room_eval.py` (`eval_f3`, `PLAYBOX_F3_TARGET=3.25`, `j=2`, `noise_ppm=50000`, `min_gain_ppm=50000`):
+
+- **Found by this run and fixed:** `playbox-net/src/roomsync.rs` (`ask()`) previously applied the 15 s `RPC_IO_TIMEOUT` to `"op": "receipt"` RPCs even though `measure()` allows 900 s for remote evaluators, causing slow CPU peers (RPi5 running PyTorch) to time out on the leader. Updated `ask()` to use `RECEIPT_RPC_TIMEOUT = 915 s` for `"receipt"` RPCs and added a content-hashed baseline token cache to `eval_f3`.
+- **Quorum verdicts:** (1) `dev_memorizer_INJECTED_BAD` refused (`holdout_failed: holdout=3.4727 > limit=3.3000`, `dev=3.2291`); (2) `lr_3e-3` **promoted by 2-of-2 quorum** to frontier `2,250,000` (2.25× tokens-to-target, weakest signer tier `1`); (3) `baseline.py` refused (`1,000,000` below frontier `2,250,000`, all peers answered).
+- **Offline verification:** Both hosts' `roomlog.jsonl` verified identically offline (`room log OK: 3 entries, 3 committed (3 PQ-committed), head 4ddb3e33…`), and `playbox gate verify --require-signature --require-pq --json` verified the exported 5-gate bundle (`ok: true`, `promotions: 1`, `room_log_pq_committed: 3`, `bundle_digest: f0c888f6…`).
+
+## Three-machine fault-tolerant F3 quorum (2026-11-24, M4 Max + M1 Air 8GB + Raspberry Pi 5)
+
+Ran `scripts/f3-three-node-quorum-e2e.sh` across three physically distinct hosts peered over `iroh` (`2 of 3 hosts needed`, three separate keys and independent sealed holdout seeds `77101` / `88202` / `99303`): MacBook Pro M4 Max (Host A leader), MacBook Air M1 8GB (`episteman@192.168.4.31`, Host B replica, `playbox 0.4.6`, PyTorch `2.8.0` MPS), and Raspberry Pi 5 (`patelsh@192.168.4.20`, Host C replica, `playbox 0.4.6`, Debian 13 `aarch64`):
+
+- **Anti-Goodhart & 3-of-3 promotion:** `dev_memorizer_INJECTED_BAD` refused on sealed holdout (`holdout=3.4727 > limit=3.3000`); `lr_3e-3` promoted to frontier `2,250,000` (`2.25×`).
+- **Node-loss resilience (2-of-3 quorum):** Killed Host C (RPi5) mid-room; surviving hosts M4 Max + M1 Air independently evaluated `lr_6e-3` and promoted frontier `3,000,000` (`3.0×`) without Host C.
+- **Offline verification:** Exported 5-gate bundle verified offline with `playbox gate verify --require-signature --require-pq --json` (`ok: true`, `pq_signed: true`, `hash_signed: true`, `pqai_signed: true`, `room_log_len: 4`, `room_log_pq_committed: 3`, `bundle_digest: 4657603b…`).
+
 ## Not yet tested
 
 - The libkrun runner and its confinement on bare-metal or x86-64 Linux/KVM. Both passed on nested arm64 KVM (above). The Pi has `/dev/kvm`, but libkrun is not packaged for it.

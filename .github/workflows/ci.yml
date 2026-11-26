@@ -256,3 +256,39 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: lean
+  pqai-gate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p playbox-core roomlog::tests::checkpoint_pqai
+      - run: cargo test -p playbox-net --test pqai_conformance
+      - run: cargo test -p playbox-cli pqai
+      - name: offline tri-signed PQAI gate & tamper check
+        run: |
+          cargo build -p playbox-cli --bin playbox
+          PB=./target/debug/playbox
+          WORK=$(mktemp -d)
+          mkdir -p "$WORK/before" "$WORK/after"
+          echo 'function f() public pure { ecrecover(0, 27, 0, 0); }' > "$WORK/before/legacy.sol"
+          echo '// EIP-8141 hash-based verifier (SLH-DSA / XMSS)' > "$WORK/after/migrated.sol"
+          printf '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' > "$WORK/root.key"
+          "$PB" pqai verify-migration --before "$WORK/before" --after "$WORK/after" --oracle-cmd "true" --sign-key "$WORK/root.key" --out "$WORK/receipt.json"
+          "$PB" gate verify --require-signature --require-pq --require-pqai "$WORK/receipt.json"
+          "$PB" gate export --receipt "$WORK/receipt.json" --sign-key "$WORK/root.key" --out "$WORK/bundle.json"
+          "$PB" gate verify --require-signature --require-pq --require-pqai "$WORK/bundle.json"
+          python3 -c '
+          import json, sys
+          p = sys.argv[1]
+          d = json.load(open(p))
+          hs = d["signature"]["hash_sig"]
+          d["signature"]["hash_sig"] = ("0" if hs[0] != "0" else "1") + hs[1:]
+          json.dump(d, open(sys.argv[2], "w"))
+          ' "$WORK/bundle.json" "$WORK/bundle_tampered.json"
+          if "$PB" gate verify --require-signature --require-pq --require-pqai "$WORK/bundle_tampered.json" 2>/dev/null; then
+            echo "tampered SLH-DSA signature was unexpectedly accepted"
+            exit 1
+          fi

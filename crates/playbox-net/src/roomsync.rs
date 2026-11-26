@@ -17,7 +17,8 @@ use iroh::{
 };
 use playbox_core::promotion::{Promotion, Receipt, Register};
 use playbox_core::roomlog::{
-    self, text, Checkpoint, Config, Entry, Equivocation, PqSig, Proposal, RoomLog, SignedCheckpoint,
+    self, text, Checkpoint, Config, Entry, Equivocation, HashSig, PqSig, Proposal, RoomLog,
+    SignedCheckpoint,
 };
 use serde_json::{json, Value};
 use std::{
@@ -32,6 +33,8 @@ const MAX_MSG: usize = 8 * 1024 * 1024;
 const MAX_CERTS: usize = 256;
 /// Stream I/O timeout for peer-to-peer roomlog RPCs so a stalled peer cannot hang `ask_all`/`pull`.
 const RPC_IO_TIMEOUT: Duration = Duration::from_secs(15);
+/// Timeout for `"receipt"` RPCs, where the remote peer runs its evaluator (up to 900 s in `measure`).
+const RECEIPT_RPC_TIMEOUT: Duration = Duration::from_secs(915);
 
 /// What this host has promised and seen, kept next to the log. A promise must survive a restart or a host could
 /// sign two rival bids for one epoch.
@@ -78,6 +81,7 @@ pub struct Status {
     pub head: String,
     pub committed: u64,
     pub pq_committed: u64,
+    pub pqai_committed: u64,
     pub epoch: u64,
     pub leader: String,
     pub hosts: Vec<String>,
@@ -115,6 +119,7 @@ fn status_of(l: &RoomLog, certs: &[SignedCheckpoint], proofs: &[Equivocation]) -
         head: roomlog::hex(&l.head()),
         committed: l.committed(certs),
         pq_committed: l.committed_pq(certs),
+        pqai_committed: l.committed_pqai(certs),
         epoch: l.config().epoch,
         leader: roomlog::hex(&l.config().leader),
         hosts: l.config().hosts.iter().map(|h| roomlog::hex(h)).collect(),
@@ -504,7 +509,7 @@ impl RoomLogNode {
                 bail!("this host has signed a bid for a later epoch; it no longer leads");
             }
             let sc = l
-                .sign_checkpoint(&self.key, l.checkpoint())
+                .sign_checkpoint_pqai(&self.key, l.checkpoint())
                 .map_err(|e| anyhow!("{e}"))?;
             (l.entries().to_vec(), sc, l.config().clone())
         };
@@ -533,6 +538,20 @@ impl RoomLogNode {
                     PqSig {
                         pk: pq_pk,
                         sig: pq_sig,
+                    },
+                );
+            }
+            if let (Some(hash_pk), Some(hash_sig)) = (
+                reply["hash_pk"].as_str().and_then(text::unhex_vec),
+                reply["hash_sig"].as_str().and_then(text::unhex_vec),
+            ) {
+                sc.add_hash(
+                    &self.room,
+                    &cfg,
+                    who,
+                    HashSig {
+                        pk: hash_pk,
+                        sig: hash_sig,
                     },
                 );
             }
@@ -625,9 +644,8 @@ impl RoomLogNode {
                 if loc.promised.as_ref().is_some_and(|p| p.epoch > cp.epoch) {
                     bail!("this host has signed a bid for a later epoch");
                 }
-                let (who, sig, pq) = l
-                    .cosign_hybrid(&self.key, &cp)
-                    .map_err(|e| anyhow!("{e}"))?;
+                let (who, sig, pq, hash) =
+                    l.cosign_pqai(&self.key, &cp).map_err(|e| anyhow!("{e}"))?;
                 if loc
                     .last
                     .as_ref()
@@ -644,6 +662,8 @@ impl RoomLogNode {
                     "sig": roomlog::hex(&sig),
                     "pq_pk": roomlog::hex(&pq.pk),
                     "pq_sig": roomlog::hex(&pq.sig),
+                    "hash_pk": roomlog::hex(&hash.pk),
+                    "hash_sig": roomlog::hex(&hash.sig),
                 }))
             }
             Some("pull") => {
@@ -1033,6 +1053,22 @@ fn cert_json(c: &SignedCheckpoint) -> Value {
             ),
         );
     }
+    if !c.hash_sigs.is_empty() {
+        obj.insert(
+            "hash_sigs".into(),
+            Value::Object(
+                c.hash_sigs
+                    .iter()
+                    .map(|(k, h)| {
+                        (
+                            roomlog::hex(k),
+                            json!({ "pk": roomlog::hex(&h.pk), "sig": roomlog::hex(&h.sig) }),
+                        )
+                    })
+                    .collect(),
+            ),
+        );
+    }
     Value::Object(obj)
 }
 
@@ -1051,6 +1087,17 @@ pub(crate) fn cert_from_json(v: &Value) -> Option<SignedCheckpoint> {
                 entry["sig"].as_str().and_then(text::unhex_vec),
             ) {
                 sc.pq_sigs.insert(who, PqSig { pk, sig });
+            }
+        }
+    }
+    if let Some(hash_map) = v.get("hash_sigs").and_then(Value::as_object) {
+        for (k, entry) in hash_map {
+            if let (Some(who), Some(pk), Some(sig)) = (
+                roomlog::unhex(k),
+                entry["pk"].as_str().and_then(text::unhex_vec),
+                entry["sig"].as_str().and_then(text::unhex_vec),
+            ) {
+                sc.hash_sigs.insert(who, HashSig { pk, sig });
             }
         }
     }
@@ -1083,7 +1130,12 @@ async fn ask(endpoint: &Endpoint, peer: &EndpointAddr, req: &Value) -> Result<Va
     )
     .await
     .map_err(|_| anyhow!("timed out connecting to {}", peer.id.fmt_short()))??;
-    let reply = tokio::time::timeout(RPC_IO_TIMEOUT, async {
+    let io_timeout = if req["op"] == "receipt" {
+        RECEIPT_RPC_TIMEOUT
+    } else {
+        RPC_IO_TIMEOUT
+    };
+    let reply = tokio::time::timeout(io_timeout, async {
         let (mut send, mut recv) = conn.open_bi().await?;
         send.write_all(req.to_string().as_bytes()).await?;
         send.finish()?;

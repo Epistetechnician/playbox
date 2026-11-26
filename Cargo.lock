@@ -633,9 +633,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.8"
+version = "4.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac230478587d0269d8d6998b82ae69ea51509d55df66d9e92edd1f986904cd4a"
+checksum = "844c5c0b65be192cb68d570cca1b21a6444431d24e39c084dc0336177015337c"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -665,9 +665,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.6.8"
+version = "4.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "895c9d8d2ac2dd8b8a29f3724a14e72aaaa6debcf8c38c82f97305c6a172767a"
+checksum = "b4c174f11f949b9ca8c60580925e282b9cbd5454750e506f08648b2038080cd7"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1477,6 +1477,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fips205"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a5a5dcc490a93ad15deabf0534af8b2b6e9d20e01e8066f6fcba4da7e316100"
+dependencies = [
+ "rand_core 0.6.4",
+ "sha2 0.10.9",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2251,9 +2263,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-gossip"
-version = "0.102.0"
+version = "0.103.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f78267c0d936a3f51b8aa24419a7a267e42d1800ac99315f48045f2540c57922"
+checksum = "74c4170847b5603f489c4d7771f1e7b263fa63a2521dbbb747601931987aa777"
 dependencies = [
  "blake3",
  "bytes",
@@ -2264,7 +2276,6 @@ dependencies = [
  "iroh",
  "iroh-base",
  "iroh-metrics",
- "irpc",
  "n0-error",
  "n0-future",
  "postcard",
@@ -2367,33 +2378,6 @@ dependencies = [
  "url",
  "webpki-roots",
  "ws_stream_wasm",
-]
-
-[[package]]
-name = "irpc"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3623d6ff582b415904b29bbe6ebcb4a4f9a262ccdee05a45fdd003ef0950c386"
-dependencies = [
- "futures-util",
- "irpc-derive",
- "n0-error",
- "n0-future",
- "serde",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "irpc-derive"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35c254013736de16472140d26904e6ac98e8f3887284dcf4af40f88c77411b56"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -3567,7 +3551,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "playbox-bridge"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "a2a-lf",
  "anyhow",
@@ -3581,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-cli"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3603,7 +3587,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-core"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "aes 0.9.4",
  "base64 0.23.1",
@@ -3611,6 +3595,7 @@ dependencies = [
  "cfb-mode",
  "ed25519-dalek 3.0.0",
  "fips204",
+ "fips205",
  "getrandom 0.4.3",
  "hmac 0.12.1",
  "p256 0.14.0",
@@ -3625,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-git"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "tokio",
@@ -3633,7 +3618,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-mcp"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "blake3",
@@ -3648,7 +3633,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-net"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "a2a-lf",
  "anyhow",
@@ -3667,6 +3652,7 @@ dependencies = [
  "playbox-core",
  "playbox-git",
  "playbox-runner",
+ "reqwest",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -3678,7 +3664,7 @@ dependencies = [
 
 [[package]]
 name = "playbox-rap"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -3697,11 +3683,12 @@ dependencies = [
 
 [[package]]
 name = "playbox-runner"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "async-trait",
  "blake3",
+ "ed25519-dalek 3.0.0",
  "libc",
  "playbox-core",
  "reqwest",

@@ -1,0 +1,37 @@
+=== size sizes ===
+four hash-based PCSs on 2^18 B128, opened at one point of 18 coordinates, core 3, one thread
+
+  scheme                            rate  target   commit ms     open ms   verify ms     C bytes  |pi| bytes
+  binius64 BaseFold                  1/2      96       39.63       13.85        0.78          32      241616
+  binius64 BaseFold                  1/4      96       77.21       18.10        1.32          32      182800
+  binius64 BaseFold                  1/2     100       41.26       14.18        0.80          32      249680
+  binius64 BaseFold                  1/4     100       73.29       17.51        0.57          32      188752
+  binius64 WHIR                      1/2      96       43.93       53.09        3.95          32      189248
+  binius64 WHIR                      1/4      96       69.51       32.28        1.72          32      153104
+  binius64 WHIR                      1/2     100       38.09       50.35        4.14          32      194752
+  binius64 WHIR                      1/4     100       76.30       36.61        1.81          32      158096
+  flock-core Ligerito Fast           1/2    ~128       33.18       57.50        1.27        4096      374568
+  flock-core Ligerito Slim           1/4    ~128       52.90       84.93        0.85        2048      222440
+  flock-core Ligerito Fast100        1/2     100       25.06       27.25        1.23        4096      358568
+  flock-core Ligerito Slim100        1/4     100       54.25       70.39        1.07        2048      180776
+  Brakedown tensor                 0.704      96       55.30        9.06       19.05          32     3502848
+  Brakedown tensor                 0.581      96       62.11        4.71       12.08          32     1657152
+  Brakedown tensor                 0.704     100       54.00        9.74       18.02          32     3582528
+  Brakedown tensor                 0.581     100       71.72        4.76        8.56          32     1698336
+
+  binius64 BaseFold at 1/2, 96 bits: unique decoding, 232 queries, no grinding, opening claim element-MLE
+  binius64 BaseFold at 1/4, 96 bits: unique decoding, 142 queries, no grinding, opening claim element-MLE
+  binius64 BaseFold at 1/2, 100 bits: unique decoding, 241 queries, no grinding, opening claim element-MLE
+  binius64 BaseFold at 1/4, 100 bits: unique decoding, 148 queries, no grinding, opening claim element-MLE
+  binius64 WHIR at 1/2, 96 bits: unique decoding, 96.3 achieved, no grinding, ladder 1/2x232 1/16x106, opening claim element-MLE
+  binius64 WHIR at 1/4, 96 bits: unique decoding, 96.3 achieved, no grinding, ladder 1/4x142 1/16x106, opening claim element-MLE
+  binius64 WHIR at 1/2, 100 bits: unique decoding, 100.0 achieved, no grinding, ladder 1/2x241 1/16x110, opening claim element-MLE
+  binius64 WHIR at 1/4, 100 bits: unique decoding, 100.4 achieved, no grinding, ladder 1/4x148 1/16x110, opening claim element-MLE
+  flock-core Ligerito Fast at 1/2, ~128 bits: queries [244, 79, 48, 35], rates [1, 3, 5, 7], grinding [16, 16, 16, 16], opening claim element-MLE, chosen point
+  flock-core Ligerito Slim at 1/4, ~128 bits: queries [119, 60, 41, 32], rates [2, 4, 6, 8], grinding [16, 16, 16, 16], opening claim element-MLE, chosen point
+  flock-core Ligerito Fast100 at 1/2, 100 bits: queries [218, 106, 71, 53], rates [1, 2, 3, 4], grinding [0, 0, 0, 0], opening claim element-MLE, chosen point
+  flock-core Ligerito Slim100 at 1/4, 100 bits: queries [90, 60, 45, 36], rates [2, 3, 4, 5], grinding [16, 16, 16, 16], opening claim element-MLE, chosen point
+  Brakedown tensor at 0.704, 96 bits: unique decoding to d/3 at delta 0.020, 10052 queries, no grinding, opening claim element-MLE
+  Brakedown tensor at 0.581, 96 bits: unique decoding to d/3 at delta 0.070, 2846 queries, no grinding, opening claim element-MLE
+  Brakedown tensor at 0.704, 100 bits: unique decoding to d/3 at delta 0.020, 10467 queries, no grinding, opening claim element-MLE
+  Brakedown tensor at 0.581, 100 bits: unique decoding to d/3 at delta 0.070, 2963 queries, no grinding, opening claim element-MLE

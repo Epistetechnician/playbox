@@ -72,3 +72,50 @@ def test_a_host_measures_only_what_the_room_named(tmp_path):
 def test_the_rule_line_asks_for_two_hosts_and_exact_agreement_on_tier_a(tmp_path):
     r = run("rule", str(A / "problem.json"), store=tmp_path)
     assert r.stdout.split() == ["roomlog-problem", phash(), "2", "0", "1", "1000000"], r.stdout
+
+
+# REQ: ROOM-17
+def test_f3_rule_line_asks_for_two_hosts(tmp_path):
+    sys.path.insert(0, str(HERE))
+    import room_eval
+
+    spec = HERE / "f3" / "task_spec.json"
+    r = run("rule", str(spec), store=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.split() == ["roomlog-problem", room_eval.sha256_file(spec), "2", "50000", "50000", "1000000"]
+
+
+# REQ: ROOM-17
+def test_f3_good_candidate_promotes_and_memorizer_is_refused(tmp_path):
+    sys.path.insert(0, str(HERE))
+    import room_eval
+
+    spec = HERE / "f3" / "task_spec.json"
+    f3_hash = room_eval.sha256_file(spec)
+    base_src = (HERE / "f3" / "baseline.py").read_text()
+
+    good_file = tmp_path / "lr_3e-3.py"
+    good_file.write_text(base_src.replace("LR = 1e-3", "LR = 3e-3"))
+    good_h = put(good_file, tmp_path)
+    r_good = run(f3_hash, good_h, store=tmp_path, tier="2")
+    assert r_good.returncode == 0, r_good.stderr
+    out = json.loads(r_good.stdout)
+    assert out["metric"] > 1_050_000 and out["tier"] == 2
+    assert len(out["weights"]) == 64 and len(out["env"]) == 64
+
+    bad_file = tmp_path / "memorizer.py"
+    bad_file.write_text(
+        base_src.replace(
+            "x, y = ctx.next_batch(BATCH)",
+            "import numpy as np\n"
+            "        _i = np.random.randint(0, len(ctx.dev_blocks), BATCH)\n"
+            "        _b = torch.from_numpy(ctx.dev_blocks[_i]).long()\n"
+            "        ctx.batches += 1\n"
+            "        ctx.tokens += BATCH * ctx.block_size\n"
+            "        x, y = _b[:, :-1], _b[:, 1:]",
+        )
+    )
+    bad_h = put(bad_file, tmp_path)
+    r_bad = run(f3_hash, bad_h, store=tmp_path, tier="2")
+    assert r_bad.returncode != 0 and r_bad.stdout == ""
+    assert "holdout_failed" in r_bad.stderr

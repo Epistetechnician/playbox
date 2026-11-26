@@ -7,6 +7,7 @@ mod gate;
 mod hub;
 mod latent;
 mod launch;
+mod pqai;
 mod python;
 mod release;
 mod rooms;
@@ -102,6 +103,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 attestation,
                 sign_key,
                 pq_key,
+                hash_key,
                 no_sign,
                 out,
             } => gate::export(gate::ExportOpts {
@@ -115,6 +117,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 attestation,
                 sign_key,
                 pq_key,
+                hash_key,
                 no_sign,
                 out,
             }),
@@ -125,20 +128,25 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 bundle,
                 pubkey,
                 pq_pubkey,
+                hash_pubkey,
                 require_signature,
                 require_pq,
+                require_pqai,
                 require_tier,
                 json,
             } => gate::verify(gate::VerifyOpts {
                 bundle,
                 pubkey,
                 pq_pubkey,
+                hash_pubkey,
                 require_signature,
                 require_pq,
+                require_pqai,
                 require_tier,
                 json,
             }),
         },
+        Cmd::Pqai(p) => pqai::run(p),
         Cmd::Latent(LatentCmd::Session {
             link,
             transport,
@@ -152,6 +160,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             json,
             pubkey,
             pq_pubkey,
+            hash_pubkey,
         } => {
             let code = update::run(&update::Opts {
                 check,
@@ -161,6 +170,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 json,
                 pubkey,
                 pq_pubkey,
+                hash_pubkey,
             })?;
             if code != 0 {
                 return Ok(std::process::ExitCode::from(code));
@@ -170,7 +180,13 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         Cmd::Release(r) => match r {
             ReleaseCmd::Keygen { out } => release::keygen(&out),
             ReleaseCmd::PqKeygen { out } => release::pq_keygen(&out),
-            ReleaseCmd::Sign { file, key, pq_key } => release::sign(&file, &key, pq_key.as_deref()),
+            ReleaseCmd::HashKeygen { out } => release::hash_keygen(&out),
+            ReleaseCmd::Sign {
+                file,
+                key,
+                pq_key,
+                hash_key,
+            } => release::sign(&file, &key, pq_key.as_deref(), hash_key.as_deref()),
             ReleaseCmd::Notes { version, changelog } => release::notes(&version, &changelog),
             ReleaseCmd::Check {
                 version,
@@ -194,12 +210,16 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 sig,
                 pq_pubkey,
                 pq_sig,
+                hash_pubkey,
+                hash_sig,
             } => release::verify(
                 &file,
                 sig.as_deref(),
                 &pubkey,
                 pq_sig.as_deref(),
                 pq_pubkey.as_deref(),
+                hash_sig.as_deref(),
+                hash_pubkey.as_deref(),
             ),
         },
         Cmd::Setup {

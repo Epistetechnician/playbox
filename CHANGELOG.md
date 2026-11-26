@@ -9,6 +9,23 @@ hosted by the new one (and the reverse); a release without one stays compatible 
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-11-26
+
+### Added
+- PQAI FIPS 205 `SLH-DSA-SHA2-128f` tri-signing (`release.hash.pub`, `playbox release hash-keygen|sign|verify`), PQAI scanner/verifier (`playbox pqai`), zero-egress PQAI templates, Lean 4 PQAI proofs (`lean/Playbox/Pqai.lean`), and reproducible ARM64 home-staker benchmark bundles for Apple M4 Max and Raspberry Pi 5 (`scripts/run_pqai_arm_bench.sh`, `docs/reports/pqai-arm-bench-*-v0.4.{7,8}/`).
+- Independent-operator two-key F3 quorum promotion and 3-machine fault-tolerant quorum E2E scripts (`scripts/f3-two-key-promotion-e2e.sh`, `scripts/f3-three-node-quorum-e2e.sh`), plus RPi5 T2 Shirudo E2E (`scripts/shirudo-gate-e2e.sh`).
+- Hardened live in-TDX `host_aiproxy` and `tdx+gpu` attestation (`scripts/gpu-cc-evidence.py`, `deploy/t3-swe-aiproxy*`, `deploy/t3-tdx-gpu*`, pinned `docs/reports/nvidia-nras-jwks.json`).
+- L4 v2 `no_ridge` cache-only 3-seed ablations (+24.5 pts), AtlasKV `S=16` salience-gated resampler Pareto point (`15/20 = 75%` at `6.72x` KV compression), Playbox ARC/Maverick bridge, KV gateway, and Hub lineage spectator UI (`ui/hub/lineage.py`).
+- Verified 5-gate JSON compliance bundles and PDF reports in `docs/reports/`.
+
+### Changed
+- Migrate `iroh-gossip` from `0.102.0` to `0.103.0` (`playbox-net` crate-root re-exports).
+- Bump `clap` to `4.6.9`, `github/codeql-action` to v4, and `actions/dependency-review-action` to v5.
+
+### Fixed
+- Fix `RoomLog` receipt RPC timeout and >60m T3 export/OAuth expiry handling.
+- Fix `challenge/gate.py` sandboxed Tier B runs (docs mount, HF blob symlinks, symlinked venv python).
+
 ## [0.4.7] - 2026-11-23
 
 ### Added

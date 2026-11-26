@@ -3,5 +3,10 @@
 useDefault = true
 
 [allowlist]
-description = "signed-message test vectors"
-paths = ['''ui/tests/launch_vector\.txt''']
+description = "signed-message test vectors and public Ed25519 host_key fields in 5-gate bundles"
+paths = [
+  '''ui/tests/launch_vector\.txt''',
+  '''docs/reports/playbox-security20-5gate-bundle\.json''',
+  '''docs/reports/playbox-swe50-5gate-bundle\.json''',
+  '''docs/reports/playbox-verified-eval-5gate-bundle-3da4be1ab\.json''',
+]

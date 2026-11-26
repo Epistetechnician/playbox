@@ -116,8 +116,10 @@ class KBEncoderProjector:
         # Pool along token axis while preserving head & channel structure:
         k_perm = k_raw.permute(0, 1, 3, 2).reshape(b * h * d, 1, seq_len)
         v_perm = v_raw.permute(0, 1, 3, 2).reshape(b * h * d, 1, seq_len)
-        k_pool = F.adaptive_avg_pool1d(k_perm.float(), s).to(k_raw.dtype).reshape(b, h, d, s).permute(0, 1, 3, 2).contiguous()
-        v_pool = F.adaptive_avg_pool1d(v_perm.float(), s).to(v_raw.dtype).reshape(b, h, d, s).permute(0, 1, 3, 2).contiguous()
+        k_in = k_perm.float().cpu() if (k_raw.device.type == "mps" and seq_len % s != 0) else k_perm.float()
+        v_in = v_perm.float().cpu() if (v_raw.device.type == "mps" and seq_len % s != 0) else v_perm.float()
+        k_pool = F.adaptive_avg_pool1d(k_in, s).to(device=k_raw.device, dtype=k_raw.dtype).reshape(b, h, d, s).permute(0, 1, 3, 2).contiguous()
+        v_pool = F.adaptive_avg_pool1d(v_in, s).to(device=v_raw.device, dtype=v_raw.dtype).reshape(b, h, d, s).permute(0, 1, 3, 2).contiguous()
         return k_pool, v_pool
 
 
@@ -137,9 +139,11 @@ class TrainedKVProjectionAdapter:
         head_dim: int,
         *,
         rank: int = 32,
+        resampler_slots: int | None = None,
         device: str = "cpu",
     ):
         torch, _ = _import_torch_and_transformers()
+        import math
         import torch.nn as nn
 
         self.torch = torch
@@ -148,11 +152,14 @@ class TrainedKVProjectionAdapter:
         self.head_dim = int(head_dim)
         self.kv_dim = self.num_kv_heads * self.head_dim
         self.rank = int(rank)
+        self.resampler_slots = int(resampler_slots) if resampler_slots else None
         self.device = device
 
         class _KVNet(nn.Module):
-            def __init__(self, n_layers: int, kv_dim: int, r: int, n_heads: int):
+            def __init__(self, n_layers: int, kv_dim: int, r: int, n_heads: int, h_dim: int, m_slots: int | None):
                 super().__init__()
+                self.m_slots = m_slots
+                self.h_dim = h_dim
                 self.k_norm = nn.ModuleList([nn.LayerNorm(kv_dim) for _ in range(n_layers)])
                 self.k_down = nn.ModuleList([nn.Linear(kv_dim, r, bias=False) for _ in range(n_layers)])
                 self.k_up = nn.ModuleList([nn.Linear(r, kv_dim, bias=True) for _ in range(n_layers)])
@@ -162,6 +169,17 @@ class TrainedKVProjectionAdapter:
                 self.k_scale = nn.Parameter(torch.ones(n_layers, 1, n_heads, 1, 1))
                 self.v_scale = nn.Parameter(torch.ones(n_layers, 1, n_heads, 1, 1))
                 self.act = nn.SiLU()
+                if m_slots is not None:
+                    # Learned Perceiver-style cross-attention resampler over pre-RoPE (K, V) tokens
+                    # with a per-token content salience gate and soft monotonic ordering prior.
+                    self.resamp_q = nn.Parameter(torch.randn(n_layers, 1, n_heads, m_slots, h_dim) * 0.02)
+                    self.resamp_k = nn.ModuleList([nn.Linear(h_dim, h_dim, bias=False) for _ in range(n_layers)])
+                    self.resamp_tok_gate = nn.ModuleList([nn.Linear(h_dim, 1, bias=False) for _ in range(n_layers)])
+                    self.resamp_log_temp = nn.Parameter(torch.full((n_layers, 1, n_heads, 1, 1), math.log(0.15)))
+                    self.resamp_log_pos = nn.Parameter(torch.full((n_layers, 1, n_heads, 1, 1), math.log(8.0)))
+                    for li in range(n_layers):
+                        nn.init.eye_(self.resamp_k[li].weight)
+                        nn.init.zeros_(self.resamp_tok_gate[li].weight)
                 for li in range(n_layers):
                     nn.init.normal_(self.k_down[li].weight, std=0.02)
                     nn.init.zeros_(self.k_up[li].weight)
@@ -170,11 +188,27 @@ class TrainedKVProjectionAdapter:
                     nn.init.zeros_(self.v_up[li].weight)
                     nn.init.zeros_(self.v_up[li].bias)
 
+            def _resample(self, li: int, kf: object, vf: object):
+                b, h, s, d = kf.shape
+                if self.m_slots is None or s <= self.m_slots:
+                    return kf, vf
+                m = self.m_slots
+                k_proj = self.resamp_k[li](kf)
+                temp = torch.exp(self.resamp_log_temp[li]).clamp(min=0.02, max=2.0)
+                logits = torch.matmul(self.resamp_q[li], k_proj.transpose(-2, -1)) / (math.sqrt(d) * temp)
+                tok_bias = self.resamp_tok_gate[li](kf).squeeze(-1).unsqueeze(-2)
+                slot_pos = torch.linspace(0.0, 1.0, m, device=kf.device, dtype=kf.dtype)
+                tok_pos = torch.linspace(0.0, 1.0, s, device=kf.device, dtype=kf.dtype)
+                dist2 = (slot_pos[:, None] - tok_pos[None, :]) ** 2
+                pos_sharp = torch.exp(self.resamp_log_pos[li]).clamp(min=0.25, max=256.0)
+                logits = logits + tok_bias - pos_sharp * dist2.view(1, 1, m, s)
+                attn = torch.softmax(logits, dim=-1)
+                return torch.matmul(attn, kf), torch.matmul(attn, vf)
+
             def project_layer(self, li: int, k: object, v: object):
                 # k, v: (B, H, S, D) in float32 or model dtype
                 orig_dtype = k.dtype
-                kf = k.float()
-                vf = v.float()
+                kf, vf = self._resample(li, k.float(), v.float())
                 b, h, s, d = kf.shape
                 k_flat = kf.transpose(1, 2).reshape(b, s, h * d)
                 v_flat = vf.transpose(1, 2).reshape(b, s, h * d)
@@ -184,7 +218,9 @@ class TrainedKVProjectionAdapter:
                 v_out = vf * self.v_scale[li] + dv
                 return k_out.to(orig_dtype), v_out.to(orig_dtype)
 
-        self.net = _KVNet(self.num_layers, self.kv_dim, self.rank, self.num_kv_heads).to(device)
+        self.net = _KVNet(
+            self.num_layers, self.kv_dim, self.rank, self.num_kv_heads, self.head_dim, self.resampler_slots
+        ).to(device)
 
     def to(self, device: str) -> TrainedKVProjectionAdapter:
         self.device = device
@@ -221,13 +257,14 @@ class TrainedKVProjectionAdapter:
                     v_dev = v_cpu.to(self.device)
                     kp, vp = self.net.project_layer(li, k_dev, v_dev)
                     new_layers.append((kp.cpu(), vp.cpu()))
+                new_slot_count = int(new_layers[0][0].shape[2]) if new_layers else c.slot_count
                 adapted.append(
                     ParametricClusterKV(
                         inter_key=c.inter_key,
                         root_key=c.root_key,
                         text=c.text,
                         token_count=c.token_count,
-                        slot_count=c.slot_count,
+                        slot_count=new_slot_count,
                         layers_kv=new_layers,
                     )
                 )
@@ -375,9 +412,11 @@ class ParametricAtlasKVEngine:
         head_dim = getattr(attn0, "head_dim", self.model.config.hidden_size // self.model.config.num_attention_heads)
         return len(layers), int(num_kv_heads), int(head_dim)
 
-    def create_kv_adapter(self, *, rank: int = 32) -> TrainedKVProjectionAdapter:
+    def create_kv_adapter(self, *, rank: int = 32, resampler_slots: int | None = None) -> TrainedKVProjectionAdapter:
         n_layers, n_kv, h_dim = self._layer_kv_spec()
-        adapter = TrainedKVProjectionAdapter(n_layers, n_kv, h_dim, rank=rank, device=self.device)
+        adapter = TrainedKVProjectionAdapter(
+            n_layers, n_kv, h_dim, rank=rank, resampler_slots=resampler_slots, device=self.device
+        )
         self.kv_adapter = adapter
         return adapter
 
@@ -392,16 +431,9 @@ class ParametricAtlasKVEngine:
         DynamicCache = self.transformers.cache_utils.DynamicCache
         _, layers, rotary = self._backbone_and_layers()
 
-        total_slots = sum(c.slot_count for c in selected_clusters)
-        pos_ids = torch.arange(0, total_slots, device=self.device, dtype=torch.long).unsqueeze(0)
-        dummy_x = torch.zeros((1, 1, total_slots, 1), device=self.device, dtype=self.dtype)
-        with torch.no_grad():
-            cos, sin = rotary(dummy_x, pos_ids)
-        if cos.dim() == 3:
-            cos = cos.unsqueeze(1)
-            sin = sin.unsqueeze(1)
-
         cache = DynamicCache()
+        cos = sin = None
+        total_slots = 0
         for li in range(len(layers)):
             if apply_live_adapter and self.kv_adapter is not None:
                 k_parts = []
@@ -418,6 +450,15 @@ class ParametricAtlasKVEngine:
             else:
                 k_cat = torch.cat([c.layers_kv[li][0] for c in selected_clusters], dim=2).to(self.device, dtype=self.dtype)
                 v_cat = torch.cat([c.layers_kv[li][1] for c in selected_clusters], dim=2).to(self.device, dtype=self.dtype)
+            if cos is None:
+                total_slots = int(k_cat.shape[2])
+                pos_ids = torch.arange(0, total_slots, device=self.device, dtype=torch.long).unsqueeze(0)
+                dummy_x = torch.zeros((1, 1, total_slots, 1), device=self.device, dtype=self.dtype)
+                with torch.no_grad():
+                    cos, sin = rotary(dummy_x, pos_ids)
+                if cos.dim() == 3:
+                    cos = cos.unsqueeze(1)
+                    sin = sin.unsqueeze(1)
             k_rot = _apply_rope(k_cat, cos, sin)
             cache.update(k_rot, v_cat, li)
         return cache, total_slots
@@ -428,6 +469,7 @@ class ParametricAtlasKVEngine:
         train_examples: Sequence[dict],
         *,
         rank: int = 32,
+        resampler_slots: int | None = None,
         epochs: int = 8,
         lr: float = 2e-3,
         weight_decay: float = 1e-4,
@@ -453,7 +495,11 @@ class ParametricAtlasKVEngine:
         idx = HiKVPIndex.build(train_triples)
         raw_clusters, q_dropped = self.build_clusters(train_triples)
 
-        adapter = self.kv_adapter if self.kv_adapter is not None else self.create_kv_adapter(rank=rank)
+        adapter = (
+            self.kv_adapter
+            if (self.kv_adapter is not None and self.kv_adapter.resampler_slots == resampler_slots)
+            else self.create_kv_adapter(rank=rank, resampler_slots=resampler_slots)
+        )
         adapter.to(self.device).train_mode()
         opt = torch.optim.AdamW(adapter.parameters(), lr=lr, weight_decay=weight_decay)
 
@@ -541,6 +587,7 @@ class ParametricAtlasKVEngine:
         train_sec = round(time.perf_counter() - t0, 2)
         return adapter, {
             "rank": rank,
+            "resampler_slots": resampler_slots,
             "epochs": epochs,
             "train_examples": len(prepared),
             "quarantined_dropped_in_train": q_dropped,
@@ -684,7 +731,7 @@ def _verify_pq_attestation(
     if atlas_blk.get("body_sha256") != body_sha256 or atlas_blk.get("tensors_sha256") != tensors_sha256:
         raise ValueError("manifest PQ attestation digest binding mismatch")
     sig_alg = str((pq_att.get("signature") or {}).get("alg") or "")
-    return sig_alg == "Ed25519+ML-DSA-65"
+    return sig_alg in ("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f")
 
 
 def save_signed_kb_shard(
@@ -852,6 +899,8 @@ def save_signed_kv_adapter(
         "train_meta": train_meta,
         "tensors_sha256": tensors_sha,
     }
+    if adapter.resampler_slots is not None:
+        body["resampler_slots"] = adapter.resampler_slots
     body_bytes = _canonical_bytes(body)
     body_sha = hashlib.sha256(body_bytes).hexdigest()
     msg = ADAPTER_DOMAIN + body_bytes
@@ -934,6 +983,7 @@ def load_verified_kv_adapter(
         int(body["num_kv_heads"]),
         int(body["head_dim"]),
         rank=int(body["rank"]),
+        resampler_slots=int(body["resampler_slots"]) if body.get("resampler_slots") is not None else None,
         device="cpu",
     )
     adapter.net.load_state_dict(state_dict, strict=True)

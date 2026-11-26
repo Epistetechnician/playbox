@@ -272,7 +272,7 @@ def verify_signed_receipt(
     if not isinstance(sig, dict) or not sig.get("signed"):
         return False, "receipt is not signed"
     alg = str(sig.get("alg") or "")
-    if alg not in ("Ed25519", "Ed25519+ML-DSA-65"):
+    if alg not in ("Ed25519", "Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f"):
         return False, f"unsupported receipt signature alg: {alg!r}"
     if sig.get("domain") != RECEIPT_DOMAIN:
         return False, f"unexpected signature domain: {sig.get('domain')}"
@@ -291,7 +291,7 @@ def verify_signed_receipt(
     except ImportError:
         return False, "cryptography package unavailable to verify Ed25519 signature"
 
-    has_pq = alg == "Ed25519+ML-DSA-65" or bool(sig.get("pq_sig_hex"))
+    has_pq = alg in ("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65+SLH-DSA-SHA2-128f") or bool(sig.get("pq_sig_hex"))
     if require_pq and not has_pq:
         return False, "receipt is missing required ML-DSA-65 post-quantum signature"
     if has_pq:

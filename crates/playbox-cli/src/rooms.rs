@@ -334,7 +334,10 @@ pub async fn up(a: UpArgs) -> Result<()> {
         .transpose()?;
     let mut first_link: Option<String> = None;
     if a.replica_of.is_some() {
-        println!("replica up ({}): serves the room's grants, cannot admit members; join through the primary.", transport.label());
+        println!(
+            "replica up ({}): serves the room's grants, cannot admit members; join through the primary.",
+            transport.label()
+        );
     } else {
         let link = host.create_link_with(
             Duration::from_secs(a.link_ttl),
@@ -395,7 +398,9 @@ pub async fn up(a: UpArgs) -> Result<()> {
         }
     };
     if a.console {
-        println!("host console: link [GUEST ID] | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | roomlog | roomlog-add <peer address> | roomlog-remove <host id> | roomlog-problem <hash> <j> <noise ppm> <gain ppm> <baseline> | roomlog-promote <problem> <candidate> | quit");
+        println!(
+            "host console: link [GUEST ID] | members | audit [N] | revoke <member id> | calls | approve <call id> | deny <call id> | roomlog | roomlog-add <peer address> | roomlog-remove <host id> | roomlog-problem <hash> <j> <noise ppm> <gain ppm> <baseline> | roomlog-promote <problem> <candidate> | quit"
+        );
         tokio::select! { r = console(&host) => r?, () = serve => {} }
     } else {
         println!("(ctrl-c to stop)");
@@ -406,6 +411,21 @@ pub async fn up(a: UpArgs) -> Result<()> {
 
 /// Refuse runtime-only flags that the chosen runner (or lack of one) would silently ignore or fail on at task time.
 fn check_flags(a: &UpArgs, runtime: Option<&str>, enforces_host_list: bool) -> Result<()> {
+    if matches!(
+        a.template,
+        Some(crate::cli::RoomTemplate::PqaiAudit | crate::cli::RoomTemplate::PqaiMigrate)
+    ) {
+        if a.confine_net != "none" || !a.allow_host.is_empty() || !a.allow_egress.is_empty() {
+            bail!(
+                "air-gapped PQAI templates (`pqai-audit`, `pqai-migrate`) forbid --confine-net != none, --allow-host, and --allow-egress"
+            );
+        }
+        if !a.allow_secret.is_empty() {
+            bail!(
+                "air-gapped PQAI templates (`pqai-audit`, `pqai-migrate`) forbid injecting host secrets via --allow-secret"
+            );
+        }
+    }
     if !a.allow_host.is_empty() {
         match runtime {
             None => bail!(
@@ -536,17 +556,18 @@ pub fn room_log_cmd(state: &str, root: &str, json: bool) -> Result<()> {
         println!(
             "{}",
             serde_json::json!({ "len": st.len, "head": st.head, "committed": st.committed,
-                "pq_committed": st.pq_committed,
+                "pq_committed": st.pq_committed, "hash_committed": st.pqai_committed,
                 "epoch": st.epoch, "leader": st.leader, "hosts": st.hosts, "k": st.k,
                 "problems": st.problems.iter().map(|p| serde_json::json!({"problem": p.problem, "candidate": p.candidate, "metric": p.metric, "strength": p.strength, "j": p.j})).collect::<Vec<_>>(), "equivocators": st.equivocators,
                 "members": st.members, "banned": st.banned })
         );
     } else {
         println!(
-            "room log OK: {} entries, {} committed ({} PQ-committed), epoch {} led by {}; {} of {} hosts needed",
+            "room log OK: {} entries, {} committed ({} PQ-committed, {} PQAI-hash-committed), epoch {} led by {}; {} of {} hosts needed",
             st.len,
             st.committed,
             st.pq_committed,
+            st.pqai_committed,
             st.epoch,
             st.leader,
             st.k,
@@ -1272,7 +1293,9 @@ pub fn link_opts(for_guest: Option<&str>, show_ips: bool) -> Result<playbox_net:
 pub fn guest_id() -> Result<()> {
     let k = playbox_net::identity_key(&store::home().join("guest.key"))?;
     println!("{}", k.public());
-    eprintln!("send this to the host; they run `playbox up --for-guest <id>` so the link works only for you");
+    eprintln!(
+        "send this to the host; they run `playbox up --for-guest <id>` so the link works only for you"
+    );
     Ok(())
 }
 
@@ -1391,6 +1414,36 @@ mod tests {
             unreachable!("expected up")
         };
         a
+    }
+
+    #[test]
+    fn pqai_templates_fail_closed_on_network_or_egress_or_secrets() {
+        for tpl in ["pqai-audit", "pqai-migrate"] {
+            assert!(check_flags(&up_args(&["--template", tpl]), Some("libkrun"), true).is_ok());
+            assert!(check_flags(
+                &up_args(&["--template", tpl, "--confine", "--confine-net", "internet"]),
+                Some("libkrun"),
+                true
+            )
+            .is_err());
+            assert!(check_flags(
+                &up_args(&["--template", tpl, "--allow-host", "example.com"]),
+                Some("openshell"),
+                true
+            )
+            .is_err());
+            assert!(check_flags(
+                &up_args(&["--template", tpl, "--allow-secret", "API_KEY"]),
+                Some("libkrun"),
+                true
+            )
+            .is_err());
+            let limits = build_limits(&up_args(&["--template", tpl]));
+            assert!(!limits.network);
+            assert!(limits.allowed_hosts.is_empty());
+            assert!(limits.allowed_egress.is_empty());
+            assert!(limits.allowed_secrets.is_empty());
+        }
     }
 
     #[test]

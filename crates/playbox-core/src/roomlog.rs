@@ -37,6 +37,7 @@ use thiserror::Error;
 const ENTRY_DOMAIN: &[u8] = b"playbox.roomlog.entry.v1";
 const CHECKPOINT_DOMAIN: &[u8] = b"playbox.roomlog.checkpoint.v1";
 const CHECKPOINT_PQ_CTX: &[u8] = b"playbox.roomlog.checkpoint.pq.v1";
+const CHECKPOINT_HASH_CTX: &[u8] = b"playbox.roomlog.checkpoint.pqai.slhdsa.v1";
 
 /// Most bytes one entry's payload may hold.
 pub const MAX_PAYLOAD: usize = 16 * 1024;
@@ -235,12 +236,20 @@ pub struct PqSig {
     pub sig: Vec<u8>,
 }
 
+/// Stateless FIPS 205 `SLH-DSA-SHA2-128f` pure hash-based cosignature attached to a [`SignedCheckpoint`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HashSig {
+    pub pk: Vec<u8>,
+    pub sig: Vec<u8>,
+}
+
 /// A checkpoint with the cosignatures collected for it, by host key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignedCheckpoint {
     pub cp: Checkpoint,
     pub sigs: BTreeMap<Key, [u8; 64]>,
     pub pq_sigs: BTreeMap<Key, PqSig>,
+    pub hash_sigs: BTreeMap<Key, HashSig>,
 }
 
 impl SignedCheckpoint {
@@ -250,6 +259,7 @@ impl SignedCheckpoint {
             cp,
             sigs: BTreeMap::new(),
             pq_sigs: BTreeMap::new(),
+            hash_sigs: BTreeMap::new(),
         }
     }
 
@@ -276,6 +286,19 @@ impl SignedCheckpoint {
         let ok = crate::pq::verify_mldsa65(&pq.pk, &msg, &pq.sig, CHECKPOINT_PQ_CTX);
         if ok {
             self.pq_sigs.insert(signer, pq);
+        }
+        ok
+    }
+
+    /// Add `signer`'s FIPS 205 `SLH-DSA-SHA2-128f` pure hash-based cosignature if `signer` is a host of `cfg` and it verifies.
+    pub fn add_hash(&mut self, room: &Key, cfg: &Config, signer: Key, hash: HashSig) -> bool {
+        if !cfg.hosts.contains(&signer) || self.hash_sigs.contains_key(&signer) {
+            return false;
+        }
+        let msg = self.cp.pq_signing_bytes(room, &signer);
+        let ok = crate::pq::verify_slhdsa(&hash.pk, &msg, &hash.sig, CHECKPOINT_HASH_CTX);
+        if ok {
+            self.hash_sigs.insert(signer, hash);
         }
         ok
     }
@@ -322,6 +345,39 @@ impl SignedCheckpoint {
                     &pq.sig,
                     CHECKPOINT_PQ_CTX,
                 )
+            })
+            .count()
+    }
+
+    /// Valid distinct host cosignatures carrying ALL THREE valid signatures:
+    /// Ed25519 + FIPS 204 ML-DSA-65 + FIPS 205 `SLH-DSA-SHA2-128f` (PQAI hash-based root).
+    #[must_use]
+    pub fn pqai_count(&self, room: &Key, cfg: &Config) -> usize {
+        self.sigs
+            .iter()
+            .filter(|(s, sig)| {
+                if !cfg.hosts.contains(*s) {
+                    return false;
+                }
+                let ed_ok = VerifyingKey::from_bytes(s)
+                    .and_then(|k| {
+                        k.verify(&self.cp.signing_bytes(room), &Signature::from_bytes(sig))
+                    })
+                    .is_ok();
+                if !ed_ok {
+                    return false;
+                }
+                let msg = self.cp.pq_signing_bytes(room, s);
+                let Some(pq) = self.pq_sigs.get(*s) else {
+                    return false;
+                };
+                if !crate::pq::verify_mldsa65(&pq.pk, &msg, &pq.sig, CHECKPOINT_PQ_CTX) {
+                    return false;
+                }
+                let Some(h) = self.hash_sigs.get(*s) else {
+                    return false;
+                };
+                crate::pq::verify_slhdsa(&h.pk, &msg, &h.sig, CHECKPOINT_HASH_CTX)
             })
             .count()
     }
@@ -951,12 +1007,12 @@ impl RoomLog {
             Some(_) => {
                 return Err(LogError::BadCheckpoint(
                     "head differs from this host's log".into(),
-                ))
+                ));
             }
             None => {
                 return Err(LogError::BadCheckpoint(
                     "this host has not reached that size".into(),
-                ))
+                ));
             }
         }
         Ok((me, key.sign(&cp.signing_bytes(&self.room)).to_bytes()))
@@ -990,6 +1046,35 @@ impl RoomLog {
         ))
     }
 
+    /// Cosign `cp` with Ed25519, FIPS 204 ML-DSA-65, and FIPS 205 `SLH-DSA-SHA2-128f` (PQAI hash-only root).
+    ///
+    /// # Errors
+    ///
+    /// As [`RoomLog::cosign_hybrid`], or if `SLH-DSA-SHA2-128f` signing fails.
+    pub fn cosign_pqai(
+        &self,
+        key: &SigningKey,
+        cp: &Checkpoint,
+    ) -> Result<(Key, [u8; 64], PqSig, HashSig), LogError> {
+        let (me, sig, pq) = self.cosign_hybrid(key, cp)?;
+        let (h_pk, h_sk) = crate::pq::derive_slhdsa_from_ed25519_seed(&key.to_bytes());
+        let h_sig = crate::pq::sign_slhdsa(
+            &h_sk,
+            &cp.pq_signing_bytes(&self.room, &me),
+            CHECKPOINT_HASH_CTX,
+        )
+        .map_err(|e| LogError::BadCheckpoint(e.to_string()))?;
+        Ok((
+            me,
+            sig,
+            pq,
+            HashSig {
+                pk: h_pk,
+                sig: h_sig,
+            },
+        ))
+    }
+
     /// Make a [`SignedCheckpoint`] for `cp` carrying `key`'s own hybrid (Ed25519 + ML-DSA-65) cosignature.
     ///
     /// # Errors
@@ -1004,6 +1089,25 @@ impl RoomLog {
         let mut sc = SignedCheckpoint::new(cp);
         sc.add(&self.room, &self.cfg, me, sig);
         sc.add_pq(&self.room, &self.cfg, me, pq);
+        Ok(sc)
+    }
+
+    /// Make a [`SignedCheckpoint`] for `cp` carrying `key`'s PQAI tri-signed
+    /// (Ed25519 + ML-DSA-65 + `SLH-DSA-SHA2-128f`) cosignature.
+    ///
+    /// # Errors
+    ///
+    /// As [`RoomLog::cosign_pqai`].
+    pub fn sign_checkpoint_pqai(
+        &self,
+        key: &SigningKey,
+        cp: Checkpoint,
+    ) -> Result<SignedCheckpoint, LogError> {
+        let (me, sig, pq, hash) = self.cosign_pqai(key, &cp)?;
+        let mut sc = SignedCheckpoint::new(cp);
+        sc.add(&self.room, &self.cfg, me, sig);
+        sc.add_pq(&self.room, &self.cfg, me, pq);
+        sc.add_hash(&self.room, &self.cfg, me, hash);
         Ok(sc)
     }
 
@@ -1025,7 +1129,12 @@ impl RoomLog {
             .iter()
             .filter(|(s, pq)| into.add_pq(&self.room, cfg, **s, (*pq).clone()))
             .count();
-        ed + pq
+        let hash = other
+            .hash_sigs
+            .iter()
+            .filter(|(s, h)| into.add_hash(&self.room, cfg, **s, (*h).clone()))
+            .count();
+        ed + pq + hash
     }
 
     /// How many entries are committed: the largest checkpoint size, among `certs`, that has `k` valid host
@@ -1057,6 +1166,24 @@ impl RoomLog {
                     .iter()
                     .find(|cfg| cfg.epoch == c.cp.epoch)
                     .is_some_and(|cfg| c.pq_count(&self.room, cfg) >= cfg.k)
+            })
+            .map(|c| c.cp.size)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Largest checkpoint size backed by `k` PQAI tri-signed
+    /// (Ed25519 + ML-DSA-65 + FIPS 205 `SLH-DSA-SHA2-128f`) host cosignatures.
+    #[must_use]
+    pub fn committed_pqai(&self, certs: &[SignedCheckpoint]) -> u64 {
+        certs
+            .iter()
+            .filter(|c| self.head_at(c.cp.size) == Some(c.cp.head))
+            .filter(|c| {
+                self.hist
+                    .iter()
+                    .find(|cfg| cfg.epoch == c.cp.epoch)
+                    .is_some_and(|cfg| c.pqai_count(&self.room, cfg) >= cfg.k)
             })
             .map(|c| c.cp.size)
             .max()
@@ -1188,6 +1315,19 @@ fn validate_event(e: &Entry) -> Result<(), LogError> {
         }
         "problem.register" => promotion::parse_register(e).map(|_| ()),
         "promotion" => promotion::parse_promotion(e).map(|_| ()),
+        "arc.receipt" => {
+            let v: Value =
+                serde_json::from_slice(&e.payload).map_err(|_| bad("payload is not json"))?;
+            let kind = v["event"].as_str().ok_or_else(|| bad("missing event"))?;
+            let digest = v["digest"].as_str().ok_or_else(|| bad("missing digest"))?;
+            if kind.is_empty()
+                || digest.len() != 64
+                || !digest.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(bad("arc.receipt fields"));
+            }
+            Ok(())
+        }
         other => Err(bad(&format!("kind {other}"))),
     }
 }
@@ -2649,5 +2789,38 @@ mod tests {
         assert!(sc.add_pq(&l.room(), l.config(), who, pq));
         assert_eq!(sc.pq_count(&l.room(), l.config()), 2);
         assert_eq!(l.committed_pq(std::slice::from_ref(&sc)), 2);
+        assert_eq!(l.committed_pqai(std::slice::from_ref(&sc)), 0);
+    }
+
+    #[test]
+    fn checkpoint_pqai_tri_signing_ed25519_mldsa65_slhdsa_verifies_and_rejects_tamper() {
+        let (r, mut l) = room(3, 2);
+        join(&mut l, &r, "a");
+        let mut sc = l.sign_checkpoint_pqai(&r.hosts[0], l.checkpoint()).unwrap();
+        assert_eq!(sc.count(&l.room(), l.config()), 1);
+        assert_eq!(sc.pq_count(&l.room(), l.config()), 1);
+        assert_eq!(sc.pqai_count(&l.room(), l.config()), 1);
+        assert_eq!(l.committed_pqai(std::slice::from_ref(&sc)), 0);
+
+        let f1 = copy(&l);
+        let (who, sig, pq, hash) = f1.cosign_pqai(&r.hosts[1], &sc.cp).unwrap();
+        assert!(sc.add(&l.room(), l.config(), who, sig));
+        assert!(sc.add_pq(&l.room(), l.config(), who, pq));
+        // Still only 1 tri-signed host until the hash-based SLH-DSA signature arrives.
+        assert_eq!(l.committed_pq(std::slice::from_ref(&sc)), 2);
+        assert_eq!(l.committed_pqai(std::slice::from_ref(&sc)), 0);
+
+        // Tampered SLH-DSA signature is rejected fail-closed.
+        let mut bad_hash = hash.clone();
+        bad_hash.sig[0] ^= 1;
+        assert!(!sc.add_hash(&l.room(), l.config(), who, bad_hash));
+        assert_eq!(l.committed_pqai(std::slice::from_ref(&sc)), 0);
+
+        // Wrong signer binding (host 2 Ed25519 key with host 1 SLH-DSA sig) is rejected.
+        assert!(!sc.add_hash(&l.room(), l.config(), pk(&r.hosts[2]), hash.clone()));
+
+        assert!(sc.add_hash(&l.room(), l.config(), who, hash));
+        assert_eq!(sc.pqai_count(&l.room(), l.config()), 2);
+        assert_eq!(l.committed_pqai(std::slice::from_ref(&sc)), 2);
     }
 }

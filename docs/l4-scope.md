@@ -478,3 +478,39 @@ Reading:
   controls above are properties of the receiver and the items and were measured with the old checkpoints.
 - The 20-point bar of section 11 is met on the edge path (about 26 points) but not on the cache-only path. Whether a 4-token edge counts as an acceptable
   deployment is a decision for the user, not a result. Ablations and the full-size mapper remain unstarted. Cost of the controls: about 6 USD (including the wasted first attempt).
+
+### 14.2 One-switch-off ablations (2026-11-24, Colab A100-SXM4-80GB, seed 0)
+
+Ran three one-switch-off ablations of `V2Config` on `Qwen/Qwen3-4B-Base -> unsloth/Llama-3.2-3B` (same 720-item `(B)` test, draw seeds 5, 6, 7, `edge_k=4` controls; runner: `steer/tools/l4_v2_ablations_colab.py`, results in `steer/results/telepathy/l4_v2/ablate_{no_ridge,nll_loss,kw1}_s0.json`). Note: the two ridge-on runs (`nll_loss`, `kw1`) hit the 4,500 s wall cap around steps 2,577–2,665 on A100 because the 4.2 GB float32 ridge matmul slows each forward step ~2× compared to H100 (~5,489 steps in §14), whereas `no_ridge` ran full steps cleanly. `edge0` was skipped to conserve GPU compute units since §14.1 already tested mappers trained without edge tokens.
+
+| condition (seed 0, 720 items) | `mapped_edge` ret | `B_edge` (pts, 95% CI) | `mapped` plain ret | `B_plain` (pts, 95% CI) | specificity | Δ vs full v2 (`B_edge` / `B_plain`) |
+|---|---:|---:|---:|---:|---:|---:|
+| full v2 (§14, H100, 4.2 GB ridge) | 86.19% | +26.63 (25.5–27.9) | 76.20% | +16.63 (15.0–18.4) | 46.03 | baseline |
+| **`no_ridge`** (`--no-ridge`, ~60 MB) | **88.15%** | **+28.59** (27.4–29.9) | **83.63%** | **+24.07** (22.8–25.3) | 38.68 | **+1.96 / +7.44** |
+| **`nll_loss`** (`--loss nll`, step 2,665) | 80.25% | +20.69 (19.1–22.1) | 55.75% | −3.81 (−5.9 to −1.7) | 56.17 | **−5.94 / −20.44** |
+| **`kw1`** (`--key-weight 1.0`, step 2,577) | 84.40% | +24.83 (23.7–26.2) | 76.72% | +17.16 (15.9–18.6) | 44.37 | **−1.80 / +0.53** |
+
+Controls reproduced identically across all three runs: `other_own = 59.56%`, `other_own_edge = 58.86%`, `edge_only = 7.38%`.
+
+Reading:
+- **Teacher KL distillation (`loss="kl"`) is the primary load-bearing switch:** switching stage 2 to NLL drops `B_edge` by −5.94 pts and collapses cache-only `B_plain` by −20.44 pts (below an unrelated real cache).
+- **The 4.2 GB ridge prior hurts on seed 0:** removing it shrinks checkpoints ~70× (~60 MB), eliminates the ~12 GiB Gram-matrix VRAM spike, speeds up training ~2×, and **improves both `B_edge` (+1.96 pts → +28.59) and cache-only `B_plain` (+7.44 pts → +24.07)**, clearing the 20-point cache-only bar on seed 0.
+- **`2×` key weight (`kw=2.0`) gives a modest edge-path gain (+1.80 pts)** and is roughly neutral on the plain path (−0.53 pts), noting the step-count caveat (2,577 vs 5,489 steps on A100 vs H100).
+- **Honest limit:** Single training seed (`seed 0`); confirming whether `no_ridge` also holds a ≤5 pt range across 4 seeds (and whether `B_plain ≥ 20` holds across seeds 1–3) remains open if L4 is ever unfrozen. Total Colab spend: ~46.6 CU (`l4-a100-hm` terminated immediately after `kw1`; 39.71 CU remaining).
+
+### 14.3 Three-seed `no_ridge` replication (2026-11-25, Colab A100-SXM4-80GB, seeds 0–2)
+
+Replicated `no_ridge` (`--no-ridge`, `loss=kl`, `key_weight=2.0`, `edge_k=4`, `~60 MB` checkpoint) across two additional training seeds (`seed 1` and `seed 2`; `seed 3` skipped by the `< 16 CU` budget guard, leaving `9.18 CU` untouched and `0` active sessions). Files: `steer/results/telepathy/l4_v2/ablate_no_ridge_s{0,1,2}.json`.
+
+| seed (720 items) | full v2 `B_edge` (§14) | full v2 `B_plain` (§14) | **`no_ridge` `B_edge` (ret / 95% CI)** | **`no_ridge` `B_plain` cache-only (ret / 95% CI)** |
+|---|---:|---:|---:|---:|
+| 0 | +26.63 | +16.63 | **+28.59** (88.15%, 27.4–29.9) | **+24.07** (83.63%, 22.8–25.3) |
+| 1 | +25.70 | +8.20 | **+28.51** (88.07%, 27.3–29.8) | **+21.50** (81.06%, 20.1–23.0) |
+| 2 | +27.00 | +20.00 | **+28.84** (88.41%, 27.6–30.2) | **+28.03** (87.59%, 26.6–29.5) |
+| **mean (s0–s2)** | **+26.44** | **+14.94** | **+28.65** (+2.21 pts) | **+24.53** (**+9.59 pts**) |
+| **range (s0–s2)** | **1.30** | **11.80** | **0.33** | **6.53** |
+
+Reading:
+- **Cache-only bar (`≥ 20.0` pts, §11) cleared on 3/3 seeds:** Even the lower 95% cluster-bootstrap confidence bound exceeds `+20.0` on all three seeds (`22.8`, `20.1`, `26.6`), with mean `+24.53` pts (`+9.59` pts over full v2's `+14.94`).
+- **Edge-path stability improves 4×:** 3-seed `B_edge` range shrinks from `1.30` pts (v2 with 4.2 GB ridge) to **`0.33` pts** (`28.51–28.84`, mean `+28.65`, `88.1–88.4%` retention) with a ~70× smaller checkpoint (~60 MB).
+- **Honest limit:** Three seeds (`0, 1, 2`) rather than four (seed 3 held back to preserve `9.18 CU` remaining); plain-path range is `6.53` pts (above the `5.0` pt stability bar on plain, while well below it on edge at `0.33` pts), and all three seeds still used `edge_k=4` during training (`--no-ridge` + `--edge-k 0` remains untested).

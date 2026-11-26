@@ -204,7 +204,10 @@ def score(name, patch):
         else:
             m = re.match(r"(test\w+ \([\w.]+\))", ln)
             if m: cur = m.group(1)
-            if ln.endswith("... ok") and cur: ok.add(cur); cur = None
+            if ln.endswith("... ok"):
+                if cur: ok.add(cur); cur = None
+                desc = ln[:-len("... ok")].strip()
+                if desc: ok.add(desc)
     f = sum(x in ok for x in r["F"])
     cal = f"{D}/{name}.p2p_ok.json"   # P2P tests our parser sees passing under the gold patch (calibrated once; others e.g. skipped are excluded)
     if os.path.exists(cal): r["P"] = json.load(open(cal))

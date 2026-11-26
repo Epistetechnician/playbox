@@ -16,8 +16,9 @@ MAXRUNS = int(os.environ.get("PB_MAX_RUNS", "30"))
 TIMEOUT = int(os.environ.get("PB_TIMEOUT", "1500"))
 PLAYBOX = os.environ.get("PLAYBOX_BIN", os.path.expanduser("~/.local/bin/playbox"))
 # Not the ~/.local/bin/hermes shim: it execs into whichever per-home python last rewrote it (a sibling's deleted home broke it once).
-HERMES = [os.path.expanduser("~/.hermes/tools/python-3.14.9+20261021-darwin-arm64/bin/python3"), "-m", "hermes_cli.main"]
-HVENV_PY = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python")
+_HERMES_PY = os.environ.get("PB_HERMES_PY", os.path.expanduser("~/.hermes/tools/python-3.14.9+20261021-darwin-arm64/bin/python3"))
+HERMES = [_HERMES_PY, "-m", "hermes_cli.main"]
+HVENV_PY = os.environ.get("PB_HERMES_PY", os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python"))
 IMAGE = "hermes-agent-nonroot:latest"
 HOSTING = os.path.expanduser("~/.playbox/hosting")
 PROMPT = ("Fix the bugs in the Python package `mini`. The repo root is {path} (it is a git repo; work only there). "
@@ -114,7 +115,7 @@ def kill_my_gateways(home):
         env = subprocess.run(["ps", "eww", "-p", pid], capture_output=True, text=True).stdout.split()
         if f"HERMES_HOME={home}" in env:
             try: os.kill(int(pid), 15)
-            except Exception: pass  # noqa: BLE001
+            except OSError as exc: print(f"[warn] kill {pid}: {exc}", file=sys.stderr)
     time.sleep(2)
 
 
