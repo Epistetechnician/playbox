@@ -12,7 +12,15 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from playbox_steer.arc_maverick_proxy import ArcMaverickProxyState, create_arc_maverick_server
+import pytest
+
+try:
+    from playbox_steer.arc_maverick_proxy import ArcMaverickProxyState, create_arc_maverick_server
+except ModuleNotFoundError as exc:
+    if exc.name and exc.name.split(".")[0] == "arc_membrane":
+        pytest.skip("requires optional sibling patelshaan/arc_membrane repo", allow_module_level=True)
+    raise
+
 from playbox_steer.kv_routed_proxy import EntityRecord
 
 SIDECAR_BIN = Path(__file__).resolve().parents[3] / "patelshaan" / "arc_membrane" / "maverick_rs" / "target" / "release" / "sidecar"
@@ -24,6 +32,7 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+@pytest.mark.skipif(not SIDECAR_BIN.exists(), reason=f"Missing optional Rust sidecar at {SIDECAR_BIN}")
 def test_playbox_arc_maverick_proxy_e2e() -> None:
     assert SIDECAR_BIN.exists(), f"Missing Rust sidecar at {SIDECAR_BIN}"
 
