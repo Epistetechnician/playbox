@@ -55,7 +55,7 @@ def is_read_only(tool_name):
     server, tool = base_name(tool_name)
     if server == "playbox":
         return tool in ROOM_SAFE_TOOLS
-    return tool in READ_ONLY_TOOLS
+    return server is None and tool in READ_ONLY_TOOLS
 
 
 def _is_workspace_args(args):
